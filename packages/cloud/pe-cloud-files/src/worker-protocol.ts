@@ -15,6 +15,154 @@ export interface FdRootIdentity {
   readonly rootMountId?: string
 }
 
+/** Actual fixed .pe identity; no arbitrary child name or private path is supplied. */
+export interface FdProjectMetadataDirectory {
+  readonly device: string
+  readonly inode: string
+  readonly mountId: string
+  readonly uid: number
+  readonly gid: number
+  readonly mode: number
+}
+
+/** Fixed native capability-v1 receipt; unknown remains owned even when known descriptors have closed. */
+export interface FdProjectMetadataFacts {
+  readonly outcome: 'existing' | 'created' | 'not-prepared' | 'unknown'
+  readonly closed: boolean
+  readonly created: boolean
+  readonly attempted: boolean
+  readonly rootValidated: boolean
+  readonly directoryValidated: boolean
+  readonly directorySynced: boolean
+  readonly parentSynced: boolean
+  readonly errno: number
+  readonly directory: FdProjectMetadataDirectory
+}
+
+/** Completed durable preparation retained through the original operation result. */
+export interface FdProjectMetadataResult {
+  readonly created: boolean
+  readonly directory: FdProjectMetadataDirectory
+}
+
+/** Fixed environment entry names; each identity belongs to the original environment hard domain. */
+export interface FdEnvironmentLayout {
+  readonly home: FdProjectMetadataDirectory
+  readonly venv: FdProjectMetadataDirectory
+  readonly tmp: FdProjectMetadataDirectory
+}
+
+/** Closed native layout receipt; partial or uncertain effects retain the original mutation. */
+export interface FdEnvironmentLayoutFacts {
+  readonly outcome: 'existing' | 'created' | 'not-prepared' | 'unknown'
+  readonly closed: boolean
+  readonly rootValidated: boolean
+  readonly errno: number
+  readonly createdMask: number
+  readonly layout: FdEnvironmentLayout
+}
+
+/** Private fixed layout request; no child name, mode or arbitrary mkdir operation crosses the wire. */
+export interface FdEnvironmentLayoutRequest {
+  readonly kind: 'environment-layout-prepare'
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly uid: number
+  readonly gid: number
+  readonly cancel: SharedArrayBuffer
+}
+
+/**
+ * Verify the exact DEL1 frame against the selected environment anchor and expected application identity.
+ * @param raw Fixed native or worker frame.
+ * @param root Original protected environment identity.
+ * @param uid Expected application UID.
+ * @param gid Expected application GID.
+ * @returns Fixed directory identities and effect facts, or undefined for an invalid receipt.
+ */
+export function parseEnvironmentLayoutFrame(
+  raw: unknown, root: FdRootIdentity, uid: number, gid: number,
+): FdEnvironmentLayoutFacts | undefined {
+  if (!(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer) || raw.byteOffset !== 0
+    || raw.byteLength !== 256 || raw.buffer.byteLength !== 256 || root.rootMountId === undefined) return undefined
+  const frame = new DataView(raw.buffer), tag = raw[5], flags = raw[6]
+  if (frame.getUint32(0, false) !== 0x44454c31 || raw[4] !== 1 || tag === undefined || tag < 1 || tag > 4
+    || flags === undefined || flags > 3 || raw[7] !== 0 || raw.subarray(12, 24).some(byte => byte !== 0)
+    || raw.subarray(240).some(byte => byte !== 0)) return undefined
+  const decimal = (offset: number): string => frame.getBigUint64(offset, true).toString()
+  if (decimal(24) !== root.rootDevice || decimal(32) !== root.rootInode || decimal(40) !== root.rootMountId) return undefined
+  const errno = frame.getUint32(8, true), closed = (flags & 1) !== 0, rootValidated = (flags & 2) !== 0
+  let createdMask = 0, synchronized = false
+  const directories: FdProjectMetadataDirectory[] = []
+  for (let index = 0; index < 3; index++) {
+    const offset = 48 + index * 64, bits = raw[offset]
+    if (bits === undefined || bits > 31 || raw.subarray(offset + 1, offset + 4).some(byte => byte !== 0)
+      || raw.subarray(offset + 40, offset + 64).some(byte => byte !== 0)
+      || (bits & 2) !== 0 && (bits & 16) === 0 || (bits & 4) !== 0 && (bits & 1) === 0
+      || (bits & 8) !== 0 && (bits & 4) === 0 || bits !== 0 && !rootValidated) return undefined
+    if ((bits & 2) !== 0) createdMask |= 1 << index
+    if ((bits & 12) !== 0) synchronized = true
+    const directory = Object.freeze({ uid: frame.getUint32(offset + 4, true), gid: frame.getUint32(offset + 8, true),
+      mode: frame.getUint32(offset + 12, true), device: decimal(offset + 16), inode: decimal(offset + 24),
+      mountId: decimal(offset + 32) })
+    if (tag < 3 && ((bits & 13) !== 13 || directory.uid !== uid || directory.gid !== gid || directory.mode !== 0o40700
+      || directory.device !== root.rootDevice || directory.mountId !== root.rootMountId || directory.inode === '0'
+      || directory.inode === root.rootInode || directories.some(other => other.inode === directory.inode))) return undefined
+    directories.push(directory)
+  }
+  if (errno > 4095 || (tag < 3 ? errno !== 0 || !closed || !rootValidated || (createdMask !== 0) !== (tag === 2)
+    : errno === 0 || tag === 3 && (!closed || createdMask !== 0 || synchronized))) return undefined
+  const [home, venv, tmp] = directories
+  if (home === undefined || venv === undefined || tmp === undefined) return undefined
+  return Object.freeze({ outcome: tag === 1 ? 'existing' : tag === 2 ? 'created' : tag === 3 ? 'not-prepared' : 'unknown',
+    closed, rootValidated, errno, createdMask, layout: Object.freeze({ home, venv, tmp }) })
+}
+
+/** Private fixed operation; metadata names, mkdir arguments and unverified directory assertions cannot cross the wire. */
+export interface FdProjectMetadataRequest {
+  readonly kind: 'project-metadata-prepare'
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly uid: number
+  readonly gid: number
+  readonly cancel: SharedArrayBuffer
+}
+
+/**
+ * Decode the exact closed/native receipt and verify every successful identity against its original request.
+ * @param raw Native or worker binary frame, never a success assertion from configuration.
+ * @param root Original selected project anchor.
+ * @param uid Expected deployment application UID.
+ * @param gid Expected deployment application GID.
+ * @returns Bounded facts, or undefined for incompatible, malformed or contradictory replies.
+ */
+export function parseProjectMetadataFrame(
+  raw: unknown, root: FdRootIdentity, uid: number, gid: number,
+): FdProjectMetadataFacts | undefined {
+  if (!(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer) || raw.byteOffset !== 0
+    || raw.byteLength !== 96 || raw.buffer.byteLength !== 96 || root.rootMountId === undefined) return undefined
+  const frame = new DataView(raw.buffer), tag = raw[5], flags = raw[6]
+  if (frame.getUint32(0, false) !== 0x44504d31 || raw[4] !== 1 || tag === undefined || tag < 1 || tag > 4
+    || flags === undefined || flags > 127 || raw[7] !== 0 || raw.subarray(72).some(byte => byte !== 0)) return undefined
+  const decimal = (offset: number): string => frame.getBigUint64(offset, true).toString()
+  if (decimal(24) !== root.rootDevice || decimal(32) !== root.rootInode || decimal(40) !== root.rootMountId) return undefined
+  const directory = Object.freeze({ device: decimal(48), inode: decimal(56), mountId: decimal(64),
+    uid: frame.getUint32(12, true), gid: frame.getUint32(16, true), mode: frame.getUint32(20, true) })
+  const errno = frame.getUint32(8, true), closed = (flags & 1) !== 0, created = (flags & 32) !== 0
+  const rootValidated = (flags & 2) !== 0, directoryValidated = (flags & 4) !== 0
+  const directorySynced = (flags & 8) !== 0, parentSynced = (flags & 16) !== 0, attempted = (flags & 64) !== 0
+  if (created && !attempted || directoryValidated && !rootValidated || directorySynced && !directoryValidated
+    || parentSynced && !directorySynced || errno > 4095) return undefined
+  if (tag < 3) {
+    if (errno !== 0 || !closed || !rootValidated || !directoryValidated || !directorySynced || !parentSynced
+      || created !== (tag === 2) || directory.uid !== uid || directory.gid !== gid || directory.mode !== 0o40700
+      || directory.device !== root.rootDevice || directory.inode === '0' || directory.inode === root.rootInode
+      || directory.mountId !== root.rootMountId) return undefined
+  } else if (errno === 0 || tag === 3 && (!closed || created || directorySynced || parentSynced)) return undefined
+  return Object.freeze({ outcome: tag === 1 ? 'existing' : tag === 2 ? 'created' : tag === 3 ? 'not-prepared' : 'unknown',
+    closed, created, attempted, rootValidated, directoryValidated, directorySynced, parentSynced, errno, directory })
+}
+
 /** Root bootstrap creates idle workers before any account/project is selected. */
 export interface FdWorkerInput {
   readonly helperPath: string
@@ -53,7 +201,11 @@ export interface FdStageFile {
   readonly expectedBytes: number
 }
 
-/** Shared pure spelling gate; the native companion independently enforces every component again. */
+/**
+ * Shared pure spelling gate; the native companion independently enforces every component again.
+ * @param name One proposed attachment filename, without directory components.
+ * @returns Whether the name is a valid UTF-8 portable leaf within255 bytes and excludes reserved device names.
+ */
 export function validStageName(name: string): boolean {
   return !!name && name !== '.' && name !== '..' && name.trim() === name && !/[. ]$/.test(name)
     && !/[\u0000-\u001f\u007f/\\<>:"|?*]/.test(name) && Buffer.byteLength(name) <= 255
@@ -206,7 +358,16 @@ export interface FdStreamControl {
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
   | FdStageReply
-  | { readonly kind: 'ready'; readonly abiVersion: 6 | 7 | 8; readonly storageProbeVersion?: 1; readonly stagingAbiVersion?: 1 }
+  | {
+    readonly kind: 'ready'
+    readonly abiVersion: 6 | 7 | 8
+    readonly storageProbeVersion?: 1
+    readonly stagingAbiVersion?: 1
+    readonly projectMetadataVersion?: 1
+    readonly environmentLayoutVersion?: 1
+  }
+  | { readonly kind: 'project-metadata-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'environment-layout-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'lstat-reply'; readonly id: OperationId; readonly metadata: FdPathMetadata | undefined }
   | { readonly kind: 'list-reply'; readonly id: OperationId; readonly entries: readonly FdDirectoryEntry[] }
   | { readonly kind: 'range-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }

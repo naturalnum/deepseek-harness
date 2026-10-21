@@ -18,6 +18,12 @@ import { readRequestExpectation } from './expectation.ts'
 import { ConnectionGenerations } from './generations.ts'
 import { LoginPeerRegistry, type LoginPeer } from './peers.ts'
 import { produceCloudBootstrap } from './bootstrap-producer.ts'
+import { ExecutionStateError, withAccountApplicationService } from '@deepseek-ai/dsh-pe-opensandbox'
+import { PreviewAccessError } from './preview-access.ts'
+import { forwardInertPreview, PreviewResponseError } from './preview-response.ts'
+import { SERVICE_PREVIEW_ROUTE, readServicePreviewSelection } from './preview-route.ts'
+import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
+import { observeIngressTransfer } from './ingress-transfer.ts'
 import type { AuthIngressConfig } from './root-config.ts'
 import type { AccessConfig, AuthenticatedPrincipal, RequestExpectation, IngressObservation } from './types.ts'
 
@@ -29,6 +35,7 @@ type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.c
   | 'peer.acquire' | 'peer.generation' | 'peer.http' | 'peer.upgrade' | 'route.unsupported'
   | 'beforeHttp.peer' | 'beforeHttp.request' | 'beforeDispatch.peer' | 'beforeDispatch.request'
   | 'beforeDispatch.api' | 'beforeDispatch.peer-current' | 'native.invoke-or-transfer'
+  | 'preview.authenticate' | 'preview.selection' | 'preview.borrow' | 'preview.forward' | 'preview.transfer'
 
 const FAILURE_CODES: readonly string[] = Object.freeze([
   'cloud/unauthenticated', 'cloud/forbidden', 'cloud/login-active', 'cloud/account-unavailable',
@@ -67,6 +74,8 @@ interface Operation {
   readonly socket: Duplex | undefined
   readonly observer: AbortController
   readonly transferred: Promise<void>
+  readonly deadlineAtMs: number
+  holdNormalFinish: boolean
   actual: Promise<void>
   accountId: AccountId | undefined
   timedOut: boolean
@@ -87,6 +96,7 @@ export class CloudIngress {
   private readonly requests = new WeakMap<IncomingMessage, { operation: Operation; expected: RequestExpectation }>()
   private readonly unregister: Array<() => void | Promise<void>> = []
   private readonly registrations = new Set<object>()
+  private previewRegistration: object | undefined
   private state: IngressObservation['state'] = 'prepared'
   private accepting = false
   private closing: Promise<void> | undefined
@@ -157,6 +167,12 @@ export class CloudIngress {
       for (const route of routes) {
         this.register(() => this.dependencies.web.register(route), 'pe-cloud-access: shared HTTP route')
       }
+      if (this.limits.servicePreview !== undefined) {
+        if (this.config.servicePreview === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+        this.previewRegistration = this.register(() => this.dependencies.web.register({ kind: 'exact',
+          path: SERVICE_PREVIEW_ROUTE.path, handler: (req, res) => this.handleHttp(req, res) }),
+        'pe-cloud-access: fixed isolated service preview')
+      }
       this.register(() => this.dependencies.web.registerUpgrade({
         path: REMOTE_STREAM_MUX_PATH, handler: (req, socket, head) => this.handleUpgrade(req, socket, head),
       }), 'pe-cloud-access: shared native upgrade route')
@@ -188,10 +204,23 @@ export class CloudIngress {
     }
     return Object.freeze({
       state: this.state,
-      current: this.state === 'installed' && this.accepting && this.registrations.size === 5
+      current: this.state === 'installed' && this.accepting && this.registrations.size === (this.limits.servicePreview === undefined ? 5 : 6)
         && this.ctx.fiber.state === FiberState.ACTIVE && web !== undefined && original(web) === original(this.dependencies.web),
       registeredRoutes: this.registrations.size, pendingOperations: this.operations.size,
     })
+  }
+
+  /**
+   * Inspect actual Root Fetch registrations without opening business admission or requiring the recipe seal.
+   * @returns Only the fixed preview row while its original Web registration remains installed and current.
+   */
+  inspectRootFetch(): readonly ExactFetchExposure[] {
+    if (!this.observe().current) throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+    if (this.limits.servicePreview === undefined) return Object.freeze([])
+    if (this.previewRegistration === undefined || !this.registrations.has(this.previewRegistration)) {
+      throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+    }
+    return Object.freeze([SERVICE_PREVIEW_ROUTE])
   }
 
   /** Stop admission synchronously, unregister routes and join all actual ingress/Peer work before auth/pool close. */
@@ -225,9 +254,11 @@ export class CloudIngress {
       operation.stage = 'request.url'
       const url = this.url(request, operation.id)
       operation.stage = 'request.transport'
-      this.assertTransport(request, operation.id, 'http')
+      const preview = url.pathname === SERVICE_PREVIEW_ROUTE.path && this.limits.servicePreview !== undefined
+      this.assertTransport(request, operation.id, preview ? { kind: 'service-preview', method: request.method, url: request.url } : 'http')
       operation.stage = 'ingress.current'
       this.assertOperation(operation)
+      if (preview) { await this.handlePreview(operation, url); return }
       if (url.pathname === '/cloud/auth' || url.pathname.startsWith('/cloud/auth/')) {
         operation.stage = 'auth.handler'
         await this.auth.handleNodeRequest(request, response, operation.id, {
@@ -305,6 +336,99 @@ export class CloudIngress {
     })
   }
 
+  private async handlePreview(operation: Operation, url: URL): Promise<void> {
+    const limits = this.limits.servicePreview, configured = this.config.servicePreview, response = operation.response
+    const exposure = this.dependencies.exposure
+    if (limits === undefined || configured === undefined || response === undefined || exposure === undefined) {
+      throw new AuthAccessError('cloud/account-unavailable', operation.id)
+    }
+    operation.stage = 'preview.selection'
+    const selected = readServicePreviewSelection(operation.request, this.config, limits, operation.id)
+    operation.stage = 'preview.authenticate'
+    const principal = await this.auth.authenticateServicePreview(operation.request, operation.id)
+    this.assertOperation(operation)
+    const expected = readRequestExpectation(operation.request, url, this.config.bindingFields, 'query', operation.id)
+    assertExpectedAccount(expected, principal.accountId, operation.id)
+    this.bindAccount(operation, principal.accountId)
+    let canonical: LoginPeer | undefined
+    const loginCurrent = (): void => {
+      if (canonical === undefined) this.auth.assertLoginCurrent(principal, operation.id)
+      else this.assertPeer(canonical, operation.id)
+    }
+    await this.withAccount(operation, principal, expected, async (use) => {
+      operation.stage = 'peer.acquire'
+      const peer = await this.peers.acquire(principal, use.binding, operation.deadlineAtMs,
+        operation.observer.signal, operation.id)
+      this.assertOperation(operation)
+      operation.stage = 'peer.generation'
+      this.pinGeneration(peer, operation.id)
+      canonical = peer
+      operation.stage = 'peer.http'
+      await this.peers.runCarrier(peer, operation.request, operation.id, {
+        authenticate: () => this.auth.authenticateServicePreview(operation.request, operation.id),
+        actual: operation.actual,
+        destroy: () => {
+          operation.observer.abort(new AuthAccessError('cloud/unauthenticated', operation.id))
+          operation.request.destroy(); response.destroy()
+        },
+        consume: async () => {
+          const api = this.accountApi(use.context, use.binding), manifest = exposure.policy.manifest
+          const current = (): void => {
+            this.assertOperation(operation); loginCurrent(); use.assertCurrent()
+            assertExpectedAccount(expected, principal.accountId, operation.id)
+            assertExpectedGeneration(expected, this.generations.current(use.binding, operation.id), operation.id)
+            const currentApi = this.accountApi(use.context, use.binding)
+            if ((Reflect.get(currentApi, symbols.original) ?? currentApi) !== (Reflect.get(api, symbols.original) ?? api)
+              || exposure.policy.manifest !== manifest) {
+              throw new AuthAccessError('cloud/account-unavailable', operation.id)
+            }
+            this.inspectRootFetch()
+          }
+          current()
+          operation.stage = 'preview.borrow'
+          await withAccountApplicationService(use.context, selected.selection, operation.observer.signal, operation.deadlineAtMs,
+            async (service) => {
+              current(); service.assertCurrent()
+              operation.stage = 'preview.forward'
+              await forwardInertPreview({ origin: configured.origin, method: 'GET', pathname: SERVICE_PREVIEW_ROUTE.path,
+                scope: service.scope, resourcePath: '/', headers: selected.headers },
+              { use, api, signal: operation.observer.signal, assertCurrent: current },
+              { manifest, routePath: SERVICE_PREVIEW_ROUTE.path, handlerId: SERVICE_PREVIEW_ROUTE.handlerId,
+                managementOrigin: this.config.publicOrigin, previewOrigin: configured.origin, allowedServicePorts: [8000],
+                maxFieldBytes: limits.maxFieldBytes, maxResourceBytes: 1,
+                maxHeaderCount: limits.maxRequestHeaderCount, maxHeaderBytes: limits.maxRequestHeaderBytes },
+              { ...limits.response, mode: 'inert-text-v1' },
+              { withRegisteredService: async (binding, selector, selectedManifest, signal, consume) => {
+                current(); signal.throwIfAborted(); service.assertCurrent()
+                if (binding !== use.binding || selectedManifest !== manifest
+                  || selector.accountId !== service.scope.accountId || selector.epoch !== service.scope.epoch
+                  || selector.sessionId !== service.scope.sessionId || selector.allocationId !== service.scope.allocationId
+                  || selector.serviceId !== service.scope.serviceId) throw new AuthAccessError('cloud/forbidden', operation.id)
+                await consume({ scope: service.scope, port: service.port, lifetime: service.lifetime, manifest,
+                  assertCurrent: () => { current(); service.assertCurrent() },
+                  withResponse: service.withResponse.bind(service) })
+                current()
+              } },
+              { send: async (reply, signal, assertCurrent) => {
+                assertCurrent(); signal.throwIfAborted(); operation.stage = 'preview.transfer'
+                operation.holdNormalFinish = true
+                response.writeHead(reply.status, reply.headers); response.end(reply.body)
+                await operation.transferred
+                assertCurrent(); signal.throwIfAborted()
+              }, close: async () => {
+                if (response.closed) return
+                await new Promise<void>((resolve) => {
+                  const closed = (): void => { response.off('close', closed); resolve() }
+                  response.once('close', closed); response.destroy()
+                  if (response.closed) closed()
+                })
+              } })
+            })
+        },
+      })
+    }, loginCurrent)
+  }
+
   private handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     return this.run(request, undefined, socket, async (operation) => {
       operation.stage = 'request.transport'
@@ -341,13 +465,14 @@ export class CloudIngress {
   private async withAccount(
     operation: Operation, principal: AuthenticatedPrincipal,
     expected: Parameters<typeof assertExpectedGeneration>[0] | undefined, consume: (use: AccountUse) => Promise<void>,
+    loginCurrent: () => void = () => { this.auth.assertLoginCurrent(principal, operation.id) },
   ): Promise<void> {
     operation.stage = 'account.locate'
     await this.dependencies.runtime.locateAccount(principal.accountId)
     operation.stage = 'ingress.current'
     this.assertOperation(operation)
     operation.stage = 'auth.login-current'
-    this.auth.assertLoginCurrent(principal, operation.id)
+    loginCurrent()
     operation.stage = 'account.acquire'
     const use = await this.dependencies.runtime.acquireAccount(principal.accountId, operation.observer.signal)
     // The actual ingress operation owns even a late borrow through response/error transfer settlement.
@@ -355,7 +480,7 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertOperation(operation)
     operation.stage = 'auth.login-current'
-    this.auth.assertLoginCurrent(principal, operation.id)
+    loginCurrent()
     operation.stage = 'account.use-current'
     use.assertCurrent()
     operation.stage = 'account.binding'
@@ -369,7 +494,7 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertCurrent(operation.id)
     operation.stage = 'auth.login-current'
-    this.auth.assertLoginCurrent(principal, operation.id)
+    loginCurrent()
     operation.stage = 'account.use-current'
     if (!operation.upgraded) use.assertCurrent()
   }
@@ -387,28 +512,14 @@ export class CloudIngress {
       return Promise.resolve()
     }
     const observer = new AbortController()
-    const transferred = new Promise<void>((resolve) => {
-      const done = (): void => {
-        response?.off('finish', done)
-        response?.off('close', done)
-        response?.off('error', failed)
-        socket?.off('close', done)
-        observer.abort()
-        resolve()
-      }
-      const failed = (): void => { response?.destroy(); done() }
-      if (response !== undefined) {
-        response.once('finish', done)
-        response.once('close', done)
-        response.once('error', failed)
-      } else socket?.once('close', done)
-      if (response?.destroyed === true || response?.writableFinished === true || socket?.destroyed === true) done()
-    })
+    const transferred = Promise.withResolvers<void>()
     const operation: Operation = {
-      id, request, response, socket, observer, transferred, actual: Promise.resolve(), accountId: undefined,
+      id, request, response, socket, observer, transferred: transferred.promise, actual: Promise.resolve(), accountId: undefined,
+      deadlineAtMs: Date.now() + this.limits.requestTimeoutMs, holdNormalFinish: false,
       timedOut: false, upgraded: false, use: undefined, releaseFault: false, cleanupUnknown: false,
       stage: 'run.start',
     }
+    observeIngressTransfer(operation, transferred.resolve)
     const timedOut = Promise.withResolvers<void>()
     const timer = setTimeout(() => {
       if (operation.upgraded) return
@@ -421,7 +532,7 @@ export class CloudIngress {
     operation.actual = Promise.resolve().then(async () => {
       try { await consume(operation) }
       catch (error) {
-        if (error instanceof AuthAccessError && error.code === 'cloud/stop-unconfirmed') {
+        if (this.failure(error, id).code === 'cloud/stop-unconfirmed') {
           operation.cleanupUnknown = true
           this.state = 'unknown'
           this.accepting = false
@@ -430,7 +541,8 @@ export class CloudIngress {
         this.sendFailure(operation, error)
       }
       finally {
-        await transferred
+        await transferred.promise
+        observer.abort()
         request.destroy()
         clearTimeout(timer)
         if (operation.cleanupUnknown) throw new AuthAccessError('cloud/stop-unconfirmed', operation.id)
@@ -504,7 +616,8 @@ export class CloudIngress {
 
   private failure(error: unknown, id: RequestId): AuthAccessError | RequestBindingError {
     if (error instanceof RequestBindingError || error instanceof AuthAccessError) return error
-    else if (error instanceof CloudApiError || error instanceof AccountRuntimeError) {
+    else if (error instanceof CloudApiError || error instanceof AccountRuntimeError || error instanceof ExecutionStateError
+      || error instanceof PreviewAccessError || error instanceof PreviewResponseError) {
       return error.code === 'cloud/stale-generation' ? new RequestBindingError(id)
         : error.code === 'cloud/capacity' ? new AuthAccessError('cloud/capacity', id)
           : error.code === 'cloud/forbidden' ? new AuthAccessError('cloud/forbidden', id)
@@ -540,7 +653,7 @@ export class CloudIngress {
     if (operation.timedOut || operation.observer.signal.aborted) throw new AuthAccessError('cloud/account-unavailable', operation.id)
   }
 
-  private assertTransport(request: IncomingMessage, id: RequestId, transport: 'http' | 'websocket'): void {
+  private assertTransport(request: IncomingMessage, id: RequestId, transport: Parameters<typeof assertAuthTransport>[6]): void {
     const secure = 'encrypted' in request.socket && request.socket.encrypted === true
     assertAuthTransport(request.headers, request.rawHeaders, request.socket.remoteAddress, secure, this.config, id, transport)
   }
@@ -587,7 +700,7 @@ export class CloudIngress {
     assertExpectedGeneration(entry.expected, this.generations.current(peer.binding, id), id)
   }
 
-  private register(acquire: () => () => void, label: string): void {
+  private register(acquire: () => () => void, label: string): object {
     const token = {}
     this.unregister.push(this.ctx.effect(() => {
       const remove = acquire()
@@ -600,6 +713,7 @@ export class CloudIngress {
         }
       }
     }, label))
+    return token
   }
 
   private requestId(): RequestId { return randomUUID() as RequestId }

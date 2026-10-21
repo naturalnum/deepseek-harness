@@ -520,6 +520,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClientConnectionRpc {\n    call(channel: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<ConnectionRpcResult<unknown>>;\n    readonly open?: (channel: string, endpoint: string, payload: unknown, signal: AbortSignal, uplink?: AsyncIterable<unknown>) => AsyncIterable<unknown>;\n}',
   },
   {
+    name: 'ClientPersistence',
+    declaration: 'export interface ClientPersistence {\n    getItem(key: string): string | null;\n    setItem(key: string, value: string): void;\n    removeItem(key: string): void;\n    keys(): readonly string[];\n}',
+  },
+  {
     name: 'ClientRemote',
     declaration: 'export interface ClientRemote extends TypertClientRemote {\n    $stream<Item>(options: RemoteStreamOptions<Item>): RemoteStream<Item>;\n    readonly $host: RemoteHostFacts;\n}',
   },
@@ -1033,7 +1037,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StoreHandle',
-    declaration: 'export interface StoreHandle<T, A extends ActionsDecl<T>> {\n    readonly spec: StoreSpec<T, A>;\n    create(scopeKey?: string): StoreInstance<T, A>;\n}',
+    declaration: 'export interface StoreHandle<T, A extends ActionsDecl<T>> {\n    readonly spec: StoreSpec<T, A>;\n    create(scopeKey?: string, persistence?: ClientPersistence): StoreInstance<T, A>;\n}',
   },
   {
     name: 'StoreInstance',

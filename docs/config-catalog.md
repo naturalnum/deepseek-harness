@@ -92,7 +92,7 @@ export interface Config {
 
 - `inject`: `agents` · `sessions` · `llm` · `tools` · `systemPrompt` · `sessionProjections`
 - `refs`: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/core.md) · `Volatile` (`@deepseek-ai/cosmokit`)
-- `source`: [`packages/core/agent-loop/src/index.ts:303`](../packages/core/agent-loop/src/index.ts)
+- `source`: [`packages/core/agent-loop/src/index.ts:326`](../packages/core/agent-loop/src/index.ts)
 
 ```ts config-catalog
 /** Agent-loop plugin configuration. */
@@ -182,7 +182,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-gateway`
 
 - `inject`: `typert` · `remoteAccess`
-- `source`: [`packages/api/gateway/src/index.ts:156`](../packages/api/gateway/src/index.ts)
+- `source`: [`packages/api/gateway/src/index.ts:165`](../packages/api/gateway/src/index.ts)
 
 ```ts config-catalog
 /** Gateway transport configuration. */
@@ -220,7 +220,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:94`](../packages/api/session-controller/src/index.ts)
+- `source`: [`packages/api/session-controller/src/index.ts:97`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -435,7 +435,7 @@ export type Config = LocalConfig
 ## `@deepseek-ai/dsh-client-connection`
 
 - `inject`: `credentials`
-- `source`: [`packages/client/connection/src/index.ts:96`](../packages/client/connection/src/index.ts)
+- `source`: [`packages/client/connection/src/index.ts:98`](../packages/client/connection/src/index.ts)
 
 ```ts config-catalog
 /** Browser authentication, request limits, and connection recovery configuration. */
@@ -473,6 +473,21 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-connection -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-file-upload -->
+<a id="deepseek-aidsh-client-file-upload"></a>
+
+## `@deepseek-ai/dsh-client-file-upload`
+
+- `inject`: `agents` · `attachments` · `commands` · `connection`
+- `refs`: `z` (`zod`)
+- `source`: [`packages/client/file-upload/src/index.ts:20`](../packages/client/file-upload/src/index.ts)
+
+```ts config-catalog
+/** Native intake configuration; omitted capacity resolves to 128 occupied slots. */
+export type Config = z.input<typeof FileUploads.Config>
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-file-upload -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->
 <a id="deepseek-aidsh-client-hmr"></a>
@@ -777,7 +792,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-credentials-local`
 
-- `source`: [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+- `source`: [`packages/credentials/credentials-local/src/index.ts:65`](../packages/credentials/credentials-local/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: file location and hot-reload behavior. */
@@ -1561,14 +1576,16 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-frontend-static`
 
-- `inject`: `webServer` · `connection`
+- `inject`: `webServer`
 - `source`: [`packages/host/frontend-static/src/index.ts:30`](../packages/host/frontend-static/src/index.ts)
 
 ```ts config-catalog
-/** Plugin config: the dist anchor. */
+/** Distribution anchor and index document authentication. */
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
+  /** Public mode serves a login document; named business routes retain their own authentication. */
+  indexAuth?: 'connection' | 'public'
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-frontend-static -->
@@ -2330,6 +2347,94 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-office-to-pdf -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-pe-cloud-client -->
+<a id="deepseek-aidsh-pe-cloud-client"></a>
+
+## `@deepseek-ai/dsh-pe-cloud-client`
+
+- `refs`: `BindingFieldNames` (`@deepseek-ai/dsh-pe-cloud-access/types`) · `BootstrapDecodeLimits` (`@deepseek-ai/dsh-pe-cloud-access/types`)
+- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:25`](../packages/cloud/pe-cloud-client/src/index.ts)
+
+```ts config-catalog
+/** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
+export interface Config {
+  /** Explicit public Web inputs; omission leaves ordinary browser startup unchanged. */
+  readonly web?: CloudWebManifest
+}
+
+/** Public deployment inputs for the existing Web entry; contains no login or account state. */
+export interface CloudWebManifest {
+  /** Explicit bootstrap and bound-transport limits, with optional download and preview inputs. */
+  readonly client: CloudClientConfig
+  /** Bootstrap DTO decoding budgets, applied after bounded response-body consumption. */
+  readonly decodeLimits: BootstrapDecodeLimits
+  /** Limits for the page's account/generation-scoped persistence namespace. */
+  readonly persistenceLimits: CloudPersistenceLimits
+  /** Account/generation header and query names; must match the access ingress configuration. */
+  readonly fields: BindingFieldNames
+  /** Browser sign-in/sign-out deadlines and request/response body byte budgets. */
+  readonly auth: {
+    /** Milliseconds before a sign-in or sign-out request aborts; cleanup can settle later. */
+    readonly requestTimeoutMs: number
+    /** Maximum UTF-8 bytes in the serialized authentication request body before sending. */
+    readonly maxRequestBytes: number
+    /** Maximum response-body bytes consumed for one authentication request. */
+    readonly maxResponseBytes: number
+  }
+}
+
+/** Finite public configuration for bootstrap and one captured native carrier. */
+export interface CloudClientConfig {
+  /** Document-relative route without query or fragment; Web manifests require `cloud/bootstrap`. */
+  bootstrapPath: string
+  /** Bootstrap abort deadline in milliseconds; actual carrier cleanup can settle later. */
+  bootstrapTimeoutMs: number
+  /** Maximum bootstrap response-body bytes accepted before UTF-8 JSON decoding. */
+  maxBootstrapResponseBytes: number
+  /** Maximum body bytes read from a 409 response while checking for stale generation. */
+  maxErrorResponseBytes: number
+  /** Maximum concurrent fetch operations tracked by one bound transport. */
+  maxPendingFetches: number
+  /** Maximum concurrent WebSocket instances tracked by one bound transport. */
+  maxSockets: number
+  /** Milliseconds to await carrier cleanup and revalidation on close; expiry leaves cleanup unconfirmed. */
+  closeTimeoutMs: number
+  /** Optional complete-file download acceptance cap; absence keeps download actions unregistered. */
+  maxDownloadBytes?: number
+  /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
+  servicePreview?: Readonly<CloudServicePreviewPolicy>
+}
+
+/** Explicit finite UTF-8 budgets; total includes the physical key and serialized envelope. */
+export interface CloudPersistenceLimits {
+  /** Maximum logical entries stored in one account/generation namespace. */
+  readonly maxKeys: number
+  /** Maximum UTF-8 bytes in one logical storage key. */
+  readonly maxKeyBytes: number
+  /** Maximum UTF-8 bytes in one logical stored value. */
+  readonly maxValueBytes: number
+  /** Maximum combined UTF-8 bytes of the physical storage key and serialized version/entries envelope. */
+  readonly maxTotalBytes: number
+  /** Maximum UTF-8 bytes of the physical namespace key, including its prefix and account/generation encoding. */
+  readonly maxNamespaceBytes: number
+}
+
+/** Root-owned public inputs for one exact GET preview entry; no account identity or application target. */
+export interface CloudServicePreviewPolicy {
+  /** Exact HTTP(S) management origin; must match the captured transport's origin. */
+  readonly managementOrigin: string
+  /** Exact preview origin using the management protocol and a different hostname. */
+  readonly previewOrigin: string
+  /** Fixed GET entry path: `/cloud/service-preview`. */
+  readonly routePath: string
+  /** Maximum UTF-8 bytes per Session, service-handle, account or generation value in the preview URL. */
+  readonly maxFieldBytes: number
+  /** Maximum UTF-8 bytes in the complete serialized preview URL, including query fields. */
+  readonly maxUrlBytes: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-pe-cloud-client -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-permission-presets -->
 <a id="deepseek-aidsh-permission-presets"></a>
 
@@ -2423,7 +2528,7 @@ export interface PlanModeConfig {
 ## `@deepseek-ai/dsh-plugin-manager`
 
 - `inject`: `loader` · `profileContext`
-- `source`: [`packages/boot/plugin-manager/src/index.ts:42`](../packages/boot/plugin-manager/src/index.ts)
+- `source`: [`packages/boot/plugin-manager/src/index.ts:64`](../packages/boot/plugin-manager/src/index.ts)
 
 ```ts config-catalog
 /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
@@ -4597,7 +4702,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-api-remotes` | `typertGateway` | [`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts) |
 | `@deepseek-ai/dsh-authorization` | `credentials` | [`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts) |
 | `@deepseek-ai/dsh-browser-use` | — | [`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts) |
-| `@deepseek-ai/dsh-client-file-upload` | `agents` · `attachments` · `commands` · `connection` | [`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts) |
 | `@deepseek-ai/dsh-client-locale` | — | [`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts) |
 | `@deepseek-ai/dsh-client-modules` | `loader` | [`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts) |
 | `@deepseek-ai/dsh-client-resources` | — | [`packages/client/resources/src/index.ts`](../packages/client/resources/src/index.ts) |
@@ -4771,6 +4875,12 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-native-command` | — | [`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts) |
 | `@deepseek-ai/dsh-output-retention` | — | [`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts) |
 | `@deepseek-ai/dsh-package-manifest` | — | [`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts) |
+| `@deepseek-ai/dsh-pe-account-instructions` | — | [`packages/cloud/pe-account-instructions/src/index.ts`](../packages/cloud/pe-account-instructions/src/index.ts) |
+| `@deepseek-ai/dsh-pe-cloud-access` | — | [`packages/cloud/pe-cloud-access/src/index.ts`](../packages/cloud/pe-cloud-access/src/index.ts) |
+| `@deepseek-ai/dsh-pe-cloud-api` | — | [`packages/cloud/pe-cloud-api/src/index.ts`](../packages/cloud/pe-cloud-api/src/index.ts) |
+| `@deepseek-ai/dsh-pe-cloud-files` | — | [`packages/cloud/pe-cloud-files/src/index.ts`](../packages/cloud/pe-cloud-files/src/index.ts) |
+| `@deepseek-ai/dsh-pe-cloud-runtime` | — | [`packages/cloud/pe-cloud-runtime/src/index.ts`](../packages/cloud/pe-cloud-runtime/src/index.ts) |
+| `@deepseek-ai/dsh-pe-opensandbox` | — | [`packages/cloud/pe-opensandbox/src/index.ts`](../packages/cloud/pe-opensandbox/src/index.ts) |
 | `@deepseek-ai/dsh-plugin-market-index` | — | [`packages/util/plugin-market-index/src/index.ts`](../packages/util/plugin-market-index/src/index.ts) |
 | `@deepseek-ai/dsh-remote-mock` | — | [`packages/test-support/remote-mock/src/index.ts`](../packages/test-support/remote-mock/src/index.ts) |
 | `@deepseek-ai/dsh-sandbox-windows-acl` | — | [`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts) |

@@ -35,6 +35,10 @@ Cloud Loader 另挂载生成的 API 项目创建贡献，并向两个原生 Work
 
 ### 最小配置
 
+受控预览导航还要求显式 `client.servicePreview` policy（管理/预览源、精确 `/cloud/service-preview` 路径及字段/URL 字节上限）、bootstrap 的 `servicePreview: available` 观察，以及 `PreparedCloudPage.prepare` 中由应用拥有的 `previewNavigation` port。缺少输入时不提供可选 `servicePreviewNavigation` 回调，C11 不增加 policy。回调只接受框架 Session 与记录的 service handle，捕获原页面 C02 值并收纳导航/反馈失败；应用 port 提供同步普通 GET 导航和本地化反馈，服务端仍须执行登录、原生 Session 与原注册服务校验。
+
+Cloud Web 应用在准备页面前捕获所属文档的导航函数，以 `noopener,noreferrer` 在独立标签页打开预览，本地拒绝显示在既有本地化页面顶栏中。浏览器插件仅在准备好的回调、能力和页面均有效时贡献原生 `dev_service` 工具行。操作使用有界的已记录任务元数据和框架 Session；历史行及进程提交均不证明授权或 HTTP 就绪。页面撤销或 slot 撤回会使已挂载回调失效。
+
 Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选择既有 `apps/web` Cloud 入口。省略时保留普通启动。`parseCloudWebManifest` 要求显式提供 `client`、`decodeLimits`、`persistenceLimits`、`fields` 与 `auth`；认证预算为 `requestTimeoutMs`、`maxRequestBytes` 与 `maxResponseBytes`。固定 bootstrap 路径为 `cloud/bootstrap`，绑定字段必须与 access 配置一致。不支持的身份、token 与当前账户字段会被拒绝。
 
 带有 `web` 的 Host Loader row 必须显式声明 `inject: ['clientModules']`。声明使用原始 registry 及其 Loader 树的可信解析 base，以 `activate: false` 登记原生 Connection，并以 `activate: true` 登记固定的一组 BFF 浏览器服务，不加载对应 Host 服务。同一个依赖作用域拥有全部登记和公开注入。实际登记完成后 Cloud row 才激活；卸载须加入异步撤回。缺少依赖声明或登记失败时拒绝，不发布公开 manifest。没有 `web` 时，声明不要求 registry，也不登记模块。浏览器输入不能选择包名或解析路径。

@@ -13,11 +13,17 @@ import { createStorageWorker, storageRequest } from './storage-worker.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
 import { loadStagingNative, StagingFailure } from './staging-native.ts'
 import type { StagingFacts, StagingTransaction } from './staging-native.ts'
-import { validStageName } from './worker-protocol.ts'
-import type { FdStagingWorkerInput, FdStageRequest } from './worker-protocol.ts'
+import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame, validStageName } from './worker-protocol.ts'
+import type { FdStagingWorkerInput, FdStageRequest, FdProjectMetadataRequest, FdEnvironmentLayoutRequest } from './worker-protocol.ts'
 
 interface LinuxFdHelper {
   readonly abiVersion: 6 | 7 | 8
+  readonly projectMetadataVersion?: 1
+  readonly environmentLayoutVersion?: 1
+  prepareEnvironmentLayout?(this: void, path: string, device: string, inode: string, mountId: string,
+    uid: number, gid: number, limit: number, retries: number, timeoutMs: number, cancel: Int32Array<SharedArrayBuffer>): unknown
+  prepareProjectMetadata?(this: void, path: string, device: string, inode: string, mountId: string,
+    uid: number, gid: number, limit: number, retries: number, timeoutMs: number, cancel: Int32Array<SharedArrayBuffer>): unknown
   writeText?(this: void, rootPath: string, relativePath: string, temporary: string, bytes: Uint8Array,
     maximum: number, guard: string, expected: string, cancel: Int32Array<SharedArrayBuffer>): unknown
   openPathMetadata?(this: void, relativePath: string): number
@@ -47,6 +53,10 @@ interface LinuxFdHelper {
 
 function isHelper(value: unknown): value is LinuxFdHelper {
   return record(value) && (value.abiVersion === 6 || value.abiVersion === 7 || value.abiVersion === 8)
+    && (value.projectMetadataVersion === undefined ? value.prepareProjectMetadata === undefined
+      : value.projectMetadataVersion === 1 && value.abiVersion === 8 && typeof value.prepareProjectMetadata === 'function')
+    && (value.environmentLayoutVersion === undefined ? value.prepareEnvironmentLayout === undefined
+      : value.environmentLayoutVersion === 1 && value.abiVersion === 8 && typeof value.prepareEnvironmentLayout === 'function')
     && (value.abiVersion === 6 || typeof value.writeText === 'function')
     && (value.abiVersion !== 8 || typeof value.openPathMetadata === 'function'
       && typeof value.verifyContentAnchor === 'function' && typeof value.listDirectory === 'function')
@@ -180,6 +190,12 @@ function helper(path: string): LinuxFdHelper {
   const removeExt4Leaf = loaded.removeExt4Leaf
   return {
     abiVersion: loaded.abiVersion,
+    ...loaded.projectMetadataVersion !== 1 || loaded.prepareProjectMetadata === undefined ? {} : {
+      projectMetadataVersion: 1, prepareProjectMetadata: loaded.prepareProjectMetadata,
+    },
+    ...loaded.environmentLayoutVersion !== 1 || loaded.prepareEnvironmentLayout === undefined ? {} : {
+      environmentLayoutVersion: 1, prepareEnvironmentLayout: loaded.prepareEnvironmentLayout,
+    },
     ...loaded.openPathMetadata === undefined ? {} : { openPathMetadata: loaded.openPathMetadata },
     ...loaded.verifyContentAnchor === undefined ? {} : { verifyContentAnchor: loaded.verifyContentAnchor },
     ...loaded.listDirectory === undefined ? {} : { listDirectory: loaded.listDirectory },
@@ -267,6 +283,58 @@ function leafOperation(native: LinuxFdHelper, request: FdLeafRequest, limits: Fd
     || !(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer)) throw new WorkerFailure('FS_IO_ERROR')
   // Cancellation after C must retain its real creation/unlink facts instead of replacing the reply.
   return new Uint8Array(raw.buffer, 0, 64)
+}
+
+function projectMetadataRequest(raw: unknown, limits: FdWorkerInput): FdProjectMetadataRequest {
+  if (!record(raw) || Object.keys(raw).length !== 6 || raw.kind !== 'project-metadata-prepare'
+    || typeof raw.uid !== 'number' || !Number.isSafeInteger(raw.uid) || raw.uid < 1 || raw.uid >= 4294967295
+    || typeof raw.gid !== 'number' || !Number.isSafeInteger(raw.gid) || raw.gid < 1 || raw.gid >= 4294967295) {
+    throw new WorkerFailure('FS_PERMISSION_DENIED')
+  }
+  const base = taskRequest({ ...raw, kind: 'stat', relativePath: '.', maxBytes: 0 }, limits)
+  if (base.root.rootMountId === undefined || Buffer.byteLength(base.root.rootPath) + 4 > limits.maxPathBytes) {
+    throw new WorkerFailure('FS_PERMISSION_DENIED')
+  }
+  return { kind: 'project-metadata-prepare', id: base.id, root: base.root, uid: raw.uid, gid: raw.gid, cancel: base.cancel }
+}
+
+function environmentLayoutRequest(raw: unknown, limits: FdWorkerInput): FdEnvironmentLayoutRequest {
+  if (!record(raw) || raw.kind !== 'environment-layout-prepare') throw new WorkerFailure('FS_PERMISSION_DENIED')
+  const base = projectMetadataRequest({ ...raw, kind: 'project-metadata-prepare' }, limits)
+  if (Buffer.byteLength(base.root.rootPath) + 5 > limits.maxPathBytes) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return { ...base, kind: 'environment-layout-prepare' }
+}
+
+function environmentLayoutOperation(
+  native: LinuxFdHelper, request: FdEnvironmentLayoutRequest, limits: FdWorkerInput,
+): Uint8Array<ArrayBuffer> {
+  if (native.environmentLayoutVersion !== 1 || native.prepareEnvironmentLayout === undefined || limits.content === undefined
+    || request.root.rootMountId === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  const root = request.root
+  const raw = native.prepareEnvironmentLayout(root.rootPath, root.rootDevice, root.rootInode, request.root.rootMountId,
+    request.uid, request.gid, limits.maxPathBytes, limits.maxResolveRetries, limits.content.operationTimeoutMs,
+    new Int32Array(request.cancel))
+  if (parseEnvironmentLayoutFrame(raw, root, request.uid, request.gid) === undefined
+    || !(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer)) {
+    throw new AnchorCloseFailure('Environment layout completion is unconfirmed')
+  }
+  return new Uint8Array(raw.buffer)
+}
+
+function projectMetadataOperation(
+  native: LinuxFdHelper, request: FdProjectMetadataRequest, limits: FdWorkerInput,
+): Uint8Array<ArrayBuffer> {
+  if (native.projectMetadataVersion !== 1 || native.prepareProjectMetadata === undefined || limits.content === undefined
+    || request.root.rootMountId === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  const root = request.root
+  const raw = native.prepareProjectMetadata(root.rootPath, root.rootDevice, root.rootInode, request.root.rootMountId,
+    request.uid, request.gid, limits.maxPathBytes, limits.maxResolveRetries, limits.content.operationTimeoutMs,
+    new Int32Array(request.cancel))
+  if (parseProjectMetadataFrame(raw, root, request.uid, request.gid) === undefined
+    || !(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer)) {
+    throw new AnchorCloseFailure('Project metadata native receipt is unconfirmed')
+  }
+  return new Uint8Array(raw.buffer)
 }
 
 function failure(error: unknown): { code: FsErrorCode; syscallCode?: string } {
@@ -785,6 +853,20 @@ function start(): void {
       else port.postMessage(reply)
       return
     }
+    if (record(raw) && raw.kind === 'environment-layout-prepare') {
+      let request: FdEnvironmentLayoutRequest
+      try { request = environmentLayoutRequest(raw, limits) } catch (_error) { port.close(); return }
+      const frame = environmentLayoutOperation(native, request, limits)
+      port.postMessage({ kind: 'environment-layout-reply', id: request.id, frame } satisfies FdWorkerReply, [frame.buffer])
+      return
+    }
+    if (record(raw) && raw.kind === 'project-metadata-prepare') {
+      let request: FdProjectMetadataRequest
+      try { request = projectMetadataRequest(raw, limits) } catch (_error) { port.close(); return }
+      const frame = projectMetadataOperation(native, request, limits)
+      port.postMessage({ kind: 'project-metadata-reply', id: request.id, frame } satisfies FdWorkerReply, [frame.buffer])
+      return
+    }
     if (record(raw) && raw.kind === 'text-write') {
       let request: FdTextWriteRequest
       try { request = textWriteRequest(raw, limits) } catch (_error) { port.close(); return }
@@ -860,6 +942,8 @@ function start(): void {
     }
   })
   port.postMessage({ kind: 'ready', abiVersion: native.abiVersion, ...storage === undefined ? {} : { storageProbeVersion: 1 as const },
+    ...native.projectMetadataVersion === undefined ? {} : { projectMetadataVersion: native.projectMetadataVersion },
+    ...native.environmentLayoutVersion === undefined ? {} : { environmentLayoutVersion: native.environmentLayoutVersion },
     ...staging === undefined ? {} : { stagingAbiVersion: 1 as const } } satisfies FdWorkerReply)
 }
 

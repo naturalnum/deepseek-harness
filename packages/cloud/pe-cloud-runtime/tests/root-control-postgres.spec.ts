@@ -114,6 +114,32 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
     expect((await fixture.record()).phase).toBe('closed')
   })
 
+  it('keeps Root metadata access through actual participant cleanup, then refuses old borrowers before SQL submission', async () => {
+    const fixture = await root()
+    const stopped = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+    const participant: DrainParticipant = { id: 'execution',
+      closeRoot: () => { entered.resolve(undefined); return stopped.promise },
+      stopEpoch: async () => { throw new Error('This fixture mounts no account') } }
+    fixture.runtime.registerDrainParticipant(participant)
+    expect(() => fixture.runtime.controlDatabase({ ...participant })).toThrow('original registered')
+    const query = fixture.runtime.controlDatabase(participant)
+    expect(fixture.runtime.controlDatabase(participant)).toBe(query)
+    await expect(query.query('SELECT $1::text AS value', ['actual-root-metadata']))
+      .resolves.toMatchObject({ rows: [{ value: 'actual-root-metadata' }] })
+    const actual = fixture.runtime.close()
+    try {
+      await entered.promise
+      expect((await fixture.record()).phase).toBe('registered')
+      expect(() => fixture.runtime.controlDatabase(participant)).toThrow('closed')
+      await expect(query.query('SELECT $1::text AS value', ['cleanup-still-owned']))
+        .resolves.toMatchObject({ rows: [{ value: 'cleanup-still-owned' }] })
+    } finally { stopped.resolve(undefined); await actual }
+    const failure = await query.query('SELECT 1', []).then(() => undefined, (cause: unknown) => cause)
+    expect(query.wasNotSubmitted(failure)).toBe(true)
+    expect(query.wasNotSubmitted(new Error('unclassified transport failure'))).toBe(false)
+    expect((await fixture.record()).phase).toBe('closed')
+  })
+
   it('closes admission after a heartbeat observation expires but joins the original locked SQL before actual shutdown', async () => {
     const fixture = await root({ heartbeatIntervalMs: 100, heartbeatTimeoutMs: 30 })
     const first = await fixture.record()

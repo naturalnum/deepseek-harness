@@ -68,6 +68,8 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 可信 runtime 在准备阶段，以精确 binding、独立的挂载/业务核验、部署开放策略和根签发保存屏障构造公开 `CloudAccountApi` 服务。其 `providers` 提供固定的原生编辑器和凭据构造函数；原生安装方法沿用既有 Controller、AgentLoop 和 LLM 守卫。空 `/account` 入口要求这个精确准备好的 `peCloudApi` owner。服务存在和入口激活不发布账户就绪：runtime 仍负责实际 files/Workspace/Preset/模型核验、inventory 审核及 ready 发布。
 
+可信准备过程可提供 `inspectRootFetch`，有界读取原 Root 注册。准备清单将这些实际事实与原生上传合并后，再执行既有开放审核。Fetch 分发和 bootstrap 会重读同一生产者，精确核对方法、路径、handler 和 guard；撤回、不匹配、重复或超出数量均拒绝。缺失回调不能证明已选择的 Root 路由，实际条目共用既有原生清单预算。
+
 `auditPrepared(owner, signal?)` 要求 factory 的原始未发布权限，以及同一共享策略和有限原生清单上限。它在异步策略读取前后检查装配/未发布权限，从实际受守卫 Controller 方法及原生 Typert 标记/路由推导选中处理器，失败时撤销先前审核。继承但未受守卫的方法不能满足 manifest 声明。它不执行业务操作，也不授予 ready；业务调用仍要求独立 ready 检查。
 
 固定可选首屏装配将 `session/list` 和 `session/control` 委派给原 SessionController，将 `workspace/follow` 委派给原 WorkspaceController，并保留原生、按 Peer 读取的 `remoteAccess/follow`。列表行与 control 帧共用原 AccountPolicy 的只读元数据检查；它可在 Workspace 关联前检查已发布 Session，不签发命令或历史权限。冷 id 只保留原批准 Workspace 的既有只读关系，原生列表行还核对实际项目、父关系和已有投影字段。Workspace 流通过共享项目守卫核验每个精确 Registry 对象，支持多个批准项目，并要求每个返回 Session 都具有唯一项目关系。原生 `workspace/create(path)` 仅复用已登记的批准项目；目录分配使用单独的云项目能力。集合数量及完整原生结果/帧字节都有显式有限上界。Reader 还必须提供 `maxQueuedEvents` 和 `maxQueuedBytes`；它验证并复制这些值及帧上界，通过 `controlBufferLimits()` 交给原生 control 队列。因此原生 baseline 检查可先于 Cloud 结果检查拒绝。这里不改变 Remote 参数，也不引入队列实现。原六个 Session 守卫继续保留。
@@ -98,6 +100,8 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 服务就绪后安装 hook 无法补记更早的初始化写入。Constructor 路径解决该本地迁移缺口，但 runtime 仍须在迟到结算期间保留 hook fiber 及初始化 ownership，在 resume 前重新审核，并在开放账户前提供真实图、存储授权及 I/O 预算。保存失败保留证据；观察者取消和强制 fiber 销毁不能证明 teardown 干净完成。
 
+可选原生上传装配继承 FileUploads 的流式路由、Agent 解析、收据绑定与退休，显式选择其原待处理收据及上传容量。账户适配在原生收据发布前等待受控存储钩子，encoded 文件上传及内联编码图片保持关闭。准备审核检查唯一 ACTIVE owner、未替换原生依赖及流式路由，再开放精确 POST 路径。原生 Session Controller 在原 prompt 准入、绑定与投递前等待同 Agent 文件准备，已接受请求去重仍最先执行。账户适配不重写上传存储、收据表或 prompt 投递。
+
 </details>
 
 -----
@@ -114,8 +118,6 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 <a id="model-experience"></a>
 ## Model Experience
-
-可选原生上传装配继承 FileUploads 的流式路由、Agent 解析、收据绑定与退休，显式选择其原待处理收据及上传容量。账户适配在原生收据发布前等待受控存储钩子，encoded 文件上传及内联编码图片保持关闭。准备审核检查唯一 ACTIVE owner、未替换原生依赖及流式路由，再开放精确 POST 路径。原生 Session Controller 在原 prompt 准入、绑定与投递前等待同 Agent 文件准备，已接受请求去重仍最先执行。账户适配不重写上传存储、收据表或 prompt 投递。
 
 ### Model-call admission
 

@@ -11,7 +11,7 @@ import * as Root from '../src/root.ts'
 import * as Index from '../src/index.ts'
 import { RuntimeRootConfigSchema } from '../src/schema.ts'
 import { rootConfig, RootCredentials } from './root-control-fixture.ts'
-import type { AccountBinding } from '../src/types.ts'
+import type { AccountBinding, DrainParticipant } from '../src/types.ts'
 
 const directories: string[] = []
 const contexts: Context[] = []
@@ -93,4 +93,23 @@ it('retains the original secret resolution during Loader closure, without starti
     expect(read).toHaveBeenCalledTimes(1)
     expect(closed).toBe(true)
   } finally { secret.resolve(undefined); await actual }
+})
+
+it('retains a Root participant until its actual shutdown settles and denies component-only database borrowing', async () => {
+  const ctx = new Context()
+  contexts.push(ctx)
+  const runtime = new Root.PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+  const stopped = Promise.withResolvers<undefined>()
+  const closeRoot = vi.fn(() => stopped.promise)
+  const participant: DrainParticipant = { id: 'execution', closeRoot,
+    stopEpoch: async () => { throw new Error('No account is mounted in this fixture') } }
+  const withdraw = runtime.registerDrainParticipant(participant)
+  expect(() => runtime.controlDatabase(participant)).toThrow('not available')
+  const actual = withdraw()
+  await Promise.resolve()
+  expect(closeRoot).toHaveBeenCalledTimes(1)
+  expect(() => runtime.registerDrainParticipant(participant)).toThrow('Duplicate')
+  stopped.resolve(undefined)
+  await actual
+  expect(() => runtime.registerDrainParticipant({ ...participant, closeRoot: () => Promise.resolve() })).not.toThrow()
 })

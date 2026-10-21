@@ -25,7 +25,14 @@
     "src/client/FileDownloadButton.tsx",
     "src/client/downloads.ts",
     "src/client/FileDownloadAction.tsx",
-    "src/client/download/locales.ts"
+    "src/client/download/locales.ts",
+    "src/client/service-preview.ts",
+    "src/client/service-preview-locales.ts",
+    "src/client/service-previews.ts",
+    "src/client/ServicePreviewRow.tsx",
+    "src/css-modules.d.ts",
+    "src/preview-policy.ts",
+    "src/client/preview-url.ts"
   ],
   "references": [
     {
@@ -69,6 +76,12 @@
     },
     {
       "path": "../../client/ui-sidebar-documentpreview/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-tool"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

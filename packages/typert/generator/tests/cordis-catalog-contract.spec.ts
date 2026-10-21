@@ -124,6 +124,59 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
+describe('service-qualified catalog type links', () => {
+  const policy: CordisCatalogPolicy = {
+    ...TEST_POLICY,
+    linkedTypePages: { ...TEST_POLICY.linkedTypePages, 'ctx.fix:Config': 'fix-config.md' },
+  }
+  const source = `export interface Config { limit: number }
+/** Fixture service. */
+export class FixService {
+  /**
+   * Install the selected limits.
+   * @param config The validated limits.
+   */
+  install(config: Config): void {}
+}`
+
+  it('classifies and renders the configuration link only for its owning service', () => {
+    const services = collectServicesWithPolicy(makeService(source), policy)
+    expect(renderPageRegion('fixture.md', services, [], policy)).toContain('Types: [Config](fix-config.md)')
+    const other = services.map(service => ({ ...service, key: 'other' }))
+    expect(renderPageRegion('fixture.md', other, [], policy)).not.toContain('[Config](fix-config.md)')
+  })
+
+  it('still rejects the same short name in another service', () => {
+    const root = makeService(`${source}
+declare module '@deepseek-ai/cordis' { interface Context { other: OtherService } }
+/** Another service. */
+export class OtherService {
+  /**
+   * Install other limits.
+   * @param config The other service's limits.
+   */
+  install(config: Config): void {}
+}`)
+    expect(() => collectServicesWithPolicy(root, policy))
+      .toThrow(/service method ctx\.other\.install .* references unclassified type 'Config'/)
+  })
+
+  it('does not classify an event parameter through a service-only entry', () => {
+    const root = makeService(`${source}
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Observe configuration.
+     * @param config The event's configuration.
+     * @mode emit
+     */
+    'fix/config'(config: Config): void
+  }
+}`)
+    expect(() => collectEventsWithPolicy(root, policy)).toThrow(/unclassified type 'Config'/)
+  })
+})
+
 describe.skip('gen-cordis-catalog collectEvents', { timeout: 60_000 }, () => {
   it('extracts a well-formed event with its @mode and JSDoc', () => {
     const events = collectEvents(make(

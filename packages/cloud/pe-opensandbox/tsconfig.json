@@ -28,6 +28,24 @@
     },
     {
       "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../util/timeout"
+    },
+    {
+      "path": "../pe-cloud-files"
+    },
+    {
+      "path": "../../shell/shell-env"
     }
   ]
 }

@@ -324,9 +324,11 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       } catch (error) { throw nativeReadFailure(error) }
     }
     override editText(): Promise<FsEditOutcome> { return this.denied() }
-    override async watch(): Promise<() => Promise<void>> {
-      this.current()
-      throw new FsError('Cloud filesystem watching is unsupported.', 'FS_PERMISSION_DENIED')
+    override watch(): Promise<() => Promise<void>> {
+      return new Promise((_resolve, reject) => {
+        this.current()
+        reject(new FsError('Cloud filesystem watching is unsupported.', 'FS_PERMISSION_DENIED'))
+      })
     }
   }
 }

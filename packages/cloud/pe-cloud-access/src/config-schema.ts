@@ -15,6 +15,10 @@ const BindingFieldsSchema: z<BindingFieldNames> = z.object({
 /** Required finite values have no example-derived production defaults. */
 export const AccessConfigSchema: z<AccessConfig> = z.object({
   publicOrigin: z.string().required(),
+  servicePreview: z.object({
+    origin: z.string().required(),
+    cookieDomain: z.string().required(),
+  }).default(undefined as never),
   deploymentMode: z.union(['development', 'production']).required(),
   trustedProxyAddresses: z.array(String).required(),
   authSecretRef: z.string().pattern(/\S/).required(),

@@ -445,11 +445,13 @@ interface TypertGateway {
    * Register the application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
    * @param host - stable Host facts included in each Client generation's opening frame.
-   * @returns disposer removing this exact source and cancelling its active streams.
+   * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
+   * @returns disposer joining this exact source and cancelling its active streams; bounded cleanup failures retain identity.
    */
   registerRemoteEvents(
     source: TypertRemoteEventSource,
     host: RemoteEventHostInfo,
+    limits?: RemoteEventQueueLimits,
   ): () => Promise<void>
   /**
    * Invoke one live Remote method without assuming a carrier or response envelope.

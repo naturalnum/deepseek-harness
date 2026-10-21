@@ -46,6 +46,8 @@ kind: "package-reference"
 | `database` | 显式 `host`、`port`、`user`、`database`、`passwordRef`、`ssl`；SSL 使用系统信任验证服务端证书。 |
 | `pool` | 显式正值 `maxConnections`、`connectionTimeoutMs`、`statementTimeoutMs`、`lockTimeoutMs`、`idleTimeoutMs`、`idleTransactionTimeoutMs`、`maxLifetimeSeconds`；锁超时不得大于语句超时。 |
 | `startupTimeoutMs`、`secretResolveTimeoutMs`、`maxSecretOperations`、`maxSecretBytes` | 有限启动/秘密等待和实际读取容量；每个秘密的字节上限至少为 32，并按 UTF-8 计数。 |
+| 可选 `servicePreview` | 固定独立 origin 与共用 DNS `cookieDomain`；协议相同，生产要求 HTTPS，开发可显式选择 localhost 子域。缺省时 Cookie 只属于当前主机。 |
+| 可选 `ingress.servicePreview` | 显式 URL、字段、请求头限额及全部响应限额。只注册 GET `/cloud/service-preview`；缺省时不注册预览入口。 |
 | 可选 `disableSignUp` | 委托给固定版本 Better Auth；省略时保持注册兼容，首试用部署须显式设为 `true`。 |
 | 可选 `ingress` | 必填正有限值 `maxOperations`、`maxOperationsPerAccount`、`requestTimeoutMs`、`maxAuthRequestBodyBytes`、`maxRequestBodyBytes`、`maxBootstrapResponseBytes`、`maxGenerationBindings`、`maxFrameBytes`、`maxLogicalStreams`、`maxLogicalStreamsPerAccount`、`maxLogicalStreamsPerPeer`；子级容量不得大于父级。配置存在不授予 ready。 |
 
@@ -65,13 +67,17 @@ kind: "package-reference"
 
 HTTP 和 upgrade 准入先预留有限 carrier 容量，再加入正在进行或已到期的 Peer 原 Cookie 查库复核。派发仍须通过复核时效及原请求/账户检查；WS 逻辑流打开保留同步守卫。
 
+可选的固定预览入口沿用原数据库登录、C02 预期和 AccountUse。请求只选择原生 Session 与服务句柄；原执行拥有者补齐五项分配身份，不准备新工作。应用路径固定为 `/`，端口为8000；响应为有界惰性文本，不传递上游 Cookie、重定向或活动内容。正常预览响应完成后，原消费者继续保留到实际结算；取消和错误仍由同一操作持有到实际关闭。`PeAuthService.inspectRootFetch()` 只向可信账户清单报告当前实际注册；配置和此观察均不发布 bootstrap 可用状态。
+
 ### Bootstrap 元数据
 
 `decodeCloudBootstrap(input, limits)` 严格校验 C-11 的账户、版本、代际和能力描述，返回独立副本及深只读数据。显式传入 `maxBodyBytes`、`maxStringBytes` 和合计 `maxListItems`，不补默认值。正文预算计入完整紧凑结果的字段名、分隔符和转义后 UTF-8 字符串。调用方仍须在 `JSON.parse` 前限制原始 HTTP 字节；三项上限均可由其 `maxBootstrapResponseBytes` 派生。
 
-未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。私有 producer 等待原 `CloudAccountApi.assertBootstrapCurrent`、files/project 成员关系、closed execution 及有界 Loader/包检查。发送有界 JSON（`no-store`）前再次检查原登录、Root、Use、代际和安装。批准项本身不代表已安装；事实缺失时拒绝整个 bootstrap。
+未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。私有 producer 等待原 `CloudAccountApi.assertBootstrapCurrent`、files/project 成员关系、已安装执行 provider 及有界 Loader/包检查。发送有界 JSON（`no-store`）前再次检查原登录、Root、Use、代际和安装。批准项本身不代表已安装；事实缺失时拒绝整个 bootstrap。
 
-producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `workspaceFiles/read`、`stat`、`list`、`readBytes` RPC 和 `workspaceFiles/changes` stream。这两个 namespace 的其他方法及错误的 RPC/stream 类别均拒绝。每个选中条目都经原 API owner 的当前注册审计。只有完整文件组被选中，且原 Files owner 的 `assertContentAvailable()` 通过，包含已结算的 ABI8、content 和 provider 前提时，`filePreview` 才为 available。部分文件组仍显示 disabled；任何选中的文件端点都要求该内容断言。Runtime 在 ready 前也检查相同前提。未选择文件端点的 first-trial 配方保持 preview disabled。项目元数据沿用原字段；执行、配置及其他未批准能力保持关闭。
+producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `workspaceFiles/read`、`stat`、`list`、`readBytes` RPC 和 `workspaceFiles/changes` stream。这两个 namespace 的其他方法及错误的 RPC/stream 类别均拒绝。每个选中条目都经原 API owner 的当前注册审计。只有完整文件组被选中，且原 Files owner 的 `assertContentAvailable()` 通过，包含已结算的 ABI8、content 和 provider 前提时，`filePreview` 才为 available。部分文件组仍显示 disabled；任何选中的文件端点都要求该内容断言。Runtime 在 ready 前也检查相同前提。未选择文件端点的 first-trial 配方保持 preview disabled。项目元数据沿用原字段；配置及其他未批准能力保持关闭。
+
+服务能力来自原执行拥有者的 `accountServiceAvailability(ctx)`，包含当前原始 `dev_service` 定义，以及安装和消费位置的原 Tools provider。预览还要求原应用 provider 和经 API 审计、仍有效的 GET `/cloud/service-preview` 注册。producer 允许该精确路由与原生上传并存，重新检查每条选中路由，拒绝重复和变体。这些事实仅表示能力已安装；检查不创建服务进程、分配或请求，也不产生 HTTP 就绪结果。
 
 ### 认证适配器
 
@@ -86,6 +92,8 @@ producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `wor
 `sign-in/email` 和 `sign-up/email` 先通过库查询原 Cookie，禁用身份缓存和刷新。有效登录或仍携带旧 session Cookie 的请求返回结构化 `cloud/login-active`/409、`retry: never`，要求真实 sign-out；查询失败不等于匿名。超时或取消后的迟到查询不能进入修改。最初匿名的请求没有共享的服务端转换标识，因此不宣称新 Cookie 签发在跨标签页/跨节点间有原子顺序。
 
 `revokeLogin` 先通过库删除，再由登录会话删除 hook 通知失效处理者。`planMigrations` 返回库生成的计划而不应用。认证操作只预留一个有限名额，覆盖真实查询及失效收尾；嵌套 hook 不再预留名额。等待超时后，该名额继续计入 `pendingOperations`，直到实际工作结算。`close` 停止准入并等待，不关闭调用方持有的池。认证失败不会取消 Agent 任务。
+
+只有显式预览配置才会为已校验的固定后缀启用 Better Auth 跨子域 Cookie；认证 base URL 和可信 origin 仍为管理域。单独的内部预览认证方法在同一无缓存登录读取前，检查原 Host 和精确 GET 路径；认证写入、bootstrap、原生 HTTP 和 WS 保留管理域传输检查。
 
 ### 失败与恢复
 
@@ -104,6 +112,8 @@ producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `wor
 内部 `LoginPeerRegistry` 按已验证登录、账户及 epoch 合并创建，独立借用生命周期 `AccountUse`，固定首次 principal/cookie。准备中和清理未知的记录均占 Peer 名额；单个调用者超时或退出只结束自身等待。原生 HTTP bridge 和 WS mux 复用同一个真实 `Peer`；socket 断开保留 Peer 及借用。watcher 按配置复查，任意拒绝均关闭精确登录；派发及每个逻辑流前同步检查原登录、账户借用和传入的端点守卫。
 
 撤销或 lifetime 结束先停止准入并销毁载体，再共同等待原生 mux/Peer 及实际 HTTP 操作清理，最后释放借用。M1 失效回调只等待原生载体/Peer 关闭，不等待可能触发删除 hook 的准备、复查或载体认证。完整关闭另行等待载体实际结算及晚到借用后，才释放 Use。`cloud/stop-unconfirmed` 表示清理失败或清理等待超时；失败保留名额和借用并通知必填诊断回调，超时不代表已释放。有界标志通过公共 Cordis 日志观察 Peer 子树的错误事件；原生 disposer 兑现本身不能证明清理成功。该类及借用回调均只供同包装配，不增加 SDK、客户端授权字段或监听器。
+
+固定预览 GET 在后端 I/O 前通过私有载体回调加入同一登记器。在载体准入内再次认证原请求，正文及外层账户返回均使用 canonical Peer 的登录守卫；登录失效只取消原 HTTP observer/request/response。载体容量及 Peer Use 保留至原 ingress actual 实际结束，包含响应传输及请求 Use 释放；清理未确认时仍保持 blocked。载体正文不等待包含自身的 actual，失效回调仍只等待原生清理。
 
 | 源码 | 职责 |
 | --- | --- |
@@ -157,6 +167,7 @@ producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `wor
 
 - 生产准入要求真实存储权、配方审核及账户发布；这些前提独立于元数据投影。`CloudAccountApi` 及原生分派/流 hook 已接线，不以根策略替代。未 sealed 的 ingress 拒绝业务工作。库初始化及拒绝测试不代表 S1/S2 或完整 F01 浏览器/WS 成功。
 - 代理转发仅限已配置固定源；转发客户端 IP 链及跨实例服务身份/选路须另行部署集成。
+- 内部[预览请求](src/preview-access.ts)及[响应](src/preview-response.ts)辅助函数保留原账户和服务借用，生成有界文本及固定响应头；它们不注册路由或开启预览能力，仍须完成 HTTP 适配、origin 隔离以及真实服务与生命周期验证。
 - 根拒绝非空库迁移计划，且从不执行迁移。Root 必须提供真实批准的公开控制目录；未列入目录的基础设施仍须通过原 API/files/execution 断言。C06 控制及批准的导航下载载体选择仍待提供；原生 HTTP 当前要求绑定头，WS 使用 query 字段。开放完整链路前，仍须正式生产者/消费者构建及真实 PG/Web 集成验证。
 
 <a id="dev-note"></a>

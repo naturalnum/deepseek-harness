@@ -9,7 +9,8 @@
     "src/index.ts",
     "src/config.ts",
     "src/schema.ts",
-    "src/types.ts"
+    "src/types.ts",
+    "src/preview-policy.ts"
   ],
   "references": [
     {

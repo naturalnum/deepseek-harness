@@ -1,8 +1,8 @@
 /** Root control composition retains original PG/storage/native work through ready and drain settlement. */
 import { posix } from 'node:path'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { ConfigSaveCoordinator } from '@deepseek-ai/dsh-pe-cloud-api'
+import { ConfigSaveCoordinator, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { RuntimeRootConfig } from './root-config.ts'
@@ -11,14 +11,19 @@ import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObse
 import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
 import { AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
+import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import { RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
 import { RuntimeCapacity } from './capacity.ts'
 import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
+
+function hasRootFetch(value: unknown): value is { inspectRootFetch(): readonly ExactFetchExposure[] } {
+  return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'inspectRootFetch') === 'function'
+}
 import { createAccountPolicy } from './account-policy.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
-import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootRecipeInput, RootRecipeObservation, RuntimeConfig } from './types.ts'
+import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootRecipeInput, RootRecipeObservation, RuntimeConfig } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
@@ -27,6 +32,7 @@ export type * from './types.ts'
 interface RootControl {
   readonly config: RuntimeRootConfig
   readonly executor: PgOwnerExecutor
+  readonly database: RootMetadataDatabase
   readonly instance: RuntimeInstanceControl
   readonly owners: PostgresOwnerStore
   readonly factory: AccountFactory
@@ -41,11 +47,16 @@ interface RootControl {
   failure?: unknown
 }
 
+interface RootParticipant extends RegisteredRootParticipant {
+  readonly closeRoot?: () => Promise<void>
+  readonly metadata: { accepting: boolean; shutdown?: Promise<void>; database?: RootMetadataDatabase }
+}
+
 /** Runtime-owned component API; only the function Loader entry creates the actual control plane. */
 export class PeAccountRuntime extends Service implements AccountRuntimeService {
   static Config = RuntimeConfigSchema
 
-  private readonly participants = new Map<ParticipantId, RegisteredRootParticipant>()
+  private readonly participants = new Map<ParticipantId, RootParticipant>()
   private readonly recipe: RootRecipeAudit
   private readonly capacity: RuntimeCapacity
   private closed = false
@@ -82,11 +93,46 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       throw new AccountRuntimeError('cloud/invalid-config', `Duplicate mandatory drain participant: ${participant.id}`)
     }
     return this.ctx.effect(() => {
-      const registered = { participant, fiber: this.ctx.fiber }
+      const metadata: RootParticipant['metadata'] = { accepting: true }
+      const stop = participant.closeRoot?.bind(participant)
+      const registered: RootParticipant = { participant, fiber: this.ctx.fiber, metadata,
+        ...(stop === undefined ? {} : { closeRoot: () => metadata.shutdown ??= Promise.resolve().then(stop).then(() => {
+          metadata.accepting = false
+        }) }) }
       this.recipe.revoke()
       this.participants.set(participant.id, registered)
-      return () => { this.recipe.revoke(); this.participants.delete(participant.id) }
+      return () => {
+        this.recipe.revoke()
+        const withdraw = (): void => { this.participants.delete(participant.id) }
+        if (registered.closeRoot === undefined) {
+          withdraw()
+          return
+        }
+        return registered.closeRoot().then(withdraw)
+      }
     }, 'pe-cloud-runtime: drain participant')
+  }
+
+  controlDatabase(participant: DrainParticipant): RootMetadataDatabase {
+    const control = this.activeControl()
+    const registration = this.participants.get(participant.id)
+    if (registration?.participant !== participant || registration.closeRoot === undefined) {
+      throw new AccountRuntimeError('cloud/invalid-config', 'Root metadata requires the original registered Root shutdown owner')
+    }
+    if (registration.metadata.shutdown !== undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Root participant shutdown has already begun')
+    }
+    const participants = this.participants
+    registration.metadata.database ??= Object.freeze({
+      wasNotSubmitted: (cause: unknown) => control.database.wasNotSubmitted(cause),
+      query(text: string, values: readonly (string | null)[]) {
+        if (participants.get(participant.id) !== registration || !registration.metadata.accepting) {
+          return Promise.reject(new OwnerPgNotSubmittedError('cloud/account-unavailable', 'Root participant database admission is closed before SQL submission'))
+        }
+        return control.database.query(text, values)
+      },
+    })
+    return registration.metadata.database
   }
 
   /**
@@ -282,12 +328,16 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const secrets = new Set<Promise<string>>()
     const password = (): Promise<string> => this.resolvePassword(config, credentials, secrets)
     const executor = new PgOwnerExecutor({ ...config.database, password }, config.pg)
+    const database: RootMetadataDatabase = Object.freeze({
+      wasNotSubmitted: (cause: unknown) => cause instanceof OwnerPgNotSubmittedError,
+      query: (text: string, values: readonly (string | null)[]) => executor.query(text, values),
+    })
     const instance = new RuntimeInstanceControl(executor, config)
     const owners = new PostgresOwnerStore(executor, instance.identity, config)
     const factory = new AccountFactory(this.capacity, config.factory)
     const saves = new ConfigSaveCoordinator(config.saves)
     const control: RootControl = {
-      config, executor, instance, owners, factory, saves, requests: new Map(), secrets,
+      config, executor, database, instance, owners, factory, saves, requests: new Map(), secrets,
       phase: 'starting', starting: Promise.resolve(),
     }
     this.control = control
@@ -343,6 +393,11 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     try { await control.heartbeat } catch (cause) { faults.push(cause) }
     let native: readonly AccountNativeCloseObservation[] = []
     try { native = await control.factory.close() } catch (cause) { faults.push(cause) }
+    let rootWorkUnknown = false
+    for (const registration of this.participants.values()) {
+      try { await registration.closeRoot?.() }
+      catch (cause) { rootWorkUnknown = true; faults.push(cause) }
+    }
     for (const observation of native) {
       // Known complete production drains have already released; incomplete generations remain quarantined.
       try {
@@ -354,7 +409,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       } catch (cause) { faults.push(cause) }
       if (observation.status === 'unknown') faults.push(observation.cause ?? new AccountRuntimeError('cloud/stop-unconfirmed', 'Native account shutdown is not confirmed'))
     }
-    if (native.some(observation => observation.status === 'unknown')) {
+    if (rootWorkUnknown || native.some(observation => observation.status === 'unknown')) {
       control.failure ??= faults[0]
       control.phase = 'failed'
       this.ctx.logger.error('Actual account drain remains unresolved; original Root control resources and ownership remain retained')
@@ -380,6 +435,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const exposure = this.ctx.root.get('peExposure')
     const execution = this.ctx.root.get('peSandboxCoordinator')
     const files = this.ctx.root.get('peFilesPool')
+    const selectedAuth: unknown = this.ctx.root.get('peAuth')
+    const auth = hasRootFetch(selectedAuth) ? selectedAuth : undefined
     if (exposure === undefined || execution === undefined || files === undefined) throw new AccountMountPrerequisiteError()
     const storage = files.requireStorageOwner()
     storage.assertRootCurrent()
@@ -400,6 +457,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         storage: Object.freeze({ owner: storage, files }),
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
           maxNativeInventoryEntries: config.native.maxEntries,
+          ...auth === undefined ? {} : { inspectRootFetch: () => {
+            const current: unknown = this.ctx.root.get('peAuth')
+            if (!hasRootFetch(current) || (Reflect.get(current, symbols.original) ?? current)
+              !== (Reflect.get(auth, symbols.original) ?? auth)) throw new AccountMountPrerequisiteError()
+            return auth.inspectRootFetch()
+          } },
           ...config.native.attachments === undefined ? {} : { attachments: config.native.attachments },
           ...config.native.firstScreen === undefined ? {} : { firstScreen: {
             ...config.native.firstScreen, home: layout.privateRoot,

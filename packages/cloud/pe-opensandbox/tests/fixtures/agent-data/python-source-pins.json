@@ -1,0 +1,12 @@
+{
+  "protocol": "s4-collect/7-proxy-auth",
+  "agentSourceSha256": "6ccf4a6d491acbcc3f98bda7d6a6ee056fada7578d5823c3ef3aecb12869b2de",
+  "sources": {
+    "server.py": "f850f4dce23467da27fb46c68e079233a928814d5cdba41f852f79788ffd02c7",
+    "wire.py": "9b4e8e33a6789d1c2405268522c71519ac90ad0a77a2736fa562cae3449ffe75",
+    "manager.py": "50ae067a1111e9ff801d2d1f1d75f245d3f6390d99ed8575bdeccaec40930294",
+    "launcher.py": "2803d5975b489cfe844a79e3c823a7da1462d69029e3c90a3cf968ae3ce3370b",
+    "guardian.py": "381ce6426d9f79277e485087c3ff3856e7ed95e31c4623da10a7c50a6c0e6ec1",
+    "paths.py": "65cd31b5d865151fe6b0baeedb7f601ce8d03b702b6581a294dd93208a5d7fbe"
+  }
+}

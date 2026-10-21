@@ -1,7 +1,8 @@
 /** Strict static-record and fixed ABI1 decoding shared by the root owner and worker transport. */
 import { posix } from 'node:path'
-import type { StaticStorageAccount, StaticStorageAuxiliary, StaticStorageBacking, StaticStorageConfig,
-  StaticStorageDomain, StaticStoragePlan, StorageProbeFacts } from './storage-types.ts'
+import type { StaticStorageAccount, StaticStorageAccountV1, StaticStorageAccountV2, StaticStorageAuxiliary,
+  StaticStorageBacking, StaticStorageConfig, StaticStorageDomain, StaticStoragePlan, StorageProbeFacts,
+  StaticEnvironmentBank } from './storage-types.ts'
 import { FilesFailure } from './error.ts'
 
 function invalid(): never { throw new FilesFailure('files/prerequisite-missing', 'Static storage facts are invalid or unavailable.') }
@@ -33,13 +34,43 @@ function domain(value: unknown, max: number): StaticStorageDomain {
     || BigInt(result.minimumInodes) > BigInt(result.maximumInodes)) invalid()
   return Object.freeze(result)
 }
-function account(value: unknown, max: number): StaticStorageAccount {
+function account(value: unknown, max: number): StaticStorageAccountV1 {
   const v = shape(value, ['accountId', 'storageKey', 'accountRoot', 'private', 'projects'])
   if (typeof v.accountId !== 'string' || v.accountId.length === 0 || Buffer.byteLength(v.accountId) > max
     || typeof v.storageKey !== 'string' || !/^v1-[a-f0-9]{64}$/.test(v.storageKey)) invalid()
   return Object.freeze({ accountId: v.accountId as StaticStorageAccount['accountId'],
     storageKey: v.storageKey as StaticStorageAccount['storageKey'], accountRoot: path(v.accountRoot, max),
     private: domain(v.private, max), projects: domain(v.projects, max) })
+}
+
+function identifier(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(value)) invalid()
+  return value
+}
+
+function accountV2(value: unknown, max: number): StaticStorageAccountV2 {
+  const v = shape(value, ['accountId', 'storageKey', 'accountRoot', 'private', 'projects', 'environmentBank'])
+  const base = account({ accountId: v.accountId, storageKey: v.storageKey, accountRoot: v.accountRoot,
+    private: v.private, projects: v.projects }, max)
+  const bank = shape(v.environmentBank, ['bankId', 'slots'])
+  if (!Array.isArray(bank.slots) || bank.slots.length < 1) invalid()
+  const slots = bank.slots.map((entry: unknown) => {
+    const slot = shape(entry, ['slotId', 'domain'])
+    const slotId = identifier(slot.slotId), measured = domain(slot.domain, max)
+    if (measured.rootPath !== posix.join(base.accountRoot, 'environments', slotId)) invalid()
+    return Object.freeze({ slotId, domain: measured })
+  })
+  if (new Set(slots.map(slot => slot.slotId)).size !== slots.length) invalid()
+  return Object.freeze({ ...base, environmentBank: Object.freeze({ bankId: identifier(bank.bankId), slots: Object.freeze(slots) }) })
+}
+
+/**
+ * Return only an explicitly declared bank; a v1 record has none.
+ * @param account Original parsed account selector.
+ * @returns The protected finite inventory, without issuing runtime authority.
+ */
+export function accountEnvironmentBank(account: StaticStorageAccount): StaticEnvironmentBank | undefined {
+  return 'environmentBank' in account ? account.environmentBank : undefined
 }
 
 /**
@@ -53,21 +84,27 @@ export function parseStaticStoragePlan(bytes: Uint8Array, maxPathBytes: number):
   try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch (_error) { invalid() }
   const v = shape(raw, ['version', 'recipeVersion', 'appUid', 'appGid', 'arenaReserveBytes', 'arena', 'control',
     'accounts', 'baseConfigPath', 'installAnchor', 'auxiliary'])
-  if (v.version !== 1 || typeof v.recipeVersion !== 'string' || v.recipeVersion.length < 1 || v.recipeVersion.length > 128
+  if ((v.version !== 1 && v.version !== 2) || typeof v.recipeVersion !== 'string' || v.recipeVersion.length < 1 || v.recipeVersion.length > 128
     || typeof v.appUid !== 'number' || !Number.isSafeInteger(v.appUid) || v.appUid < 1 || v.appUid > 4294967295
     || typeof v.appGid !== 'number' || !Number.isSafeInteger(v.appGid) || v.appGid < 1 || v.appGid > 4294967295
     || !Array.isArray(v.accounts) || v.accounts.length !== 2 || !Array.isArray(v.auxiliary) || v.auxiliary.length > 8) invalid()
-  const a = account(v.accounts[0], maxPathBytes), b = account(v.accounts[1], maxPathBytes)
+  const a2 = v.version === 2 ? accountV2(v.accounts[0], maxPathBytes) : undefined
+  const b2 = v.version === 2 ? accountV2(v.accounts[1], maxPathBytes) : undefined
+  const a = a2 ?? account(v.accounts[0], maxPathBytes), b = b2 ?? account(v.accounts[1], maxPathBytes)
   if (a.accountId === b.accountId || a.storageKey === b.storageKey || a.accountRoot === b.accountRoot) invalid()
   const auxiliary: StaticStorageAuxiliary[] = v.auxiliary.map((entry: unknown) => {
     const item = shape(entry, ['path', 'maximumBytes', 'maximumInodes'])
     return Object.freeze({ path: path(item.path, maxPathBytes),
       maximumBytes: decimal(item.maximumBytes), maximumInodes: decimal(item.maximumInodes) })
   })
-  return Object.freeze({ version: 1, recipeVersion: v.recipeVersion, appUid: v.appUid, appGid: v.appGid,
+  const shared = { recipeVersion: v.recipeVersion, appUid: v.appUid, appGid: v.appGid,
     arenaReserveBytes: decimal(v.arenaReserveBytes), arena: domain(v.arena, maxPathBytes), control: domain(v.control, maxPathBytes),
-    accounts: Object.freeze([a, b] as const), baseConfigPath: path(v.baseConfigPath, maxPathBytes),
-    installAnchor: path(v.installAnchor, maxPathBytes), auxiliary: Object.freeze(auxiliary) })
+    baseConfigPath: path(v.baseConfigPath, maxPathBytes),
+    installAnchor: path(v.installAnchor, maxPathBytes), auxiliary: Object.freeze(auxiliary) }
+  if (a2 !== undefined && b2 !== undefined) {
+    return Object.freeze({ ...shared, version: 2, accounts: Object.freeze([a2, b2] as const) })
+  }
+  return Object.freeze({ ...shared, version: 1, accounts: Object.freeze([a, b] as const) })
 }
 
 /**

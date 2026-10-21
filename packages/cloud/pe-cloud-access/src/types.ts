@@ -31,6 +31,8 @@ export interface AuthenticatedPrincipal {
 /** Public deployment inputs; authentication secrets are referenced, not embedded. */
 export interface AccessConfig {
   publicOrigin: string
+  /** Fixed isolated GET preview origin and shared session-cookie suffix; omission preserves host-only cookies. */
+  servicePreview?: Readonly<{ origin: string; cookieDomain: string }>
   deploymentMode: 'development' | 'production'
   trustedProxyAddresses: string[]
   authSecretRef: string

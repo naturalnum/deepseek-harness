@@ -18,23 +18,23 @@
   en: 04dc0d63fa49f0d7
   zh: b6c6b4661ac7fd73
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/configuration:
-  en: 66e44ddb2066866c
-  zh: fdfb09a089c905e5
+  en: babeef9a4eae3262
+  zh: fb92c07d8fdcb26f
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/request-bindings:
-  en: aa3d39ddcf52ff09
-  zh: 9c6a87f18ed4ba07
+  en: 8ed8abec75cf9527
+  zh: ac39f95f790a5f33
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/bootstrap-metadata:
-  en: 7083b8eb0bf04b87
-  zh: 3b951614db4ca68d
+  en: b83e8dc92b8fa244
+  zh: 9dc9660192e014cf
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/authentication-adapter:
-  en: 23f72c1d971be506
-  zh: a7bb11b943cb5744
+  en: 85fcee00e5b6edc1
+  zh: 8512e240fc21095d
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/failure-and-recovery:
   en: cb1578a2d1ac8f90
   zh: 7a47300b08602bd7
 /deepseek-ai-dsh-pe-cloud-access/understand-the-implementation:
-  en: b60866bf5d089e6e
-  zh: e0b51965bdce23a7
+  en: dc133d070221264d
+  zh: 800a5916fe0cce78
 /deepseek-ai-dsh-pe-cloud-access/further-exploration:
   en: 4cd687a6806208b0
   zh: 4a5d543ea4ad8513
@@ -54,8 +54,8 @@
   en: 69e9749cddb257e8
   zh: 063906c5ff47a213
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work:
-  en: a79e8fba4f5d5427
-  zh: b955667cfd2047d4
+  en: f53efd15d246f0c3
+  zh: 98d2e9e3adb051b4
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work/dev-note:
   en: 1fdae11f988aceda
   zh: bd330aeef71da0d6

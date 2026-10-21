@@ -7,6 +7,7 @@ import { FilesFailure } from './error.ts'
 
 export { RootStorageOwner, StaticAccountStorageLease } from './storage-owner.ts'
 export type { StaticStorageConfig, StaticStoragePlan, StaticStorageAccount, StaticStorageDomain } from './storage-types.ts'
+export type { StaticStoragePlanV1, StaticStoragePlanV2, StaticEnvironmentBank, StaticEnvironmentSlot } from './storage-types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

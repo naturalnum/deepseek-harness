@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { parseStaticStoragePlan, parseStorageProbeFrame, staticStorageReservation } from '../src/storage-probe.ts'
+import { accountEnvironmentBank, parseStaticStoragePlan, parseStorageProbeFrame, staticStorageReservation } from '../src/storage-probe.ts'
 import { RootStorageOwner, validateStorageView, type StaticAccountStorageLease, type StaticStorageDriver } from '../src/storage-owner.ts'
 import { storageRequest, createStorageWorker } from '../src/storage-worker.ts'
 import type { StaticStorageConfig, StorageProbeFacts } from '../src/storage-types.ts'
@@ -18,6 +18,15 @@ function raw() {
       storageKey: `v1-${String(index).repeat(64)}`, accountRoot: `/accounts/v1-${String(index).repeat(64)}`,
       private: domain(2 * index + 1), projects: domain(2 * index + 2) })),
     baseConfigPath: '/app/base.yml', installAnchor: '/app/package.json', auxiliary: [] }
+}
+function rawV2() {
+  const base = raw()
+  return { ...base, version: 2, accounts: base.accounts.map((account, accountIndex) => ({ ...account,
+    environmentBank: { bankId: `bank-${accountIndex}`, slots: Array.from({ length: 2 }, (_, slotIndex) => {
+      const slotId = `slot-${slotIndex}`, actual = domain(7 + accountIndex * 2 + slotIndex)
+      actual.rootPath = `${account.accountRoot}/environments/${slotId}`
+      return { slotId, domain: actual }
+    }) } })) }
 }
 const config: StaticStorageConfig = { planPath: '/deployment/plan.json', planSha256: '1'.repeat(64),
   probeHelperPath: '/deployment/storage.node', probeHelperSha256: '2'.repeat(64), maxProbeAssetBytes: 1024,
@@ -67,6 +76,21 @@ describe('static protected record parsing without storage authority', () => {
     for (const changed of [{ rootProbeReservationBytes: 1 }, { maxMountInfoBytes: Infinity },
       { probeTimeoutMs: 2147483648 }, { planSha256: 'invalid' }, { probeHelperPath: '/tmp/../probe.node' }]) {
       expect(() => staticStorageReservation({ ...config, ...changed }, 1024, 2)).toThrow()
+    }
+  })
+  it('parses finite v2 banks while rejecting missing, empty, duplicated and path-selected slots', () => {
+    const parsed = parseStaticStoragePlan(encode(rawV2()), 1024)
+    expect(parsed.version).toBe(2)
+    expect(accountEnvironmentBank(parsed.accounts[0])?.slots).toHaveLength(2)
+    expect(Object.isFrozen(accountEnvironmentBank(parsed.accounts[0])?.slots[0]?.domain.backing)).toBe(true)
+    expect(accountEnvironmentBank(parseStaticStoragePlan(encode(raw()), 1024).accounts[0])).toBeUndefined()
+    for (const change of ['empty', 'duplicate', 'path', 'unknown']) {
+      const value = rawV2(), bank = value.accounts[0]!.environmentBank
+      if (change === 'empty') bank.slots = []
+      else if (change === 'duplicate') bank.slots[1] = bank.slots[0]!
+      else if (change === 'path') bank.slots[0]!.domain.rootPath = '/another-account/environments/slot-0'
+      else Object.assign(bank, { quotaApproved: true })
+      expect(() => parseStaticStoragePlan(encode(value), 1024)).toThrow()
     }
   })
 })
@@ -133,18 +157,19 @@ describe('two retained static preparations with serial verification', () => {
     vi.unstubAllGlobals()
   })
 
-  async function fixture() {
-    const record = raw()
-    record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = '65536'
+  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> = raw()) {
+    record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = record.version === 2 ? '131072' : '65536'
     for (const row of record.accounts) {
       row.private.rootPath = `${row.accountRoot}/private`
       row.projects.rootPath = `${row.accountRoot}/projects`
     }
-    for (const domain of [record.control, ...record.accounts.flatMap(row => [row.private, row.projects])]) {
+    const extras = record.accounts.flatMap(row => 'environmentBank' in row ? row.environmentBank.slots.map(slot => slot.domain) : [])
+    for (const domain of [record.control, ...record.accounts.flatMap(row => [row.private, row.projects]), ...extras]) {
       domain.backing.device = record.arena.rootDevice
     }
     const encoded = encode(record), plan = parseStaticStoragePlan(encoded, 1024)
-    const domains = [plan.arena, plan.control, ...plan.accounts.flatMap(row => [row.private, row.projects])]
+    const domains = [plan.arena, plan.control, ...plan.accounts.flatMap(row => [row.private, row.projects,
+      ...accountEnvironmentBank(row)?.slots.map(slot => slot.domain) ?? []])]
     const facts = new Map<string, StorageProbeFacts>()
     const fact = (change: Partial<StorageProbeFacts>): StorageProbeFacts => ({ flags: 3, uid: 0, gid: 0, mode: 0o40755,
       appUid: 1000, appGid: 1000, device: '99', inode: '2', mountId: '1', filesystem: '61267',
@@ -155,7 +180,9 @@ describe('two retained static preparations with serial verification', () => {
     for (const [index, domain] of domains.entries()) {
       facts.set(domain.rootPath, fact({ device: domain.rootDevice, inode: domain.rootInode, mountId: domain.rootMountId,
         flags: index < 2 ? 3 : 31, uid: index < 2 ? 0 : 1000, gid: index < 2 ? 0 : 1000,
-        mode: index < 2 ? 0o40755 : 0o40700, blocks: index === 0 ? '16' : '2', availableBlocks: index === 0 ? '16' : '1' }))
+        mode: index < 2 ? 0o40755 : 0o40700,
+        blocks: index === 0 ? String(BigInt(record.arena.maximumBytes) / 4096n) : '2',
+        availableBlocks: index === 0 ? String(BigInt(record.arena.maximumBytes) / 4096n) : '1' }))
       facts.set(domain.backing.path, fact({ device: domain.backing.device, inode: domain.backing.inode,
         mode: 0o100600, size: domain.backing.bytes, allocatedBytes: domain.backing.bytes }))
     }
@@ -215,6 +242,57 @@ describe('two retained static preparations with serial verification', () => {
     releases.push(finish)
     return { entered: entered.promise, finish, fail: (cause: Error) => { resume.reject(cause) } }
   }
+
+  it('keeps v1 closed compatibility and requires actual v2 domains for execution storage', async () => {
+    const legacy = await fixture()
+    legacy.owner.assertRootCurrent()
+    expect(() => { legacy.owner.assertExecutionStorageAvailable() }).toThrow()
+    const current = await fixture(rawV2())
+    current.owner.assertExecutionStorageAvailable()
+    const lease = await current.prepare(current.inputs[0]!)
+    lease.assertCurrent()
+    for (const account of current.plan.accounts) for (const slot of accountEnvironmentBank(account)!.slots) {
+      expect(current.probePaths).toContain(slot.domain.rootPath)
+      expect(current.probePaths).toContain(slot.domain.backing.path)
+    }
+  })
+
+  it.each(['geometry', 'backing'])('refuses renewed v2 admission after actual slot %s changed', async (kind) => {
+    const f = await fixture(rawV2()), slot = accountEnvironmentBank(f.plan.accounts[0])!.slots[0]!
+    const path = kind === 'geometry' ? slot.domain.rootPath : slot.domain.backing.path
+    const previous = f.facts.get(path)!
+    f.facts.set(path, { ...previous, ...kind === 'geometry' ? { inodes: '1' } : { allocatedBytes: '1' } })
+    await expect(f.prepare(f.inputs[0]!)).rejects.toMatchObject({ code: 'files/prerequisite-missing' })
+    expect(f.driver.bind).not.toHaveBeenCalled()
+  })
+
+  it.each(['project', 'environment'])('rejects an undeclared read-only private-source mount below the %s export', async (kind) => {
+    const f = await fixture(rawV2())
+    const root = kind === 'project' ? f.plan.accounts[0].projects.rootPath
+      : accountEnvironmentBank(f.plan.accounts[0])!.slots[0]!.domain.rootPath
+    const original = await f.driver.view()
+    f.driver.view.mockResolvedValue({ ...original, mountInfo: new TextEncoder().encode(
+      new TextDecoder().decode(original.mountInfo) + `\n999 1 8:99 /private ${root}/foreign ro - ext4 /dev/private-source ro`) })
+    await expect(f.prepare(f.inputs[0]!)).rejects.toMatchObject({ code: 'files/prerequisite-missing' })
+    expect(f.driver.bind).not.toHaveBeenCalled()
+  })
+
+  it('retains the explicitly protected readonly installation base outside project and environment exports', async () => {
+    const f = await fixture(rawV2()), original = await f.driver.view()
+    f.driver.view.mockResolvedValue({ ...original, mountInfo: new TextEncoder().encode(
+      new TextDecoder().decode(original.mountInfo) + `\n999 1 8:99 / ${f.plan.installAnchor} ro - ext4 /dev/install-base ro`) })
+    const lease = await f.prepare(f.inputs[0]!)
+    lease.assertCurrent()
+  })
+
+  it('rejects aliased environment identities and total backing oversubscription before any account lease', async () => {
+    const alias = rawV2()
+    alias.accounts[0]!.environmentBank.slots[0]!.domain.rootDevice = alias.accounts[0]!.projects.rootDevice
+    await expect(fixture(alias)).rejects.toMatchObject({ code: 'files/prerequisite-missing' })
+    const over = rawV2()
+    for (const account of over.accounts) for (const slot of account.environmentBank.slots) slot.domain.backing.bytes = '65536'
+    await expect(fixture(over)).rejects.toMatchObject({ code: 'files/prerequisite-missing' })
+  })
 
   it('retains B and its duplicates while A is pending, then verifies B only after the complete A verification', async () => {
     const f = await fixture(), gate = pauseLastProbe(f)

@@ -81,6 +81,9 @@ export class BetterAuthAccess {
       advanced: {
         useSecureCookies: new URL(this.config.publicOrigin).protocol === 'https:',
         trustedProxyHeaders: false,
+        ...this.config.servicePreview === undefined ? {} : {
+          crossSubDomainCookies: { enabled: true, domain: this.config.servicePreview.cookieDomain },
+        },
         defaultCookieAttributes: { httpOnly: true, sameSite: 'lax' },
         ipAddress: { ipAddressHeaders: ['x-pe-auth-remote-ip'] },
       },
@@ -134,6 +137,18 @@ export class BetterAuthAccess {
   }
 
   /**
+   * Read the same database-backed login for the fixed isolated preview GET only.
+   * This adapter method is internal to Root ingress and is not exposed by PeAuthService or a client RPC.
+   * @param request - Original request; Host, method and canonical preview path are checked without rewriting.
+   * @param requestId - Server-generated correlation id.
+   * @returns The original library-tracked principal, without authorizing any preview target or management API.
+   * @throws AuthAccessError for forbidden transport, missing/expired login, capacity, DB failure or timeout.
+   */
+  authenticateServicePreview(request: IncomingMessage, requestId: Branded<'pe-request-id'>): Promise<AuthenticatedPrincipal> {
+    return this.authenticateAndProject(request, requestId, (_login, principal) => principal, 'service-preview')
+  }
+
+  /**
    * Authenticate once and project the same verified user's bounded display metadata for future bootstrap assembly.
    * Neither the projection nor its wrapper is retained in a Peer principal record.
    * @param request - Original request whose cookie is captured before the library query.
@@ -161,8 +176,9 @@ export class BetterAuthAccess {
   private authenticateAndProject<T>(
     request: IncomingMessage, requestId: Branded<'pe-request-id'>,
     project: (login: LibraryLogin, principal: AuthenticatedPrincipal) => T,
+    transport: 'management' | 'service-preview' = 'management',
   ): Promise<T> {
-    const headers = this.trustedHeaders(request, requestId)
+    const headers = this.trustedHeaders(request, requestId, transport)
     return this.withDeadline(async (ordinal) => {
       const login = await this.readLogin(headers, ordinal, requestId)
       const principal: AuthenticatedPrincipal = Object.freeze({
@@ -382,9 +398,12 @@ export class BetterAuthAccess {
     return record
   }
 
-  private trustedHeaders(request: IncomingMessage, requestId: Branded<'pe-request-id'>): Headers {
+  private trustedHeaders(
+    request: IncomingMessage, requestId: Branded<'pe-request-id'>, transport: 'management' | 'service-preview' = 'management',
+  ): Headers {
     const secure = 'encrypted' in request.socket && request.socket.encrypted === true
-    assertAuthTransport(request.headers, request.rawHeaders, request.socket.remoteAddress, secure, this.config, requestId)
+    assertAuthTransport(request.headers, request.rawHeaders, request.socket.remoteAddress, secure, this.config, requestId,
+      transport === 'service-preview' ? { kind: 'service-preview', method: request.method, url: request.url } : 'http')
     const headers = this.node.fromNodeHeaders(request.headers)
     for (const name of [...headers.keys()]) {
       if (name === 'forwarded' || name.startsWith('x-forwarded-') || name === 'x-real-ip' || name === 'x-pe-auth-remote-ip') headers.delete(name)

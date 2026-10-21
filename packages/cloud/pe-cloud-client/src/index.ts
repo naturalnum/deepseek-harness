@@ -23,6 +23,7 @@ export const name = 'pe-cloud-client'
 export const inject: string[] = []
 /** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
 export interface Config {
+  /** Explicit public Web inputs; omission leaves ordinary browser startup unchanged. */
   readonly web?: CloudWebManifest
 }
 /** No browser inputs are injected unless the deployment explicitly supplies them. */

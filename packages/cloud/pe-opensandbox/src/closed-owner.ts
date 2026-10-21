@@ -2,9 +2,11 @@
 import { randomUUID } from 'node:crypto'
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { assertInstalledExecutionBinding, type AccountExecutionPort } from './account-port.ts'
+import { assertInstalledExecutionBinding, IssuedExecutionPort, installIssuedExecutionPort,
+  requireIssuedExecutionPort, type AccountExecutionPort } from './account-port.ts'
 import { ExecutionStateError, ExecutionUnavailableError } from './errors.ts'
 import { ClosedShellExecutor, ClosedSubprocessRuntime } from './closed-providers.ts'
+import type { ApplicationServiceSelection, RegisteredApplicationService } from './types.ts'
 
 interface Registration {
   readonly binding: AccountBinding
@@ -17,8 +19,8 @@ interface Registration {
   providers?: { readonly ctx: Context; readonly shell: ClosedShellExecutor; readonly subprocess: ClosedSubprocessRuntime }
 }
 
-class ClosedPort implements AccountExecutionPort {
-  constructor(readonly binding: AccountBinding, private readonly owner: ClosedExecutionOwner) {}
+class ClosedPort extends IssuedExecutionPort {
+  constructor(binding: AccountBinding, private readonly owner: ClosedExecutionOwner) { super(binding, owner, 'closed') }
   assertCurrent(ctx: Context): void { this.owner.assertPort(this, ctx) }
   deny(ctx: Context, signal?: AbortSignal): never {
     if (requireAccountExecutionPort(ctx) !== this) {
@@ -31,6 +33,10 @@ class ClosedPort implements AccountExecutionPort {
   installProviders(ctx: Context): void { this.owner.installProviders(this, ctx) }
   assertProviders(ctx: Context): void { this.owner.assertProviders(this, ctx) }
   close(): void { this.owner.closePort(this) }
+  withApplicationService(ctx: Context, _selection: ApplicationServiceSelection, signal: AbortSignal,
+    _deadlineAtMs: number, _consume: (service: RegisteredApplicationService) => Promise<void>): Promise<void> {
+    return new Promise(() => { this.deny(ctx, signal) })
+  }
 }
 
 /** Fixed-capacity owner of exact closed-mode bindings, including terminal observations. */
@@ -137,6 +143,17 @@ export class ClosedExecutionOwner {
   }
 
   /**
+   * Verify the original closed providers and report services disabled without creating execution resources.
+   * @param port Original closed port.
+   * @param ctx Actual account consumer scope.
+   * @returns Disabled service facts.
+   */
+  inspectServices(port: AccountExecutionPort, ctx: Context): { developmentServices: false; servicePreview: false } {
+    this.assertProviders(port, ctx)
+    return Object.freeze({ developmentServices: false, servicePreview: false })
+  }
+
+  /**
    * Read actual native provider ownership without executing or stopping anything.
    * @param port Original issued port.
    * @param ctx Current account consumer scope.
@@ -218,12 +235,7 @@ export class ClosedExecutionOwner {
  * @returns the original issued refusal port; copied and shadowed ports reject.
  */
 export function requireAccountExecutionPort(ctx: Context): AccountExecutionPort {
-  const port = ctx.get('peAccountExecution')
-  if (!(port instanceof ClosedPort) || ctx.root.get('peAccountExecution') !== port) {
-    throw new ExecutionStateError('cloud/stale-generation', 'The account requires its root-issued execution port.')
-  }
-  ClosedPort.prototype.assertCurrent.call(port, ctx)
-  return port
+  return requireIssuedExecutionPort(ctx)
 }
 
 /**
@@ -232,18 +244,7 @@ export function requireAccountExecutionPort(ctx: Context): AccountExecutionPort 
  * @param port - the root owner's exact issued capability.
  */
 export function installAccountExecutionPort(ctx: Context, port: AccountExecutionPort): void {
-  if (!(port instanceof ClosedPort)) {
-    throw new ExecutionStateError('cloud/stale-generation', 'Execution port was not issued by the closed execution owner.')
-  }
-  ClosedPort.prototype.assertCurrent.call(port, ctx)
-  if (ctx.get('peAccountExecution') !== undefined || ctx.root.get('peAccountExecution') !== undefined) {
-    throw new ExecutionStateError('cloud/invalid-config', 'The account already has an execution port.')
-  }
-  const unprovide = ctx.provide('peAccountExecution', port)
-  if (ctx.root.get('peAccountExecution') !== port) {
-    unprovide()
-    throw new ExecutionStateError('cloud/stale-generation', 'Execution port installation must be visible in its account root.')
-  }
+  installIssuedExecutionPort(ctx, port)
 }
 
 /**

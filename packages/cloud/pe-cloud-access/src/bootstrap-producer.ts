@@ -1,11 +1,12 @@
-/** C11 projection from original graph owners and explicitly audited closed execution/file policies. */
+/** C11 projection from original graph owners and explicitly audited execution/file policies. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { CloudAccountApi, CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
-import { assertClosedAccountExecution } from '@deepseek-ai/dsh-pe-opensandbox'
+import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
 import type { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
+import { SERVICE_PREVIEW_ROUTE } from './preview-route.ts'
 import { decodeCloudBootstrap } from './bootstrap.ts'
 import { inspectBootstrapConfiguration } from './bootstrap-inventory.ts'
 import type { CloudBootstrap } from './types.ts'
@@ -55,6 +56,9 @@ export async function produceCloudBootstrap(
     || manifest.streamEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
   const previewSelected = fileRpcEndpoints.every(endpoint => manifest.rpcEndpoints.some(row => row.endpoint === endpoint))
     && manifest.streamEndpoints.some(row => row.endpoint === fileStreamEndpoint)
+  const services = accountServiceAvailability(ctx)
+  const previewRouteSelected = manifest.exactFetchRoutes.some(row => row.method === SERVICE_PREVIEW_ROUTE.method
+    && row.path === SERVICE_PREVIEW_ROUTE.path)
   const factsCurrent = (): void => {
     signal.throwIfAborted()
     current()
@@ -67,12 +71,21 @@ export async function produceCloudBootstrap(
     if (files.project() !== project || project.binding !== binding || registry === undefined
       || currentRegistry === undefined || original(currentRegistry) !== original(registry)
       || registry.get(project.workspace.id) !== project.workspace) unavailable()
-    assertClosedAccountExecution(ctx)
-    // Execution and configuration remain closed; file exposure still requires its original audited native owners.
-    if (manifest.allowedSettings.length !== 0 || manifest.exactFetchRoutes.length > 1) unavailable()
+    assertAccountExecutionProviders(ctx)
+    const liveServices = accountServiceAvailability(ctx)
+    if (liveServices.developmentServices !== services.developmentServices
+      || liveServices.servicePreview !== services.servicePreview) unavailable()
+    // Only the original native upload and Root's protocol-fixed preview route may coexist.
+    if (manifest.allowedSettings.length !== 0 || manifest.exactFetchRoutes.length > 2) unavailable()
+    const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
-      if (row.method !== 'POST' || row.path !== FILE_UPLOAD_PATH
-        || row.handlerId !== 'native:fileUploads' || row.guard !== 'account-session') unavailable()
+      const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
+      const preview = row.method === SERVICE_PREVIEW_ROUTE.method && row.path === SERVICE_PREVIEW_ROUTE.path
+        && row.handlerId === SERVICE_PREVIEW_ROUTE.handlerId
+      const key = `${row.method} ${row.path}`
+      if ((!upload && !preview) || row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
+      selectedFetch.add(key)
+      // Original API checks its audited manifest and freshly inspects actual native + Root inventory.
       api.requireFetch(row.method, row.path)
     }
     const budget = catalog.maxEntries
@@ -106,8 +119,10 @@ export async function produceCloudBootstrap(
   assertCurrent()
   const disabled = Object.freeze({ state: 'disabled', reason: 'not-approved' } as const)
   const value = decodeCloudBootstrap({ account, recipeVersion: binding.recipeVersion, connectionGeneration: token,
-    capabilities: { projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled, shell: disabled,
-      developmentServices: disabled, servicePreview: disabled, sandboxScope: 'session', backgroundJobs: false,
+    capabilities: { projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
+      shell: accountExecutionMode(ctx) === 'session-collect' ? { state: 'available' } : disabled,
+      developmentServices: services.developmentServices ? { state: 'available' } : disabled,
+      servicePreview: services.servicePreview && previewRouteSelected ? { state: 'available' } : disabled, sandboxScope: 'session', backgroundJobs: false,
       localDesktop: false, arbitraryBackendPlugins: false,
       subprocess: { spawn: false, pipes: false, control: false, inherit: false, terminal: false, consumers: [] },
       configuration: inventory.configuration,

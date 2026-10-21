@@ -103,14 +103,16 @@ function pair(): [MemorySocket, MemorySocket] {
   return [a, b]
 }
 
-function authRequest(cookie: string): IncomingMessage {
+function authRequest(cookie: string, origin = config().publicOrigin,
+  path = '/api/accessPeerFixture/identity', method = 'POST'): IncomingMessage {
   const socket = new Socket()
   cleanups.push(async () => { socket.destroy() })
   const request = new IncomingMessage(socket)
-  request.url = '/api/accessPeerFixture/identity'
-  request.method = 'POST'
-  request.headers = { host: '127.0.0.1:4100', cookie }
-  request.rawHeaders = ['Host', '127.0.0.1:4100', 'Cookie', cookie]
+  const host = new URL(origin).host
+  request.url = path
+  request.method = method
+  request.headers = { host, cookie }
+  request.rawHeaders = ['Host', host, 'Cookie', cookie]
   return request
 }
 
@@ -157,7 +159,7 @@ async function setup(
     }))
     expect(response.status).toBe(200)
     const cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-    return { cookie, principal: await auth.authenticate(authRequest(cookie), requestId) }
+    return { cookie, principal: await auth.authenticate(authRequest(cookie, settings.publicOrigin), requestId) }
   }
   const a = await signup()
   const b = await signup()
@@ -850,5 +852,177 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     fixture.lifetimeA.abort()
     await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
     expect(handle.peer.signal.aborted).toBe(true)
+  })
+
+  // New carrier lifecycle cases use ONLY this original fixture's real Better Auth/PG-issued principals.
+  // This worker does not execute this describe block or read its private DB configuration.
+  it('keeps a distinct real principal stale while the canonical original-cookie recheck refreshes carrier admission', async () => {
+    const fixture = await setup(), handle = await acquire(fixture)
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    expect(fresh).not.toBe(handle.principal)
+    const actual = Promise.withResolvers<undefined>()
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 61_000)
+    try {
+      await fixture.auth.recheckLogin(handle.principal, requestId)
+      expect(() => { fixture.auth.assertLoginCurrent(fresh, requestId) })
+        .toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+      await fixture.registry.runCarrier(handle, authRequest(fixture.cookieA), requestId, {
+        actual: actual.promise, destroy: () => {},
+        authenticate: () => fixture.auth.authenticate(authRequest(fixture.cookieA), requestId),
+        consume: async () => { fixture.registry.assertCurrent(handle, requestId) },
+      })
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      actual.resolve(undefined)
+      await vi.waitFor(() => { expect(fixture.registry.reservedCarriers).toBe(0) })
+    } finally { actual.resolve(undefined); clock.mockRestore() }
+  })
+
+  it('immediately cancels the original carrier on real sign-out while retaining its full actual and Peer Use', async () => {
+    const fixture = await setup(), handle = await acquire(fixture)
+    const observer = new AbortController(), entered = Promise.withResolvers<undefined>(), closed = Promise.withResolvers<undefined>()
+    const request = authRequest(fixture.cookieA)
+    let settled = false
+    const actual: Promise<void> = Promise.resolve().then(async () => {
+      try {
+        await fixture.registry.runCarrier(handle, request, requestId, {
+          actual, authenticate: () => fixture.auth.authenticate(authRequest(fixture.cookieA), requestId),
+          destroy: () => { observer.abort(); request.destroy() },
+          consume: async () => {
+            entered.resolve(undefined)
+            await new Promise<void>((resolve) => { observer.signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+            observer.signal.throwIfAborted()
+          },
+        })
+      } catch (_error) { /* Original ingress contains business failure; its actual includes the remaining close below. */ }
+      finally { await closed.promise; settled = true }
+    })
+    try {
+      await entered.promise
+      await fixture.auth.revokeLogin(handle.principal.authSessionId, requestId)
+      expect(observer.signal.aborted).toBe(true); expect(request.destroyed).toBe(true)
+      expect(settled).toBe(false); expect(fixture.registry.reservedCarriers).toBe(1)
+      expect(fixture.releases.size).toBe(0)
+      expect(fixture.invalidations).toContainEqual({ id: handle.principal.authSessionId, returned: true })
+    } finally { observer.abort(); closed.resolve(undefined); await actual }
+    await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+    expect(fixture.registry.reservedCarriers).toBe(0); expect(fixture.registry.reservedPeers).toBe(0)
+    expect(fixture.releases.get(fixture.a.accountId)).toBe(1)
+  })
+
+  it('rejects a different real login without running the callback and holds capacity to original actual settlement', async () => {
+    const fixture = await setup(), handle = await acquire(fixture), actual = Promise.withResolvers<undefined>()
+    const consume = vi.fn(async () => undefined)
+    try {
+      await expect(fixture.registry.runCarrier(handle, authRequest(fixture.cookieB), requestId, {
+        actual: actual.promise, destroy: () => {}, consume,
+        authenticate: () => fixture.auth.authenticate(authRequest(fixture.cookieB), requestId),
+      })).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+      expect(consume).not.toHaveBeenCalled(); expect(fixture.registry.reservedCarriers).toBe(1)
+    } finally { actual.resolve(undefined) }
+    await vi.waitFor(() => { expect(fixture.registry.reservedCarriers).toBe(0) })
+  })
+
+  it('keeps original per-login carrier capacity after body settlement until the original actual completes', async () => {
+    const fixture = await setup({ maxPeerCarriersPerLogin: 1 }), handle = await acquire(fixture)
+    const actual = Promise.withResolvers<undefined>(), refused = Promise.withResolvers<undefined>()
+    const authenticate = () => fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    try {
+      await fixture.registry.runCarrier(handle, authRequest(fixture.cookieA), requestId, {
+        actual: actual.promise, authenticate, destroy: () => {}, consume: async () => {},
+      })
+      expect(() => fixture.registry.runCarrier(handle, authRequest(fixture.cookieA), requestId, {
+        actual: refused.promise, authenticate, destroy: () => {}, consume: async () => {},
+      })).toThrow(expect.objectContaining({ code: 'cloud/capacity' }))
+      expect(fixture.registry.reservedCarriers).toBe(1)
+    } finally { actual.resolve(undefined); refused.resolve(undefined) }
+    await vi.waitFor(() => { expect(fixture.registry.reservedCarriers).toBe(0) })
+  })
+
+  it('retains the original carrier and blocked Entry when the ingress actual reports unknown cleanup', async () => {
+    const fixture = await setup(), handle = await acquire(fixture), actual = Promise.withResolvers<undefined>()
+    await fixture.registry.runCarrier(handle, authRequest(fixture.cookieA), requestId, {
+      actual: actual.promise, destroy: () => {}, consume: async () => {},
+      authenticate: () => fixture.auth.authenticate(authRequest(fixture.cookieA), requestId),
+    })
+    actual.reject(new Error('Original ingress cleanup is unconfirmed'))
+    await vi.waitFor(() => { expect(fixture.failures.length).toBeGreaterThan(0) })
+    await expect(fixture.registry.close(Date.now() + 2000)).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+    expect(fixture.registry.reservedCarriers).toBe(1); expect(fixture.registry.reservedPeers).toBe(1)
+    expect(fixture.releases.size).toBe(0)
+  })
+
+  it('settles a carrier whose real expired-cookie deletion hook invalidates that same carrier without self-joining', async () => {
+    const fixture = await setup({ authCheckTimeoutMs: 10_000, peerCloseTimeoutMs: 10_000 }), handle = await acquire(fixture)
+    await fixture.expireA()
+    const consume = vi.fn(async () => undefined)
+    let failed = false
+    const actual: Promise<void> = Promise.resolve().then(async () => {
+      try {
+        await fixture.registry.runCarrier(handle, authRequest(fixture.cookieA), requestId, {
+          actual, consume, destroy: () => {},
+          authenticate: () => fixture.auth.authenticate(authRequest(fixture.cookieA), requestId),
+        })
+      } catch (_error) { failed = true }
+    })
+    await actual
+    await vi.waitFor(() => {
+      expect(fixture.invalidations).toContainEqual({ id: handle.principal.authSessionId, returned: true })
+      expect(fixture.registry.reservedCarriers).toBe(0); expect(fixture.registry.reservedPeers).toBe(0)
+    }, { timeout: 2000 })
+    expect(failed).toBe(true); expect(consume).not.toHaveBeenCalled()
+    expect(fixture.auth.pendingOperations).toBe(0); expect(fixture.failures).toHaveLength(0)
+  })
+
+
+  it('authenticates a real preview-origin Cookie only through the fixed GET adapter and rechecks that same principal', async () => {
+    const management = 'http://console.dsh.localhost:4100', origin = 'http://preview.dsh.localhost:4100'
+    const f = await setup({ publicOrigin: management, servicePreview: { origin, cookieDomain: 'dsh.localhost' } })
+    const request = authRequest(f.cookieA, origin, '/cloud/service-preview', 'GET')
+    const principal = await f.auth.authenticateServicePreview(request, requestId)
+    expect(principal.accountId).toBe(f.a.accountId); expect(principal.authSessionId).toBe(f.a.authSessionId)
+    expect(principal).not.toBe(f.a)
+    await f.auth.recheckLogin(principal, requestId)
+    expect(() => { f.auth.assertLoginCurrent(principal, requestId) }).not.toThrow()
+    expect(() => f.auth.authenticate(request, requestId)).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+    expect(() => f.auth.authenticateServicePreview(authRequest(f.cookieA, management, '/cloud/service-preview', 'GET'), requestId))
+      .toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  })
+
+  it('invalidates a real preview-origin carrier through management library sign-out before its actual settles', async () => {
+    const management = 'http://console.dsh.localhost:4100', origin = 'http://preview.dsh.localhost:4100'
+    const f = await setup({ publicOrigin: management, servicePreview: { origin, cookieDomain: 'dsh.localhost' } })
+    const handle = await acquire(f), request = authRequest(f.cookieA, origin, '/cloud/service-preview', 'GET')
+    const observer = new AbortController(), entered = Promise.withResolvers<undefined>(), closed = Promise.withResolvers<undefined>()
+    let settled = false
+    const actual: Promise<void> = Promise.resolve().then(async () => {
+      try {
+        await f.registry.runCarrier(handle, request, requestId, {
+          actual, authenticate: () => f.auth.authenticateServicePreview(request, requestId),
+          destroy: () => { observer.abort(); request.destroy() },
+          consume: async () => {
+            entered.resolve(undefined)
+            await new Promise<void>((resolve) => { observer.signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+            observer.signal.throwIfAborted()
+          },
+        })
+      } catch (_error) { /* The original containing operation owns business failure and the remaining close below. */ }
+      finally { await closed.promise; settled = true }
+    })
+    try {
+      await entered.promise
+      const library = Reflect.get(f.auth, 'auth') as Auth
+      const reply = await library.handler(new Request(`${management}/cloud/auth/sign-out`, {
+        method: 'POST', headers: { cookie: f.cookieA, origin: management, 'content-type': 'application/json' }, body: '{}',
+      }))
+      expect(reply.status).toBe(200)
+      expect(observer.signal.aborted).toBe(true); expect(request.destroyed).toBe(true)
+      expect(settled).toBe(false); expect(f.registry.reservedCarriers).toBe(1); expect(f.releases.size).toBe(0)
+      expect(f.invalidations).toContainEqual({ id: handle.principal.authSessionId, returned: true })
+      await expect(f.auth.authenticateServicePreview(authRequest(f.cookieA, origin, '/cloud/service-preview', 'GET'), requestId))
+        .rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+    } finally { observer.abort(); closed.resolve(undefined); await actual }
+    await f.registry.closeBinding(f.bindingA, Date.now() + 2000)
+    expect(f.registry.reservedCarriers).toBe(0); expect(f.registry.reservedPeers).toBe(0)
+    expect(f.releases.get(f.a.accountId)).toBe(1); expect(f.failures).toHaveLength(0)
   })
 })

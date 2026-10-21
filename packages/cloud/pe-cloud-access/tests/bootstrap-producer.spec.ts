@@ -2,12 +2,14 @@
 import { Context } from '@deepseek-ai/cordis'
 import { CloudApiError, ExposureService, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
+import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { policyFixture } from '../../pe-cloud-runtime/tests/account-policy-fixture.ts'
 import { produceCloudBootstrap } from '../src/bootstrap-producer.ts'
 
 vi.mock('@deepseek-ai/dsh-pe-opensandbox', async original => ({
-  ...await original<typeof import('@deepseek-ai/dsh-pe-opensandbox')>(), assertClosedAccountExecution: () => {},
+  ...await original<typeof import('@deepseek-ai/dsh-pe-opensandbox')>(),
+  assertAccountExecutionProviders: vi.fn(() => {}), accountExecutionMode: vi.fn(() => 'closed'), accountServiceAvailability: vi.fn(() => ({ developmentServices: false, servicePreview: false })),
 }))
 vi.mock('../src/bootstrap-inventory.ts', () => ({ inspectBootstrapConfiguration: async () => ({
   configuration: { catalogVersion: 'producer-contract', plugins: [], skills: { manage: false },
@@ -77,6 +79,20 @@ it('preserves the old first-trial wire and does not request a content capability
   result.assertCurrent()
 })
 
+it('projects only shell from the account mode and withdraws it when the original execution providers reject', async () => {
+  const f = await fixture()
+  vi.mocked(accountExecutionMode).mockReturnValueOnce('session-collect')
+  const result = await f.produce(), disabled = { state: 'disabled', reason: 'not-approved' }
+  expect(accountExecutionMode).toHaveBeenLastCalledWith(f.graph.ctx)
+  expect(JSON.parse(result.body)).toMatchObject({ capabilities: { shell: { state: 'available' },
+    filePreview: disabled, developmentServices: disabled, servicePreview: disabled, backgroundJobs: false,
+    subprocess: { spawn: false, pipes: false, control: false, inherit: false, terminal: false, consumers: [] },
+    configuration: { plugins: [], skills: { manage: false }, credentials: { write: false }, fields: [] },
+  } })
+  vi.mocked(assertAccountExecutionProviders).mockImplementationOnce(() => { throw new Error('Original execution providers ended') })
+  expect(result.assertCurrent).toThrow('Original execution providers ended')
+})
+
 it('projects available preview only for the complete exact native file group and rechecks the original assertions', async () => {
   const create = { endpoint: 'cloudProjects/create', handlerId: 'native:cloudProjects', guard: 'authenticated-account' as const }
   const f = await fixture([...fileRpc, create], [changes]), result = await f.produce()
@@ -121,4 +137,36 @@ it('withdraws a completed projection when the original endpoint audit rejects it
   const f = await fixture(fileRpc, [changes]), result = await f.produce()
   f.auditedRpc.mockImplementation(() => { throw new CloudApiError('cloud/account-unavailable', 'Native registration ended') })
   expect(result.assertCurrent).toThrow('Native registration ended')
+})
+
+const preview: ExactFetchExposure={ method:'GET',path:'/cloud/service-preview',handlerId:'cloud:servicePreview',guard:'account-session' }
+it('permits original upload and exact preview together only after both original API requirements',async()=>{
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:true,servicePreview:true })
+  const f=await fixture([],[],[upload,preview]),r=await f.produce()
+  expect(JSON.parse(r.body)).toMatchObject({ capabilities: { developmentServices:{ state:'available' },servicePreview:{ state:'available' } } })
+  expect(f.auditedFetch).toHaveBeenCalledWith('POST',upload.path);expect(f.auditedFetch).toHaveBeenCalledWith('GET',preview.path)
+  f.auditedFetch.mockImplementation(()=>{throw new CloudApiError('cloud/account-unavailable','Original Root registration ended')})
+  expect(r.assertCurrent).toThrow('Original Root registration ended')
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:false,servicePreview:false })
+})
+it.each([{ ...preview,method:'POST' },{ ...preview,path:'/cloud/service-preview/other' }, { ...preview,handlerId:'other:preview' }, { ...preview,guard:'authenticated-account' as const }])('refuses undeclared preview variants: %j',async(row)=>{
+  const f=await fixture([],[],[row]);await expect(f.produce()).rejects.toMatchObject({ code:'cloud/account-unavailable' })
+})
+it('refuses duplicate exact Fetch and extra third routes',async()=>{
+  await expect(fixture([],[],[preview,preview])).rejects.toMatchObject({ code:'cloud/invalid-config' })
+  for(const rows of [[upload,preview,{ ...upload,path:'/extra' }]]){
+    const f=await fixture([],[],rows);await expect(f.produce()).rejects.toMatchObject({ code:'cloud/account-unavailable' }) }
+})
+it('withdraws the captured projection when the original service facts change',async()=>{
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:true,servicePreview:true })
+  const f=await fixture([],[],[preview]),r=await f.produce()
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:true,servicePreview:false })
+  expect(r.assertCurrent).toThrow()
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:false,servicePreview:false })
+})
+it('keeps preview disabled for missing route or original provider despite declarations',async()=>{
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:true,servicePreview:true })
+  let f=await fixture(),r=await f.produce();expect(JSON.parse(r.body)).toMatchObject({ capabilities: { servicePreview: { state: 'disabled' } } })
+  vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:false,servicePreview:false })
+  f=await fixture([],[],[preview]);r=await f.produce();expect(JSON.parse(r.body)).toMatchObject({ capabilities: { servicePreview: { state: 'disabled' } } })
 })

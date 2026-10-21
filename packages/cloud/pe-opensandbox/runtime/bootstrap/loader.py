@@ -1,0 +1,16 @@
+import hashlib,os,stat,sys
+if os.getuid()!=0 or os.geteuid()!=0 or os.getgid()!=0 or os.getegid()!=0: raise RuntimeError('root required')
+d=os.open('/root-secret',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC|os.O_NOFOLLOW)
+s=os.fstat(d)
+if s.st_uid!=0 or s.st_gid!=0 or stat.S_IMODE(s.st_mode)!=0o700: raise RuntimeError('directory refused')
+a=os.open('.bootstrap',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC|os.O_NOFOLLOW,dir_fd=d)
+s=os.fstat(a)
+if s.st_uid!=0 or s.st_gid!=0 or stat.S_IMODE(s.st_mode)!=0o700: raise RuntimeError('stage refused')
+f=os.open('publisher.py',os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW,dir_fd=a)
+s=os.fstat(f)
+if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_gid!=0 or stat.S_IMODE(s.st_mode)!=0o600 or s.st_nlink!=1 or s.st_size!=6696: raise RuntimeError('publisher refused')
+b=os.read(f,6696+1)
+os.close(f);os.close(a);os.close(d)
+if len(b)!=6696 or hashlib.sha256(b).hexdigest()!='548f66afdd2474eb87460a27f321f883bbf2acd9de56867a1c3bd2adc0d67f93': raise RuntimeError('publisher hash refused')
+sys.argv=['/root-secret/.bootstrap/publisher.py']
+exec(compile(b,'/root-secret/.bootstrap/publisher.py','exec'),{'__name__':'__main__','__file__':'/root-secret/.bootstrap/publisher.py'})

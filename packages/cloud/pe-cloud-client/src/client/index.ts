@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installCloudProjects } from './projects.ts'
 import { installCloudFileDownloads } from './downloads.ts'
+import { installCloudServicePreviews } from './service-previews.ts'
 
 /** Stable browser plugin name. */
 export const name = 'pe-cloud-client/client'
@@ -26,6 +27,7 @@ export function apply(ctx: Context, config: Config): void {
   owner.activate(ctx)
   installCloudProjects(ctx)
   installCloudFileDownloads(ctx, owner)
+  installCloudServicePreviews(ctx, owner)
 }
 
 export { CloudPagePersistence, CloudPersistenceError } from './persistence.ts'
@@ -39,3 +41,4 @@ export type { CloudNativeEntry, CloudPageLifetimeInput, CloudPageSnapshot } from
 export { PreparedCloudPage } from './prepared-page.ts'
 export { ClientFailure, type ClientFailureCode } from './errors.ts'
 export type { CloudPagePreparation, CloudPagePreparationInput, CloudPreparedNativeOptions } from './prepared-page.ts'
+export type { CloudServicePreviewNavigation, CloudServicePreviewSelection } from './service-preview.ts'

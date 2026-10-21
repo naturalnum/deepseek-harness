@@ -3,7 +3,10 @@ import type {
   ClientTransportHooks, ConnectionWebSocket, ConnectionWebSocketFactory, RpcFetch,
 } from '@deepseek-ai/dsh-client-connection/client'
 import type { BindingFieldNames, RequestExpectation } from '@deepseek-ai/dsh-pe-cloud-access/types'
-import type { CloudClientConfig } from '../types.ts'
+import type { CloudClientConfig, CloudServicePreviewPolicy } from '../types.ts'
+import { parseServicePreviewPolicy } from '../preview-policy.ts'
+import type { CloudServicePreviewSelection } from './service-preview.ts'
+import { servicePreviewUrl } from './preview-url.ts'
 import type { BootstrapAttempt } from './bootstrap.ts'
 import { ClientFailure, type ClientFailureCode } from './errors.ts'
 import { readResponse, cancelResponseReader } from './read-response.ts'
@@ -13,6 +16,8 @@ export interface BoundTransportInput {
   readonly baseUrl: string
   readonly expectation: RequestExpectation
   readonly fields: BindingFieldNames
+  /** Optional exact Root navigation policy; never widens ordinary HTTP/WS targets. */
+  readonly servicePreview?: Readonly<CloudServicePreviewPolicy>
   readonly fetch: RpcFetch
   readonly createWebSocket: ConnectionWebSocketFactory
   readonly limits: Pick<CloudClientConfig, 'maxPendingFetches' | 'maxSockets' | 'maxErrorResponseBytes' | 'closeTimeoutMs'>
@@ -46,6 +51,7 @@ export class BoundTransport {
   private readonly base: URL
   private readonly expectation: Readonly<RequestExpectation>
   private readonly fields: Readonly<BindingFieldNames>
+  private readonly preview: Readonly<CloudServicePreviewPolicy> | undefined
   private readonly limits: BoundTransportInput['limits']
   private readonly abort = new AbortController()
   private readonly pending = new Set<Promise<Response>>()
@@ -71,6 +77,8 @@ export class BoundTransport {
     }
     this.expectation = Object.freeze({ ...input.expectation })
     this.fields = Object.freeze({ ...input.fields })
+    this.preview = input.servicePreview === undefined ? undefined : parseServicePreviewPolicy(input.servicePreview)
+    if (this.preview !== undefined && this.preview.managementOrigin !== this.base.origin) throw new ClientFailure('target-denied')
     this.limits = Object.freeze({ ...input.limits })
     const send = input.fetch
     const createSocket = input.createWebSocket
@@ -97,6 +105,17 @@ export class BoundTransport {
   navigationUrl(input: string | URL): string {
     this.assertOpen()
     return this.bindQuery(this.target(input, false)).href
+  }
+
+  /**
+   * Build a preview navigation URL only while this transport is open and has an explicit preview policy.
+   * @param selection Original Session/handle pair.
+   * @returns Exact preview GET URL using this carrier's immutable C02 values.
+   */
+  servicePreviewNavigationUrl(selection: CloudServicePreviewSelection): string {
+    this.assertOpen()
+    if (this.preview === undefined) throw new ClientFailure('target-denied')
+    return servicePreviewUrl(selection, this.preview, this.fields, this.expectation)
   }
 
   /**

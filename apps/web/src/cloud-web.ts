@@ -42,6 +42,7 @@ export class CloudWebEntry {
   private readonly exit: HTMLButtonElement
   private readonly check: HTMLButtonElement
   private readonly notice: HTMLParagraphElement
+  private readonly previewNotice: HTMLParagraphElement
   private readonly localeObserver: MutationObserver
   private readonly lifetime = new AbortController()
   private readonly fetch = globalThis.fetch.bind(globalThis)
@@ -60,7 +61,7 @@ export class CloudWebEntry {
   private stopping = false
   private disposed = false
   private phase: Phase = 'checking'
-  private issue: 'invalidCredentials' | 'requestTooLarge' | undefined
+  private issue: 'invalidCredentials' | 'requestTooLarge' | 'previewClosed' | 'previewDenied' | undefined
   private nativeLanguage = false
 
   /**
@@ -103,10 +104,13 @@ export class CloudWebEntry {
     this.notice = element('p', styles.notice)
     this.notice.setAttribute('role', 'status')
     this.notice.setAttribute('aria-live', 'polite')
+    this.previewNotice = element('p', styles.notice)
+    this.previewNotice.setAttribute('role', 'status')
+    this.previewNotice.setAttribute('aria-live', 'polite')
     this.emailField.append(this.emailLabel, this.email)
     this.passwordField.append(this.passwordLabel, this.password)
     this.form.append(this.title, this.emailField, this.passwordField, this.submit, this.notice, this.check)
-    this.chrome.append(this.exit)
+    this.chrome.append(this.previewNotice, this.exit)
     this.content.append(this.form)
     root.before(this.shell)
     root.classList.add(styles.native as string)
@@ -171,10 +175,23 @@ export class CloudWebEntry {
     let page: PreparedCloudPage | undefined
     let preparation: CloudPagePreparation | undefined
     try {
+      const open = this.doc.defaultView?.open.bind(this.doc.defaultView)
       preparation = cloud.PreparedCloudPage.prepare({
         baseUrl: this.baseUrl(), config: manifest.client, decodeLimits: manifest.decodeLimits,
         persistenceLimits: manifest.persistenceLimits, fields: manifest.fields,
         storage: globalThis.localStorage, fetch: this.fetch, createWebSocket: url => new WebSocket(url),
+        ...open === undefined ? {} : { previewNavigation: {
+          open: (url: string) => {
+            if (this.stopping || this.disposed || this.phase !== 'running') throw new cloud.ClientFailure('closed')
+            open(url, '_blank', 'noopener,noreferrer')
+            this.issue = undefined
+            this.render()
+          },
+          refused: (code: 'closed' | 'target-denied') => {
+            this.issue = code === 'closed' ? 'previewClosed' : 'previewDenied'
+            this.render()
+          },
+        } },
       }, this.lifetime.signal)
       this.preparation = preparation
       page = await preparation.ready
@@ -392,6 +409,9 @@ export class CloudWebEntry {
     this.passwordLabel.textContent = copy.password
     this.submit.textContent = copy.signIn
     this.exit.textContent = copy.signOut
+    const previewIssue = this.issue === 'previewClosed' || this.issue === 'previewDenied' ? this.issue : undefined
+    this.previewNotice.hidden = previewIssue === undefined
+    this.previewNotice.textContent = previewIssue === undefined ? '' : copy[previewIssue]
     this.check.textContent = copy.check
     this.emailField.hidden = !login
     this.passwordField.hidden = !login

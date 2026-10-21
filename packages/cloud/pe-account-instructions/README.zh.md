@@ -27,6 +27,7 @@ kind: "package-reference"
 
 账户准备通过 `/session` 导出的 `new AccountInstructionSources(ctx, input)` 传入精确装配 binding、共享活跃 Agent 检查及 files 持有者的 `withSources` 操作。该操作预留完整快照存储，并交付各来源独立的受限 reader、真实原生 Workspace id 及已提交的原生 cwd。适配器须在原 Agent/Workspace 核验及来源预留内，用原生 `WorkingDirectory.get(agent.session)` 捕获 cwd；Session header、项目根或 home 都不能替代它。构造过程不创建来源权限。准备缺失、过期或属于其他图时，`/session` 以 `cloud/invalid-config` 拒绝激活。真实适配接通前保持此行禁用，并排除原生自动指令发现。根入口只导出配置及指令数据类型，不挂载行为。
 
+<a id="minimal-configuration"></a>
 ### 最小配置
 
 Loader 配置行激活前必须存在已准备的持有者。[配置 schema](src/config.ts) 要求显式提供下列五个限制；值必须为正安全整数。这些限制不替代 files 持有的全局/账户准入、流 credit 或实际存储隔离。

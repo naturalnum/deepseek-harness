@@ -10,6 +10,7 @@ import { AuthAccessError } from './auth-error.ts'
 import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
 import { CloudIngress } from './ingress.ts'
 import type { IngressObservation } from './types.ts'
+import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
 
@@ -87,6 +88,15 @@ export class PeAuthService extends Service {
         state: 'absent' as const, current: false, registeredRoutes: 0, pendingOperations: 0,
       }) },
     })
+  }
+
+  /**
+   * Inspect the original shared ingress's registered Root Fetch entries for trusted account preparation.
+   * @returns Actual current registrations; this creates neither a route nor business admission.
+   */
+  inspectRootFetch(): readonly ExactFetchExposure[] {
+    if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+    return this.ingress.inspectRootFetch()
   }
 
   /**

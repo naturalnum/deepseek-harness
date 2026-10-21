@@ -109,12 +109,38 @@ export type ParticipantReceipt = Readonly<{
 export interface DrainParticipant {
   readonly id: ParticipantId
   /**
+   * Join all Root-owned work, including allocations not mounted in an account graph.
+   * Required before borrowing the Root metadata database. Repeated calls retain the same actual
+   * shutdown promise; rejection or pending work prevents database release and participant withdrawal.
+   * @returns Actual Root quiescence, without treating an observation deadline as completion.
+   */
+  closeRoot?(): Promise<void>
+  /**
    * Stop this generation's admission and queued/running work; unknown keeps cleanup ownership.
    * @param binding Exact account generation being drained.
    * @param deadlineAtMs Finite absolute server-time deadline in milliseconds.
    * @returns Actual-work evidence; confirmed requires no pending operation ids.
    */
   stopEpoch(binding: AccountBinding, deadlineAtMs: number): Promise<ParticipantReceipt>
+}
+
+/** Root-only parameterized statements sharing runtime's finite connection and shutdown ownership. */
+export interface RootMetadataDatabase {
+  /**
+   * Classify the actual Root adapter's zero-submission failure without importing its Host implementation.
+   * @param cause Rejection from this query capability, including a revoked borrow.
+   * @returns True only for the adapter's known never-submitted, settled operation.
+   */
+  wasNotSubmitted(cause: unknown): boolean
+  /**
+   * Submit one statement owned by a registered Root participant, never account/request-selected SQL.
+   * The actual connection closes before settlement; a rejected submitted write can remain unknown.
+   * Existing borrowers retain cleanup access during Root drain until their closeRoot work settles.
+   * @param text Fixed SQL owned by the participant's metadata store.
+   * @param values Bound text/null values; no target, credential or driver lifetime is exposed.
+   * @returns Actual driver rows, requiring the owning store's durable-value validation.
+   */
+  query(text: string, values: readonly (string | null)[]): Promise<{ readonly rows: readonly unknown[] }>
 }
 
 /** Explicit deployment capacities; these fields carry no storage or readiness evidence. */
@@ -192,6 +218,13 @@ export interface RootRecipeObservation {
 
 /** Shared service definition; providers need no dependency on Host control implementation. */
 export interface AccountRuntimeService {
+  /**
+   * Borrow the active Root's bounded database for an exactly registered Root shutdown owner.
+   * Account graphs receive no such capability; borrowing grants no account or execution authority.
+   * @param participant Original registered object with an actual idempotent closeRoot implementation.
+   * @returns The immutable Root-only query capability; it cannot close or retarget the driver.
+   */
+  controlDatabase(participant: DrainParticipant): RootMetadataDatabase
   /**
    * Audit actual Root facts; missing real storage keeps sealing rejected.
    * @param input Fixed requirements and original object identities, never caller readiness assertions.

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-组合维护者可以明确关闭云端执行，同时装配必需的原生拒绝提供方。每个 Shell 和子进程请求都会在执行准备前失败，不创建沙盒或联系后端。启用执行仍不可用，只有空需求列表不能使账户就绪。
+组合维护者可以选择原生拒绝提供方，或开发中的 Root 会话执行路径。关闭模式在准备前拒绝每个 Shell 和子进程请求，不创建沙盒或联系后端。受管模式要求原始受保护部署及目标验收；只有空需求列表不能使账户就绪。
 
 ## 目录
 
@@ -25,17 +25,27 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `dsh` profile 组合中挂载 `/root` 和 `/account`。显式 `mode: closed` 会注册实际根执行拥有者，并为每个账户装配各一个原生 ShellExecutor 与 SubprocessRuntime。没有配置能够开启执行；省略关闭模式或声明非空必需能力都会以 `cloud/execution-unavailable` 阻止启动。
+在 `dsh` profile 组合中挂载 `/root` 和 `/account`。显式 `mode: closed` 会注册实际根执行拥有者，并为每个账户装配各一个原生 ShellExecutor 与 SubprocessRuntime。仅靠配置不能开启执行；省略模式或声明所选拥有者不支持的必需能力都会阻止启动。
+
+`/types` 入口提供 `ServicePreviewIdentity`，沿用原分配和 Session 的品牌化标识，并声明 `DevelopmentServiceId` 以及有界应用读取和已登记服务的定义。身份不授予权限；访问仍须持有执行拥有者当前签发的能力。访问适配层附加其已审计的 HTTP 暴露项及浏览器响应策略。原生开发服务工具仅将最终有界的任务句柄、操作及进程提交观察投影为展示元数据；基础设施标识和预览 URL 不进入模型结果或元数据。
 
 ### 配置与失败
 
-两个入口都要求显式关闭模式和空能力声明。[schema](src/config.ts) 唯一持有允许的取值；声明不能验证执行能力。
+已部署的关闭配方要求显式关闭模式和空能力声明。[schema](src/config.ts) 唯一持有允许的取值；声明不能验证执行能力。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `mode` | 省略时启动失败 | 仅支持 `closed`，全部执行保持禁用。 |
+| `mode` | 省略时启动失败 | `closed`，或开发中的 `session-collect`；后者还须原始且受保护的 Root 部署能力。 |
 | `requiredCapabilities` | 必填 | 关闭模式下必须为空；任何必需能力都会阻止装配。 |
 | `maxBoundAccounts` | 根入口必填 | 同时开放准入的精确账户代际数量，必须为有限正整数。 |
+| `managed` | 受管根入口必填 | 显式受管限额，由严格解析器在构造拥有者前验证；该 JSON 不提供部署授权。 |
+| `rootDeployment` | 普通受管 Root 必填 | `{ path, sha256 }` 引用受保护的 Root 输入。缺省时须有原始内部部署能力；同时提供两种来源会被拒绝。关闭模式及在账户图中挂载 Root 均拒绝此引用。 |
+
+开发中的 `session-collect` 路径要求原始 `ManagedExecutionDeployment` 能力。普通 Loader 输入提供显式且受保护的 `rootDeployment` 引用，由 Root 据此构造原始能力；JSON 本身不提供授权。将原始对象作为第三个参数传给 Root `apply` 仅用于可信内部组合。Root 等待实际迁移和恢复检查；账户入口确认原始 port 与所选模式一致，才安装 Shell、subprocess 和固定远端 ShellEnv 提供方。实际部署与原生网页仍待验收，当前生产配方保持关闭。
+
+私有 [Root SDK 工厂](src/bootstrap/factory.ts) 加载随包发布于 `runtime/agent` 和 `runtime/bootstrap` 的九份固定 Python 资产，仅从构建后的 `lib` 模块旁定位。文件缺失、为链接或 hash 不符时，在 HTTP 工作之前拒绝；不回退到源码树，也不下载资产。工厂保留原 bootstrap、认证登记器与 SDK 后端的拥有关系，不提供 files 导出授权或账户准入，也不改变关闭的生产配方。
+
+原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。装配收养原继承 FD4 keeper，绑定原 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
 
 runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，可信工厂将安装后的精确对象及图当前性检查传给根协调器的 `bindAccount`，再在账户入口之前调用 `installAccountExecutionPort`。绑定或 port 缺失、复制、跨图或被影子替换都会失败；重复提供方或容量耗尽也会失败。关闭登记不替代其他账户就绪检查。
 
@@ -52,6 +62,20 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 [根拥有者](src/closed-owner.ts) 保留精确登记和永久准入状态，依赖中没有执行后端或进程启动器。停止已知登记时会关闭其 port，并保留该拥有者本代无工作事实的观察；未知或克隆绑定被拒绝。根卸载先关闭全部 port 再撤销参与者；账户卸载只关闭自己的 port。这些观察不能证明较早拥有者或代际的资源。
 
 [原生提供方](src/closed-providers.ts) 共用该 port，拒绝所有方法，包括可执行文件查找和终端准备。spawn 同步拒绝；异步方法返回被拒绝的 Promise，已预先取消的调用者保留原始原因。内部[作用域签发器](src/scopes.ts) 仍单独存在：作用域撤销不能证明分配或进程已停。
+
+私有[分配拥有者](src/allocation-owner.ts) 按账户、原生 Session 和代际合并完整的持久意图、创建及认证准备流程。等待者取消后，迟到或不确定工作仍由它保留；只有后端实际停止和原始终结元数据写入完成，才释放挂载预留。Loader 入口不将此组件开放为已启用的后端。
+
+私有[命令操作](src/command-operation.ts) 同步提供准备中的 subprocess 句柄，并为 Shell 单独保留提交命令前的发布步骤。直接进程退出且收集流 EOF 后结算 subprocess 的 `done`；完整范围及本地 I/O 结束后结算独立的范围完成凭据。[Shell 投影](src/shell-execution.ts) 等待该完整范围。输出保持有界，直到原生结果拥有者释放；撤销后拒绝公开访问，未知清理仍由 Root 保留。账户内的[工具调用传播](src/native-calls.ts) 将这些操作跨异步等待绑定到原始 registry token、Agent、Session 和项目。
+
+私有[开发服务消费者](src/dev-service-consumer.ts) 要求显式完整的 `commands.services` 策略和原生工具 provider。严格解析配置后，Root 接入原 managed 拥有者的回调；省略策略时该消费者保持关闭。它复用该拥有者现有的工作记录和 subprocess provider，在8000端口运行项目相对路径的 Python HTTP 脚本。启动只报告进程已提交，HTTP 就绪单独判断；状态、有界日志和停止都指向同一保留操作。固定的安装与服务 payload 声明前台命令、已登记服务各一个运行范围，角色由 Root 签发，运行时限分别为150秒、120秒，绝对驻留时限300秒。这四个生命周期记录及已做组件检查的限制，不代表完整 Session 生命周期或真实服务隔离已通过。
+
+原服务记录只绑定一次分配，并独立于工具调用持有有界应用读取。可选的 `commands.services.application` 显式提供全局、账户和服务请求数量及全部 HTTP 传输限额，不授予网络权限。私有 [HTTP 适配器](src/application-http.ts) 只允许通过 Root 选定的服务器执行 GET，使用固定目标身份、有界缓冲区和实际本地 I/O 终结凭据。Root 在传输前预留全局、账户请求数量，并计入命令输出共用的原 resident 字节池。公开的 `withAccountApplicationService` helper 要求原始已安装账户 port 和 provider。固定控制跳显式退出访问续期，不接受调用方提供该控制头。服务停止、作用域释放和记录退休会取消读取，并等待其实际终结；清理未知时保留原记录和容量。缺少 Root 回调时，读取保持关闭。适配器和记录检查不代表已部署代理、浏览器授权或工作负载网络隔离通过验收。
+
+启用开发服务的执行账户条目要求 `inject: ['tools']`；未选择服务及关闭模式条目保留原依赖声明。`accountServiceAvailability(ctx)` 检查原始已安装消费者和应用工厂，不创建工作。工具定义、安装位置或实际消费位置的 Tools provider 被替换时，拒绝检查。
+
+现有 HTTP 定时器扣除原操作、服务角色、原 ingress 请求的剩余时限，以及在首次 bootstrap 前捕获的保守驻留期限。预留和已提交观察均不重新开始计时。物理沙盒到期单独处理：提前到期沿用原请求失败和物理停止确认流程，不能仅因时间到期就释放容量。
+
+私有[受管协调器](src/managed-coordinator.ts) 通过原始延迟原生授权和 files 授权连接这些拥有者，活跃进程槽与保留输出分别释放。Root 启动时先检查持久化的非终态分配，再允许就绪；关闭时等待启动、分配、传输和元数据责任实际结束。[SDK 适配器](src/sdk-lifecycle.ts) 在唯一且受验证的物理 DELETE 前关闭并等待特权启动请求。[受信运行时登记器](src/trusted-runtime.ts) 保留普通认证请求直到本地实际结束；只有物理删除不能释放命令容量。有界[数据传输器](src/agent-data/index.ts) 保留原始字节坐标与原操作引用。其 Loader 安装仍要求原始受保护部署；组件安装本身不代表原生网页服务执行已通过验收。
 
 </details>
 
@@ -73,7 +97,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 #### 模型会看到什么
 
-本包不注册模型工具或 Session 事件。模型不能通过配置或复制作用域来开启执行。若其他已装配的原生工具请求执行，会收到 `Cloud execution is disabled by this deployment.`。
+关闭模式不注册模型工具或 Session 事件。模型不能通过配置或复制作用域来开启执行。若其他已装配的原生工具请求执行，会收到 `Cloud execution is disabled by this deployment.`。开发中的私有消费者只有在 Root 通过原执行拥有者显式安装后才添加 `dev_service`；其启动结果不承诺 HTTP 已就绪。
 
 #### Token 影响
 
@@ -89,10 +113,10 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 关闭模式是受限部署配置，不是已验证的远端执行。
 
-- 全部执行模式和消费者保持禁用。开放任何模式都需要持久分配对账、完整部署配置、目标通道与隔离证据，以及受管范围停止。
+- 默认关闭配方不开放执行。受管操作仍要求持久分配对账、完整部署配置、目标通道与隔离证据，以及受管范围停止。
 - 关闭排空观察只覆盖其精确登记的本代，不提供分配、远端停止或恢复证明，也不能清除旧未知工作。账户就绪和恢复仍由 runtime 持有。
 - 原生默认 Bash 执行器依据 subprocess 的 `done` 结算，而该值不能证明所有后代均已停止。Shell 准备与作用域完成仍需要显式、兼容的适配器。
-- OpenSandbox 的文本命令流不能提供原生 subprocess 所需的完整原始管道/control 或受管范围观察。本包不提供可启用的执行协议、宿主回退或自动恢复。
+- OpenSandbox 的文本命令流不能提供原生 subprocess 所需的完整原始管道/control 或受管范围观察。受限的受管 collect 通道不提供交互管道、终端、宿主回退或自动恢复。
 
 <a id="dev-note"></a>
 ### 开发备注

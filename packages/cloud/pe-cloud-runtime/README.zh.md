@@ -43,6 +43,8 @@ kind: "package-reference"
 
 函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。原生准备期间，factory 从精确安装的 binding 签发该 coordinator 的屏障，并在实际保存及其余账户排空检查完成前持续持有。
 
+`controlDatabase(participant)` 向精确登记且实现 `closeRoot()` 的根拥有者提供不可变参数化查询能力，共用 runtime 的有界 PG executor；不暴露凭据、目标选择或驱动关闭权，也不向账户图提供数据库能力。根关闭先等待账户排空和保留的根工作结束，再关闭 executor；参与者撤销也等待其实际根关闭。关闭待定或失败时保留登记和数据库责任。既有借用者可在排空期间完成清理；撤销完成后的查询在提交前拒绝。`wasNotSubmitted(cause)` 仅识别实际适配器已结束且未提交 SQL 的错误，不引入对 Host 实现的依赖。
+
 `locateAccount()` 读取实际 PG 元数据；`acquireAccount()` 在领取 owner 或创建原生图前要求当前配方已封口，再用根选定输入进入保留型 factory。`borrowAccount(binding)` 要求配方封口，并为登录 Peer 独立借用精确的 ready 代际；它不会领取 owner、装配账户或替换为较新的图。`assertMountCurrent()` 检查已安装的准备期/当前身份；`assertBusinessCurrent()` 还要求配方封口和 factory 的 ready 状态。根控制面 active 或原生 mounted 均不发布账户 ready。
 
 Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记归调用 fiber 所有，重复项会被拒绝。缺参与者时拒绝装配容量预留；通过此检查不等于配方封口。配置保存使用 API 单独持有的屏障，不是第三个参与者。
@@ -135,6 +137,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 私有[装配桥](src/account-mount.ts)将 Profile 目录、patch、home 和默认项目候选与唯一布局核对，并把同一个原生 `LaunchEnvironmentSnapshot` 对象交给 boot。私有[工厂](src/account-factory.ts)为每个账户保留一次实际操作。即使每次创建新的 request 外壳，只要账户/实例/配方值及可信资源引用一致，调用仍会合并；不同 binding、配方、环境或部署输入会拒绝。有界、可撤销的等待者共享一次结算订阅；截止或观察者取消均不停止装配或释放其容量。
 
 Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。 固定私有 `ACCOUNT_NATIVE_ENTRIES.workspaceFiles` builtin 只在配方显式安装该入口时激活。它保留原生 WorkspaceFiles 的 Config 和全部 inject，额外要求 `peCloudApi`，并经原 API owner 构造不变的原生服务。配方须安装真实 sandbox-policy provider，显式选择部署模式和 fallback root；该 fallback 不授予项目权限。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。受限 files lane 构造原始 `CloudAccountFiles`，其 `/account` 入口持有原生 Registry/default/FS 安装。API 业务准入后，目录准备从原始已登记 Workspace 派生 `projectFor(workspace)`，并在 await 后复核 binding、owner 和 Workspace；新派生能力 wrapper 不要求对象身份相同。指令准备先选择 Agent 的 Workspace，再保留完整 snapshot 预算，并在 reservation 内使用同步共享检查。原生依赖可能在 files 初始化期间激活，必需入口检查与业务准入仍阻止不完整发布。缺 files 或共享 guard 时保持关闭。
+
+原认证拥有者提供 Root Fetch 检查时，私有账户准备过程捕获该拥有者，只向 API 传入其只读注册回调。更换或撤回会拒绝下一次检查；账户图中不安装 Root 服务或 Context，此读取也不创建请求或分配。
 
 选中清单包含 `cloudProjects/create` 时，准备阶段要求原始 `borrowAccount` 回调。处理器检查 Root 和业务 current，借用精确 ready account，完整等待原 files owner 的创建，核验返回的原生 Workspace，并返回原生 WorkspaceValue。创建 Promise 结算后才在 `finally` 释放原 borrow，包含 abort 和错误路径。不选中该端点时无需创建 borrow。
 

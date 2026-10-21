@@ -72,7 +72,7 @@ export class CloudFileDownload {
     const control = new AbortController()
     const operation = { control, task }
     this.operation = operation
-    void this.perform(control.signal).then(finish, cause => finish({ kind: 'failed', reason: 'browser', cause }))
+    void this.perform(control.signal).then(finish, (cause: unknown) => { finish({ kind: 'failed', reason: 'browser', cause }) })
     void task.then(() => {
       if (this.operation === operation) this.operation = undefined
     })
@@ -116,6 +116,7 @@ export class CloudFileDownload {
   }
 
   private async perform(signal: AbortSignal): Promise<CloudFileDownloadResult> {
+    const cancelled = (): boolean => signal.aborted
     const { sessionId, resourceAddress, readBytes, maxFileBytes } = this.input
     const file = parseFileAddress(resourceAddress)
     if (file?.scope !== 'session' || file.sessionId !== sessionId || file.path.length === 0) {
@@ -139,7 +140,7 @@ export class CloudFileDownload {
       const handedOff = new Promise<void>((released) => {
         this.lease = { url, released, timer: setTimeout(() => { this.releaseUrl() }, 0) }
       })
-      if (signal.aborted) return { kind: 'cancelled' }
+      if (cancelled()) return { kind: 'cancelled' }
       anchor = document.createElement('a')
       anchor.href = url
       anchor.download = name
@@ -149,7 +150,7 @@ export class CloudFileDownload {
       anchor.click()
       // Give the browser one task to consume the download before releasing the URL.
       await handedOff
-      return signal.aborted ? { kind: 'cancelled' } : { kind: 'started' }
+      return cancelled() ? { kind: 'cancelled' } : { kind: 'started' }
     } finally {
       anchor?.remove()
       this.releaseUrl()

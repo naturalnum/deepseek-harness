@@ -36,13 +36,33 @@ export interface StaticStorageDomain {
 }
 
 /** One fixed authentic account assignment, not a request-selected disk or a second account database. */
-export interface StaticStorageAccount {
+export interface StaticStorageAccountV1 {
   readonly accountId: AccountId
   readonly storageKey: AccountStorageKey
   readonly accountRoot: string
   readonly private: StaticStorageDomain
   readonly projects: StaticStorageDomain
 }
+
+/** One preprovisioned independent filesystem; its private ownership record is never mounted into execution. */
+export interface StaticEnvironmentSlot {
+  readonly slotId: string
+  readonly domain: StaticStorageDomain
+}
+
+/** A finite protected inventory, not a list of free slots or permission to create filesystems. */
+export interface StaticEnvironmentBank {
+  readonly bankId: string
+  readonly slots: readonly StaticEnvironmentSlot[]
+}
+
+/** Version two requires a bank for each authentic account; version one grants no execution storage. */
+export interface StaticStorageAccountV2 extends StaticStorageAccountV1 {
+  readonly environmentBank: StaticEnvironmentBank
+}
+
+/** Account selectors follow their protected deployment record version. */
+export type StaticStorageAccount = StaticStorageAccountV1 | StaticStorageAccountV2
 
 /** Explicit bounded auxiliary writable filesystem in the application view. */
 export interface StaticStorageAuxiliary {
@@ -52,19 +72,32 @@ export interface StaticStorageAuxiliary {
 }
 
 /** Protected root deployment record, written only after actual preallocation, fsync and permission setup. */
-export interface StaticStoragePlan {
-  readonly version: 1
+interface StaticStoragePlanFields {
   readonly recipeVersion: string
   readonly appUid: number
   readonly appGid: number
   readonly arenaReserveBytes: string
   readonly arena: StaticStorageDomain
   readonly control: StaticStorageDomain
-  readonly accounts: readonly [StaticStorageAccount, StaticStorageAccount]
   readonly baseConfigPath: string
   readonly installAnchor: string
   readonly auxiliary: readonly StaticStorageAuxiliary[]
 }
+
+/** Existing closed-execution deployment record, preserved without added fields. */
+export interface StaticStoragePlanV1 extends StaticStoragePlanFields {
+  readonly version: 1
+  readonly accounts: readonly [StaticStorageAccountV1, StaticStorageAccountV1]
+}
+
+/** Remote execution requires these additional independently verified persistent domains. */
+export interface StaticStoragePlanV2 extends StaticStoragePlanFields {
+  readonly version: 2
+  readonly accounts: readonly [StaticStorageAccountV2, StaticStorageAccountV2]
+}
+
+/** Explicit record versions; a v1 deployment can never infer an environment bank. */
+export type StaticStoragePlan = StaticStoragePlanV1 | StaticStoragePlanV2
 
 /** Exact closed-FD probe ABI1 facts. Decimal strings keep kernel-sized quantities lossless. */
 export interface StorageProbeFacts {

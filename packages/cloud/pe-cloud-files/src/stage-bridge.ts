@@ -35,7 +35,12 @@ export interface StageBatchPlan {
   readonly files: readonly { readonly source: StageSource; readonly file: FdStageFile; readonly relativePath: string }[]
 }
 
-/** Validate every field before optional staging is enabled; there are no inferred deployment capacities. */
+/**
+ * Validate every field before optional staging is enabled; there are no inferred deployment capacities.
+ * @param limits Explicit helper, source, batch, deadline and reservation bounds.
+ * @param pathLimit Existing worker path-byte ceiling, also applied to the helper path.
+ * @param chunkBytes Existing transfer chunk size, bounded by both file and source limits.
+ */
 export function validateStagingLimits(limits: FdStagingLimits, pathLimit: number, chunkBytes: number): void {
   if (typeof limits.helperPath !== 'string' || !limits.helperPath.startsWith('/') || !limits.helperPath.endsWith('.node')
     || limits.helperPath.includes('\0') || Buffer.byteLength(limits.helperPath) > pathLimit

@@ -20,6 +20,8 @@ The private native boot adapter installs an independent `ProfileContext`, launch
 
 The runtime root registers exactly two required participant categories: `files` and `execution`. Contributions belong to their caller's Cordis effect and disappear when that effect is disposed. Duplicate registration and missing participants reject mount-capacity reservation.
 
+`RootMetadataDatabase` is a runtime-issued parameterized-query capability for an original Root participant with `closeRoot()`. It shares the runtime executor without exposing credentials, database selection or driver closure. Withdrawal and Root shutdown join that participant's actual cleanup before revoking its borrowed capability; unresolved cleanup retains ownership. Its `wasNotSubmitted()` predicate recognizes only the original adapter's settled failures before SQL submission.
+
 `ParticipantReceipt` identifies its account, epoch, participant and evidence. A confirmed receipt has no pending operation ids. An unknown receipt retains pending work and a reason; a request deadline or rejected wait does not establish that actual work stopped.
 
 Local mount and drain reservations bound concurrent work. Settling mount work releases its operation slot; the mounted-account slot remains reserved until its owner releases it after actual cleanup. These reservations do not acquire a database owner or establish account readiness.
@@ -39,6 +41,10 @@ Trusted runtime preparation installs `CloudAccountApi` with the exact account bi
 
 The native Session adapter preserves original dispatch, DTOs and Session state while guarding actual effects. Its awaited directory preparation uses the account's fixed files capability before Agent creation. Production routing, project/Preset/model checks, actual native inventory and durable storage authority remain required before account publication.
 
+`CloudProjectCreateRequest` carries only an optional title; `CloudProjectsPreparation` captures the trusted allocator used by `CloudProjectsService` ([declarations](../../packages/cloud/pe-cloud-api/src/cloud-projects.ts), [request](../../packages/cloud/pe-cloud-api/src/types.ts)). `NativeUploadPreparation` supplies the pending-receipt limit and awaited stream-persistence hook while the native upload service owns receipts ([declaration](../../packages/cloud/pe-cloud-api/src/native-uploads.ts)).
+
+Files-owned `ResidentResult<T>` pairs a value with its reservation release ([declaration](../../packages/cloud/pe-cloud-files/src/work-queue.ts)). `StageFileResult` pairs native staging facts with the attachment ref and project-relative copy path ([declaration](../../packages/cloud/pe-cloud-files/src/stage-bridge.ts)); `InstructionReadReaders` supplies a restricted project reader and optional account reader ([declaration](../../packages/cloud/pe-cloud-files/src/instruction-read-work.ts)). `EnvironmentSessionId` is the native Workspace membership's Session id type; `ExecutionMountGrant` describes the original binding, Session/project selection, measured project/environment identities and quotas, and read-only `.pe` policy ([declarations](../../packages/cloud/pe-cloud-files/src/environment-bank.ts)).
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -46,6 +52,37 @@ The native Session adapter preserves original dispatch, DTOs and Session state w
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxcloudprojects--cloudprojectsservice"></a>
+
+### `ctx.cloudProjects` — `CloudProjectsService`
+
+One additive Remote capability; directory allocation and native persistence stay with their owners.
+
+```ts cordis-catalog
+/**
+ * Allocate one project with an optional display title; paths and identities are server-owned.
+ * @param request Optional title, trimmed and limited to 256 UTF-8 bytes; explicit blank titles reject before allocation.
+ * @param signal Caller cancellation, combined with the captured graph lifetime.
+ * @returns The original durable Workspace projection after the allocator settles and admission is rechecked.
+ * @throws CloudApiError before allocation for invalid title or unavailable admission; original allocation failures remain unchanged.
+ * Cancellation after allocation does not promise rollback. The callback is always awaited; callers must not replay unknown results.
+ */
+@Remote('create') async create(request: CloudProjectCreateRequest, signal: AbortSignal): Promise<WorkspaceValue>
+
+/** Require the exact original service in both local and root lookups; replacement cannot inherit this callback. */
+assertCurrent(): void
+
+/**
+ * Inspect the actual Remote marker and installed service for the API's bounded native inventory.
+ * @returns Exactly the guarded project-creation endpoint; does not publish readiness.
+ */
+inspect(): ExposureInventory
+```
+
+Types: [WorkspaceValue](workspace.md)
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-projects.ts`](../../packages/cloud/pe-cloud-api/src/cloud-projects.ts)
 
 <a id="ctxpeaccount--accountbinding"></a>
 
@@ -88,6 +125,26 @@ close(): void
 
 Source: [`packages/cloud/pe-opensandbox/src/account-port.ts`](../../packages/cloud/pe-opensandbox/src/account-port.ts)
 
+<a id="ctxpeaccountinstructions--accountinstructionsources"></a>
+
+### `ctx.peAccountInstructions` — `AccountInstructionSources`
+
+Account-owned adapter between trusted source reservations and native Session instruction injection.
+
+```ts cordis-catalog
+/**
+ * Install scoped turn injection using this graph's original source adapter.
+ * @param owner Actual Session plugin scope in the prepared account graph.
+ * @param config Validated finite snapshot limits.
+ * @returns No value; source I/O starts only when a real turn enters.
+ */
+install(owner: Context, config: Config): void
+```
+
+Types: [Config](../../packages/cloud/pe-account-instructions/README.md#minimal-configuration)
+
+Source: [`packages/cloud/pe-account-instructions/src/session.ts`](../../packages/cloud/pe-account-instructions/src/session.ts)
+
 <a id="ctxpeaccountruntime--accountruntimeservice"></a>
 
 ### `ctx.peAccountRuntime` — `AccountRuntimeService`
@@ -95,6 +152,14 @@ Source: [`packages/cloud/pe-opensandbox/src/account-port.ts`](../../packages/clo
 Shared service definition; providers need no dependency on Host control implementation.
 
 ```ts cordis-catalog
+/**
+ * Borrow the active Root's bounded database for an exactly registered Root shutdown owner.
+ * Account graphs receive no such capability; borrowing grants no account or execution authority.
+ * @param participant Original registered object with an actual idempotent closeRoot implementation.
+ * @returns The immutable Root-only query capability; it cannot close or retarget the driver.
+ */
+controlDatabase(participant: DrainParticipant): RootMetadataDatabase
+
 /**
  * Audit actual Root facts; missing real storage keeps sealing rejected.
  * @param input Fixed requirements and original object identities, never caller readiness assertions.
@@ -202,6 +267,12 @@ Owns one finite authentication pool and its actual secret/library work, without 
 observe(): AuthRootObservation
 
 /**
+ * Inspect the original shared ingress's registered Root Fetch entries for trusted account preparation.
+ * @returns Actual current registrations; this creates neither a route nor business admission.
+ */
+inspectRootFetch(): readonly ExactFetchExposure[]
+
+/**
  * Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end.
  * Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.
  * @returns Actual resource settlement, without a timer that could certify an early release.
@@ -287,6 +358,22 @@ requireFetch(method: string, pathname: string): ExactFetchExposure
 prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding'>): NativeFirstScreen
 
 /**
+ * Install the account's sole project allocator before native auditing and business publication.
+ * @param owner Original independent account preparation scope.
+ * @param input Trusted files/Registry callback; receives no client-selected path or authority.
+ * @returns The additive Remote owner, registered on the original graph.
+ */
+prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProjectsService
+
+/**
+ * Register the sole unchanged native WorkspaceFiles in its actual Loader fiber.
+ * @param owner Original Loader scope with the complete native inject list ready.
+ * @param nativeConfig Original WorkspaceFiles page/list caps, resolved by its native Config.
+ * @returns The original native service; existing filesystem provider and native Gateway retain authorization and I/O ownership.
+ */
+createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]): WorkspaceFiles
+
+/**
  * Register the actual bounded native event subset on the original Gateway.
  * @param owner Original registration Loader fiber after readonly native providers activate.
  * @param input Exact graph profile home and all required event bounds.
@@ -308,6 +395,14 @@ async stopFirstScreenEvents(): Promise<void>
  * @returns The registered native subclass; this does not audit or publish the graph.
  */
 createController( owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1], ): SessionController
+
+/**
+ * Construct the sole original native upload owner with controlled streamed persistence.
+ * @param owner Actual Loader entry, with native dependencies ready.
+ * @param input Same-Agent storage admission and finite native receipt capacity.
+ * @returns Native service; its streamed route remains subject to the audited exposure policy.
+ */
+createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads
 
 /**
  * Install the sole guarded native factory before business admission opens.
@@ -349,7 +444,7 @@ stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveR
 async withdraw(): Promise<void>
 ```
 
-Types: [AgentLoop](core.md) · [SessionController](session.md)
+Types: [AgentLoop](core.md) · [FileUploads](attachment.md) · [SessionController](session.md) · [WorkspaceFiles](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 
@@ -361,13 +456,40 @@ One graph's real Registry/FS installation; shared pool drain and directory respo
 
 ```ts cordis-catalog
 /**
+ * Select the single native provider constructor prepared for this graph.
+ * @returns Native class with unchanged Config and persistence, after the staging capability check.
+ */
+attachmentStore(): typeof LocalAttachmentStore
+
+/**
+ * Copy approved native refs using the original store and this account's existing mutation lane.
+ * @param workspace Actual registered project selected by the native Agent owner.
+ * @param buildRefs Collect native receipts or accepted Session refs inside the positive batch reservation.
+ * @param assertAuthorized Exact Agent/Session/provider checks, repeated before source I/O.
+ * @param signal Actual caller cancellation, combined with the original account lifetime by the pool.
+ * @returns Closed publications whose retained reservation must be released after handoff.
+ */
+async stageAttachments( workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal, ): Promise<ResidentResult<readonly StageFileResult[]>>
+
+/**
+ * Admit native upload persistence on the same files mutation owner before any stream is pulled.
+ * @param reservationBytes Complete finite intake/cleanup/result reservation.
+ * @param assertAuthorized Original Agent and provider checks; no path-derived authority.
+ * @param execute Native persistence operation whose actual settlement remains owned by the pool.
+ * @param signal Observation cancellation; an unconfirmed failure retains the original positive reservation.
+ * @returns The native result retained until release.
+ */
+runAttachmentIntake<T>( reservationBytes: number, assertAuthorized: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal, ): Promise<ResidentResult<T>>
+
+/**
  * Require this exact prepared owner and current binding without granting business admission.
  * @param owner Native scope in the original account graph; omission checks the calling service scope.
  */
 assertInstalled(owner: Context = this.ctx): void
 
 /**
- * Install the sole original native Registry, await its default result, then install its fixed S2 FileSystem.
+ * Install the sole original native Registry, await its default result, then prepare and install its selected native FileSystem.
+ * Without a trusted provider factory, retain the metadata-only S2 implementation.
  * One Promise retains actual settlement; failure is terminal for this owner and does not certify cleanup.
  * @param owner Actual files/account Loader scope, which owns both native child fibers.
  * @returns The actual project after provider activation and directory verification; no ready or clean claim.
@@ -380,7 +502,61 @@ install(owner: Context): Promise<AccountFilesProject>
  * @throws FilesFailure before successful installation, after provider disposal or for a foreign/stale graph.
  */
 project(): AccountFilesProject
+
+/**
+ * Require the settled original Registry/FS installation and its trusted actual content-capability check.
+ * @throws FilesFailure for partial installation, replaced providers, S2 omission or unavailable ABI8 pool capability.
+ */
+assertContentAvailable(): void
+
+/**
+ * Derive metadata for the actual registered object without selecting or replacing the bootstrap default.
+ * @param workspace Native Registry object already selected by trusted account admission.
+ * @param signal Cancellation of bounded metadata observation.
+ * @returns A fixed directory capability on the original lane; it grants no new service or registration window.
+ */
+async projectFor(workspace: Workspace, signal?: AbortSignal): Promise<AccountFilesProject>
+
+/**
+ * Bind a persistent environment only after Root approved the exact live native Agent/Session and project relationship.
+ * Session strings, copied project results and path-selected inputs cannot establish that approval.
+ * @param project Original object obtained from this owner's install/project/projectFor method.
+ * @param sessionId Real native Session already checked by Root's account-native guards.
+ * @param environmentVersion Approved image/architecture/Python/init identity, never command environment input.
+ * @param signal Observer cancellation; confirmed late metadata remains bound and unknown retains actual work.
+ * @returns An opaque original grant with its resident reservation; release revokes it without freeing or deleting a slot.
+ */
+async prepareExecutionMounts( project: AccountFilesProject, sessionId: EnvironmentSessionId, environmentVersion: string, signal?: AbortSignal, ): Promise<ResidentResult<ExecutionMountGrant>>
+
+/**
+ * Recheck the original opaque object before allocation or user execution; Root also repeats its native Session guard.
+ * @param grant Exact unreleased object issued by this files owner.
+ * @throws FilesFailure after release, graph/provider replacement, lost membership or a foreign/copied object.
+ */
+assertExecutionMountGrant(grant: ExecutionMountGrant): void
+
+/**
+ * Create one server-selected project while retaining the actual ready borrow through native settlement.
+ * @param use Original runtime borrow; request JSON cannot supply it.
+ * @param title Native display title; it never chooses a path or leaf.
+ * @param signal Admission cancellation; started registration keeps its actual responsibility.
+ * @returns The actual fulfilled native Workspace, after responsibility transfer.
+ */
+async createProject(use: AccountUse, title: string | undefined, signal: AbortSignal): Promise<Workspace>
+
+/**
+ * Consume source readers only for this owner's exact registered native project.
+ * The trusted caller owns exact active Agent/Session admission; no path or id grants authority here.
+ * @param workspace Exact Registry object after shared native admission.
+ * @param reservedBytes Complete snapshot storage held through native message handoff.
+ * @param build Consumes independent source readers without another lane reservation.
+ * @param signal Cancellation leaves actual work with the same files participant.
+ * @returns Complete retained result after source I/O settles; stale results are released and rejected.
+ */
+async withInstructionReaders<T>( workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, ): Promise<ResidentResult<T>>
 ```
+
+Types: [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [Workspace](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-files/src/account-service.ts`](../../packages/cloud/pe-cloud-files/src/account-service.ts)
 
@@ -407,9 +583,10 @@ abstract assertReady(): void
  * @param ctx - independent account graph with its actual installed binding.
  * @param binding - exact installed runtime generation, never serialized identity.
  * @param assertCurrent - runtime-owned graph-current check, valid during mounting.
+ * @param authority - optional lazy native authority, not consumed during binding; closed coordinators ignore it.
  * @returns an account-only port; issuance does not establish account readiness.
  */
-abstract bindAccount(ctx: Context, binding: AccountBinding, assertCurrent: () => void): AccountExecutionPort
+abstract bindAccount( ctx: Context, binding: AccountBinding, assertCurrent: () => void, authority?: NativeAccountExecutionAuthority, ): AccountExecutionPort
 
 /**
  * Stop all actual work and nonterminal allocations for this exact generation.

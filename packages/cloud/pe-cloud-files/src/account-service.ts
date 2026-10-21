@@ -12,6 +12,7 @@ import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
 import { createAccountAttachmentStore, type AccountAttachmentBackend } from './account-attachment-store.ts'
 import type { StageFileResult } from './stage-bridge.ts'
+import type { EnvironmentSessionId, ExecutionMountGrant } from './environment-bank.ts'
 
 /** Trusted runtime preparation only; Loader JSON cannot select an account, path, backend or plugin. */
 export interface AccountFilesPreparation {
@@ -36,6 +37,10 @@ export interface AccountFilesPreparation {
   }
   /** Same-lane metadata capability for an exact native Registry object. */
   readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>
+  /** Fixed storage-lease callback; omission keeps execution storage unavailable on v1 deployments. */
+  readonly prepareExecutionMounts?: (
+    workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal,
+  ) => Promise<ResidentResult<ExecutionMountGrant>>
   /** Ready-only creation from the original borrow; the trusted lease selects the UUID and grant. */
   readonly createProject?: (
     registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal,
@@ -95,6 +100,7 @@ export class CloudAccountFiles extends Service {
     readonly createFileSystem: AccountFilesPreparation['createFileSystem']
     readonly withInstructionReaders: AccountFilesPreparation['withInstructionReaders']
     readonly projectFor: AccountFilesPreparation['projectFor']
+    readonly prepareExecutionMounts: AccountFilesPreparation['prepareExecutionMounts']
     readonly createProject: AccountFilesPreparation['createProject']
     readonly assertContentAvailable: AccountFilesPreparation['assertContentAvailable']
     readonly attachments: AccountFilesPreparation['attachments']
@@ -106,6 +112,9 @@ export class CloudAccountFiles extends Service {
   private readonly identity = Symbol('account-files-owner')
   // Caller-scoped Cordis service proxies share this cell; replacing a service field would shadow it per caller.
   private readonly installation: { work?: Installation } = {}
+  private readonly executionStorage = {
+    projects: new WeakSet<AccountFilesProject>(), grants: new WeakMap<ExecutionMountGrant, () => void>(),
+  }
 
   /**
    * Prepare before native Include activation using an already bound, restricted lane.
@@ -141,7 +150,8 @@ export class CloudAccountFiles extends Service {
     super(ctx, 'peCloudFiles')
     this.binding = input.binding
     this.providers = { Registry, createFileSystem: input.createFileSystem, withInstructionReaders: input.withInstructionReaders,
-      projectFor: input.projectFor, createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
+      projectFor: input.projectFor, prepareExecutionMounts: input.prepareExecutionMounts,
+      createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
       attachments: input.attachments, attachmentProjection: input.attachmentProjection }
     this.checkGraph = checkGraph
     this.unpublished = input.assertUnpublished
@@ -312,7 +322,61 @@ export class CloudAccountFiles extends Service {
     if (result.binding !== this.binding || result.workspace !== workspace || result.projectDirectory.binding !== this.binding) {
       throw new FilesFailure('cloud/stale-generation', 'Derived project belongs to another generation.')
     }
+    this.executionStorage.projects.add(result)
     return result
+  }
+
+  /**
+   * Bind a persistent environment only after Root approved the exact live native Agent/Session and project relationship.
+   * Session strings, copied project results and path-selected inputs cannot establish that approval.
+   * @param project Original object obtained from this owner's install/project/projectFor method.
+   * @param sessionId Real native Session already checked by Root's account-native guards.
+   * @param environmentVersion Approved image/architecture/Python/init identity, never command environment input.
+   * @param signal Observer cancellation; confirmed late metadata remains bound and unknown retains actual work.
+   * @returns An opaque original grant with its resident reservation; release revokes it without freeing or deleting a slot.
+   */
+  async prepareExecutionMounts(
+    project: AccountFilesProject, sessionId: EnvironmentSessionId, environmentVersion: string, signal?: AbortSignal,
+  ): Promise<ResidentResult<ExecutionMountGrant>> {
+    const current = (): void => {
+      this.assertWorkspace(project.workspace)
+      if (!this.executionStorage.projects.has(project) || project.binding !== this.binding
+        || !project.workspace.sessionIds.includes(sessionId)) {
+        throw new FilesFailure('cloud/stale-generation', 'Execution storage requires the original issued project and native membership.')
+      }
+    }
+    current()
+    signal?.throwIfAborted()
+    const prepare = this.providers.prepareExecutionMounts
+    if (prepare === undefined) throw new FilesFailure('files/prerequisite-missing', 'No verified environment bank is installed.')
+    const held = await prepare(project.workspace, sessionId, environmentVersion, current, signal)
+    try {
+      current()
+      signal?.throwIfAborted()
+      const grant = held.value
+      if (grant.binding !== this.binding || grant.sessionId !== sessionId || grant.workspaceId !== project.workspace.id) {
+        throw new FilesFailure('cloud/stale-generation', 'The mount grant belongs to another native selection.')
+      }
+      const release = (): void => {
+        if (!this.executionStorage.grants.delete(grant)) return
+        this.binding.lifetime.removeEventListener('abort', release)
+        held.release()
+      }
+      this.executionStorage.grants.set(grant, current)
+      this.binding.lifetime.addEventListener('abort', release, { once: true })
+      return Object.freeze({ value: grant, release })
+    } catch (error) { held.release(); throw error }
+  }
+
+  /**
+   * Recheck the original opaque object before allocation or user execution; Root also repeats its native Session guard.
+   * @param grant Exact unreleased object issued by this files owner.
+   * @throws FilesFailure after release, graph/provider replacement, lost membership or a foreign/copied object.
+   */
+  assertExecutionMountGrant(grant: ExecutionMountGrant): void {
+    const current = this.executionStorage.grants.get(grant)
+    if (current === undefined) throw new FilesFailure('cloud/stale-generation', 'The execution mount grant is not owned or was revoked.')
+    current()
   }
 
   /**
@@ -415,6 +479,7 @@ export class CloudAccountFiles extends Service {
       },
     })
     work.project = Object.freeze({ binding: this.binding, workspace, projectDirectory })
+    this.executionStorage.projects.add(work.project)
     return work.project
   }
 

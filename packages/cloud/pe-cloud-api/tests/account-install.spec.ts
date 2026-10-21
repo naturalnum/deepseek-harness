@@ -206,7 +206,7 @@ it('installs constructor hooks before real credentials migration and Settings le
   }) }).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
   expect(a.current).toHaveBeenCalledWith(a.binding)
   expect(() => a.install().exposure.requireRpc('session/page')).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
-  expect(() => mountIncompleteAccount(ctxA, {})).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  expect(() =>{  mountIncompleteAccount(ctxA, {}) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
 })
 
 it('pauses actual submitted work, rejects new native writers and only reopens the paused quiescent barrier', async () => {

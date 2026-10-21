@@ -10,6 +10,7 @@ import { parseCloudClientConfig } from '../config.ts'
 import type { CloudClientConfig } from '../types.ts'
 import { BootstrapAttempt, type BootstrapSnapshot } from './bootstrap.ts'
 import { ClientFailure } from './errors.ts'
+import type { CloudServicePreviewNavigation } from './service-preview.ts'
 import { CloudPageLifetime, type CloudNativeEntry, type CloudPageSnapshot } from './page-lifetime.ts'
 import type { CloudPersistenceLimits, CloudPersistenceStorage } from './persistence.ts'
 
@@ -23,6 +24,16 @@ export interface CloudPagePreparationInput {
   readonly storage: CloudPersistenceStorage
   readonly fetch: RpcFetch
   readonly createWebSocket: ConnectionWebSocketFactory
+  /** Optional actual navigation/feedback carrier; absence supplies no no-op preview entry. */
+  readonly previewNavigation?: CloudPreviewNavigationPort
+}
+
+/** Native application owner supplies ordinary navigation and localized refusal feedback. */
+export interface CloudPreviewNavigationPort {
+  /** @param url Exact bound URL for synchronous ordinary GET navigation; never publish it to model/history or diagnostics. */
+  open(url: string): void
+  /** @param code Safe local refusal; no rejected selector, token, URL or original error is exposed. */
+  refused(code: 'closed' | 'target-denied'): void
 }
 
 /** Prompt bootstrap outcome and actual request cleanup remain separate. */
@@ -76,6 +87,8 @@ export class PreparedCloudPage {
   readonly lifetime: CloudPageLifetime
   /** Pass these options when constructing the existing AppWebEntry. */
   readonly nativeOptions: CloudPreparedNativeOptions
+  /** Original immutable-page callback consumed by the native preview Tool installer. */
+  readonly servicePreviewNavigation?: CloudServicePreviewNavigation
   private root: Context | undefined
   private activation: Context | undefined
   private connection: ConnectionHandle | undefined
@@ -93,6 +106,7 @@ export class PreparedCloudPage {
       storage: input.storage, persistenceLimits: input.persistenceLimits,
       transport: {
         baseUrl: input.baseUrl, fields: input.fields, fetch: input.fetch,
+        ...this.config.servicePreview === undefined ? {} : { servicePreview: this.config.servicePreview },
         createWebSocket: input.createWebSocket, limits: this.config,
         revalidate: signal => new BootstrapAttempt({
           baseUrl: input.baseUrl, config: this.config,
@@ -120,6 +134,23 @@ export class PreparedCloudPage {
         void this.lifetime.transport.close()
       },
     })
+    const navigation = input.previewNavigation
+    if (bootstrap.capabilities.servicePreview.state === 'available' && this.config.servicePreview !== undefined && navigation !== undefined) {
+      this.servicePreviewNavigation = (selection) => {
+        try {
+          if (this.activation === undefined || this.lifetime.transport.signal.aborted
+            || this.lifetime.getSnapshot().phase !== 'running') throw new ClientFailure('closed')
+          this.assertCurrent(this.activation)
+          navigation.open(this.lifetime.transport.servicePreviewNavigationUrl(selection))
+        } catch (error) {
+          const code = error instanceof ClientFailure && error.code === 'closed' ? 'closed' : 'target-denied'
+          try { navigation.refused(code) } catch (_feedbackError) {
+            try { console.error('Cloud preview navigation feedback unavailable.') }
+            catch (_loggerError) { /* The original UI callback must remain contained even when feedback is unavailable. */ }
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -134,6 +165,10 @@ export class PreparedCloudPage {
       ...input, config: Object.freeze({ ...parseCloudClientConfig(input.config) }),
       decodeLimits: Object.freeze({ ...input.decodeLimits }),
       persistenceLimits: Object.freeze({ ...input.persistenceLimits }), fields: Object.freeze({ ...input.fields }),
+      ...input.previewNavigation === undefined ? {} : { previewNavigation: Object.freeze({
+        open: input.previewNavigation.open.bind(input.previewNavigation),
+        refused: input.previewNavigation.refused.bind(input.previewNavigation),
+      }) },
     }
     const abort = new AbortController()
     let page: PreparedCloudPage | undefined

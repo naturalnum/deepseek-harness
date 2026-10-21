@@ -6,6 +6,7 @@ import type { ClientBundleRegistration, ClientModuleCreateOptions, ClientModuleL
 import * as connection from '@deepseek-ai/dsh-client-connection/client'
 import * as cloud from '@deepseek-ai/dsh-pe-cloud-client/client'
 import type { CloudWebManifest } from '@deepseek-ai/dsh-pe-cloud-client/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudWebEntry } from '../src/cloud-web.ts'
 
@@ -112,6 +113,51 @@ function submit(password = 'component-password'): void {
 function exit(): void { document.querySelector<HTMLButtonElement>('header button')!.click() }
 
 describe('real source Cloud Web component', () => {
+  it('opens the captured preview through the actual page carrier as an ordinary isolated GET navigation', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null), defaults = manifest(), data = metadata()
+    const policy = { managementOrigin: new URL(document.baseURI).origin, previewOrigin: 'http://preview.localhost:3000',
+      routePath: '/cloud/service-preview', maxFieldBytes: 128, maxUrlBytes: 2048 }
+    const f = fixture({ manifest: { ...defaults, client: { ...defaults.client, servicePreview: policy } },
+      fetch: async () => Response.json({ ...data, capabilities: { ...data.capabilities, servicePreview: { state: 'available' } } }) })
+    await f.entry.run()
+    expect(f.state()).toBe('running')
+    const page = f.native()!.get('peCloudPage')!, navigate = page.servicePreviewNavigation
+    if (navigate === undefined) throw new Error('Actual Cloud Web page did not supply its navigation carrier')
+    navigate({ sessionId: SessionId('original-session'), serviceHandle: 'original-service' })
+    expect(open).toHaveBeenCalledTimes(1)
+    const [target, name, features] = open.mock.calls[0]!
+    const url = new URL(String(target))
+    expect([name, features]).toEqual(['_blank', 'noopener,noreferrer'])
+    expect(url.origin + url.pathname).toBe(policy.previewOrigin + policy.routePath)
+    expect(Object.fromEntries(url.searchParams)).toEqual({ sessionId: 'original-session', serviceHandle: 'original-service',
+      peAccount: 'component-account', peGeneration: 'component-generation' })
+    await page.dispose()
+    navigate({ sessionId: SessionId('original-session'), serviceHandle: 'original-service' })
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('header [role=status]')?.textContent).toBe(
+      'This page has closed. Check your sign-in status before opening a preview.')
+  })
+
+  it('reports contained preview refusal in the visible localized chrome without exposing the rejected target', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => { throw new Error('private rejected target') })
+    const defaults = manifest(), data = metadata()
+    const f = fixture({ manifest: { ...defaults, client: { ...defaults.client, servicePreview: {
+      managementOrigin: new URL(document.baseURI).origin, previewOrigin: 'http://preview.localhost:3000',
+      routePath: '/cloud/service-preview', maxFieldBytes: 128, maxUrlBytes: 2048 } } },
+    fetch: async () => Response.json({ ...data, capabilities: { ...data.capabilities, servicePreview: { state: 'available' } } }) })
+    await f.entry.run()
+    const navigate = f.native()!.get('peCloudPage')!.servicePreviewNavigation
+    if (navigate === undefined) throw new Error('Actual Cloud Web page did not supply its navigation carrier')
+    expect(() =>{  navigate({ sessionId: SessionId('original-session'), serviceHandle: 'original-service' }) }).not.toThrow()
+    expect(open).toHaveBeenCalledTimes(1)
+    const notice = document.querySelector<HTMLElement>('header [role=status]')!
+    expect(notice.hidden).toBe(false)
+    expect(notice.textContent).toBe('The preview could not open. Check the service status and try again.')
+    expect(notice.textContent).not.toContain('private rejected target')
+    document.documentElement.lang = 'zh-CN'
+    await expect.poll(() => notice.textContent).toBe('无法打开预览，请检查服务状态后重试')
+  })
+
   it('shows localized login after canonical 401 without native startup or storage reads', async () => {
     const storage = vi.spyOn(Storage.prototype, 'getItem')
     const f = fixture()
@@ -249,10 +295,10 @@ describe('real source Cloud Web component', () => {
     const f = fixture({ manifest: config })
     await f.entry.run()
     submit('p'.repeat(500))
-    await expect.poll(() => document.querySelector('[role=status]')?.textContent).toContain('too long')
+    await expect.poll(() => document.querySelector('form [role=status]')?.textContent).toContain('too long')
     expect(f.fetcher).toHaveBeenCalledTimes(1)
     submit()
-    await expect.poll(() => document.querySelector('[role=status]')?.textContent).toContain('refused')
+    await expect.poll(() => document.querySelector('form [role=status]')?.textContent).toContain('refused')
     expect(f.state()).toBe('login')
     expect(f.fetcher).toHaveBeenCalledTimes(2)
   })

@@ -6,7 +6,7 @@ import type { AccountFilesPreparation } from './account-service.ts'
 import type { PoolReadPort } from './worker-pool.ts'
 import type { FdRootIdentity, FdStorageView } from './worker-protocol.ts'
 import type { StaticStorageAccount, StaticStorageConfig, StaticStorageDomain, StaticStoragePlan, StorageProbeFacts } from './storage-types.ts'
-import { parseStaticStoragePlan } from './storage-probe.ts'
+import { accountEnvironmentBank, parseStaticStoragePlan } from './storage-probe.ts'
 import { FilesFailure } from './error.ts'
 import type { ResolveAccountFileProject } from './text-project.ts'
 
@@ -130,6 +130,12 @@ export class RootStorageOwner {
     if (this.state !== 'open' || this.plan === undefined) failure()
   }
 
+  /** Require the actually verified v2 inventory; v1 remains valid only for closed execution. */
+  assertExecutionStorageAvailable(): void {
+    this.assertRootCurrent()
+    if (this.plan?.version !== 2) failure()
+  }
+
   /**
    * Verify a preplaced authentic assignment before any native Profile I/O; this never allocates or remounts.
    * @param input Original factory input, carrying its PG generation and server-derived layout.
@@ -193,7 +199,13 @@ export class RootStorageOwner {
     if (!directory(root) || (root.flags & 32) === 0 || (root.flags & 4) !== 0
       || root.appUid !== plan.appUid || root.appGid !== plan.appGid) failure()
     for (const path of [plan.baseConfigPath, plan.installAnchor]) readonlyObject(await this.driver.probe(path))
-    const domains = [plan.arena, plan.control, ...plan.accounts.flatMap(account => [account.private, account.projects])]
+    const domains = [plan.arena, plan.control, ...plan.accounts.flatMap(account => [account.private, account.projects,
+      ...accountEnvironmentBank(account)?.slots.map(slot => slot.domain) ?? []])]
+    const bankIds = plan.accounts.flatMap((account) => {
+      const bank = accountEnvironmentBank(account)
+      return bank === undefined ? [] : [bank.bankId]
+    })
+    if (new Set(bankIds).size !== bankIds.length) failure()
     if (new Set(domains.map(d => d.rootDevice)).size !== domains.length || new Set(domains.map(d => d.rootMountId)).size !== domains.length
       || new Set(domains.map(d => d.rootPath)).size !== domains.length
       || new Set(domains.map(d => d.backing.path)).size !== domains.length
@@ -228,7 +240,7 @@ export class RootStorageOwner {
       if (account.accountRoot !== posix.join(posix.dirname(account.accountRoot), account.storageKey)
         || account.private.rootPath !== posix.join(account.accountRoot, 'private')
         || account.projects.rootPath !== posix.join(account.accountRoot, 'projects')) failure()
-      for (const domain of [account.private, account.projects]) {
+      for (const domain of [account.private, account.projects, ...accountEnvironmentBank(account)?.slots.map(slot => slot.domain) ?? []]) {
         const observed = measured(domain)
         if (observed.uid !== plan.appUid || observed.gid !== plan.appGid
           || (observed.mode & 0o7777) !== 0o700 || (observed.flags & 28) !== 28) failure()
@@ -244,10 +256,13 @@ export class RootStorageOwner {
         || BigInt(observed.inodes) <= 0 || BigInt(observed.inodes) > BigInt(auxiliary.maximumInodes)) failure()
       writableIds.add(observed.mountId)
     }
-    // Root guarantees a read-only application view; every ordinary writable filesystem must be a declared fixed domain.
+    const exportRoots = plan.accounts.flatMap(account => [account.projects.rootPath, posix.join(account.accountRoot, 'environments')])
+    // Exported trees admit only declared domains, including when a foreign submount is read-only or a pseudo filesystem.
     const pseudo = new Set(['proc', 'sysfs', 'cgroup2', 'cgroup', 'devpts', 'mqueue', 'pstore', 'securityfs', 'debugfs',
       'tracefs', 'fusectl', 'configfs', 'binfmt_misc', 'autofs', 'hugetlbfs', 'nsfs', 'bpf', 'rpc_pipefs'])
     for (const mount of mounts) {
+      if (exportRoots.some(root => mount.path === root || mount.path.startsWith(root + '/'))
+        && !domains.some(domain => domain.rootMountId === mount.id && domain.rootPath === mount.path)) failure()
       if (!mount.writable || pseudo.has(mount.filesystem) || writableIds.has(mount.id)
         || domains.some(domain => domain.rootMountId === mount.id)) continue
       if (mount.path === '/dev' && mount.filesystem === 'tmpfs' && ((await this.driver.probe('/dev')).flags & 4) === 0) continue
@@ -332,12 +347,19 @@ export class StaticAccountStorageLease {
     const privateParent = Object.freeze({ rootPath: this.account.private.rootPath, rootDevice: this.account.private.rootDevice,
       rootInode: this.account.private.rootInode, rootMountId: this.account.private.rootMountId })
     const port = this.driver.bind(binding, parent, current, privateParent)
+    const bank = accountEnvironmentBank(this.account)
     const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
       assertContentAvailable: () => { port.assertContentAvailable() },
       attachments: port,
       createFileSystem: (workspace, assertInstalled, mapProcessPath) =>
         port.createTextFileSystem(workspace, assertInstalled, resolveProject, mapProcessPath),
       projectFor: (workspace, assertRegistered, signal) => port.projectFor(workspace, assertRegistered, signal),
+      ...bank === undefined ? {} : { prepareExecutionMounts: (workspace, sessionId, environmentVersion, assertRegistered, signal) => {
+        this.owner.assertExecutionStorageAvailable()
+        current()
+        return port.prepareExecutionMounts(workspace, sessionId, environmentVersion,
+          { bank, appUid: this.plan.appUid, appGid: this.plan.appGid, projects: this.account.projects }, assertRegistered, signal)
+      } },
       createProject: async (registry, use, title, signal) => {
         signal.throwIfAborted()
         use.assertCurrent()

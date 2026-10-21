@@ -1,6 +1,7 @@
 /** Browser-safe validation of public limits and the relative bootstrap entry. */
 import z from '@deepseek-ai/schemastery'
 import type { CloudClientConfig, CloudWebManifest } from './types.ts'
+import { parseServicePreviewPolicy } from './preview-policy.ts'
 
 const MAX_TIMER_MS = 2_147_483_647
 
@@ -14,6 +15,11 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
   maxSockets: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   closeTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
   maxDownloadBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
+  servicePreview: z.union([z.object({
+    managementOrigin: z.string().required(), previewOrigin: z.string().required(), routePath: z.string().required(),
+    maxFieldBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+    maxUrlBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  })]),
 })
 
 const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapResponseBytes',
@@ -26,7 +32,8 @@ const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapRespo
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes'])
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview'])
+  const preview = Object.hasOwn(value, 'servicePreview') ? parseServicePreviewPolicy(value.servicePreview) : undefined
   let limit: number | undefined
   if (Object.hasOwn(value, 'maxDownloadBytes')) {
     const candidate = value['maxDownloadBytes']
@@ -37,10 +44,12 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
   }
   const config = { ...CloudClientConfigSchema(input as CloudClientConfig) }
   delete config.maxDownloadBytes
+  delete config.servicePreview
   if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(config.bootstrapPath)) {
     throw new Error('cloud client bootstrapPath must be a document-relative route without query or fragment')
   }
-  return limit === undefined ? config : { ...config, maxDownloadBytes: limit }
+  return { ...config, ...limit === undefined ? {} : { maxDownloadBytes: limit },
+    ...preview === undefined ? {} : { servicePreview: preview } }
 }
 
 const positive = (): z<number> => z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required()

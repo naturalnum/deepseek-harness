@@ -38,7 +38,19 @@ kind: "package-reference"
 
 `CloudAccountFiles.assertContentAvailable()` 要求原安装已经成功结算、唯一原 Registry/FS provider 仍有效，且通过可信准备回调。存储 lease 将回调交给原绑定池，核验当前代际、池健康、显式 content 限额和真实 ABI8 worker 握手。S2 遗漏、ABI 混用、worker 不可用或半安装状态都会拒绝。Runtime 须在安装结算后、接纳依赖内容能力的配方之前调用该断言；方法存在本身不授予就绪。
 
-生产工厂首先通过原池的 `requireStorageOwner()` 取得实际存储 owner。可选的根配置 `staticStorage` 见 [StaticStorageConfig](src/storage-types.ts)；省略仅支持组件调用者，不授予 owner。准备核验恰好两份预置账户分配之一。工厂须在原生 Profile 读取前保留实际 lease，核验其 Profile/base 地址，再把规范的 installed runtime 代际仅绑定一次到原 projects lane。另一个仍活动的 epoch 会被拒绝。runtime 等待 native/save/execution writer 后，lease 关闭继续等待该 lane 的实际工作与持有结果；它从不归还持久容量或重新挂载存储。本地索引及 environment 执行写入不获得授权。
+生产工厂首先通过原池的 `requireStorageOwner()` 取得实际存储 owner。可选的根配置 `staticStorage` 见 [StaticStorageConfig](src/storage-types.ts)；省略仅支持组件调用者，不授予 owner。准备核验恰好两份预置账户分配之一。工厂须在原生 Profile 读取前保留实际 lease，核验其 Profile/base 地址，再把规范的 installed runtime 代际仅绑定一次到原 projects lane。另一个仍活动的 epoch 会被拒绝。runtime 等待 native/save/execution writer 后，lease 关闭继续等待该 lane 的实际工作与持有结果；它从不归还持久容量或重新挂载存储。本地索引写入不获得授权。
+
+静态存储计划 v1 保留关闭执行的兼容性。v2 额外要求每账户具有有限 `environmentBank`：受保护的 `bankId` 与唯一 `slotId` 条目，每槽对应本账户 environments 根下的独立 ext4 `StaticStorageDomain`。owner 经原池及 probe 核对各槽实际身份、byte/inode 几何、完整预分配 backing、arena 总量及预留。项目及环境子树拒绝未声明的子挂载，包括只读及伪文件系统。v1 计划不能通过 `assertExecutionStorageAvailable()`。
+
+可信部署初始化须为各槽在 `private/.pe-env-<bankId>-<slotId>.json` 放置普通单链接记录。初始字段为 `schema: 1`、精确的 `bankId`/`slotId`、正安全整数 `slotGeneration` 及 `state: "free"`。绑定记录增加 `sessionId`、`workspaceId`、`environmentVersion` 并改为 `state: "bound"`；不存沙盒或命令状态。运行时不会初始化缺失记录，也不会从空环境目录推断槽空闲。
+
+Root 必须先核验精确原生 Agent/Session 与 Workspace 关系，再调用 `prepareExecutionMounts(originalProject, sessionId, environmentVersion, signal)`；项目必须是原签发对象。方法准备项目的固定 `.pe` 目录、读取 bank 的固定 private 记录，原子绑定一个明确初始化的 free 槽后，才返回 `ResidentResult<ExecutionMountGrant>`。记录缺失、无效或重复会关闭 bank 准入；发布 unknown 保留原操作及预留。读取/probe 的已确认取消不会封闭 bank。观察者取消后的迟到确认写入仍保留绑定。bank 私有元数据及附件原件保持私有；grant 仅描述所选项目及环境、实测硬限、当前绑定与只读 `.pe` 策略。execution 仍须独立核验实际挂载和进程停止。
+
+执行存储要求 helper 实际具备独立的 `projectMetadataVersion: 1` 能力；旧 ABI8 helper 会在 SDK 创建前拒绝准备。固定原生操作核验原项目的设备、inode 和挂载身份，仅打开不跟随链接、不跨挂载的 `.pe`，并以 `0700` 模式创建缺失目录。已有目录必须具有预期 UID/GID、模式及硬存储域。目录和父目录同步、再次核验身份且全部描述符实际关闭后才成功；固定 96 字节帧向 opaque grant 提供 `.pe` 身份。该操作与私有 bank 绑定共用原修改操作、worker 及正数预留。成功的 `.pe` 目录在取消后仍保留。创建、同步或关闭 unknown 时，保留原操作与预算且不签发 grant。实际 ARM64 helper 编译及 Linux 系统调用验证仍是部署前提。
+
+独立的实际 `environmentLayoutVersion: 1` 能力在私有槽绑定前，仅于所选已核验环境根下准备 `home`、`venv` 和 `tmp`。每个入口必须是具有预期应用 UID/GID、`0700` 模式及相同设备/挂载身份的目录；链接、特殊入口及身份不符均拒绝且不替换。缺失目录会被创建，已有 Session 内容不会清除。固定 256 字节帧在目录/父目录 fsync、再次核验身份及全部描述符关闭后，记录各目录身份、创建和同步事实。准备共用原修改操作与完整预留；影响 unknown 时保留两者且不签发 grant。取消后的成功迟到回执保留目录，不绑定空闲槽。grant 设置 `environment.rootReadOnly: true`，将 `writablePaths` 固定为 `home`、`venv`、`tmp`，并携带三者各自的 `layout` 身份。execution 必须将环境根只读挂载，仅将同一硬域内这三个入口分别读写绑定，防止用户替换源入口。本包负责目录身份准备，实际挂载限制及启动核验仍由 execution 持有。旧 helper 仍支持原 ABI8 内容方法及关闭执行的 v1 计划；执行存储准备要求同时具备两项固定能力。
+
+`assertExecutionMountGrant()` 只接受本 owner 原签发且未释放的对象，并复查图、provider 和原生项目成员关系。release 或图 lifetime 结束会撤销 grant 并归还其常驻内存；不会停止计算、删除数据或释放持久槽。普通计算回收保留 Session 归属。项目改变、环境版本不兼容及删除需要明确的停止/清理证据；本包不提供环境擦除或自动槽复用。
 
 -----
 

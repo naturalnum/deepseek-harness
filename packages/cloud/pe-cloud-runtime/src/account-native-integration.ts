@@ -9,7 +9,7 @@ import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
-  type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+  type ExposureService, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -17,7 +17,7 @@ import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
 import * as InstructionsSession from '@deepseek-ai/dsh-pe-account-instructions/session'
-import { assertClosedAccountExecution, installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
+import { assertAccountExecutionProviders, installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -58,6 +58,11 @@ export interface AccountNativePreparation {
   readonly stopTimeoutMs: number
   /** Existing Root native.maxEntries bounds each bootstrap native inventory read. */
   readonly maxNativeInventoryEntries: number
+  /**
+   * Read original shared-Web exact registrations; absent producers cannot certify selected Root routes.
+   * @returns Actual currently registered Root Fetch entries within the original inventory budget.
+   */
+  readonly inspectRootFetch?: () => readonly ExactFetchExposure[]
   /** Omission keeps streamed uploads and attachment-path projection closed. */
   readonly attachments?: AccountAttachmentLimits
   /** Optional fixed readonly first-screen composition; every limit and exact graph home is required when selected. */
@@ -144,10 +149,17 @@ export class AccountNativeIntegration {
       assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
+      ...this.input.inspectRootFetch === undefined ? {} : { inspectRootFetch: this.input.inspectRootFetch },
       assertUnpublished: unpublished,
     })
     this.api = api
-    this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) })
+    this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) }, {
+      assertBusinessCurrent: () => { this.input.assertRootCurrent(); businessCurrent(binding) },
+      getAgent: id => ctx.get('agents')?.get(id),
+      projectForAgent: agent => requireGuards(ctx).projectForAgent(agent),
+      projectForSession: session => requireGuards(ctx).projectForSession(session),
+      files: () => requireFiles(ctx),
+    })
     installAccountExecutionPort(ctx, this.execution)
     let filesOwner: CloudAccountFiles | undefined
     const attachmentLimits = this.input.attachments
@@ -441,7 +453,7 @@ export class AccountNativeIntegration {
       if (this.agents === undefined || this.persistence === undefined || this.loopFiber?.state !== FiberState.ACTIVE) {
         throw new AccountRuntimeError('cloud/account-unavailable', 'Native Agent lifecycle and persistence owners are missing')
       }
-      assertClosedAccountExecution(ctx)
+      assertAccountExecutionProviders(ctx)
       const saves = await api.pauseAccountChanges(Date.now() + input.stopTimeoutMs, binding.lifetime)
       if (saves.status !== 'confirmed') {
         throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native startup configuration saves have not settled')
@@ -476,7 +488,7 @@ export class AccountNativeIntegration {
       mountCurrent(binding)
       unpublished()
       if (project(ctx) !== installed) throw new AccountRuntimeError('cloud/stale-generation', 'Prepared files project changed')
-      assertClosedAccountExecution(ctx)
+      assertAccountExecutionProviders(ctx)
       api.resumeAccountChanges()
     }
     ctx.effect(() => () => { api.invalidate(); this.execution?.close() }, 'pe-cloud-runtime: revoke prepared API and execution')

@@ -6,7 +6,7 @@ Read this before changing anything under `packages/`. It assumes you know Cordis
 
 ## Cordis
 
-[Cordis](cordis-primer.md) is the framework under dsh: plugins contribute services, typed events, and reversible effects to a shared context. Every part of the product is a plugin, including the model adapter, the tool registry, the session log, and the agent loop itself, so each is replaceable from configuration.
+[Cordis](cordis-primer.md) is the framework under dsh: plugins contribute services, typed events, and reversible effects to a shared context. Every product component is a plugin, including the model adapter, tool registry, session log, and agent loop, so each is replaceable from configuration.
 
 There is no privileged core to patch: you extend dsh by mounting a plugin beside the others, and registrations are effects that unwind when their plugin unloads.
 

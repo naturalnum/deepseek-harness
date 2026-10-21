@@ -19,15 +19,20 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-async function fixture() {
+async function fixture(preview = false) {
   const ctx = new Context()
   // Constructing the real service does not invoke Service.init or open its listener.
   const web = new WebServer(ctx, { host: '127.0.0.1', port: 0 })
   const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
   const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'test', database: 'unavailable', password: 'test', max: 1, connectionTimeoutMillis: 30 })
-  const auth = await BetterAuthAccess.create(accessConfig(), pool, 'ingress-test-secret-thirty-two-characters-123456', async () => {})
+  const config = preview ? { ...accessConfig(), publicOrigin: 'http://console.dsh.localhost:4100',
+    servicePreview: { origin: 'http://preview.dsh.localhost:4100', cookieDomain: 'dsh.localhost' } } : accessConfig()
+  const limits = { ...ingressConfig(), ...(preview ? { servicePreview: { maxUrlBytes: 1024, maxFieldBytes: 128,
+    maxRequestHeaderCount: 16, maxRequestHeaderBytes: 2048,
+    response: { maxBodyBytes: 8192, maxChunkBytes: 4096, maxChunks: 8, maxHeaderCount: 32, maxHeaderBytes: 4096 } } } : {}) }
+  const auth = await BetterAuthAccess.create(config, pool, 'ingress-test-secret-thirty-two-characters-123456', async () => {})
   const authCurrent = vi.fn((): void => { throw new AuthAccessError('cloud/account-unavailable', 'test' as AuthAccessError['requestId']) })
-  const ingress = new CloudIngress(ctx, accessConfig(), ingressConfig(), auth, {
+  const ingress = new CloudIngress(ctx, config, limits, auth, {
     web, runtime, recipeVersion: 'ingress-test', assertAuthenticationCurrent: authCurrent,
   })
   cleanups.push(async () => {
@@ -40,6 +45,7 @@ async function fixture() {
   const upgrade = vi.spyOn(web, 'registerUpgrade')
   const seal = vi.spyOn(runtime, 'assertRecipeSealed')
   const authenticate = vi.spyOn(auth, 'authenticate')
+  const previewAuth = vi.spyOn(auth, 'authenticateServicePreview')
   const bootstrap = vi.spyOn(auth, 'authenticateForBootstrap')
   const authHandler = vi.spyOn(auth, 'handleNodeRequest')
   const locate = vi.spyOn(runtime, 'locateAccount')
@@ -49,7 +55,7 @@ async function fixture() {
   const stream = vi.spyOn(TypertGatewayService.prototype, 'createNodeStreamTransport')
   const query = vi.spyOn(pool, 'query')
   return {
-    ctx, web, ingress, register, upgrade, seal, authCurrent, authenticate, bootstrap, authHandler,
+    ctx, web, ingress, register, upgrade, seal, authCurrent, authenticate, previewAuth, bootstrap, authHandler,
     locate, acquire, borrow, http, stream, query,
   }
 }
@@ -63,6 +69,40 @@ function responseRequestId(body: string): string {
 }
 
 describe('shared Web ingress under the actual unsealed runtime', () => {
+  it('reports only the actually registered fixed preview route and keeps unsealed admission before login or account work', async () => {
+    const f = await fixture(true)
+    await f.ingress.install()
+    const rows = f.ingress.inspectRootFetch()
+    expect(rows).toEqual([{ method: 'GET', path: '/cloud/service-preview', handlerId: 'cloud:servicePreview', guard: 'account-session' }])
+    expect(f.ingress.observe()).toMatchObject({ current: true, registeredRoutes: 6 })
+    const route = f.register.mock.calls.map(([value]) => value).find(value => value.path === '/cloud/service-preview')
+    if (route === undefined) throw new Error('Actual preview registration missing')
+    const input = carrier('/cloud/service-preview?sessionId=a&serviceHandle=s&peAccount=A&peGeneration=old')
+    input.request.headers.host = 'preview.dsh.localhost:4100'; input.request.rawHeaders[1] = 'preview.dsh.localhost:4100'
+    await route.handler(input.request, input.response)
+    expect(input.response.statusCode).toBe(503)
+    expect(f.previewAuth).not.toHaveBeenCalled(); expect(f.authenticate).not.toHaveBeenCalled()
+    expect(f.locate).not.toHaveBeenCalled(); expect(f.acquire).not.toHaveBeenCalled(); expect(f.query).not.toHaveBeenCalled()
+    await f.ingress.closeActual()
+    expect(() => f.ingress.inspectRootFetch()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  })
+
+  it('retains the original five registrations without preview policy and refuses preview method/host before login', async () => {
+    const disabled = await fixture(); await disabled.ingress.install()
+    expect(disabled.ingress.observe().registeredRoutes).toBe(5)
+    expect(disabled.ingress.inspectRootFetch()).toEqual([])
+    const f = await fixture(true); await f.ingress.install()
+    const route = f.register.mock.calls.map(([value]) => value).find(value => value.path === '/cloud/service-preview')
+    if (route === undefined) throw new Error('Actual preview registration missing')
+    for (const [method, host] of [['HEAD', 'preview.dsh.localhost:4100'], ['GET', 'console.dsh.localhost:4100']]) {
+      const input = carrier('/cloud/service-preview', method)
+      input.request.headers.host = host; input.request.rawHeaders[1] = host!
+      await route.handler(input.request, input.response)
+      expect(input.response.statusCode).toBe(403)
+    }
+    expect(f.previewAuth).not.toHaveBeenCalled(); expect(f.seal).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['/cloud/auth', '/cloud/auth/sign-in/email', 'POST'],
     ['/cloud/bootstrap', '/cloud/bootstrap', 'GET'],

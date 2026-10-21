@@ -108,6 +108,56 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'cloudProjects', pkg: 'pe-cloud-api', title: 'Account project metadata', mode: 'service',
+    consumers: ['pe-cloud-api', 'pe-cloud-runtime'],
+    note: 'Adapts native Workspace operations to the installed account files owner and approved project roots.',
+  },
+  {
+    key: 'peAccount', pkg: 'pe-cloud-runtime', title: 'Installed account generation', mode: 'core',
+    consumers: ['pe-cloud-api', 'pe-cloud-files', 'pe-opensandbox', 'pe-account-instructions'],
+    note: 'Carries the immutable account binding and lifetime for one independent account Context.',
+  },
+  {
+    key: 'peAccountExecution', pkg: 'pe-opensandbox', title: 'Account execution port', mode: 'service',
+    consumers: ['pe-cloud-api', 'pe-cloud-runtime'],
+    note: 'Exposes only the original Root-issued account capability; closed mode refuses native execution.',
+  },
+  {
+    key: 'peAccountInstructions', pkg: 'pe-account-instructions', title: 'Account instruction sources', mode: 'service',
+    consumers: ['pe-account-instructions'],
+    note: 'Reads bounded private and project instruction snapshots through the original account files owner.',
+  },
+  {
+    key: 'peAccountRuntime', pkg: 'pe-cloud-runtime', title: 'Account Context lifecycle', mode: 'core',
+    consumers: ['pe-cloud-access', 'pe-cloud-api'],
+    note: 'Owns account mounting, current-generation admission and retained participant cleanup.',
+  },
+  {
+    key: 'peAuth', pkg: 'pe-cloud-access', title: 'Cloud account authentication', mode: 'service',
+    consumers: ['pe-cloud-access', 'pe-cloud-runtime'],
+    note: 'Resolves authenticated requests through the Root-owned BetterAuth and account-owner selection.',
+  },
+  {
+    key: 'peCloudApi', pkg: 'pe-cloud-api', title: 'Account native API assembly', mode: 'service',
+    consumers: ['pe-cloud-access', 'pe-cloud-runtime'],
+    note: 'Audits and invokes native endpoints on the exact installed account graph under the exposure manifest.',
+  },
+  {
+    key: 'peCloudFiles', pkg: 'pe-cloud-files', title: 'Account file operations', mode: 'service',
+    consumers: ['pe-cloud-api', 'pe-cloud-runtime', 'pe-opensandbox', 'pe-account-instructions'],
+    note: 'Owns scoped project and private-file access, bounded worker requests and session environment banks.',
+  },
+  {
+    key: 'peExposure', pkg: 'pe-cloud-api', title: 'Cloud endpoint exposure policy', mode: 'service',
+    consumers: ['pe-cloud-access', 'pe-cloud-runtime'],
+    note: 'Validates the explicit native endpoint manifest and exact HTTP route declarations before account publication.',
+  },
+  {
+    key: 'peSandboxCoordinator', pkg: 'pe-opensandbox', title: 'Cloud session execution ownership', mode: 'seam',
+    implementations: ['pe-opensandbox'], consumers: ['pe-cloud-runtime', 'pe-cloud-api'],
+    note: 'Owns allocation metadata, issued account ports, process ranges and actual stop evidence; providers retain unknown work.',
+  },
+  {
     key: 'cotTranslation',
     pkg: 'experimental-client-ui-cot-translation',
     title: 'Reasoning translation Remote',

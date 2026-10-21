@@ -649,6 +649,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'cloudProjects',
+    summary: 'One additive Remote capability; directory allocation and native persistence stay with their owners.',
+    description: 'One additive Remote capability; directory allocation and native persistence stay with their owners.',
+    methods: [
+      {
+        signature: '@Remote(\'create\') async create(request: CloudProjectCreateRequest, signal: AbortSignal): Promise<WorkspaceValue>',
+        description: 'Allocate one project with an optional display title; paths and identities are server-owned.',
+        parameters: [{ name: 'request', description: 'Optional title, trimmed and limited to 256 UTF-8 bytes; explicit blank titles reject before allocation.' }, { name: 'signal', description: 'Caller cancellation, combined with the captured graph lifetime.' }],
+        returns: 'The original durable Workspace projection after the allocator settles and admission is rechecked.',
+        throws: ['CloudApiError before allocation for invalid title or unavailable admission; original allocation failures remain unchanged. Cancellation after allocation does not promise rollback. The callback is always awaited; callers must not replay unknown results.'],
+      },
+      {
+        signature: 'assertCurrent(): void',
+        description: 'Require the exact original service in both local and root lookups; replacement cannot inherit this callback.',
+        parameters: [],
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Inspect the actual Remote marker and installed service for the API\'s bounded native inventory.',
+        parameters: [],
+        returns: 'Exactly the guarded project-creation endpoint; does not publish readiness.',
+      },
+    ],
+  },
+  {
     key: 'commands',
     summary: 'Human-command registry.',
     description: 'Human-command registry. Plain-context definitions are global; definitions registered through a command-injected child of an agent context shadow globals for that agent.',
@@ -1709,10 +1734,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'peAccountInstructions',
+    summary: 'Account-owned adapter between trusted source reservations and native Session instruction injection.',
+    description: 'Account-owned adapter between trusted source reservations and native Session instruction injection.',
+    methods: [
+      {
+        signature: 'install(owner: Context, config: Config): void',
+        description: 'Install scoped turn injection using this graph\'s original source adapter.',
+        parameters: [{ name: 'owner', description: 'Actual Session plugin scope in the prepared account graph.' }, { name: 'config', description: 'Validated finite snapshot limits.' }],
+        returns: 'No value; source I/O starts only when a real turn enters.',
+      },
+    ],
+  },
+  {
     key: 'peAccountRuntime',
     summary: 'Shared service definition; providers need no dependency on Host control implementation.',
     description: 'Shared service definition; providers need no dependency on Host control implementation.',
     methods: [
+      {
+        signature: 'controlDatabase(participant: DrainParticipant): RootMetadataDatabase',
+        description: 'Borrow the active Root\'s bounded database for an exactly registered Root shutdown owner. Account graphs receive no such capability; borrowing grants no account or execution authority.',
+        parameters: [{ name: 'participant', description: 'Original registered object with an actual idempotent closeRoot implementation.' }],
+        returns: 'The immutable Root-only query capability; it cannot close or retarget the driver.',
+      },
       {
         signature: 'sealRecipe(input: RootRecipeInput): void',
         description: 'Audit actual Root facts; missing real storage keeps sealing rejected.',
@@ -1812,6 +1856,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'A frozen snapshot; request admission stays closed independently of authentication initialization.',
       },
       {
+        signature: 'inspectRootFetch(): readonly ExactFetchExposure[]',
+        description: 'Inspect the original shared ingress\'s registered Root Fetch entries for trusted account preparation.',
+        parameters: [],
+        returns: 'Actual current registrations; this creates neither a route nor business admission.',
+      },
+      {
         signature: 'close(): Promise<void>',
         description: 'Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end. Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.',
         parameters: [],
@@ -1888,6 +1938,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Original constructor installation, with no readiness publication or directory creation.',
       },
       {
+        signature: 'prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProjectsService',
+        description: 'Install the account\'s sole project allocator before native auditing and business publication.',
+        parameters: [{ name: 'owner', description: 'Original independent account preparation scope.' }, { name: 'input', description: 'Trusted files/Registry callback; receives no client-selected path or authority.' }],
+        returns: 'The additive Remote owner, registered on the original graph.',
+      },
+      {
+        signature: 'createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]): WorkspaceFiles',
+        description: 'Register the sole unchanged native WorkspaceFiles in its actual Loader fiber.',
+        parameters: [{ name: 'owner', description: 'Original Loader scope with the complete native inject list ready.' }, { name: 'nativeConfig', description: 'Original WorkspaceFiles page/list caps, resolved by its native Config.' }],
+        returns: 'The original native service; existing filesystem provider and native Gateway retain authorization and I/O ownership.',
+      },
+      {
         signature: 'installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents',
         description: 'Register the actual bounded native event subset on the original Gateway.',
         parameters: [{ name: 'owner', description: 'Original registration Loader fiber after readonly native providers activate.' }, { name: 'input', description: 'Exact graph profile home and all required event bounds.' }],
@@ -1904,6 +1966,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Construct the sole native Controller in its actual Loader fiber.',
         parameters: [{ name: 'owner', description: 'Owning native entry inside this independent graph.' }, { name: 'guards', description: 'Shared files/project/Preset and enabled-handler checks, including the fixed directory capability.' }, { name: 'config', description: 'Original native Controller configuration.' }],
         returns: 'The registered native subclass; this does not audit or publish the graph.',
+      },
+      {
+        signature: 'createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads',
+        description: 'Construct the sole original native upload owner with controlled streamed persistence.',
+        parameters: [{ name: 'owner', description: 'Actual Loader entry, with native dependencies ready.' }, { name: 'input', description: 'Same-Agent storage admission and finite native receipt capacity.' }],
+        returns: 'Native service; its streamed route remains subject to the audited exposure policy.',
       },
       {
         signature: 'createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop',
@@ -1952,13 +2020,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'attachmentStore(): typeof LocalAttachmentStore',
+        description: 'Select the single native provider constructor prepared for this graph.',
+        parameters: [],
+        returns: 'Native class with unchanged Config and persistence, after the staging capability check.',
+      },
+      {
+        signature: 'async stageAttachments( workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal, ): Promise<ResidentResult<readonly StageFileResult[]>>',
+        description: 'Copy approved native refs using the original store and this account\'s existing mutation lane.',
+        parameters: [{ name: 'workspace', description: 'Actual registered project selected by the native Agent owner.' }, { name: 'buildRefs', description: 'Collect native receipts or accepted Session refs inside the positive batch reservation.' }, { name: 'assertAuthorized', description: 'Exact Agent/Session/provider checks, repeated before source I/O.' }, { name: 'signal', description: 'Actual caller cancellation, combined with the original account lifetime by the pool.' }],
+        returns: 'Closed publications whose retained reservation must be released after handoff.',
+      },
+      {
+        signature: 'runAttachmentIntake<T>( reservationBytes: number, assertAuthorized: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal, ): Promise<ResidentResult<T>>',
+        description: 'Admit native upload persistence on the same files mutation owner before any stream is pulled.',
+        parameters: [{ name: 'reservationBytes', description: 'Complete finite intake/cleanup/result reservation.' }, { name: 'assertAuthorized', description: 'Original Agent and provider checks; no path-derived authority.' }, { name: 'execute', description: 'Native persistence operation whose actual settlement remains owned by the pool.' }, { name: 'signal', description: 'Observation cancellation; an unconfirmed failure retains the original positive reservation.' }],
+        returns: 'The native result retained until release.',
+      },
+      {
         signature: 'assertInstalled(owner: Context = this.ctx): void',
         description: 'Require this exact prepared owner and current binding without granting business admission.',
         parameters: [{ name: 'owner', description: 'Native scope in the original account graph; omission checks the calling service scope.' }],
       },
       {
         signature: 'install(owner: Context): Promise<AccountFilesProject>',
-        description: 'Install the sole original native Registry, await its default result, then install its fixed S2 FileSystem. One Promise retains actual settlement; failure is terminal for this owner and does not certify cleanup.',
+        description: 'Install the sole original native Registry, await its default result, then prepare and install its selected native FileSystem. Without a trusted provider factory, retain the metadata-only S2 implementation. One Promise retains actual settlement; failure is terminal for this owner and does not certify cleanup.',
         parameters: [{ name: 'owner', description: 'Actual files/account Loader scope, which owns both native child fibers.' }],
         returns: 'The actual project after provider activation and directory verification; no ready or clean claim.',
       },
@@ -1968,6 +2054,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: 'The original Workspace object and files-owned directory capability, while both native providers remain current.',
         throws: ['FilesFailure before successful installation, after provider disposal or for a foreign/stale graph.'],
+      },
+      {
+        signature: 'assertContentAvailable(): void',
+        description: 'Require the settled original Registry/FS installation and its trusted actual content-capability check.',
+        parameters: [],
+        throws: ['FilesFailure for partial installation, replaced providers, S2 omission or unavailable ABI8 pool capability.'],
+      },
+      {
+        signature: 'async projectFor(workspace: Workspace, signal?: AbortSignal): Promise<AccountFilesProject>',
+        description: 'Derive metadata for the actual registered object without selecting or replacing the bootstrap default.',
+        parameters: [{ name: 'workspace', description: 'Native Registry object already selected by trusted account admission.' }, { name: 'signal', description: 'Cancellation of bounded metadata observation.' }],
+        returns: 'A fixed directory capability on the original lane; it grants no new service or registration window.',
+      },
+      {
+        signature: 'async prepareExecutionMounts( project: AccountFilesProject, sessionId: EnvironmentSessionId, environmentVersion: string, signal?: AbortSignal, ): Promise<ResidentResult<ExecutionMountGrant>>',
+        description: 'Bind a persistent environment only after Root approved the exact live native Agent/Session and project relationship. Session strings, copied project results and path-selected inputs cannot establish that approval.',
+        parameters: [{ name: 'project', description: 'Original object obtained from this owner\'s install/project/projectFor method.' }, { name: 'sessionId', description: 'Real native Session already checked by Root\'s account-native guards.' }, { name: 'environmentVersion', description: 'Approved image/architecture/Python/init identity, never command environment input.' }, { name: 'signal', description: 'Observer cancellation; confirmed late metadata remains bound and unknown retains actual work.' }],
+        returns: 'An opaque original grant with its resident reservation; release revokes it without freeing or deleting a slot.',
+      },
+      {
+        signature: 'assertExecutionMountGrant(grant: ExecutionMountGrant): void',
+        description: 'Recheck the original opaque object before allocation or user execution; Root also repeats its native Session guard.',
+        parameters: [{ name: 'grant', description: 'Exact unreleased object issued by this files owner.' }],
+        throws: ['FilesFailure after release, graph/provider replacement, lost membership or a foreign/copied object.'],
+      },
+      {
+        signature: 'async createProject(use: AccountUse, title: string | undefined, signal: AbortSignal): Promise<Workspace>',
+        description: 'Create one server-selected project while retaining the actual ready borrow through native settlement.',
+        parameters: [{ name: 'use', description: 'Original runtime borrow; request JSON cannot supply it.' }, { name: 'title', description: 'Native display title; it never chooses a path or leaf.' }, { name: 'signal', description: 'Admission cancellation; started registration keeps its actual responsibility.' }],
+        returns: 'The actual fulfilled native Workspace, after responsibility transfer.',
+      },
+      {
+        signature: 'async withInstructionReaders<T>( workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, ): Promise<ResidentResult<T>>',
+        description: 'Consume source readers only for this owner\'s exact registered native project. The trusted caller owns exact active Agent/Session admission; no path or id grants authority here.',
+        parameters: [{ name: 'workspace', description: 'Exact Registry object after shared native admission.' }, { name: 'reservedBytes', description: 'Complete snapshot storage held through native message handoff.' }, { name: 'build', description: 'Consumes independent source readers without another lane reservation.' }, { name: 'signal', description: 'Cancellation leaves actual work with the same files participant.' }],
+        returns: 'Complete retained result after source I/O settles; stale results are released and rejected.',
       },
     ],
   },
@@ -2043,9 +2165,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'abstract bindAccount(ctx: Context, binding: AccountBinding, assertCurrent: () => void): AccountExecutionPort',
+        signature: 'abstract bindAccount( ctx: Context, binding: AccountBinding, assertCurrent: () => void, authority?: NativeAccountExecutionAuthority, ): AccountExecutionPort',
         description: 'Issue one restricted port from runtime\'s trusted native prepare scope.',
-        parameters: [{ name: 'ctx', description: 'independent account graph with its actual installed binding.' }, { name: 'binding', description: 'exact installed runtime generation, never serialized identity.' }, { name: 'assertCurrent', description: 'runtime-owned graph-current check, valid during mounting.' }],
+        parameters: [{ name: 'ctx', description: 'independent account graph with its actual installed binding.' }, { name: 'binding', description: 'exact installed runtime generation, never serialized identity.' }, { name: 'assertCurrent', description: 'runtime-owned graph-current check, valid during mounting.' }, { name: 'authority', description: 'optional lazy native authority, not consumed during binding; closed coordinators ignore it.' }],
         returns: 'an account-only port; issuance does not establish account readiness.',
       },
       {
@@ -5054,7 +5176,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountApiPreparation',
-    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n}',
+    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n}',
+  },
+  {
+    name: 'AccountAttachmentBackend',
+    declaration: 'export interface AccountAttachmentBackend {\n    readonly binding: AccountBinding;\n    assertCurrent(): void;\n    assertInstalled(caller: Context): void;\n    mapFileHostPath(caller: Context, ref: FileAttachmentRef): string | undefined;\n}',
   },
   {
     name: 'AccountBonusBatch',
@@ -5079,6 +5205,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountExecutionPort',
     declaration: 'export interface AccountExecutionPort {\n    readonly binding: AccountBinding;\n    assertCurrent(ctx: Context): void;\n    deny(ctx: Context, signal?: AbortSignal): never;\n    claim(ctx: Context): void;\n    close(): void;\n}',
+  },
+  {
+    name: 'AccountFileSelection',
+    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    assertCurrent(): void;\n}',
+  },
+  {
+    name: 'AccountFilesPreparation',
+    declaration: 'export interface AccountFilesPreparation {\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'runNativeMutation\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n    readonly withInstructionReaders?: <T>(workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void) => Promise<ResidentResult< /* …truncated — full shape in source */',
   },
   {
     name: 'AccountFilesProject',
@@ -5317,6 +5451,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AttachmentStore',
+    declaration: 'export abstract class AttachmentStore extends Service {\n    constructor(ctx: Context);\n    abstract readonly imageLimits: ImageAttachmentLimits;\n    abstract validateImage(input: SaveImageAttachment): Promise<void>;\n    async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>;\n    async admitPromptContent(content: readonly AttachmentAdmissionPart[]): Promise<AdmittedPromptContentPart[]>;\n    admitEncodedFile(input: EncodedFileAttachment): Promise<FileAttachmentRef>;\n    isAttachmentError(error: unknown): error is AttachmentError;\n    abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>;\n    abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>;\n    imageHostPath(ref: ImageAttachmentRef): string | undefined;\n    saveFile(input: SaveFileAttachment): Promise<FileAttachmentRef>;\n    saveFileStream(input: SaveFileStreamAttachment): Promise<FileAttachmentRef>;\n    async *readFileStream(ref: FileAttachmentRef, signal?: AbortSignal): AsyncIterable<Uint8Array>;\n    fileHostPath(ref: FileAttachmentRef): string | undefined;\n    readImageRequest(ref: ImageAttachmentRef, target: ImageRequestTarget, signal?: AbortSignal): Promise<RequestImageAttachment>;\n}',
+  },
+  {
     name: 'AuthorizationEntry',
     declaration: 'export interface AuthorizationEntry {\n    key: CredentialKey;\n    label: string;\n    methods: readonly AuthorizationMethod[];\n    inFlight: boolean;\n}',
   },
@@ -5422,7 +5560,23 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'>>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\'>): NativeFirstScreen;\n    installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents;\n    async stopFirstScreenEvents(): Promise<void>;\n    createController(owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1]): SessionController;\n    createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop;\n    installLlmGuard(owner: Context, allowed: (provider: string, model: string) => boolean): () => void;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): v /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'>>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\'>): NativeFirstScreen;\n    prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProjectsService;\n    createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]): WorkspaceFiles;\n    installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents;\n    async stopFirstScreenEvents(): Promise<void>;\n    createController(owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1]): SessionController;\n    createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads;\n    createAgentLoop(owner: Context, guards: NativeAgentFactory /* …truncated — full shape in source */',
+  },
+  {
+    name: 'CloudAccountFiles',
+    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    attachmentStore(): typeof LocalAttachmentStore;\n    async stageAttachments(workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runAttachmentIntake<T>(reservationBytes: number, assertAuthorized: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    assertInstalled(owner: Context = this.ctx): void;\n    install(owner: Context): Promise<AccountFilesProject>;\n    project(): AccountFilesProject;\n    assertContentAvailable(): void;\n    async projectFor(workspace: Workspace, signal?: AbortSignal): Promise<AccountFilesProject>;\n    async prepareExecutionMounts(project: AccountFilesProject, sessionId: EnvironmentSessionId, environmentVersion: string, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    assertExecutionMountGrant(grant: ExecutionMountGrant): void;\n    async createProject(use: AccountUse, title: string | undefined, signal: AbortSignal): Promise<Workspace>;\n    async withInstructionReaders<T>(workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n}',
+  },
+  {
+    name: 'CloudProjectCreateRequest',
+    declaration: 'export interface CloudProjectCreateRequest {\n    readonly title?: string;\n}',
+  },
+  {
+    name: 'CloudProjectsPreparation',
+    declaration: 'export interface CloudProjectsPreparation {\n    readonly createProject: (title: string | undefined, signal: AbortSignal) => Promise<WorkspaceValue>;\n}',
+  },
+  {
+    name: 'CloudProjectsService',
+    declaration: 'export class CloudProjectsService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, input: CloudProjectsPreparation);\n    @Remote(\'create\')\n    async create(request: CloudProjectCreateRequest, signal: AbortSignal): Promise<WorkspaceValue>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'CollectedOutput',
@@ -5645,6 +5799,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableCreateSpec {\n    readonly seed?: readonly SessionEvent[];\n}',
   },
   {
+    name: 'ControlledWorkspaceRegistry',
+    declaration: 'export interface ControlledWorkspaceRegistry extends WorkspaceRegistry {\n    createProject(grant: IsolatedLeafGrant, title?: string): Promise<Workspace>;\n    createAdmittedProject(use: AccountUse, grant: IsolatedLeafGrant, title: string | undefined, signal: AbortSignal): Promise<Workspace>;\n    createS2Project(): Promise<S2ProjectPort>;\n}',
+  },
+  {
     name: 'CordisDynamicPackageId',
     declaration: 'export type CordisDynamicPackageId = Branded<\'CordisDynamicPackageId\'>;',
   },
@@ -5841,6 +5999,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DirectoryListing {\n    path: string;\n    home: string;\n    crumbs: DirectoryEntry[];\n    entries: DirectoryEntry[];\n    truncated: boolean;\n}',
   },
   {
+    name: 'DirectoryObservation',
+    declaration: 'export interface DirectoryObservation {\n    readonly id: OperationId;\n    waitPrepared(signal?: AbortSignal): Promise<\'created\' | \'unchanged\'>;\n}',
+  },
+  {
     name: 'DirectoryPickerBrowseCapability',
     declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
   },
@@ -5855,6 +6017,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryPickerNativeCapability',
     declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal): Promise<string | null>;\n}',
+  },
+  {
+    name: 'DirectoryReadPort',
+    declaration: 'export interface DirectoryReadPort {\n    canonicalPath(path: string, signal?: AbortSignal): Promise<string>;\n    isDirectory(path: string, signal?: AbortSignal): Promise<boolean>;\n}',
   },
   {
     name: 'DirectoryRegistrationHandle',
@@ -5949,6 +6115,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EndpointExposure {\n    readonly endpoint: string;\n    readonly handlerId: string;\n    readonly guard: ExposureGuard;\n}',
   },
   {
+    name: 'EnvironmentBankAuthority',
+    declaration: 'export interface EnvironmentBankAuthority {\n    readonly bank: StaticEnvironmentBank;\n    readonly appUid: number;\n    readonly appGid: number;\n    readonly projects: StaticStorageDomain;\n}',
+  },
+  {
+    name: 'EnvironmentSessionId',
+    declaration: 'export type EnvironmentSessionId = Workspace[\'sessionIds\'][number];',
+  },
+  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n    system?: never;\n}',
   },
@@ -5969,6 +6143,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ExactFetchExposure {\n    readonly method: string;\n    readonly path: string;\n    readonly handlerId: string;\n    readonly guard: ExposureGuard;\n}',
   },
   {
+    name: 'ExecutionMountGrant',
+    declaration: 'export interface ExecutionMountGrant {\n    readonly binding: AccountBinding;\n    readonly sessionId: EnvironmentSessionId;\n    readonly workspaceId: Workspace[\'id\'];\n    readonly project: FdRootIdentity & {\n        readonly mountVersion: string;\n        readonly quota: ExecutionMountQuota;\n        readonly readOnlyPaths: readonly [\n            \'.pe\'\n        ];\n        readonly metadataDirectory: FdProjectMetadataDirectory & {\n            readonly relativePath: \'.pe\';\n        };\n    };\n    readonly environment: FdRootIdentity & {\n        readonly targetPath: \'/opt/session-env\';\n        readonly bankId: string;\n        readonly slotId: string;\n        readonly slotGeneration: number;\n        readonly environmentVersion: string;\n        readonly quota: ExecutionMountQuota;\n        readonly rootReadOnly: true;\n        readonly writablePaths: readonly [\n            \'home\',\n            \'venv\',\n            \'tmp\'\n        ];\n        readonly layout: FdEnvironmentLayout;\n    };\n}',
+  },
+  {
+    name: 'ExecutionMountQuota',
+    declaration: 'export interface ExecutionMountQuota {\n    readonly device: string;\n    readonly mountId: string;\n    readonly maximumBytes: string;\n    readonly maximumInodes: string;\n}',
+  },
+  {
     name: 'ExposureGuard',
     declaration: 'export type ExposureGuard = \'authenticated-account\' | \'account-project\' | \'account-session\' | \'account-attachment\';',
   },
@@ -5983,6 +6165,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ExposurePolicy',
     declaration: 'export class ExposurePolicy {\n    readonly manifest: ExposureManifest;\n    constructor(input: ExposureManifest);\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    assertSettingsFields(namespace: string, fields: readonly string[]): void;\n}',
+  },
+  {
+    name: 'FdEnvironmentLayout',
+    declaration: 'export interface FdEnvironmentLayout {\n    readonly home: FdProjectMetadataDirectory;\n    readonly venv: FdProjectMetadataDirectory;\n    readonly tmp: FdProjectMetadataDirectory;\n}',
+  },
+  {
+    name: 'FdProjectMetadataDirectory',
+    declaration: 'export interface FdProjectMetadataDirectory {\n    readonly device: string;\n    readonly inode: string;\n    readonly mountId: string;\n    readonly uid: number;\n    readonly gid: number;\n    readonly mode: number;\n}',
+  },
+  {
+    name: 'FdRootIdentity',
+    declaration: 'export interface FdRootIdentity {\n    readonly rootPath: string;\n    readonly rootDevice: string;\n    readonly rootInode: string;\n    readonly rootMountId?: string;\n}',
+  },
+  {
+    name: 'FdStageResult',
+    declaration: 'export interface FdStageResult {\n    readonly outcome: \'published\' | \'reused\';\n    readonly facts: StagingFacts;\n}',
   },
   {
     name: 'FeedbackCategory',
@@ -6013,8 +6211,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FileReferenceCandidate {\n    path: string;\n    kind: \'file\' | \'directory\';\n}',
   },
   {
+    name: 'FileSystem',
+    declaration: 'export abstract class FileSystem extends Service {\n    constructor(ctx: Context);\n    watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>;\n    get sandboxMode(): SandboxMode | undefined;\n    abstract resolve(path: string, opts?: {\n        cwd?: string;\n        signal?: AbortSignal;\n    }): Promise<FsTarget>;\n    abstract processPath(target: FsTarget): string;\n    processPathFromHostPath(hostPath: string): string | undefined;\n    abstract fileUrl(target: FsTarget): string;\n    abstract contains(parent: FsTarget, child: FsTarget): boolean;\n    abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>;\n    abstract lstat(path: string, opts?: {\n        cwd?: string;\n    }, signal?: AbortSignal): Promise<FsPathInfo | undefined>;\n    abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>;\n    abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>;\n    abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>;\n    abstract readByteRange(target: FsTarget, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<Uint8Array>;\n    abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>;\n    abstract writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise< /* …truncated — full shape in source */',
+  },
+  {
     name: 'FileUploadReceiptId',
     declaration: 'export type FileUploadReceiptId = Branded<\'file-upload-receipt-id\'>;',
+  },
+  {
+    name: 'FileUploads',
+    declaration: 'export class FileUploads extends TypertRemoteService {\n    static inject;\n    static Config;\n    constructor(ctx: Context, config: Config = {});\n    registerAgentResolver(resolve: AgentResolver): () => void;\n    @Remote(\'upload\')\n    upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue>;\n    async uploadStream(request: {\n        readonly sessionId: SessionId;\n        readonly data: AsyncIterable<Uint8Array>;\n        readonly signal?: AbortSignal;\n        readonly name?: string;\n    }): Promise<FileUploadValue>;\n    resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined;\n    bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): PromptFileBinding;\n    retirePrompt(agent: Agent, requestId: string): void;\n}',
   },
   {
     name: 'FileUploadValue',
@@ -6038,7 +6244,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenNativeInput',
-    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n}',
+    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n}',
+  },
+  {
+    name: 'FixedRootReader',
+    declaration: 'export type FixedRootReader = Pick<FileSystem, \'resolve\' | \'stat\' | \'streamText\' | \'processPath\'>;',
   },
   {
     name: 'FrequencyTooHighError',
@@ -6245,6 +6455,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
   },
   {
+    name: 'InstructionReadReaders',
+    declaration: 'export interface InstructionReadReaders {\n    readonly project: FixedRootReader;\n    readonly account?: FixedRootReader;\n}',
+  },
+  {
     name: 'InternalScheduleError',
     declaration: 'export interface InternalScheduleError {\n    readonly code: \'internal_error\';\n    readonly message: string;\n}',
   },
@@ -6279,6 +6493,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InvokeRemoteRequest',
     declaration: 'export interface InvokeRemoteRequest {\n    readonly namespace: string;\n    readonly method: string;\n    readonly args: Readonly<Record<string, unknown>>;\n    readonly uplink?: AsyncIterable<unknown>;\n    readonly uplinkWindow?: RemoteUplinkWindow | undefined;\n    readonly peer: PeerScope;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'IsolatedLeafGrant',
+    declaration: 'export type IsolatedLeafGrant = {\n    readonly binding: AccountBinding;\n    readonly leaf: string;\n    assertExclusive(this: void): void;\n} & ({\n    readonly backend: \'root-owned-isolated-linux-tmpfs\';\n    readonly parent: FdRootIdentity;\n} | {\n    readonly backend: \'root-owned-isolated-ext4\';\n    readonly parent: FdRootIdentity & {\n        readonly rootMountId: string;\n    };\n    assertDeployment(this: void): void;\n});',
   },
   {
     name: 'JobAppendOptions',
@@ -6503,6 +6721,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LocalAtInput',
     declaration: 'export interface LocalAtInput {\n    readonly date: string;\n    readonly time: string;\n    readonly time_zone: string;\n}',
+  },
+  {
+    name: 'LocalAttachmentStore',
+    declaration: 'export class LocalAttachmentStore extends AttachmentStore {\n    static Config: z<Config>;\n    readonly root: string;\n    readonly imageLimits: ImageAttachmentLimits;\n    readonly normalizationPolicy: Readonly<NormalizationPolicy>;\n    readonly imageCompressionConcurrency: number;\n    constructor(ctx: Context, config: Config);\n    async validateImage(input: SaveImageAttachment): Promise<void>;\n    override async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>;\n    async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>;\n    async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>;\n    override imageHostPath(ref: ImageAttachmentRef): string;\n    override async saveFile(input: SaveFileAttachment): Promise<FileAttachmentRef>;\n    override async saveFileStream(input: SaveFileStreamAttachment): Promise<FileAttachmentRef>;\n    override readFileStream(ref: FileAttachmentRef, signal?: AbortSignal): AsyncIterable<Uint8Array>;\n    override fileHostPath(ref: FileAttachmentRef): string;\n    override async readImageRequest(ref: ImageAttachmentRef, target: ImageRequestTarget, signal?: AbortSignal): Promise<RequestImageAttachment>;\n}',
   },
   {
     name: 'LocalCredentialProvider',
@@ -6809,6 +7031,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ModTier = \'prepend\' | \'user\' | \'append\' | \'builtin\' | \'core\';',
   },
   {
+    name: 'NativeAccountExecutionAuthority',
+    declaration: 'export interface NativeAccountExecutionAuthority {\n    readonly assertBusinessCurrent: () => void;\n    readonly getAgent: (id: SessionId) => Agent | undefined;\n    readonly projectForAgent: (agent: Agent) => Workspace;\n    readonly projectForSession: (session: Session) => Workspace;\n    readonly files: () => CloudAccountFiles;\n}',
+  },
+  {
     name: 'NativeAgentFactoryGuards',
     declaration: 'export interface NativeAgentFactoryGuards {\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void>;\n    assertPrepared(agent: PreparedAgent): void;\n}',
   },
@@ -6830,11 +7056,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativeSessionGuards',
-    declaration: 'export interface NativeSessionGuards {\n    readonly projectDirectory: NativeSessionDirectory;\n    readonly firstScreen?: NativeSessionReadGuards;\n    assertHandlerEnabled(handlerId: string): void;\n    resolveCreate(request: SessionCreateRequest): Promise<SessionCreateRequest>;\n    assertSessionProject(sessionId: SessionId): Promise<void>;\n    assertActiveScope(agent: NonNullable<ReturnType<Context[\'agents\'][\'get\']>>): void;\n}',
+    declaration: 'export interface NativeSessionGuards {\n    readonly projectDirectory: NativeSessionDirectory;\n    readonly firstScreen?: NativeSessionReadGuards;\n    assertHandlerEnabled(handlerId: string): void;\n    resolveCreate(request: SessionCreateRequest): Promise<SessionCreateRequest>;\n    assertSessionProject(sessionId: SessionId): Promise<void>;\n    assertActiveScope(agent: NonNullable<ReturnType<Context[\'agents\'][\'get\']>>): void;\n    readonly preparePromptFiles?: (agent: Agent, receiptIds: readonly FileUploadReceiptId[], signal?: AbortSignal) => Promise<void>;\n}',
   },
   {
     name: 'NativeSessionReadGuards',
     declaration: 'export interface NativeSessionReadGuards {\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly assertSessionRead: (id: SessionId, summary?: SessionSummary) => void;\n}',
+  },
+  {
+    name: 'NativeTextFileSystemConstructor',
+    declaration: 'export interface NativeTextFileSystemConstructor {\n    new (ctx: Context): FileSystem;\n    readonly inject: readonly string[];\n}',
+  },
+  {
+    name: 'NativeUploadPreparation',
+    declaration: 'export interface NativeUploadPreparation {\n    readonly maxPendingReceipts: number;\n    storeFileStream(agent: Agent, input: SaveFileStreamAttachment, save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>): Promise<FileAttachmentRef>;\n}',
   },
   {
     name: 'NodeStreamTransport',
@@ -6843,6 +7077,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'NodeStreamTransportOptions',
     declaration: 'export interface NodeStreamTransportOptions {\n    readonly maxFrameBytes: number;\n    readonly acquireStream: (endpoint: string) => (status: \'confirmed\' | \'unknown\') => void;\n}',
+  },
+  {
+    name: 'NormalizationPolicy',
+    declaration: 'export interface NormalizationPolicy {\n    maxPixels: number;\n    maxDimension: number;\n    maxBytes: number;\n}',
   },
   {
     name: 'NotFutureError',
@@ -7017,6 +7255,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n    readonly registry: Registry;\n    readonly host?: string;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n    readonly registries?: Registry[];\n};',
   },
   {
+    name: 'PoolReadPort',
+    declaration: 'export interface PoolReadPort {\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>;\n    withInstructionReaders<T>(this: void, workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void): Promise<ResidentResult<T>>;\n    derivePreparedLeaf(grant: IsolatedLeafGrant): PreparedLeafPort;\n    createWorkspaceRegistry(defaultGrant: Is /* …truncated — full shape in source */',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
@@ -7031,6 +7273,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreparedDeepSeekLlmApiExtensions',
     declaration: 'export interface PreparedDeepSeekLlmApiExtensions {\n    readonly fields: Readonly<Partial<DeepSeekLlmApiExtensionMap>>;\n    accept(): Promise<void>;\n}',
+  },
+  {
+    name: 'PreparedLeafPort',
+    declaration: 'export interface PreparedLeafPort {\n    prepare(): {\n        readonly observation: DirectoryObservation;\n        readonly control: {\n            expose(): string;\n            cleanup(signal?: AbortSignal): Promise<\'cleaned\' | \'unknown\'>;\n        };\n    };\n}',
   },
   {
     name: 'PreparedLlmCall',
@@ -7369,6 +7615,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RequestUserInput {\n    readonly role: \'user\';\n    readonly content: UserMessage[\'content\'];\n    readonly id?: never;\n    readonly source?: never;\n}',
   },
   {
+    name: 'ResidentResult',
+    declaration: 'export interface ResidentResult<T> {\n    readonly value: T;\n    release(): void;\n}',
+  },
+  {
+    name: 'ResolveAccountFileProject',
+    declaration: 'export type ResolveAccountFileProject = (caller: Context, signal?: AbortSignal) => Promise<AccountFileSelection>;',
+  },
+  {
     name: 'ResolvedAlwaysRetryPolicy',
     declaration: 'export interface ResolvedAlwaysRetryPolicy extends ResolvedRetryBackoff {\n    readonly mode: \'always\';\n}',
   },
@@ -7413,8 +7667,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
   },
   {
+    name: 'S2FileSystemConstructor',
+    declaration: 'export interface S2FileSystemConstructor {\n    new (ctx: Context): FileSystem;\n    readonly inject: readonly string[];\n}',
+  },
+  {
     name: 'S2ProjectDirectory',
     declaration: 'export interface S2ProjectDirectory {\n    readonly binding: AccountBinding;\n    prepare(cwd: string): Promise<void>;\n}',
+  },
+  {
+    name: 'S2ProjectPort',
+    declaration: 'export interface S2ProjectPort {\n    readonly binding: AccountBinding;\n    readonly workspaceId: Workspace[\'id\'];\n    readonly FileSystem: S2FileSystemConstructor;\n    readonly projectDirectory: S2ProjectDirectory;\n}',
   },
   {
     name: 'SandboxEnforcement',
@@ -8403,6 +8665,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SshStreamEndpoint',
     declaration: 'export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>;',
+  },
+  {
+    name: 'StageFileResult',
+    declaration: 'export interface StageFileResult extends FdStageResult {\n    readonly ref: FileAttachmentRef;\n    readonly relativePath: string;\n}',
+  },
+  {
+    name: 'StageSource',
+    declaration: 'export interface StageSource {\n    readonly ref: FileAttachmentRef;\n    open(this: void, signal: AbortSignal): AsyncIterable<Uint8Array>;\n}',
+  },
+  {
+    name: 'StageSources',
+    declaration: 'export type StageSources = readonly StageSource[] | (() => readonly StageSource[]);',
+  },
+  {
+    name: 'StagingFacts',
+    declaration: 'export interface StagingFacts {\n    readonly kind: \'write\' | \'written\' | \'existing\' | \'existing-chunk\' | \'published\' | \'reused\' | \'aborted\' | \'failed\' | \'unknown\';\n    readonly code: string;\n    readonly publication: \'none\' | \'published\' | \'unknown\';\n    readonly closed: boolean;\n    readonly clean: boolean;\n    readonly temporaryPresent: boolean;\n    readonly writtenBytes: number;\n    readonly readBytes: number;\n    readonly sequence: number;\n    readonly retainedCreatedDirectories: number;\n}',
+  },
+  {
+    name: 'StaticEnvironmentBank',
+    declaration: 'export interface StaticEnvironmentBank {\n    readonly bankId: string;\n    readonly slots: readonly StaticEnvironmentSlot[];\n}',
+  },
+  {
+    name: 'StaticEnvironmentSlot',
+    declaration: 'export interface StaticEnvironmentSlot {\n    readonly slotId: string;\n    readonly domain: StaticStorageDomain;\n}',
+  },
+  {
+    name: 'StaticStorageBacking',
+    declaration: 'export interface StaticStorageBacking {\n    readonly path: string;\n    readonly device: string;\n    readonly inode: string;\n    readonly bytes: string;\n}',
+  },
+  {
+    name: 'StaticStorageDomain',
+    declaration: 'export interface StaticStorageDomain {\n    readonly rootPath: string;\n    readonly rootDevice: string;\n    readonly rootInode: string;\n    readonly rootMountId: string;\n    readonly minimumBytes: string;\n    readonly maximumBytes: string;\n    readonly minimumInodes: string;\n    readonly maximumInodes: string;\n    readonly backing: StaticStorageBacking;\n}',
   },
   {
     name: 'StorageBackend',
@@ -9413,6 +9707,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceFileRange {\n    readonly offset?: number;\n    readonly limit?: number;\n}',
   },
   {
+    name: 'WorkspaceFiles',
+    declaration: 'export class WorkspaceFiles extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, private readonly config: Config);\n    @Remote\n    async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>;\n    @Remote\n    async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal): Promise<WorkspaceFileBytes>;\n    @Remote\n    async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>;\n    @Remote\n    async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>;\n    @Remote({ mode: \'stream\' })\n    changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>;\n}',
+  },
+  {
     name: 'WorkspaceFileScope',
     declaration: 'export interface WorkspaceFileScope {\n    readonly sessionId: SessionId;\n    readonly workspaceRoot: string;\n}',
   },
@@ -9455,6 +9753,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspacePinValue',
     declaration: 'export interface WorkspacePinValue {\n    readonly pinnedSessionIds: readonly SessionId[];\n}',
+  },
+  {
+    name: 'WorkspaceRegistry',
+    declaration: 'export class WorkspaceRegistry extends Service {\n    static inject;\n    constructor(ctx: Context);\n    async create(path: string, title?: string): Promise<Workspace>;\n    initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined>;\n    get(id: WorkspaceId): Workspace | undefined;\n    list(): Workspace[];\n    delete(id: WorkspaceId): Promise<boolean>;\n    insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>;\n    get archivedSessionIds(): readonly SessionId[];\n    archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promise<void>;\n    unarchiveSession(sessionId: SessionId): Promise<void>;\n    get pinnedSessionIds(): readonly SessionId[];\n    pinSession(sessionId: SessionId): Promise<void>;\n    unpinSession(sessionId: SessionId): Promise<void>;\n    async resolveByPath(path: string): Promise<Workspace | undefined>;\n}',
   },
   {
     name: 'WorkspaceRenameRequest',

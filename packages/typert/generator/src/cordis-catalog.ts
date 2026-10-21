@@ -26,15 +26,27 @@ type Mode = 'emit' | 'bail' | 'waterfall' | 'parallel' | 'serial'
  * doc-typecheck, since a bare signature fragment is not standalone-compilable). */
 const FENCE = 'ts cordis-catalog'
 
+/** Resolve service-qualified type names without classifying the same short name elsewhere. */
+function typePagesForService(pages: Readonly<Record<string, string>>, serviceKey?: string): Readonly<Record<string, string>> {
+  const prefix = serviceKey === undefined ? undefined : `ctx.${serviceKey}:`
+  const unscoped = Object.entries(pages).filter(([name]) => !name.startsWith('ctx.'))
+  const scoped = prefix === undefined ? [] : Object.entries(pages)
+    .filter(([name]) => name.startsWith(prefix))
+    .map(([name, page]): [string, string] => [name.slice(prefix.length), page])
+  return Object.fromEntries([...unscoped, ...scoped])
+}
+
 /** Append fail-closed signature type-link violations from the retained type tree. */
 function checkTypeLinks(
   where: string,
   names: readonly string[],
   policy: CordisCatalogPolicy,
   violations: string[],
+  serviceKey?: string,
 ): void {
+  const pages = typePagesForService(policy.linkedTypePages, serviceKey)
   for (const name of names) {
-    if (Object.hasOwn(policy.linkedTypePages, name)
+    if (Object.hasOwn(pages, name)
       || policy.foundationTypeNames.has(name)
       || Object.hasOwn(policy.typeLinkExemptions, name)) continue
     violations.push(
@@ -110,7 +122,7 @@ export interface InheritedEntry {
 
 /** Repository policy consumed by the Cordis catalog parsing and rendering logic. */
 export interface CordisCatalogPolicy {
-  /** Type names linked from signatures to their documentation pages. */
+  /** Type names linked to documentation; `ctx.<service>:<type>` limits a short name to that service. */
   readonly linkedTypePages: Readonly<Record<string, string>>
   /** TypeScript or framework types that need no repository documentation link. */
   readonly foundationTypeNames: ReadonlySet<string>
@@ -303,7 +315,7 @@ export class CordisCatalogProjector {
         if (member.kind !== 'method') continue
         const where = `service method ctx.${service.key}.${member.name} (${pointer(member.location)})`
         if (this.face.face === 'host') {
-          checkTypeLinks(where, signatureTypeNames(this.renderer, member.signature), this.policy, typeLinkViolations)
+          checkTypeLinks(where, signatureTypeNames(this.renderer, member.signature), this.policy, typeLinkViolations, service.key)
         }
         methods.push({ kind: 'method', signature: member.text, jsDoc: member.jsDoc ?? '' })
         if (member.jsDoc === undefined) {
@@ -966,7 +978,7 @@ function renderEvent(e: EventEntry, onPage: string, linkedTypePages: Readonly<Re
   const out = [...anchorFor(`${e.name} — ${e.mode}`), `#### \`${e.name}\` — ${e.mode}`, '']
   if (e.doc) out.push(e.doc, '')
   out.push('```' + FENCE, e.jsDoc, e.signature, '```', '')
-  const links = typeLinks(e.signature, onPage, linkedTypePages)
+  const links = typeLinks(e.signature, onPage, typePagesForService(linkedTypePages))
   if (links) out.push(links, '')
   out.push(`Source: ${sourceLink(e.source)}`, '')
   return out
@@ -985,7 +997,7 @@ function renderService(s: ServiceEntry, onPage: string, linkedTypePages: Readonl
       method.signature,
     ])
     out.push('```' + FENCE, ...declarations, '```', '')
-    const links = typeLinks(methods.map(method => method.signature).join('\n'), onPage, linkedTypePages)
+    const links = typeLinks(methods.map(method => method.signature).join('\n'), onPage, typePagesForService(linkedTypePages, s.key))
     if (links) out.push(links, '')
   }
   out.push(`Source: ${sourceLink(s.source)}`, '')

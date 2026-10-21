@@ -36,6 +36,9 @@ import { runInstructionReadWork } from './instruction-read-work.ts'
 import type { InstructionReadReaders } from './instruction-read-work.ts'
 import { executeStageBatch, planStageBatch, validateStagingLimits } from './stage-bridge.ts'
 import type { StageSources, StageFileResult, StageBatchPlan } from './stage-bridge.ts'
+import { environmentQuota, environmentWorkBytes, prepareEnvironmentSlot } from './environment-bank.ts'
+import type { EnvironmentBankAuthority, EnvironmentBankState, EnvironmentSessionId, ExecutionMountGrant } from './environment-bank.ts'
+import type { StaticEnvironmentBank } from './storage-types.ts'
 
 /** Privileged fixture input; layout/stat/mode/name alone never establishes this namespace guarantee. */
 export type IsolatedLeafGrant = {
@@ -81,6 +84,20 @@ export interface PoolReadPort {
   assertContentAvailable(): void
   /** Require the separate staging companion on the original current pool; omission rejects. */
   assertStagingAvailable(): void
+  /**
+   * Prepare fixed private metadata and verified mounts within one original mutation operation.
+   * @param workspace Exact registered project selected by Root's native Agent/Session guard.
+   * @param sessionId Native Session identity already approved against this project; a string alone cannot authorize it.
+   * @param environmentVersion Approved image/architecture/Python/init version.
+   * @param authority Original storage lease's protected finite inventory; no request or public FS may supply it.
+   * @param assertRegistered Exact project/provider/current guard.
+   * @param signal Observer cancellation; actual metadata work remains owned until settled.
+   * @returns Measured mounts only after confirmed private binding; release returns memory, never a persistent slot.
+   */
+  prepareExecutionMounts(
+    workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string,
+    authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal,
+  ): Promise<ResidentResult<ExecutionMountGrant>>
   /**
    * Stage a trusted native-source batch in one actual mutation reservation and borrowed worker.
    * @param workspace Exact native Registry object selected by account admission.
@@ -273,6 +290,8 @@ export class LinuxFilesPool implements DrainParticipant {
    * @param binding Runtime-owned immutable account generation.
    * @param root Independently verified root identity; this method does not grant authorization or quota.
    * @param assertCurrent Trusted factory's owner/admission check, invoked for every operation.
+   * @param privateParent Optional verified private-files parent for instruction reads and environment banks;
+   * omission leaves those operations unavailable.
    * @returns A fixed-root internal read port with no shared-pool close capability.
    */
   bind(
@@ -402,6 +421,7 @@ export class LinuxFilesPool implements DrainParticipant {
     }
     let mutationTail = Promise.resolve()
     let mutationUnknown = false
+    const environmentBanks = new WeakMap<StaticEnvironmentBank, EnvironmentBankState>()
     // Only trusted same-lane executors enter here; observation never settles their actual work.
     const runMutation = <T>(
       reservation: number, assertProject: () => void,
@@ -610,6 +630,86 @@ export class LinuxFilesPool implements DrainParticipant {
       directory,
       assertContentAvailable,
       assertStagingAvailable,
+      prepareExecutionMounts: async (
+        workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string,
+        authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal,
+      ): Promise<ResidentResult<ExecutionMountGrant>> => {
+        const current = (): void => { checkCurrent(); assertRegistered() }
+        current()
+        assertContentAvailable()
+        if (this.slots.some(slot => !slot.client.supportsProjectMetadata)) {
+          throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified fixed project metadata capability.')
+        }
+        if (this.slots.some(slot => !slot.client.supportsEnvironmentLayout)) {
+          throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified fixed environment layout capability.')
+        }
+        if (preferencesParent === undefined || fixedRoot.rootMountId === undefined) {
+          throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+        }
+        const privateRoot = preferencesParent
+        const leaf = projectLeaf(workspace)
+        const reservation = environmentWorkBytes(authority.bank.slots.length, this.config)
+        let bankState = environmentBanks.get(authority.bank)
+        if (bankState === undefined) { bankState = { blocked: false }; environmentBanks.set(authority.bank, bankState) }
+        const state = bankState
+        const held = await runMutation(reservation, current, async (client, actual) => {
+          const running = (): void => {
+            current()
+            if (actual.aborted) throw new FdMutationFailure('not-published', 'FS_ABORTED', undefined, { cause: actual.reason })
+          }
+          try {
+            running()
+            const directory = await client.directory(fixedRoot, leaf, this.config.maxPathBytes, actual)
+            running()
+            if (!directory.directory || directory.canonicalPath !== workspace.path) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+            const info = await client.stat(fixedRoot, leaf, actual)
+            if (info?.type !== 'directory') throw new FdWorkerFailure('FS_NOT_DIRECTORY')
+            const [device, inode] = info.identity.split(':')
+            if (device === undefined || inode === undefined) throw new FdWorkerFailure('FS_IO_ERROR')
+            const quota = environmentQuota(authority.projects, await client.storageProbe(authority.projects.rootPath, actual), authority)
+            const metadata = await client.prepareProjectMetadata({ rootPath: workspace.path, rootDevice: device,
+              rootInode: inode, rootMountId: quota.mountId }, authority.appUid, authority.appGid, actual)
+            running()
+            const assignment = await prepareEnvironmentSlot({
+              read: async (path) => {
+                pathBytes(path)
+                const before = await client.stat(privateRoot, path, actual)
+                if (before?.type !== 'file' || before.size === undefined || before.size > this.config.maxReadBytes) {
+                  throw new FdWorkerFailure('FS_IO_ERROR')
+                }
+                const bytes = await client.read(privateRoot, path, this.config.maxReadBytes, actual)
+                const after = await client.stat(privateRoot, path, actual)
+                if (after?.version !== before.version) throw new FdWorkerFailure('FS_STALE_VERSION')
+                return { bytes, version: before.version }
+              },
+              write: async (path, content, version) => {
+                pathBytes(path)
+                await client.writeText(privateRoot, path, content, { kind: 'replaceIfVersion', version: FsVersion(version) },
+                  this.config.maxReadBytes, actual)
+              },
+              probe: domain => client.storageProbe(domain.rootPath, actual),
+              prepareLayout: domain => client.prepareEnvironmentLayout(domain, authority.appUid, authority.appGid, actual),
+            }, authority, state, { sessionId, workspaceId: workspace.id, environmentVersion }, this.config.maxPathBytes, running)
+            const domain = assignment.slot.domain
+            return Object.freeze<ExecutionMountGrant>({ binding, sessionId, workspaceId: workspace.id,
+              project: Object.freeze({ rootPath: workspace.path, rootDevice: device, rootInode: inode,
+                rootMountId: quota.mountId, mountVersion: `${device}:${inode}:${quota.mountId}`, quota,
+                readOnlyPaths: Object.freeze(['.pe'] as const),
+                metadataDirectory: Object.freeze({ ...metadata.directory, relativePath: '.pe' }) }),
+              environment: Object.freeze({ rootPath: domain.rootPath, rootDevice: domain.rootDevice, rootInode: domain.rootInode,
+                rootMountId: domain.rootMountId, targetPath: '/opt/session-env', bankId: authority.bank.bankId,
+                rootReadOnly: true, writablePaths: Object.freeze(['home', 'venv', 'tmp'] as const), layout: assignment.layout,
+                slotId: assignment.slot.slotId, slotGeneration: assignment.record.slotGeneration, environmentVersion,
+                quota: assignment.quota }) })
+          } catch (error) {
+            if (error instanceof FdWorkerFailure && !(error instanceof FdMutationFailure)) {
+              throw new FdMutationFailure('not-published', error.code, error.syscallCode, { cause: error })
+            }
+            throw error
+          }
+        }, (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal, 'retained-result')
+        try { current(); signal?.throwIfAborted(); return held } catch (error) { held.release(); throw error }
+      },
       runNativeMutation: <T>(reservationBytes: number, assertOwner: () => void,
         execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>> => {
         assertStagingAvailable()

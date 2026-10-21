@@ -226,6 +226,46 @@ export class LoginPeerRegistry {
   }
 
   /**
+   * Retain one Root HTTP operation under the original login carrier limits and canonical principal.
+   * @param handle Original shared Peer; the first verified Cookie stays pinned for rechecks.
+   * @param request Original fixed-route request, used only to detect a disconnected carrier.
+   * @param requestId Original ingress correlation id.
+   * @param input Trusted Root callbacks: real route-specific authentication, existing cancellation and body work.
+   * Its actual promise is the original ingress operation, including response transfer and Use release; rejection
+   * means cleanup is unconfirmed. It is observed here, never awaited by the body that it contains.
+   * @returns Authentication/body settlement; carrier capacity remains held until the separate actual operation settles.
+   */
+  runCarrier(handle: LoginPeer, request: IncomingMessage, requestId: RequestId, input: {
+    readonly authenticate: () => Promise<AuthenticatedPrincipal>
+    readonly actual: Promise<void>
+    readonly destroy: () => void
+    readonly consume: () => Promise<void>
+  }): Promise<void> {
+    const entry = this.admitCarrier(handle, requestId)
+    const carrier = { destroy: input.destroy }
+    entry.carriers.add(carrier)
+    let confirmed = false
+    const actual = input.actual.then(() => { confirmed = true }, (error: unknown) => {
+      entry.cleanupFault = true
+      void this.startClose(entry, requestId)
+      throw error
+    })
+    const tracked = this.trackCarrier(entry, actual, () => {
+      if (!confirmed) return // Unknown original ingress cleanup retains this carrier and the original blocked Entry.
+      entry.carriers.delete(carrier)
+      this.releaseCarrier(entry)
+    })
+    void tracked.catch((_error: unknown) => {
+      // Original ingress observes its failure; Entry cleanupFault/blocked and done retain unknown responsibility.
+    })
+    return (async () => {
+      await this.authenticateCarrier(entry, request, requestId, input.authenticate)
+      this.assertCurrent(handle, requestId)
+      await input.consume()
+    })()
+  }
+
+  /**
    * Transfer a reauthenticated socket to the real native stream mux; stream opens guard the pinned login.
    * Admission may join an original-Cookie recheck; logical stream opens remain synchronous.
    * @param handle - Fixed login Peer selected by trusted root routing.
@@ -500,8 +540,11 @@ export class LoginPeerRegistry {
     return entry
   }
 
-  private async authenticateCarrier(entry: Entry, request: IncomingMessage, requestId: RequestId): Promise<void> {
-    const principal = await this.auth.authenticate(request, requestId)
+  private async authenticateCarrier(
+    entry: Entry, request: IncomingMessage, requestId: RequestId,
+    authenticate: () => Promise<AuthenticatedPrincipal> = () => this.auth.authenticate(request, requestId),
+  ): Promise<void> {
+    const principal = await authenticate()
     if (principal.accountId !== entry.principal.accountId || principal.authSessionId !== entry.principal.authSessionId) {
       throw new AuthAccessError('cloud/unauthenticated', requestId)
     }

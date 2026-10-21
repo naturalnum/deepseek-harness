@@ -14,6 +14,9 @@ import { parseStorageProbeFrame } from './storage-probe.ts'
 import type { StorageProbeFacts } from './storage-types.ts'
 import type { StagingFacts } from './staging-native.ts'
 import type { FdStageFile, FdStageResult } from './worker-protocol.ts'
+import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame } from './worker-protocol.ts'
+import type { FdProjectMetadataFacts, FdProjectMetadataRequest, FdProjectMetadataResult } from './worker-protocol.ts'
+import type { FdEnvironmentLayout, FdEnvironmentLayoutFacts, FdEnvironmentLayoutRequest } from './worker-protocol.ts'
 
 /** Transport failure retains the native error category without private paths. */
 export class FdWorkerFailure extends Error {
@@ -30,6 +33,22 @@ export class FdMutationFailure extends FdWorkerFailure {
 
 /** Text publication retains its original error class and shared mutation disposition. */
 export class FdTextWriteFailure extends FdMutationFailure {}
+
+/** Fixed-directory effects retain actual native facts; transport loss never invents a closed preparation. */
+export class FdProjectMetadataFailure extends FdMutationFailure {
+  constructor(outcome: 'not-published' | 'unknown', code: FsErrorCode, readonly facts?: FdProjectMetadataFacts,
+    syscallCode?: string, options?: ErrorOptions) {
+    super(outcome, outcome === 'unknown' ? 'FS_IO_ERROR' : code, syscallCode, options)
+  }
+}
+
+/** Environment initialization preserves partial directory facts and actual operation responsibility. */
+export class FdEnvironmentLayoutFailure extends FdMutationFailure {
+  constructor(outcome: 'not-published' | 'unknown', code: FsErrorCode, readonly facts?: FdEnvironmentLayoutFacts,
+    syscallCode?: string, options?: ErrorOptions) {
+    super(outcome, outcome === 'unknown' ? 'FS_IO_ERROR' : code, syscallCode, options)
+  }
+}
 
 /** Staging distinguishes proven sink cleanup from uncertain effects; source closure remains separate. */
 export class FdStageFailure extends FdMutationFailure {
@@ -80,6 +99,22 @@ interface PendingTextWrite extends PendingBase {
   readonly kind: 'text-write'
   readonly content: string
   readonly resolve: (value: FdTextWriteResult) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingProjectMetadata extends PendingBase {
+  readonly kind: 'project-metadata'
+  readonly root: FdRootIdentity
+  readonly uid: number
+  readonly gid: number
+  readonly resolve: (result: FdProjectMetadataResult) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingEnvironmentLayout extends PendingBase {
+  readonly kind: 'environment-layout'
+  readonly root: FdRootIdentity
+  readonly uid: number
+  readonly gid: number
+  readonly resolve: (result: FdEnvironmentLayout) => void
   readonly reject: (error: Error) => void
 }
 type StageStep = { readonly kind: 'starting' } | { readonly kind: 'writing'; readonly sequence: number; readonly total: number }
@@ -136,7 +171,7 @@ interface PendingStream extends PendingBase {
   total: number
 }
 type Pending = PendingContent | PendingRead | PendingStat | PendingStream | PendingDirectory
-  | PendingLeaf | PendingStorage | PendingTextWrite | PendingStage
+  | PendingLeaf | PendingStorage | PendingTextWrite | PendingStage | PendingProjectMetadata | PendingEnvironmentLayout
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
@@ -193,6 +228,8 @@ export class FdWorkerClient {
   private storageVersion: 1 | undefined
   private abiVersion: 6 | 7 | 8 | undefined
   private stagingVersion: 1 | undefined
+  private projectMetadataVersion: 1 | undefined
+  private environmentLayoutVersion: 1 | undefined
   private closed = false
   private failure: Error | undefined
   private pending: Pending | undefined
@@ -224,6 +261,59 @@ export class FdWorkerClient {
 
   /** The separate staging companion must complete its own real worker handshake. */
   get supportsStaging(): boolean { return this.stagingVersion === 1 }
+
+  /** Actual independent fixed-.pe capability, never inferred from the content ABI. */
+  get supportsProjectMetadata(): boolean { return this.projectMetadataVersion === 1 }
+  /** Whether this worker advertised the independent environment-layout version1 capability. */
+  get supportsEnvironmentLayout(): boolean { return this.environmentLayoutVersion === 1 }
+
+  /**
+   * Prepare only home/venv/tmp in the selected environment without clearing retained Session content.
+   * @param root Protected original environment anchor.
+   * @param uid Expected deployment application UID.
+   * @param gid Expected deployment application GID.
+   * @param signal Original operation cancellation; effects remain owned until receipt or actual worker exit.
+   * @returns Fixed durable identities after all descriptor closure.
+   */
+  prepareEnvironmentLayout(root: FdRootIdentity, uid: number, gid: number, signal: AbortSignal): Promise<FdEnvironmentLayout> {
+    try { this.assertAvailable(signal) } catch (cause) {
+      throw new FdEnvironmentLayoutFailure('not-published', cause instanceof FdWorkerFailure ? cause.code : 'FS_IO_ERROR',
+        undefined, undefined, { cause })
+    }
+    if (!this.supportsEnvironmentLayout || root.rootMountId === undefined) {
+      throw new FdEnvironmentLayoutFailure('not-published', 'FS_PERMISSION_DENIED')
+    }
+    return new Promise((resolve, reject) => {
+      const pending: PendingEnvironmentLayout = { kind: 'environment-layout', ...this.base(256, signal), root, uid, gid, resolve, reject }
+      this.pending = pending
+      const request: FdEnvironmentLayoutRequest = { kind: 'environment-layout-prepare', id: pending.id, root, uid, gid,
+        cancel: pending.cancel.buffer }
+      this.post(request)
+    })
+  }
+
+  /**
+   * Prepare only .pe beneath the original project anchor; cancellation does not replace native creation facts.
+   * @param root Original project directory/mount identity.
+   * @param uid Expected deployment application UID.
+   * @param gid Expected deployment application GID.
+   * @param signal Actual original work cancellation; all effects remain owned until receipt or actual exit.
+   * @returns Durable directory identity only after native fsync and descriptor closure.
+   */
+  prepareProjectMetadata(root: FdRootIdentity, uid: number, gid: number, signal: AbortSignal): Promise<FdProjectMetadataResult> {
+    try { this.assertAvailable(signal) } catch (cause) {
+      throw new FdProjectMetadataFailure('not-published', cause instanceof FdWorkerFailure ? cause.code : 'FS_IO_ERROR',
+        undefined, undefined, { cause })
+    }
+    if (!this.supportsProjectMetadata || root.rootMountId === undefined) throw new FdProjectMetadataFailure('not-published', 'FS_PERMISSION_DENIED')
+    return new Promise((resolve, reject) => {
+      const pending: PendingProjectMetadata = { kind: 'project-metadata', ...this.base(96, signal), root, uid, gid, resolve, reject }
+      this.pending = pending
+      const request: FdProjectMetadataRequest = { kind: 'project-metadata-prepare', id: pending.id, root, uid, gid,
+        cancel: pending.cancel.buffer }
+      this.post(request)
+    })
+  }
 
   /**
    * Begin one closed-lifecycle binary sink on the already borrowed slot.
@@ -669,10 +759,16 @@ export class FdWorkerClient {
     if (value.kind === 'ready') {
       if ((value.abiVersion !== 6 && value.abiVersion !== 7 && value.abiVersion !== 8) || this.readyResolved || this.closed
         || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)
-        || (value.stagingAbiVersion !== undefined && value.stagingAbiVersion !== 1)) { this.failProtocol(); return }
+        || (value.stagingAbiVersion !== undefined && value.stagingAbiVersion !== 1)
+        || (value.projectMetadataVersion !== undefined && (value.projectMetadataVersion !== 1 || value.abiVersion !== 8))
+        || (value.environmentLayoutVersion !== undefined && (value.environmentLayoutVersion !== 1 || value.abiVersion !== 8))) {
+        this.failProtocol(); return
+      }
       this.storageVersion = value.storageProbeVersion
       this.abiVersion = value.abiVersion
       this.stagingVersion = value.stagingAbiVersion
+      this.projectMetadataVersion = value.projectMetadataVersion
+      this.environmentLayoutVersion = value.environmentLayoutVersion
       this.readyResolved = true
       this.resolveReady()
       return
@@ -686,6 +782,8 @@ export class FdWorkerClient {
     const pending = this.pending
     if (pending === undefined || value.id !== pending.id) { this.failProtocol(); return }
     if (pending.kind === 'stage') { this.stageMessage(pending, value); return }
+    if (pending.kind === 'project-metadata') { this.projectMetadataMessage(pending, value); return }
+    if (pending.kind === 'environment-layout') { this.environmentLayoutMessage(pending, value); return }
     if (pending.kind === 'text-write') { this.textWriteMessage(pending, value); return }
     if (pending.kind === 'directory') { this.directoryMessage(pending, value); return }
     if (pending.kind === 'leaf-prepare' || pending.kind === 'leaf-cleanup') {
@@ -769,6 +867,46 @@ export class FdWorkerClient {
       pending.resolveReady('reused'); pending.resolve(complete); return
     }
     this.failProtocol()
+  }
+
+  private projectMetadataMessage(pending: PendingProjectMetadata, value: Record<string, unknown>): void {
+    const facts = value.kind === 'project-metadata-reply'
+      ? parseProjectMetadataFrame(value.frame, pending.root, pending.uid, pending.gid) : undefined
+    if (facts === undefined) { this.failProtocol(); return }
+    if (facts.outcome === 'unknown' || !facts.closed) {
+      this.failure = new FdProjectMetadataFailure('unknown', 'FS_IO_ERROR', facts)
+      void this.close()
+      return
+    }
+    pending.removeAbort(); this.pending = undefined
+    if (facts.outcome === 'not-prepared') {
+      const syscallCode = ({ 1: 'EPERM', 2: 'ENOENT', 5: 'EIO', 13: 'EACCES', 18: 'EXDEV', 20: 'ENOTDIR', 22: 'EINVAL',
+        28: 'ENOSPC', 40: 'ELOOP', 110: 'ETIMEDOUT', 116: 'ESTALE', 122: 'EDQUOT', 125: 'ECANCELED' } as Record<number, string>)[facts.errno]
+      const code: FsErrorCode = facts.errno === 125 || facts.errno === 110 ? 'FS_ABORTED'
+        : [1, 13, 18, 22, 40].includes(facts.errno) ? 'FS_PERMISSION_DENIED'
+          : facts.errno === 20 ? 'FS_NOT_DIRECTORY' : facts.errno === 2 ? 'FS_NOT_FOUND' : 'FS_IO_ERROR'
+      pending.reject(new FdProjectMetadataFailure('not-published', code, facts, syscallCode))
+    } else pending.resolve(Object.freeze({ created: facts.created, directory: facts.directory }))
+  }
+
+  private environmentLayoutMessage(pending: PendingEnvironmentLayout, value: Record<string, unknown>): void {
+    const facts = value.kind === 'environment-layout-reply'
+      ? parseEnvironmentLayoutFrame(value.frame, pending.root, pending.uid, pending.gid) : undefined
+    if (facts === undefined) { this.failProtocol(); return }
+    if (facts.outcome === 'unknown' || !facts.closed) {
+      this.failure = new FdEnvironmentLayoutFailure('unknown', 'FS_IO_ERROR', facts)
+      void this.close()
+      return
+    }
+    pending.removeAbort(); this.pending = undefined
+    if (facts.outcome === 'not-prepared') {
+      const codes: Partial<Record<number, string>> = { 1: 'EPERM', 2: 'ENOENT', 5: 'EIO', 13: 'EACCES', 18: 'EXDEV',
+        20: 'ENOTDIR', 22: 'EINVAL', 28: 'ENOSPC', 40: 'ELOOP', 110: 'ETIMEDOUT', 116: 'ESTALE', 122: 'EDQUOT', 125: 'ECANCELED' }
+      const code: FsErrorCode = facts.errno === 125 || facts.errno === 110 ? 'FS_ABORTED'
+        : [1, 13, 18, 22, 40].includes(facts.errno) ? 'FS_PERMISSION_DENIED'
+          : facts.errno === 20 ? 'FS_NOT_DIRECTORY' : facts.errno === 2 ? 'FS_NOT_FOUND' : 'FS_IO_ERROR'
+      pending.reject(new FdEnvironmentLayoutFailure('not-published', code, facts, codes[facts.errno]))
+    } else pending.resolve(facts.layout)
   }
 
   private finishStage(pending: PendingStage, error: FdStageFailure): void {
@@ -866,6 +1004,10 @@ export class FdWorkerClient {
     pending.removeAbort()
     this.pending = undefined
     if (pending.kind === 'directory') pending.reject(new DirectoryMetadataFailure('unavailable', 'transport', { cause: error }))
+    else if (pending.kind === 'project-metadata') pending.reject(error instanceof FdProjectMetadataFailure ? error
+      : new FdProjectMetadataFailure('unknown', 'FS_IO_ERROR', undefined, undefined, { cause: error }))
+    else if (pending.kind === 'environment-layout') pending.reject(error instanceof FdEnvironmentLayoutFailure ? error
+      : new FdEnvironmentLayoutFailure('unknown', 'FS_IO_ERROR', undefined, undefined, { cause: error }))
     else if (pending.kind === 'stream') pending.finish(error)
     else if (pending.kind === 'text-write') pending.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error }))
     else pending.reject(error)

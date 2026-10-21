@@ -27,6 +27,7 @@ File instructions require an account-prepared adapter for trusted Agent/project 
 
 Account preparation constructs `new AccountInstructionSources(ctx, input)` from `/session` with the exact installed binding, shared active-Agent checks and the files owner's `withSources` operation. That operation reserves complete snapshot storage and supplies each source's independent restricted reader, actual native Workspace id and committed native cwd. The adapter captures cwd with native `WorkingDirectory.get(agent.session)` inside the original Agent/Workspace checks and source reservation; the Session header, project root and home cannot replace it. Construction creates no source authority. `/session` rejects activation with `cloud/invalid-config` when preparation is absent, stale or foreign. Keep the row disabled until the real adapter is connected, and exclude the native automatic instruction loader. The root exports configuration and instruction data types without mounting behavior.
 
+<a id="minimal-configuration"></a>
 ### Minimal configuration
 
 The prepared owner must exist before the Loader row activates. The [configuration schema](src/config.ts) requires all five limits below; every value must be a positive safe integer. These limits do not substitute for files-owned global/account admission, stream credit or physical storage isolation.

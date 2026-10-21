@@ -9,6 +9,8 @@ interface CloudWebCopy {
   pending: string
   invalidCredentials: string
   requestTooLarge: string
+  previewClosed: string
+  previewDenied: string
   unavailable: string
   stopped: string
   authUnknown: string
@@ -21,6 +23,8 @@ const en: CloudWebCopy = {
   check: 'Check sign-in status', pending: 'Please wait',
   invalidCredentials: 'Sign-in was refused. Check your email and password.',
   requestTooLarge: 'The sign-in details are too long. Shorten them and try again.',
+  previewClosed: 'This page has closed. Check your sign-in status before opening a preview.',
+  previewDenied: 'The preview could not open. Check the service status and try again.',
   unavailable: 'The workspace could not open. Check your sign-in status or sign out.',
   stopped: 'The workspace has closed. Check your sign-in status or sign out.',
   authUnknown: 'Sign-in could not be confirmed. Check its status before trying again.',
@@ -33,6 +37,8 @@ const zh: CloudWebCopy = {
   check: '检查登录状态', pending: '请稍候',
   invalidCredentials: '登录被拒绝，请检查邮箱和密码',
   requestTooLarge: '登录信息过长，请缩短后重试',
+  previewClosed: '此页面已关闭，请检查登录状态后再打开预览',
+  previewDenied: '无法打开预览，请检查服务状态后重试',
   unavailable: '暂时无法打开工作区，请检查登录状态或退出登录',
   stopped: '工作区已关闭，请检查登录状态或退出登录',
   authUnknown: '尚无法确认登录结果，请先检查登录状态再继续',

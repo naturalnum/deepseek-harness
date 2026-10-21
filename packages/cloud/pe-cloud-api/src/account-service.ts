@@ -33,7 +33,12 @@ export interface AccountApiPreparation {
   readonly assertBusinessCurrent: (binding: AccountBinding) => void
   /** Read the original shared project/Preset/default-model policy; absence keeps bootstrap assertions closed. */
   readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>
-  /** Positive finite bound shared by visited native runtimes, fibers and selected exposure rows; no default. */
+  /**
+   * Recheck original Root registration; trusted assembly only, never Loader/client input.
+   * @returns Actual exact Fetch routes within maxNativeInventoryEntries after original registration checks.
+   */
+  readonly inspectRootFetch?: () => readonly ExactFetchExposure[]
+  /** Positive finite bound shared by visited native runtimes/fibers, selected exposures and actual Root routes; no default. */
   readonly maxNativeInventoryEntries?: number
   /** Factory-owned unpublished mounting window; required only by prepared native auditing. */
   readonly assertUnpublished?: () => void
@@ -63,6 +68,7 @@ export class CloudAccountApi extends Service {
   private readonly installation: AccountApiInstall
   private readonly mountCurrent: AccountApiPreparation['assertMountCurrent']
   private readonly businessCurrent: AccountApiPreparation['assertBusinessCurrent']
+  private readonly rootFetch: AccountApiPreparation['inspectRootFetch']
   private readonly bootstrapCurrent: AccountApiPreparation['assertBootstrapCurrent']
   private readonly maxNativeInventoryEntries: AccountApiPreparation['maxNativeInventoryEntries']
   private readonly unpublished: AccountApiPreparation['assertUnpublished']
@@ -93,6 +99,7 @@ export class CloudAccountApi extends Service {
     this.binding = input.binding
     this.mountCurrent = input.assertMountCurrent
     this.businessCurrent = input.assertBusinessCurrent
+    this.rootFetch = input.inspectRootFetch
     this.bootstrapCurrent = input.assertBootstrapCurrent
     this.maxNativeInventoryEntries = input.maxNativeInventoryEntries
     this.unpublished = input.assertUnpublished
@@ -173,6 +180,7 @@ export class CloudAccountApi extends Service {
     const events = this.firstScreen.events?.inspect()
     const projects = this.projects.native?.inspect()
     const files = this.files.native?.inspect()
+    const fetch = this.inspectFetchRoutes()
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
       rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
@@ -180,9 +188,9 @@ export class CloudAccountApi extends Service {
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [],
         ...files?.streamEndpoints ?? [], ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
-      exactFetchRoutes: this.uploads.native?.inspect().exactFetchRoutes ?? [],
+      exactFetchRoutes: [...fetch.native, ...fetch.root],
     }
-    if (inventory.rpcEndpoints.length + inventory.streamEndpoints.length > maximum) this.nativeUnavailable()
+    if (inventory.rpcEndpoints.length + inventory.streamEndpoints.length + fetch.root.length > maximum) this.nativeUnavailable()
     const typert = owner.get('typert')
     if (typert === undefined) this.nativeUnavailable()
     for (const [rows, mode] of [[inventory.rpcEndpoints, 'rpc'], [inventory.streamEndpoints, 'stream']] as const) {
@@ -269,11 +277,9 @@ export class CloudAccountApi extends Service {
    */
   requireFetch(method: string, pathname: string): ExactFetchExposure {
     this.admit()
-    if (pathname === FILE_UPLOAD_PATH) {
-      if (this.uploads.native === undefined) this.nativeUnavailable()
-      this.uploads.native.assertCurrent()
-    }
-    return this.installation.exposure.requireFetch(method, pathname)
+    const row = this.installation.exposure.requireFetch(method, pathname)
+    this.assertFetchCurrent(row, this.inspectFetchRoutes())
+    return row
   }
 
   /**
@@ -475,6 +481,29 @@ export class CloudAccountApi extends Service {
     this.files.native.assertCurrent()
   }
 
+  private inspectFetchRoutes(): { native: readonly ExactFetchExposure[]; root: readonly ExactFetchExposure[] } {
+    const maximum = this.maxNativeInventoryEntries
+    if (maximum === undefined || !Number.isSafeInteger(maximum) || maximum < 1) this.nativeUnavailable()
+    const root = this.rootFetch?.() ?? []
+    if (root.length > maximum) this.nativeUnavailable()
+    const native = this.uploads.native?.inspect().exactFetchRoutes ?? []
+    if (native.length > maximum - root.length) this.nativeUnavailable()
+    return { native, root }
+  }
+
+  private assertFetchCurrent(
+    expected: ExactFetchExposure, actual: { native: readonly ExactFetchExposure[]; root: readonly ExactFetchExposure[] },
+  ): void {
+    let matches = 0
+    for (const routes of [actual.native, actual.root]) {
+      for (const row of routes) {
+        if (row.method !== expected.method || row.path !== expected.path) continue
+        if (++matches !== 1 || row.handlerId !== expected.handlerId || row.guard !== expected.guard) this.nativeUnavailable()
+      }
+    }
+    if (matches !== 1) this.nativeUnavailable()
+  }
+
   private assertNativeCurrent(owner: Context, audited = true): void {
     owner.fiber.assertActive()
     if (this.streamGuard.dispose === undefined) this.nativeUnavailable()
@@ -490,6 +519,8 @@ export class CloudAccountApi extends Service {
     consume(exposure.manifest.rpcEndpoints.length)
     consume(exposure.manifest.streamEndpoints.length)
     consume(exposure.manifest.exactFetchRoutes.length)
+    const fetch = this.inspectFetchRoutes()
+    consume(fetch.root.length)
     const counts: Record<NativeKey, number> = { sessionController: 0, agentLoop: 0, llm: 0 }
     for (const key of ['sessionController', 'agentLoop', 'llm'] as const) {
       const expected = this.native[key], local = owner.get(key), root = owner.root.get(key)
@@ -523,7 +554,10 @@ export class CloudAccountApi extends Service {
     if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)
-    for (const row of exposure.manifest.exactFetchRoutes) exposure.requireFetch(row.method, row.path)
+    for (const row of exposure.manifest.exactFetchRoutes) {
+      exposure.requireFetch(row.method, row.path)
+      this.assertFetchCurrent(row, fetch)
+    }
   }
 
   private assertOwner(owner: Context): void {

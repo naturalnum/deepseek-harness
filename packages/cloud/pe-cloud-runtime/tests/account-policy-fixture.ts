@@ -32,7 +32,8 @@ import Tools from '@deepseek-ai/dsh-tools'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import FsLocal from '@deepseek-ai/dsh-fs-local'
 import LlmRuntime, { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier, type EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier, type EndpointExposure,
+  type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
 import { remoteMethods, type PeerId } from '@deepseek-ai/dsh-typert-protocol'
@@ -69,7 +70,8 @@ export class TextAdapter extends LlmAdapter {
  */
 export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   firstScreen?: Omit<NonNullable<Parameters<CloudAccountApi['installFirstScreenEvents']>[1]>, 'home' | 'maxInventoryEntries'>
-    & { readonly maxCollectionItems: number; readonly expectedHome?: string }, accountId = 'component') {
+    & { readonly maxCollectionItems: number; readonly expectedHome?: string }, accountId = 'component',
+  rootFetch?: { readonly selected: readonly ExactFetchExposure[]; readonly inspectRootFetch?: () => readonly ExactFetchExposure[] }) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -100,7 +102,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     { endpoint: 'remoteAccess/follow', handlerId: 'native:remoteAccess', guard: 'authenticated-account' as const },
     { endpoint: '$events', handlerId: 'native:typertGateway', guard: 'authenticated-account' as const },
   ]],
-  exactFetchRoutes: [], allowedSettings: [] }
+  exactFetchRoutes: rootFetch?.selected ?? [], allowedSettings: [] }
   const exposureOwner = new ExposureService(shared, manifest), exposure = exposureOwner.policy
   const graphs: { close(): Promise<void> }[] = []
   onTestFinished(async () => {
@@ -198,6 +200,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
           assertMountCurrent: actualGraph, assertBusinessCurrent: actualGraph,
           ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
           ...bootstrapInventory,
+          ...rootFetch?.inspectRootFetch === undefined ? {} : { inspectRootFetch: rootFetch.inspectRootFetch },
           assertUnpublished: () => { actualGraph(binding) },
         })
         class NodeFileSystem extends FsLocal {
@@ -283,11 +286,13 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         && (marker.mode ?? 'rpc') === 'rpc')), streamEndpoints: manifest.streamEndpoints.filter(row =>
       remoteMethods(outcome.context.sessionController).some(marker => `${outcome.context.sessionController.typertRemote.namespace}/${marker.exportName ?? marker.method}` === row.endpoint
         && marker.mode === 'stream')), exactFetchRoutes: [] }
-    if (firstScreen === undefined) api.audit(inventory)
+    if (firstScreen === undefined && rootFetch === undefined) api.audit(inventory)
     else {
-      if (eventOwner === undefined) throw new Error('Actual event registration Loader entry absent')
-      events = api.installFirstScreenEvents(eventOwner, { ...firstScreen,
-        home: firstScreen.expectedHome ?? privateRoot, maxInventoryEntries: maxEntries })
+      if (firstScreen !== undefined) {
+        if (eventOwner === undefined) throw new Error('Actual event registration Loader entry absent')
+        events = api.installFirstScreenEvents(eventOwner, { ...firstScreen,
+          home: firstScreen.expectedHome ?? privateRoot, maxInventoryEntries: maxEntries })
+      }
       await api.auditPrepared(outcome.context)
     }
     const invoke = (method: string, request: object) => outcome.context.typertGateway.invoke({ namespace: 'session', method,

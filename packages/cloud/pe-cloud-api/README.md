@@ -68,6 +68,8 @@ The Controller requires a fixed `NativeSessionGuards.projectDirectory` capabilit
 
 Trusted runtime preparation constructs the public `CloudAccountApi` service with the exact binding, separate mount/business checks, deployment exposure and root-issued save barrier. Its `providers` supplies the fixed native editor and credential constructors; its native installation methods retain the existing Controller, AgentLoop and LLM guards. The empty `/account` entry requires that exact prepared `peCloudApi` owner. Service presence and entry activation do not publish account readiness: runtime still owns actual files/Workspace/Preset/model checks, inventory audit and ready publication.
 
+Trusted preparation may supply `inspectRootFetch`, a bounded read of the original Root registrations. Prepared inventory combines these actual facts with native uploads before the existing exposure audit. Fetch dispatch and bootstrap reread the same producer and require exact method, path, handler and guard; withdrawal, mismatch, duplicates or excess entries reject. Missing callbacks cannot certify selected Root routes, and actual entries share the existing native inventory budget.
+
 `auditPrepared(owner, signal?)` requires the factory's original unpublished authority and the same shared policy and finite native-inventory limit. It checks mount/unpublished authority before and after asynchronous policy reads, derives selected handlers from the actual guarded Controller methods and original native Typert markers/routes, and invalidates a previous audit on failure. Inherited unguarded methods cannot satisfy a manifest declaration. It performs no business operation and grants no ready state; business calls still require the separate ready check.
 
 The fixed optional first-screen installation delegates `session/list` and `session/control` to the original SessionController, `workspace/follow` to the original WorkspaceController, and `remoteAccess/follow` to the stock Peer-aware RemoteAccess service. List rows and control frames use the same original AccountPolicy readonly metadata check; it can inspect a published Session before Workspace attachment without issuing command/history authority. Cold ids retain only their existing approved Workspace relationship, and native list rows also verify original project, parent and available projection fields. Workspace feeds validate each exact Registry object through the shared project guard, support multiple approved projects, and require a unique project relationship for every returned Session. Native `workspace/create(path)` only adopts an already registered approved project; directory allocation uses the separate Cloud project capability. Collection count and complete native result/frame bytes have explicit finite limits. The reader also requires `maxQueuedEvents` and `maxQueuedBytes`; it validates and copies these with the frame limit into the original native control queue through `controlBufferLimits()`. The native baseline check can therefore reject before Cloud result inspection. No Remote argument or queue implementation changes here. The original six Session guards remain in place.
@@ -98,6 +100,8 @@ The private [prepare-time installation](src/account-install.ts) returns two fixe
 
 Service-ready hook installation cannot account for earlier initialization writes. The constructor path closes that local migration gap, but runtime must still retain hook fibers and initialization ownership through late settlement, re-audit before resume, and provide actual graph, storage authority, and I/O budgets before opening the account. Failed saves retain evidence; observer cancellation and forced fiber disposal do not establish clean teardown.
 
+Optional native upload assembly inherits FileUploads' streamed route, Agent resolution, receipt binding and retirement. Its original pending-receipt/intake capacity is explicitly selected; the account adapter awaits the controlled store hook before native receipt publication. Encoded file upload and inline encoded images remain closed. Prepared audit checks the unique active owner, unchanged native dependencies and streaming route before exposing the exact POST path. The native Session Controller awaits same-Agent file preparation before its original prompt admission/bind/delivery, and keeps accepted-request deduplication first. No account adapter reimplements upload storage, receipt tables or prompt delivery.
+
 </details>
 
 -----
@@ -114,8 +118,6 @@ Service-ready hook installation cannot account for earlier initialization writes
 
 <a id="model-experience"></a>
 ## Model Experience
-
-Optional native upload assembly inherits FileUploads' streamed route, Agent resolution, receipt binding and retirement. Its original pending-receipt/intake capacity is explicitly selected; the account adapter awaits the controlled store hook before native receipt publication. Encoded file upload and inline encoded images remain closed. Prepared audit checks the unique active owner, unchanged native dependencies and streaming route before exposing the exact POST path. The native Session Controller awaits same-Agent file preparation before its original prompt admission/bind/delivery, and keeps accepted-request deduplication first. No account adapter reimplements upload storage, receipt tables or prompt delivery.
 
 ### Model-call admission
 

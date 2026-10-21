@@ -50,8 +50,10 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  cloudProjects: 'cloud.md',
   peAccount: 'cloud.md',
   peAccountExecution: 'cloud.md',
+  peAccountInstructions: 'cloud.md',
   peAccountRuntime: 'cloud.md',
   peAuth: 'cloud.md',
   peCloudApi: 'cloud.md',
@@ -192,6 +194,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   pluginPackages: 'profile-boot-owned package resolver service used by optional consumers — packages/boot/app-boot/README.md owns this internal API',
   fileUpload: 'client-side browser upload service — packages/client/file-upload/README.md owns the API',
+  fileUploadHooks: 'client-side captured upload carrier — packages/client/file-upload/README.md owns installation and settlement',
   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   uiSession: 'client-side Session source adapter — packages/client/ui-session/README.md owns the API',
   uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
@@ -293,17 +296,23 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * signature, including package READMEs that own native extension hooks.
  * This stays curated because union names intentionally do not
  * reuse the type-equivalence manifest's map-symbol entries and some symbols
- * appear on more than one page.
+ * appear on more than one page. A `ctx.<service>:<type>` key limits an
+ * ambiguous short name to that service's signatures.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
   AccountBinding: 'cloud.md',
   AccountExecutionPort: 'cloud.md',
+  NativeAccountExecutionAuthority: 'cloud.md',
   AccountFilesProject: 'cloud.md',
   AccountId: 'cloud.md',
   AccountOwner: 'cloud.md',
   AccountUse: 'cloud.md',
   AgentLoop: 'core.md',
   AuthRootObservation: 'cloud.md',
+  CloudProjectCreateRequest: 'cloud.md',
+  CloudProjectsPreparation: 'cloud.md',
+  CloudProjectsService: 'cloud.md',
+  'ctx.peAccountInstructions:Config': '../../packages/cloud/pe-account-instructions/README.md#minimal-configuration',
   ConfigImpactGuard: '../../packages/boot/config-editor/README.md',
   ConfigSaveReceipt: 'cloud.md',
   ConfigSaveSubmissionHook: '../../packages/boot/config-editor/README.md',
@@ -312,23 +321,33 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   DrainCapacityReservation: 'cloud.md',
   DrainParticipant: 'cloud.md',
   EndpointExposure: 'cloud.md',
+  EnvironmentSessionId: 'cloud.md',
   ExactFetchExposure: 'cloud.md',
+  ExecutionMountGrant: 'cloud.md',
   ExposureInventory: 'cloud.md',
+  FileUploads: 'attachment.md',
   FirstScreenEventInput: 'cloud.md',
   FirstScreenEvents: 'cloud.md',
   FirstScreenNativeInput: 'cloud.md',
+  InstructionReadReaders: 'cloud.md',
+  LocalAttachmentStore: '../../packages/attachment/attachment-local/README.md',
   MountCapacityReservation: 'cloud.md',
   NativeAgentFactoryGuards: 'cloud.md',
   NativeFirstScreen: 'cloud.md',
   NativeSessionGuards: 'cloud.md',
+  NativeUploadPreparation: 'cloud.md',
   NodeStreamTransport: '../../packages/api/gateway/README.md',
   NodeStreamTransportOptions: '../../packages/api/gateway/README.md',
   ParticipantReceipt: 'cloud.md',
   PluginSaveSubmissionHook: '../../packages/boot/plugin-manager/README.md',
   RemoteEventQueueLimits: '../../packages/api/gateway/README.md',
+  ResidentResult: 'cloud.md',
+  RootMetadataDatabase: 'cloud.md',
   RootRecipeInput: 'cloud.md',
   RootRecipeObservation: 'cloud.md',
   RuntimeControlObservation: 'cloud.md',
+  StageFileResult: 'cloud.md',
+  WorkspaceFiles: 'workspace.md',
   SessionController: 'session.md',
   Principal: 'typert.md',
   PrincipalMap: 'typert.md',

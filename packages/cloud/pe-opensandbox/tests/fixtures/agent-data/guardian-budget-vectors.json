@@ -1,0 +1,67 @@
+{
+  "origin": "Python stdlib dumps of exact guardian-config fields, fixed ENV, four uint64-max integer identities; no resource execution",
+  "vectors": [
+    {
+      "project": "/srv/project",
+      "spec": {
+        "argv": [
+          "/bin/echo",
+          "literal $HOME;$(id)"
+        ],
+        "cwd": "/srv/project",
+        "stdin": {
+          "mode": "ignore"
+        }
+      },
+      "maximumEncodedBytes": 399,
+      "pythonMaximumFrame": "{\"argv\":[\"/bin/echo\",\"literal $HOME;$(id)\"],\"env\":{\"PATH\":\"/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin\",\"HOME\":\"/opt/session-env/home\",\"TMPDIR\":\"/opt/session-env/tmp\",\"LANG\":\"C.UTF-8\"},\"roots\":{\"/srv/project\":[18446744073709551615,18446744073709551615],\"/opt/session-env\":[18446744073709551615,18446744073709551615]},\"projectRoot\":\"/srv/project\",\"cwd\":\"/srv/project\",\"stdinMode\":\"ignore\"}"
+    },
+    {
+      "project": "/srv/project",
+      "spec": {
+        "argv": [
+          "/bin/echo",
+          "literal $HOME;$(id)"
+        ],
+        "cwd": "/srv/project",
+        "stdin": {
+          "mode": "batch",
+          "base64": "AP8="
+        }
+      },
+      "maximumEncodedBytes": 398,
+      "pythonMaximumFrame": "{\"argv\":[\"/bin/echo\",\"literal $HOME;$(id)\"],\"env\":{\"PATH\":\"/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin\",\"HOME\":\"/opt/session-env/home\",\"TMPDIR\":\"/opt/session-env/tmp\",\"LANG\":\"C.UTF-8\"},\"roots\":{\"/srv/project\":[18446744073709551615,18446744073709551615],\"/opt/session-env\":[18446744073709551615,18446744073709551615]},\"projectRoot\":\"/srv/project\",\"cwd\":\"/srv/project\",\"stdinMode\":\"batch\"}"
+    },
+    {
+      "project": "/srv/\u6848\u4f8b/project",
+      "spec": {
+        "argv": [
+          "/bin/echo",
+          "\u4e2d\u6587\ud83d\ude00\u007f\\\"\n"
+        ],
+        "cwd": "/srv/\u6848\u4f8b/project/\u5b50\u76ee\u5f55",
+        "stdin": {
+          "mode": "ignore"
+        }
+      },
+      "maximumEncodedBytes": 474,
+      "pythonMaximumFrame": "{\"argv\":[\"/bin/echo\",\"\\u4e2d\\u6587\\ud83d\\ude00\\u007f\\\\\\\"\\n\"],\"env\":{\"PATH\":\"/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin\",\"HOME\":\"/opt/session-env/home\",\"TMPDIR\":\"/opt/session-env/tmp\",\"LANG\":\"C.UTF-8\"},\"roots\":{\"/srv/\\u6848\\u4f8b/project\":[18446744073709551615,18446744073709551615],\"/opt/session-env\":[18446744073709551615,18446744073709551615]},\"projectRoot\":\"/srv/\\u6848\\u4f8b/project\",\"cwd\":\"/srv/\\u6848\\u4f8b/project/\\u5b50\\u76ee\\u5f55\",\"stdinMode\":\"ignore\"}"
+    },
+    {
+      "project": "/srv/\u6848\u4f8b/project",
+      "spec": {
+        "argv": [
+          "/bin/echo",
+          "\u4e2d\u6587\ud83d\ude00\u007f\\\"\n"
+        ],
+        "cwd": "/srv/\u6848\u4f8b/project/\u5b50\u76ee\u5f55",
+        "stdin": {
+          "mode": "batch",
+          "base64": "AP8="
+        }
+      },
+      "maximumEncodedBytes": 473,
+      "pythonMaximumFrame": "{\"argv\":[\"/bin/echo\",\"\\u4e2d\\u6587\\ud83d\\ude00\\u007f\\\\\\\"\\n\"],\"env\":{\"PATH\":\"/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin\",\"HOME\":\"/opt/session-env/home\",\"TMPDIR\":\"/opt/session-env/tmp\",\"LANG\":\"C.UTF-8\"},\"roots\":{\"/srv/\\u6848\\u4f8b/project\":[18446744073709551615,18446744073709551615],\"/opt/session-env\":[18446744073709551615,18446744073709551615]},\"projectRoot\":\"/srv/\\u6848\\u4f8b/project\",\"cwd\":\"/srv/\\u6848\\u4f8b/project/\\u5b50\\u76ee\\u5f55\",\"stdinMode\":\"batch\"}"
+    }
+  ]
+}

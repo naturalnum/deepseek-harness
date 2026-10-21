@@ -72,6 +72,7 @@ async function fixture(mode = 'normal') {
       assertContentAvailable?: AccountFilesPreparation['assertContentAvailable']
       attachments?: AccountFilesPreparation['attachments']
       attachmentProjection?: AccountFilesPreparation['attachmentProjection']
+      prepareExecutionMounts?: AccountFilesPreparation['prepareExecutionMounts']
     } = {}) => {
       const configPath = join(dir, 'cordis.yml')
       writeFileSync(configPath, JSON.stringify([
@@ -91,6 +92,7 @@ async function fixture(mode = 'normal') {
           ...options.assertContentAvailable === undefined ? {} : { assertContentAvailable: options.assertContentAvailable },
           ...options.attachments === undefined ? {} : { attachments: options.attachments },
           ...options.attachmentProjection === undefined ? {} : { attachmentProjection: options.attachmentProjection },
+          ...options.prepareExecutionMounts === undefined ? {} : { prepareExecutionMounts: options.prepareExecutionMounts },
         })
         Object.assign(scope.loader.builtins, { 'm8r-sessions': SessionStore, 'm8r-storage': Storage,
           'm8r-json': JsonStorage, 'm8r-domain': DomainStorage, 'm8r-jsonl': Jsonl,
@@ -156,6 +158,48 @@ it('derives an exact registered project without changing the bootstrap and survi
   await expect(selected.projectDirectory.prepare(workspace.path)).rejects.toThrow('no longer current')
   expect(f.workers).toHaveLength(1)
   expect(f.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('keeps issued project and mount grant identities across real native callers and revokes grant memory independently of slot data', async () => {
+  const f = await fixture(), account = f.prepare('A'), released = vi.fn()
+  // This identity callback creates no environment, allocation or quota proof.
+  const prepare = vi.fn<NonNullable<AccountFilesPreparation['prepareExecutionMounts']>>(async (
+    workspace, sessionId, environmentVersion, current,
+  ) => {
+    current()
+    const quota = { device: '1', mountId: '1', maximumBytes: '4096', maximumInodes: '16' }
+    const layoutDirectory = { device: '2', mountId: '2', uid: 2000, gid: 2000, mode: 0o40700 }
+    return { value: Object.freeze({ binding: account.binding, sessionId, workspaceId: workspace.id,
+      project: { rootPath: workspace.path, rootDevice: '1', rootInode: '2', rootMountId: '1', mountVersion: '1:2:1', quota,
+        readOnlyPaths: ['.pe'] as const, metadataDirectory: { relativePath: '.pe' as const,
+          device: '1', inode: '3', mountId: '1', uid: 2000, gid: 2000, mode: 0o40700 } },
+      environment: { rootPath: '/fixture/environment', rootDevice: '2', rootInode: '2', rootMountId: '2',
+        rootReadOnly: true as const, writablePaths: ['home', 'venv', 'tmp'] as const,
+        layout: { home: { ...layoutDirectory, inode: '3' }, venv: { ...layoutDirectory, inode: '4' },
+          tmp: { ...layoutDirectory, inode: '5' } },
+        targetPath: '/opt/session-env' as const, bankId: 'bank', slotId: 'slot', slotGeneration: 1, environmentVersion, quota } }),
+    release: released }
+  })
+  const graph = await account.start({ prepareExecutionMounts: prepare }), owner = graph.owner()
+  const project = await owner.install(graph.entry!.fiber!.ctx)
+  const session = graph.ctx.sessions.create(undefined, { meta: { cwd: project.workspace.path } })
+  await graph.ctx.sessions.flush(session)
+  await project.workspace.attachSession(session.id)
+  await expect(owner.prepareExecutionMounts({ ...project }, session.id, 'version-1'))
+    .rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  expect(prepare).not.toHaveBeenCalled()
+  const held = await owner.prepareExecutionMounts(project, session.id, 'version-1')
+  await graph.ctx.plugin({ inject: ['peCloudFiles'], apply(caller: Context) {
+    caller.peCloudFiles.assertExecutionMountGrant(held.value)
+  } })
+  expect(() => { owner.assertExecutionMountGrant({ ...held.value }) }).toThrow('not owned')
+  held.release(); held.release()
+  expect(released).toHaveBeenCalledTimes(1)
+  expect(() => { owner.assertExecutionMountGrant(held.value) }).toThrow('revoked')
+  const next = await owner.prepareExecutionMounts(await owner.projectFor(project.workspace), session.id, 'version-1')
+  account.lifetime.abort()
+  expect(released).toHaveBeenCalledTimes(2)
+  expect(() => { owner.assertExecutionMountGrant(next.value) }).toThrow()
 })
 
 it('requires a settled original installation before invoking the trusted content-capability assertion', async () => {

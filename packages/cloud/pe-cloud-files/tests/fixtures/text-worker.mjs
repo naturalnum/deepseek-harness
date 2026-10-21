@@ -1,8 +1,8 @@
 /** TEST ONLY Node transport. This supplies no Linux FD, confinement, sync or quota evidence. */
 import { parentPort, workerData } from 'node:worker_threads'
-import { closeSync, lstatSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-const { mode = 'normal', gate, abiVersion = 7, content } = workerData
+const { mode = 'normal', gate, abiVersion = 7, content, storageFacts, projectMetadataVersion, environmentLayoutVersion } = workerData
 const state = new Int32Array(gate)
 const version = info => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
 const normalize = text => text.replace(/\r\n?/g, '\n')
@@ -11,8 +11,89 @@ const block = () => {
   Atomics.notify(state, 1)
   Atomics.wait(state, 2, 0)
 }
-parentPort.postMessage({ kind: 'ready', abiVersion })
+parentPort.postMessage({ kind: 'ready', abiVersion, ...storageFacts === undefined ? {} : { storageProbeVersion: 1 },
+  ...projectMetadataVersion === undefined ? {} : { projectMetadataVersion },
+  ...environmentLayoutVersion === undefined ? {} : { environmentLayoutVersion } })
 parentPort.on('message', request => {
+  if (request.kind === 'environment-layout-prepare') {
+    if (environmentLayoutVersion !== 1) throw new Error('Unadvertised environment layout operation')
+    const frame = new Uint8Array(256), view = new DataView(frame.buffer)
+    frame.set([68, 69, 76, 49, 1, 1, 3])
+    view.setBigUint64(24, BigInt(request.root.rootDevice), true)
+    view.setBigUint64(32, BigInt(request.root.rootInode), true)
+    view.setBigUint64(40, BigInt(request.root.rootMountId), true)
+    let created = false, synchronized = false, error = mode === 'layout-known-failure' ? 28 : 0
+    for (const [index, name] of ['home', 'venv', 'tmp'].entries()) {
+      if (error) break
+      const path = join(request.root.rootPath, name), offset = 48 + 64 * index
+      let info
+      try { info = lstatSync(path, { bigint: true }) } catch (cause) { if (cause.code !== 'ENOENT') throw cause }
+      if (info === undefined) {
+        frame[offset] |= 16; mkdirSync(path, { mode: 0o700 }); frame[offset] |= 2; created = true
+        info = lstatSync(path, { bigint: true })
+      }
+      view.setUint32(offset + 4, request.uid, true); view.setUint32(offset + 8, request.gid, true)
+      view.setUint32(offset + 12, Number(info.mode), true)
+      view.setBigUint64(offset + 16, BigInt(request.root.rootDevice), true)
+      view.setBigUint64(offset + 24, info.ino, true)
+      if (!info.isDirectory() || (info.mode & 0o7777n) !== 0o700n) { error = 1; break }
+      view.setBigUint64(offset + 32, BigInt(request.root.rootMountId), true)
+      frame[offset] |= 13; synchronized = true
+    }
+    frame[5] = error ? created || synchronized ? 4 : 3 : created ? 2 : 1
+    if (mode === 'layout-unknown' || mode === 'layout-unclosed') { frame[5] = 4; error = 5 }
+    if (mode === 'layout-unclosed') frame[6] &= ~1
+    if (mode === 'layout-bad-frame') frame[240] = 1
+    view.setUint32(8, error, true)
+    if (mode === 'layout-block-after') block()
+    parentPort.postMessage({ kind: 'environment-layout-reply', id: request.id, frame }, [frame.buffer]); return
+  }
+  if (request.kind === 'project-metadata-prepare') {
+    if (projectMetadataVersion !== 1) throw new Error('Unadvertised metadata operation')
+    const frame = new Uint8Array(96), view = new DataView(frame.buffer), path = join(request.root.rootPath, '.pe')
+    frame.set([68, 80, 77, 49, 1])
+    view.setBigUint64(24, BigInt(request.root.rootDevice), true)
+    view.setBigUint64(32, BigInt(request.root.rootInode), true)
+    view.setBigUint64(40, BigInt(request.root.rootMountId), true)
+    let created = false, flags = 3, error = 0
+    if (mode === 'metadata-known-failure') error = 28
+    else {
+      let info
+      try { info = lstatSync(path, { bigint: true }) } catch (cause) { if (cause.code !== 'ENOENT') throw cause }
+      if (info === undefined) {
+        flags |= 64; mkdirSync(path, { mode: 0o700 }); created = true; flags |= 32
+        info = lstatSync(path, { bigint: true })
+      }
+      if (!info.isDirectory() || (info.mode & 0o7777n) !== 0o700n) error = 1
+      else {
+        flags |= 28
+        view.setUint32(12, request.uid, true); view.setUint32(16, request.gid, true); view.setUint32(20, 0o40700, true)
+        view.setBigUint64(48, BigInt(request.root.rootDevice), true); view.setBigUint64(56, info.ino, true)
+        view.setBigUint64(64, BigInt(request.root.rootMountId), true)
+      }
+    }
+    frame[5] = error ? 3 : created ? 2 : 1
+    if (mode === 'metadata-unknown' || mode === 'metadata-unclosed') { frame[5] = 4; error = 5 }
+    if (mode === 'metadata-unclosed') flags &= ~1
+    if (mode === 'metadata-bad-frame') flags |= 128
+    frame[6] = flags; view.setUint32(8, error, true)
+    if (mode === 'metadata-block-after') block()
+    parentPort.postMessage({ kind: 'project-metadata-reply', id: request.id, frame }, [frame.buffer]); return
+  }
+  if (request.kind === 'storage-probe' && storageFacts !== undefined) {
+    // Synthetic geometry only; no real quota or Linux deployment result is established.
+    const facts = storageFacts[request.path]
+    if (facts === undefined) throw new Error('Unexpected synthetic storage probe')
+    if (mode === 'probe-abort-once' && /\/env-\d+$/.test(request.path) && Atomics.compareExchange(state, 3, 0, 1) === 0) {
+      parentPort.postMessage({ kind: 'reply', id: request.id, ok: false, code: 'FS_ABORTED', syscallCode: 'ECANCELED' }); return
+    }
+    const frame = new Uint8Array(256), view = new DataView(frame.buffer)
+    frame.set([68, 83, 80, 49, 1, 1, facts.flags])
+    for (const [index, key] of ['uid', 'gid', 'mode', 'appUid', 'appGid'].entries()) view.setUint32(12 + index * 4, facts[key], true)
+    for (const [index, key] of ['device', 'inode', 'mountId', 'filesystem', 'blockBytes', 'blocks', 'freeBlocks', 'availableBlocks',
+      'inodes', 'freeInodes', 'size', 'allocatedBytes', 'links'].entries()) view.setBigUint64(32 + index * 8, BigInt(facts[key]), true)
+    parentPort.postMessage({ kind: 'storage-probe-reply', id: request.id, frame }, [frame.buffer]); return
+  }
   const { root, id, relativePath } = request
   const path = join(root.rootPath, relativePath)
   const failed = (code, syscallCode = 'EIO', outcome = 'not-published') => parentPort.postMessage({

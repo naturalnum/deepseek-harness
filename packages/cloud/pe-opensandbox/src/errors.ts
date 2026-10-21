@@ -17,13 +17,14 @@ export class ExecutionUnavailableError extends Error {
   }
 }
 
-/** Closed execution registration or generation failure; no user execution is submitted. */
+/** Execution registration, unsupported operation or generation refusal before user submission. */
 export class ExecutionStateError extends Error {
   /**
    * @param code - existing cloud failure classification.
    * @param message - secret-free failure and required correction.
    */
-  constructor(readonly code: 'cloud/invalid-config' | 'cloud/stale-generation' | 'cloud/account-unavailable' | 'cloud/capacity', message: string) {
+  constructor(readonly code: 'cloud/invalid-config' | 'cloud/stale-generation' | 'cloud/account-unavailable'
+    | 'cloud/capacity' | 'cloud/execution-unavailable' | 'cloud/forbidden' | 'cloud/stop-unconfirmed', message: string) {
     super(message)
     this.name = 'ExecutionStateError'
   }

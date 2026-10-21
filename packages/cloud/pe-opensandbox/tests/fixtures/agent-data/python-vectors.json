@@ -1,0 +1,219 @@
+{
+  "origin": "Python stdlib json canonical and frozen launcher AST only; no prepared module imported or primitive executed",
+  "canonical": [
+    {
+      "value": {
+        "argv": [
+          "/bin/echo",
+          "literal $HOME;$(id)"
+        ],
+        "cwd": "/srv/project",
+        "stdin": {
+          "mode": "ignore"
+        }
+      },
+      "canonical": "{\"argv\":[\"/bin/echo\",\"literal $HOME;$(id)\"],\"cwd\":\"/srv/project\",\"stdin\":{\"mode\":\"ignore\"}}",
+      "sha256": "d616a935732009c8eb266aa3c2f87a027e44d38671dc5b91835b50c0afb341c5"
+    },
+    {
+      "value": {
+        "argv": [
+          "/bin/echo",
+          "\u4e2d\u6587\ud83d\ude00\ud834\udd1e\u00e9\r\n\"\\\t",
+          "x\u007fy"
+        ],
+        "cwd": "/srv/project/sub",
+        "stdin": {
+          "mode": "batch",
+          "base64": "AP8="
+        }
+      },
+      "canonical": "{\"argv\":[\"/bin/echo\",\"\\u4e2d\\u6587\\ud83d\\ude00\\ud834\\udd1e\\u00e9\\r\\n\\\"\\\\\\t\",\"x\\u007fy\"],\"cwd\":\"/srv/project/sub\",\"stdin\":{\"base64\":\"AP8=\",\"mode\":\"batch\"}}",
+      "sha256": "35b3b88ed755c942464e8530e82b38d7f852e501d39f9ace57060b8a3149fce1"
+    },
+    {
+      "value": {
+        "argv": [
+          "/bin/echo",
+          "\b\f\r\t\n\u0001\u001f\u007f\u0080\u2028\u2029"
+        ],
+        "cwd": "/srv/\u6848\u4f8b/project",
+        "stdin": {
+          "mode": "ignore"
+        }
+      },
+      "canonical": "{\"argv\":[\"/bin/echo\",\"\\b\\f\\r\\t\\n\\u0001\\u001f\\u007f\\u0080\\u2028\\u2029\"],\"cwd\":\"/srv/\\u6848\\u4f8b/project\",\"stdin\":{\"mode\":\"ignore\"}}",
+      "sha256": "1e49698e11cf0dd566d59a0e79dc70b91fdbc922f9458ffa3293c67f2aeaf384"
+    },
+    {
+      "value": {
+        "\ud800\udc00": 1,
+        "\ue000": 2,
+        "\u4e2d\u6587": 3,
+        "a": 4
+      },
+      "canonical": "{\"a\":4,\"\\u4e2d\\u6587\":3,\"\\ue000\":2,\"\\ud800\\udc00\":1}",
+      "sha256": "67c2ac0d0e11e531a78773a735b249e6383920514b3a9681bffffc697909c7fd"
+    },
+    {
+      "value": [
+        "\u007f",
+        "\u00e9",
+        "\ud83d\ude00",
+        "/",
+        "\"",
+        "\\",
+        true,
+        false,
+        null,
+        9007199254740991
+      ],
+      "canonical": "[\"\\u007f\",\"\\u00e9\",\"\\ud83d\\ude00\",\"/\",\"\\\"\",\"\\\\\",true,false,null,9007199254740991]",
+      "sha256": "f2584978d0666650fddff9de6f6d7120c3384732454cabbf5e5104c9364c5f06"
+    }
+  ],
+  "world": [
+    {
+      "project": "/srv/project",
+      "argv": [
+        "/trusted/bwrap",
+        "--unshare-user",
+        "--uid",
+        "0",
+        "--gid",
+        "0",
+        "--disable-userns",
+        "--assert-userns-disabled",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--die-with-parent",
+        "--new-session",
+        "--cap-drop",
+        "ALL",
+        "--clearenv",
+        "--setenv",
+        "PATH",
+        "/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin",
+        "--setenv",
+        "HOME",
+        "/opt/session-env/home",
+        "--setenv",
+        "TMPDIR",
+        "/opt/session-env/tmp",
+        "--setenv",
+        "LANG",
+        "C.UTF-8",
+        "--ro-bind",
+        "/",
+        "/",
+        "--proc",
+        "/proc",
+        "--ro-bind",
+        "/dev",
+        "/dev",
+        "--dev-bind",
+        "/dev/null",
+        "/dev/null",
+        "--ro-bind",
+        "/sys",
+        "/sys",
+        "--bind",
+        "/srv/project",
+        "/srv/project",
+        "--ro-bind",
+        "/opt/session-env",
+        "/opt/session-env",
+        "--bind",
+        "/opt/session-env/home",
+        "/opt/session-env/home",
+        "--bind",
+        "/opt/session-env/venv",
+        "/opt/session-env/venv",
+        "--bind",
+        "/opt/session-env/tmp",
+        "/opt/session-env/tmp",
+        "--bind",
+        "/opt/session-env/tmp",
+        "/tmp",
+        "--ro-bind",
+        "/srv/project/.pe",
+        "/srv/project/.pe",
+        "--chdir",
+        "/srv/project"
+      ],
+      "sha256": "bfd1b360b3e0acc940d74af62c2a6cd4188003f926c1edb4c7d87c94d403799f"
+    },
+    {
+      "project": "/srv/\u6848\u4f8b/project",
+      "argv": [
+        "/trusted/bwrap",
+        "--unshare-user",
+        "--uid",
+        "0",
+        "--gid",
+        "0",
+        "--disable-userns",
+        "--assert-userns-disabled",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--die-with-parent",
+        "--new-session",
+        "--cap-drop",
+        "ALL",
+        "--clearenv",
+        "--setenv",
+        "PATH",
+        "/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin",
+        "--setenv",
+        "HOME",
+        "/opt/session-env/home",
+        "--setenv",
+        "TMPDIR",
+        "/opt/session-env/tmp",
+        "--setenv",
+        "LANG",
+        "C.UTF-8",
+        "--ro-bind",
+        "/",
+        "/",
+        "--proc",
+        "/proc",
+        "--ro-bind",
+        "/dev",
+        "/dev",
+        "--dev-bind",
+        "/dev/null",
+        "/dev/null",
+        "--ro-bind",
+        "/sys",
+        "/sys",
+        "--bind",
+        "/srv/\u6848\u4f8b/project",
+        "/srv/\u6848\u4f8b/project",
+        "--ro-bind",
+        "/opt/session-env",
+        "/opt/session-env",
+        "--bind",
+        "/opt/session-env/home",
+        "/opt/session-env/home",
+        "--bind",
+        "/opt/session-env/venv",
+        "/opt/session-env/venv",
+        "--bind",
+        "/opt/session-env/tmp",
+        "/opt/session-env/tmp",
+        "--bind",
+        "/opt/session-env/tmp",
+        "/tmp",
+        "--ro-bind",
+        "/srv/\u6848\u4f8b/project/.pe",
+        "/srv/\u6848\u4f8b/project/.pe",
+        "--chdir",
+        "/srv/\u6848\u4f8b/project"
+      ],
+      "sha256": "1038af93a87d14252147b9bc8189c777345ba8d51b957021c1db1eac643b1165"
+    }
+  ]
+}

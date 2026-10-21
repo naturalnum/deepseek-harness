@@ -908,6 +908,256 @@ done:
   if (error) return fail(env, error);
   return entries;
 }
+
+/* Independent fixed-.pe capability; existing ABI8 methods and workspace-leaf restrictions are unchanged. */
+enum { PM_CLOSED = 1, PM_ROOT = 2, PM_DIRECTORY = 4, PM_SYNCED = 8, PM_PARENT_SYNCED = 16,
+  PM_CREATED = 32, PM_ATTEMPTED = 64 };
+
+static int project_metadata_open(int parent, uint64_t retries, int32_t *cancel, uint64_t deadline) {
+  struct open_how how = {0};
+  how.flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+  uint64_t attempts = 0;
+  for (;;) {
+    int fd = (int)syscall(SYS_openat2, parent, ".pe", &how, sizeof(how));
+    if (fd >= 0 || errno != EAGAIN || attempts >= retries) return fd;
+    attempts++;
+    int error = content_running(cancel, deadline);
+    if (error) { errno = error; return -1; }
+  }
+}
+
+static napi_value prepare_project_metadata(napi_env env, napi_callback_info info) {
+  size_t count = 10, length = 0, offset = 0;
+  napi_value args[10], backing, array, cancel_backing;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EBUSY);
+  void *memory = NULL, *cancel_data = NULL;
+  if (napi_create_arraybuffer(env, 96, &memory, &backing) != napi_ok
+    || napi_create_typedarray(env, napi_uint8_array, 96, backing, 0, &array) != napi_ok) return fail(env, ENOMEM);
+  unsigned char *frame = memory;
+  memset(frame, 0, 96); memcpy(frame, "DPM1", 4); frame[4] = 1;
+  int error = EINVAL, unknown = 0, close_failed = 0, syncing = 0, named = -1;
+  unsigned flags = 0;
+  uint64_t device = 0, inode = 0, mount = 0, start = 0, deadline = 0;
+  double uid_value = 0, gid_value = 0, retry_value = 0;
+  uint32_t maximum = 0, timeout = 0;
+  char *path = NULL;
+  int32_t *cancel = NULL;
+  napi_typedarray_type type;
+  struct stat root, target, observed;
+  struct statfs filesystem;
+  _Static_assert(6 * sizeof(struct stat) + sizeof(struct statfs) + 2 * sizeof(struct statx)
+    + sizeof(struct open_how) + 1024 <= 4096, "project metadata scratch exceeds reservation");
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 10
+    || !content_number(env, args[6], &maximum) || maximum > 16384 || !content_number(env, args[8], &timeout)
+    || napi_get_value_double(env, args[4], &uid_value) != napi_ok || !(uid_value >= 1 && uid_value < UINT32_MAX)
+    || uid_value != (uint32_t)uid_value
+    || napi_get_value_double(env, args[5], &gid_value) != napi_ok || !(gid_value >= 1 && gid_value < UINT32_MAX)
+    || gid_value != (uint32_t)gid_value
+    || napi_get_value_double(env, args[7], &retry_value) != napi_ok || !(retry_value >= 0 && retry_value <= 9007199254740991.0)
+    || retry_value != (double)(uint64_t)retry_value
+    || !bounded_decimal(env, args[1], &device) || !bounded_decimal(env, args[2], &inode)
+    || !bounded_decimal(env, args[3], &mount) || !mount
+    || napi_get_typedarray_info(env, args[9], &type, &length, &cancel_data, &cancel_backing, &offset) != napi_ok
+    || type != napi_int32_array || length != 1 || offset != 0 || !cancel_data) goto finished;
+  cancel = cancel_data;
+  bool ordinary = false;
+  if (napi_is_arraybuffer(env, cancel_backing, &ordinary) != napi_ok || ordinary) goto finished;
+  path = bounded_text(env, args[0], maximum);
+  if (!path || path[0] != '/' || strlen(path) + 4 > maximum) goto finished;
+  put64(frame + 24, device); put64(frame + 32, inode); put64(frame + 40, mount);
+  if ((uint64_t)geteuid() != (uint64_t)uid_value || (uint64_t)getegid() != (uint64_t)gid_value) { error = EPERM; goto finished; }
+  error = content_clock(&start); if (error) goto finished;
+  deadline = start + (uint64_t)timeout * 1000000ULL;
+  error = content_running(cancel, deadline); if (error) goto finished;
+  owned->anchor = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  if (owned->anchor < 0) { error = errno; goto finished; }
+  if (fstat(owned->anchor, &root) || fstatfs(owned->anchor, &filesystem)) { error = errno; goto finished; }
+  if (!S_ISDIR(root.st_mode) || (uint64_t)root.st_dev != device || (uint64_t)root.st_ino != inode) { error = ESTALE; goto finished; }
+  if (root.st_uid != (uid_t)uid_value || root.st_gid != (gid_t)gid_value || (root.st_mode & 07777) != 0700
+    || filesystem.f_type != EXT4_SUPER_MAGIC) { error = EPERM; goto finished; }
+  error = mount_identity(owned->anchor, mount); if (error) goto finished;
+  owned->mount_id = mount; flags |= PM_ROOT;
+  error = leaf_parent(owned, path, &close_failed); if (error || close_failed) goto finished;
+  error = content_running(cancel, deadline); if (error) goto finished;
+  owned->reader = project_metadata_open(owned->anchor, (uint64_t)retry_value, cancel, deadline);
+  if (owned->reader < 0 && errno == ENOENT) {
+    error = content_running(cancel, deadline); if (error) goto finished;
+    error = leaf_parent(owned, path, &close_failed); if (error || close_failed) goto finished;
+    flags |= PM_ATTEMPTED;
+    if (!mkdirat(owned->anchor, ".pe", 0700)) flags |= PM_CREATED;
+    else {
+      error = errno;
+      if (error != EEXIST) { if (!definite_no_create(error)) unknown = 1; goto finished; }
+    }
+    owned->reader = project_metadata_open(owned->anchor, (uint64_t)retry_value, cancel, deadline);
+  }
+  if (owned->reader < 0) { error = errno; goto finished; }
+  if (fstat(owned->reader, &target)) { error = errno; goto finished; }
+  put32(frame + 12, (uint32_t)target.st_uid); put32(frame + 16, (uint32_t)target.st_gid);
+  put32(frame + 20, (uint32_t)target.st_mode);
+  put64(frame + 48, (uint64_t)target.st_dev); put64(frame + 56, (uint64_t)target.st_ino);
+  if (!S_ISDIR(target.st_mode) || target.st_uid != (uid_t)uid_value || target.st_gid != (gid_t)gid_value
+    || (target.st_mode & 07777) != 0700 || (uint64_t)target.st_dev != device) { error = EPERM; goto finished; }
+  error = mount_identity(owned->reader, mount); if (error) goto finished;
+  put64(frame + 64, mount); flags |= PM_DIRECTORY;
+  /* After obtaining the directory, finish durability and closure even if the observer has left. */
+  syncing = 1;
+  if (fsync(owned->reader)) { error = errno; goto finished; }
+  flags |= PM_SYNCED;
+  if (fsync(owned->anchor)) { error = errno; goto finished; }
+  flags |= PM_PARENT_SYNCED;
+  error = leaf_parent(owned, path, &close_failed); if (error || close_failed) goto finished;
+  named = project_metadata_open(owned->anchor, (uint64_t)retry_value, cancel, deadline);
+  if (named < 0) { error = errno; goto finished; }
+  if (fstat(named, &observed)) { error = errno; goto finished; }
+  if (observed.st_dev != target.st_dev || observed.st_ino != target.st_ino || !S_ISDIR(observed.st_mode)
+    || observed.st_uid != target.st_uid || observed.st_gid != target.st_gid || (observed.st_mode & 07777) != 0700) {
+    error = ESTALE; goto finished;
+  }
+  error = mount_identity(named, mount);
+  if (!error) error = leaf_parent(owned, path, &close_failed);
+finished:
+  if (retire_close(&named)) close_failed = 1;
+  if (retire_close(&owned->reader)) close_failed = 1;
+  if (retire_close(&owned->anchor)) close_failed = 1;
+  owned->mount_id = 0;
+  free(path);
+  if (close_failed) { if (!error) error = EIO; unknown = 1; }
+  else flags |= PM_CLOSED;
+  if (error && ((flags & PM_CREATED) || syncing)) unknown = 1;
+  frame[5] = unknown ? 4 : error ? 3 : (flags & PM_CREATED) ? 2 : 1;
+  frame[6] = (unsigned char)flags; put32(frame + 8, (uint32_t)error);
+  return array;
+}
+/* Names are native constants; no caller-selected environment child is accepted. */
+static int environment_layout_open(int parent, unsigned index, uint64_t retries, int32_t *cancel, uint64_t deadline) {
+  static const char *const names[3] = {"home", "venv", "tmp"};
+  struct open_how how = {0};
+  how.flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+  uint64_t attempts = 0;
+  for (;;) {
+    int fd = (int)syscall(SYS_openat2, parent, names[index], &how, sizeof(how));
+    if (fd >= 0 || errno != EAGAIN || attempts >= retries) return fd;
+    attempts++;
+    int error = content_running(cancel, deadline);
+    if (error) { errno = error; return -1; }
+  }
+}
+
+static napi_value prepare_environment_layout(napi_env env, napi_callback_info info) {
+  static const char *const names[3] = {"home", "venv", "tmp"};
+  size_t count = 10, length = 0, offset = 0;
+  napi_value args[10], backing, array, cancel_backing;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EBUSY);
+  void *memory = NULL, *cancel_data = NULL;
+  if (napi_create_arraybuffer(env, 256, &memory, &backing) != napi_ok
+    || napi_create_typedarray(env, napi_uint8_array, 256, backing, 0, &array) != napi_ok) return fail(env, ENOMEM);
+  unsigned char *frame = memory;
+  memset(frame, 0, 256); memcpy(frame, "DEL1", 4); frame[4] = 1;
+  int error = EINVAL, unknown = 0, close_failed = 0, syncing = 0, created = 0, named = -1;
+  uint64_t device = 0, inode = 0, mount = 0, start = 0, deadline = 0;
+  double uid_value = 0, gid_value = 0, retry_value = 0;
+  uint32_t maximum = 0, timeout = 0;
+  char *path = NULL;
+  int32_t *cancel = NULL;
+  napi_typedarray_type type;
+  struct stat root, target[3], observed;
+  struct statfs filesystem;
+  _Static_assert(8 * sizeof(struct stat) + sizeof(struct statfs) + 2 * sizeof(struct statx)
+    + sizeof(struct open_how) + 1024 <= 4096, "environment layout scratch exceeds reservation");
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 10
+    || !content_number(env, args[6], &maximum) || maximum > 16384 || !content_number(env, args[8], &timeout)
+    || napi_get_value_double(env, args[4], &uid_value) != napi_ok || !(uid_value >= 1 && uid_value < UINT32_MAX)
+    || uid_value != (uint32_t)uid_value
+    || napi_get_value_double(env, args[5], &gid_value) != napi_ok || !(gid_value >= 1 && gid_value < UINT32_MAX)
+    || gid_value != (uint32_t)gid_value
+    || napi_get_value_double(env, args[7], &retry_value) != napi_ok || !(retry_value >= 0 && retry_value <= 9007199254740991.0)
+    || retry_value != (double)(uint64_t)retry_value
+    || !bounded_decimal(env, args[1], &device) || !bounded_decimal(env, args[2], &inode)
+    || !bounded_decimal(env, args[3], &mount) || !mount
+    || napi_get_typedarray_info(env, args[9], &type, &length, &cancel_data, &cancel_backing, &offset) != napi_ok
+    || type != napi_int32_array || length != 1 || offset != 0 || !cancel_data) goto finished;
+  cancel = cancel_data;
+  bool ordinary = false;
+  if (napi_is_arraybuffer(env, cancel_backing, &ordinary) != napi_ok || ordinary) goto finished;
+  path = bounded_text(env, args[0], maximum);
+  if (!path || path[0] != '/' || strlen(path) + 5 > maximum) goto finished;
+  put64(frame + 24, device); put64(frame + 32, inode); put64(frame + 40, mount);
+  if ((uint64_t)geteuid() != (uint64_t)uid_value || (uint64_t)getegid() != (uint64_t)gid_value) { error = EPERM; goto finished; }
+  error = content_clock(&start); if (error) goto finished;
+  deadline = start + (uint64_t)timeout * 1000000ULL;
+  error = content_running(cancel, deadline); if (error) goto finished;
+  owned->anchor = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  if (owned->anchor < 0) { error = errno; goto finished; }
+  if (fstat(owned->anchor, &root) || fstatfs(owned->anchor, &filesystem)) { error = errno; goto finished; }
+  if (!S_ISDIR(root.st_mode) || (uint64_t)root.st_dev != device || (uint64_t)root.st_ino != inode) { error = ESTALE; goto finished; }
+  if (root.st_uid != (uid_t)uid_value || root.st_gid != (gid_t)gid_value || (root.st_mode & 07777) != 0700
+    || filesystem.f_type != EXT4_SUPER_MAGIC) { error = EPERM; goto finished; }
+  error = mount_identity(owned->anchor, mount); if (error) goto finished;
+  owned->mount_id = mount; frame[6] |= 2;
+  error = leaf_parent(owned, path, &close_failed); if (error || close_failed) goto finished;
+  error = content_running(cancel, deadline); if (error) goto finished;
+  for (unsigned index = 0; index < 3; index++) {
+    unsigned char *entry = frame + 48 + index * 64;
+    owned->reader = environment_layout_open(owned->anchor, index, (uint64_t)retry_value, cancel, deadline);
+    if (owned->reader < 0 && errno == ENOENT) {
+      if (!created && !syncing) { error = content_running(cancel, deadline); if (error) goto finished; }
+      error = leaf_parent(owned, path, &close_failed); if (error || close_failed) goto finished;
+      entry[0] |= 16;
+      if (!mkdirat(owned->anchor, names[index], 0700)) { entry[0] |= 2; created = 1; }
+      else {
+        error = errno;
+        if (error != EEXIST) { if (!definite_no_create(error)) unknown = 1; goto finished; }
+      }
+      owned->reader = environment_layout_open(owned->anchor, index, (uint64_t)retry_value, cancel, deadline);
+    }
+    if (owned->reader < 0) { error = errno; goto finished; }
+    if (fstat(owned->reader, &target[index])) { error = errno; goto finished; }
+    put32(entry + 4, (uint32_t)target[index].st_uid); put32(entry + 8, (uint32_t)target[index].st_gid);
+    put32(entry + 12, (uint32_t)target[index].st_mode);
+    put64(entry + 16, (uint64_t)target[index].st_dev); put64(entry + 24, (uint64_t)target[index].st_ino);
+    if (!S_ISDIR(target[index].st_mode) || target[index].st_uid != (uid_t)uid_value || target[index].st_gid != (gid_t)gid_value
+      || (target[index].st_mode & 07777) != 0700 || (uint64_t)target[index].st_dev != device) { error = EPERM; goto finished; }
+    error = mount_identity(owned->reader, mount); if (error) goto finished;
+    put64(entry + 32, mount); entry[0] |= 1;
+    syncing = 1;
+    if (fsync(owned->reader)) { error = errno; goto finished; }
+    entry[0] |= 4;
+    if (fsync(owned->anchor)) { error = errno; goto finished; }
+    entry[0] |= 8;
+    if (retire_close(&owned->reader)) { error = EIO; close_failed = 1; goto finished; }
+  }
+  /* A later fixed entry cannot replace an earlier validated entry before the completed receipt. */
+  for (unsigned index = 0; index < 3; index++) {
+    error = leaf_parent(owned, path, &close_failed); if (error || close_failed) goto finished;
+    named = environment_layout_open(owned->anchor, index, (uint64_t)retry_value, cancel, deadline);
+    if (named < 0) { error = errno; goto finished; }
+    if (fstat(named, &observed)) { error = errno; goto finished; }
+    if (observed.st_dev != target[index].st_dev || observed.st_ino != target[index].st_ino || !S_ISDIR(observed.st_mode)
+      || observed.st_uid != target[index].st_uid || observed.st_gid != target[index].st_gid || (observed.st_mode & 07777) != 0700) {
+      error = ESTALE; goto finished;
+    }
+    error = mount_identity(named, mount); if (error) goto finished;
+    if (retire_close(&named)) { error = EIO; close_failed = 1; goto finished; }
+  }
+  error = leaf_parent(owned, path, &close_failed);
+finished:
+  if (retire_close(&named)) close_failed = 1;
+  if (retire_close(&owned->reader)) close_failed = 1;
+  if (retire_close(&owned->anchor)) close_failed = 1;
+  owned->mount_id = 0;
+  free(path);
+  if (close_failed) { if (!error) error = EIO; unknown = 1; }
+  else frame[6] |= 1;
+  if (error && (created || syncing)) unknown = 1;
+  frame[5] = unknown ? 4 : error ? 3 : created ? 2 : 1;
+  put32(frame + 8, (uint32_t)error);
+  return array;
+}
 #endif
 
 static void cleanup(napi_env env, void *data, void *hint) {
@@ -928,6 +1178,8 @@ static napi_value init(napi_env env, napi_value exports) {
   if (napi_set_instance_data(env, owned, cleanup, NULL) != napi_ok) { free(owned); return fail(env, EIO); }
   napi_property_descriptor methods[] = {
 #ifdef DSH_FD_CONTENT_ABI
+    {"prepareEnvironmentLayout", NULL, prepare_environment_layout, NULL, NULL, NULL, napi_default, NULL},
+    {"prepareProjectMetadata", NULL, prepare_project_metadata, NULL, NULL, NULL, napi_default, NULL},
     {"openPathMetadata", NULL, open_path_metadata, NULL, NULL, NULL, napi_default, NULL},
     {"verifyContentAnchor", NULL, verify_content_anchor, NULL, NULL, NULL, napi_default, NULL},
     {"listDirectory", NULL, list_directory, NULL, NULL, NULL, napi_default, NULL},
@@ -950,6 +1202,10 @@ static napi_value init(napi_env env, napi_value exports) {
   napi_value abi;
 #ifdef DSH_FD_CONTENT_ABI
   napi_create_uint32(env, 8, &abi);
+  napi_value metadata_version;
+  napi_create_uint32(env, 1, &metadata_version);
+  napi_set_named_property(env, exports, "projectMetadataVersion", metadata_version);
+  napi_set_named_property(env, exports, "environmentLayoutVersion", metadata_version);
 #elif defined(DSH_FD_TEXT_ABI)
   napi_create_uint32(env, 7, &abi);
 #else

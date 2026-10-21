@@ -972,6 +972,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-directory-picker-browse BrowseDirectoryFlow',
       'client-ui-directory-picker-native NativeDirectoryFlow',
+      'pe-cloud-client CloudProjectFlow',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.workspace.directoryFlow\', () => ctx.slots.register(\n      { name: \'conversation.hero.workspace.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2751,7 +2752,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'root\', () => ctx.slots.register(\n      { name: \'root\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-renderer/src/client/registry.ts:44',
+    source: 'packages/client/ui-renderer/src/client/registry.ts:45',
   },
   {
     key: 'settings.action',
@@ -4525,6 +4526,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-directory-picker-browse BrowseDirectoryFlow',
       'client-ui-directory-picker-native NativeDirectoryFlow',
+      'pe-cloud-client CloudProjectFlow',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces.directoryFlow\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -4686,14 +4688,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:44',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:43',
   },
   {
     key: 'tool.call.toolview',
     kind: 'keyed',
     scope: 'session',
-    summary: 'Keyed Tool call view dispatched by wire Tool name.',
-    doc: 'Keyed Tool call view dispatched by wire Tool name. Any name is allowed,\nincluding tools registered by your package. Register with\n`key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and running\nor settled node through explicit phase props. Every stage supplies\n`name` and a lazy `args` view; preparing arguments may be incomplete.',
+    summary: 'Keyed Tool call view dispatched by wire Tool name, including package tools.',
+    doc: 'Keyed Tool call view dispatched by wire Tool name, including package tools.\nRegister with `key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and running\nor settled node through explicit phase props. Every stage supplies\n`name` and a lazy `args` view; preparing arguments may be incomplete.',
     registerOptions: [
       {
         name: 'key',
@@ -4735,7 +4737,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useAccess: (action: RemoteEndpoint) => boolean',
       'useTrajectory: UseTrajectory',
     ],
-    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: ask_user_question, bash, cordis_define, cordis_inspect_list, cordis_inspect_query, cordis_inspect_self, cordis_run, cordis_stop, cordis_undefine, create_goal, edit, get_goal, glob, grep, interrupt_agent, job_kill, job_list, job_output, list_agents, list_subagent_models, lsp, present, ralph, read, read_image, schedule_create, schedule_delete, schedule_list, schedule_update, send_message, session_event_read, session_event_search, session_event_trace, session_search, session_trace, skill, spawn_teammate, subagent, team_task_create, team_task_get, team_task_list, team_task_update, terminal_close, terminal_list, terminal_open, terminal_read, terminal_signal, todo_write, update_goal, wait_agent, web_fetch, web_search, workflow, write',
+    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: ask_user_question, bash, cordis_define, cordis_inspect_list, cordis_inspect_query, cordis_inspect_self, cordis_run, cordis_stop, cordis_undefine, create_goal, dev_service, edit, get_goal, glob, grep, interrupt_agent, job_kill, job_list, job_output, list_agents, list_subagent_models, lsp, present, ralph, read, read_image, schedule_create, schedule_delete, schedule_list, schedule_update, send_message, session_event_read, session_event_search, session_event_trace, session_search, session_trace, skill, spawn_teammate, subagent, team_task_create, team_task_get, team_task_list, team_task_update, terminal_close, terminal_list, terminal_open, terminal_read, terminal_signal, todo_write, update_goal, wait_agent, web_fetch, web_search, workflow, write',
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-tool), so it exists while that entry is mounted',
@@ -4790,6 +4792,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-tool TodoRow key \'todo_write\'',
       'client-ui-tool WebRow key \'web_search\'',
       'client-ui-tool WebRow key \'web_fetch\'',
+      'pe-cloud-client ServicePreviewRow key \'dev_service\'',
       'client-ui-cordis CordisDefineRow key \'cordis_define\'',
       'client-ui-cordis CordisRunRow key \'cordis_run\'',
       'client-ui-cordis CordisActionRow key \'cordis_stop\'',
@@ -4797,7 +4800,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.toolview\', () => ctx.slots.register(\n      { name: \'tool.call.toolview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:26',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:25',
   },
   {
     key: 'tool.view.cordis',

@@ -4,9 +4,21 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { AccessConfigSchema } from './config-schema.ts'
 import { parseAccessConfig } from './config.ts'
 import type { AccessConfig } from './types.ts'
+import type { ApplicationReadLimits } from '@deepseek-ai/dsh-pe-opensandbox/types'
+
+/** Explicit bounds for the fixed isolated GET preview; no field chooses an upstream target or application path. */
+export interface ServicePreviewIngressLimits {
+  readonly maxUrlBytes: number
+  readonly maxFieldBytes: number
+  readonly maxRequestHeaderCount: number
+  readonly maxRequestHeaderBytes: number
+  readonly response: ApplicationReadLimits
+}
 
 /** Optional shared-Web registration inputs; none grants recipe, account or transport readiness. */
 export interface AuthIngressConfig {
+  /** Absence registers no application preview route, independently of cookie-domain configuration. */
+  readonly servicePreview?: ServicePreviewIngressLimits
   readonly maxOperations: number
   readonly maxOperationsPerAccount: number
   readonly requestTimeoutMs: number
@@ -69,6 +81,19 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
     }).required(),
     startupTimeoutMs: timer(), secretResolveTimeoutMs: timer(), maxSecretOperations: positive(), maxSecretBytes: positive(),
     ingress: z.object({
+      servicePreview: z.object({
+        maxUrlBytes: z.natural().min(1).max(65536).required(),
+        maxFieldBytes: z.natural().min(1).max(65536).required(),
+        maxRequestHeaderCount: z.natural().min(1).max(128).required(),
+        maxRequestHeaderBytes: z.natural().min(1).max(65536).required(),
+        response: z.object({
+          maxBodyBytes: z.natural().min(1).max(1048576).required(),
+          maxChunkBytes: z.natural().min(1).max(1048576).required(),
+          maxChunks: z.natural().min(1).max(1048576).required(),
+          maxHeaderCount: z.natural().min(1).max(128).required(),
+          maxHeaderBytes: z.natural().min(1).max(1048576).required(),
+        }).required(),
+      }).default(undefined as never),
       maxOperations: positive(), maxOperationsPerAccount: positive(), requestTimeoutMs: timer(),
       maxAuthRequestBodyBytes: positive(), maxRequestBodyBytes: positive(),
       maxBootstrapResponseBytes: positive(), maxGenerationBindings: positive(),
@@ -94,6 +119,13 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
     if (config.ingress !== undefined && config.ingress.maxOperationsPerAccount > config.ingress.maxOperations) throw new TypeError()
     if (config.ingress !== undefined && (config.ingress.maxLogicalStreamsPerAccount > config.ingress.maxLogicalStreams
       || config.ingress.maxLogicalStreamsPerPeer > config.ingress.maxLogicalStreamsPerAccount)) throw new TypeError()
+    const preview = config.ingress?.servicePreview
+    if (preview !== undefined && (config.servicePreview === undefined
+      || preview.response.maxChunkBytes > preview.response.maxBodyBytes + 1
+      || Object.keys(preview).some(name => !['maxUrlBytes', 'maxFieldBytes', 'maxRequestHeaderCount', 'maxRequestHeaderBytes', 'response'].includes(name))
+      || Object.keys(preview.response).some(name => !['maxBodyBytes', 'maxChunkBytes', 'maxChunks', 'maxHeaderCount', 'maxHeaderBytes'].includes(name))
+      || [config.bindingFields.accountQuery, config.bindingFields.generationQuery]
+        .some(name => name === 'sessionId' || name === 'serviceHandle'))) throw new TypeError()
     return config
   } catch (_error) {
     // Schema diagnostics can contain supplied configuration; root exposes only this fixed deployment error.

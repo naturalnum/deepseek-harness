@@ -1,0 +1,13 @@
+{
+  "status": "install-service-component-candidate-only-not-approved-or-executed",
+  "protocol": "s4-collect/9-install-service-v1",
+  "agentSourceSha256": "cc55d7cb7d61a9bc74569c1f980830bc52fa150f26eecccf0adb7bce37e6abd0",
+  "sources": {
+    "server.py": "302480c419d9790c4355a2295acfe545e43a798051eab5b96cbb940b191aaaf8",
+    "wire.py": "58311cbe1b5e6c942c05091a02dbd1c5d897275b9e764ce2fc56b650f1e612d6",
+    "manager.py": "1019519dc566cf29f9a9f55ca769cf40c1c095a0ef266e963fdb9acd326531ae",
+    "launcher.py": "bfcbf51b0e283216022a2ece1269c8395f8e13919fe71224060185134fdd13f7",
+    "guardian.py": "24c2a9122b356bc71f26824862570999d4069f53343d7a29c000e5d6feac9c9f",
+    "paths.py": "65cd31b5d865151fe6b0baeedb7f601ce8d03b702b6581a294dd93208a5d7fbe"
+  }
+}
