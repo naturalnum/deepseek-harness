@@ -1,6 +1,14 @@
 /** Local units use the actual pinned public SDK over a synthetic transport; no network/backend resource is accessed. */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi, onTestFinished } from 'vitest'
+import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { loadBootstrapPayload, TrustedSdkBootstrap, type BootstrapConfig } from '../src/bootstrap/bootstrap.ts'
+import { SOURCE_DIGEST } from '../src/bootstrap/asset-manifest.ts'
+import { TrustedRuntimeRegistry } from '../src/trusted-runtime.ts'
+import { SessionAllocationOwner } from '../src/allocation-owner.ts'
+import type { NativeAllocationRequest } from '../src/allocation-owner.ts'
+import type { SandboxAllocation, AllocationCreateIntent as Intent, AllocationExpectation, AllocationChange } from '../src/allocation-types.ts'
 import type { CreateSandboxRequest } from '@alibaba-group/opensandbox'
 import type { AllocationCreateIntent } from '../src/allocation-types.ts'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -444,4 +452,137 @@ test('failed privileged lane still joins original locals and retains unknown wit
   await assert.rejects(backend.closeRoot(Date.now() + 1000), { code: 'sdk/close-unconfirmed' })
   assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 0)
   assert.equal(transport.calls.filter(value => value.method === 'POST').length, 1)
+})
+
+
+/** Actual public SDK and original bootstrap/registry/stop owners over finite scripted HTTP; no backend or Context. */
+async function bootstrapFailureFixture(events: readonly object[], options: { pending?: boolean; closeFailure?: boolean } = {}) {
+  const runtime = fileURLToPath(new URL('../runtime/', import.meta.url)), selected = selection()
+  const lifecycle: SdkLifecycleConfig = { ...config, lifecycleBaseUrl: 'http://127.0.0.1:24444/v1',
+    imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
+    payloadSha256: SOURCE_DIGEST, entrypoint: ['/usr/bin/tail', '-f', '/dev/null'] }
+  const settings: BootstrapConfig = { lifecycle, execdAccessToken: 'synthetic-bootstrap-only',
+    transport: { connections: 1, connectTimeoutMs: 100, headersTimeoutMs: 1000, bodyTimeoutMs: 1000,
+      keepAliveTimeoutMs: 1000, maxHeaderBytes: 4096, maxRequestBytes: 32768, maxResponseBytes: 32768 },
+    bootstrapTimeoutMs: 10000, requestTimeoutMs: 5000, commandTimeoutSeconds: 3, maxRequestBytes: 32768,
+    maxReplyBytes: 32768, maxAggregateBytes: 262144, maxEvents: 8, maxRecords: 4, agentPort: 8080,
+    assertDeploymentCurrent() {} }
+  const payload = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
+  const wire: string[] = [], entered = Promise.withResolvers<undefined>(), body = Promise.withResolvers<undefined>(),
+    closed = Promise.withResolvers<undefined>()
+  let commands = 0
+  const close = vi.fn(async () => {
+    if (options.pending) await closed.promise
+    if (options.closeFailure) throw new Error('Synthetic original dispatcher close unknown')
+  })
+  const bootstrap = new TrustedSdkBootstrap(settings, payload, () => ({ close, fetch: async (input, init) => {
+    const request = new Request(input, init), url = new URL(request.url)
+    wire.push(`${request.method} ${url.pathname}`)
+    if (request.body !== null) await request.arrayBuffer()
+    if (url.pathname.endsWith('/endpoints/44772')) return Response.json({ endpoint: '127.0.0.1:24444/v1/sandboxes/sandbox-one/proxy/44772' })
+    if (url.pathname.endsWith('/files/upload')) return Response.json({})
+    if (url.pathname.endsWith('/command')) {
+      commands++
+      const frames = commands === 1 ? [{ type: 'init', text: 'prep' }, { type: 'stdout', text: 's4-bootstrap-claimed\n' },
+        { type: 'execution_complete' }] : events
+      if (commands === 2) entered.resolve(undefined)
+      const bytes = new TextEncoder().encode(frames.map(event => JSON.stringify(event)+'\n').join(''))
+      if (commands === 2 && options.pending) return new Response(new ReadableStream<Uint8Array>({ async start(controller) {
+        await body.promise; controller.enqueue(bytes); controller.close()
+      } }), { headers: { 'content-type': 'text/event-stream' } })
+      return new Response(bytes, { headers: { 'content-type': 'text/event-stream' } })
+    }
+    throw new Error('No agent endpoint or other bootstrap request is permitted')
+  } }))
+  const client = vi.fn((): never => { throw new Error('Failed startup must not construct an agent data client') })
+  const registry = new TrustedRuntimeRegistry(bootstrap, 4, client)
+  const ack = vi.spyOn(registry, 'acknowledgePhysicalStop'), transport = new FakeTransport(), info = transport.info.bind(transport)
+  transport.info = id => ({ ...info(id), entrypoint: [...lifecycle.entrypoint] })
+  const backend = new SdkAllocationBackend(lifecycle, registry, transport)
+  onTestFinished(async () => {
+    body.resolve(undefined); closed.resolve(undefined)
+    await backend.closeRootActual().catch((_cause: unknown) => { /* Negative original joins intentionally remain unknown. */ })
+  })
+  return { selected, lifecycle, backend, registry, ack, transport, wire, entered, body, closed, close, client }
+}
+const completedWrongMarker = [{ type: 'init', text: 'loader' }, { type: 'stdout', text: 'wrong\n' }, { type: 'execution_complete' }]
+const completedFailure = [{ type: 'init', text: 'loader' }, { type: 'stderr', text: 'synthetic loader failure\n' },
+  { type: 'error', error: { ename: 'RuntimeError', evalue: 'synthetic loader failure' } }, { type: 'execution_complete' }]
+
+for (const [name, events] of [['marker mismatch', completedWrongMarker], ['stderr/error with terminal', completedFailure]] as const) {
+  test(`known failed bootstrap ${name} still joins privileged starts and permits the original selected DELETE`, async () => {
+    const f = await bootstrapFailureFixture(events), created = await f.backend.create(f.selected.intent, f.selected.mount)
+    await assert.rejects(f.backend.prepare(created, f.selected.mount, Date.now() + 10000))
+    assert.equal(f.transport.calls.filter(call => call.method === 'DELETE').length, 0)
+    await f.backend.stop(created, undefined)
+    assert.equal(f.transport.calls.filter(call => call.method === 'DELETE').length, 1)
+    assert.equal(f.ack.mock.calls.length, 1); assert.equal(f.close.mock.calls.length, 1)
+    assert.equal(f.wire.filter(path => path.endsWith('/files/upload')).length, 8)
+    assert.equal(f.wire.filter(path => path.endsWith('/command')).length, 2)
+    assert.equal(f.wire.some(path => path.includes('/endpoints/8080')), false)
+    assert.equal(f.client.mock.calls.length, 0)
+  })
+}
+
+for (const [name, events, closeFailure] of [
+  ['HTTP200 without terminal', [{ type: 'init' }], false],
+  ['error without terminal', [{ type: 'init' }, { type: 'error' }], false],
+  ['contradictory trailing event', [{ type: 'init' }, { type: 'execution_complete' }, { type: 'stdout', text: 'late' }], false],
+  ['event budget exceeded', [{ type: 'init' }, ...Array.from({ length: 8 }, () => ({ type: 'ping', text: 'pong' })), { type: 'execution_complete' }], false],
+  ['original dispatcher close failure', completedWrongMarker, true],
+] as const) test(`bootstrap ${name} retains unknown and cannot authorize DELETE from HTTP/body settlement alone`, async () => {
+  const f = await bootstrapFailureFixture(events, { closeFailure }), created = await f.backend.create(f.selected.intent, f.selected.mount)
+  await assert.rejects(f.backend.prepare(created, f.selected.mount, Date.now() + 10000))
+  await assert.rejects(f.backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
+  assert.equal(f.transport.calls.filter(call => call.method === 'DELETE').length, 0); assert.equal(f.ack.mock.calls.length, 0)
+})
+
+test('known failure cannot authorize DELETE before the original body and dispatcher actually settle', async () => {
+  const f = await bootstrapFailureFixture(completedWrongMarker, { pending: true })
+  const created = await f.backend.create(f.selected.intent, f.selected.mount)
+  const preparing = f.backend.prepare(created, f.selected.mount, Date.now() + 10000)
+  const rejected = assert.rejects(preparing)
+  await f.entered.promise
+  const stopped = f.backend.stop(created, undefined), outcome = stopped.then(() => 'stopped', () => 'unknown')
+  assert.equal(f.transport.calls.filter(call => call.method === 'DELETE').length, 0)
+  f.body.resolve(undefined)
+  await vi.waitFor(() => { assert.equal(f.close.mock.calls.length, 1) })
+  assert.equal(f.transport.calls.filter(call => call.method === 'DELETE').length, 0)
+  f.closed.resolve(undefined)
+  await rejected
+  assert.equal(await outcome, 'stopped'); assert.equal(f.ack.mock.calls.length, 1)
+})
+
+test('terminal failed bootstrap reaches allocation released only through actual selected stop and terminal SQL', async () => {
+  const f = await bootstrapFailureFixture(completedFailure), release = vi.fn()
+  let row: SandboxAllocation | undefined
+  const store = {
+    begin: vi.fn(async (intent: Intent) => {
+      row = { ...intent, state: 'creating', sandboxId: null, lastActivityAt: intent.requestedAt, lastCheckedAt: intent.requestedAt,
+        runtimeIdentity: null, executionProtocolVersion: null, executionCapabilities: [], failureCode: null }
+      return { allocation: row, inserted: true }
+    }),
+    transition: vi.fn(async (_expected: AllocationExpectation, change: AllocationChange) => {
+      if (row === undefined) throw new Error('Missing original allocation row')
+      row = { ...row, state: change.to, sandboxId: change.sandboxId ?? row.sandboxId }; return row
+    }),
+    releaseStopped: vi.fn(async (_expected: AllocationExpectation) => {
+      if (row?.state !== 'stopping' || f.ack.mock.calls.length !== 1) throw new Error('Actual original stop must precede SQL release')
+      row = { ...row, state: 'released' }; return row
+    }),
+    failNotCreated: vi.fn(async (): Promise<never> => { throw new Error('Created bootstrap failure cannot become not-created') }),
+    reconcileCommitted: vi.fn(async (): Promise<never> => { throw new Error('No metadata reconciliation is scripted') }),
+  }
+  const request: NativeAllocationRequest<VerifiedExecutionMount> = { binding: f.selected.mount.grant.binding,
+    sessionId: f.selected.intent.sessionId, workspaceId: f.selected.intent.workspaceId, assertCurrent() {},
+    prepareMount: async () => ({ value: f.selected.mount, projectMountVersion: f.selected.intent.projectMountVersion,
+      assertCurrent() {}, release }) }
+  const owner = new SessionAllocationOwner(store, f.backend, { environmentVersion: config.environmentVersion,
+    provider: config.provider, createBudgetMs: 10000, maxAllocations: 1, maxAllocationsPerAccount: 1,
+    maxWaiters: 2, maxWaitersPerAllocation: 2 })
+  await assert.rejects(owner.prepare(request))
+  assert.equal(row?.state, 'creating'); assert.equal(row?.sandboxId, null); assert.equal(release.mock.calls.length, 0)
+  await owner.stop(request)
+  assert.equal(row?.state, 'released')
+  assert.equal(store.failNotCreated.mock.calls.length, 0); assert.equal(release.mock.calls.length, 1)
 })

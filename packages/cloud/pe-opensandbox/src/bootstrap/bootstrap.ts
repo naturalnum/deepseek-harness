@@ -201,6 +201,7 @@ interface RecordState {
   actual?: Promise<ClientOptions>
   connection?: BootstrapConnection
   joined?: Promise<void>
+  /** An attempted command lacks a validated bounded terminal; ordinary startup failure is separate. */
   privilegedFailure?: { cause: unknown }
   closeActual?: Promise<void>
   protected?: Readonly<{ token: string; expected: ClientOptions['expected'] }>
@@ -414,10 +415,10 @@ export class TrustedSdkBootstrap {
   }
   private async command(record: RecordState, execd: ExecdStack, connection: BootstrapConnection,
     base: string, source: string, expectedOutput: string): Promise<void> {
-    const admission = { started: false }
+    const admission = { started: false, terminal: false }
     try {
       await connection.run('POST', base + '/command', async () => {
-        let complete = false, initialized = false, output = '', count = 0
+        let complete = false, initialized = false, failed = false, output = '', count = 0
         admission.started = true
         for await (const event of execd.commands.runStream(['/usr/local/bin/python3', '-I', '-S', '-B', '-c', source],
           { uid: 0, gid: 0, background: false, workingDirectory: '/', timeoutSeconds: this.config.commandTimeoutSeconds })) {
@@ -432,13 +433,18 @@ export class TrustedSdkBootstrap {
             need(typeof event.text === 'string', 'command-unknown')
             output += event.text
             need(output.length <= expectedOutput.length, 'command-unknown')
+          } else if (event.type === 'stderr' || event.type === 'error') {
+            need(initialized, 'command-unknown')
+            failed = true // Startup fails, but keep bounded observation through its original terminal event.
           } else if (event.type === 'execution_complete') complete = true
           else throw new BootstrapFailure('command-unknown')
         }
-        need(initialized && complete && output === expectedOutput, 'command-unknown')
+        need(initialized && complete, 'command-unknown')
+        admission.terminal = true
+        need(!failed && output === expectedOutput, 'command-unknown')
       })
     } catch (cause) {
-      if (admission.started && !(cause instanceof BootstrapFailure && cause.code === 'closed')) record.privilegedFailure ??= { cause }
+      if (admission.started && !admission.terminal && !(cause instanceof BootstrapFailure && cause.code === 'closed')) record.privilegedFailure ??= { cause }
       throw cause
     }
   }

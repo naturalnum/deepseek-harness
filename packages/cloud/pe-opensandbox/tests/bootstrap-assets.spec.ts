@@ -29,4 +29,17 @@ describe('fixed packaged bootstrap assets', () => {
   it('refuses source-module asset discovery instead of looking up a source-tree fallback', async () => {
     await expect(loadPackagedBootstrapPayload()).rejects.toMatchObject({ code: 'binding' })
   })
+
+  it('binds the loader checks to the publisher bytes that the same payload uploads', async () => {
+    const payload = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
+    const publisher = payload.uploads.find(file => file.name === 'publisher.py')
+    expect(publisher).toBeDefined()
+    if (publisher === undefined) throw new Error('The fixed publisher upload is missing.')
+    const bytes = publisher.data.byteLength
+    const sha256 = createHash('sha256').update(publisher.data).digest('hex')
+    expect(payload.loader).toContain(`s.st_size!=${bytes}`)
+    expect(payload.loader).toContain(`os.read(f,${bytes}+1)`)
+    expect(payload.loader).toContain(`len(b)!=${bytes}`)
+    expect(payload.loader).toContain(`hashlib.sha256(b).hexdigest()!='${sha256}'`)
+  })
 })
