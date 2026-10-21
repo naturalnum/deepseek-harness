@@ -92,10 +92,10 @@ export function referencedProjectsCompilerArgs(
  * Project mode reads the declarations that its references already emitted and never compiles a reference,
  * so missing package outputs surface as compiler diagnostics.
  * @param face - Compiler face whose aggregate program is checked.
- * @returns Arguments for `process.execPath`, run from the repository root.
+ * @returns Arguments for `process.execPath`, run from the repository root; Host aggregate checks have an 8 GiB heap ceiling.
  */
 export function aggregateCheckArgs(face: 'host' | 'client'): string[] {
-  return [...hostHeapArgs(face), fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '-p', `tsconfig.${face}.json`]
+  return [...hostHeapArgs(face, 8192), fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '-p', `tsconfig.${face}.json`]
 }
 
 /**
@@ -103,14 +103,14 @@ export function aggregateCheckArgs(face: 'host' | 'client'): string[] {
  * Build mode skips the program when its tsbuildinfo is current; callers run it only after the
  * aggregate's references are compiled, so it finds every reference up to date and compiles none.
  * @param face - Compiler face whose aggregate program is checked.
- * @returns Arguments for `process.execPath`, run from the repository root.
+ * @returns Arguments for `process.execPath`, run from the repository root; Host aggregate checks have an 8 GiB heap ceiling.
  */
 export function aggregateBuildArgs(face: 'host' | 'client'): string[] {
-  return [...hostHeapArgs(face), fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '-b', `tsconfig.${face}.json`]
+  return [...hostHeapArgs(face, 8192), fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '-b', `tsconfig.${face}.json`]
 }
 
-function hostHeapArgs(face: 'host' | 'client'): string[] {
-  return face === 'host' ? ['--max-old-space-size=4096'] : []
+function hostHeapArgs(face: 'host' | 'client', maxMiB = 4096): string[] {
+  return face === 'host' ? [`--max-old-space-size=${String(maxMiB)}`] : []
 }
 
 /**
