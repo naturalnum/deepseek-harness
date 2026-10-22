@@ -1748,9 +1748,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'peAccountRuntime',
-    summary: 'Shared service definition; providers need no dependency on Host control implementation.',
-    description: 'Shared service definition; providers need no dependency on Host control implementation.',
+    summary: 'Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission.',
+    description: 'Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission.',
     methods: [
+      {
+        signature: 'readonly recovery?: AccountRecoveryRuntime | undefined',
+        description: 'Explicit maintenance Roots expose recovery while rejecting all ordinary account admission; omission keeps recovery closed.',
+        parameters: [],
+      },
       {
         signature: 'controlDatabase(participant: DrainParticipant): RootMetadataDatabase',
         description: 'Borrow the active Root\'s bounded database for an exactly registered Root shutdown owner. Account graphs receive no such capability; borrowing grants no account or execution authority.',

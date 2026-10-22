@@ -2,6 +2,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import type { OwnerRecoveryAudit, OwnerRecoveryExpectation, OwnerRecoveryObservation, OwnerRecoveryProof,
+  RecoveredInstanceCloseResult, RecoveredInstanceExpectation, RecoveredInstanceObservation, RecoveryVerifierId } from './owner-types.ts'
 
 export type * from './owner-types.ts'
 
@@ -13,6 +15,17 @@ export type AccountStorageKey = Branded<'pe-account-storage-key'>
 export type OwnerEpoch = Branded<'pe-owner-epoch'>
 /** Server-generated identity that changes on every process start. */
 export type InstanceId = Branded<'pe-instance-id'>
+/** Trusted root deployment metadata; it has no selectable instance-id field. */
+export interface InstanceDeployment {
+  readonly internalAddress: string
+  readonly recipeVersion: string
+}
+/** Only the five C-12 instance metadata fields; phase grants no account readiness. */
+export interface RuntimeInstanceRecord extends InstanceDeployment {
+  readonly instanceId: InstanceId
+  readonly phase: 'registered' | 'closed'
+  readonly heartbeatAt: string
+}
 /** Server-generated actual-work identity retained beyond a request's wait. */
 export type OperationId = Branded<'pe-operation-id'>
 /** The two mandatory root participants; config saving is tracked separately by API. */
@@ -216,8 +229,42 @@ export interface RootRecipeObservation {
   readonly issues: readonly RootRecipeIssue[]
 }
 
-/** Shared service definition; providers need no dependency on Host control implementation. */
+/** Root-selected verifier callback; account and browser data cannot register this capability. */
+export interface RootRecoveryVerifier {
+  readonly id: RecoveryVerifierId
+  /** @param expected Exact old identity. @returns Actual protected and independently rechecked recovery evidence. */
+  verify(expected: Readonly<OwnerRecoveryExpectation>): Promise<OwnerRecoveryProof>
+}
+
+/** Maintenance-only runtime capability; every operation requires the original registered execution participant. */
+export interface AccountRecoveryRuntime {
+  /** @returns Original Root startup settlement; this grants no account readiness or recovery proof. */
+  whenReady(): Promise<void>
+  /**
+   * Register the single selected verifier in the Root effect scope.
+   * @param participant Original execution shutdown owner.
+   * @param verifier Protected publication and actual-process verifier.
+   * @returns Withdrawal which first joins the participant's actual recovery work.
+   */
+  registerVerifier(participant: DrainParticipant, verifier: RootRecoveryVerifier): () => void | Promise<void>
+  /** @param participant Original execution owner. @returns Actual recovery schema migration after allocation migration. */
+  migrate(participant: DrainParticipant): Promise<void>
+  /** @param participant Original execution owner. @param instanceId Exact old identity. @returns Trusted registration metadata only. */
+  locateInstance(participant: DrainParticipant, instanceId: InstanceId): Promise<RuntimeInstanceRecord | undefined>
+  /** @param participant Original execution owner. @param expected Exact old owner. @returns Committed recovery audit. */
+  recoverAccount(participant: DrainParticipant, expected: OwnerRecoveryExpectation): Promise<OwnerRecoveryAudit>
+  /** @param participant Original execution owner. @param expected Exact old audit. @returns Read-only current/postimage comparison. */
+  inspectAccount(participant: DrainParticipant, expected: OwnerRecoveryExpectation): Promise<OwnerRecoveryObservation>
+  /** @param participant Original execution owner. @param expected Exact old registration. @returns Audited old-instance closure. */
+  closeInstance(participant: DrainParticipant, expected: RecoveredInstanceExpectation): Promise<RecoveredInstanceCloseResult>
+  /** @param participant Original execution owner. @param expected Exact old registration. @returns Read-only closure comparison. */
+  inspectInstance(participant: DrainParticipant, expected: RecoveredInstanceExpectation): Promise<RecoveredInstanceObservation>
+}
+
+/** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
 export interface AccountRuntimeService {
+  /** Explicit maintenance Roots expose recovery while rejecting all ordinary account admission; omission keeps recovery closed. */
+  readonly recovery?: AccountRecoveryRuntime | undefined
   /**
    * Borrow the active Root's bounded database for an exactly registered Root shutdown owner.
    * Account graphs receive no such capability; borrowing grants no account or execution authority.

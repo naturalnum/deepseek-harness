@@ -65,6 +65,10 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 私有[分配拥有者](src/allocation-owner.ts) 按账户、原生 Session 和代际合并完整的持久意图、创建及认证准备流程。等待者取消后，迟到或不确定工作仍由它保留；只有后端实际停止和原始终结元数据写入完成，才释放挂载预留。Loader 入口不将此组件开放为已启用的后端。
 
+私有的[旧分配恢复 helper](src/allocation-recovery.ts)先有界枚举并冻结精确旧账户/epoch 的全部非终态记录。Root 必须选择可信同进程 verifier，针对完整快照证明旧进程/writer 已失效、已接受创建已终结、精确物理资源已销毁且永久失去迟到启动能力；sandbox id 为空时还须独立创建绑定。helper 复核完整快照及原始 intent/state 后，仅调用原有 stopping/released CAS。未知写入通过同一 store 的原 postimage 只读对账，不重放；即使列表为空，未解决责任仍阻止恢复。它只向 runtime 独立恢复 CAS 返回有界覆盖引用，不授予 provider 权限，也不改变正常停止链。Root 入口接线、真实维护见证、PostgreSQL 与物理后端验收仍须分别完成。
+
+现有 Root 入口还支持显式关闭的维护装配：`mode: closed`、空 required capabilities、有界 `managed` 元数据预算及唯一受保护 `recovery` 发布引用。它不构造 SDK 执行或账户图。原执行 participant 复核进程死亡及完整不可变 intent 覆盖，经原 store 对账 allocation，再调用 runtime 的精确旧 owner 恢复及独立旧实例关闭。实际工作未知时保留清理责任。发布物通过 SHA256 和只读 Root 持有租约绑定，不使用密码学签名。
+
 私有[命令操作](src/command-operation.ts) 同步提供准备中的 subprocess 句柄，并为 Shell 单独保留提交命令前的发布步骤。直接进程退出且收集流 EOF 后结算 subprocess 的 `done`；完整范围及本地 I/O 结束后结算独立的范围完成凭据。[Shell 投影](src/shell-execution.ts) 等待该完整范围。输出保持有界，直到原生结果拥有者释放；撤销后拒绝公开访问，未知清理仍由 Root 保留。账户内的[工具调用传播](src/native-calls.ts) 将这些操作跨异步等待绑定到原始 registry token、Agent、Session 和项目。
 
 私有[开发服务消费者](src/dev-service-consumer.ts) 要求显式完整的 `commands.services` 策略和原生工具 provider。严格解析配置后，Root 接入原 managed 拥有者的回调；省略策略时该消费者保持关闭。它复用该拥有者现有的工作记录和 subprocess provider，在8000端口运行项目相对路径的 Python HTTP 脚本。启动只报告进程已提交，HTTP 就绪单独判断；状态、有界日志和停止都指向同一保留操作。固定的安装与服务 payload 声明前台命令、已登记服务各一个运行范围，角色由 Root 签发，运行时限分别为150秒、120秒，绝对驻留时限300秒。这四个生命周期记录及已做组件检查的限制，不代表完整 Session 生命周期或真实服务隔离已通过。

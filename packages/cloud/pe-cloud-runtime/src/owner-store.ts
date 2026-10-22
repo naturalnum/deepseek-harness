@@ -4,9 +4,14 @@ import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import { accountOwnerMigrationSql } from './migrations/account-owners.ts'
 import { ownerEpoch, readOwnerRow } from './owner-row.ts'
 import { beginOwnerDrainSql, claimOwnerSql, finishOwnerDrainSql, heartbeatOwnerSql, locateOwnerSql, quarantineOwnerSql, readyOwnerSql } from './owner-sql.ts'
+import { recoveryAuditMigrationSql } from './migrations/recovery-audit.ts'
+import { bindRecoveryAuthority, readRecoveryAudit, readRecoveryProof } from './owner-recovery.ts'
+import { inspectRecoverySql, recoverReleasedSql, closeRecoveredInstanceSql, inspectRecoveredInstanceSql } from './owner-sql.ts'
 import { RuntimeConfigSchema } from './schema.ts'
 import type { AccountId, AccountOwner, OwnerEpoch, RuntimeConfig } from './types.ts'
-import type { OwnerClaim, OwnerDrainEvidence, OwnerExpectation, OwnerPgExecutor, OwnerStoreIdentity } from './owner-types.ts'
+import type { OwnerClaim, OwnerDrainEvidence, OwnerExpectation, OwnerPgExecutor, OwnerStoreIdentity,
+  OwnerRecoveryAuthority, OwnerRecoveryExpectation, OwnerRecoveryObservation, OwnerRecoveryAudit,
+  RecoveredInstanceExpectation, RecoveredInstanceObservation, RecoveredInstanceCloseResult } from './owner-types.ts'
 
 interface PendingClaim { readonly expectedEpoch: OwnerClaim['expectedEpoch']; readonly recipeVersion: string; readonly actual: Promise<AccountOwner> }
 interface MutationResponsibility { readonly epoch: OwnerEpoch; state: 'pending' | 'unknown' }
@@ -18,15 +23,23 @@ export class PostgresOwnerStore {
   private readonly config: RuntimeConfig
   private migration: Promise<void> | undefined
   private migrated = false
+  private recoveryMigrated = false
+  private recoveryMigration: Promise<void> | undefined
+  private readonly recovery: OwnerRecoveryAuthority | undefined
 
   /**
    * Bind a real root-owned database driver and server-generated instance identity.
    * @param executor Real PostgreSQL query adapter with finite driver budgets; no in-memory fallback.
    * @param identity This process's immutable server-generated InstanceId.
+   * @param recovery Optional constructor-only trusted verifier; omission keeps recovery closed.
    * @param config maxConcurrentMounts bounds claims; maxMountedAccounts bounds pending/unknown account responsibilities.
    */
-  constructor(private readonly executor: OwnerPgExecutor, private readonly identity: OwnerStoreIdentity, config: RuntimeConfig) {
+  constructor(
+    private readonly executor: OwnerPgExecutor, private readonly identity: OwnerStoreIdentity, config: RuntimeConfig,
+    recovery?: OwnerRecoveryAuthority,
+  ) {
     this.config = RuntimeConfigSchema(config)
+    this.recovery = recovery === undefined ? undefined : bindRecoveryAuthority(identity, recovery)
   }
 
   /**
@@ -135,8 +148,8 @@ export class PostgresOwnerStore {
 
   /**
    * CAS a fully drained graph to unowned, retaining its epoch row for the next increment.
-   * Incomplete matching evidence quarantines the exact owned generation instead. Recovery/unquarantine
-   * is deliberately absent until the trusted verifier and persistent allocation coverage are available.
+   * Incomplete matching evidence quarantines the exact owned generation instead.
+   * Normal teardown never substitutes for trusted crash recovery or its persistent allocation checks.
    * @param expected Exact current owner generation.
    * @param evidence Actual teardown evidence from runtime and its mandatory providers, never browser JSON.
    * @returns Unowned metadata only after all required evidence and the draining CAS succeed.
@@ -153,6 +166,183 @@ export class PostgresOwnerStore {
    */
   park(expected: OwnerExpectation, evidence: OwnerDrainEvidence): Promise<AccountOwner> {
     return this.finishDrain(expected, evidence, 'parked')
+  }
+
+  /** Install only the protected recovery audit/function after owner and execution allocation migrations.
+   * @returns Actual DDL settlement; does not run recovery or open Root/account admission.
+   */
+  migrateRecovery(): Promise<void> {
+    this.assertMigrated()
+    if (this.recovery === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'No trusted recovery verifier is selected')
+    this.recoveryMigration ??= this.executor.query(recoveryAuditMigrationSql, []).then(() => {
+      this.recoveryMigrated = true
+    }).catch((cause: unknown) => {
+      this.recoveryMigration = undefined
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Recovery audit migration did not complete; recovery remains closed', { cause })
+    })
+    return this.recoveryMigration
+  }
+
+  /** Read exact immutable audit/postimage and the current owner in one snapshot; never retry or clear unknown writes.
+   * @param input Trusted exact old owner/epoch/audit identity.
+   * @returns Historical commit evidence, current metadata and whether that exact postimage still matches.
+   */
+  async inspectRecovery(input: OwnerRecoveryExpectation): Promise<OwnerRecoveryObservation> {
+    const authority = this.requireRecovery(), expected = this.recoveryExpected(input)
+    const rows = await this.query(inspectRecoverySql, [expected.auditRef, expected.accountId], false)
+    if (rows.length !== 1 || rows[0] === null || typeof rows[0] !== 'object') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Recovery audit lookup returned ambiguous metadata')
+    }
+    const value: unknown = Reflect.get(rows[0], 'recovery'), currentValue: unknown = Reflect.get(rows[0], 'owner')
+    const matches: unknown = Reflect.get(rows[0], 'matches')
+    if (typeof matches !== 'boolean') throw new AccountRuntimeError('cloud/account-unavailable', 'Recovery postimage comparison is not trusted')
+    const audit = value === null ? undefined : readRecoveryAudit(value, expected, authority)
+    const current = currentValue === null ? undefined : readOwnerRow({ owner: currentValue })
+    if (current !== undefined && current.accountId !== expected.accountId) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Recovery lookup returned a different account')
+    }
+    return Object.freeze({ audit, current, matchesPostimage: matches && audit !== undefined && current !== undefined
+      && current.accountId === audit.postimage.accountId && current.epoch === audit.postimage.epoch
+      && current.phase === 'unowned' && current.ownerInstanceId === null && current.updatedAt === audit.postimage.updatedAt,
+    responsibilityRetained: this.responsibilities.has(expected.accountId) })
+  }
+
+  /** Recover an exact dead old owner only through the selected read-only verifier and atomic guarded SQL.
+   * @param input Trusted old identity and stable audit reference; proof is obtained internally, never from request JSON.
+   * @returns Immutable committed historical postimage. Duplicate successful references skip verifier and mutation.
+   * Unknown driver/decoder outcomes retain the existing account write responsibility; inspectRecovery is read-only.
+   */
+  async recoverReleased(input: OwnerRecoveryExpectation): Promise<OwnerRecoveryAudit> {
+    const authority = this.requireRecovery(), expected = this.recoveryExpected(input)
+    this.assertAccountWritable(expected.accountId)
+    if (this.responsibilities.has(expected.accountId)) {
+      throw new AccountRuntimeError('cloud/config-busy', 'An owner write for this account is still pending')
+    }
+    if (this.responsibilities.size >= this.config.maxMountedAccounts) {
+      throw new AccountRuntimeError('cloud/capacity', 'Owner observation capacity is exhausted; unresolved records are retained')
+    }
+    const responsibility: MutationResponsibility = { epoch: expected.epoch, state: 'pending' }
+    this.responsibilities.set(expected.accountId, responsibility)
+    let unknown = false
+    try {
+      const prior = await this.inspectRecovery(expected)
+      if (prior.audit !== undefined) return prior.audit
+      const proof = readRecoveryProof(await authority.verify(expected), expected, authority, true)
+      unknown = true
+      const rows = await this.query(recoverReleasedSql, [expected.accountId, expected.oldInstanceId, expected.epoch,
+        expected.auditRef, JSON.stringify(proof), String(authority.limits.maxAllocations), String(authority.limits.maxAuditRows),
+        String(authority.limits.maxProofAgeMs)], true)
+      if (rows.length === 0) {
+        unknown = false
+        throw new AccountRuntimeError('cloud/stale-generation', 'Recovery CAS or allocation/audit guard refused; inspect exact state before continuing')
+      }
+      if (rows.length !== 1 || rows[0] === null || typeof rows[0] !== 'object') {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'Recovery write returned ambiguous metadata')
+      }
+      const audit = readRecoveryAudit(Reflect.get(rows[0], 'recovery'), expected, authority)
+      unknown = false
+      return audit
+    } catch (error) {
+      if (unknown && !(error instanceof OwnerPgNotSubmittedError)) responsibility.state = 'unknown'
+      throw error
+    } finally {
+      if (responsibility.state !== 'unknown') this.responsibilities.delete(expected.accountId)
+    }
+  }
+
+  /** Read exact old registration closure/audit and every retained old owner without changing responsibility.
+   * @param input Exact old registration and committed account-audit anchor.
+   * @returns Actual closure postimage and retained-owner observations, never process-death authority.
+   */
+  async inspectRecoveredInstance(input: RecoveredInstanceExpectation): Promise<RecoveredInstanceObservation> {
+    this.requireRecovery()
+    const expected = this.recoveredInstanceExpected(input)
+    const rows = await this.query(inspectRecoveredInstanceSql, [expected.accountId, expected.oldInstanceId, expected.epoch,
+      expected.auditRef, expected.internalAddress, expected.recipeVersion], false)
+    if (rows.length !== 1 || rows[0] === null || typeof rows[0] !== 'object') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Recovered instance lookup is ambiguous')
+    }
+    const audited: unknown = Reflect.get(rows[0], 'audited'), closed: unknown = Reflect.get(rows[0], 'closed')
+    const retained: unknown = Reflect.get(rows[0], 'retained')
+    if (typeof audited !== 'boolean' || typeof closed !== 'boolean' || typeof retained !== 'boolean') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Recovered instance lookup is not trusted')
+    }
+    return Object.freeze({ audited, closed, retainedOwners: retained,
+      responsibilityRetained: this.responsibilities.has(expected.accountId) })
+  }
+
+  /** Close only an exact recovered old registration; never close this process or substitute normal clean receipts.
+   * @param input Original old registration plus its exact committed recovery audit/owner generation.
+   * @returns Confirmed exact closure; duplicate closure skips verification and SQL.
+   * Submitted unknown outcomes stay in the same bounded owner responsibility map, anchored by account/epoch.
+   */
+  async closeRecoveredInstance(input: RecoveredInstanceExpectation): Promise<RecoveredInstanceCloseResult> {
+    const authority = this.requireRecovery(), expected = this.recoveredInstanceExpected(input)
+    this.assertAccountWritable(expected.accountId)
+    if (this.responsibilities.has(expected.accountId)) {
+      throw new AccountRuntimeError('cloud/config-busy', 'An owner write for this account is still pending')
+    }
+    if (this.responsibilities.size >= this.config.maxMountedAccounts) {
+      throw new AccountRuntimeError('cloud/capacity', 'Owner observation capacity is exhausted; unresolved records are retained')
+    }
+    const responsibility: MutationResponsibility = { epoch: expected.epoch, state: 'pending' }
+    this.responsibilities.set(expected.accountId, responsibility)
+    let unknown = false
+    try {
+      const audit = await this.inspectRecovery(expected), prior = await this.inspectRecoveredInstance(expected)
+      if (audit.audit === undefined || !prior.audited || prior.retainedOwners) {
+        throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Instance closure requires its exact audit and every old owner released')
+      }
+      if (prior.closed) return Object.freeze({ instanceId: expected.oldInstanceId, auditRef: expected.auditRef, alreadyClosed: true })
+      if (!audit.matchesPostimage) throw new AccountRuntimeError('cloud/stale-generation', 'The audited owner postimage no longer matches')
+      const anchor = this.recoveryExpected(expected)
+      const proof = readRecoveryProof(await authority.verify(anchor), anchor, authority, true)
+      unknown = true
+      const rows = await this.query(closeRecoveredInstanceSql, [expected.accountId, expected.oldInstanceId, expected.epoch,
+        expected.auditRef, expected.internalAddress, expected.recipeVersion, JSON.stringify(proof),
+        String(authority.limits.maxProofAgeMs)], true)
+      if (rows.length === 0) {
+        unknown = false
+        throw new AccountRuntimeError('cloud/stale-generation', 'Recovered instance CAS or writer/owner guard refused')
+      }
+      if (rows.length !== 1 || rows[0] === null || typeof rows[0] !== 'object'
+        || Reflect.get(rows[0], 'closed_instance') !== expected.oldInstanceId) {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'Recovered instance closure returned ambiguous metadata')
+      }
+      unknown = false
+      return Object.freeze({ instanceId: expected.oldInstanceId, auditRef: expected.auditRef, alreadyClosed: false })
+    } catch (error) {
+      if (unknown && !(error instanceof OwnerPgNotSubmittedError)) responsibility.state = 'unknown'
+      throw error
+    } finally {
+      if (responsibility.state !== 'unknown') this.responsibilities.delete(expected.accountId)
+    }
+  }
+
+  private recoveredInstanceExpected(input: RecoveredInstanceExpectation): Readonly<RecoveredInstanceExpectation> {
+    const expected = this.recoveryExpected(input), maximum = this.recovery?.limits.maxReferenceBytes ?? 0
+    if ([input.internalAddress, input.recipeVersion].some(value => value.length === 0 || Buffer.byteLength(value) > maximum)) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Recovered instance registration fields must be bounded and exact')
+    }
+    return Object.freeze({ ...expected, internalAddress: input.internalAddress, recipeVersion: input.recipeVersion })
+  }
+
+  private requireRecovery(): OwnerRecoveryAuthority {
+    this.assertMigrated()
+    if (!this.recoveryMigrated || this.recovery === undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Trusted recovery audit and verifier are not installed')
+    }
+    return this.recovery
+  }
+
+  private recoveryExpected(input: OwnerRecoveryExpectation): Readonly<OwnerRecoveryExpectation> {
+    ownerEpoch(input.epoch)
+    const maximum = this.recovery?.limits.maxReferenceBytes ?? 0
+    if (input.oldInstanceId === this.identity.instanceId
+      || [input.accountId, input.oldInstanceId, input.auditRef].some(value => value.length === 0 || Buffer.byteLength(value) > maximum)) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Recovery requires bounded exact identities of a different dead process')
+    }
+    return Object.freeze({ accountId: input.accountId, oldInstanceId: input.oldInstanceId, epoch: input.epoch, auditRef: input.auditRef })
   }
 
   private async applyMigration(): Promise<void> {

@@ -25,6 +25,8 @@ export interface Config extends ExecutionRequirements {
   readonly managed?: unknown
   /** Explicit Root-owned protected deployment publication; its JSON is not itself an execution capability. */
   readonly rootDeployment?: RootDeploymentReference
+  /** Explicit protected maintenance reference; only closed mode with a maintenance runtime may consume it. */
+  readonly recovery?: unknown
 }
 /** Required mode declaration; accepting it supplies no verification evidence. */
 export const Config = rootExecutionSchema
@@ -64,6 +66,17 @@ class ClosedCoordinator extends SandboxCoordinator {
  * @throws for missing deployment authority, unsupported capabilities, missing runtime or duplicate registration.
  */
 export async function apply(ctx: Context, config: Config, deployment?: ManagedExecutionDeployment): Promise<void> {
+  if (config.recovery !== undefined) {
+    if (config.mode !== 'closed' || config.requiredCapabilities.length !== 0 || config.rootDeployment !== undefined
+      || deployment !== undefined || ctx.get('peAccount') !== undefined || ctx.root.get('peAccount') !== undefined) {
+      throw new ExecutionStateError('cloud/invalid-config', 'Recovery requires closed execution in its original maintenance Root.')
+    }
+    const runtime = ctx.get('peAccountRuntime')
+    if (runtime === undefined) throw new ExecutionStateError('cloud/invalid-config', 'Recovery requires its original maintenance runtime.')
+    const recovery = await import('./root-recovery.ts')
+    await recovery.mountRootRecovery(ctx, runtime, parseManagedCoordinatorConfig(config.managed), config.recovery)
+    return
+  }
   if (config.mode === 'session-collect') {
     const resolved = Config({ mode: config.mode, requiredCapabilities: [...config.requiredCapabilities], managed: config.managed,
       ...(config.rootDeployment === undefined ? {} : { rootDeployment: config.rootDeployment }) })
@@ -103,6 +116,9 @@ export async function apply(ctx: Context, config: Config, deployment?: ManagedEx
     throw new ExecutionStateError('cloud/invalid-config', 'A protected Root deployment reference requires managed execution mode.')
   }
   if (config.mode !== 'closed') return requireExecution(config)
+  if (config.managed !== undefined) {
+    throw new ExecutionStateError('cloud/invalid-config', 'Closed execution accepts managed limits only for explicit maintenance recovery.')
+  }
   const resolved = Config({ mode: 'closed', requiredCapabilities: [...config.requiredCapabilities],
     ...(config.maxBoundAccounts === undefined ? {} : { maxBoundAccounts: config.maxBoundAccounts }) })
   if (resolved.requiredCapabilities.length !== 0) return requireExecution(resolved)

@@ -1,11 +1,14 @@
 /** Fixed PostgreSQL statements; owner transitions never depend on a heartbeat lease. */
 
-const projection = `jsonb_build_object(
+/** Original owner projection shared by ordinary reads and the atomic recovery audit. */
+export const ownerJsonSql = `jsonb_build_object(
   'accountId', account_id, 'ownerInstanceId', owner_instance_id,
   'epoch', epoch::text, 'phase', phase, 'recipeVersion', recipe_version,
   'heartbeatAt', to_char(heartbeat_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
   'updatedAt', to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-) AS owner`
+)`
+
+const projection = `${ownerJsonSql} AS owner`
 
 /** Read ownership without acquiring it or interpreting lease expiry. */
 export const locateOwnerSql = `SELECT ${projection} FROM public.pe_account_owners WHERE account_id = $1`
@@ -57,3 +60,23 @@ SET phase = $4, owner_instance_id = CASE WHEN $4 = 'unowned' THEN NULL ELSE owne
     updated_at = statement_timestamp()
 WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint AND phase = 'draining'
 RETURNING ${projection}`
+
+/** Atomic locked recovery function; all physical verification remains with the selected Root callback. */
+export const recoverReleasedSql = 'SELECT public.pe_recover_released_0001($1,$2,$3::bigint,$4,$5::jsonb,$6::integer,$7::integer,$8::integer) AS recovery'
+
+/** One read-only snapshot of exact audit identity and current owner; absence never authorizes a retry. */
+export const inspectRecoverySql = `SELECT
+  (SELECT jsonb_build_object('proof', proof, 'postimage', postimage)
+   FROM public.pe_recovery_audit WHERE audit_ref = $1) AS recovery,
+  (SELECT ${projection} FROM public.pe_account_owners WHERE account_id = $2) AS owner,
+  COALESCE((SELECT ${ownerJsonSql} = (SELECT postimage FROM public.pe_recovery_audit WHERE audit_ref=$1)
+    FROM public.pe_account_owners WHERE account_id=$2),false) AS matches`
+
+/** Independently locked instance closure; requires an existing exact account recovery audit and no retained old owner. */
+export const closeRecoveredInstanceSql = 'SELECT public.pe_close_recovered_instance_0001($1,$2,$3::bigint,$4,$5,$6,$7::jsonb,$8::integer) AS closed_instance'
+
+/** Exact registration/audit postimage only; never erases uncertain local mutation responsibility. */
+export const inspectRecoveredInstanceSql = `SELECT
+  EXISTS (SELECT 1 FROM public.pe_recovery_audit WHERE audit_ref=$4 AND account_id=$1 AND old_instance_id=$2 AND epoch=$3::bigint) AS audited,
+  EXISTS (SELECT 1 FROM public.pe_instances WHERE instance_id=$2 AND internal_address=$5 AND recipe_version=$6 AND phase='closed') AS closed,
+  EXISTS (SELECT 1 FROM public.pe_account_owners WHERE owner_instance_id=$2) AS retained`

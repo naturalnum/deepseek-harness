@@ -7,9 +7,12 @@ import type { OwnerPgLimits } from './owner-pg-executor.ts'
 import type { AccountPolicyConfig } from './account-policy.ts'
 import type { AccountNativePreparation } from './account-native-integration.ts'
 import { AccountRuntimeError } from './errors.ts'
+import type { OwnerRecoveryLimits, RecoveryVerifierId } from './owner-types.ts'
 
 /** Required deployment inputs for the actual root Loader; component capacities stay separate. */
 export interface RuntimeRootConfig extends RuntimeConfig {
+  /** Explicit maintenance-only authority; omission preserves ordinary runtime admission and closes recovery. */
+  readonly recovery?: Readonly<{ readonly verifierId: RecoveryVerifierId; readonly limits: OwnerRecoveryLimits }>
   readonly recipeVersion: string
   readonly internalAddress: string
   readonly heartbeatIntervalMs: number
@@ -83,6 +86,17 @@ export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(acc
 
 /** Actual root deployment schema; no component configuration or absent field enables production. */
 export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
+  recovery: z.union([z.object({
+    verifierId: z.const('local-original-process-and-provider-v1').required(),
+    limits: z.object({
+      maxAllocations: z.natural().min(1).max(128).required(),
+      maxEvidenceRefs: z.natural().min(1).max(128).required(),
+      maxReferenceBytes: z.natural().min(1).max(4096).required(),
+      maxProofBytes: z.natural().min(1).max(131072).required(),
+      maxAuditRows: z.natural().min(1).max(2147483647).required(),
+      maxProofAgeMs: timer(),
+    }).required(),
+  }).required()]),
   maxMountedAccounts: positive(), maxConcurrentMounts: positive(), maxConcurrentDrains: positive(),
   recipeVersion: text(), internalAddress: text(),
   heartbeatIntervalMs: timer(), heartbeatTimeoutMs: timer(), startupTimeoutMs: timer(),

@@ -15,6 +15,8 @@ const closedRootExecutionSchema = z.object({
   mode: z.const('closed'),
   requiredCapabilities,
   maxBoundAccounts: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
+  managed: z.any<unknown>().default(undefined as never),
+  recovery: z.any<unknown>().default(undefined as never),
 })
 
 /** Managed limits are validated by the strict parser before a Root owner or resource can be created. */

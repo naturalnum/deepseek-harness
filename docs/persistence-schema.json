@@ -24024,8 +24024,8 @@
       "sources": [
         "packages/api/session-controller/src/types.ts:409",
         "packages/attachment/attachment/src/brand.ts:6",
-        "packages/cloud/pe-cloud-runtime/src/types.ts:13",
-        "packages/cloud/pe-cloud-runtime/src/types.ts:9",
+        "packages/cloud/pe-cloud-runtime/src/types.ts:11",
+        "packages/cloud/pe-cloud-runtime/src/types.ts:15",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:21",
         "packages/experimental/agent-team/src/types.ts:21",

@@ -6,20 +6,8 @@ import { instanceMigrationSql } from './migrations/instances.ts'
 import { registerInstanceSql, locateInstanceSql, heartbeatInstanceSql, closeInstanceSql } from './instance-sql.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import type { OwnerPgExecutor, OwnerStoreIdentity } from './owner-types.ts'
-import type { InstanceId } from './types.ts'
-
-/** Trusted root deployment metadata; it has no selectable instance-id field. */
-export interface InstanceDeployment {
-  readonly internalAddress: string
-  readonly recipeVersion: string
-}
-
-/** Only the five C-12 instance metadata fields; phase grants no account readiness. */
-export interface RuntimeInstanceRecord extends InstanceDeployment {
-  readonly instanceId: InstanceId
-  readonly phase: 'registered' | 'closed'
-  readonly heartbeatAt: string
-}
+import type { InstanceId, InstanceDeployment, RuntimeInstanceRecord } from './types.ts'
+export type { InstanceDeployment, RuntimeInstanceRecord } from './types.ts'
 
 /** Closing a component with no submitted registration creates no synthetic database row. */
 export type InstanceCloseResult =

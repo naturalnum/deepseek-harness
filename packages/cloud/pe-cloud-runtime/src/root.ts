@@ -16,6 +16,7 @@ import { RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
 import { RuntimeCapacity } from './capacity.ts'
 import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
+import type { OwnerRecoveryExpectation, OwnerRecoveryProof } from './owner-types.ts'
 
 function hasRootFetch(value: unknown): value is { inspectRootFetch(): readonly ExactFetchExposure[] } {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'inspectRootFetch') === 'function'
@@ -23,7 +24,7 @@ function hasRootFetch(value: unknown): value is { inspectRootFetch(): readonly E
 import { createAccountPolicy } from './account-policy.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
-import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootRecipeInput, RootRecipeObservation, RuntimeConfig } from './types.ts'
+import type { AccountBinding, AccountId, AccountOwner, AccountRecoveryRuntime, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
@@ -39,6 +40,8 @@ interface RootControl {
   readonly saves: ConfigSaveCoordinator
   readonly requests: Map<AccountId, AccountFactoryRequest>
   readonly secrets: Set<Promise<string>>
+  recovery?: AccountRecoveryRuntime
+  recoveryVerifier?: { readonly participant: DrainParticipant; readonly verify: RootRecoveryVerifier['verify'] }
   phase: 'starting' | 'active' | 'failed' | 'closing' | 'closed'
   starting: Promise<void>
   heartbeat?: Promise<unknown>
@@ -61,6 +64,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   private readonly capacity: RuntimeCapacity
   private closed = false
   private control: RootControl | undefined
+
+  /** Root-only maintenance capability; ordinary and component-only runtimes keep recovery closed. */
+  get recovery(): AccountRecoveryRuntime | undefined { return this.control?.recovery }
 
   /**
    * Install one root with explicit limits; this does not acquire a PG owner or mark an account ready.
@@ -140,14 +146,22 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * @param input Fixed recipe requirements, not a caller-supplied success receipt.
    * @throws AccountRuntimeError while any fact or real storage capability is unavailable.
    */
-  sealRecipe(input: RootRecipeInput): void { this.assertOpen(); this.recipe.seal(input) }
+  sealRecipe(input: RootRecipeInput): void {
+    this.assertOpen()
+    if (this.control !== undefined) this.assertBusinessMode(this.control)
+    this.recipe.seal(input)
+  }
 
   /**
    * Require a current complete seal before external admission.
    * @param recipeVersion Expected fixed deployment version.
    * @throws AccountRuntimeError for unsealed, revoked, closed or incomplete storage admission.
    */
-  assertRecipeSealed(recipeVersion: string): void { this.assertOpen(); this.recipe.assertSealed(recipeVersion) }
+  assertRecipeSealed(recipeVersion: string): void {
+    this.assertOpen()
+    if (this.control !== undefined) this.assertBusinessMode(this.control)
+    this.recipe.assertSealed(recipeVersion)
+  }
 
   /** Revoke root admission before replacing or reloading the recipe. */
   revokeRecipe(): void { this.recipe.revoke() }
@@ -235,6 +249,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    */
   acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
     const control = this.activeControl()
+    this.assertBusinessMode(control)
     this.assertRecipeSealed(control.config.recipeVersion)
     this.assertRequiredParticipants()
     let request = control.requests.get(accountId)
@@ -269,6 +284,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * @returns A fresh independent lifecycle reference; stale, unpublished and closed graphs reject.
    */
   async borrowAccount(binding: AccountBinding): Promise<AccountUse> {
+    this.assertBusinessMode(this.activeControl())
     this.assertRecipeSealed(binding.recipeVersion)
     return this.activeControl().factory.borrowCurrent(binding)
   }
@@ -277,13 +293,18 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * Check the exact installed graph during restricted native preparation as well as ready.
    * @param binding Original graph binding, never a request borrow.
    */
-  assertMountCurrent(binding: AccountBinding): void { this.activeControl().factory.assertMountCurrent(binding) }
+  assertMountCurrent(binding: AccountBinding): void {
+    const control = this.activeControl()
+    this.assertBusinessMode(control)
+    control.factory.assertMountCurrent(binding)
+  }
 
   /**
    * Admit business only with a current recipe seal and exact ready publication.
    * @param binding Original installed graph binding; unpublished, stale and closed graphs reject.
    */
   assertBusinessCurrent(binding: AccountBinding): void {
+    this.assertBusinessMode(this.activeControl())
     this.assertRecipeSealed(binding.recipeVersion)
     this.activeControl().factory.assertBusinessCurrent(binding)
   }
@@ -333,7 +354,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       query: (text: string, values: readonly (string | null)[]) => executor.query(text, values),
     })
     const instance = new RuntimeInstanceControl(executor, config)
-    const owners = new PostgresOwnerStore(executor, instance.identity, config)
+    const owners = new PostgresOwnerStore(executor, instance.identity, config, config.recovery === undefined ? undefined : {
+      instanceId: instance.identity.instanceId, verifierId: config.recovery.verifierId, limits: config.recovery.limits,
+      verify: expected => this.verifyRecovery(expected),
+    })
     const factory = new AccountFactory(this.capacity, config.factory)
     const saves = new ConfigSaveCoordinator(config.saves)
     const control: RootControl = {
@@ -341,6 +365,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       phase: 'starting', starting: Promise.resolve(),
     }
     this.control = control
+    if (config.recovery !== undefined) control.recovery = this.recoveryCapability(control)
     control.starting = (async () => {
       await password()
       this.assertStarting(control)
@@ -481,6 +506,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   }
 
   private armRecipeSeal(config: RuntimeRootConfig): void {
+    if (config.recovery !== undefined) return
     const ready = this.ctx.root.get('appReady')
     if (ready === undefined) return
     this.ctx.effect(() => ready.onReady(() => {
@@ -497,6 +523,78 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime root control is not available')
     }
     return control
+  }
+
+  private assertBusinessMode(control: RootControl): void {
+    if (control.config.recovery !== undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Maintenance recovery keeps ordinary account admission closed')
+    }
+  }
+
+  private recoveryParticipant(control: RootControl, participant: DrainParticipant, mutation: boolean): RootParticipant {
+    const registration = this.participants.get('execution')
+    if (this.control !== control || control.config.recovery === undefined || participant.id !== 'execution'
+      || registration?.participant !== participant || registration.closeRoot === undefined || !registration.metadata.accepting
+      || mutation && (this.closed || control.phase !== 'active')) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Recovery requires its original active Root execution owner')
+    }
+    return registration
+  }
+
+  private async verifyRecovery(expected: Readonly<OwnerRecoveryExpectation>): Promise<OwnerRecoveryProof> {
+    const control = this.activeControl(), selected = control.recoveryVerifier
+    if (selected === undefined) throw new AccountRuntimeError('cloud/stop-unconfirmed', 'No original Root recovery verifier is registered')
+    this.recoveryParticipant(control, selected.participant, true)
+    const proof = await selected.verify(expected)
+    this.recoveryParticipant(control, selected.participant, true)
+    if (control.recoveryVerifier !== selected) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Root recovery verifier was withdrawn before submission')
+    }
+    return proof
+  }
+
+  private recoveryCapability(control: RootControl): AccountRecoveryRuntime {
+    const current = (participant: DrainParticipant, mutation: boolean): void => {
+      this.recoveryParticipant(control, participant, mutation)
+      if (control.recoveryVerifier?.participant !== participant) {
+        throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Recovery verifier is not bound to this original execution owner')
+      }
+    }
+    const capability: AccountRecoveryRuntime = {
+      whenReady: () => control.starting,
+      registerVerifier: (participant: DrainParticipant, verifier: RootRecoveryVerifier) => {
+        const registration = this.recoveryParticipant(control, participant, true)
+        if (control.recoveryVerifier !== undefined || verifier.id !== control.config.recovery?.verifierId) {
+          throw new AccountRuntimeError('cloud/invalid-config', 'Only the selected original Root recovery verifier can register')
+        }
+        const selected = { participant, verify: verifier.verify.bind(verifier) }, close = registration.closeRoot
+        if (close === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Recovery requires an original shutdown owner')
+        return this.ctx.effect(() => {
+          control.recoveryVerifier = selected
+          return async () => {
+            await close()
+            if (control.recoveryVerifier === selected) delete control.recoveryVerifier
+          }
+        }, 'pe-cloud-runtime: retain original recovery verifier through actual work')
+      },
+      migrate: (participant: DrainParticipant) => { current(participant, true); return control.owners.migrateRecovery() },
+      locateInstance: (participant: DrainParticipant, instanceId) => {
+        current(participant, false); return control.instance.locate(instanceId)
+      },
+      recoverAccount: (participant: DrainParticipant, expected) => {
+        current(participant, true); return control.owners.recoverReleased(expected)
+      },
+      inspectAccount: (participant: DrainParticipant, expected) => {
+        current(participant, false); return control.owners.inspectRecovery(expected)
+      },
+      closeInstance: (participant: DrainParticipant, expected) => {
+        current(participant, true); return control.owners.closeRecoveredInstance(expected)
+      },
+      inspectInstance: (participant: DrainParticipant, expected) => {
+        current(participant, false); return control.owners.inspectRecoveredInstance(expected)
+      },
+    }
+    return Object.freeze(capability)
   }
 
   private assertStarting(control: RootControl): void {

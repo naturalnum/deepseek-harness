@@ -112,6 +112,16 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 被拒绝的 mutation 可能已经提交而结果未知。Store 保留该账户及尝试的 epoch，关闭该账户后续写入，并允许读取状态，不重放或自动解除未知。其他账户继续受正常 CAS 及容量规则约束。每次 mutation 前预留责任记录；未知记录保留在配置上界内，耗尽时拒绝新观察，不丢弃旧记录。迁移失败使整个 store 保持关闭。完整 runtime 必须经可信生命周期完成对账；构造存储 adapter 不代表获准恢复。
 
+崩溃恢复是独立的私有操作。构造器可选捕获接手实例固定的 `local-original-process-and-provider-v1` verifier 及显式 proof/审计上界。Root 提供只读 callback，核验受保护的核验发布物及当前 kernel/进程事实；`recoverReleased()` 的调用者只传精确旧账户、instance、epoch 和稳定审计引用。缺少 authority 时恢复关闭。`migrateRecovery()` 显式调用，并要求原 owner 与 execution allocation 迁移已完成；它新增版本化 `pe_recovery_audit` 和固定的 invoker 权限 SQL 函数，不改原 owner 数据。
+
+Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁，以及 late-create/spawn 永久失去生效能力。返回值包含有界证据引用、旧 epoch 全部保留 allocation ID、`databaseRole` 及在进程死亡后签发的 `writersVerifiedAt` 截止时间。固定 PostgreSQL 调用锁定审计容量与 allocation 写入，拒绝任何非终态或未覆盖分配，复核 `current_user`、同角色旧 client backend 及同角色 prepared transaction，然后在同一原子操作中只把精确 ready/draining/quarantined/mounting owner 改为 unowned 并写不可变审计/后镜像。epoch、recipe 不变，普通下一次 claim 才递增 epoch；不伪造正常 flush/dispose 收据。
+
+成功审计引用的重复调用先只读检查，不再调用 verifier，也不重放 SQL/provider 动作。历史审计的后镜像若已不再匹配当前 owner，只作为历史结果。提交/解码未知时保留原有有界 owner-write 责任；`inspectRecovery()` 只读精确审计和当前后镜像，不重试、不自动清除此责任。Root 负责后续责任解除、实际 allocation 对账、启动/入口集成及另行限定范围的旧实例关闭。heartbeat 或单账户 proof 均不授予整实例关闭权限。
+
+`closeRecoveredInstance()` 是另一个私有 CAS，锚定同一精确账户审计、旧 instance 和 epoch。它再次核验选定 proof，锁住全部 owner 写入，要求审计账户在该 epoch 仍为 unowned，且不存在任何指向旧实例的 owner。旧注册行的地址、recipe、registered 阶段必须精确匹配；已匹配 closed 后镜像时幂等返回。`inspectRecoveredInstance()` 提供精确只读对账；关闭结果未知时保留同一有界账户/epoch 责任。Root 必须保持普通准入关闭，直到两步恢复及维护 CLI 关闭均已结束。
+
+现有 Root 入口仅在维护装配中接受显式 `recovery` 配置，关闭 acquire、borrow、mount 与业务准入，并只通过原执行 drain participant 登记选定 verifier。恢复复用原 owner store 及其保留的未知写入责任；普通 Root 不提供恢复 port。维护进程必须等待实际对账完成并关闭，之后才能恢复普通启动。
+
 ### Process instance metadata
 
 私有[实例组件](src/instance-control.ts)在 `pe_instances` 保存启动身份、可信部署地址、配方版本、观察阶段及 heartbeat 时间。其原子迁移遇到不兼容字段或约束时拒绝，不重置记录。组件在内部生成并冻结身份；持有者在每次 Node 启动时构造唯一组件，并将同一个身份交给 owner store。构造器不接受外部提供的实例 id。地址是不透明的部署元数据，不用于选择网络目标。
@@ -187,7 +197,7 @@ Factory 关闭时先关闭准入和图 lifetime，等待原保存屏障，调用
 - **账户工厂** — 生产链要求原 files storage owner、准备期原生审核及实际 PostgreSQL ready CAS。账户持久化恢复、认证 Web 和完整 Linux 配方仍须集成验收；组件文本回合或冷读取不授予生产 `AccountUse`。
 - **根封口** — 原 files owner 必须直接复核受保护部署记录、当前 mount、写入者 namespace 及 bytes/inodes/private-reserve 上界。存储缺失或被撤销时准入关闭。非 Root 声明仍须在实际账户、Session 和客户端装配中核验。
 - **布局接线** — 私有原生桥已核对 layout/Profile 一致性，但布局数据不能创建 files 能力或验证存储。已包含 environments 父根，尚无按 Session 的环境派生。
-- **数据库集成与恢复** — 实际根持有 PG 部署配置、迁移、登记及串行实例 heartbeat 调度。恢复审计、分配对账及可信 RecoveryProof 应用仍未提供；本模块不能重领隔离态 owner。
+- **数据库集成与恢复** — 实际根持有 PG 部署配置、迁移、登记及串行实例 heartbeat 调度。私有恢复 CAS/审计为显式 opt-in；开放恢复入口前仍须完成实际 verifier/见证签发、分配对账、Root 启动集成及 PostgreSQL 执行验收。
 - **必需证据** — 参与者存在不验证存储配额、进程停止或完整账户销毁。Private Profile/patch 读取及所有原生配置/JSONL 写入都须在 boot 前取得真实的所有写入者存储授权；prepare 期间才核准目录已经太晚。容量预留不执行参与者排空。
 - **账户交接** — 只有包内工厂 helper 安装 binding。Helper 要求可信 owner 输入，自身不核验 PG 归属；测试提供 binding 夹具，不据此宣称账户图 ready。
 - **关闭顺序** — Clean 账户释放要求完整原生/保存/持久化、execution/files 及 owner-store 结算。账户工作未知时保留 Root 控制资源。保留失败的恢复仍未开放；仅原生销毁不能释放生产 owner。

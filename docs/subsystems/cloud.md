@@ -149,7 +149,7 @@ Source: [`packages/cloud/pe-account-instructions/src/session.ts`](../../packages
 
 ### `ctx.peAccountRuntime` — `AccountRuntimeService`
 
-Shared service definition; providers need no dependency on Host control implementation.
+Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission.
 
 ```ts cordis-catalog
 /**
