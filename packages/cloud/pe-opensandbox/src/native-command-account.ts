@@ -142,6 +142,37 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       released: (scope) => { this.releaseScope(scope) } })
   }
 
+  /**
+   * Confirm that only this never-submitted foreground acquisition is active in the Session.
+   * @param scope Original current foreground scope whose acquire callback has not returned a channel.
+   */
+  assertContinuation(scope: ExecutionScope<Workspace>): void {
+    this.calls.assertCurrent(scope)
+    const current = this.active.get(scope.sessionId)?.foreground
+    if (!this.state.open || scope.purpose !== 'command' || current?.scope !== scope
+      || current.operation === undefined || !current.operation.isAwaitingChannel() || current.unknownReported) throw this.failure()
+    for (const row of this.records.values()) {
+      if (row === current || row.scope.sessionId !== scope.sessionId) continue
+      if (!row.activeReleased || row.unknownReported || (row.service?.requests.size ?? 0) !== 0) {
+        throw new ExecutionStateError('cloud/capacity', 'Session compute cannot retire while another range or application request remains active.')
+      }
+    }
+  }
+
+  /**
+   * Revoke completed old handles after original physical stop, terminal metadata and mount release.
+   * @param scope The same original foreground acquisition that has not yet obtained its new channel.
+   */
+  retireCompletedSession(scope: ExecutionScope<Workspace>): void {
+    this.assertContinuation(scope)
+    const current = this.active.get(scope.sessionId)?.foreground
+    for (const row of [...this.records.values()]) {
+      if (row === current || row.scope.sessionId !== scope.sessionId) continue
+      if (row.operation !== undefined) row.operation.release()
+      else this.retireUnstarted(row)
+    }
+  }
+
   assertCurrent(caller: Context): void { this.capture(caller) }
   projectRoot(caller: Context): string { return this.capture(caller).scope.project.path }
 

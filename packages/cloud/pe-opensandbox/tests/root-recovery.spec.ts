@@ -7,6 +7,10 @@ import { BootstrapFailure } from '../src/bootstrap/bootstrap.ts'
 import { ExecutionStateError } from '../src/errors.ts'
 import type { ManagedCoordinatorConfig } from '../src/managed-coordinator.ts'
 import { mountRootRecovery } from '../src/root-recovery.ts'
+import { AllocationStoreError, PostgresAllocationStore } from '../src/allocation-store.ts'
+import type { SandboxAllocation } from '../src/allocation-types.ts'
+import type { AccountOwner } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { RootRecoveryWitness, recoveryIntentDigest, PROVIDER_CREATE_REFUSAL_CODE } from '../src/bootstrap/recovery-witness.ts'
 
 const seam = vi.hoisted(() => ({ open: vi.fn() }))
 vi.mock('../src/bootstrap/recovery-reference.ts', async original => ({
@@ -72,4 +76,73 @@ it('does not start late recovery after Cordis disposal while original runtime st
   expect(f.register).not.toHaveBeenCalled()
   expect(seam.open).not.toHaveBeenCalled()
   expect(f.query).not.toHaveBeenCalled()
+})
+
+
+it.each(['creating', 'failed', 'unknown'] as const)('audits verified refused %s metadata through the original maintenance participant', async (initial) => {
+  const f = fixture(), now = Date.parse('2026-10-22T02:15:00.000Z')
+  const registeredVerifier = vi.spyOn(f.recovery, 'registerVerifier')
+  f.recovery.migrate = vi.fn(); f.recovery.locateInstance = vi.fn(); f.recovery.recoverAccount = vi.fn()
+  f.recovery.inspectAccount = vi.fn(); f.recovery.closeInstance = vi.fn(); f.recovery.inspectInstance = vi.fn()
+  const intent = { allocationId: 'refused-allocation', accountId: 'refused-account', epoch: '21', sessionId: 'session',
+    workspaceId: 'workspace', environmentVersion: 'env', provider: 'opensandbox', projectMountVersion: 'mount',
+    requestedAt: '2026-10-22T02:08:13.139Z', createDeadlineAt: '2026-10-22T02:08:43.139Z' } as SandboxAllocation
+  let current: SandboxAllocation = { ...intent, state: initial === 'failed' ? 'failed' : 'creating', sandboxId: null, runtimeIdentity: null,
+    executionProtocolVersion: null, executionCapabilities: [], lastActivityAt: intent.requestedAt,
+    lastCheckedAt: intent.requestedAt, failureCode: initial === 'failed' ? PROVIDER_CREATE_REFUSAL_CODE : null }
+  const item = { createOutcome: 'rejected-before-provider-create', sandboxId: null, intent, intentDigest: recoveryIntentDigest(intent),
+    refusalCode: 'fixed-ttl-bounds', knownRefusalEvidenceRef: 'test:refusal', completedRequestEvidenceRef: 'test:completed',
+    providerCreateNotStartedEvidenceRef: 'test:not-started', lateStartsRevokedEvidenceRef: 'test:late-loss' }
+  // Publication intent has exactly the original ten immutable fields.
+  const originalIntent = Object.fromEntries(['allocationId', 'accountId', 'epoch', 'sessionId', 'workspaceId', 'environmentVersion',
+    'provider', 'projectMountVersion', 'requestedAt', 'createDeadlineAt'].map(k => [k, Reflect.get(intent, k)]))
+  const value = { schema: 'pe-local-controlled-recovery-v2', verifierId: 'local-original-process-and-provider-v1',
+    auditRef: 'test:audit', verifiedAt: new Date(now).toISOString(), oldInstanceId: 'old-instance', databaseRole: 'test-role',
+    writersVerifiedAt: new Date(now - 1).toISOString(), processEvidenceRef: 'test:process', writersEvidenceRef: 'test:writers',
+    oldProcess: { pid: 3456, startTicks: '7890', bootId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', pidNamespace: 'pid:[1234]' },
+    accounts: [{ accountId: intent.accountId, epoch: intent.epoch, allocations: [{ ...item, intent: originalIntent }] }] }
+  const witness = new RootRecoveryWitness({ value: () => value, assertCurrent() {} },
+    { maxBytes: 32768, maxAccounts: 2, maxAllocations: 8, maxFieldBytes: 256, maxAgeMs: 30000 },
+    i => ({ bootId: i.bootId, pidNamespace: i.pidNamespace, original: 'absent' }), () => now)
+  const close = vi.fn(); seam.open.mockReturnValue({ witness, close })
+  vi.spyOn(PostgresAllocationStore.prototype, 'migrate').mockResolvedValue(undefined)
+  vi.spyOn(PostgresAllocationStore.prototype, 'get').mockImplementation(async () => current)
+  vi.spyOn(PostgresAllocationStore.prototype, 'listNonterminal').mockImplementation(async () => ({ allocations: current.state === 'creating' ? [current] : [], nextCursor: null }))
+  let retained = false
+  vi.spyOn(PostgresAllocationStore.prototype, 'inspect').mockImplementation(() => ({ pendingQueries: 0, mutationResponsibilities: Number(retained), unknownMutations: Number(retained), retainedBytes: 0 }))
+  vi.spyOn(PostgresAllocationStore.prototype, 'reconcileCommitted').mockRejectedValue(new AllocationStoreError('unknown'))
+  const failed = vi.spyOn(PostgresAllocationStore.prototype, 'failNotCreated').mockImplementation(async (_expected, code) => {
+    if (initial === 'unknown') { retained = true; throw new AllocationStoreError('unknown') }
+    current = { ...current, state: 'failed', failureCode: code }; return current
+  })
+  const release = vi.spyOn(PostgresAllocationStore.prototype, 'releaseStopped')
+  const owner = { accountId: intent.accountId, epoch: intent.epoch, ownerInstanceId: 'old-instance', phase: 'quarantined',
+    recipeVersion: 'fixture', heartbeatAt: intent.requestedAt, updatedAt: intent.requestedAt } as AccountOwner
+  vi.spyOn(f.runtime, 'locateAccount').mockResolvedValue(owner)
+  vi.spyOn(f.recovery, 'migrate').mockResolvedValue(undefined)
+  vi.spyOn(f.recovery, 'locateInstance').mockResolvedValue({ instanceId: owner.ownerInstanceId!, phase: 'registered', heartbeatAt: intent.requestedAt,
+    internalAddress: 'http://fixture', recipeVersion: 'fixture' })
+  const audit = vi.spyOn(f.recovery, 'recoverAccount').mockImplementation(async (_participant, expected) => {
+    const verifier = registeredVerifier.mock.calls[0]?.[1]
+    if (verifier === undefined) throw new Error('Original runtime verifier missing')
+    const proof = await verifier.verify(expected)
+    expect(proof.allocations).toEqual([{ allocationId: intent.allocationId,
+      evidenceRefs: ['test:refusal', 'test:completed', 'test:not-started', 'test:late-loss'] }])
+    return { proof, postimage: { ...owner, ownerInstanceId: null, phase: 'unowned' } }
+  })
+  vi.spyOn(f.recovery, 'inspectAccount').mockResolvedValue({ audit: undefined, current: undefined, matchesPostimage: true, responsibilityRetained: false })
+  vi.spyOn(f.recovery, 'closeInstance').mockImplementation(async (_participant, expected) => ({ instanceId: expected.oldInstanceId, auditRef: expected.auditRef, alreadyClosed: false }))
+  vi.spyOn(f.recovery, 'inspectInstance').mockResolvedValue({ audited: true, closed: true, retainedOwners: false, responsibilityRetained: false })
+  vi.spyOn(f.ctx.logger, 'info').mockImplementation(() => {})
+  if (initial === 'unknown') {
+    await expect(mountRootRecovery(f.ctx, f.runtime, config, reference)).rejects.toMatchObject({ code: 'store-unknown' })
+    await expect(f.register.mock.calls[0]?.[0].closeRoot?.()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+    expect(failed).toHaveBeenCalledOnce(); expect(audit).not.toHaveBeenCalled(); expect(release).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled(); expect(f.query).not.toHaveBeenCalled(); return
+  }
+  await expect(mountRootRecovery(f.ctx, f.runtime, config, reference)).resolves.toBeUndefined()
+  expect(failed).toHaveBeenCalledTimes(initial === 'creating' ? 1 : 0)
+  expect(release).not.toHaveBeenCalled(); expect(audit).toHaveBeenCalledOnce(); expect(current.sandboxId).toBeNull()
+  await expect(f.register.mock.calls[0]?.[0].closeRoot?.()).resolves.toBeUndefined()
+  expect(close).toHaveBeenCalledOnce(); expect(f.query).not.toHaveBeenCalled()
 })

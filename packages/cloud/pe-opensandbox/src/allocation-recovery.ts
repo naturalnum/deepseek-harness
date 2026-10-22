@@ -2,12 +2,12 @@
 import { createHash } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import { AllocationStoreError, type PostgresAllocationStore } from './allocation-store.ts'
-import { recoveryIntentDigest } from './bootstrap/recovery-witness.ts'
+import { recoveryIntentDigest, isProviderCreateRefusalRow, PROVIDER_CREATE_REFUSAL_CODE, KNOWN_PROVIDER_REFUSAL } from './bootstrap/recovery-witness.ts'
 import type { AllocationEpochScope, AllocationId, AllocationState, SandboxAllocation } from './allocation-types.ts'
 
 /** Original store authority; inspect preserves pending/unknown responsibilities outside the listing. */
 export type AllocationRecoveryStore = Pick<PostgresAllocationStore,
-  'listNonterminal' | 'get' | 'transition' | 'releaseStopped' | 'reconcileCommitted' | 'inspect'>
+  'listNonterminal' | 'get' | 'failNotCreated' | 'transition' | 'releaseStopped' | 'reconcileCommitted' | 'inspect'>
 
 /** Explicit finite recovery observation limits, independent of the store's per-statement limits. */
 export interface AllocationRecoveryLimits {
@@ -47,6 +47,22 @@ export interface AllocationDestructionEvidence {
   readonly independentCreateBindingRef?: string
 }
 
+/** Exact completed provider refusal, attested by Root independently of any HTTP status or empty list. */
+export interface AllocationRefusalEvidence {
+  readonly allocationId: AllocationId
+  readonly rowDigest: string
+  readonly intentDigest: string
+  readonly createOutcome: 'rejected-before-provider-create'
+  readonly sandboxId: string | null
+  readonly refusalCode: typeof KNOWN_PROVIDER_REFUSAL | 'unsettled-or-unknown'
+  readonly refusalRef: string
+  readonly completedRequestRef: string
+  readonly providerCreateNotStartedRef: string
+  readonly permanentLateCreateSpawnLossRef: string
+}
+type AllocationEvidence = AllocationDestructionEvidence | AllocationRefusalEvidence
+type AllocationCoverage = (AllocationDestructionEvidence & { readonly createOutcome: 'accepted-created-and-settled' }) | (AllocationRefusalEvidence & { readonly refusalCode: typeof KNOWN_PROVIDER_REFUSAL; readonly sandboxId: null })
+
 /** Trusted attestations for this whole snapshot, never a browser-supplied stopped boolean. */
 export interface AllocationRecoveryEvidence {
   readonly scope: AllocationEpochScope
@@ -54,7 +70,7 @@ export interface AllocationRecoveryEvidence {
   readonly oldProcessExitRef: string
   readonly oldWriterWithdrawalRef: string
   readonly permanentLateCreateSpawnLossRef: string
-  readonly allocations: readonly AllocationDestructionEvidence[]
+  readonly allocations: readonly AllocationEvidence[]
 }
 
 /** Root chooses this capability and verifies actual process/create/physical facts outside this helper. */
@@ -62,7 +78,7 @@ export interface TrustedAllocationRecoveryVerifier {
   readonly id: string
   /**
    * Verify the entire snapshot, including old process/writer loss even when the list is empty.
-   * Every item must bind all original intent fields/state, accepted creation and exact sandbox destruction.
+   * Every item must bind the exact original intent/state and either destruction or a completed qualified no-create refusal.
    * @param snapshot - frozen complete bounded observation.
    * @returns full trusted coverage, or undefined when any fact cannot be established.
    */
@@ -75,7 +91,7 @@ export interface AllocationRecoveryReport {
   readonly snapshotDigest: string
   readonly finalSnapshotDigest: string
   readonly verifierId: string
-  readonly coverage: readonly (AllocationDestructionEvidence & { readonly createOutcome: 'accepted-created-and-settled' })[]
+  readonly coverage: readonly AllocationCoverage[]
   readonly evidenceRefs: readonly string[]
   readonly reconciledUnknownWrites: number
 }
@@ -166,7 +182,18 @@ function validateEvidence(snapshot: AllocationRecoverySnapshot, evidence: Alloca
     reference(ref, limits)
   }
   const seen = new Set<AllocationId>()
-  const coverage = evidence.allocations.map((item: AllocationDestructionEvidence) => {
+  const coverage = evidence.allocations.map((item: AllocationEvidence): AllocationCoverage => {
+    if (item.createOutcome === 'rejected-before-provider-create') {
+      exactFields(item, ['allocationId', 'rowDigest', 'intentDigest', 'createOutcome', 'sandboxId', 'refusalCode', 'refusalRef',
+        'completedRequestRef', 'providerCreateNotStartedRef', 'permanentLateCreateSpawnLossRef'])
+      const entry = snapshot.allocations.find(value => value.row.allocationId === item.allocationId)
+      if (entry === undefined || seen.has(item.allocationId) || item.rowDigest !== entry.digest || item.intentDigest !== entry.intentDigest
+        || item.sandboxId !== null || item.refusalCode !== KNOWN_PROVIDER_REFUSAL || !isProviderCreateRefusalRow(entry.row)) throw new AllocationRecoveryError('proof')
+      for (const ref of [item.refusalRef, item.completedRequestRef,
+        item.providerCreateNotStartedRef, item.permanentLateCreateSpawnLossRef]) reference(ref, limits)
+      seen.add(item.allocationId)
+      return Object.freeze({ ...item, sandboxId: null, refusalCode: KNOWN_PROVIDER_REFUSAL })
+    }
     exactFields(item, ['allocationId', 'rowDigest', 'intentDigest', 'sandboxId', 'createOutcome', 'acceptedCreateRef',
       'physicalDestructionRef', 'permanentLateCreateSpawnLossRef'], ['independentCreateBindingRef'])
     const entry = snapshot.allocations.find(value => value.row.allocationId === item.allocationId)
@@ -191,13 +218,14 @@ function validateEvidence(snapshot: AllocationRecoverySnapshot, evidence: Alloca
   return copied
 }
 
-function assertPostimage(before: SandboxAllocation, after: SandboxAllocation, state: 'stopping' | 'released', sandboxId: string | null): void {
-  const expected = { ...before, state, sandboxId, lastCheckedAt: after.lastCheckedAt }
+function assertPostimage(before: SandboxAllocation, after: SandboxAllocation, state: 'stopping' | 'released' | 'failed', sandboxId: string | null): void {
+  const expected = { ...before, state, sandboxId, lastCheckedAt: after.lastCheckedAt,
+    ...(state === 'failed' ? { failureCode: PROVIDER_CREATE_REFUSAL_CODE } : {}) }
   if (digest(rowValue(after)) !== digest(rowValue(expected))) throw new AllocationRecoveryError('snapshot-changed')
 }
 
 /**
- * Reconcile only an old epoch's already-destroyed accepted creates using the original durable store.
+ * Reconcile an old epoch's verified destroyed creates or completed fixed provider admission refusals.
  * Root must exclude old writers and concurrent recoverers, retain the actual Promise and select the trusted verifier.
  * Complete proof and a repeated whole-snapshot check precede every first write; exact reads bind every subsequent CAS.
  * Submitted unknown writes are only reconciled against the original store's captured postimage, never replayed.
@@ -231,8 +259,10 @@ export async function reconcileOldAllocationEpoch(store: AllocationRecoveryStore
   const proof = validateEvidence(snapshot, observed, limits)
   observed = undefined
   const refs = [proof.oldProcessExitRef, proof.oldWriterWithdrawalRef, proof.permanentLateCreateSpawnLossRef,
-    ...proof.allocations.flatMap(item => [item.acceptedCreateRef, item.physicalDestructionRef,
-      item.permanentLateCreateSpawnLossRef, ...(item.independentCreateBindingRef === undefined ? [] : [item.independentCreateBindingRef])])]
+    ...proof.allocations.flatMap(item => item.createOutcome === 'rejected-before-provider-create'
+      ? [item.refusalRef, item.completedRequestRef, item.providerCreateNotStartedRef, item.permanentLateCreateSpawnLossRef]
+      : [item.acceptedCreateRef, item.physicalDestructionRef, item.permanentLateCreateSpawnLossRef,
+        ...(item.independentCreateBindingRef === undefined ? [] : [item.independentCreateBindingRef])])]
   const audit = { scope, snapshotDigest: snapshot.digest, verifierId, coverage: proof.allocations,
     evidenceRefs: Object.freeze([...new Set(refs)]) }
   if (bytes({ ...audit, finalSnapshotDigest: '0'.repeat(64), reconciledUnknownWrites: snapshot.allocations.length * 3 }) > limits.maxProofBytes) {
@@ -268,6 +298,20 @@ export async function reconcileOldAllocationEpoch(store: AllocationRecoveryStore
     if (evidence === undefined) throw new AllocationRecoveryError('proof')
     const current = await store.get(entry.row)
     if (current === undefined || digest(rowValue(current)) !== entry.digest) throw new AllocationRecoveryError('snapshot-changed')
+    if (evidence.createOutcome === 'rejected-before-provider-create') {
+      let failed: SandboxAllocation
+      try { failed = await store.failNotCreated(current, PROVIDER_CREATE_REFUSAL_CODE) }
+      catch (error) {
+        if (!(error instanceof AllocationStoreError) || error.code !== 'unknown') throw new AllocationRecoveryError('store-conflict')
+        try { failed = await store.reconcileCommitted(current) }
+        catch { throw new AllocationRecoveryError('store-unknown') }
+        reconciledUnknownWrites++
+      }
+      assertPostimage(current, failed, 'failed', null)
+      const checked = await store.get(failed)
+      if (checked === undefined || digest(rowValue(checked)) !== digest(rowValue(failed))) throw new AllocationRecoveryError('snapshot-changed')
+      continue
+    }
     let stopping = current
     if (current.state !== 'stopping') {
       try { stopping = await store.transition(current, { to: 'stopping', sandboxId: evidence.sandboxId }) }

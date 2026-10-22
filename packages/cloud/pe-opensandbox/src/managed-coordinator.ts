@@ -277,7 +277,17 @@ export class ManagedCoordinator extends SandboxCoordinator {
         registered?.assertCurrent()
         const request = this.request(work, scope)
         try {
-          const prepared = await this.allocations.prepare(request, signal)
+          let prepared = await this.allocations.prepare(request, signal)
+          if (registered === undefined && this.deployment.runtimes.needsContinuation(prepared)) {
+            commands.assertContinuation(scope)
+            // stop synchronously fences the old allocation; its original promise joins physical and SQL settlement.
+            await this.allocations.stop(request)
+            this.deployment.backend.retireStopped(prepared, (selection) =>{  this.deployment.runtimes.retireStopped(prepared, selection) })
+            signal.throwIfAborted(); request.assertCurrent()
+            commands.retireCompletedSession(scope)
+            prepared = await this.allocations.prepare(request, signal)
+            signal.throwIfAborted(); request.assertCurrent()
+          }
           if (registered === undefined) return this.deployment.runtimes.command(prepared)
           registered.assertCurrent()
           if (registered.scope !== scope) this.stale()

@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { loadBootstrapPayload, TrustedSdkBootstrap, type BootstrapConfig } from '../src/bootstrap/bootstrap.ts'
 import { SOURCE_DIGEST } from '../src/bootstrap/asset-manifest.ts'
 import { TrustedRuntimeRegistry } from '../src/trusted-runtime.ts'
+import { PROTOCOL, SLICE_LIMITS } from '../src/agent-data/index.ts'
+import type { AgentDataClient, ClientOptions, Handshake, Responsibility } from '../src/agent-data/types.ts'
 import { SessionAllocationOwner } from '../src/allocation-owner.ts'
 import type { NativeAllocationRequest } from '../src/allocation-owner.ts'
 import type { SandboxAllocation, AllocationCreateIntent as Intent, AllocationExpectation, AllocationChange } from '../src/allocation-types.ts'
@@ -503,7 +505,7 @@ async function bootstrapFailureFixture(events: readonly object[], options: { pen
     body.resolve(undefined); closed.resolve(undefined)
     await backend.closeRootActual().catch((_cause: unknown) => { /* Negative original joins intentionally remain unknown. */ })
   })
-  return { selected, lifecycle, backend, registry, ack, transport, wire, entered, body, closed, close, client }
+  return { selected, lifecycle, backend, registry, ack, transport, wire, entered, body, closed, close, client, bootstrap }
 }
 const completedWrongMarker = [{ type: 'init', text: 'loader' }, { type: 'stdout', text: 'wrong\n' }, { type: 'execution_complete' }]
 const completedFailure = [{ type: 'init', text: 'loader' }, { type: 'stderr', text: 'synthetic loader failure\n' },
@@ -585,4 +587,124 @@ test('terminal failed bootstrap reaches allocation released only through actual 
   await owner.stop(request)
   assert.equal(row?.state, 'released')
   assert.equal(store.failNotCreated.mock.calls.length, 0); assert.equal(release.mock.calls.length, 1)
+})
+
+
+test('retains unknown or active SDK records and reclaims only stopped originals without replaying their create', async () => {
+  const transport = new FakeTransport(), backend = new SdkAllocationBackend({ ...config, maxRecords: 1 }, agent(transport), transport)
+  const retire = vi.fn()
+  for (let index = 0; index < 7; index++) {
+    const selected = selection(), intent = { ...selected.intent, allocationId: `continued-${index}` as AllocationCreateIntent['allocationId'] }
+    const created = await backend.create(intent, selected.mount)
+    const prepared = await backend.prepare(created, selected.mount, Date.now() + 5000)
+    assert.throws(() =>{  backend.retireStopped(prepared, retire) }, { code: 'sdk/selection' })
+    await backend.stop(created, prepared)
+    assert.throws(() =>{  backend.retireStopped({ ...prepared }, retire) }, { code: 'sdk/selection' })
+    assert.throws(() =>{  backend.retireStopped(prepared, () => { throw new Error('original registry refuses') }) }, /registry refuses/)
+    backend.retireStopped(prepared, retire)
+    assert.throws(() => backend.create(intent, selected.mount), { code: 'sdk/closed' })
+    await backend.stop(created, prepared) // The original handle retains its same fulfilled stop; no second DELETE.
+  }
+  assert.equal(retire.mock.calls.length, 7)
+  assert.equal(transport.calls.filter(value => value.method === 'POST').length, 7)
+  assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 7)
+  await backend.closeRootActual()
+  const unknownTransport = new FakeTransport(); unknownTransport.deleteFailure = true
+  const selected = selection(), unknown = new SdkAllocationBackend(config, agent(unknownTransport), unknownTransport)
+  const created = await unknown.create(selected.intent, selected.mount)
+  const prepared = await unknown.prepare(created, selected.mount, Date.now() + 5000)
+  await assert.rejects(unknown.stop(created, prepared), { code: 'sdk/stop-unknown' })
+  assert.throws(() =>{  unknown.retireStopped(prepared, retire) }, { code: 'sdk/selection' })
+  await unknown.closeRootActual().catch((_cause: unknown) => { /* Original negative stop remains unknown. */ })
+})
+
+test('bootstrap retirement requires its exact fenced and actually joined selection and refuses its original capability afterwards', async () => {
+  const f = await bootstrapFailureFixture(completedWrongMarker)
+  const select = (index: number) => ({ intent: { ...f.selected.intent, allocationId: `bootstrap-retire-${index}` as AllocationCreateIntent['allocationId'] },
+    mount: f.selected.mount, sandboxId: `bootstrap-${index}`, imageDigest: f.lifecycle.imageDigest,
+    payloadSha256: f.lifecycle.payloadSha256, deploymentIdentity: f.lifecycle.deploymentIdentity })
+  for (let index = 0; index < 7; index++) {
+    const original = select(index)
+    assert.throws(() =>{  f.bootstrap.retireStopped(original) }, { code: 'binding' })
+    const fenced = f.bootstrap.fence(original)
+    assert.throws(() =>{  f.bootstrap.retireStopped(original) }, { code: 'binding' })
+    await fenced.whenJoined
+    assert.throws(() =>{  f.bootstrap.retireStopped({ ...original, intent: { ...original.intent } }) }, { code: 'binding' })
+    f.bootstrap.retireStopped(original)
+    assert.throws(() => f.bootstrap.fence(original), { code: 'closed' })
+  }
+  assert.equal(f.wire.length, 0); assert.equal(f.close.mock.calls.length, 0)
+})
+
+
+test('actual SDK, pinned bootstrap and runtime owners reclaim seven completed lifetimes with maxRecords one', async () => {
+  const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
+  const lifecycle: SdkLifecycleConfig = { ...config, maxRecords: 1, lifecycleBaseUrl: 'http://127.0.0.1:24444/v1',
+    imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
+    payloadSha256: SOURCE_DIGEST, entrypoint: ['/usr/bin/tail', '-f', '/dev/null'] }
+  const settings: BootstrapConfig = { lifecycle, execdAccessToken: 'synthetic-only',
+    transport: { connections: 1, connectTimeoutMs: 100, headersTimeoutMs: 1000, bodyTimeoutMs: 1000,
+      keepAliveTimeoutMs: 1000, maxHeaderBytes: 4096, maxRequestBytes: 32768, maxResponseBytes: 32768 },
+    bootstrapTimeoutMs: 10000, requestTimeoutMs: 5000, commandTimeoutSeconds: 3, maxRequestBytes: 32768,
+    maxReplyBytes: 32768, maxAggregateBytes: 262144, maxEvents: 8, maxRecords: 1, agentPort: 8080,
+    assertDeploymentCurrent() {} }
+  const payload = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
+  let sandboxId = '', bootstrapStarts = 0, bootstrapCloses = 0, dataCloses = 0
+  const bootstrap = new TrustedSdkBootstrap(settings, payload, () => {
+    bootstrapStarts++
+    let commands = 0
+    return { close: async () => { bootstrapCloses++ }, fetch: async (input, init) => {
+      const request = new Request(input, init), url = new URL(request.url)
+      if (request.body !== null) await request.arrayBuffer()
+      if (url.pathname.includes('/endpoints/')) {
+        const port = url.pathname.split('/').at(-1)
+        return Response.json({ endpoint: `127.0.0.1:24444/v1/sandboxes/${sandboxId}/proxy/${port}` })
+      }
+      if (url.pathname.endsWith('/files/upload')) return Response.json({})
+      assert(url.pathname.endsWith('/command')); commands++
+      const frames = [{ type: 'init', text: 'synthetic' },
+        { type: 'stdout', text: commands === 1 ? 's4-bootstrap-claimed\n' : 's4-bootstrap-started\n' },
+        { type: 'execution_complete' }]
+      return new Response(frames.map(value => JSON.stringify(value) + '\n').join(''),
+        { headers: { 'content-type': 'text/event-stream' } })
+    } }
+  })
+  const factory = (options: ClientOptions): AgentDataClient => {
+    let responsibility: Responsibility = { fenced: false, closing: false, inFlight: 0, dispatcherClosed: false,
+      localSettled: false, closeMethodsPending: 0, cleanupFailure: false, attempts: 0, sentBodyBytes: 0,
+      replyBodyAllowance: 0, replyBuffersReservedBytes: 0, inFlightRequestBodyBytes: 0, bufferedReplyBytes: 0,
+      receivedReplyBodyBytes: 0, remoteUnresolved: [], physicalStopAcknowledged: false, physicalStopRequired: false }
+    const handshake: Handshake = { protocolVersion: PROTOCOL, runtimeIdentity: options.expected.runtimeIdentity,
+      capabilities: ['argv', 'stdin-ignore', 'stdin-batch', 'collect'], pins: options.expected.pins,
+      declaredImageId: options.expected.declaredImageId, mounts: {}, limits: SLICE_LIMITS, newOperationsAccepted: true,
+      recordCount: 0, activeRangeCount: 0, rangeRoles: { foreground: 0, service: 0 }, sealed: false,
+      sealReason: null, physicalStopRequired: false }
+    const unused = (): never => { throw new Error('No real agent command is sent by this owner-retirement component') }
+    return { handshake: async () => handshake, prepare: unused, commit: unused, poll: unused, cancel: unused, stop: unused,
+      seal: async () => handshake, fence: async () => {}, responsibility: () => responsibility,
+      release: async () => { dataCloses++; responsibility = { ...responsibility, fenced: true, closing: true,
+        dispatcherClosed: true, localSettled: true }; return responsibility }, whenLocallySettled: async () => {},
+      notePhysicalStop: () => { responsibility = { ...responsibility, physicalStopAcknowledged: true } } }
+  }
+  const registry = new TrustedRuntimeRegistry(bootstrap, 1, factory), transport = new FakeTransport()
+  const info = transport.info.bind(transport)
+  transport.info = id => ({ ...info(id), id: sandboxId, entrypoint: [...lifecycle.entrypoint] })
+  const backend = new SdkAllocationBackend(lifecycle, registry, transport), identities: string[] = []
+  for (let index = 0; index < 7; index++) {
+    sandboxId = `owner-lifetime-${index}`
+    const selected = selection(), intent = { ...selected.intent, allocationId: `owner-allocation-${index}` as AllocationCreateIntent['allocationId'] }
+    const created = await backend.create(intent, selected.mount)
+    const prepared = registry.bindPrepared(await backend.prepare(created, selected.mount, Date.now() + 5000))
+    identities.push(prepared.runtimeIdentity)
+    for (let command = 0; command < 4; command++) registry.command(prepared)
+    assert(registry.needsContinuation(prepared))
+    await backend.stop(created, prepared)
+    backend.retireStopped(prepared, (selection) =>{  registry.retireStopped(prepared, selection) })
+    assert.throws(() => registry.command(prepared))
+    assert.throws(() => backend.create(intent, selected.mount), { code: 'sdk/closed' })
+  }
+  assert.equal(new Set(identities).size, 7)
+  assert.equal(bootstrapStarts, 7); assert.equal(bootstrapCloses, 7); assert.equal(dataCloses, 7)
+  assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 7)
+  await backend.closeRootActual()
 })

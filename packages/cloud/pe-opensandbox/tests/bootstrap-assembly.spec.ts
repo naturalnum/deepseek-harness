@@ -54,7 +54,7 @@ const limits: ManagedCoordinatorConfig = {
 }
 function input() {
   return { schema: 'pe-opensandbox-root-deployment-v1', selection: {
-    serverImageDigest: 'sha256:231802e5e5fba30fb95955869a017ae3b56d074d9c72e1c6f2cf1bf60c2856f2',
+    serverImageDigest: 'sha256:4900c9b13a02e0cdbec19733b9cc140d7af6d3fa06a06c752d19a3d2e5ee7ca7',
     execdImageDigest: 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf', apiKeyDeploymentIdentity: 'selected-deployment' },
   lifecycle: { lifecycleBaseUrl: 'http://127.0.0.1:24444/v1', apiKey: 'synthetic-management-only', deploymentIdentity: 'selected-deployment',
     environmentVersion: 'env-v1', provider: 'selected-docker', imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
@@ -111,4 +111,25 @@ it('retains original observer and selection on unpublished retained-share uncert
   expect(state.keeperClosed).not.toHaveBeenCalled()
   expect(state.events).not.toContain('selection-close')
   expect(() => parseRootDeploymentInput({ ...input(), status: 'verified' })).toThrow()
+})
+
+it.each([60, 120, 600])('accepts the selected backend finite TTL %s before any lifecycle request', (ttlSeconds) => {
+  const value = input()
+  value.lifecycle.ttlSeconds = ttlSeconds
+  expect(parseRootDeploymentInput(value).lifecycle.ttlSeconds).toBe(ttlSeconds)
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
+})
+
+it.each([59, 601])('refuses TTL %s outside the selected backend policy before allocation', (ttlSeconds) => {
+  const value = input()
+  value.lifecycle.ttlSeconds = ttlSeconds
+  expect(() => parseRootDeploymentInput(value)).toThrow()
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
+})
+
+it('refuses the predecessor server image instead of claiming its TTL policy changed', () => {
+  const value = input()
+  value.selection.serverImageDigest = 'sha256:231802e5e5fba30fb95955869a017ae3b56d074d9c72e1c6f2cf1bf60c2856f2'
+  expect(() => parseRootDeploymentInput(value)).toThrow()
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
 })

@@ -34,6 +34,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   private readonly connection: BoundedLifecycleConnection
   private readonly sandboxes: ReturnType<AdapterFactory['createLifecycleStack']>['sandboxes']
   private readonly records = new Map<string, AllocationRecord>()
+  private readonly retiredIntents = new WeakSet<AllocationCreateIntent>()
   private readonly handles = new WeakMap<CreatedSandbox, AllocationRecord>()
   private readonly inflight = new Set<Promise<unknown>>()
   private readonly recipe: string
@@ -71,6 +72,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
    */
   create(intent: AllocationCreateIntent, mount: VerifiedExecutionMount): Promise<CreatedSandbox> {
     this.assertAdmission()
+    check(!this.retiredIntents.has(intent), 'sdk/closed')
     const existing = this.records.get(intent.allocationId)
     if (existing !== undefined) {
       check(existing.intent === intent && existing.mount === mount, 'sdk/selection')
@@ -144,6 +146,21 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     const record = this.record(created)
     check(prepared === undefined || prepared === record.prepared, 'sdk/selection')
     return this.stopRecord(record)
+  }
+
+  /**
+   * Reclaim one stopped record only at the coordinator's original allocation-released boundary.
+   * @param prepared Exact SDK result retained by the original allocation owner.
+   * @param retireRuntime Synchronous Root registry retirement; any refusal retains this SDK record.
+   */
+  retireStopped(prepared: PreparedSandbox, retireRuntime: (selection: AgentSelection) => void): void {
+    const record = [...this.records.values()].find(value => value.prepared === prepared)
+    if (record === undefined) throw new SdkLifecycleFailure('sdk/selection')
+    check(record.phase === 'stopped' && record.stopActual !== undefined
+      && record.observations.size === 0, 'sdk/selection')
+    retireRuntime(this.selection(record))
+    this.retiredIntents.add(record.intent)
+    this.records.delete(record.intent.allocationId)
   }
 
   /** Scope-filtered bounded pages; no state filter, global-account search, adoption or repeated create.

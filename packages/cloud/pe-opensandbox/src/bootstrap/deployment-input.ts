@@ -97,9 +97,10 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
   need(v.schema === 'pe-opensandbox-root-deployment-v1', 'schema')
   const life = lifecycle(v.lifecycle), boot = bootstrap(v.bootstrap)
   const s = object(v.selection, ['serverImageDigest', 'execdImageDigest', 'apiKeyDeploymentIdentity'], 'selection')
-  need(s.serverImageDigest === 'sha256:231802e5e5fba30fb95955869a017ae3b56d074d9c72e1c6f2cf1bf60c2856f2'
+  need(s.serverImageDigest === 'sha256:4900c9b13a02e0cdbec19733b9cc140d7af6d3fa06a06c752d19a3d2e5ee7ca7'
     && s.execdImageDigest === 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
+  need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
   const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')
   const limits = object(e.limits, ['maxManifestBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'exports.limits')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')

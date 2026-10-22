@@ -23,7 +23,7 @@ import { SdkAllocationBackend } from '../src/sdk-lifecycle.ts'
 import type { OwnedSdkTransport, SdkLifecycleConfig } from '../src/lifecycle-types.ts'
 import { TrustedRuntimeRegistry } from '../src/trusted-runtime.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import * as accountEntry from '../src/account.ts'
 import * as rootEntry from '../src/root.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -648,4 +648,77 @@ it.each([true, false])('uses original NativeBoot and account entry with service 
     expect(claim).toHaveBeenCalledTimes(1); expect(outcome.context.get('agents')).toBeUndefined()
   } else { expect(outcome.status).toBe('failed'); expect(claim).not.toHaveBeenCalled() }
   expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled(); expect(f.bootstrap).not.toHaveBeenCalled()
+})
+
+
+/** Actual Tools/Agent/subprocess/coordinator path; the existing allocation and carrier frontiers are scripted. */
+async function continuationFixture() {
+  const f = await applicationFixture(), a = await f.account('continuation'), counts = new Map<string, number>()
+  let generation = 0, serial = 0
+  f.prepare.mockImplementation(async () => ({ sandboxId: `compute-${generation}`, runtimeIdentity: String(generation).padStart(64, '1'),
+    protocolVersion: 'scripted-original-frontier', capabilities: ['argv-collect'] }))
+  const stop = vi.spyOn(SessionAllocationOwner.prototype, 'stop')
+  stop.mockImplementation(async () => { generation++ })
+  const retire = vi.spyOn(f.backend, 'retireStopped').mockImplementation(() => {})
+  const due = vi.spyOn(f.deployment.runtimes, 'needsContinuation').mockImplementation(prepared => (counts.get(prepared.sandboxId) ?? 0) >= 4)
+  const command = vi.spyOn(f.deployment.runtimes, 'command').mockImplementation((prepared) => {
+    counts.set(prepared.sandboxId, (counts.get(prepared.sandboxId) ?? 0) + 1)
+    const empty = { bytes: Buffer.alloc(0), observedBytes: 0, eof: false }
+    const initial: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
+      ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined, stdout: empty, stderr: empty }
+    const complete: CommandSnapshot = { ...initial, submitted: true, rangeEmpty: true, ioClosed: true,
+      direct: { exitCode: 0, signal: null }, stdout: { ...empty, eof: true }, stderr: { ...empty, eof: true } }
+    return { prepare: async () => initial, commit: async () => complete, poll: async () => complete, stop: async () => complete }
+  })
+  const dispose = a.ctx.tools.register(defineTool({ name: 'bash', description: 'Synthetic native command consumer for continuation components.', parameters: {},
+    output: { schema: { type: 'json' }, render: () => [] }, execute: async () => {
+      const handle = a.ctx.subprocess.spawn({ argv: ['/bin/true'], cwd: '/project', graceMs: 100,
+        stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 32 } } })
+      const outcome = await handle.done
+      if (!await handle.waitForExit()) throw new Error('Original range remains active')
+      return { exitCode: outcome.exitCode }
+    } }))
+  applicationCleanups.push(dispose)
+  const run = (signal = new AbortController().signal) => a.ctx.tools.execute({ callId: ToolCallId(`continuation-${++serial}`),
+    name: 'bash', arguments: {}, agent: a.agents[0]!, signal })
+  return { ...f, a, counts, stop, due, command, retire, run }
+}
+
+it('continues the fifth and ninth never-submitted native operation on new compute without replacing account or Session', async () => {
+  const f = await continuationFixture()
+  for (let i = 0; i < 9; i++) expect((await f.run()).isError).toBe(false)
+  expect([...f.counts]).toEqual([['compute-0', 4], ['compute-1', 4], ['compute-2', 1]])
+  expect(f.stop).toHaveBeenCalledTimes(2); expect(f.command).toHaveBeenCalledTimes(9)
+  expect(f.retire).toHaveBeenCalledTimes(2)
+  expect(f.stop.mock.invocationCallOrder[0]).toBeLessThan(f.retire.mock.invocationCallOrder[0]!)
+  expect(f.prepare).toHaveBeenCalledTimes(11)
+  expect(new Set(f.prepare.mock.calls.map(([request]) => request.sessionId)).size).toBe(1)
+  expect(f.a.lifetime.signal.aborted).toBe(false)
+})
+
+it('retains the old compute when original physical/terminal stop refuses and never opens a replacement channel', async () => {
+  const f = await continuationFixture()
+  for (let i = 0; i < 4; i++) expect((await f.run()).isError).toBe(false)
+  f.stop.mockRejectedValueOnce(new Error('scripted stop or terminal SQL unknown'))
+  expect((await f.run()).isError).toBe(true)
+  expect(f.command).toHaveBeenCalledTimes(4); expect(f.prepare).toHaveBeenCalledTimes(5)
+  expect(f.retire).not.toHaveBeenCalled()
+})
+
+it('does not retire compute while the independent original service is active', async () => {
+  const f = await continuationFixture()
+  await f.a.start()
+  f.due.mockReturnValue(true)
+  expect((await f.run()).isError).toBe(true)
+  expect(f.stop).not.toHaveBeenCalled(); expect(f.command).not.toHaveBeenCalled()
+})
+
+it('does not prepare new compute or submit the new operation after its original cancellation during stop', async () => {
+  const f = await continuationFixture(), stopped = Promise.withResolvers<undefined>(), cancel = new AbortController()
+  f.due.mockReturnValue(true); f.stop.mockImplementationOnce(() => stopped.promise)
+  const actual = f.run(cancel.signal)
+  await vi.waitFor(() => { expect(f.stop).toHaveBeenCalledTimes(1) })
+  cancel.abort(new Error('original caller cancellation')); stopped.resolve(undefined)
+  expect((await actual).isError).toBe(true)
+  expect(f.prepare).toHaveBeenCalledTimes(1); expect(f.command).not.toHaveBeenCalled()
 })

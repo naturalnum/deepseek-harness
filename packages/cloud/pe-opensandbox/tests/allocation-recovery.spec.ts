@@ -10,7 +10,7 @@ import { allocationMigrationSql } from '../src/migrations/allocations.ts'
 import type { AllocationId, AllocationQuery, SandboxAllocation } from '../src/allocation-types.ts'
 import {
   reconcileOldAllocationEpoch, type AllocationRecoveryEvidence, type AllocationRecoveryLimits,
-  type AllocationRecoverySnapshot, type TrustedAllocationRecoveryVerifier,
+  type AllocationRecoverySnapshot, type TrustedAllocationRecoveryVerifier, type AllocationDestructionEvidence,
 } from '../src/allocation-recovery.ts'
 
 const scope = { accountId: brandString<AccountId>('old-account'), epoch: brandString<OwnerEpoch>('20') }
@@ -24,7 +24,7 @@ function allocation(id = 'allocation-1', changes: Partial<SandboxAllocation> = {
     state: 'creating', sandboxId: null, lastActivityAt: '2026-10-20T00:00:00.000Z', lastCheckedAt: '2026-10-20T00:00:00.000Z',
     runtimeIdentity: null, executionProtocolVersion: null, executionCapabilities: [], failureCode: null, ...changes }
 }
-function evidence(snapshot: AllocationRecoverySnapshot): AllocationRecoveryEvidence {
+function evidence(snapshot: AllocationRecoverySnapshot): Omit<AllocationRecoveryEvidence, 'allocations'> & { allocations: AllocationDestructionEvidence[] } {
   return { scope: snapshot.scope, snapshotDigest: snapshot.digest, oldProcessExitRef: 'test:process-exit',
     oldWriterWithdrawalRef: 'test:writer-loss', permanentLateCreateSpawnLossRef: 'test:permanent-loss',
     allocations: snapshot.allocations.map(({ row, digest, intentDigest }) => ({
@@ -124,8 +124,10 @@ describe('old allocation metadata recovery with complete trusted coverage', () =
     const f = await fixture([allocation('allocation-1', { state: 'stopping' })])
     const report = await recover(f.store)
     expect(f.mutations).toEqual(['released'])
-    expect(report.coverage[0]?.sandboxId).toBe('sandbox-allocation-1')
-    expect(report.coverage[0]?.independentCreateBindingRef).toBeDefined()
+    const item = report.coverage[0]
+    if (item?.createOutcome !== 'accepted-created-and-settled') throw new Error('Expected original accepted branch')
+    expect(item.sandboxId).toBe('sandbox-allocation-1')
+    expect(item.independentCreateBindingRef).toBeDefined()
   })
 
   it('repeats successful recovery with no metadata write or provider action while still requiring owner-loss verification', async () => {
@@ -139,7 +141,7 @@ describe('old allocation metadata recovery with complete trusted coverage', () =
     await expect(recover(f.store, verifier(async () => undefined))).rejects.toMatchObject({ code: 'proof' })
   })
 
-  const invalid: [string, (proof: AllocationRecoveryEvidence) => AllocationRecoveryEvidence | undefined][] = [
+  const invalid: [string, (proof: ReturnType<typeof evidence>) => AllocationRecoveryEvidence | undefined][] = [
     ['missing proof', () => undefined],
     ['missing old process fact', p => ({ ...p, oldProcessExitRef: '' })],
     ['missing writer loss', p => ({ ...p, oldWriterWithdrawalRef: '' })],

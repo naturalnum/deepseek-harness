@@ -235,3 +235,19 @@ it('anchors a role observer before the sole commit call and never restarts it on
     expect(f.channel.commit).toHaveBeenCalledTimes(1)
   } finally { commit.resolve(complete(false)); clock.mockRestore() }
 })
+
+
+it('identifies only the original never-attempted channel wait and closes that fact on cancellation or acquisition', async () => {
+  const f = fixture()
+  expect(f.op.isAwaitingChannel()).toBe(false)
+  f.holdAcquisition(); f.op.publish(); f.op.begin()
+  expect(f.op.isAwaitingChannel()).toBe(true)
+  f.acquire.resolve(f.channel); await f.op.prepared
+  expect(f.op.isAwaitingChannel()).toBe(false)
+  f.poll.resolve(complete()); await f.op.whenEmpty
+  const cancelled = fixture(); cancelled.holdAcquisition(); cancelled.op.publish(); cancelled.op.begin()
+  expect(cancelled.op.isAwaitingChannel()).toBe(true)
+  cancelled.caller.abort(new Error('cancelled original'))
+  expect(cancelled.op.isAwaitingChannel()).toBe(false)
+  await cancelled.op.whenEmpty
+})

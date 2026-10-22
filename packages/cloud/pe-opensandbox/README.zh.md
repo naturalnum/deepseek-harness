@@ -65,7 +65,9 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 私有[分配拥有者](src/allocation-owner.ts) 按账户、原生 Session 和代际合并完整的持久意图、创建及认证准备流程。等待者取消后，迟到或不确定工作仍由它保留；只有后端实际停止和原始终结元数据写入完成，才释放挂载预留。Loader 入口不将此组件开放为已启用的后端。
 
-私有的[旧分配恢复 helper](src/allocation-recovery.ts)先有界枚举并冻结精确旧账户/epoch 的全部非终态记录。Root 必须选择可信同进程 verifier，针对完整快照证明旧进程/writer 已失效、已接受创建已终结、精确物理资源已销毁且永久失去迟到启动能力；sandbox id 为空时还须独立创建绑定。helper 复核完整快照及原始 intent/state 后，仅调用原有 stopping/released CAS。未知写入通过同一 store 的原 postimage 只读对账，不重放；即使列表为空，未解决责任仍阻止恢复。它只向 runtime 独立恢复 CAS 返回有界覆盖引用，不授予 provider 权限，也不改变正常停止链。Root 入口接线、真实维护见证、PostgreSQL 与物理后端验收仍须分别完成。
+尚未提交的前台命令可在原有四记录或300秒驻留上限处更换已完全停稳的计算资源。Root 先等待原物理停止、released 元数据及挂载释放完成，再为同一 Session 环境取得新的 files 授权并启动新运行时。活跃服务、运行范围、应用 I/O 及未知引用都会阻止更换。已确认停止的 SDK、bootstrap 和运行时记录可被回收，原 intent 对象保持撤销；未解决记录继续占用容量。
+
+私有的[旧分配恢复 helper](src/allocation-recovery.ts)有界枚举并冻结精确旧账户/epoch 的全部非终态记录。Root 的可信 verifier 必须证明旧进程/writer 已失效且永久失去迟到启动能力。已接受创建须有精确物理销毁证明，sandbox id 为空时还须独立创建绑定，随后调用原有 stopping/released CAS。严格 v2 见证另允许 provider 创建前已完成的固定 TTL 拒绝：精确 intent 及拒绝/请求完成/未创建/迟到启动撤销四项引用，只授权原 `failNotCreated` CAS 写入固定 failed/null-id 终态。HTTP500 或空列表本身不能取得资格。未知写入只读对账原捕获 postimage，不重放；未解决责任仍阻止恢复。helper 只向 runtime 独立恢复 CAS 返回覆盖引用，不授予 provider 权限。实际维护、PostgreSQL 与后端验收仍须分别完成。
 
 现有 Root 入口还支持显式关闭的维护装配：`mode: closed`、空 required capabilities、有界 `managed` 元数据预算及唯一受保护 `recovery` 发布引用。它不构造 SDK 执行或账户图。原执行 participant 复核进程死亡及完整不可变 intent 覆盖，经原 store 对账 allocation，再调用 runtime 的精确旧 owner 恢复及独立旧实例关闭。实际工作未知时保留清理责任。发布物通过 SHA256 和只读 Root 持有租约绑定，不使用密码学签名。
 
@@ -117,6 +119,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 关闭模式是受限部署配置，不是已验证的远端执行。
 
+- 计算资源更换只在新的前台命令取得执行通道时进行，不启动空闲定时器，也不迁移活跃服务。同一 Session 的环境持久性及原生网页连续运行仍须通过部署验收。
 - 默认关闭配方不开放执行。受管操作仍要求持久分配对账、完整部署配置、目标通道与隔离证据，以及受管范围停止。
 - 关闭排空观察只覆盖其精确登记的本代，不提供分配、远端停止或恢复证明，也不能清除旧未知工作。账户就绪和恢复仍由 runtime 持有。
 - 原生默认 Bash 执行器依据 subprocess 的 `done` 结算，而该值不能证明所有后代均已停止。Shell 准备与作用域完成仍需要显式、兼容的适配器。

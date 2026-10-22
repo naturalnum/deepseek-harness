@@ -36,6 +36,7 @@ function witness(value = fixture(), observe = absent, clock = now) {
 describe('selected local recovery witness', () => {
   it('binds creating/null sandbox metadata to the independently witnessed accepted original creation', () => {
     const verified = witness().verifyAllocation(row())
+    if (verified.createOutcome !== 'accepted-created-and-settled') throw new Error('Expected original accepted branch')
     expect(verified.sandboxId).toBe('accepted-original-sandbox')
     expect(verified.acceptedCreateEvidenceRef).toBe('sha256:synthetic-accepted-create')
     expect(Object.isFrozen(verified)).toBe(true)
@@ -103,4 +104,16 @@ describe('selected local recovery witness', () => {
     expect(() => parseRecoveryWitness(undefined, limits)).toThrow(/Trusted recovery evidence/)
     expect(() => parseRecoveryWitness({ ...fixture(), verifierId: 'browser-boolean' }, limits)).toThrow(/Trusted recovery evidence/)
   })
+})
+
+
+it('requires the explicit accepted discriminant in strict v2 while retaining the original v1 wire shape', () => {
+  const legacy = fixture()
+  expect(parseRecoveryWitness(legacy, limits).accounts[0]?.allocations[0]?.createOutcome).toBe('accepted-created-and-settled')
+  legacy.schema = 'pe-local-controlled-recovery-v2'
+  expect(() => parseRecoveryWitness(legacy, limits)).toThrow(/Trusted recovery evidence/)
+  Object.assign(legacy.accounts[0]!.allocations[0]!, { createOutcome: 'accepted-created-and-settled' })
+  expect(parseRecoveryWitness(legacy, limits).accounts[0]?.allocations[0]?.createOutcome).toBe('accepted-created-and-settled')
+  legacy.schema = 'pe-local-controlled-recovery-v1'
+  expect(() => parseRecoveryWitness(legacy, limits)).toThrow(/Trusted recovery evidence/)
 })

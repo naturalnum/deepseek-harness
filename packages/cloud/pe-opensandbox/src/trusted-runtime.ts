@@ -28,6 +28,8 @@ export interface TrustedAgentBootstrap {
     readonly whenJoined: Promise<void>
     assertDeploymentCurrent(): void
   }
+  /** Revoke one original capability only after its privileged starts and dispatcher actually joined. */
+  retireStopped?(selection: AgentSelection): void
 }
 
 interface RuntimeRecord {
@@ -43,6 +45,7 @@ interface RuntimeRecord {
   service?: (registration: NativeRegisteredService) => RoleIssuer
   stopping?: FencedAgentRequests
   physicalStopped: boolean
+  ordinaryJoined?: boolean
   failure?: { readonly cause: unknown }
 }
 
@@ -81,10 +84,11 @@ function snapshot(value: OperationSnapshot): CommandSnapshot {
 export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
   private readonly records = new Map<string, RuntimeRecord>()
   private readonly ready = new WeakMap<PreparedSandbox, RuntimeRecord>()
+  private readonly retiredIntents = new WeakSet<AgentSelection['intent']>()
 
   /**
    * @param bootstrap Original fixed-deployment privileged owner.
-   * @param maxRecords Finite lifetime allocation-record capacity, including stopped records.
+   * @param maxRecords Finite retained allocation-record capacity; unresolved records are never evicted.
    * @param clientFactory Dedicated production client factory; replacement transfers exclusive ownership for component tests.
    * @param applicationFactory Root's fixed selected-server factory; absence keeps application reads unavailable.
    */
@@ -125,6 +129,46 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     if (existing !== undefined && existing !== record) unavailable()
     this.ready.set(prepared, record)
     return prepared
+  }
+
+  /**
+   * Read the original runtime's known lifetime boundary without opening a channel or renewing a clock.
+   * @param prepared Exact previously bound original allocation result.
+   * @returns Whether a quiescent physical retirement is needed before any new operation can be issued.
+   * Unknown work, failed cleanup and outstanding remote references never authorize ordinary continuation.
+   */
+  needsContinuation(prepared: PreparedSandbox): boolean {
+    const record = this.ready.get(prepared)
+    if (record === undefined || record.client === undefined || record.fenced || record.physicalStopped
+      || record.failure !== undefined) unavailable()
+    const due = record.commands >= SLICE_LIMITS.lifetimeOperations || performance.now() >= record.residentDeadlineAtMs
+    if (!due) return false
+    const facts = record.client.responsibility()
+    if (facts.inFlight !== 0 || facts.remoteUnresolved.length !== 0 || facts.cleanupFailure
+      || facts.closing || facts.fenced || facts.physicalStopRequired) unavailable()
+    return true
+  }
+
+  /**
+   * Drop only a known stopped original record after SDK stop and allocation release have fulfilled.
+   * @param prepared Exact bound SDK result; copied projections never authorize retirement.
+   * @param selection Exact original SDK intent, mount and physical allocation binding.
+   */
+  retireStopped(prepared: PreparedSandbox, selection: AgentSelection): void {
+    const record = this.ready.get(prepared)
+    if (record === undefined || this.bootstrap.retireStopped === undefined || !record.physicalStopped || !record.ordinaryJoined
+      || record.failure !== undefined || this.records.get(selection.intent.allocationId) !== record
+      || selection.intent !== record.selection.intent || selection.mount !== record.selection.mount
+      || selection.sandboxId !== record.selection.sandboxId || selection.deploymentIdentity !== record.selection.deploymentIdentity
+      || selection.imageDigest !== record.selection.imageDigest || selection.payloadSha256 !== record.selection.payloadSha256) unavailable()
+    const facts = record.client?.responsibility()
+    if (facts === undefined || !facts.localSettled || !facts.dispatcherClosed || facts.inFlight !== 0
+      || facts.closeMethodsPending !== 0 || facts.cleanupFailure || facts.remoteUnresolved.length !== 0
+      || !facts.physicalStopAcknowledged || facts.physicalStopRequired) unavailable()
+    this.bootstrap.retireStopped(record.selection)
+    this.retiredIntents.add(selection.intent)
+    this.records.delete(selection.intent.allocationId)
+    this.ready.delete(prepared)
   }
 
   /**
@@ -228,6 +272,7 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       await Promise.allSettled([record.preparation ?? Promise.resolve()])
       await released
       if (existingClient !== undefined) await existingClient.whenLocallySettled()
+      record.ordinaryJoined = true
     })()
     record.stopping = Object.freeze({ sandboxId: selection.sandboxId, deploymentIdentity: selection.deploymentIdentity,
       whenPrivilegedStartsJoined: privileged.whenJoined, whenJoined: ordinary,
@@ -294,6 +339,7 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
   }
 
   private record(selection: AgentSelection): RuntimeRecord {
+    if (this.retiredIntents.has(selection.intent)) unavailable()
     const existing = this.records.get(selection.intent.allocationId)
     if (existing !== undefined) {
       const original = existing.selection

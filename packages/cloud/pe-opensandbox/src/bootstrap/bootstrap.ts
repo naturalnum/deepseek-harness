@@ -201,6 +201,7 @@ interface RecordState {
   actual?: Promise<ClientOptions>
   connection?: BootstrapConnection
   joined?: Promise<void>
+  joinedConfirmed?: boolean
   /** An attempted command lacks a validated bounded terminal; ordinary startup failure is separate. */
   privilegedFailure?: { cause: unknown }
   closeActual?: Promise<void>
@@ -211,6 +212,7 @@ interface RecordState {
 /** Original physical allocation only: no list adoption, create, restart, user argv or account SDK access. */
 export class TrustedSdkBootstrap {
   private readonly records = new Map<string, RecordState>()
+  private readonly retiredIntents = new WeakSet<AgentSelection['intent']>()
   private readonly options = new WeakMap<ClientOptions, Readonly<{ record: RecordState; endpoint: URL; headers: Record<string, string> }>>()
   private readonly payload: BootstrapPayload
   /** @param config Root's fixed selected deployment. @param payload Verified helper and six-file source payload.
@@ -293,12 +295,28 @@ export class TrustedSdkBootstrap {
       const closure = results[1]
       if (closure.status === 'rejected') throw new BootstrapFailure('wire-unknown', closure.reason)
       if (record.privilegedFailure !== undefined) throw new BootstrapFailure('command-unknown', record.privilegedFailure.cause)
+      record.joinedConfirmed = true
     })()
     return Object.freeze({ whenJoined: record.joined,
       assertDeploymentCurrent: () => { this.config.assertDeploymentCurrent() } })
   }
 
+  /**
+   * Revoke one already fenced original selection after its actual privileged dispatcher join.
+   * @param selection Original Root capability retained through confirmed physical stop and allocation release.
+   */
+  retireStopped(selection: AgentSelection): void {
+    const record = this.records.get(selection.intent.allocationId), original = record?.selection
+    need(record !== undefined && original !== undefined && record.fenced && record.joinedConfirmed === true
+      && selection.intent === original.intent && selection.mount === original.mount && selection.sandboxId === original.sandboxId
+      && selection.deploymentIdentity === original.deploymentIdentity && selection.imageDigest === original.imageDigest
+      && selection.payloadSha256 === original.payloadSha256, 'binding')
+    this.retiredIntents.add(selection.intent)
+    this.records.delete(selection.intent.allocationId)
+  }
+
   private record(selection: AgentSelection): RecordState {
+    need(!this.retiredIntents.has(selection.intent), 'closed')
     const original = this.records.get(selection.intent.allocationId)
     if (original !== undefined) {
       const s = original.selection

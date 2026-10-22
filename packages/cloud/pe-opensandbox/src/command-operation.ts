@@ -213,6 +213,15 @@ export class ManagedCommandOperation {
   stopReason(): { readonly reason: unknown } | undefined { return this.requestedStop }
 
   /**
+   * Read the original acquisition status without admitting remote work.
+   * @returns Whether this controller still awaits its first channel with no cancellation or remote attempt.
+   */
+  isAwaitingChannel(): boolean {
+    return this.started && !this.remoteAttempted && !this.localSettled && !this.scopeReleased
+      && this.requestedStop === undefined && this.failed === undefined
+  }
+
+  /**
    * Project a shorter observer budget from this controller's original timer and sole commit attempt.
    * The local commit point precedes the remote gate write; submitted observation never renews it.
    * @param runMs Original registered role policy; cannot extend the controller's existing lifetime.

@@ -281,3 +281,69 @@ it('projects resident expiry from before bootstrap without refreshing it on dela
     await f.registry.fenceRequests(f.selected, undefined, new AbortController().signal).whenJoined
   } finally { clock.mockRestore() }
 })
+
+
+it('reports only known quiescent lifetime boundaries without opening another channel or renewing time', async () => {
+  let now = 100
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now), f = fixture()
+  vi.spyOn(f.client, 'responsibility').mockImplementation(() => ({
+    fenced: false, closing: false, inFlight: 0, dispatcherClosed: false, localSettled: true,
+    closeMethodsPending: 0, cleanupFailure: false, attempts: 0, sentBodyBytes: 0, replyBodyAllowance: 0,
+    bufferedReplyBytes: 0, replyBuffersReservedBytes: 0, inFlightRequestBodyBytes: 0, receivedReplyBodyBytes: 0,
+    remoteUnresolved: [], physicalStopAcknowledged: false, physicalStopRequired: false,
+  }))
+  try {
+    const ready = f.registry.bindPrepared(await f.registry.handshake(f.selected, new AbortController().signal))
+    expect(f.registry.needsContinuation(ready)).toBe(false)
+    for (let i = 0; i < 4; i++) f.registry.command(ready)
+    expect(f.registry.needsContinuation(ready)).toBe(true)
+    expect(f.client.prepare).not.toHaveBeenCalled(); expect(f.bootstrap.bootstrap).toHaveBeenCalledTimes(1)
+    const healthy = f.client.responsibility()
+    for (const changed of [{ ...healthy, inFlight: 1 }, { ...healthy, cleanupFailure: true },
+      { ...healthy, physicalStopRequired: true }, { ...healthy, remoteUnresolved: [{
+        runtimeIdentity: f.options.expected.runtimeIdentity, operationId: 'original', specHash: '4'.repeat(64),
+        authorization: { role: 'foreground' as const, registrationId: null, signature: '5'.repeat(64) },
+      }] }]) {
+      vi.mocked(f.client.responsibility).mockReturnValue(changed)
+      expect(() => f.registry.needsContinuation(ready)).toThrow('unconfirmed')
+    }
+    vi.mocked(f.client.responsibility).mockReturnValue(healthy)
+    await f.registry.fenceRequests(f.selected, undefined, new AbortController().signal).whenJoined
+    expect(() => f.registry.needsContinuation(ready)).toThrow('unconfirmed')
+    const expired = fixture()
+    vi.spyOn(expired.client, 'responsibility').mockReturnValue(healthy)
+    const original = expired.registry.bindPrepared(await expired.registry.handshake(expired.selected, new AbortController().signal))
+    now = 300100
+    expect(expired.registry.needsContinuation(original)).toBe(true)
+    expect(expired.client.prepare).not.toHaveBeenCalled()
+    await expired.registry.fenceRequests(expired.selected, undefined, new AbortController().signal).whenJoined
+  } finally { clock.mockRestore() }
+})
+
+
+it('retires only the exact stopped and locally joined runtime and permanently revokes the original intent', async () => {
+  const f = fixture(), signal = new AbortController().signal
+  const retire = vi.fn(), bootstrap = { ...f.bootstrap, retireStopped: retire }
+  const registry = new TrustedRuntimeRegistry(bootstrap, 1, () => f.client)
+  const prepared = registry.bindPrepared(await registry.handshake(f.selected, signal))
+  expect(() =>{  registry.retireStopped(prepared, f.selected) }).toThrow('unconfirmed')
+  const fenced = registry.fenceRequests(f.selected, undefined, signal)
+  await fenced.whenJoined; await fenced.whenPrivilegedStartsJoined
+  expect(() =>{  registry.retireStopped(prepared, f.selected) }).toThrow('unconfirmed')
+  registry.acknowledgePhysicalStop(f.selected, undefined)
+  const settled = { ...f.client.responsibility(), physicalStopAcknowledged: true }
+  const responsibility = vi.spyOn(f.client, 'responsibility').mockReturnValue(settled)
+  expect(() =>{  registry.retireStopped({ ...prepared }, f.selected) }).toThrow('unconfirmed')
+  responsibility.mockReturnValue({ ...settled, cleanupFailure: true })
+  expect(() =>{  registry.retireStopped(prepared, f.selected) }).toThrow('unconfirmed')
+  responsibility.mockReturnValue(settled)
+  registry.retireStopped(prepared, f.selected)
+  expect(retire).toHaveBeenCalledExactlyOnceWith(f.selected)
+  expect(() => registry.handshake(f.selected, signal)).toThrow('unconfirmed')
+  expect(() => registry.command(prepared)).toThrow('unconfirmed')
+  expect(() =>{  registry.retireStopped(prepared, f.selected) }).toThrow('unconfirmed')
+  const fresh = { ...f.selected, intent: { ...f.selected.intent, allocationId: brandString<AllocationCreateIntent['allocationId']>('allocation-fresh') } }
+  // The synthetic client returns the same physical facts; this only proves reclaimed record admission, not a real new sandbox.
+  await expect(registry.handshake(fresh, signal)).resolves.toMatchObject({ sandboxId: fresh.sandboxId })
+  await registry.fenceRequests(fresh, undefined, signal).whenJoined
+})

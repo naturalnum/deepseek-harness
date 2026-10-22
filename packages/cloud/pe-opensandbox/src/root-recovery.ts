@@ -15,7 +15,7 @@ import { BootstrapFailure } from './bootstrap/bootstrap.ts'
 import type { ManagedCoordinatorConfig } from './managed-coordinator.ts'
 import { openRootRecoveryReference, parseRootRecoveryReference,
   type RootRecoveryReference, type RootRecoverySelection } from './bootstrap/recovery-reference.ts'
-import type { RecoveryAccountWitness, RootRecoveryWitness } from './bootstrap/recovery-witness.ts'
+import { recoveryWitnessEvidenceRefs, type RecoveryAccountWitness, type RootRecoveryWitness } from './bootstrap/recovery-witness.ts'
 
 function unavailable(): never {
   throw new ExecutionStateError('cloud/stop-unconfirmed', 'Maintenance recovery is incomplete; ordinary account and execution admission remain closed.')
@@ -88,8 +88,11 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
   private async proveRows(account: RecoveryAccountWitness, terminal: boolean): Promise<void> {
     for (const item of account.allocations) {
       const row = await this.store.get(item.intent)
-      if (row === undefined || row.state === 'failed' || terminal && row.state !== 'released') unavailable()
-      this.witness.verifyAllocation(row)
+      if (row === undefined) unavailable()
+      const selected = this.witness.verifyAllocation(row)
+      if (selected.createOutcome === 'rejected-before-provider-create') {
+        if (terminal && row.state !== 'failed') unavailable()
+      } else if (row.state === 'failed' || terminal && row.state !== 'released') unavailable()
     }
     this.witness.assertCurrent()
   }
@@ -109,8 +112,7 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
       lateCreateFenceEvidenceRef: publication, lateSpawnFenceEvidenceRef: publication,
       evidenceRefs: Object.freeze([...new Set([publication, facts.processEvidenceRef, facts.writersEvidenceRef])]),
       allocations: Object.freeze(account.allocations.map(item => Object.freeze({ allocationId: item.intent.allocationId,
-        evidenceRefs: Object.freeze([...new Set([item.acceptedCreateEvidenceRef, item.physicalStopEvidenceRef,
-          item.lateStartsRevokedEvidenceRef])]) }))) })
+        evidenceRefs: Object.freeze([...new Set(recoveryWitnessEvidenceRefs(item))]) }))) })
   }
 
   private async run(): Promise<void> {
@@ -143,6 +145,13 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
             oldWriterWithdrawalRef: facts.writersEvidenceRef, permanentLateCreateSpawnLossRef: publication,
             allocations: snapshot.allocations.map((entry) => {
               const selected = witness.verifyAllocation(entry.row)
+              if (selected.createOutcome === 'rejected-before-provider-create') {
+                return { allocationId: entry.row.allocationId, rowDigest: entry.digest, intentDigest: entry.intentDigest,
+                  createOutcome: 'rejected-before-provider-create' as const, sandboxId: null, refusalCode: selected.refusalCode,
+                  refusalRef: selected.knownRefusalEvidenceRef, completedRequestRef: selected.completedRequestEvidenceRef,
+                  providerCreateNotStartedRef: selected.providerCreateNotStartedEvidenceRef,
+                  permanentLateCreateSpawnLossRef: selected.lateStartsRevokedEvidenceRef }
+              }
               return { allocationId: entry.row.allocationId, rowDigest: entry.digest, intentDigest: entry.intentDigest,
                 sandboxId: selected.sandboxId, createOutcome: 'accepted-created-and-settled' as const,
                 acceptedCreateRef: selected.acceptedCreateEvidenceRef, physicalDestructionRef: selected.physicalStopEvidenceRef,
