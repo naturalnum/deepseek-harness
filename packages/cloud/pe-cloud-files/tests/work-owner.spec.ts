@@ -141,3 +141,48 @@ describe('files generation work owner', () => {
     owner.close()
   })
 })
+
+it('retains a passive mount lease across idle observation while ordinary results still block configuration', async () => {
+  const owner = new FilesWorkOwner(limits), bound = binding()
+  const port = owner.bind(bound, () => {})
+  const pending = Promise.withResolvers<string>(), entered = Promise.withResolvers<undefined>()
+  const work = port.run(10, async () => { entered.resolve(undefined); return pending.promise }, undefined, 'lease')
+  await entered.promise
+  expect(owner.isEpochIdle(bound)).toBe(false)
+  pending.resolve('original mount grant')
+  const lease = await work
+  expect(owner.isEpochIdle(bound)).toBe(true)
+  expect(owner.isEpochIdle({ ...bound })).toBe(false)
+  expect(owner.inspect()).toMatchObject({ residentBytes: 10, pending: 1 })
+  const ordinary = await port.run(5, async () => 'output not yet consumed')
+  expect(owner.isEpochIdle(bound)).toBe(false)
+  ordinary.release()
+  expect(owner.isEpochIdle(bound)).toBe(true)
+  expect(lease.value).toBe('original mount grant')
+  expect((await owner.stopEpoch(bound, Date.now())).status).toBe('unknown')
+  expect(owner.isEpochIdle(bound)).toBe(false)
+  expect(owner.inspect().residentBytes).toBe(10)
+  lease.release()
+  expect((await owner.stopEpoch(bound, Date.now())).status).toBe('confirmed')
+  owner.close()
+})
+
+it('keeps queued lease preparation and caller-abandoned I/O busy until actual settlement', async () => {
+  const owner = new FilesWorkOwner(limits), bound = binding()
+  const port = owner.bind(bound, () => {})
+  const pending = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+  const abort = new AbortController()
+  const running = port.run(10, async () => { entered.resolve(undefined); await pending.promise }, abort.signal, 'lease')
+  await entered.promise
+  const queued = port.run(5, async () => 'second lease', undefined, 'lease')
+  const rejection = expect(running).rejects.toThrow('caller abandoned')
+  abort.abort(new Error('caller abandoned'))
+  await rejection
+  expect(owner.isEpochIdle(bound)).toBe(false)
+  expect(owner.inspect()).toMatchObject({ running: 1, queued: 1, residentBytes: 15 })
+  pending.resolve(undefined)
+  const lease = await queued
+  expect(owner.isEpochIdle(bound)).toBe(true)
+  expect(owner.inspect()).toMatchObject({ running: 0, residentBytes: 5, pending: 1 })
+  lease.release(); owner.close()
+})

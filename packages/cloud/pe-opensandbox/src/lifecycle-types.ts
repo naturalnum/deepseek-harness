@@ -2,11 +2,14 @@
 import type { AllocationCreateIntent } from './allocation-types.ts'
 import type { PreparedSandbox } from './allocation-owner.ts'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import type { SkillProjectGrant } from './skill-files-types.ts'
 
 /** Original grant plus Root-verified daemon exports, retained under the original files/share reservation. */
 export interface VerifiedExecutionMount {
   readonly grant: ExecutionMountGrant
-  readonly exports: Readonly<{ project: string; protectedProject: string; environment: string }>
+  readonly exports: Readonly<{ project: string; protectedProject: string; environment: string; skills?: string }>
+  /** Original retained files parent; absent allocations keep the entire metadata tree read-only. */
+  readonly skills?: Readonly<{ grant: SkillProjectGrant; maxCopies: number }>
   /** Recheck original grant identity, native membership, exact exports, quotas and their retained share. */
   assertCurrent(): void
 }

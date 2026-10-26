@@ -292,6 +292,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   /** Backend label for diagnostics and effects; shadows `Service.name` without changing the service key. */
   override readonly name = 'session-persistence-jsonl'
 
+  private readonly requests = { pending: 0 }
   private root: string
   private compression: JsonlCompression
   /**
@@ -358,24 +359,26 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the owned write handle.
    */
   async create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle> {
-    options?.signal?.throwIfAborted()
-    const snapshot = materializeCreateHeader(header)
-    // Fail fast on a seeded/cut mismatch with the exact refusal the header
-    // line encoder enforces at materialization.
-    toHeaderLine(snapshot, options?.inheritedEventCount)
-    const inheritedEventCount = SessionLogOffset(options?.inheritedEventCount ?? 0)
-    await this.ensureRootEncoding()
-    options?.signal?.throwIfAborted()
-    if (this.tracker.hasPending(snapshot.id) || await this.findLog(snapshot.id, options?.signal) !== undefined) {
-      throw new SessionAlreadyExistsError(snapshot.id)
-    }
-    options?.signal?.throwIfAborted()
-    // No lock yet: before materialization there is no durable artifact for
-    // another process to contend over, so the handle acquires the lock right
-    // before its first log bytes publish (ensureLease); an unmaterialized
-    // session leaves no filesystem footprint at all.
-    this.tracker.registerCreated(snapshot, inheritedEventCount)
-    return this.tracker.adopt(new JsonlSessionHandle(this, snapshot.id, snapshot, 'write', { cursor: 0, materialized: false, inheritedEventCount }))
+    return this.observeRequest(async () => {
+      options?.signal?.throwIfAborted()
+      const snapshot = materializeCreateHeader(header)
+      // Fail fast on a seeded/cut mismatch with the exact refusal the header
+      // line encoder enforces at materialization.
+      toHeaderLine(snapshot, options?.inheritedEventCount)
+      const inheritedEventCount = SessionLogOffset(options?.inheritedEventCount ?? 0)
+      await this.ensureRootEncoding()
+      options?.signal?.throwIfAborted()
+      if (this.tracker.hasPending(snapshot.id) || await this.findLog(snapshot.id, options?.signal) !== undefined) {
+        throw new SessionAlreadyExistsError(snapshot.id)
+      }
+      options?.signal?.throwIfAborted()
+      // No lock yet: before materialization there is no durable artifact for
+      // another process to contend over, so the handle acquires the lock right
+      // before its first log bytes publish (ensureLease); an unmaterialized
+      // session leaves no filesystem footprint at all.
+      this.tracker.registerCreated(snapshot, inheritedEventCount)
+      return this.tracker.adopt(new JsonlSessionHandle(this, snapshot.id, snapshot, 'write', { cursor: 0, materialized: false, inheritedEventCount }))
+    })
   }
 
   /**
@@ -386,82 +389,84 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the open handle.
    */
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
-    options?.signal?.throwIfAborted()
-    await this.ensureRootEncoding()
-    options?.signal?.throwIfAborted()
-    const pending = this.tracker.pendingOf(id)
-    if (access === 'read') {
-      if (pending !== undefined) {
-        return this.tracker.adopt(new JsonlSessionHandle(this, id, pending.header, 'read', { cursor: 0, materialized: false, inheritedEventCount: pending.inheritedEventCount }))
+    return this.observeRequest(async () => {
+      options?.signal?.throwIfAborted()
+      await this.ensureRootEncoding()
+      options?.signal?.throwIfAborted()
+      const pending = this.tracker.pendingOf(id)
+      if (access === 'read') {
+        if (pending !== undefined) {
+          return this.tracker.adopt(new JsonlSessionHandle(this, id, pending.header, 'read', { cursor: 0, materialized: false, inheritedEventCount: pending.inheritedEventCount }))
+        }
+        let stored: StoredLog
+        try {
+          stored = await this.requireStoredLog(id, options?.signal)
+        } catch (error: unknown) {
+          if (!(error instanceof JsonlGenerationSourceChangedError)) throw error
+          stored = await this.requireStoredLog(id, options?.signal)
+        }
+        let state: StorageHandleState
+        if (stored.status === 'prepared') {
+          state = {
+            cursor: 0,
+            materialized: true,
+            inheritedEventCount: stored.inheritedEventCount,
+            primed: stored,
+          }
+        } else {
+          state = {
+            cursor: 0,
+            materialized: true,
+            inheritedEventCount: stored.inheritedEventCount,
+          }
+        }
+        return this.tracker.adopt(new JsonlSessionHandle(this, id, stored.meta, 'read', state))
       }
-      let stored: StoredLog
+      // A pending entry always belongs to an ACTIVE creator handle (close erases
+      // it), so the claim below rejects that case as already owned.
+      this.tracker.claimWrite(id)
+      let lease: SessionWriteLease | undefined
       try {
-        stored = await this.requireStoredLog(id, options?.signal)
-      } catch (error: unknown) {
-        if (!(error instanceof JsonlGenerationSourceChangedError)) throw error
-        stored = await this.requireStoredLog(id, options?.signal)
-      }
-      let state: StorageHandleState
-      if (stored.status === 'prepared') {
-        state = {
-          cursor: 0,
+        const resolved = await this.findLog(id, options?.signal)
+        if (resolved === undefined) throw new SessionPersistenceNotFoundError(id)
+        lease = await this.acquireLease(id, undefined, dirname(resolved.currentPath))
+        const prepared = await this.requireStoredLog(id, options?.signal)
+        options?.signal?.throwIfAborted()
+        let stored: CurrentStoredLog
+        if (prepared.status === 'prepared') {
+          stored = await this.publishStoredMigration(id, prepared)
+        } else {
+          stored = prepared
+        }
+        options?.signal?.throwIfAborted()
+        return this.tracker.adopt(new JsonlSessionHandle(this, id, stored.meta, 'write', {
+          cursor: stored.events.length,
           materialized: true,
+          tornTruncateTo: stored.tornTruncateTo,
+          recoveredTail: stored.recoveredTail,
           inheritedEventCount: stored.inheritedEventCount,
           primed: stored,
+        }, lease))
+      } catch (error) {
+        // Free the in-process claim no matter how the kernel-lock release
+        // fares, and keep the original diagnostic: a release failure joins it
+        // instead of replacing it.
+        /* v8 ignore next -- typed backends and fs reject with Error */
+        const failure = error instanceof Error ? error : new Error(String(error))
+        let releaseFailure: Error | undefined
+        try {
+          await lease?.release()
+        } catch (raw: unknown) {
+          /* v8 ignore next -- lock releases reject with Error */
+          releaseFailure = raw instanceof Error ? raw : new Error(String(raw))
         }
-      } else {
-        state = {
-          cursor: 0,
-          materialized: true,
-          inheritedEventCount: stored.inheritedEventCount,
+        this.tracker.releaseClaim(id)
+        if (releaseFailure !== undefined) {
+          throw new AggregateError([failure, releaseFailure], `session "${id}": write open failed and its lock release failed`)
         }
+        throw failure
       }
-      return this.tracker.adopt(new JsonlSessionHandle(this, id, stored.meta, 'read', state))
-    }
-    // A pending entry always belongs to an ACTIVE creator handle (close erases
-    // it), so the claim below rejects that case as already owned.
-    this.tracker.claimWrite(id)
-    let lease: SessionWriteLease | undefined
-    try {
-      const resolved = await this.findLog(id, options?.signal)
-      if (resolved === undefined) throw new SessionPersistenceNotFoundError(id)
-      lease = await this.acquireLease(id, undefined, dirname(resolved.currentPath))
-      const prepared = await this.requireStoredLog(id, options?.signal)
-      options?.signal?.throwIfAborted()
-      let stored: CurrentStoredLog
-      if (prepared.status === 'prepared') {
-        stored = await this.publishStoredMigration(id, prepared)
-      } else {
-        stored = prepared
-      }
-      options?.signal?.throwIfAborted()
-      return this.tracker.adopt(new JsonlSessionHandle(this, id, stored.meta, 'write', {
-        cursor: stored.events.length,
-        materialized: true,
-        tornTruncateTo: stored.tornTruncateTo,
-        recoveredTail: stored.recoveredTail,
-        inheritedEventCount: stored.inheritedEventCount,
-        primed: stored,
-      }, lease))
-    } catch (error) {
-      // Free the in-process claim no matter how the kernel-lock release
-      // fares, and keep the original diagnostic: a release failure joins it
-      // instead of replacing it.
-      /* v8 ignore next -- typed backends and fs reject with Error */
-      const failure = error instanceof Error ? error : new Error(String(error))
-      let releaseFailure: Error | undefined
-      try {
-        await lease?.release()
-      } catch (raw: unknown) {
-        /* v8 ignore next -- lock releases reject with Error */
-        releaseFailure = raw instanceof Error ? raw : new Error(String(raw))
-      }
-      this.tracker.releaseClaim(id)
-      if (releaseFailure !== undefined) {
-        throw new AggregateError([failure, releaseFailure], `session "${id}": write open failed and its lock release failed`)
-      }
-      throw failure
-    }
+    })
   }
 
   /**
@@ -471,6 +476,22 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   flush(): Promise<void> {
     return this.tracker.flushAll()
+  }
+
+  private async observeRequest<T>(submit: () => Promise<T>): Promise<T> {
+    this.requests.pending++
+    try { return await submit() }
+    finally { this.requests.pending-- }
+  }
+
+  /** Observe original handles, migration preparation and bounded listing work without any disk write.
+   * @param maximum Explicit account handle bound.
+   * @returns True only when the native JSONL owner has no pending work or unmaterialized session.
+   */
+  override isQuiescent(maximum: number): boolean {
+    return this.requests.pending === 0 && this.migrationPreparations.size === 0
+      && this.listLimit.activeCount === 0 && this.listLimit.pendingCount === 0
+      && this.tracker.isQuiescent(maximum)
   }
 
   /**
@@ -484,32 +505,34 @@ class JsonlSessionPersistence extends SessionPersistence {
     id: SessionId,
     options?: SessionPersistenceStatOptions,
   ): Promise<SessionPersistenceSnapshot | undefined> {
-    options?.signal?.throwIfAborted()
-    await this.ensureRootEncoding()
-    options?.signal?.throwIfAborted()
-    const pending = this.tracker.pendingOf(id)
-    if (pending !== undefined) {
-      return { header: pending.header, revision: pending.revision }
-    }
-    const selected = await this.findLog(id, options?.signal)
-    if (selected === undefined) return undefined
-    const metadata = await this.readGenerationHeader(selected, id, options?.signal)
-    if (metadata === undefined) return undefined
-    try {
-      const identity = await stat(selected.sourcePath, { bigint: true })
+    return this.observeRequest(async () => {
       options?.signal?.throwIfAborted()
-      return {
-        ...metadata,
-        revision: selected.sourceVersion < SESSION_FORMAT_VERSION
-          ? SessionPersistenceRevision(`${fileRevision(identity)}:${await this.historicalCorpusRevision(options?.signal)}`)
-          : fileRevision(identity),
-        sizeBytes: Number(identity.size),
+      await this.ensureRootEncoding()
+      options?.signal?.throwIfAborted()
+      const pending = this.tracker.pendingOf(id)
+      if (pending !== undefined) {
+        return { header: pending.header, revision: pending.revision }
       }
-    } catch (error: unknown) {
-      options?.signal?.throwIfAborted()
-      if (isENOENT(error)) return undefined
-      throw error
-    }
+      const selected = await this.findLog(id, options?.signal)
+      if (selected === undefined) return undefined
+      const metadata = await this.readGenerationHeader(selected, id, options?.signal)
+      if (metadata === undefined) return undefined
+      try {
+        const identity = await stat(selected.sourcePath, { bigint: true })
+        options?.signal?.throwIfAborted()
+        return {
+          ...metadata,
+          revision: selected.sourceVersion < SESSION_FORMAT_VERSION
+            ? SessionPersistenceRevision(`${fileRevision(identity)}:${await this.historicalCorpusRevision(options?.signal)}`)
+            : fileRevision(identity),
+          sizeBytes: Number(identity.size),
+        }
+      } catch (error: unknown) {
+        options?.signal?.throwIfAborted()
+        if (isENOENT(error)) return undefined
+        throw error
+      }
+    })
   }
 
   /**
@@ -519,46 +542,48 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns one snapshot per session, in no promised order.
    */
   async list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
-    const signal = options?.signal
-    const snapshots: SessionPersistenceSnapshot[] = []
-    const listed = new Set<SessionId>()
-    // Snapshot pending entries BEFORE scanning storage: a session whose first
-    // append lands mid-scan is then still in this snapshot (its artifact may
-    // predate the scan), so create-to-list visibility never has a hole.
-    const pending = [...this.tracker.pendingEntries()]
-    const artifacts = await this.listArtifacts(signal)
-    const corpusRevision = artifacts.some(artifact => artifact.sourceVersion < SESSION_FORMAT_VERSION)
-      ? await this.historicalCorpusRevision(signal) : undefined
-    const statted = settledValues(await settleLimited(this.listLimit, artifacts, async (artifact) => {
-      signal?.throwIfAborted()
-      try {
-        const identity = await stat(artifact.path, { bigint: true })
+    return this.observeRequest(async () => {
+      const signal = options?.signal
+      const snapshots: SessionPersistenceSnapshot[] = []
+      const listed = new Set<SessionId>()
+      // Snapshot pending entries BEFORE scanning storage: a session whose first
+      // append lands mid-scan is then still in this snapshot (its artifact may
+      // predate the scan), so create-to-list visibility never has a hole.
+      const pending = [...this.tracker.pendingEntries()]
+      const artifacts = await this.listArtifacts(signal)
+      const corpusRevision = artifacts.some(artifact => artifact.sourceVersion < SESSION_FORMAT_VERSION)
+        ? await this.historicalCorpusRevision(signal) : undefined
+      const statted = settledValues(await settleLimited(this.listLimit, artifacts, async (artifact) => {
         signal?.throwIfAborted()
-        return { artifact, identity }
-      } catch (error: unknown) {
-        signal?.throwIfAborted()
-        if (!isENOENT(error)) throw error
-        return undefined
+        try {
+          const identity = await stat(artifact.path, { bigint: true })
+          signal?.throwIfAborted()
+          return { artifact, identity }
+        } catch (error: unknown) {
+          signal?.throwIfAborted()
+          if (!isENOENT(error)) throw error
+          return undefined
+        }
+      }))
+      for (const entry of statted) {
+        if (entry === undefined) continue
+        const { artifact, identity } = entry
+        listed.add(artifact.header.id)
+        snapshots.push({
+          header: artifact.header,
+          formatStatus: artifact.formatStatus,
+          revision: artifact.sourceVersion < SESSION_FORMAT_VERSION
+            ? SessionPersistenceRevision(`${fileRevision(identity)}:${corpusRevision}`)
+            : fileRevision(identity),
+          sizeBytes: Number(identity.size),
+        })
       }
-    }))
-    for (const entry of statted) {
-      if (entry === undefined) continue
-      const { artifact, identity } = entry
-      listed.add(artifact.header.id)
-      snapshots.push({
-        header: artifact.header,
-        formatStatus: artifact.formatStatus,
-        revision: artifact.sourceVersion < SESSION_FORMAT_VERSION
-          ? SessionPersistenceRevision(`${fileRevision(identity)}:${corpusRevision}`)
-          : fileRevision(identity),
-        sizeBytes: Number(identity.size),
-      })
-    }
-    for (const [id, entry] of pending) {
-      if (!listed.has(id)) snapshots.push({ header: entry.header, revision: entry.revision })
-    }
-    signal?.throwIfAborted()
-    return snapshots
+      for (const [id, entry] of pending) {
+        if (!listed.has(id)) snapshots.push({ header: entry.header, revision: entry.revision })
+      }
+      signal?.throwIfAborted()
+      return snapshots
+    })
   }
 
   // --- handle-facing storage internals (package-private via the handle class below) ---

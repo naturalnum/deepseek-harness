@@ -2,7 +2,7 @@ import { queryObjects } from 'node:v8'
 import { RemoteError, typertOwnedValue } from '@deepseek-ai/dsh-typert-protocol'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { openConnectionWebSocket } from '@deepseek-ai/dsh-client-connection/src/client/socket.ts'
@@ -765,6 +765,24 @@ describe('Client Remote transport readiness', () => {
 })
 
 describe('Client Typert API', () => {
+  it('mounts a business method named install without exposing its native helper', async () => {
+    const call = vi.fn<ConnectionHandle['rpc']['call']>(), ctx = await bench(call)
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    const unmount = await ctx.remote.$mount({ package: '@fixture/install',
+      descriptors: [{ ...directDescriptor(), id: '@fixture/install#probe/install', method: 'install' }],
+    })
+    const namespace = ctx.remote.probe, retained: unknown = Reflect.get(namespace, 'install')
+    expect(retained).toBeTypeOf('function')
+    if (typeof retained !== 'function') throw new Error('Generated install method is missing')
+    await unmount()
+    expect(ctx.get('remote.probe')).toBeUndefined()
+    expect(ctx.typert.remotes.list()).toEqual([])
+    await expect(Reflect.apply(retained, namespace, ['agent-1', { objective: 'ship' }])).resolves.toMatchObject({
+      ok: false, error: { code: 'gateway/internal', message: 'client api: Remote method probe/install is no longer mounted' },
+    })
+    expect(call).not.toHaveBeenCalled()
+  })
+
   it('mounts concrete direct methods, forwards inputs, and withdraws retained handles', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
       .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })

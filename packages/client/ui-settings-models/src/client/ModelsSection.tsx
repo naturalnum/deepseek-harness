@@ -31,7 +31,8 @@ import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, protocolChoices, providerUsable, reasoningLevelChoices } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
-import type { ModelsOperations } from './operations.ts'
+import type { ModelsOperations, ModelsCredentialEditing } from './operations.ts'
+import { CredentialKeyActions } from './CredentialKeyActions.tsx'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
@@ -47,6 +48,11 @@ export interface ModelsSectionInjected {
   }
   /** The Host operations the section and its cards invoke. */
   operations: ModelsOperations
+  /**
+   * Optional original page hook; undefined keeps native UI, null closes protected key edits.
+   * Publish scope changes through the original slot owner.
+   */
+  credentialEditing?: ModelsCredentialEditing | null
   /** Settings schema and immutable path callbacks. */
   schema: SettingsSchemaOperations
   /** Section copy. */
@@ -241,11 +247,15 @@ export function ModelsSection(props: ModelsSectionProps): ReactNode {
     controller === undefined || useSnapshot === undefined || operations === undefined
     || schema === undefined || t === undefined
   ) return null
-  return <Loaded injected={{ controller, useSnapshot, operations, schema, t }} renderSlot={renderSlot} />
+  const editing = props.credentialEditing
+  return <Loaded key={editing === undefined ? 'native' : editing?.scope ?? 'closed'}
+    injected={{ controller, useSnapshot, operations, schema, t,
+      ...(editing === undefined ? {} : { credentialEditing: editing }) }} renderSlot={renderSlot} />
 }
 
 function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
-  const { controller, operations, schema, t } = injected
+  const { controller, operations, schema, t, credentialEditing } = injected
+  const protectedKeys = credentialEditing !== undefined
   const snapshot = injected.useSnapshot(value => value)
   const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
     ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }
@@ -431,7 +441,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           const error = row.entry.error === undefined
             ? null
             : <p role="alert" className={styles['error']}>{row.entry.error}</p>
-          if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
+          if (!protectedKeys && needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
             // First-run posture: the provider exists but has no key — the
             // setup card IS its presence on the page, until the user closes it.
             return (
@@ -502,7 +512,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 </span>
                 <span className={styles['rowActions']}>
                   {/* The account catalog comes from the account listing; its model overrides live in cordis.patch.yml. */}
-                  {row.entry.provider === 'deepseek-account'
+                  {row.entry.provider === 'deepseek-account' || protectedKeys
                     ? null
                     : (
                       <button
@@ -523,7 +533,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         {t('edit')}
                       </button>
                     )}
-                  {row.removable
+                  {row.removable && !protectedKeys
                     ? (
                       <button
                         type="button"
@@ -549,7 +559,15 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
                 { entryKey: row.entry.settingsNs },
               )}
-              {open
+              {credentialEditing !== undefined && credentialEditing !== null
+                && credentialEditing.scope !== null && row.apiKeyEnv !== undefined
+                ? <CredentialKeyActions key={credentialEditing.scope + ':' + row.apiKeyEnv}
+                  provider={row.entry.provider} displayName={row.entry.displayName} namespace={namespace} schema={schema}
+                  settingsPath={row.entry.settingsPath} operations={operations} t={t} reference={row.apiKeyEnv}
+                  configured={row.credential?.configured === true} editing={credentialEditing}
+                  onSaved={() => { announceSaved(target) }} />
+                : null}
+              {open && !protectedKeys
                 ? renderProviderEditor({
                   target,
                   row,
@@ -565,7 +583,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           )
         })}
       </ul>
-      <div className={styles['addBlock']}>
+      {!protectedKeys ? <div className={styles['addBlock']}>
         {addOpen
           ? (
             <div className={styles['addCard']}>
@@ -716,7 +734,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               </div>
             )
             : null}
-      </div>
+      </div> : null}
       {renderSlot('settings.models.footer', {})}
       <Modal
         open={deleteTarget !== undefined}

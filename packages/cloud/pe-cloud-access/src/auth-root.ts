@@ -9,8 +9,12 @@ import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
 import { CloudIngress } from './ingress.ts'
+import { OwnerRouting } from './owner-routing.ts'
 import type { IngressObservation } from './types.ts'
+import type { AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
+import type { ConfigurationPeerOperation } from './peers.ts'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
 
@@ -41,6 +45,7 @@ export class PeAuthService extends Service {
   private closing: Promise<void> | undefined
   private ingress: CloudIngress | undefined
   private ingressFinal: IngressObservation | undefined
+  private ownerRouting: OwnerRouting | undefined
 
   private constructor(ctx: Context, private readonly config: AuthRootConfig, private readonly credentials: CredentialProvider) {
     super(ctx, 'peAuth')
@@ -48,6 +53,11 @@ export class PeAuthService extends Service {
     ctx.effect(() => async () => {
       try { await this.close() } finally { await rootClose() }
     }, 'pe-cloud-access: close authentication before releasing dependencies')
+    if (config.ingress !== undefined) {
+      if (ctx.get('peAccountRuntime') === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+      const unregister = ctx.peAccountRuntime.registerIngressClose({ closeActual: () => this.close() })
+      ctx.effect(() => () => unregister(), 'pe-cloud-access: withdraw actual Root ingress close owner')
+    }
   }
 
   /**
@@ -100,6 +110,28 @@ export class PeAuthService extends Service {
   }
 
   /**
+   * Delegate one native model-key invocation through the original login registry.
+   * @param peer Exact Gateway invocation Peer, never a client identity.
+   * @param consume Actual native work using the original retained Use and current checks.
+   * @returns Actual operation settlement; this service issues no additional borrow.
+   */
+  withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
+    if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+    return this.ingress.withModelKeyPeerUse(peer, consume)
+  }
+
+  /** Delegate a guarded configuration handoff to the same original login/Peer owner.
+   * @param peer Exact native invocation Peer.
+   * @param consume Factory-owned exclusive update, without another login or state authority.
+   * @param mode Explicit local idle operation or terminal acceptance followed by original full closure.
+   * @returns Actual update settlement and fresh same-generation borrow restoration.
+   */
+  withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: 'if-idle' | 'stop-and-apply' = 'if-idle'): Promise<T> {
+    if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+    return this.ingress.withConfigurationPeer(peer, consume, mode)
+  }
+
+  /**
    * Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end.
    * Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.
    * @returns Actual resource settlement, without a timer that could certify an early release.
@@ -107,14 +139,19 @@ export class PeAuthService extends Service {
   close(): Promise<void> {
     if (this.closing !== undefined) return this.closing
     this.phase = 'closing'
+    this.closing = this.finishClose().catch(() => { throw new AuthAccessError('cloud/stop-unconfirmed', this.requestId) })
     void this.ingress?.closeActual().catch((_error: unknown) => {
       // finishClose joins the same actual ingress barrier and reports its safe failure.
     })
-    this.closing = this.finishClose().catch(() => { throw new AuthAccessError('cloud/stop-unconfirmed', this.requestId) })
     return this.closing
   }
 
   private async start(): Promise<void> {
+    const forwarding = this.config.ingress?.ownerForwarding
+    if (forwarding !== undefined) {
+      this.ownerRouting = await OwnerRouting.prepare(forwarding, () => { this.assertStarting() })
+      this.assertStarting()
+    }
     const secret = await this.resolveSecret(this.config.authSecretRef, true)
     this.assertStarting()
     const limits = this.config.pool
@@ -154,6 +191,7 @@ export class PeAuthService extends Service {
         assertAuthenticationCurrent: () => {
           if (this.phase !== 'initialized') throw new AuthAccessError('cloud/account-unavailable', this.requestId)
         },
+        ...(this.ownerRouting === undefined ? {} : { ownerRouting: this.ownerRouting }),
       })
       await this.ingress.install()
       this.assertStarting()
@@ -187,6 +225,7 @@ export class PeAuthService extends Service {
   private async finishClose(): Promise<void> {
     await Promise.allSettled([this.starting])
     await this.ingress?.closeActual()
+    await this.ownerRouting?.closeActual()
     this.ingressFinal = this.ingress?.observe()
     await this.auth?.close()
     await Promise.allSettled([...this.secrets])
@@ -194,6 +233,7 @@ export class PeAuthService extends Service {
     this.pool = undefined
     this.auth = undefined
     this.ingress = undefined
+    this.ownerRouting = undefined
     this.phase = 'closed'
   }
 

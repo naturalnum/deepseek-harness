@@ -1,10 +1,13 @@
 /** Bind reviewed native save submissions to the runtime-owned account barrier. */
 import type { Context } from '@deepseek-ai/cordis'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import type ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import type { ConfigSaveSubmissionHook } from '@deepseek-ai/dsh-config-editor'
 import type { CredentialProvider, CredentialSaveSubmissionHook } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
+import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
 import type { ConfigSaveBarrier, ConfigSaveKind } from './save-hooks.ts'
 
 function assertBinding(ctx: Context, barrier: ConfigSaveBarrier): void {
@@ -33,12 +36,45 @@ function admit<T>(ctx: Context, barrier: ConfigSaveBarrier, kind: ConfigSaveKind
 
 function bindEditorSaveHook(
   ctx: Context, barrier: ConfigSaveBarrier, editor: ConfigEditor, kindOf: (writer: string) => ConfigSaveKind,
+  liveOnly = false,
 ): () => Promise<void> {
   assertBinding(ctx, barrier)
+  const scopes = new AsyncLocalStorage<{ planSeen: boolean }>()
+  const impact = liveOnly ? editor.registerImpactGuard({ check() {
+    assertBinding(ctx, barrier)
+    const scope = scopes.getStore()
+    if (scope !== undefined) scope.planSeen = true
+  } }) : undefined
   const hook: ConfigSaveSubmissionHook = {
-    submit: (writer, submit) => admit(ctx, barrier, kindOf(writer), submit),
+    submit<T>(writer: string, submit: () => Promise<T>): Promise<T> {
+      const kind = kindOf(writer)
+      if (!liveOnly) return admit(ctx, barrier, kind, submit)
+      // The installed native guarded path performs no replacement or reconcile before its plan check.
+      const result = admit(ctx, barrier, kind, () => scopes.run({ planSeen: false }, async () => {
+        try { return { ok: true as const, value: await submit() } }
+        catch (error) {
+          const outcome = editor.editFailureOutcome(error)
+          if (outcome === 'not-published') return { ok: false as const, error }
+          if (outcome === 'unknown') throw new ConfigSaveOutcomeUnknown({ cause: error })
+          if (writer === 'settings/write' && error instanceof SettingsConflictError) {
+            if (scopes.getStore()?.planSeen === false) return { ok: false as const, error }
+            throw new ConfigSaveOutcomeUnknown()  // A post-plan exception cannot certify a zero-write revision refusal.
+          }
+          throw error
+        }
+      }))
+      return result.then((value) => {
+        if (!value.ok) throw value.error  // The no-write refusal follows settlement of its original serial turn.
+        return value.value
+      })
+    },
   }
-  return guardDisposal(barrier, editor.registerSaveHook(hook))
+  const dispose = editor.registerSaveHook(hook)
+  return guardDisposal(barrier, async () => {
+    await dispose()
+    await impact?.()
+    scopes.disable()
+  })
 }
 
 function requireEditor(ctx: Context, barrier: ConfigSaveBarrier): ConfigEditor {
@@ -96,7 +132,7 @@ export function bindNativeConfigSaveHook(ctx: Context, barrier: ConfigSaveBarrie
       case 'config-editor/edit': return 'config-editor'
       default: return unreviewedWriter()
     }
-  })
+  }, true)
 }
 
 /**
@@ -129,7 +165,13 @@ export function bindNativeCredentialSaveHook(
 ): () => Promise<void> {
   assertBinding(ctx, barrier)
   const hook: CredentialSaveSubmissionHook = {
-    submit: (_operation, submit) => admit(ctx, barrier, 'credentials', submit),
+    submit: (operation, submit) => {
+      assertBinding(ctx, barrier)
+      return barrier.admitCredentialSave(operation, () => {
+        assertBinding(ctx, barrier)
+        return submit()
+      })
+    },
   }
   return guardDisposal(barrier, credentials.registerSaveHook(hook))
 }

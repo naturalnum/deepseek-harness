@@ -91,3 +91,17 @@ it.each([0, -1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, undefined, null
     expect(() => parseCloudWebManifest({ ...web, client: { ...valid, maxDownloadBytes } })).toThrow()
   },
 )
+
+
+it('requires explicit sample-editor file/deadline bounds without enabling legacy manifests', () => {
+  expect(Object.hasOwn(parseCloudClientConfig(valid), 'skillSettings')).toBe(false)
+  const skillSettings = { requestTimeoutMs: 1000, maxFileBytes: 4096 }
+  const parsed = parseCloudClientConfig({ ...valid, skillSettings })
+  expect(parsed.skillSettings).toEqual(skillSettings)
+  expect(parsed.skillSettings).not.toBe(skillSettings)
+  expect(Object.isFrozen(parsed.skillSettings)).toBe(true)
+  for (const invalid of [{}, { requestTimeoutMs: 0, maxFileBytes: 1 }, { requestTimeoutMs: 1, maxFileBytes: Infinity },
+    { ...skillSettings, account: 'forbidden' }, undefined]) {
+    expect(() => parseCloudClientConfig({ ...valid, skillSettings: invalid })).toThrow()
+  }
+})

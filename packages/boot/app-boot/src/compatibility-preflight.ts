@@ -168,20 +168,28 @@ function preflight(
   return { rows, blocked: check(rows, parentURL) }
 }
 
-/** Apply compatibility policy to the complete patch composition over a profile's empty root.
- * The caller passes every patch layer of the profile, because this returns one insertion patch for
- * that empty root: a non-empty root config would lose the caller's override patches by id.
+/** Apply compatibility policy with the original Include's base and ordered patches.
  * @param ctx Profile context prepared by the launcher.
- * @param patches Original ordered profile patches; these remain unchanged.
+ * @param patches Original complete ordered profile patches; these remain unchanged.
  * @param parentURL Root Include's resolution base.
- * @param binName Diagnostic prefix for a denied row; defaults to `dsh`.
- * @returns One prepared insertion patch for profiles, or the original patches for non-profile callers.
+ * @param binName Diagnostic prefix.
+ * @param base Actual native root file rows; omission retains the empty-root profile path.
+ * @returns Original ordered patches plus native compatibility denials for a nonempty base, or the original empty-root insertion.
  */
 export function prepareProfilePatches(
-  ctx: Context, patches: PatchOptions[], parentURL: string, binName = 'dsh',
+  ctx: Context, patches: PatchOptions[], parentURL: string, binName = 'dsh', base: EntryOptions[] = [],
 ): PatchOptions[] {
   if (ctx.get('profileContext') === undefined) return patches
-  const entries = applyEntryPatches([], patches, patchWarning(ctx))
-  const rows = prepareProfileEntries(ctx, entries, parentURL, binName)
-  return rows.length === 0 ? [] : [{ insert: rows }]
+  const entries = applyEntryPatches(base, structuredClone(patches), patchWarning(ctx))
+  if (base.length === 0) {
+    const rows = prepareProfileEntries(ctx, entries, parentURL, binName)
+    return rows.length === 0 ? [] : [{ insert: rows }]
+  }
+  const denials: PatchOptions[] = []
+  preflight(ctx, entries, parentURL, (row, reason) => {
+    if (typeof row.id !== 'string' || row.id.length === 0) throw new Error('A denied native base row has no patch address')
+    process.stderr.write(`${binName}: disabling profile plugin row ${JSON.stringify(row.id)}: ${reason}\n`)
+    denials.push({ id: row.id, disabled: true, ...row.group === false ? { group: false } : {} })
+  })
+  return [...structuredClone(patches), ...denials]
 }

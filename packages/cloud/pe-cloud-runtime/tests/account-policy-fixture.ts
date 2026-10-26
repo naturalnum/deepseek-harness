@@ -1,13 +1,21 @@
 /** Native policy component fixture: real Loader/JSONL/Preset/API with owned Node files and an in-process model, no Root ready authority. */
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context, FiberState } from '@deepseek-ai/cordis'
-import { initProfile } from '@deepseek-ai/dsh-app-boot'
+import { fileURLToPath } from 'node:url'
+import { ClosedExecutionOwner } from '../../pe-opensandbox/src/closed-owner.ts'
+import { installIssuedExecutionPort } from '../../pe-opensandbox/src/account-port.ts'
+import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
+import * as ModelProvider from '@deepseek-ai/dsh-llm-deepseek-api-key'
+import { initProfile, PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import type { SubagentCapacityReservation } from '../src/types.ts'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -33,17 +41,17 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import FsLocal from '@deepseek-ai/dsh-fs-local'
 import LlmRuntime, { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier, type EndpointExposure,
-  type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+  type ExactFetchExposure, type ApprovedConfigurationCatalog, type ModelKeyPeerConsumer } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
-import { remoteMethods, type PeerId } from '@deepseek-ai/dsh-typert-protocol'
-import { onTestFinished } from 'vitest'
+import { remoteMethods, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
+import { onTestFinished, vi } from 'vitest'
 import { accountPresetConfigDigest, createAccountPolicy, type AccountPolicyConfig } from '../src/account-policy.ts'
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
 import { ACCOUNT_NATIVE_ENTRIES } from '../src/account-native-integration.ts'
 import { startNativeAccountBoot } from '../src/native-boot.ts'
 import { nativeProjectDeriver } from './native-project-fixture.ts'
-import type { AccountBinding, AccountId, OwnerEpoch } from '../src/types.ts'
+import type { AccountBinding, AccountId, OwnerEpoch, AccountUse } from '../src/types.ts'
 
 class ExactQuery extends SessionQuery {
   override searchSessions(): Promise<never> { return Promise.reject(new Error('Unused full text search')) }
@@ -66,12 +74,15 @@ export class TextAdapter extends LlmAdapter {
 
 /**
  * Own one persistent Node directory; repeated graph starts preserve its actual native Workspace and JSONL data.
- * @returns Native graph starter and explicit finite deployment policy, without a PG owner, quota grant or AccountUse.
+ * @returns Native graph starter and finite policy; locale admission uses a synthetic Peer/Use, without PG or ready authority.
  */
 export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   firstScreen?: Omit<NonNullable<Parameters<CloudAccountApi['installFirstScreenEvents']>[1]>, 'home' | 'maxInventoryEntries'>
     & { readonly maxCollectionItems: number; readonly expectedHome?: string }, accountId = 'component',
-  rootFetch?: { readonly selected: readonly ExactFetchExposure[]; readonly inspectRootFetch?: () => readonly ExactFetchExposure[] }) {
+  rootFetch?: { readonly selected: readonly ExactFetchExposure[]; readonly inspectRootFetch?: () => readonly ExactFetchExposure[] },
+  bootstrapCatalog?: ApprovedConfigurationCatalog, settingsManifest?: Parameters<Typert['register']>[0],
+  reserveChild?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation,
+  presetChildFiber?: 'active' | 'pending') {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -80,15 +91,40 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   writeFileSync(configPath, '[]\n'); writeFileSync(patchPath, '[]\n')
   writeFileSync(join(home, 'package.json'), '{"name":"m8z-policy-component","private":true}\n')
   writeFileSync(credentials, 'version: 1\nrefs: {}\n', { mode: 0o600 })
+  if (bootstrapCatalog !== undefined) {
+    const scope = join(home, 'node_modules', '@deepseek-ai')
+    mkdirSync(scope, { recursive: true })
+    for (const [name, directory] of [['dsh-client-locale', '../../../client/locale/'],
+      ['dsh-llm-deepseek-api-key', '../../../llm/llm-deepseek-api-key/']] as const) {
+      symlinkSync(fileURLToPath(new URL(directory, import.meta.url)), join(scope, name), 'dir')
+    }
+    for (const directory of [home, profileRoot]) {
+      const manifestPath = join(directory, 'package.json'), manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest,
+        dependencies: Object.fromEntries(bootstrapCatalog.plugins.map(plugin => [plugin.packageName, plugin.packageVersion])),
+      }))
+    }
+  }
+
   const declaration = { id: 'cloud-chat', plugins: [
     { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
   ] }
+  const persona = presetChildFiber === undefined ? Persona : {
+    ...Persona,
+    apply(owner: Context, options: Persona.Config) {
+      Persona.apply(owner, options)
+      owner.inject([presetChildFiber === 'active' ? 'systemPrompt' : 'shell'], () => undefined)
+    },
+  }
   const config: AccountPolicyConfig = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
     models: [{ provider: 'local-text', model: 'plain-text' }], presetId: declaration.id, presetEntryId: 'cloud-preset',
     presetConfigSha256: accountPresetConfigDigest(declaration, 8192), maxPresetConfigBytes: 8192, agentLoopEntryId: 'agent-loop' })
   const saves = new ConfigSaveCoordinator({ maxAccounts: 2, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 1,
     maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 1, maxWaitersPerAccount: 2 })
   const shared = new Context()
+  const bootstrapPackages = bootstrapCatalog === undefined ? undefined : new PluginPackages(shared)
+  const execution = bootstrapCatalog === undefined ? undefined : new ClosedExecutionOwner(shared, 2)
+  if (execution !== undefined) shared.effect(() => () => { execution.close() }, 'fixture: original closed execution owner')
   const manifest = { recipeVersion: 'm8z', rpcEndpoints: [...['create', 'prompt', 'cancel', 'page'].map(method => ({
     endpoint: 'session/' + method, handlerId: 'native:sessionController',
     guard: method === 'create' ? 'account-project' as const : 'account-session' as const,
@@ -102,14 +138,17 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     { endpoint: 'remoteAccess/follow', handlerId: 'native:remoteAccess', guard: 'authenticated-account' as const },
     { endpoint: '$events', handlerId: 'native:typertGateway', guard: 'authenticated-account' as const },
   ]],
-  exactFetchRoutes: rootFetch?.selected ?? [], allowedSettings: [] }
-  const exposureOwner = new ExposureService(shared, manifest), exposure = exposureOwner.policy
+  exactFetchRoutes: rootFetch?.selected ?? [], allowedSettings: bootstrapCatalog?.fields.map(field =>
+    ({ namespace: field.namespace, fields: [field.field] })) ?? [] }
+  const exposureOwner = new ExposureService(shared,
+    bootstrapCatalog === undefined ? manifest : { ...manifest, approvedConfiguration: bootstrapCatalog })
+  const exposure = exposureOwner.policy
   const graphs: { close(): Promise<void> }[] = []
   onTestFinished(async () => {
     try { for (const graph of graphs.toReversed()) await graph.close(); saves.close(); await shared.fiber.dispose() }
     finally { rmSync(home, { recursive: true, force: true }) }
   })
-  const maxEntries = 128
+  const maxEntries = bootstrapCatalog?.maxEntries ?? 128
   const start = async (epoch = '1', selected = config, bootstrapPolicy = true,
     bootstrapInventory: { maxNativeInventoryEntries?: number } = { maxNativeInventoryEntries: maxEntries }) => {
     const lifetime = new AbortController(), peerLifetime = new AbortController(), adapter = new TextAdapter()
@@ -121,14 +160,22 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     let eventOwner: Context | undefined
     let events: ReturnType<CloudAccountApi['installFirstScreenEvents']> | undefined
     const directoryCalls: string[] = []
+    let businessOpen = true
     const actualGraph = (binding: AccountBinding): void => {
       if (ctx === undefined || ctx.get('peAccount') !== binding || binding.lifetime.aborted) throw new Error('Component graph lifetime ended')
       ctx.fiber.assertActive()
     }
+    const businessGraph = (binding: AccountBinding): void => { actualGraph(binding); if (!businessOpen) throw new Error('Original component business admission is closed') }
     const requireGuards = () => { if (guards === undefined) throw new Error('Component policy absent'); return guards }
     const requireApi = () => { if (api === undefined) throw new Error('Component API absent'); return api }
     const dependencies = { async apply(owner: Context) {
-      await owner.plugin(Typert); await owner.plugin(RemoteAccess); await owner.plugin(Gateway)
+      await owner.plugin(Typert)
+      if (settingsManifest !== undefined) {
+        const registry = owner.get('typert')
+        if (registry === undefined) throw new Error('Native fixture Typert registry absent')
+        registry.register(settingsManifest)
+      }
+      await owner.plugin(RemoteAccess); await owner.plugin(Gateway)
       await owner.plugin(Sessions); await owner.plugin(Projections)
       await owner.plugin(SystemPrompt, {}); await owner.plugin(Tools, {}); await owner.plugin(AgentRegistry)
       await owner.plugin(Storage); await owner.plugin(Json, { root: join(privateRoot, 'storage') })
@@ -141,7 +188,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     } }
     const loop = { inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
       apply(owner: Context, options: ConstructorParameters<typeof AgentLoop>[1]) {
-        requireApi().createAgentLoop(owner, requireGuards().agents, options)
+        requireApi().createAgentLoop(owner, requireGuards().agents, options,
+          reserveChild === undefined ? undefined : depth => reserveChild(owner.peAccount, depth))
       } }
     const controller = { inject: [...SessionController.inject, 'peCloudApi'], Config: SessionController.Config,
       apply(owner: Context, options: ConstructorParameters<typeof SessionController>[1]) {
@@ -167,6 +215,10 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     } }
     const rows = [
       { id: 'dependencies', name: 'cordis:m8z-dependencies' },
+      ...bootstrapCatalog === undefined ? [] : [
+        { id: 'execution', name: 'cordis:m8z-bootstrap-execution', config: { mode: 'closed', requiredCapabilities: [] } },
+        { id: 'model-provider', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: {} },
+      ],
       { id: 'editor', name: 'cordis:m8z-editor' },
       { id: 'credentials', name: 'cordis:m8z-credentials', config: { path: credentials, watch: false } },
       { id: 'jsonl', name: 'cordis:m8z-jsonl', config: { root: join(privateRoot, 'sessions'), compression: 'none' } },
@@ -176,10 +228,14 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       { id: 'presets', name: 'cordis:m8z-presets', config: { default: declaration.id } },
       { id: 'cloud-preset', name: 'cordis:m8z-preset', config: declaration },
       { id: 'model', name: 'cordis:m8z-model', config: { provider: 'local-text', model: 'plain-text' } },
+      ...reserveChild === undefined ? [] : [
+        { id: 'subagents', name: 'cordis:b1-subagents' },
+        { id: 'spawn', name: 'cordis:b1-spawn', config: { providerName: 'spawn' } },
+      ],
       { id: 'agent-loop', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop, config: { agents: [] } },
       { id: 'controller', name: 'cordis:m8z-controller', config: { nativeOpen: false } },
       ...firstScreen === undefined ? [] : [
-        { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: 'cordis:m8ax-locale', config: { preference: 'en' } },
+        { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: bootstrapCatalog === undefined ? 'cordis:m8ax-locale' : '@deepseek-ai/dsh-client-locale', config: { preference: 'en' } },
         { id: 'workspace-controller', name: 'cordis:m8ax-workspace-controller' },
         { id: 'settings-controller', name: 'cordis:m8ax-settings-controller' },
         { id: 'first-screen-events', name: 'cordis:m8ax-events' },
@@ -196,8 +252,22 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16,
       prepare(owner, binding) {
         ctx = owner; barrier = saves.createAccount(binding)
+        if (execution !== undefined) {
+          const internal = owner.loader.internal
+          if (internal === undefined) throw new Error('Native Loader import bridge absent')
+          const nativeImport = internal.import
+          const imported = vi.spyOn(internal, 'import').mockImplementation(async (specifier: string, ...args: unknown[]) => {
+            if (specifier === '@deepseek-ai/dsh-client-locale') return Locale
+            if (specifier === '@deepseek-ai/dsh-llm-deepseek-api-key') return ModelProvider
+            const namespace: unknown = await Reflect.apply(nativeImport, internal, [specifier, ...args])
+            return namespace
+          })
+          owner.effect(() => () => { imported.mockRestore() }, 'fixture: restore original source namespace bridge')
+          installIssuedExecutionPort(owner, execution.bind(owner, binding, () => { actualGraph(binding) }))
+        }
+
         api = new CloudAccountApi(owner, { binding, saves: barrier, selected: manifest, rootExposure: exposure,
-          assertMountCurrent: actualGraph, assertBusinessCurrent: actualGraph,
+          assertMountCurrent: actualGraph, assertBusinessCurrent: businessGraph,
           ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
           ...bootstrapInventory,
           ...rootFetch?.inspectRootFetch === undefined ? {} : { inspectRootFetch: rootFetch.inspectRootFetch },
@@ -233,9 +303,18 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
             if (entry?.fiber?.state === FiberState.ACTIVE) throw new Error('Component registration window ended')
           } }
         files = new CloudAccountFiles(owner, input)
-        guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries)
+        guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries, undefined, businessGraph)
         if (firstScreen !== undefined) {
+          const localeWrites: ModelKeyPeerConsumer | undefined = (bootstrapCatalog?.fields.length ?? 0) !== 0 ? {
+            withModelKeyPeerUse: (actual, consume) => {
+              if (actual !== localePeer) throw new Error('Foreign fixture locale Peer')
+              const check = (): void => { actualGraph(binding); peerLifetime.signal.throwIfAborted() }
+              const use: AccountUse = { binding, context: owner, assertCurrent: check, release() {} }
+              check(); return consume(use, check)
+            },
+          } : undefined
           nativeFirstScreen = api.prepareFirstScreen(owner, { ...firstScreen, maxInventoryEntries: maxEntries,
+            ...localeWrites === undefined ? {} : { settingsWrites: { ...localeWrites, fields: bootstrapCatalog?.fields ?? [] } },
             assertWorkspace: (workspace) => { requireGuards().assertWorkspace(workspace) },
             project: () => {
               if (files === undefined) throw new Error('Original fixture files owner absent')
@@ -255,10 +334,12 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
               apply(scope: Context) { eventOwner = scope } },
           })
         }
-        Object.assign(owner.loader.builtins, { 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
+        Object.assign(owner.loader.builtins, {
+          'b1-spawn': Spawn,
+          'b1-subagents': SubagentRuntime, 'm8z-bootstrap-execution': ExecutionAccount, 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-files': FilesAccount,
           'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': AgentPresets, 'm8z-preset': AgentPreset,
-          'm8z-persona': Persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
+          'm8z-persona': persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
           [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller })
       },
     })
@@ -280,7 +361,12 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     graphs.push({ close })
     const outcome = await handle.result
     if (outcome.status === 'failed') throw outcome.cause
-    if (api === undefined || files === undefined || guards === undefined) throw new Error('Component owners absent')
+    if (api === undefined || files === undefined || guards === undefined || barrier === undefined) throw new Error('Component owners absent')
+    if (reserveChild !== undefined) {
+      const check = guards.admitSubagent
+      if (check === undefined) throw new Error('Original child policy absent')
+      outcome.context.get('subagents')!.registerAdmission(check)
+    }
     const inventory = { recipeVersion: manifest.recipeVersion, rpcEndpoints: manifest.rpcEndpoints.filter(row =>
       remoteMethods(outcome.context.sessionController).some(marker => `${outcome.context.sessionController.typertRemote.namespace}/${marker.exportName ?? marker.method}` === row.endpoint
         && (marker.mode ?? 'rpc') === 'rpc')), streamEndpoints: manifest.streamEndpoints.filter(row =>
@@ -295,14 +381,21 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       }
       await api.auditPrepared(outcome.context)
     }
+    const localePeer: PeerScope = { id: brandString<PeerId>('bootstrap-locale-component'), ctx: outcome.context, principal: { kind: 'owner' },
+      interactions: 'answer', signal: peerLifetime.signal, dispose: async () => { peerLifetime.abort() } }
+    const invokeSettings = (ns: string, ops: unknown, expectedRevision: unknown): Promise<unknown> => {
+      return outcome.context.typertGateway.invoke({ namespace: 'settings', method: 'mutate', args: { ns, ops, expectedRevision }, peer: localePeer })
+    }
     const invoke = (method: string, request: object) => outcome.context.typertGateway.invoke({ namespace: 'session', method,
       args: { request }, peer: { id: brandString<PeerId>('policy-component'), ctx: outcome.context, principal: { kind: 'owner' },
         interactions: 'answer', signal: peerLifetime.signal, dispose: async () => { peerLifetime.abort() } } })
     return { ctx: outcome.context, binding: outcome.binding, files, guards, api, adapter, close, invoke, lifetime,
+      closeBusiness: () => { businessOpen = false },
       observeNativeDisposal: () => handle.dispose(),
-      directoryCalls, maxEntries, events, nativeFirstScreen, profileHome: privateRoot,
+      directoryCalls, maxEntries, events, nativeFirstScreen, invokeSettings, saveBarrier: barrier, profileHome: privateRoot,
       expectEventDisposalFailure: (error: unknown) => { expectedEventFailure = { error } },
       withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }
   }
-  return { start, config, declaration, project, privateRoot, patchPath, exposureOwner }
+  return { start, config, declaration, project, privateRoot, patchPath, exposureOwner, bootstrapPackages,
+    assertRootActive: () => { shared.fiber.assertActive() }, closeRoot: () => shared.fiber.dispose() }
 }

@@ -12,7 +12,14 @@ export interface StaticStorageConfig {
   readonly maxPlanBytes: number
   readonly maxMountInfoBytes: number
   readonly probeTimeoutMs: number
+  /** One Root-protected, hash-pinned cold-skill proof; omission supplies no revalidation authority. */
+  readonly skillRevalidation?: { readonly proofPath: string; readonly proofSha256: string }
 }
+
+/** Exact process observed by the original worker, independent of a proof's declarations. */
+export interface StorageProcessIdentity { readonly pid: number; readonly startTicks: string }
+/** Closed protected read and measured recipient process, retained within the original root reservation. */
+export interface ProtectedSkillProof { readonly bytes: Uint8Array<ArrayBuffer>; readonly process: StorageProcessIdentity }
 
 /** Root's actual preallocated backing object, checked without granting its contents or write access. */
 export interface StaticStorageBacking {

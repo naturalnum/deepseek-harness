@@ -7,16 +7,19 @@ import { pathToFileURL } from 'node:url'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { Context } from '@deepseek-ai/cordis'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import * as yaml from 'js-yaml'
 import z from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import {
-  readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
+  readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, composeProfileEntries,
   readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths,
   evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
   setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
   OFFICIAL_ON_DEMAND_CATALOG, getDshRuntimeVersion, ResolutionRestartRequired,
+  loadProfileDirectory, prepareProfilePluginUpdate, prepareProfileSelectionUpdate, assertProfileConfigUpdate, withProfileConfigUpdate,
+  reconcileProfilePatches, type ProfileConfigUpdatePlan,
 } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
 import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
@@ -58,6 +61,20 @@ export interface PluginSaveSubmissionHook {
    * @returns the original ChangeResult semantics after the admitted work settles.
    */
   submit(operation: PluginSaveOperation, submit: () => Promise<ChangeResult>): Promise<ChangeResult>
+}
+
+/** Shared entry/bundle selection policy; an idle owner retains this scope through actual application. */
+export interface PluginSelectionGuard {
+  readonly maxRegistryEntries: number
+  /** Trusted stopped-graph owner may request persistence followed by native restart; omission retains live planning. */
+  application?(): 'reconcile' | 'restart'
+  /** Recheck the original account/operation before persistence and after awaited policy work. */
+  assertCurrent(): void
+  /** @param plan Native exact-row decisions.
+ * @param target Original entry or bundle identity.
+ * @param enabled Requested selection. */
+  check(plan: ProfileConfigUpdatePlan, target: Readonly<{ kind: 'entry'; id: PluginEntryId }>
+    | Readonly<{ kind: 'bundle'; name: string }>, enabled: boolean): void | Promise<void>
 }
 
 /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
@@ -258,6 +275,9 @@ export class PluginManager extends TypertRemoteService {
   private readonly ownerContext: Context
   private readonly abort = new AbortController()
   private saveHook: PluginSaveSubmissionHook | undefined
+  private selectionGuard: PluginSelectionGuard | undefined
+  private readonly selectionFailures = new WeakMap<object, 'not-published' | 'unknown'>()
+  private readonly changeFailures = new WeakMap<ChangeResult, 'not-published' | 'unknown'>()
   /** Installations by request id, from their call until it settles. */
   private readonly installs = new Map<PluginInstallRequestId, InstallControl>()
 
@@ -299,6 +319,27 @@ export class PluginManager extends TypertRemoteService {
     return () => Promise.resolve(dispose())
   }
 
+  /** Bind the sole native selection guard; entry and bundle writes share preparation, persistence and reconcile.
+   * @param guard Original owner policy, not a replacement patch composer or supplied stop list.
+   * @returns Disposer; the caller retains this fiber until actual updates settle.
+   */
+  registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void> {
+    const dispose = this.ctx.effect(() => {
+      if (this.selectionGuard !== undefined) throw new Error('plugin-manager: a selection guard is already registered')
+      this.selectionGuard = guard
+      return () => { this.selectionGuard = undefined }
+    }, 'plugin-manager: native selection guard')
+    return () => Promise.resolve(dispose())
+  }
+
+  /** Read the original guarded writer's actual replacement disposition without changing its ChangeResult.
+   * @param result Exact native result object; copies and unrelated failures have no receipt.
+   * @returns Owner-observed zero-publication refusal or unknown after replacement was entered.
+   */
+  changeFailureOutcome(result: ChangeResult): 'not-published' | 'unknown' | undefined {
+    return this.changeFailures.get(result)
+  }
+
   /** Read exact plugin-version exemptions saved in this profile.
    * @returns Accepted package-name@version keys with the runtime versions they may run on, and any
    * record or file problem the reader rejected, which the caller reports instead of failing.
@@ -329,7 +370,7 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   async listPlugins(): Promise<PluginInfo[]> {
-    const rows = flatten(composeEntries([readProfilePatches('dsh', this.profile)]))
+    const rows = flatten(composeProfileEntries(this.ownerContext.root, readProfilePatches('dsh', this.profile)))
     const snapshot = await readPluginInventory(this.ctx)
     return snapshot.entries.map((entry) => {
       const actual = [...this.ctx.loader.entries()].find(row => row.id === entry.entryId)
@@ -533,7 +574,21 @@ export class PluginManager extends TypertRemoteService {
       const row = (await this.listPlugins()).find(item => item.entryId === id)
       if (row === undefined) throw new ManagementFailure('unknown-plugin')
       if (row.readOnlyReason !== undefined) throw new ManagementFailure(row.readOnlyReason)
-      await writePluginEnabled(this.profile, row.patchId, row.moduleName, enabled)
+      const guard = this.selectionGuard
+      await writePluginEnabled(this.profile, row.patchId, row.moduleName, enabled, guard === undefined ? undefined
+        : async (_before, after, persist) => {
+          await this.guardedSelection({ kind: 'entry', id }, enabled, async () => {
+            const target = [...this.ownerContext.loader.entries()].find(entry => entry.id === id)
+            if (target === undefined) throw new ManagementFailure('unknown-plugin')
+            const beforePatches = readProfilePatches('dsh', this.profile)
+            const loaded = loadProfileDirectory('dsh', this.profile.dir, this.profile.installAnchor, { readOnly: true })
+            const patches = readProfilePatches('dsh', this.profile, { ...loaded,
+              patches: yaml.load(after, { schema: entryListSchema }) as PatchOptions[] })
+            return { patches, plan: await prepareProfilePluginUpdate(
+              this.ownerContext.root, target, beforePatches, patches, guard.maxRegistryEntries,
+            ) }
+          }, persist, enabled ? [row.patchId] : [])
+        })
       Object.assign(result, await this.reload(enabled ? [row.patchId] : []))
       const current = (await this.listPlugins()).find(item => item.entryId === id)
       return current?.enabled !== enabled && this.ownerContext.get('hmr') !== undefined ? 'overridden' : undefined
@@ -844,7 +899,7 @@ export class PluginManager extends TypertRemoteService {
     }
   }
 
-  private async selectBundle(name: string, enabled: boolean): Promise<void> {
+  private bundleSelection(name: string, enabled: boolean) {
     const manifest = readProfileManifest('dsh', this.profile.dir)
     const previous = bundleSelection(manifest)
     if (enabled || !previous.includes(name)) {
@@ -860,10 +915,88 @@ export class PluginManager extends TypertRemoteService {
       if (this.protectsManager(name)) throw new ManagementFailure('management-required')
     }
     const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter(item => item !== name)
-    if (JSON.stringify(previous) === JSON.stringify(bundles)) return
+    if (JSON.stringify(previous) === JSON.stringify(bundles)) return { manifest, bundles, changed: false }
     manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } }
-    await saveManifest(this.profile.dir, manifest)
+    return { manifest, bundles, changed: true }
+  }
+
+  private previewBundlePatches(bundles: string[]): PatchOptions[] {
+    const preview = loadProfileDirectory('dsh', this.profile.dir, this.profile.installAnchor, { bundles, readOnly: true })
+    if (preview.skippedBundles.length !== 0) throw new ManagementFailure('operation-error')
+    return readProfilePatches('dsh', this.profile, preview)
+  }
+
+  /** Inspect the complete original bundle composition without writing or activating entries.
+   * @param name Preinstalled native bundle name.
+   * @param enabled Desired selection.
+   * @param maximum Bound on composed rows.
+   * @param application Whether the original caller will reconcile or restart the graph.
+   * @returns Opaque original profile plan; the writer prepares and checks it again under this same lock.
+   */
+  previewBundleSelection(name: string, enabled: boolean, maximum: number,
+    application: 'reconcile' | 'restart' = 'reconcile'): Promise<ProfileConfigUpdatePlan> {
+    return withFileLock(join(this.profile.dir, 'package.json'), async () => {
+      const { bundles } = this.bundleSelection(name, enabled)
+      const before = readProfilePatches('dsh', this.profile)
+      const inspectAfter = (): PatchOptions[] => this.previewBundlePatches(bundles)
+      return prepareProfileSelectionUpdate(this.ownerContext.root, before, inspectAfter(), maximum, application, inspectAfter)
+    }, { waitMs: this.lockWaitMs })
+  }
+
+  private async selectBundle(name: string, enabled: boolean): Promise<void> {
+    const { manifest, bundles, changed } = this.bundleSelection(name, enabled)
+    if (!changed) return
+    const persist = (): Promise<void> => saveManifest(this.profile.dir, manifest)
+    const guard = this.selectionGuard
+    if (guard === undefined) await persist()
+    else await this.guardedSelection({ kind: 'bundle', name }, enabled, async () => {
+      const before = readProfilePatches('dsh', this.profile)
+      const inspectAfter = (): PatchOptions[] => this.previewBundlePatches(bundles)
+      const patches = inspectAfter()
+      const plan = await prepareProfileSelectionUpdate(
+        this.ownerContext.root, before, patches, guard.maxRegistryEntries, guard.application?.(), inspectAfter,
+      )
+      return { plan, patches }
+    }, persist, enabled ? this.bundleRows(name).map(row => row.id) : [])
     if (enabled) this.protectsManager(name)
+  }
+
+  private async guardedSelection(
+    target: Parameters<PluginSelectionGuard['check']>[1], enabled: boolean,
+    prepare: () => Promise<{ plan: ProfileConfigUpdatePlan; patches: PatchOptions[] }>,
+    persist: () => Promise<void>, publishIds: string[],
+  ): Promise<void> {
+    const guard = this.selectionGuard
+    if (guard === undefined) throw new Error('plugin-manager: native selection guard is unavailable')
+    const publication = { entered: false }
+    try {
+      guard.assertCurrent()
+      const { plan, patches } = await prepare()
+      await guard.check(plan, target, enabled)
+      guard.assertCurrent()
+      assertProfileConfigUpdate(plan)
+      if (plan.restart !== undefined) {
+        if (this.ownerContext.get('hmr') !== undefined) throw new Error('Deferred native selection requires a no-HMR profile')
+        guard.assertCurrent()
+        publication.entered = true
+        await persist()
+        assertProfileConfigUpdate(plan, true)
+        return
+      }
+      await withProfileConfigUpdate(plan, async () => {
+        guard.assertCurrent()
+        publication.entered = true
+        await persist()
+        assertProfileConfigUpdate(plan, true)
+        await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh', publishIds)
+        await this.ownerContext.loader.await()
+      })
+    } catch (error) {
+      if (error !== null && typeof error === 'object') {
+        this.selectionFailures.set(error, publication.entered ? 'unknown' : 'not-published')
+      }
+      throw error
+    }
   }
 
   private bundleRows(name: string): EntryOptions[] {
@@ -926,7 +1059,7 @@ export class PluginManager extends TypertRemoteService {
     const hmr = this.ownerContext.get('hmr')
     if (hmr === undefined) {
       // Startup-only profiles recompose at restart; the saved patches still have to compose.
-      composeEntries([readProfilePatches('dsh', this.profile)])
+      composeProfileEntries(this.ownerContext.root, readProfilePatches('dsh', this.profile))
       return { warnings: [] }
     }
     const { warnings, pending, restartReason } = await hmr.reconcileProfile(requiredIds)
@@ -950,6 +1083,10 @@ export class PluginManager extends TypertRemoteService {
         // A reload that waits for a restart leaves the change saved but not applied.
         else if (result.application === 'applied' && result.restartReason !== undefined) result.application = 'restart-required'
       } catch (error) {
+        if (error !== null && typeof error === 'object') {
+          const outcome = this.selectionFailures.get(error)
+          if (outcome !== undefined) this.changeFailures.set(result, outcome)
+        }
         if (error instanceof InstallCancelledError) {
           result.application = 'cancelled'
         } else {

@@ -4,6 +4,7 @@ import type { ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { defaultProjectLayout } from './account-layout.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { startNativeAccountBoot, type NativeAccountBootHandle } from './native-boot.ts'
+import type { StartupObserver } from './startup-observation.ts'
 import type { AccountBinding, AccountMountInput } from './types.ts'
 import type { AccountNativePreparation } from './account-native-integration.ts'
 import { RootStorageOwner, type StaticAccountStorageLease } from '@deepseek-ai/dsh-pe-cloud-files/root'
@@ -61,10 +62,13 @@ export function requireAccountProductionPorts(recipe?: AccountRecipe): NonNullab
  * @param input Trusted generation, canonical layout, and exact native environment snapshot.
  * @param recipe Deployment-selected Profile and native preparation with explicit budgets.
  * @param lease Original production storage lease; absent only for isolated native-mechanism assembly.
+ * @param observeStartup Private original-owner observer; never an authority or cleanup participant.
  * @returns Actual native boot/disposal ownership, including partial startup.
  * @throws AccountRuntimeError for mismatched Profile addresses or ended generation; native read failures retain their identity.
  */
-export function mountAccount(input: AccountMountInput, recipe: AccountRecipe, lease?: StaticAccountStorageLease): NativeAccountBootHandle {
+export function mountAccount(
+  input: AccountMountInput, recipe: AccountRecipe, lease?: StaticAccountStorageLease, observeStartup?: StartupObserver,
+): NativeAccountBootHandle {
   const expectedCwd = defaultProjectLayout(input.layout, recipe.maxPathBytes).root
   if (recipe.profile.dir !== input.layout.profileRoot || recipe.profile.patchPath !== input.layout.patchPath
     || recipe.profile.home !== input.layout.privateRoot || recipe.profile.cwd !== expectedCwd
@@ -75,6 +79,7 @@ export function mountAccount(input: AccountMountInput, recipe: AccountRecipe, le
     binding: input.binding, environment: input.environment, profile: recipe.profile,
     configPath: recipe.configPath, bareModuleBaseUrl: recipe.bareModuleBaseUrl,
     requiredEntryIds: recipe.requiredEntryIds, maxObservedEvents: recipe.maxObservedEvents,
+    ...observeStartup === undefined ? {} : { observeStartup },
     ...recipe.native === undefined ? {} : { maxEntries: recipe.native.maxNativeInventoryEntries },
     ...lease === undefined ? {} : { assertBeforeNativeRead: () => { lease.assertBeforeNativeRead(recipe.profile, recipe.configPath) } },
     prepare: (ctx, binding) => recipe.prepare(ctx, binding),

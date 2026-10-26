@@ -10,7 +10,7 @@ import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { remoteDefaultResponses } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/remote-default-responses.ts'
 import { ok, RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { apply, inject, refreshIfLoaded } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import { apply, inject, refreshIfLoaded } from '../src/client/index.ts'
 import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'

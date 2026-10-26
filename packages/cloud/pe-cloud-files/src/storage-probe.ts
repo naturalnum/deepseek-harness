@@ -141,8 +141,13 @@ export function staticStorageReservation(config: StaticStorageConfig, maxPathByt
     || config.probeTimeoutMs > 2147483647 || !/^[a-f0-9]{64}$/.test(config.planSha256)
     || !/^[a-f0-9]{64}$/.test(config.probeHelperSha256)) invalid()
   path(config.planPath, maxPathBytes); path(config.probeHelperPath, maxPathBytes)
+  if (config.skillRevalidation !== undefined) {
+    path(config.skillRevalidation.proofPath, maxPathBytes)
+    if (!/^[a-f0-9]{64}$/.test(config.skillRevalidation.proofSha256)) invalid()
+  }
   const bytes = 8 * config.maxPlanBytes + 64 * config.maxMountInfoBytes
     + 2 * config.maxProbeAssetBytes * workerCount + 8 * maxPathBytes + 16384
+    + (config.skillRevalidation === undefined ? 0 : 16 * config.maxPlanBytes)
   if (!Number.isSafeInteger(bytes) || config.rootProbeReservationBytes < bytes) invalid()
   return config.rootProbeReservationBytes
 }

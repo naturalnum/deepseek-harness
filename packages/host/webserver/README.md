@@ -40,6 +40,8 @@ Compose the webserver as the HTTP transport of a browser-facing host, then let t
 
 Set `compression: 'gzip'` to wrap eligible socket-backed responses without changing route APIs. The client must accept gzip and the media type must be compressible or `multipart/form-data`; known response lengths below `compressionThresholdBytes` remain uncompressed, while unknown-length streams are eligible immediately. Existing encodings, `Cache-Control: no-transform`, range responses, SSE, ZIP, and the packaged `.gz` Worker image remain unchanged. The shipped Web bundle uses compression level 1 with a 1024-byte threshold; other compositions default to no compression.
 
+Set `transportLimits` with explicit positive integer `maxHeaderPairs`, `maxHeaderBytes`, `highWaterMark`, and `maxConnections` to configure the original HTTP/HTTPS listener before it binds. `maxHeaderPairs` must be at most `0x3fff_fffe`; the parser captures one extra pair, and each route must reject a larger raw-header count before interpreting or forwarding it. Node enforces the header-byte and connection limits; the high-water mark controls stream buffering, not total process memory. This option rejects ordinary `Expect` requests with 417 before automatic 100 Continue and closes upgrades carrying `Expect`. Upgraded raw sockets retain their writable half after a peer FIN until their owner ends or destroys them; ordinary HTTP framing keeps Node's behavior. Omitting the option or setting it to null keeps the original transport defaults and Expect handling. For TLS, Root must explicitly choose the current `getDefaultHighWaterMark(false)` value: the native HTTPS listener does not apply a custom watermark. A different selection rejects initialization, the default is rechecked after the PEM read, and connections/requests with different actual stream watermarks are closed before route dispatch. HTTP applies the selected value directly. Raw relays should explicitly select `compression: 'none'`.
+
 ### Serving HTTPS
 
 `tls` serves the same routes over TLS on that one address: the carrier opens no second HTTP listener and never redirects. Both files are read once during activation, before the socket binds, so an unreadable, empty, or malformed file, a key that does not match the certificate, or a bind failure rejects initialization — a misconfigured certificate never falls back to HTTP. Paths resolve against the process working directory, the key must be unencrypted PEM, and `certFile` may hold a chain whose leaf certificate comes first. Replacing either file takes a reload, and this carrier neither provisions nor renews certificates.
@@ -55,6 +57,8 @@ Set `compression: 'gzip'` to wrap eligible socket-backed responses without chang
 ```
 
 `ctx.webServer.protocol` reads `'http:'` or `'https:'` for the bound listener, so a plugin that keys request policy — a session cookie's `Secure` flag, an origin check — on the transport reads one configuration-derived value instead of inspecting sockets or trusting forwarded headers. Clients still verify the certificate you supplied: this carrier ships no trust store, no HTTP-to-HTTPS redirect, and no HSTS header.
+
+Set `tls.clientCa` to `{ certFile, maxBytes }` to request client certificates against a controlled CA PEM bundle on this same listener. The bundle must be a regular file containing only CA certificate blocks within the explicit positive byte budget; one extra byte detects growth, and the read handle closes before validation settles. Missing, empty, oversized or invalid material rejects initialization before listen. The original server certificate/key reads retain their existing behavior. When selected, Node uses `requestCert: true` and `rejectUnauthorized: false`, so anonymous and unauthorized peers can still reach ordinary public routes. Route owners inspect the original `TLSSocket.authorized` and `getPeerCertificate()` result; neither a certificate nor any HTTP header grants an account or node identity. Omitting `clientCa` or setting it to null keeps ordinary HTTPS without requesting a client certificate. The CA is read once at activation; replacing it requires a reload.
 
 ### Registering routes
 
@@ -128,7 +132,7 @@ These limits define where the server is intentionally minimal. They are current 
 
 - **No certificate lifecycle** — `tls` serves the PEM files present at activation: the carrier never provisions, renews, or watches them, and it applies Node's default TLS policy. Replacing a certificate takes a reload.
 - **No server-wide authentication or origin policy** — route owners such as `dsh-client-connection` enforce their own request policy. Binding a non-loopback address still exposes unprotected routes and static assets to that network.
-- **Socket options are fixed** — config selects the bind host and port, while backlog and other socket settings remain internal until a deployment needs them.
+- **Listener backlog**: backlog uses Node’s default; `transportLimits` configures only the documented parser, stream and connection limits.
 
 <a id="dev-note"></a>
 ### Dev Note

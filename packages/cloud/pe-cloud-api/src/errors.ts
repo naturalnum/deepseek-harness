@@ -5,7 +5,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 export type CloudApiErrorCode =
   | 'cloud/forbidden' | 'cloud/invalid-config' | 'cloud/account-unavailable'
   | 'cloud/stale-generation' | 'cloud/model-not-allowed'
-  | 'cloud/config-busy' | 'cloud/capacity'
+  | 'cloud/config-busy' | 'cloud/config-conflict' | 'cloud/capacity'
   | 'cloud/invalid-project-title'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -15,7 +15,15 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cloud/account-unavailable': {}
     'cloud/stale-generation': {}
     'cloud/model-not-allowed': Record<string, never>
-    'cloud/config-busy': Record<string, never>
+    'cloud/config-busy': Readonly<{ peerWork?: Readonly<{
+      nonReadyPeers: number
+      preparingPeers: number
+      recheckingPeers: number
+      cleanupFaultPeers: number
+      businessStreamPeers: number
+      otherTaskPeers: number
+    }> }>
+    'cloud/config-conflict': Record<string, never>
     'cloud/capacity': {}
     'cloud/invalid-project-title': Record<string, never>
   }

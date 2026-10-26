@@ -253,6 +253,23 @@ export class SessionAllocationOwner<Mount> {
       waiters: this.waiting.count })
   }
 
+  /**
+   * Observe the original bounded preparation/stop records without renewing or releasing a warm allocation.
+   * @param binding Exact installed epoch; another binding for the same account is unavailable.
+   * @returns True for no allocation or fully settled ready allocations; failure, waiters and cleanup remain busy.
+   */
+  isEpochIdle(binding: AccountBinding): boolean {
+    if (!this.admission.open || binding.lifetime.aborted) return false
+    for (const work of this.work.values()) {
+      if (work.request.binding.accountId !== binding.accountId) continue
+      if (work.request.binding !== binding || work.stopping || work.stop !== undefined || work.reconcile !== undefined
+        || work.stopFailure !== undefined || work.released || work.backendStopped || work.waiters.size !== 0
+        || work.settlement?.ok !== true || work.row?.state !== 'ready' || work.mount === undefined
+        || work.prepared === undefined || work.settlement.value !== work.prepared) return false
+    }
+    return true
+  }
+
   private async create(work: AllocationWork<Mount>): Promise<PreparedSandbox> {
     const mount = await work.request.prepareMount()
     work.mount = mount

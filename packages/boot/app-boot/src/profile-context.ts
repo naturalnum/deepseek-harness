@@ -61,7 +61,7 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @returns Bundle patches in application order.
  */
 export function readBundlePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
-  const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
+  const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false, readOnly: true })
   return profile.layers.flatMap(layer => layer.patches)
 }
 

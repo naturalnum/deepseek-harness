@@ -3,13 +3,14 @@ import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { createAccountExposure } from './account-exposure.ts'
 import { CloudApiError } from './errors.ts'
 import type { ExposurePolicy } from './exposure.ts'
 import { bindNativeConfigSaveHook, bindNativeCredentialSaveHook } from './native-save-hook.ts'
-import type { ConfigSaveBarrier, ConfigSaveReceipt } from './save-hooks.ts'
+import type { ConfigSaveBarrier, ConfigSaveReceipt, CredentialEditVersion, CredentialEditView } from './save-hooks.ts'
 import type { ExposureManifest } from './types.ts'
 
 /** Private structural result retained by trusted account assembly, never Loader JSON or a ready certificate. */
@@ -24,6 +25,32 @@ export interface AccountApiInstall {
   readonly credentials: typeof LocalCredentialProvider
   /** @param owner Owning graph scope; rejects withdrawal, a closed fiber or a different installed binding. */
   assertInstalled(owner: Context): void
+  /**
+   * Read the original native redacted description and this owner's edit version.
+   * @param ref - Root-approved native reference.
+   * @param assertCurrent - optional read-only request check inside the same serial turn.
+   * @returns native nonsecret facts and the original version; this is not an exposed RPC.
+   */
+  describeCredentialEdit(ref: CredentialRef, assertCurrent?: () => void): Promise<CredentialEditView>
+  /**
+   * Set through the original native provider and checked serial owner.
+   * @param ref - approved original reference.
+   * @param value - secret submitted for this operation only.
+   * @param assertCurrent - optional read-only request check repeated inside the original serial turn, before native work.
+   * @param version - original concurrency version, detached before queueing.
+   * @returns the version after actual native save and required application settle.
+   */
+  setCredential(
+    ref: CredentialRef, value: string, version: CredentialEditVersion, assertCurrent?: () => void,
+  ): Promise<CredentialEditVersion>
+  /**
+   * Unset through the same original native provider and save owner.
+   * @param ref - approved original reference.
+   * @param assertCurrent - optional read-only request check repeated inside the original serial turn, before native work.
+   * @param version - original concurrency version.
+   * @returns the successful save version; native resolution still follows the account's explicit environment snapshot.
+   */
+  unsetCredential(ref: CredentialRef, version: CredentialEditVersion, assertCurrent?: () => void): Promise<CredentialEditVersion>
   /**
    * Pause top-level configuration submissions, retaining actual admitted work.
    * @param deadlineAtMs - finite absolute server observation deadline.
@@ -123,10 +150,30 @@ export function prepareAccountApiInstall(
       super(owner, config)
       credentialHook = bindNativeCredentialSaveHook(owner, saves, this)
     }
+
+    assertAccountCurrent(): void { assertInstalled(this.ctx) }
+  }
+
+  const credentialProvider = (): LocalCredentialProvider => {
+    assertInstalled(ctx)
+    const provider = ctx.get('credentials')
+    if (!(provider instanceof AccountCredentials)) {
+      throw new CloudApiError('cloud/account-unavailable', 'The original account credential provider is not available.')
+    }
+    provider.assertAccountCurrent()
+    return provider
   }
 
   return Object.freeze({
     binding, exposure, configEditor: AccountConfigEditor, credentials: AccountCredentials, assertInstalled,
+    describeCredentialEdit: (ref: CredentialRef, assertCurrent?: () => void) =>
+      saves.describeCredentialEdit(ref, () => credentialProvider().describe(ref), assertCurrent),
+    setCredential: (ref: CredentialRef, value: string, version: CredentialEditVersion, assertCurrent?: () => void) => {
+      if (value.length === 0) throw new CloudApiError('cloud/forbidden', 'An empty credential value cannot be stored; use unset.')
+      return saves.commitCredentialEdit(ref, version, () => credentialProvider().set(ref, value), assertCurrent)
+    },
+    unsetCredential: (ref: CredentialRef, version: CredentialEditVersion, assertCurrent?: () => void) =>
+      saves.commitCredentialEdit(ref, version, () => credentialProvider().unset(ref), assertCurrent),
     pauseAccountChanges: (deadlineAtMs: number, signal?: AbortSignal) => saves.pauseAccountChanges(deadlineAtMs, signal),
     resumeAccountChanges: () => { saves.resumeAccountChanges() },
     stopConfigSaves: (deadlineAtMs: number, signal?: AbortSignal) => saves.stopConfigSaves(deadlineAtMs, signal),

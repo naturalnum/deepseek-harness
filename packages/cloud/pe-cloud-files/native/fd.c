@@ -1160,6 +1160,12 @@ finished:
 }
 #endif
 
+#ifdef DSH_FD_SKILL_ABI
+#include "skill-versions.h"
+#include "skill-project.h"
+#include "skill-bundles.h"
+#endif
+
 static void cleanup(napi_env env, void *data, void *hint) {
   (void)env;
   (void)hint;
@@ -1177,6 +1183,16 @@ static napi_value init(napi_env env, napi_value exports) {
   owned->mount_id = 0;
   if (napi_set_instance_data(env, owned, cleanup, NULL) != napi_ok) { free(owned); return fail(env, EIO); }
   napi_property_descriptor methods[] = {
+#ifdef DSH_FD_SKILL_ABI
+    {"skillBundleOperation", NULL, skill_bundle_operation, NULL, NULL, NULL, napi_default, NULL},
+    {"projectSkillVersion", NULL, project_skill_version, NULL, NULL, NULL, napi_default, NULL},
+    {"prepareSkillStore", NULL, prepare_skill_store, NULL, NULL, NULL, napi_default, NULL},
+    {"verifySkillStore", NULL, verify_skill_store, NULL, NULL, NULL, napi_default, NULL},
+    {"prepareSkillParent", NULL, prepare_skill_parent, NULL, NULL, NULL, napi_default, NULL},
+    {"verifySkillParent", NULL, verify_skill_parent, NULL, NULL, NULL, napi_default, NULL},
+    {"prepareSkillVersion", NULL, prepare_skill_version, NULL, NULL, NULL, napi_default, NULL},
+    {"retireSkillVersions", NULL, retire_skill_versions, NULL, NULL, NULL, napi_default, NULL},
+#endif
 #ifdef DSH_FD_CONTENT_ABI
     {"prepareEnvironmentLayout", NULL, prepare_environment_layout, NULL, NULL, NULL, napi_default, NULL},
     {"prepareProjectMetadata", NULL, prepare_project_metadata, NULL, NULL, NULL, napi_default, NULL},
@@ -1210,6 +1226,15 @@ static napi_value init(napi_env env, napi_value exports) {
   napi_create_uint32(env, 7, &abi);
 #else
   napi_create_uint32(env, 6, &abi);
+#endif
+#ifdef DSH_FD_SKILL_ABI
+  napi_value skill_version;
+  napi_create_uint32(env, 1, &skill_version);
+  napi_set_named_property(env, exports, "skillVersionsVersion", skill_version);
+  napi_set_named_property(env, exports, "skillProjectionVersion", skill_version);
+  napi_set_named_property(env, exports, "skillBundleVersion", skill_version);
+  napi_set_named_property(env, exports, "skillBundleProjectionVersion", skill_version);
+  napi_set_named_property(env, exports, "skillBundleReclaimVersion", skill_version);
 #endif
   napi_set_named_property(env, exports, "abiVersion", abi);
   napi_define_properties(env, exports, sizeof(methods) / sizeof(methods[0]), methods);

@@ -108,9 +108,25 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'cloudModelKey', pkg: 'pe-cloud-api', title: 'Account model-key editing', mode: 'service',
+    consumers: ['pe-cloud-api'],
+    note: 'Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner.',
+  },
+  {
+    key: 'cloudPlugins', pkg: 'pe-cloud-api', title: 'Approved account plugin controls', mode: 'service',
+    consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Adapts fixed plugin edits to original Peer admission, account saves and native profile application.',
+  },
+  {
     key: 'cloudProjects', pkg: 'pe-cloud-api', title: 'Account project metadata', mode: 'service',
     consumers: ['pe-cloud-api', 'pe-cloud-runtime'],
     note: 'Adapts native Workspace operations to the installed account files owner and approved project roots.',
+  },
+  {
+    key: 'cloudSkills', pkg: 'pe-cloud-api', title: 'Account skill installation management', mode: 'service',
+    consumers: ['pe-cloud-api', 'pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Manages account skill installations and complete packages through original Peer admission, account saves '
+      + 'and files-owned catalog/version CAS.',
   },
   {
     key: 'peAccount', pkg: 'pe-cloud-runtime', title: 'Installed account generation', mode: 'core',

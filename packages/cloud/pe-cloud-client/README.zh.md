@@ -59,10 +59,40 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 | `maxSockets` | 必填 | 单个固定载体拥有的 socket 数量上限。 |
 | `closeTimeoutMs` | 必填 | 关闭观察截止时间；到期不代表清理已确认。 |
 | `maxDownloadBytes` | 无默认值 | 可选的正安全整数下载接收上限；省略时不注册两个下载动作。 |
+| `modelSettingsRequestTimeoutMs` | 无默认值 | 可选的有限正数原生模型设置 RPC 观察期限；省略时关闭此集成。 |
+| `skillSettings` | 无默认值 | 可选 `{ requestTimeoutMs, maxFileBytes }`；两项均须为正安全整数，截止时间在平台定时器范围内。省略时不启用技能管理。 |
+
+### 原生 Models 密钥编辑
+
+`modelSettingsRequestTimeoutMs` 是可选的原生模型设置 RPC 观察者期限，须为平台 timer 范围内的正整数；省略时保持该功能关闭。原 `PreparedCloudPage` 在 UI 激活前提供类型化 Models 集成。编辑源初始为 `null`，仅接收从原依赖 scope 捕获的回调，并在等待页面清理前同步撤销。页面、Connection 或依赖 fiber 替换时，await 前后均拒绝旧回调；撤回不表示已发保存已被取消。UI 身份使用原连接代际与依赖 fiber，不依赖元数据或编辑 token。
+
+显式配置 `client.modelSettingsRequestTimeoutMs` 后，原始 prepared page 才启用 Models 集成。现有生成 API contribution 只挂载一次；适配器使用其中实际的 `cloudModelKey.metadata/describe/set/unset` 命名空间。只读元数据输入原始 Models store。每次打开编辑意图只 describe 一次，set 或仅删除 key 的 unset 始终使用当时捕获的版本；后台读取不替换版本。只有原生校验通过的 `persisted: true` 回执确认保存。失败显示固定本地化文案。页面或依赖撤销时，先发布 null 并使旧回调失效，再等待异步清理。 Cloud 在 UI 激活前于此不可变页面输入中固定 `onboarding: false`，因此不注册 Welcome 或凭据 onboarding，编辑源为 null 或已撤销时亦然。密钥通过原生 Settings/Models 面板手动配置。
+
+配置该期限时另声明原生 `ui-settings-models` 浏览器入口，并依赖部署已有的 `ui-settings` 基座。显式服务预览策略另声明 `ui-tool`，由它提供 tool-call 卡片及 keyed tool view。实际发布范围必须包含这些包并重建浏览器产物；仅声明不能证明浏览器已激活或面板已渲染。每个声明包仅保留一个供应方。general 包负责 Settings 面板；`ui-settings-shell` 是独立的 shell 偏好功能。
+
+### 原生技能管理
+
+`client.skillSettings` 与 bootstrap 的 `configuration.skills.manage` 启用原 `power-evolve-skills` 面板及原生侧栏，注册时不发起 RPC。显式刷新通过 `cloudSkills.installed` 读取完整有界清单并投影到 `PreparedCloudPage.skillVersionEditing`；生成命名空间依赖、原生槽位、语言字典及共享反馈宿主仍由原拥有者持有。限额取自实际账户答复，浏览器不设默认值。行内容报告实际安装版本及原生来源/覆盖观察，不把获批目录猜成已安装，也不由客户端计算优先级。变更确认后，其他行的覆盖观察失效并提示显式刷新，不重算优先级或续期已打开的编辑。
+
+打开安装项时只读取一次 `details`，并捕获当时的目录编辑版本。安装、完整更新及卸载均只使用该版本尝试一次，刷新清单不续期已打开的编辑。详情包含完整文件元数据，不包含已发布说明正文；面板如实报告这一限制，不伪造文档。ZIP 导出读取所选的确切内容版本。安装标识与原生技能名保持区分，不透明版本仅保留在捕获的回调中。
+
+用户选择完整目录、完整文件集或 ZIP/.skill 技能包。浏览器检查有限的路径、文件、目录与字节上限，并严格解码所选根 `SKILL.md`，不解析技能元数据或解包。原浏览器 File 保持不变，说明正文使用独立可编辑文本。提交读取全部所选资源，仅将根说明替换为编辑后的字节，从不执行脚本。实际解码、路径/链接/类型和展开量检查、不可变版本签发及资源生命周期均由 files/account 持有。移除会停止后续发现与加载，不承诺擦除历史、删除已有项目副本或停止脚本。
+
+已确认持久化与原生应用分别呈现。冲突、结果未确认和撤销会保留本地草稿并消耗写入尝试，不自动重放变更、提示词、替换令牌或读取。草稿只可留在同一账户/页面/依赖作用域；不同作用域会清空通用与兼容编辑的所选内容，迟到读写不能更新新作用域。取消只结束浏览器观察，不确认服务端回滚或结算。
+
+下载使用完整有界 ZIP 答复及临时浏览器 Blob URL；请求浏览器下载后，适配器释放锚点和 URL。界面只确认浏览器发起下载，不确认操作系统已保存文件。答复检查发生在原生传输接收有界 JSON 后，不构成流式分配上限。后端授权、源完整性及驻留计费仍保持权威。
+
+折叠的兼容示例编辑保留生成的 `current/publish`、`slot: 'sample'` 及完整 `SKILL.md/resource.bin` 两文件输入。它与多技能视图共用原页面源，更新时保留通用行，后续目录变化由显式刷新观察。API 将此兼容项保留在同一目录权威中。`skillSettings` 的 `maxFileBytes` 继续约束两文件编辑，通用技能包限额来自实际能力元数据。公开 Client 声明保留生成 API Remote 类型依赖，不挂载另一个 contribution。
 
 -----
 
 Cloud entry 仅在显式提供 `maxDownloadBytes` 且 bootstrap filePreview 为 available 时，向原生文档预览 actions 和 unpreviewable slots 安装下载动作。注册适配器以框架注入的 SessionId、owner.absolutePath 和原生 `sessionFileAddress` 构造地址，捕获唯一原 readBytes 方法及已准备 transport 的 signal，不读取全局选中 Session。其独立 `CloudFileDownload`/`FileDownloadButton` 只请求完整字节并保存 `application/octet-stream` Blob。更小的消费者接收上限不替代原生读取及 body 内存限制。每次读取保留至结算；页面撤销、声明退出、替换和卸载均丢弃迟到结果，并回收临时锚点/Blob URL。文案归 cloud-file-download namespace，并随 Cordis scope 撤销。发起浏览器保存不证明操作系统已写入文件，也不能回滚已发出的请求。旧七字段输入仍合法且不注册下载；原生预览与服务端授权保持权威。
+
+通用管理装配通过生成的 `cloudPlugins/current/change` 命名空间呈现原 bootstrap 批准的插件目录，复用既有侧栏和 shell 反馈。显式刷新按目录顺序读取每个获批标识。开启条目启停、插件包选择或普通配置编辑时再次读取，并私有捕获该次原 epoch/edit token。原生元数据提供各卡片的本地化文本和操作权限；预安装插件包选择使用同一获批标识及原 `selected` 操作。原生 `BundleInfo.enabled` 提供 manifest 选择状态，`installed` 提供 profile 依赖声明，`availability` 提供可读文件来源，`version` 提供原生公开版本。没有 Entry 的插件包不填造模块或条目启用状态。操作同时要求 bootstrap 能力及实际操作权限；选择路径不提供包安装器。只读条目保持 operations／fields 为空，也不要求 maxImpact 值。挂载、选择字段、修改草稿或切换语言均不读取账户。
+
+普通配置使用原生 JSON Schema 元数据及共享 `ConfigField`／`JsonTree` 控件。每次提交写入一个获批路径及字面 JSON 值，由原生校验器负责 schema 验收。Schema 限制及省略语义保持可见。原生字段的可写／只读元数据约束每个字段。脱敏秘密字段的 set 状态保持可见；现有秘密值不作为草稿初值，秘密／受保护／volatile 或无法确认安全性的字段均不能进行普通配置写入。不开放 Loader 表达式、原型控制键、原始 Profile 或 YAML 编辑。当前 DTO 没有 unset 操作，因此不能恢复默认值；JSON null 始终表示显式值。
+
+每次提交必须显式选择 `if-idle` 或 `stop-and-apply`；后者清楚说明将停止账户活动，并可能需要重连。提交重新核验原页面、依赖作用域、Connection 和 current 签发的版本；已消费编辑不能二次提交，旧回调不能修改替代编辑。已应用、接受重建、忙碌、冲突、不可用和未知结果保持独立。浏览器不把原生持久化或 `restart-required` 当作已应用。接受重建后选择状态保持原值，直至重连、bootstrap 及显式 current 读取确认实际状态。未确认结果关闭该项修改入口，须关闭结果并显式刷新后确认当前事实；操作不会重放或升级应用方式。更新一项保留其他目录行。撤销同步关闭准入并丢弃晚到响应。包安装及移除需要实际获批的账户流程；页面保留能力元数据，不自行实现该流程。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -92,6 +122,8 @@ fetch 正文已被捕获 signal 的同一个取消原因置为 errored 时，按
 | [Bootstrap attempt](src/client/bootstrap.ts) | 分开追踪结果、实际结束和清理。 |
 | [固定载体](src/client/transport.ts) | 在原生载体外添加 access 预期值。 |
 | [行为测试](tests/transport.client.spec.ts) | 检查原生 Connection envelope 与生命周期拒绝。 |
+
+一个已批准配置入口使用原共享 ConfigForms 和 schema 服务。它按不可变 bootstrap 批准字段与当前 Host schema 的交集暂存受支持的标量叶字段；未知或复杂字段保持不可编辑。保存保留开始编辑时捕获的 revision，并在原队列实际发送时复查原页面。General Settings shell 的供应不依赖模型或技能编辑。此表单不提供普通 ConfigEditor 字段、嵌套路径、remount 或 graph-rebuild 编辑。
 
 </details>
 

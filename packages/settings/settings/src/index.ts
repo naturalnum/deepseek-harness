@@ -6,14 +6,17 @@ import { parse } from 'yaml'
 import { Context, FiberState, Service, resolveConfig, type Fiber } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import { interpolate, type Entry } from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-config-editor'
+import type { ConfigEditControl } from '@deepseek-ai/dsh-config-editor'
+export type { ConfigEditControl as SettingsWriteControl } from '@deepseek-ai/dsh-config-editor'
 import type {} from '@deepseek-ai/dsh-app-boot'
-import { redactSecrets, type RedactedSecret } from './redact.ts'
+import { redactSecrets, type ConfigSchemaNode, type RedactedSecret } from './redact.ts'
 import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema.ts'
 import type { SettingsNamespace } from './types.ts'
 
 export { redactSecrets } from './redact.ts'
-export type { RedactedSecret, RedactedValue } from './redact.ts'
+export { ordinaryConfigPolicy } from './schema.ts'
+export type { OrdinaryConfigPolicy } from './schema.ts'
+export type { ConfigSchemaNode, RedactedSecret, RedactedValue } from './redact.ts'
 export type { SettingsNamespace } from './types.ts'
 
 /** One Loader entry's live Config fields. */
@@ -71,7 +74,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * One path-addressed edit to a namespace's user section. Path mutation exists
+ * One path-addressed edit to a native configuration object. Path mutation exists
  * for a caller holding an INCOMPLETE view of the section — a configuration UI
  * reads the redacted descriptor, which by construction never received the
  * `role('secret')` fields. Such a caller can name the field it means without
@@ -82,12 +85,18 @@ export type SettingsPathOp =
   | { op: 'set'; path: readonly string[]; value: unknown }
   | { op: 'unset'; path: readonly string[] }
 
-/** Apply one path op to a detached section, returning the next section. */
-function applyPathOp(section: Record<string, unknown>, op: SettingsPathOp, schema: z): Record<string, unknown> {
-  const edit = (input: unknown, path: readonly string[], node?: z): unknown => {
+/** Apply one native path edit, preserving ancestor defaults and untouched siblings.
+ * @param section Raw configuration; null or undefined retains native object defaults.
+ * @param op A caller-authorized path operation; this helper does not grant write permissions or validate Config.
+ * @param schema Original native Config metadata.
+ * @returns Replacement object for the original ConfigEditor writer.
+ * @throws TypeError for an invalid array position or a non-object root.
+ */
+export function applyConfigPathOp(section: unknown, op: SettingsPathOp, schema: ConfigSchemaNode): Record<string, unknown> {
+  const edit = (input: unknown, path: readonly string[], node?: ConfigSchemaNode): unknown => {
     const [head, ...rest] = path
     if (head === undefined) return op.op === 'set' ? op.value : undefined
-    const value: unknown = input === undefined ? node?.meta.default : input
+    const value: unknown = input == null ? node?.meta?.default ?? input : input
     if (Array.isArray(value)) {
       if (!/^(0|[1-9][0-9]*)$/.test(head) || (Number(head) > value.length || Number(head) === value.length && (rest.length > 0 || op.op === 'unset'))) {
         throw new TypeError(`Config array index "${head}" is out of range`)
@@ -320,13 +329,13 @@ export class SettingsForms extends Service {
       const resolved: unknown = interpolate(entry.fiber.ctx, inherited)
       const base = projectForm(form, plainConfig(inheritedConfig(entry.fiber.runtime, resolved)))
       const user = projectForm(form, override)
-      const redacted = redactSecrets(form as z<never>, value)
+      const redacted = redactSecrets(form, value)
       return [{
         autoGenerate,
         ns: entry.options.id as SettingsNamespace, schema: form.toJSON(), revision, applies: 'live' as const,
         value: options?.redactSecrets ? redacted.value : value,
-        base: options?.redactSecrets ? redactSecrets(form as z<never>, base).value : base,
-        user: options?.redactSecrets ? redactSecrets(form as z<never>, user).value : user,
+        base: options?.redactSecrets ? redactSecrets(form, base).value : base,
+        user: options?.redactSecrets ? redactSecrets(form, user).value : user,
         ...options?.redactSecrets ? { secrets: redacted.secrets } : {},
       }]
     })
@@ -343,41 +352,44 @@ export class SettingsForms extends Service {
    * @param ns Profile entry id.
    * @param patch Fields to merge.
    * @param expectedRevision Revision returned by describe.
+   * @param control Optional caller recheck at the actual native edit and replacement points.
    */
-  async update(ns: string, patch: object, expectedRevision?: number): Promise<void> {
+  async update(ns: string, patch: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void> {
     const input = cloneJsonShaped(patch)
-    await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision)
+    await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision, [], control)
   }
 
   /** Reset all live fields, then set the supplied fields; ordinary config is preserved.
    * @param ns Profile entry id.
    * @param section Complete form values.
    * @param expectedRevision Revision returned by describe.
+   * @param control Optional caller recheck at the actual native edit and replacement points.
    */
-  async replace(ns: string, section: object, expectedRevision?: number): Promise<void> {
+  async replace(ns: string, section: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void> {
     const input = cloneJsonShaped(section)
-    await this.write(ns, (_current, base) => mergeLayers(base, input) as Record<string, unknown>, expectedRevision)
+    await this.write(ns, (_current, base) => mergeLayers(base, input) as Record<string, unknown>, expectedRevision, [], control)
   }
 
   /** Apply field edits without restating redacted secrets; unsetting an array index removes its element.
    * @param ns Profile entry id.
    * @param ops Ordered form edits.
    * @param expectedRevision Revision returned by describe.
+   * @param control Optional caller recheck at the actual native edit and replacement points.
    */
-  async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
+  async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number, control?: ConfigEditControl): Promise<void> {
     await this.write(ns, (current, base, schema) => ops.reduce((value, op) => {
-      if (op.op === 'set') return applyPathOp(value, op, schema)
+      if (op.op === 'set') return applyConfigPathOp(value, op, schema)
       const parent = op.path.slice(0, -1).reduce<unknown>((node, key) => member(node, key), value)
-      if (Array.isArray(parent)) return applyPathOp(value, op, schema)
+      if (Array.isArray(parent)) return applyConfigPathOp(value, op, schema)
       const inherited = op.path.reduce<unknown>((node, key) => member(node, key, true), base)
-      return applyPathOp(value, inherited === undefined ? op : { op: 'set', path: op.path, value: inherited }, schema)
-    }, current), expectedRevision, ops.map(op => op.path))
+      return applyConfigPathOp(value, inherited === undefined ? op : { op: 'set', path: op.path, value: inherited }, schema)
+    }, current), expectedRevision, ops.map(op => op.path), control)
   }
 
   private async write(
     ns: string,
     change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,
-    expected?: number, paths: readonly (readonly string[])[] = [],
+    expected?: number, paths: readonly (readonly string[])[] = [], control?: ConfigEditControl,
   ): Promise<void> {
     await this.ownerContext.configEditor.submitSave('settings/write', async () => {
       const entry = this.ownerContext.configEditor.entries().find(row => row.options.id === ns)
@@ -419,7 +431,7 @@ export class SettingsForms extends Service {
           return result
         }
         return mergeLayers(strip(raw, form), next) as Record<string, unknown>
-      })
+      }, control)
       this.describe()
     })
   }

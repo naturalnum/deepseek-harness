@@ -40,6 +40,12 @@ export interface AgentSetupCommit {
    * @throws when publication must roll the unpublished Agent back.
    */
   commit(): void
+  /**
+   * Recheck committed setup at native publication checkpoints, including after awaited work.
+   * This synchronous check may reject publication; it must not commit again or own cleanup.
+   * @throws when the original setup or its trusted owner is no longer current.
+   */
+  assertCurrent?(): void
 }
 
 /**
@@ -52,6 +58,19 @@ export type AgentSetup = (
   agentCtx: Context,
   agent: Agent,
 ) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void
+
+/** Result of the prepared Agent's actual driver, scope, writer and registry cleanup. */
+export type AgentDisposalStatus = 'confirmed' | 'unknown'
+
+/**
+ * Observe one prepared Agent's memoized cleanup after its owned resources settle.
+ * This is a synchronous accounting callback, not an owner or a disposer. A failure
+ * before Agent preparation produces no observation; the caller must retain any
+ * reservation whose cleanup it cannot establish. The callback must not throw.
+ * @param status - confirmed only after actual setup settled and every observed cleanup operation succeeded.
+ * @returns No disposer or authority; the caller retains its own reservation.
+ */
+export type AgentDisposalObserver = (status: AgentDisposalStatus) => void
 
 /**
  * Options for programmatically creating an agent through the registry factory
@@ -116,6 +135,14 @@ export interface CreateAgentOptions {
    * than a runtime restriction. Drive the agent only after creation resolves.
    */
   readonly setup?: AgentSetup
+  /**
+   * Observe actual prepared-Agent cleanup, including setup rollback and structural
+   * owner/factory disposal. Omission registers no observer. It runs once after
+   * driver, scope, writer and registry cleanup, and cannot authorize creation.
+   * An abandoned setup still running makes the observation permanently unknown.
+   * Pre-preparation failure has no receipt; a rejected creation is not proof of cleanup.
+   */
+  readonly observeDisposal?: AgentDisposalObserver
 }
 
 /**
@@ -141,6 +168,14 @@ export interface ResumeAgentOptions {
    * or owner disposal rolls the transaction back without publishing either id.
    */
   readonly setup?: AgentSetup
+  /**
+   * Observe actual prepared-Agent cleanup, including setup rollback and structural
+   * owner/factory disposal. Omission registers no observer. It runs once after
+   * driver, scope, writer and registry cleanup, and cannot authorize creation.
+   * An abandoned setup still running makes the observation permanently unknown.
+   * Pre-preparation failure has no receipt; a rejected creation is not proof of cleanup.
+   */
+  readonly observeDisposal?: AgentDisposalObserver
 }
 
 /**

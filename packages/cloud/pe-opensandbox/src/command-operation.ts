@@ -28,6 +28,8 @@ export interface CommandSnapshot {
 /** One immutable operation selection. Mutation methods each submit at most once, including lost replies. */
 export interface CommandChannel {
   prepare(spec: Readonly<{ argv: readonly string[]; cwd: string; stdin: { readonly mode: 'ignore' } | { readonly mode: 'batch'; readonly base64: string } }>): Promise<CommandSnapshot>
+  /** End the original retained files borrow only after actual range and local request settlement. */
+  release?(): void
   commit(): Promise<CommandSnapshot>
   poll(): Promise<CommandSnapshot>
   stop(): Promise<CommandSnapshot>
@@ -76,6 +78,8 @@ export class ManagedCommandOperation {
   private readonly allocationWait = new AbortController()
   private readonly waiters = new Set<RangeWaiter>()
   private readonly output: { stdout: CollectedOutputMirror; stderr: CollectedOutputMirror }
+  private channel: CommandChannel | undefined
+  private borrowReleaseFailure: { readonly cause: unknown } | undefined
   private readonly spec: Parameters<CommandChannel['prepare']>[0]
   private readonly signal: AbortSignal | undefined
   private readonly detach: () => void
@@ -266,6 +270,7 @@ export class ManagedCommandOperation {
   private async run(): Promise<void> {
     try {
       const channel = await this.authority.acquire(this.allocationWait.signal)
+      this.channel = channel
       const beforePreparation = this.stopRequest()
       if (beforePreparation !== undefined) throw beforePreparation.reason
       this.authority.assertCurrent()
@@ -363,7 +368,12 @@ export class ManagedCommandOperation {
   }
 
   private finishEmpty(): void {
-    if (!this.localSettled || !this.rangeConfirmed) return
+    if (!this.localSettled || !this.rangeConfirmed || this.borrowReleaseFailure !== undefined) return
+    const channel = this.channel
+    try { channel?.release?.() } catch (cause) {
+      this.borrowReleaseFailure = { cause }; this.fail(cause); this.authority.unknown(cause); return
+    }
+    this.channel = undefined
     if (this.lifetime !== undefined) { clearTimeout(this.lifetime); this.lifetime = undefined }
     if (this.grace !== undefined) { clearTimeout(this.grace); this.grace = undefined }
     this.empty.resolve()
@@ -376,7 +386,7 @@ export class ManagedCommandOperation {
   }
 
   private waitForExit(signal?: AbortSignal): Promise<boolean> {
-    if (this.localSettled && this.rangeConfirmed) return Promise.resolve(true)
+    if (this.localSettled && this.rangeConfirmed && this.borrowReleaseFailure === undefined) return Promise.resolve(true)
     if (signal?.aborted) return Promise.resolve(false)
     // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Preserve the original native cancellation or provider reason.
     if (this.failed !== undefined) return Promise.reject(this.failed.cause)

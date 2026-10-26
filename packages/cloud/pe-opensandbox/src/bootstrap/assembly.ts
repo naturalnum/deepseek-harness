@@ -90,6 +90,7 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
     const owner = state.owner
     const deployment: ManagedExecutionDeployment = Object.freeze({ backend: owner.backend, runtimes: owner.runtimes,
       share: exports.share, assertEpochReleased: exports.assertEpochReleased,
+      ...(input.skillCopies === undefined ? {} : { skillCopies: input.skillCopies }),
       assertCurrent(): void {
         if (state.closing !== undefined) unavailable()
         publicationCurrent(); exports.assertCurrent()

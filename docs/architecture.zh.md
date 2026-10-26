@@ -2,33 +2,33 @@
 
 [English](architecture.md) | 中文
 
-改动 `packages/` 下的任何内容之前，请先阅读本文。本文假定你已了解 Cordis；如果尚未了解，请先阅读[入门](cordis-primer.zh.md)或[教程](cordis-tutorial/index.zh.md)。
+改动 `packages/` 前请先阅读本文。本文假定你了解 Cordis；否则请从[入门](cordis-primer.zh.md)或[教程](cordis-tutorial/index.zh.md)开始。
 
 ## Cordis
 
-[Cordis](cordis-primer.zh.md) 是 dsh 底层的框架：插件向共享上下文贡献服务、类型化事件和可逆的副作用。产品的每个组件都是插件，包括模型适配器、工具注册表、会话日志和 agent loop（智能体循环），均可通过配置替换。
+[Cordis](cordis-primer.zh.md) 是 dsh 底层的框架：插件向共享上下文贡献服务、类型化事件和可逆的副作用。每个组件——包括模型适配器、工具注册表、会话日志和 agent loop（智能体循环）——都是可通过配置替换的插件。
 
-不存在需要打补丁的特权内核：扩展 dsh 的方式是把插件挂载到其他插件旁边，而各项注册都是副作用，会在其插件卸载时撤销。
+不存在需要打补丁的特权内核：把插件挂载到现有插件旁边，其注册是副作用，在卸载时撤销。
 
 ## Profile 与组合包
 
-运行中的 `dsh` 是一棵插件树，由启动时按序叠加的各层组合而成。
+`dsh` 启动时按序叠加各层，组装插件树。
 
-**profile** 是存放在 Harness home 中的具名组装。它列出自己叠放的组合包，存放自己安装的树外插件，并保存用户自己的 `cordis.patch.yml`。`web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` 作为模板随发行版交付。
+**profile** 是 Harness home 中的具名组装。它列出组合包，存放已安装的树外插件和用户的 `cordis.patch.yml`。随附模板为 `web`、`headless`、`sdk`、`sdk-minimal` 和 `acp`。
 
-**组合包**是 Cordis 配置项及其挂载代码的分发格式，因此它插入的内容始终可被其上各层 patch。
+**组合包**分发 Cordis 配置项及其代码；更高层可以 patch 它插入的全部内容。
 
-两者都在各自的 `package.json` 中通过 `dsh` 字段声明自己：`dsh.profile` 列出一个 profile 的组合包，`dsh.bundle` 指向一个组合包的 patch 文件。
+两者使用 `package.json` 的 `dsh` 字段：`dsh.profile` 列出组合包，`dsh.bundle` 指定组合包的 patch 文件。
 
 [`dsh-base`](../packages/bundle/base/README.zh.md) 是 `web`、`headless`、`sdk` 与 `acp` profile 的共享第一层：模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。[`dsh-web-app`](../packages/bundle/web-app/README.zh.md) 增加浏览器应用，[`dsh-headless`](../packages/bundle/headless/README.zh.md) 增加不带服务器的一次性运行器，[`dsh-sdk-app`](../packages/bundle/sdk-app/README.zh.md) 增加 SDK JSON-RPC 服务器，[`dsh-acp-app`](../packages/bundle/acp-app/README.zh.md) 增加仅用于自动化的 ACP 服务器。[`dsh-sdk-minimal`](../packages/bundle/sdk-minimal/README.zh.md) 是刻意保留的例外：一个组合包拥有完整的显式 SDK 配置树，不应用 `dsh-base`。
 
-各层依次应用在空条目列表之上：profile 中有序的组合包、其 `cordis.patch.yml`、home patch，最后是 `--patch` overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。`preset` patch 在目标声明的 `config.plugins` 内应用这些操作，沿用相同的层优先级。
+各层依次应用于空条目列表：profile 中有序的组合包、其 `cordis.patch.yml`、home patch，最后是 `--patch` overlay。patch 按 id 替换条目的整个 config 或插入条目。`preset` patch 在目标声明的 `config.plugins` 内操作，优先级相同。
 
 YAML 控制 HMR：base 启用仅监视配置的 `dsh-hmr`；Headless、SDK 和 ACP 禁用它；`sdk-minimal` 不包含它。Profile patch 覆盖这些默认值。HMR 协调监听和重载；启动器提供 profile 数据和就绪信号。
 
 base 提供用于 Web 和 Agent 的[插件管理器](../packages/boot/plugin-manager/README.zh.md)。
 
-要查看你的机器启动的配置树：
+查看启动的配置树：
 
 ```sh
 dsh --profile web --dump-config
@@ -40,17 +40,17 @@ dsh --profile web --dump-config
 
 ## 应用启动
 
-受支持的 Node 应用通过具名 `dsh` profile 启动。随附 profile 为 `web`、`headless`、`sdk`、`sdk-minimal` 和 `acp`，可通过 `dsh --profile <name>` 或 `dsh <name>` 选择。`plugin` 表示管理命令；同名 profile 必须用 `--profile plugin` 选择。TypeScript SDK 会解析其同版本 `dsh` 依赖并选择 `sdk`；自定义插件组合继续由 profile 与有序 patch 文件表达，而不是另一个可执行文件或内联应用树。`sdk-minimal` 是位于同一 launcher 后的仓库自有独立组合包，而不是由调用方提供的 Cordis 配置树。
+受支持的 Node 应用使用具名 `dsh` profile：`web`、`headless`、`sdk`、`sdk-minimal` 和 `acp`，通过 `dsh --profile <name>` 或 `dsh <name>` 选择。`plugin` 是管理命令；同名 profile 必须用 `--profile plugin`。TypeScript SDK 解析同版本 `dsh` 并选择 `sdk`。自定义组装使用 profile 与有序 patch，绝不使用其他可执行文件或内联应用树。`sdk-minimal` 是仓库持有的独立组合包，沿用同一 launcher，不是调用方提供的 Cordis 树。
 
-Vendored CLI、仅用于构建和测试的可执行文件、进程内直接挂载插件以及私有浏览器 WebWorker 预览都不属于 Harness 应用启动器。[`verify-application-entrypoints`](../scripts/verify-application-entrypoints.ts)将每个包 bin、可执行源码、根 demo 以及根脚本 `start:web` 与 `dev:web` 归入显式类别，并拒绝任何绕过 `dsh` 的 Node 应用路径。
+Vendored CLI、构建/测试可执行文件、进程内直接挂载插件和私有浏览器 WebWorker 预览都不是 Harness 应用启动器。[`verify-application-entrypoints`](../scripts/verify-application-entrypoints.ts)显式分类各包 bin、可执行源码、根 demo、`start:web` 和 `dev:web`，拒绝绕过 `dsh` 的 Node 应用。
 
-Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 打包为 `deepseek-harness-sdk-runtime-<platform>-<arch>`，客户端默认以显式 Harness home 启动 `dsh --profile sdk`。极简示例选择随附的 `sdk-minimal` profile。Python 暴露 profile 选择与有序 patch 文件，而不是完整 Cordis 树；持久外部插件通过 `dsh plugin` 安装。已删除的私有直读配置载体没有兼容 bin 或回退 parser。
+Python SDK 采用相同架构：`deepseek-harness-sdk-runtime-<platform>-<arch>` wheel 包含普通 CLI；客户端默认以显式 Harness home 启动 `dsh --profile sdk`。极简示例选择 `sdk-minimal`。Python 暴露 profile 和有序 patch，而非完整 Cordis 树；`dsh plugin` 安装持久外部插件。已删除的私有直读配置载体没有兼容 bin 或回退 parser。
 
 ## 桌面应用
 
-[Electron 桌面应用](../apps/desktop/README.zh.md)在签名资源中携带精确匹配的 dsh 生产运行时，并拥有保留的 `$DSH_HOME/profiles/desktop`。共享 helper 初始化 profile 文件、协调 bundle，并解析安装与 bundle 的依赖而不替换 pnpm 拥有的包。Desktop 与 npm CLI 共享产品数据，但包、启用选择与锁文件保持独立。Desktop 内置 CLI 管理其已初始化的插件。
+[Electron 桌面应用](../apps/desktop/README.zh.md)在签名资源中携带精确匹配的 dsh 生产运行时，并拥有保留的 `$DSH_HOME/profiles/desktop`。共享 helper 初始化 profile、协调组合包、解析安装/组合包依赖，不替换 pnpm 持有的包。Desktop 与 npm CLI 共享产品数据，但包、启用选择与锁文件独立。Desktop 内置 CLI 管理其已初始化的插件。
 
-Electron 使用 Electron Node 模式启动私有 Desktop Host。Host 调用共享 CLI profile runner 与完整 Web 应用。窗口立即加载打包 Web 资源，等待启动注入后在同一文档中激活客户端插件。Web 负责 RPC 与流；桌面载体将本地页面连接到已认证的 Host。Node IPC 承载启动注入、就绪、致命错误与关闭。Desktop 默认监听系统分配的端口，profile 配置可覆盖。壳拥有的 UI 通过内置 pnpm 执行插件事务，并遵循正常用户与 profile 配置。
+Electron 以 Electron Node 模式启动私有 Desktop Host。Host 运行共享 CLI profile runner 与完整 Web 应用。窗口立即加载打包 Web 资源，等待启动注入后在同一文档中激活客户端插件。Web 负责 RPC/流；桌面载体将本地页面连接到已认证的 Host。Node IPC 承载启动注入、就绪、致命错误与关闭。Desktop 默认使用系统分配的端口，profile 配置可覆盖。壳拥有的 UI 通过内置 pnpm 执行插件事务，遵循正常用户/profile 配置。
 
 ## 核心包
 
@@ -64,11 +64,13 @@ Electron 使用 Electron Node 模式启动私有 Desktop Host。Host 调用共�
 | [`core/scope`](subsystems/scope.zh.md) | 按 agent 划分作用域的注册原语 | 库，无 ctx 键 |
 | [`llm/llm`](subsystems/llm-streaming.zh.md) | 消息与流式词汇表，以及适配器 seam | `ctx.llm` |
 
+[原生创建事务](subsystems/core.zh.md#creation-and-ownership)等待未发布 setup，只 commit 一次，并在发布前持久化其剩余 Session 事件。可选同步 current 复核在持久化及发布等待后重新核验 setup；失败沿用原回滚与清理所有权。
+
 <a id="events"></a>
 
 ## 事件
 
-事件就是扩展点，而选对事件域是大多数改动的第一个决定。
+事件是扩展点；大多数改动从选择事件域开始。
 
 - **会话事件**是追加到日志并通过 `session/event` 广播的持久事实。当某个事实必须在重新加载后仍然存在时，使用它。
 - **Agent 事件**（`agent/*`）携带活跃 `Agent`：inbox、步骤、状态、请求、验证、续跑。要观察或拦截进行中的工作时，使用它。
@@ -109,7 +111,9 @@ turn/end
 
 `turn/*`、`step/*`、`system/message`、`user/message`、`assistant/message`、`assistant/attempt` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 前把完整紧凑 stream 提交为一个 message 或仅日志 attempt；Web Session-follow adapter 是该 live event 唯一的远程消费方。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
 
-输入通过同一个 inbox 到达驱动器；注入的上下文等待一条唤醒消息。AgentLoop 的持久 `inbox` 投影使待处理输入在没有活跃 Agent 时仍可读取。
+Loop 的[静止条件](../packages/core/agent-loop/README.zh.md#understand-the-implementation)涵盖 driver、inbox 和启动活动。
+
+输入通过同一个 inbox 到达驱动器；注入的上下文等待唤醒输入。持久 `inbox` 投影使待处理输入在没有活跃 Agent 时仍可读取。
 
 `agent/pre-step` 决定接纳的输入。监听器可以改写或拒绝已领取消息；首次领取被拒绝或为空时，关闭不含步骤的持久轮次。enter 决策可设置 `startsRequestSeries`：循环记录新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。包装监听器通过 `{ ...decision, messages }` 保留该声明。组装与 `step/start` 之后，`agent/request` 和 `prepareCall()` 先解析实际路由，再提交系统提示词与已接纳用户消息；在任一异步阶段取消都不会提交这两者。提示词准入依据已准备调用的能力，而非先前的 `request/context`。每次尝试刷新已注册运行时事实、协调绑定的提示词、仅接纳一次用户消息并恢复被移除的运行时上下文、按需记录 header/context，再冻结请求并通过绑定调用发起流式请求。重试不重复组装或 `agent/pre-step`。附接后的 surface 替换和图片省略决定开启新请求序列，包括恢复后的首次 pre-step 中发生的替换；未变化的恢复延续序列。首次接纳的步骤在用户消息之前预留系统头节点，即使提示词为空（不产生协议消息）。提示词仅通过 `system/message` 历史传递：空渲染文本清除所有生效的系统节点，模型不再看到旧提示词；具备能力的路由可在缓存前缀之后追加非空更新，包括同时发生的受支持工具更新；不具备能力的路由与新请求序列将非空提示词文本归并到首个系统节点，并为非空的后续系统节点记录空内容替换（[决策](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。
 
@@ -133,15 +137,15 @@ Session 消费方只了解当前逻辑格式。仅 header 的 `stat` 与 `list` 
 
 ## 能力 seam
 
-一个 **seam** 是一项可替换能力，包含三种角色：声明接口的 **Service Definition**、实现它的 **Service Provider**，以及使用它的 **Consumer**（通常是面向模型的工具）。一个包可以合并承担多个角色，但单一角色本身不是 seam；添加一项能力意味着把三者一并设计（[能力图](capability-seams.zh.md)）。
+**seam** 是一项可替换能力：**Service Definition** 声明接口，**Service Provider** 实现接口，**Consumer** 使用它，通常是面向模型的工具。包可以合并角色；单一角色不是 seam。添加能力时须一并设计三者（[能力图](capability-seams.zh.md)）。
 
-seam 正是替换一个提供方就能改变整个产品的原因。文件系统与进程提供方共享同一个执行世界，因此把它们指向远程沙箱，也就把 Bash、PTY 和 LSP 一并搬了过去，无需提供方专用 fork。[subagent 提供方](subsystems/subagent.zh.md)在同一个接口之后同样千差万别，从新建一个子 agent，到把一个轮次委派给另一个产品。
+替换一个提供方即可改变产品。文件系统与进程提供方共享同一个执行世界：指向远程沙箱时，Bash、PTY 和 LSP 一并迁移，无需提供方专用 fork。[subagent 提供方](subsystems/subagent.zh.md)通过同一接口支持新建子 agent 和委派其他产品中的轮次。
 
 [实验性 Agent Teams](subsystems/agent-team.zh.md) 通过显式启用的 `ctx.agentTeams`，在可继续 subagent 之上提供持久 roster、任务状态和直接 inbox 消息协作。
 
 ## 新行为的归属位置
 
-新行为附加到已有文档记录的扩展点。改动循环本身时，本映射随之更新。
+把行为附加到已有文档记录的扩展点；改动循环时更新本映射。
 
 | 目标 | 机制 |
 |---|---|

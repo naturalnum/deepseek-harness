@@ -1,10 +1,17 @@
 /** Worker transport retains operations until actual FD-closure replies or actual worker exit. */
+import { parseBundleFrame } from './bundle-native.ts'
+import type { FdBundleRequest, FdBundleFacts } from './bundle-native.ts'
+import { skillSourceContext, parseSkillProjectFrame } from './skill-projection.ts'
+import type { SkillSourceContext, SkillProjectionLimits, FdSkillProjectRequest, FdSkillProjectFacts } from './skill-projection.ts'
+import { parseSkillFrame, parseSkillRetireFrame } from './skill-versions.ts'
+import type { FdSkillFacts, FdSkillPrepareRequest, FdSkillRetireFacts, FdSkillRetireRequest } from './skill-versions.ts'
 import { randomUUID } from 'node:crypto'
 import type { Worker } from 'node:worker_threads'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode, FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation, LeafBackend,
-  FdStorageRequest, FdStorageView, FdTextWriteRequest, FdTextWriteResult, FdContentRequest, FdPathMetadata, FdDirectoryEntry } from './worker-protocol.ts'
+  FdStorageRequest, FdStorageView, FdTextWriteRequest, FdTextWriteResult, FdContentRequest, FdPathMetadata,
+  FdDirectoryEntry } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import { parseLeafFrame, leafPreparation, DirectoryPreparationFailure } from './leaf-frame.ts'
@@ -33,6 +40,28 @@ export class FdMutationFailure extends FdWorkerFailure {
 
 /** Text publication retains its original error class and shared mutation disposition. */
 export class FdTextWriteFailure extends FdMutationFailure {}
+
+/** Exact skill preparation facts remain available after unknown publication or worker exit. */
+export class FdSkillFailure extends FdMutationFailure {
+  constructor(outcome: 'not-published' | 'unknown', code: FsErrorCode, readonly facts?: FdSkillFacts | FdSkillRetireFacts,
+    options?: ErrorOptions,
+    readonly intent?: { readonly operationId: OperationId
+      readonly kind: 'prepare' | 'retire'
+      readonly root: FdRootIdentity
+      readonly version: string | undefined
+      readonly pointerRevision: string | undefined }) {
+    super(outcome, code, undefined, options)
+  }
+}
+
+/** Projection failures preserve measured facts and the exact original project/version intent for Root reconciliation. */
+export class FdSkillProjectionFailure extends FdMutationFailure {
+  constructor(outcome: 'not-published' | 'unknown', code: FsErrorCode, readonly facts?: FdSkillProjectFacts,
+    readonly intent?: { readonly operationId: OperationId; readonly project: FdRootIdentity; readonly version: string },
+    options?: ErrorOptions) {
+    super(outcome, code, undefined, options)
+  }
+}
 
 /** Fixed-directory effects retain actual native facts; transport loss never invents a closed preparation. */
 export class FdProjectMetadataFailure extends FdMutationFailure {
@@ -109,6 +138,37 @@ interface PendingProjectMetadata extends PendingBase {
   readonly resolve: (result: FdProjectMetadataResult) => void
   readonly reject: (error: Error) => void
 }
+interface PendingBundle extends PendingBase {
+  readonly kind: 'bundle'
+  readonly request: Omit<FdBundleRequest, 'id' | 'cancel'>
+  readonly resolve: (facts: FdBundleFacts) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingSkillRetire extends PendingBase {
+  readonly kind: 'skill-retire'
+  readonly root: FdRootIdentity
+  readonly maximum: number
+  readonly current: FdSkillRetireRequest['current']
+  readonly resolve: (facts: FdSkillRetireFacts) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingSkillContext extends PendingBase {
+  readonly kind: 'skill-source-context'
+  readonly resolve: (context: SkillSourceContext) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingSkillProject extends PendingBase {
+  readonly kind: 'skill-project'
+  readonly request: Omit<FdSkillProjectRequest, 'id' | 'cancel'>
+  readonly resolve: (facts: FdSkillProjectFacts) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingSkill extends PendingBase {
+  readonly kind: 'skill-prepare'
+  readonly request: Omit<FdSkillPrepareRequest, 'id' | 'cancel'>
+  readonly resolve: (facts: FdSkillFacts) => void
+  readonly reject: (error: Error) => void
+}
 interface PendingEnvironmentLayout extends PendingBase {
   readonly kind: 'environment-layout'
   readonly root: FdRootIdentity
@@ -153,7 +213,7 @@ interface PendingLeaf extends PendingBase {
   readonly reject: (error: Error) => void
 }
 interface PendingStorage extends PendingBase {
-  readonly kind: 'storage-probe' | 'storage-record' | 'storage-view'
+  readonly kind: 'storage-probe' | 'storage-record' | 'storage-skill-proof' | 'storage-view'
   readonly accept: (value: Record<string, unknown>) => void
   readonly reject: (error: Error) => void
 }
@@ -172,13 +232,15 @@ interface PendingStream extends PendingBase {
 }
 type Pending = PendingContent | PendingRead | PendingStat | PendingStream | PendingDirectory
   | PendingLeaf | PendingStorage | PendingTextWrite | PendingStage | PendingProjectMetadata | PendingEnvironmentLayout
+    | PendingBundle | PendingSkill | PendingSkillRetire | PendingSkillProject | PendingSkillContext
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
   if (typeof value.code !== 'string'
     || !['FS_NOT_FOUND', 'FS_NOT_DIRECTORY', 'FS_NOT_REGULAR_FILE', 'FS_NOT_TEXT', 'FS_TOO_LARGE',
       'FS_PERMISSION_DENIED', 'FS_ABORTED', 'FS_IO_ERROR', 'FS_NOT_OBSERVED', 'FS_STALE_VERSION'].includes(value.code)
-    || (value.syscallCode !== undefined && (typeof value.syscallCode !== 'string' || !/^[A-Z]{1,16}$/.test(value.syscallCode)))) return undefined
+    || (value.syscallCode !== undefined && (typeof value.syscallCode !== 'string'
+      || !/^[A-Z]{1,16}$/.test(value.syscallCode)))) return undefined
   return new FdWorkerFailure(value.code as FsErrorCode, value.syscallCode)
 }
 function metadata(value: unknown): FdMetadata | undefined {
@@ -187,7 +249,8 @@ function metadata(value: unknown): FdMetadata | undefined {
     || (value.type !== 'file' && value.type !== 'directory')
     || (value.type === 'file' && (typeof value.size !== 'number' || !Number.isSafeInteger(value.size) || value.size < 0))
     || (value.type === 'directory' && value.size !== undefined)) return undefined
-  return { identity: value.identity, version: value.version, type: value.type, ...typeof value.size === 'number' ? { size: value.size } : {} }
+  return { identity: value.identity, version: value.version, type: value.type, ...typeof value.size === 'number' ? {
+    size: value.size } : {} }
 }
 
 function pathMetadata(value: unknown, named = false): FdPathMetadata | undefined {
@@ -207,7 +270,8 @@ function stagingFacts(value: unknown, maximum: number, chunk: number): value is 
   if (!object(value) || Object.keys(value).length !== 10
     || Object.keys(value).some(key => !['kind', 'code', 'publication', 'closed', 'clean', 'temporaryPresent',
       'writtenBytes', 'readBytes', 'sequence', 'retainedCreatedDirectories'].includes(key))) return false
-  return ['write', 'written', 'existing', 'existing-chunk', 'published', 'reused', 'aborted', 'failed', 'unknown'].includes(String(value.kind))
+  return ['write', 'written', 'existing', 'existing-chunk', 'published', 'reused', 'aborted', 'failed',
+    'unknown'].includes(String(value.kind))
     && typeof value.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(value.code)
     && ['none', 'published', 'unknown'].includes(String(value.publication))
     && [value.closed, value.clean, value.temporaryPresent].every(item => typeof item === 'boolean')
@@ -229,6 +293,9 @@ export class FdWorkerClient {
   private abiVersion: 6 | 7 | 8 | undefined
   private stagingVersion: 1 | undefined
   private projectMetadataVersion: 1 | undefined
+  private skillProjectionVersion: 1 | undefined
+  private bundleCapability = false
+  private skillVersionsVersion: 1 | undefined
   private environmentLayoutVersion: 1 | undefined
   private closed = false
   private failure: Error | undefined
@@ -266,6 +333,123 @@ export class FdWorkerClient {
   get supportsProjectMetadata(): boolean { return this.projectMetadataVersion === 1 }
   /** Whether this worker advertised the independent environment-layout version1 capability. */
   get supportsEnvironmentLayout(): boolean { return this.environmentLayoutVersion === 1 }
+  /** Complete independent tree prepare/project/reclaim handshake; ABI8 alone conveys none of it. */
+  get supportsSkillBundles(): boolean { return this.bundleCapability }
+
+  /**
+   * Submit a complete fixed tree operation on the original exclusive worker slot.
+   * @param request Complete measured tree operation without worker-issued id or cancellation fields.
+   * @param signal Cancellation attached to this original pending worker request.
+   * @returns Worker-confirmed tree facts, preserving mutation-failure classification on refusal.
+   */
+  bundle(request: Omit<FdBundleRequest, 'id' | 'cancel'>, signal: AbortSignal): Promise<FdBundleFacts> {
+    try { this.assertAvailable(signal) } catch (cause) { throw new FdMutationFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
+    if (!this.supportsSkillBundles || request.root.rootMountId === undefined) throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+    return new Promise((resolve, reject) => {
+      const pending: PendingBundle = { kind: 'bundle', ...this.base(128, signal), request, resolve, reject }
+      this.pending = pending; this.post({ ...request, id: pending.id, cancel: pending.cancel.buffer })
+    })
+  }
+
+  /** Actual independent skill-version handshake. */
+  get supportsSkillVersions(): boolean { return this.skillVersionsVersion === 1 }
+
+  /** Independent real project-copy handshake; private version capability alone is insufficient. */
+  get supportsSkillProjection(): boolean { return this.skillProjectionVersion === 1 }
+
+  /**
+   * Submit the two already verified source bytes to a fixed current project on the same original worker.
+   * @param request Measured project/metadata and fixed version/content limits.
+   * @param signal Actual cancellation; unknown completion retains the original mutation.
+   * @returns Complete native publication and descriptor-closure facts.
+   */
+  projectSkillVersion(request: Omit<FdSkillProjectRequest, 'id' | 'cancel'>, signal: AbortSignal): Promise<FdSkillProjectFacts> {
+    try { this.assertAvailable(signal) } catch (cause) { throw new FdMutationFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
+    if (!this.supportsSkillProjection || request.root.rootMountId === undefined
+      || [request.skill, request.resource].some(bytes => !(bytes.buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0
+        || bytes.byteLength !== bytes.buffer.byteLength || bytes.byteLength > request.limits.maxFileBytes)) {
+      throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+    }
+    return new Promise((resolve, reject) => {
+      const pending: PendingSkillProject = { kind: 'skill-project', ...this.base(192, signal), request, resolve, reject }
+      this.pending = pending; this.post({ ...request, id: pending.id, cancel: pending.cancel.buffer })
+    })
+  }
+
+  /**
+   * Submit cleanup only from the original root storage post-drain operation.
+   * @param request Fixed private root, actual identity and durably observed current id.
+   * @param maximum Original finite version bound.
+   * @param signal Actual operation cancellation; submitted cleanup remains owned until reply or exit.
+   * @returns Closed cleanup facts; unknown retains the native facts and original responsibility.
+   */
+  retireSkillVersions(request: Omit<FdSkillRetireRequest, 'id' | 'cancel'>, maximum: number,
+    signal: AbortSignal): Promise<FdSkillRetireFacts> {
+    try { this.assertAvailable(signal) } catch (cause) { throw new FdSkillFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
+    if (!this.supportsSkillVersions) throw new FdSkillFailure('not-published', 'FS_PERMISSION_DENIED')
+    return new Promise((resolve, reject) => {
+      const pending: PendingSkillRetire = { kind: 'skill-retire', ...this.base(96, signal), root: request.root, maximum,
+        current: request.current, resolve, reject }
+      this.pending = pending
+      this.post({ ...request, id: pending.id, cancel: pending.cancel.buffer })
+    })
+  }
+
+  /**
+   * Read only the original worker's bounded kernel boot and mount-namespace identity.
+   * @param signal Actual original read cancellation.
+   * @returns Scope for interpreting stored mount numbers; no cross-scope volume association is granted.
+   */
+  skillSourceContext(signal: AbortSignal): Promise<SkillSourceContext> {
+    this.assertAvailable(signal)
+    if (!this.supportsSkillProjection) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+    return new Promise((resolve, reject) => {
+      const pending: PendingSkillContext = { kind: 'skill-source-context', ...this.base(256, signal), resolve, reject }
+      this.pending = pending; this.post({ kind: pending.kind, id: pending.id, cancel: pending.cancel.buffer })
+    })
+  }
+
+  /**
+   * Prepare only a fixed private store or fixed skills parent; verification never recreates a missing parent.
+   * @param root Original measured private/project metadata anchor.
+   * @param uid Original application UID.
+   * @param gid Original application GID.
+   * @param purpose Closed native operation, never a directory name.
+   * @param limits Explicit bounded projection metadata capacities.
+   * @param signal Actual original operation cancellation.
+   * @returns Durable closed-FD facts for the fixed directory.
+   */
+  skillDirectory(root: FdRootIdentity, uid: number, gid: number, purpose: 'store' | 'store-verify' | 'parent-create' | 'parent-verify',
+    limits: SkillProjectionLimits, signal: AbortSignal): Promise<FdProjectMetadataResult> {
+    try { this.assertAvailable(signal) } catch (cause) { throw new FdMutationFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
+    if (!this.supportsSkillProjection || root.rootMountId === undefined) throw new FdMutationFailure('not-published',
+      'FS_PERMISSION_DENIED')
+    return new Promise((resolve, reject) => {
+      const pending: PendingProjectMetadata = { kind: 'project-metadata', ...this.base(96, signal), root, uid, gid, resolve, reject }
+      this.pending = pending
+      this.post({ kind: 'skill-directory', purpose, limits, id: pending.id, root, uid, gid, cancel: pending.cancel.buffer })
+    })
+  }
+
+  /**
+   * Submit fixed bounded content through this original exclusive worker client.
+   * @param request Original private identity, fixed limits and owned content bytes.
+   * @param signal Actual work cancellation; confirmed late publication is preserved.
+   * @returns Measured sealed-version facts after actual descriptor closure.
+   */
+  prepareSkillVersion(request: Omit<FdSkillPrepareRequest, 'id' | 'cancel'>, signal: AbortSignal): Promise<FdSkillFacts> {
+    try { this.assertAvailable(signal) } catch (cause) { throw new FdMutationFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
+    if (!this.supportsSkillVersions) throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+    if ([request.skill, request.resource].some(bytes => !(bytes.buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0
+      || bytes.byteLength !== bytes.buffer.byteLength || bytes.byteLength > request.limits.maxFileBytes)) {
+      throw new FdSkillFailure('not-published', 'FS_TOO_LARGE')
+    }
+    return new Promise((resolve, reject) => {
+      const pending: PendingSkill = { kind: 'skill-prepare', ...this.base(128, signal), request, resolve, reject }
+      this.pending = pending
+      this.post({ ...request, id: pending.id, cancel: pending.cancel.buffer })
+    })
+  }
 
   /**
    * Prepare only home/venv/tmp in the selected environment without clearing retained Session content.
@@ -305,7 +489,8 @@ export class FdWorkerClient {
       throw new FdProjectMetadataFailure('not-published', cause instanceof FdWorkerFailure ? cause.code : 'FS_IO_ERROR',
         undefined, undefined, { cause })
     }
-    if (!this.supportsProjectMetadata || root.rootMountId === undefined) throw new FdProjectMetadataFailure('not-published', 'FS_PERMISSION_DENIED')
+    if (!this.supportsProjectMetadata || root.rootMountId === undefined) throw new FdProjectMetadataFailure('not-published',
+      'FS_PERMISSION_DENIED')
     return new Promise((resolve, reject) => {
       const pending: PendingProjectMetadata = { kind: 'project-metadata', ...this.base(96, signal), root, uid, gid, resolve, reject }
       this.pending = pending
@@ -334,7 +519,8 @@ export class FdWorkerClient {
     const ready = Promise.withResolvers<'write' | 'reused'>(), completed = Promise.withResolvers<FdStageResult>()
     void ready.promise.catch(() => {}); void completed.promise.catch(() => {})
     const pending: PendingStage = { kind: 'stage', ...this.base(file.expectedBytes, signal), file, chunkBytes, frameBytes,
-      resolveReady: ready.resolve, rejectReady: ready.reject, resolve: completed.resolve, reject: completed.reject, step: { kind: 'starting' } }
+      resolveReady: ready.resolve, rejectReady: ready.reject, resolve: completed.resolve, reject: completed.reject, step: {
+        kind: 'starting' } }
     this.pending = pending
     this.post({ kind: 'stage-begin', id: pending.id, root, file, cancel: pending.cancel.buffer })
     return {
@@ -426,14 +612,16 @@ export class FdWorkerClient {
     root: FdRootIdentity, relativePath: string, maxEntries: number, maxBytes: number, signal: AbortSignal,
   ): Promise<readonly FdDirectoryEntry[]> {
     return this.content({ kind: 'list', maxEntries, maxBytes }, root, relativePath, maxBytes, maxEntries, signal, (value) => {
-      if (value.kind !== 'list-reply' || !Array.isArray(value.entries) || value.entries.length > maxEntries) throw new FdWorkerFailure('FS_IO_ERROR')
+      if (value.kind !== 'list-reply' || !Array.isArray(value.entries)
+        || value.entries.length > maxEntries) throw new FdWorkerFailure('FS_IO_ERROR')
       const entries: FdDirectoryEntry[] = []
       let previous: Buffer | undefined
       for (const entry of value.entries) {
         const info = pathMetadata(entry, true)
         if (!object(entry) || info === undefined || typeof entry.name !== 'string' || !entry.name
           || entry.name === '.' || entry.name === '..' || /[/\\\0]/.test(entry.name)
-          || Buffer.byteLength(entry.name) > maxBytes || Buffer.from(entry.name).toString('utf8') !== entry.name) throw new FdWorkerFailure('FS_IO_ERROR')
+          || Buffer.byteLength(entry.name) > maxBytes
+            || Buffer.from(entry.name).toString('utf8') !== entry.name) throw new FdWorkerFailure('FS_IO_ERROR')
         const name = Buffer.from(entry.name)
         if (previous !== undefined && Buffer.compare(previous, name) >= 0) throw new FdWorkerFailure('FS_IO_ERROR')
         previous = name
@@ -461,7 +649,8 @@ export class FdWorkerClient {
     return this.content({ kind: 'range', offset, length, maxBytes }, root, relativePath, maxBytes, 0, signal, (value) => {
       const bytes = value.bytes
       if (value.kind !== 'range-reply' || !(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)
-        || bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength || bytes.byteLength > length) throw new FdWorkerFailure('FS_IO_ERROR')
+        || bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength
+          || bytes.byteLength > length) throw new FdWorkerFailure('FS_IO_ERROR')
       return new Uint8Array(bytes.buffer)
     })
   }
@@ -481,8 +670,10 @@ export class FdWorkerClient {
     return new Promise((resolve, reject) => {
       const pending: PendingContent = { kind: command.kind, ...this.base(maxBytes, signal), maxEntries, reject, accept: (value) => {
         try {
-          const keys = command.kind === 'list' ? ['kind', 'id', 'entries'] : command.kind === 'lstat' ? ['kind', 'id', 'metadata'] : ['kind', 'id', 'bytes']
-          if (Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))) throw new FdWorkerFailure('FS_IO_ERROR')
+          const keys = command.kind === 'list' ? ['kind', 'id', 'entries'] : command.kind === 'lstat' ? ['kind', 'id',
+            'metadata'] : ['kind', 'id', 'bytes']
+          if (Object.keys(value).length !== keys.length || Object.keys(value).some(key =>
+            !keys.includes(key))) throw new FdWorkerFailure('FS_IO_ERROR')
           const result = decode(value)
           if (command.kind !== 'range' && Buffer.byteLength(JSON.stringify(value)) > maxBytes) throw new FdWorkerFailure('FS_IO_ERROR')
           pending.removeAbort(); this.pending = undefined; resolve(result)
@@ -500,7 +691,8 @@ export class FdWorkerClient {
    * @returns Closed-FD measured facts.
    */
   storageProbe(path: string, signal: AbortSignal): Promise<StorageProbeFacts> {
-    return this.storage('storage-probe', 256, signal, value => value.kind === 'storage-probe-reply' ? parseStorageProbeFrame(value.frame) : undefined, path)
+    return this.storage('storage-probe', 256, signal, value =>
+      value.kind === 'storage-probe-reply' ? parseStorageProbeFrame(value.frame) : undefined, path)
   }
 
   /**
@@ -510,7 +702,23 @@ export class FdWorkerClient {
    * @returns Protected record bytes after closure.
    */
   storageRecord(maximum: number, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
-    return this.storage('storage-record', maximum, signal, value => value.kind === 'storage-record-reply' && this.exactBytes(value.bytes, maximum) ? value.bytes : undefined)
+    return this.storage('storage-record', maximum, signal, value => value.kind === 'storage-record-reply'
+      && this.exactBytes(value.bytes, maximum) ? value.bytes : undefined)
+  }
+
+  /** Read only the fixed Root-configured proof and independently observe this original worker's process.
+   * @param maximum Existing finite protected-record byte limit.
+   * @param signal Actual root-operation cancellation, independent of account observers.
+   * @returns Closed protected bytes plus measured process identity; no path can be supplied here.
+   */
+  storageSkillProof(maximum: number, signal: AbortSignal): Promise<import('./storage-types.ts').ProtectedSkillProof> {
+    return this.storage('storage-skill-proof', maximum, signal, (value) => {
+      const proof = value.proof
+      if (value.kind !== 'storage-skill-proof-reply' || !object(proof) || !this.exactBytes(proof.bytes, maximum)
+        || !object(proof.process) || typeof proof.process.pid !== 'number' || !Number.isSafeInteger(proof.process.pid)
+        || proof.process.pid < 1 || typeof proof.process.startTicks !== 'string' || !/^[1-9][0-9]{0,19}$/.test(proof.process.startTicks)) return undefined
+      return { bytes: proof.bytes, process: { pid: proof.process.pid, startTicks: proof.process.startTicks } }
+    })
   }
 
   /**
@@ -542,7 +750,7 @@ export class FdWorkerClient {
       this.pending = pending
       const base = { id: pending.id, cancel: pending.cancel.buffer }
       if (kind === 'storage-probe' && path !== undefined) this.post({ ...base, kind, path } satisfies FdStorageRequest)
-      else if (kind === 'storage-record' || kind === 'storage-view') this.post({ ...base, kind } satisfies FdStorageRequest)
+      else if (kind === 'storage-record' || kind === 'storage-skill-proof' || kind === 'storage-view') this.post({ ...base, kind } satisfies FdStorageRequest)
       else this.failProtocol()
     })
   }
@@ -561,7 +769,8 @@ export class FdWorkerClient {
    * @returns Transferred bytes after confirmed FD closure, or a failure after reply or actual exit.
    */
   read(root: FdRootIdentity, relativePath: string, maxBytes: number, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
-    try { this.assertAvailable(signal) } catch (error) { return Promise.reject(error instanceof Error ? error : new FdWorkerFailure('FS_IO_ERROR')) }
+    try { this.assertAvailable(signal) } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new FdWorkerFailure('FS_IO_ERROR')) }
     return new Promise((resolve, reject) => {
       const pending: PendingRead = { kind: 'read', ...this.base(maxBytes, signal), resolve, reject }
       this.pending = pending
@@ -577,7 +786,8 @@ export class FdWorkerClient {
    * @returns The closed-FD metadata observation, or undefined for an absent target.
    */
   stat(root: FdRootIdentity, relativePath: string, signal: AbortSignal): Promise<FdMetadata | undefined> {
-    try { this.assertAvailable(signal) } catch (error) { return Promise.reject(error instanceof Error ? error : new FdWorkerFailure('FS_IO_ERROR')) }
+    try { this.assertAvailable(signal) } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new FdWorkerFailure('FS_IO_ERROR')) }
     return new Promise((resolve, reject) => {
       const pending: PendingStat = { kind: 'stat', ...this.base(0, signal), resolve, reject }
       this.pending = pending
@@ -612,7 +822,8 @@ export class FdWorkerClient {
    * @param backend Explicit tmpfs or verified independent ext4 branch.
    * @returns Actual creation facts after closed-FD frame or conservative transport failure.
    */
-  async prepareLeaf(root: FdRootIdentity, leaf: string, signal: AbortSignal, backend: LeafBackend = 'tmpfs'): Promise<DirectoryPrepareOutcome> {
+  async prepareLeaf(root: FdRootIdentity, leaf: string, signal: AbortSignal,
+    backend: LeafBackend = 'tmpfs'): Promise<DirectoryPrepareOutcome> {
     try { this.assertAvailable(signal) } catch (_error) { return { kind: 'not-created-failure', failure: { errno: 11, phase: 0 } } }
     const result = leafPreparation(await this.leaf(root, leaf, signal, undefined, backend))
     if (!signal.aborted) return result
@@ -639,7 +850,8 @@ export class FdWorkerClient {
     return 'cleaned'
   }
 
-  private leaf(root: FdRootIdentity, leaf: string, signal: AbortSignal, identity?: DirectoryCreatedIdentity, backend: LeafBackend = 'tmpfs'): Promise<LeafFrame> {
+  private leaf(root: FdRootIdentity, leaf: string, signal: AbortSignal, identity?: DirectoryCreatedIdentity,
+    backend: LeafBackend = 'tmpfs'): Promise<LeafFrame> {
     return new Promise((resolve, reject) => {
       const pending: PendingLeaf = { ...this.base(64, signal), kind: identity === undefined ? 'leaf-prepare' : 'leaf-cleanup',
         root, backend, resolve, reject, ...identity === undefined ? {} : { identity } }
@@ -761,7 +973,13 @@ export class FdWorkerClient {
         || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)
         || (value.stagingAbiVersion !== undefined && value.stagingAbiVersion !== 1)
         || (value.projectMetadataVersion !== undefined && (value.projectMetadataVersion !== 1 || value.abiVersion !== 8))
-        || (value.environmentLayoutVersion !== undefined && (value.environmentLayoutVersion !== 1 || value.abiVersion !== 8))) {
+        || (value.environmentLayoutVersion !== undefined && (value.environmentLayoutVersion !== 1 || value.abiVersion !== 8))
+        || (value.skillProjectionVersion !== undefined && (value.skillProjectionVersion !== 1 || value.abiVersion !== 8
+          || value.skillVersionsVersion !== 1))
+        || ([value.skillBundleVersion, value.skillBundleProjectionVersion, value.skillBundleReclaimVersion].some(v => v !== undefined)
+          && (value.skillBundleVersion !== 1 || value.skillBundleProjectionVersion !== 1 || value.skillBundleReclaimVersion !== 1
+            || value.abiVersion !== 8))
+        || (value.skillVersionsVersion !== undefined && (value.skillVersionsVersion !== 1 || value.abiVersion !== 8))) {
         this.failProtocol(); return
       }
       this.storageVersion = value.storageProbeVersion
@@ -769,6 +987,10 @@ export class FdWorkerClient {
       this.stagingVersion = value.stagingAbiVersion
       this.projectMetadataVersion = value.projectMetadataVersion
       this.environmentLayoutVersion = value.environmentLayoutVersion
+      this.bundleCapability = value.skillBundleVersion === 1
+        && value.skillBundleProjectionVersion === 1 && value.skillBundleReclaimVersion === 1
+      this.skillVersionsVersion = value.skillVersionsVersion
+      this.skillProjectionVersion = value.skillProjectionVersion
       this.readyResolved = true
       this.resolveReady()
       return
@@ -781,6 +1003,60 @@ export class FdWorkerClient {
     }
     const pending = this.pending
     if (pending === undefined || value.id !== pending.id) { this.failProtocol(); return }
+    if (pending.kind === 'skill-source-context') {
+      const context = value.kind === 'skill-source-context-reply' ? skillSourceContext(value.context) : undefined
+      if (context === undefined) { this.failProtocol(); return }
+      pending.removeAbort(); this.pending = undefined; pending.resolve(context); return
+    }
+    if (pending.kind === 'bundle') {
+      const facts = value.kind === 'bundle-reply' ? parseBundleFrame(value.frame, pending.request) : undefined
+      if (facts === undefined) { this.failProtocol(); return }
+      if (facts.outcome === 'unknown' || !facts.closed) { this.failure = new FdMutationFailure('unknown', 'FS_IO_ERROR', undefined,
+        { cause: facts }); void this.close(); return }
+      pending.removeAbort(); this.pending = undefined
+      if (facts.outcome === 'not-published') pending.reject(new FdMutationFailure('not-published', [27, 28, 122].includes(facts.errno)
+        ? 'FS_TOO_LARGE' : facts.errno === 116 ? 'FS_STALE_VERSION' : [110, 125].includes(facts.errno) ? 'FS_ABORTED' : 'FS_PERMISSION_DENIED',
+      undefined, { cause: facts }))
+      else pending.resolve(facts)
+      return
+    }
+    if (pending.kind === 'skill-retire') {
+      const facts = value.kind === 'skill-retire-reply' ? parseSkillRetireFrame(value.frame, pending.root, pending.maximum) : undefined
+      if (facts === undefined) { this.failProtocol(); return }
+      if (facts.outcome === 'unknown' || !facts.closed) { this.failure = new FdSkillFailure('unknown', 'FS_IO_ERROR', facts)
+        void this.close(); return }
+      pending.removeAbort(); this.pending = undefined
+      if (facts.outcome === 'not-retired') pending.reject(new FdSkillFailure('not-published', 'FS_IO_ERROR', facts))
+      else pending.resolve(facts)
+      return
+    }
+    if (pending.kind === 'skill-project') {
+      const facts = value.kind === 'skill-project-reply' ? parseSkillProjectFrame(value.frame, pending.request) : undefined
+      if (facts === undefined) { this.failProtocol(); return }
+      if (facts.outcome === 'unknown' || !facts.closed) { this.failure = new FdSkillProjectionFailure('unknown', 'FS_IO_ERROR',
+        facts, { operationId: pending.id, project: Object.freeze({ ...pending.request.root }), version: pending.request.version })
+      void this.close(); return }
+      pending.removeAbort(); this.pending = undefined
+      if (facts.outcome === 'not-published') pending.reject(new FdSkillProjectionFailure('not-published', [27, 28,
+        122].includes(facts.errno) ? 'FS_TOO_LARGE'
+        : [125, 110].includes(facts.errno) ? 'FS_ABORTED' : facts.errno === 116 ? 'FS_STALE_VERSION' : 'FS_PERMISSION_DENIED', facts,
+      { operationId: pending.id, project: Object.freeze({ ...pending.request.root }), version: pending.request.version }))
+      else pending.resolve(facts)
+      return
+    }
+    if (pending.kind === 'skill-prepare') {
+      const facts = value.kind === 'skill-prepare-reply' ? parseSkillFrame(value.frame, pending.request) : undefined
+      if (facts === undefined) { this.failProtocol(); return }
+      if (facts.outcome === 'unknown' || !facts.closed) { this.failure = new FdSkillFailure('unknown', 'FS_IO_ERROR', facts)
+        void this.close(); return }
+      pending.removeAbort(); this.pending = undefined
+      if (facts.outcome === 'not-prepared') pending.reject(new FdSkillFailure('not-published', [27, 28,
+        122].includes(facts.errno) ? 'FS_TOO_LARGE'
+        : facts.errno === 125 || facts.errno === 110 ? 'FS_ABORTED' : [1, 13, 18, 22, 40].includes(facts.errno) ? 'FS_PERMISSION_DENIED'
+          : facts.errno === 116 ? 'FS_STALE_VERSION' : 'FS_IO_ERROR', facts))
+      else pending.resolve(facts)
+      return
+    }
     if (pending.kind === 'stage') { this.stageMessage(pending, value); return }
     if (pending.kind === 'project-metadata') { this.projectMetadataMessage(pending, value); return }
     if (pending.kind === 'environment-layout') { this.environmentLayoutMessage(pending, value); return }
@@ -802,7 +1078,7 @@ export class FdWorkerClient {
       return
     }
     if (pending.kind === 'lstat' || pending.kind === 'list' || pending.kind === 'range') { pending.accept(value); return }
-    if (pending.kind === 'storage-probe' || pending.kind === 'storage-record' || pending.kind === 'storage-view') {
+    if (pending.kind === 'storage-probe' || pending.kind === 'storage-record' || pending.kind === 'storage-skill-proof' || pending.kind === 'storage-view') {
       pending.accept(value); return
     }
     if (pending.kind === 'stat' && value.kind === 'stat-reply') {
@@ -881,7 +1157,8 @@ export class FdWorkerClient {
     pending.removeAbort(); this.pending = undefined
     if (facts.outcome === 'not-prepared') {
       const syscallCode = ({ 1: 'EPERM', 2: 'ENOENT', 5: 'EIO', 13: 'EACCES', 18: 'EXDEV', 20: 'ENOTDIR', 22: 'EINVAL',
-        28: 'ENOSPC', 40: 'ELOOP', 110: 'ETIMEDOUT', 116: 'ESTALE', 122: 'EDQUOT', 125: 'ECANCELED' } as Record<number, string>)[facts.errno]
+        28: 'ENOSPC', 40: 'ELOOP', 110: 'ETIMEDOUT', 116: 'ESTALE', 122: 'EDQUOT', 125: 'ECANCELED' } as Record<number,
+        string>)[facts.errno]
       const code: FsErrorCode = facts.errno === 125 || facts.errno === 110 ? 'FS_ABORTED'
         : [1, 13, 18, 22, 40].includes(facts.errno) ? 'FS_PERMISSION_DENIED'
           : facts.errno === 20 ? 'FS_NOT_DIRECTORY' : facts.errno === 2 ? 'FS_NOT_FOUND' : 'FS_IO_ERROR'
@@ -930,7 +1207,8 @@ export class FdWorkerClient {
       || (result.operation !== 'create' && result.operation !== 'update')
       || typeof result.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(result.version)
       || (result.before !== null && (typeof result.before !== 'string' || Buffer.byteLength(result.before) > pending.maxBytes))
-      || result.after !== pending.content.replace(/\r\n?/g, '\n') || (result.operation === 'create' && result.before !== null)) { this.failProtocol(); return }
+      || result.after !== pending.content.replace(/\r\n?/g, '\n') || (result.operation === 'create' && result.before !== null)) {
+      this.failProtocol(); return }
     pending.removeAbort()
     this.pending = undefined
     pending.resolve({ operation: result.operation, version: result.version, before: result.before, after: result.after })
@@ -998,7 +1276,8 @@ export class FdWorkerClient {
     const pending = this.pending
     if (pending === undefined) return
     if (pending.kind === 'stage') {
-      this.finishStage(pending, error instanceof FdStageFailure ? error : new FdStageFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error }))
+      this.finishStage(pending, error instanceof FdStageFailure ? error : new FdStageFailure('unknown', 'FS_IO_ERROR', undefined, {
+        cause: error }))
       return
     }
     pending.removeAbort()
@@ -1008,7 +1287,24 @@ export class FdWorkerClient {
       : new FdProjectMetadataFailure('unknown', 'FS_IO_ERROR', undefined, undefined, { cause: error }))
     else if (pending.kind === 'environment-layout') pending.reject(error instanceof FdEnvironmentLayoutFailure ? error
       : new FdEnvironmentLayoutFailure('unknown', 'FS_IO_ERROR', undefined, undefined, { cause: error }))
+    else if (pending.kind === 'bundle') pending.reject(new FdMutationFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error }))
+    else if (pending.kind === 'skill-source-context') pending.reject(error)
+    else if (pending.kind === 'skill-project') pending.reject(error instanceof FdSkillProjectionFailure ? error
+      : new FdSkillProjectionFailure('unknown', 'FS_IO_ERROR', undefined,
+        { operationId: pending.id, project: Object.freeze({ ...pending.request.root }), version: pending.request.version }, {
+          cause: error }))
     else if (pending.kind === 'stream') pending.finish(error)
+    else if (pending.kind === 'skill-prepare' || pending.kind === 'skill-retire') {
+      const intent = Object.freeze({ operationId: pending.id,
+        kind: pending.kind === 'skill-prepare' ? 'prepare' as const : 'retire' as const,
+        root: Object.freeze({ ...pending.kind === 'skill-prepare' ? pending.request.root : pending.root }),
+        version: pending.kind === 'skill-prepare' ? pending.request.version : pending.current?.id,
+        pointerRevision: pending.kind === 'skill-retire' ? pending.current?.revision : undefined })
+      const retained = new FdSkillFailure('unknown', 'FS_IO_ERROR', error instanceof FdSkillFailure ? error.facts : undefined, {
+        cause: error }, intent)
+      this.failure = retained
+      pending.reject(retained)
+    }
     else if (pending.kind === 'text-write') pending.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error }))
     else pending.reject(error)
   }

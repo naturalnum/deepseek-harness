@@ -19,8 +19,9 @@ it('reads the same actual native policy through the original traced API without 
   const presets = vi.spyOn(graph.ctx.agentPresets, 'resolve')
   const metadata = vi.spyOn(graph.adapter, 'resolveModel')
   const api = graph.ctx.get('peCloudApi')
-  expect(api).toBeDefined()
-  await expect(api?.assertBootstrapCurrent(graph.ctx)).resolves.toBeUndefined()
+  if (api === undefined) throw new Error('Original native API absent')
+  const assertCurrent = await api.assertBootstrapCurrent(graph.ctx)
+  assertCurrent()
   expect(policy).toHaveBeenCalledTimes(1)
   expect(presets).toHaveBeenCalled()
   expect(metadata).toHaveBeenCalledWith('local-text', 'plain-text', expect.any(AbortSignal))
@@ -95,8 +96,9 @@ it('rejects repeat native installations before changing the actual original prov
   expect(same(graph.ctx.sessionController, controller)).toBe(true)
   expect(same(graph.ctx.agentLoop, loop)).toBe(true)
   expect(same(graph.ctx.llm, llm)).toBe(true)
-  await expect(graph.api.assertBootstrapCurrent(graph.ctx)).resolves.toBeUndefined()
+  const assertCurrent = await graph.api.assertBootstrapCurrent(graph.ctx)
   graph.withdrawLlmGuard()
+  expect(assertCurrent).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
   expect(same(graph.ctx.llm, llm)).toBe(true)
   await expect(graph.api.assertBootstrapCurrent(graph.ctx)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
   expect(() => graph.api.installLlmGuard(graph.ctx, graph.guards.allowedModel)).toThrow(expect.objectContaining(rejected))
@@ -123,7 +125,7 @@ it('rejects a foreign actual LlmRuntime set by its native provider owner and a f
     await expect(graph.api.assertBootstrapCurrent(graph.ctx)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
   } finally { owner.set('llm', original) }
   await expect(graph.api.assertBootstrapCurrent(other.ctx)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
-  await expect(graph.api.assertBootstrapCurrent(graph.ctx)).resolves.toBeUndefined()
+  await expect(graph.api.assertBootstrapCurrent(graph.ctx)).resolves.toEqual(expect.any(Function))
 })
 
 it.each(['controller', 'agent-loop', 'llm'])('refuses after actual native %s owner disposal', async (id) => {
@@ -159,7 +161,19 @@ it('rechecks the actual default selection after the asynchronous model metadata 
   })
   const checking = graph.api.assertBootstrapCurrent(graph.ctx)
   const rejected = expect(checking).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
-  try { await entered.promise; await graph.ctx.agentDefaultModel.saveSelection({ provider: 'local-text', model: 'changed' }) }
+  const defaultModel = graph.ctx.agentDefaultModel
+  const saved = vi.spyOn(graph.ctx.configEditor, 'edit')
+  try {
+    await entered.promise
+    const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === 'model')
+    if (entry === undefined) throw new Error('Original default-model Loader entry absent')
+    const fiber = entry.fiber
+    await entry.update({ config: { provider: 'local-text', model: 'changed' } })
+    expect(entry.fiber).toBe(fiber)
+    expect(same(graph.ctx.agentDefaultModel, defaultModel)).toBe(true)
+    expect(defaultModel.currentSelection()).toEqual({ provider: 'local-text', model: 'changed' })
+    expect(saved).not.toHaveBeenCalled()
+  }
   finally { release.resolve(undefined) }
   await rejected
   expect(graph.adapter.calls).toBe(0)

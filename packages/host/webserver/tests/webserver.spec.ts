@@ -8,21 +8,23 @@
  * denial goes through the real Loader.
  */
 
-import { generateKeyPairSync } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { generateKeyPairSync, X509Certificate } from 'node:crypto'
+import { mkdir, mkdtemp, rm, writeFile, type FileHandle } from 'node:fs/promises'
 import { once } from 'node:events'
 import { Agent, request as httpsRequest } from 'node:https'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { connect, createServer as createTcpServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { Duplex } from 'node:stream'
+import { getDefaultHighWaterMark, type Duplex } from 'node:stream'
+import { connect as tlsConnect, TLSSocket } from 'node:tls'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import HttpServer, { bindUrlHost, isLoopbackHost, normalizeBindAddress, renderIndexInjections, type TlsConfig } from '../src/index.ts'
-import { materializeTlsFixture, type TlsFixture } from './tls-fixture.ts'
+import HttpServer, { bindUrlHost, isLoopbackHost, normalizeBindAddress, renderIndexInjections, type Config, type TlsConfig } from '../src/index.ts'
+import { materializeTlsFixture, materializeClientTlsFixture, type TlsFixture } from './tls-fixture.ts'
 
 /** One-shot barrier for disposal overlapping a pending PEM read. */
 const tlsReadGate = vi.hoisted(() => {
@@ -45,6 +47,28 @@ const tlsReadGate = vi.hoisted(() => {
   }
 })
 
+const clientCaReadGate = vi.hoisted(() => {
+  const handles: FileHandle[] = []
+  let held: { entered: (handle: FileHandle) => void; resume: Promise<void> } | undefined
+  return {
+    handles,
+    arm() {
+      const entered = Promise.withResolvers<FileHandle>(), resumed = Promise.withResolvers<undefined>()
+      held = { entered: entered.resolve, resume: resumed.promise }
+      return { entered: entered.promise, release: () => { resumed.resolve(undefined) } }
+    },
+    async hold(path: string, handle: FileHandle): Promise<void> {
+      if (!path.endsWith('client-ca.pem')) return
+      handles.push(handle)
+      if (held === undefined) return
+      const gate = held
+      held = undefined
+      gate.entered(handle)
+      await gate.resume
+    },
+  }
+})
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
@@ -52,6 +76,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     async readFile(...args: Parameters<typeof actual.readFile>) {
       if (typeof args[0] === 'string') await tlsReadGate.hold(args[0])
       return actual.readFile(...args)
+    },
+    async open(...args: Parameters<typeof actual.open>) {
+      const handle = await actual.open(...args)
+      if (typeof args[0] === 'string') await clientCaReadGate.hold(args[0], handle)
+      return handle
     },
   }
 })
@@ -89,6 +118,7 @@ async function loadComposition(
   gzip = false,
   host = '127.0.0.1',
   tls?: Partial<TlsConfig> | null,
+  transportLimits?: Config['transportLimits'] | null,
 ): Promise<Context> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-webserver-loader-'))
   const configPath = join(root, 'cordis.yml')
@@ -105,6 +135,7 @@ async function loadComposition(
           '    tls:',
           ...(tls.certFile === undefined ? [] : [`      certFile: '${tls.certFile}'`]),
           ...(tls.keyFile === undefined ? [] : [`      keyFile: '${tls.keyFile}'`]),
+          ...(tls.clientCa === undefined ? [] : [`      clientCa: ${JSON.stringify(tls.clientCa)}`]),
         ]),
     ...(gzip
       ? [
@@ -113,6 +144,7 @@ async function loadComposition(
         '    compressionThresholdBytes: 16',
       ]
       : []),
+    ...(transportLimits === undefined ? [] : [`    transportLimits: ${JSON.stringify(transportLimits)}`]),
     '',
   ].join('\n'))
 
@@ -187,7 +219,9 @@ function tlsRequest(
   port: number | undefined,
   path: string,
   ca?: string,
-  agent?: Agent,
+  agent?: Agent | false,
+  credentials?: { cert: string; key: string },
+  headers?: Record<string, string>,
 ): Promise<{ status: number; body: string }> {
   const { promise, resolve, reject } = Promise.withResolvers<{ status: number; body: string }>()
   const request = httpsRequest({
@@ -196,6 +230,8 @@ function tlsRequest(
     path,
     ...(ca === undefined ? {} : { ca }),
     ...(agent === undefined ? {} : { agent }),
+    ...(credentials === undefined ? {} : credentials),
+    ...(headers === undefined ? {} : { headers }),
   }, (response) => {
     let body = ''
     response.setEncoding('utf8')
@@ -763,5 +799,312 @@ describe('real Loader composition', () => {
     const fiber = webserverFiber(second)
     expect(fiber?.state).toBe(FiberState.FAILED)
     await expect(fiber?.await()).rejects.toThrow('EADDRINUSE')
+  })
+})
+
+describe('finite transport limits through the original Loader', () => {
+  const limits = { maxHeaderPairs: 1600, maxHeaderBytes: 131072, highWaterMark: 1024, maxConnections: 4 }
+  const clients = new Map<Duplex, Promise<void>>()
+
+  afterEach(async () => {
+    for (const client of clients.keys()) client.destroy()
+    await Promise.all(clients.values())
+    clients.clear()
+  })
+
+  async function open(context: Context, ca?: string): Promise<Duplex> {
+    const port = boundPort(context.webServer.port)
+    const endpoint = { host: '127.0.0.1', port, allowHalfOpen: true }
+    const client = ca === undefined
+      ? connect(endpoint)
+      : tlsConnect({ ...endpoint, ca })
+    // Cancellation and admission refusal can reset the wire; actual close owns cleanup.
+    client.on('error', () => {})
+    client.on('end', () => { client.end() })
+    clients.set(client, new Promise<void>((resolve) => { client.once('close', () => { resolve() }) }))
+    await once(client, ca === undefined ? 'connect' : 'secureConnect')
+    return client
+  }
+
+  async function exchange(context: Context, input: string | Buffer, ca?: string): Promise<Buffer> {
+    const client = await open(context, ca)
+    const chunks: Buffer[] = []
+    client.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    client.write(input)
+    await clients.get(client)
+    return Buffer.concat(chunks)
+  }
+
+  async function compose(secure: boolean, selected = limits): Promise<{ context: Context; ca?: string }> {
+    const fixture = secure ? await tlsFixture() : undefined
+    const context = await loadComposition(0, false, '127.0.0.1', fixture === undefined
+      ? undefined : { certFile: fixture.certFile, keyFile: fixture.keyFile }, selected)
+    return fixture === undefined ? { context } : { context, ca: fixture.ca }
+  }
+
+  it('rejects incomplete, nonpositive, nonfinite and overflowing settings before listen', async () => {
+    for (const field of Object.keys(limits)) {
+      for (const value of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(() => HttpServer.Config({ host: '127.0.0.1', port: 0,
+          transportLimits: { ...limits, [field]: value } })).toThrow()
+      }
+    }
+    for (const value of [{}, { ...limits, maxHeaderPairs: 0x3fff_ffff }]) {
+      expect(() => { Reflect.apply(HttpServer.Config, undefined, [{ host: '127.0.0.1', port: 0, transportLimits: value }]) }).toThrow()
+    }
+    const denied = await loadComposition(0, false, '127.0.0.1', undefined, { ...limits, maxConnections: 0 })
+    await expect(webserverFiber(denied)?.await()).rejects.toThrow()
+    expect(denied.get('webServer')?.port).toBeUndefined()
+  })
+
+  for (const secure of [false, true]) {
+    const protocol = secure ? 'HTTPS' : 'HTTP'
+    const selected = { ...limits, highWaterMark: secure ? getDefaultHighWaterMark(false) : limits.highWaterMark }
+    it(`${protocol} retains duplicate raw headers beyond Node's default and the original body/URL with selected watermarks`, async () => {
+      const { context, ca } = await compose(secure, selected)
+      const observed = Promise.withResolvers<Buffer>()
+      let capture: { url: string | undefined; headers: string[]; flowing: boolean | null; watermarks: number[] } | undefined
+      context.webServer.register({ kind: 'exact', path: '/wire', handler: (req, res) => {
+        capture = { url: req.url, headers: req.rawHeaders, flowing: req.readableFlowing,
+          watermarks: [req.readableHighWaterMark, res.writableHighWaterMark,
+            req.socket.readableHighWaterMark, req.socket.writableHighWaterMark] }
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        req.on('end', () => { observed.resolve(Buffer.concat(chunks)); res.end('accepted') })
+      } })
+      const head = 'POST /wire?value=%2f HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\nContent-Length: 3\r\n'
+        + Array.from({ length: 1497 }, (_, i) => `X-Pad: ${String(i)}\r\n`).join('') + '\r\n'
+      const body = Buffer.from([0, 255, 3])
+      expect((await exchange(context, Buffer.concat([Buffer.from(head), body]), ca)).toString()).toContain('200 OK')
+      expect(await observed.promise).toEqual(body)
+      expect(capture?.url).toBe('/wire?value=%2f')
+      expect(capture?.headers.filter((_, i) => i % 2 === 0)).toHaveLength(1500)
+      expect(capture?.headers.at(-1)).toBe('1496')
+      expect(capture?.flowing).toBeNull()
+      expect(capture?.watermarks).toEqual(Array<number>(4).fill(selected.highWaterMark))
+    })
+
+    it(`${protocol} captures one excess header pair so the route rejects every oversized count`, async () => {
+      const { context, ca } = await compose(secure, selected)
+      let captured = 0
+      context.webServer.register({ kind: 'exact', path: '/wire', handler: (req, res) => {
+        captured = req.rawHeaders.length / 2
+        // The route owns pair admission; an excess sentinel must survive the native parser.
+        res.writeHead(captured > limits.maxHeaderPairs ? 431 : 200)
+        res.end()
+      } })
+      const input = 'GET /wire HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\n'
+        + Array.from({ length: 1700 }, () => 'X-Pad: x\r\n').join('') + '\r\n'
+      expect((await exchange(context, input, ca)).toString()).toContain('431 Request Header Fields Too Large')
+      expect(captured).toBe(limits.maxHeaderPairs + 1)
+    })
+
+    it(`${protocol} rejects oversized header bytes in the original parser before route dispatch`, async () => {
+      const { context, ca } = await compose(secure, { ...selected, maxHeaderBytes: 256 })
+      const handler = vi.fn((_req: IncomingMessage, res: ServerResponse) => { res.end() })
+      context.webServer.register({ kind: 'exact', path: '/wire', handler })
+      const result = await exchange(context,
+        'GET /wire HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\nX-Pad: ' + 'x'.repeat(1024) + '\r\n\r\n', ca)
+      expect(result.toString()).toContain('431 Request Header Fields Too Large')
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it(`${protocol} rejects Expect before automatic 100 or ordinary/upgrade route dispatch`, async () => {
+      const { context, ca } = await compose(secure, selected)
+      const handler = vi.fn((_req: IncomingMessage, res: ServerResponse) => { res.end() }), upgraded = vi.fn()
+      context.webServer.register({ kind: 'exact', path: '/wire', handler })
+      context.webServer.registerUpgrade({ path: '/wire', handler: upgraded })
+      for (const value of ['100-continue', 'custom-expectation']) {
+        const result = (await exchange(context,
+          `POST /wire HTTP/1.1\r\nHost: public.example\r\nExpect: ${value}\r\nContent-Length: 9\r\n\r\n`, ca)).toString()
+        expect(result).toContain('417 Expectation Failed')
+        expect(result).not.toContain('100 Continue')
+      }
+      expect((await exchange(context,
+        'GET /wire HTTP/1.1\r\nHost: public.example\r\nConnection: Upgrade\r\nUpgrade: dsh-test\r\nExpect: 100-continue\r\n\r\n', ca)).length).toBe(0)
+      expect(handler).not.toHaveBeenCalled()
+      expect(upgraded).not.toHaveBeenCalled()
+    })
+
+    it(`${protocol} preserves original upgrade head/bytes and a delayed reply after client half-close`, async () => {
+      const { context, ca } = await compose(secure, selected)
+      const received = Promise.withResolvers<Buffer>(), replied = Promise.withResolvers<undefined>()
+      const initial = Buffer.from([0, 255, 1]), tail = Buffer.from([128, 4, 0]), answer = Buffer.from([255, 0, 127])
+      context.webServer.registerUpgrade({ path: '/wire', handler: (req, socket, head) => {
+        expect(req.url).toBe('/wire?raw=%2f')
+        expect(req.readableFlowing).toBeNull()
+        const chunks: Buffer[] = [head]
+        socket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        socket.on('end', () => { received.resolve(Buffer.concat(chunks)); socket.end(answer) })
+        socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: dsh-test\r\n\r\n')
+      } })
+      const client = await open(context, ca), chunks: Buffer[] = []
+      client.on('data', (chunk: Buffer) => {
+        chunks.push(chunk)
+        if (Buffer.concat(chunks).includes(Buffer.from('\r\n\r\n'))) replied.resolve(undefined)
+      })
+      client.write(Buffer.concat([Buffer.from('GET /wire?raw=%2f HTTP/1.1\r\nHost: public.example\r\nConnection: Upgrade\r\nUpgrade: dsh-test\r\n\r\n'), initial]))
+      await replied.promise
+      client.end(tail)
+      await clients.get(client)
+      expect(await received.promise).toEqual(Buffer.concat([initial, tail]))
+      expect(Buffer.concat(chunks).subarray(-answer.length)).toEqual(answer)
+    })
+  }
+
+  it('rejects a TLS watermark unequal to the public native default before listening', async () => {
+    const fixture = await tlsFixture()
+    const denied = await loadComposition(0, false, '127.0.0.1',
+      { certFile: fixture.certFile, keyFile: fixture.keyFile },
+      { ...limits, highWaterMark: getDefaultHighWaterMark(false) + 1 })
+    await expect(webserverFiber(denied)?.await()).rejects.toThrow('must equal getDefaultHighWaterMark(false)')
+    expect(denied.get('webServer')?.port).toBeUndefined()
+  })
+
+  it.each([false, true])('limits connections and joins actual cancellation/disposal (TLS=%s)', async (secure) => {
+    const { context, ca } = await compose(secure, { ...limits, maxConnections: 1,
+      highWaterMark: secure ? getDefaultHighWaterMark(false) : limits.highWaterMark })
+    const entered = Promise.withResolvers<undefined>(), serverClosed = Promise.withResolvers<undefined>()
+    context.webServer.register({ kind: 'exact', path: '/held', handler: (req) => {
+      req.socket.once('close', () => { serverClosed.resolve(undefined) })
+      entered.resolve(undefined)
+    } })
+    context.webServer.register({ kind: 'exact', path: '/probe', handler: (_req, res) => { res.end('open') } })
+    const first = await open(context, ca)
+    first.write('GET /held HTTP/1.1\r\nHost: public.example\r\n\r\n')
+    await entered.promise
+    const second = await open(context)
+    await clients.get(second)
+    first.destroy()
+    await serverClosed.promise
+    expect((await exchange(context, 'GET /probe HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\n\r\n', ca)).toString()).toContain('open')
+    const upgradedClosed = Promise.withResolvers<undefined>()
+    context.webServer.registerUpgrade({ path: '/held', handler: (_req, socket) => {
+      socket.once('close', () => { upgradedClosed.resolve(undefined) })
+      socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: dsh-test\r\n\r\n')
+    } })
+    const upgraded = ca === undefined ? await upgrade(context.webServer.port, '/held')
+      : (await tlsUpgrade(context.webServer.port, '/held', ca)).socket
+    const closed = once(upgraded, 'close')
+    await context.fiber.dispose()
+    await closed
+    await upgradedClosed.promise
+    expect(upgraded.destroyed).toBe(true)
+  })
+
+  it.each([undefined, null])('retains automatic 100 Continue for omitted/null limits (%s)', async (value) => {
+    const context = await loadComposition(0, false, '127.0.0.1', undefined, value)
+    context.webServer.register({ kind: 'exact', path: '/wire', handler: (req, res) => {
+      req.resume(); req.on('end', () => { res.end('default') })
+    } })
+    const result = (await exchange(context,
+      'POST /wire HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 1\r\n\r\nx')).toString()
+    expect(result).toContain('100 Continue')
+    expect(result).toContain('default')
+  })
+})
+
+describe('optional client CA on the original HTTPS listener', () => {
+  it('keeps public requests anonymous and exposes the real trusted or foreign TLS peer', async () => {
+    const server = await tlsFixture(), clients = await materializeClientTlsFixture(dirname(server.certFile))
+    const loaded = await loadComposition(0, false, '127.0.0.1', { certFile: server.certFile, keyFile: server.keyFile,
+      clientCa: { certFile: clients.caFile, maxBytes: Buffer.byteLength(clients.ca) } },
+    { maxHeaderPairs: 128, maxHeaderBytes: 32768, highWaterMark: getDefaultHighWaterMark(false), maxConnections: 4 })
+    loaded.webServer.register({ kind: 'exact', path: '/peer', handler: (req, res) => {
+      if (!(req.socket instanceof TLSSocket)) throw new Error('Expected the original TLS socket')
+      const peer = req.socket.getPeerCertificate()
+      res.end(JSON.stringify({ authorized: req.socket.authorized, raw: peer.raw?.toString('base64') ?? null }))
+    } })
+    const observe = async (credentials?: { cert: string; key: string }, headers?: Record<string, string>) => {
+      const result = await tlsRequest(loaded.webServer.port, '/peer', server.ca, false, credentials, headers)
+      expect(result.status).toBe(200)
+      return JSON.parse(result.body) as { authorized: boolean; raw: string | null }
+    }
+    expect(await observe()).toEqual({ authorized: false, raw: null })
+    expect(await observe(undefined, { 'x-forwarded-client-cert': 'trusted-client' })).toEqual({ authorized: false, raw: null })
+    expect(await observe(clients.client)).toEqual({ authorized: true,
+      raw: new X509Certificate(clients.client.cert).raw.toString('base64') })
+    expect(await observe(clients.foreign)).toEqual({ authorized: false,
+      raw: new X509Certificate(clients.foreign.cert).raw.toString('base64') })
+    expect(clientCaReadGate.handles.at(-1)?.fd).toBe(-1)
+  })
+
+  it('does not request a client certificate when the CA option is omitted', async () => {
+    const server = await tlsFixture(), clients = await materializeClientTlsFixture(dirname(server.certFile))
+    const loaded = await loadComposition(0, false, '127.0.0.1', { certFile: server.certFile, keyFile: server.keyFile })
+    loaded.webServer.register({ kind: 'exact', path: '/peer', handler: (req, res) => {
+      if (!(req.socket instanceof TLSSocket)) throw new Error('Expected the original TLS socket')
+      res.end(JSON.stringify({ authorized: req.socket.authorized, raw: req.socket.getPeerCertificate().raw ?? null }))
+    } })
+    const result = await tlsRequest(loaded.webServer.port, '/peer', server.ca, false, clients.client)
+    expect(result.status).toBe(200)
+    expect(JSON.parse(result.body)).toEqual({ authorized: false, raw: null })
+  })
+
+  it('rejects incomplete or nonfinite CA read budgets at the configuration parser', () => {
+    for (const clientCa of [{}, { certFile: 'client-ca.pem' }, ...[0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER]
+      .map(maxBytes => ({ certFile: 'client-ca.pem', maxBytes }))]) {
+      expect(() => { Reflect.apply(HttpServer.Config, undefined,
+        [{ host: '127.0.0.1', port: 0, tls: { certFile: 'cert.pem', keyFile: 'key.pem', clientCa } }]) }).toThrow()
+    }
+  })
+
+  it('rejects missing, empty, oversized or unparseable CA material before listen and closes each read handle', async () => {
+    const server = await tlsFixture(), clients = await materializeClientTlsFixture(dirname(server.certFile))
+    const holder = createTcpServer(), listening = once(holder, 'listening')
+    holder.listen(0, '127.0.0.1')
+    await listening
+    const port = (holder.address() as AddressInfo).port
+    const directoryCa = join(dirname(server.certFile), 'directory-client-ca.pem')
+    await mkdir(directoryCa)
+    const cases = [
+      { content: '', maxBytes: 65536, reason: /is empty/ },
+      { content: 'not a certificate', maxBytes: 65536, reason: /not a usable CA certificate bundle/ },
+      { content: clients.ca + '\nnot PEM', maxBytes: 65536, reason: /not a usable CA certificate bundle/ },
+      { content: server.ca, maxBytes: 65536, reason: /not a usable CA certificate bundle/ },
+      { content: clients.ca, maxBytes: Buffer.byteLength(clients.ca) - 1, reason: /configured byte limit/ },
+      { content: clients.ca, maxBytes: 65536, reason: /cannot read tls\.clientCa\.certFile/, missing: true },
+      { content: clients.ca, maxBytes: 65536, reason: /cannot read tls\.clientCa\.certFile/, directory: true },
+    ]
+    try {
+      for (const row of cases) {
+        await writeFile(clients.caFile, row.content)
+        const count = clientCaReadGate.handles.length
+        const denied = await loadComposition(port, false, '127.0.0.1', { certFile: server.certFile, keyFile: server.keyFile,
+          clientCa: { certFile: row.directory ? directoryCa : row.missing ? clients.caFile + '.absent' : clients.caFile,
+            maxBytes: row.maxBytes } })
+        const fiber = webserverFiber(denied)
+        if (fiber === undefined) throw new Error('CA-denied webserver row is missing')
+        const failure = await fiber.await().then(() => '', (error: unknown) => error instanceof Error ? error.message : String(error))
+        expect(failure).toMatch(row.reason)
+        expect(failure).not.toMatch(/EADDRINUSE|BEGIN CERTIFICATE|PRIVATE KEY/)
+        expect(denied.get('webServer')?.port).toBeUndefined()
+        expect(clientCaReadGate.handles.slice(count).every(handle => handle.fd === -1)).toBe(true)
+      }
+    } finally {
+      const closed = once(holder, 'close')
+      holder.close()
+      await closed
+    }
+  })
+
+  it('joins a pending CA open/read and closes its actual file handle before disposal settles', async () => {
+    const server = await tlsFixture(), clients = await materializeClientTlsFixture(dirname(server.certFile))
+    const gate = clientCaReadGate.arm()
+    const loading = loadComposition(0, false, '127.0.0.1', { certFile: server.certFile, keyFile: server.keyFile,
+      clientCa: { certFile: clients.caFile, maxBytes: 65536 } })
+    try {
+      const handle = await gate.entered
+      expect(handle.fd).toBeGreaterThanOrEqual(0)
+      const composed = compositions.at(-1)
+      if (composed === undefined) throw new Error('CA-loading composition is missing')
+      const originalServer = composed.context.webServer
+      const disposal = composed.context.fiber.dispose()
+      gate.release()
+      await disposal
+      await loading
+      expect(handle.fd).toBe(-1)
+      await expect(tlsRequest(originalServer.port, '/', server.ca)).rejects.toThrow()
+    } finally { gate.release() }
   })
 })

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import type { SkillProjectGrant } from '../src/skill-files-types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRetainedExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
 
@@ -139,6 +140,12 @@ it('refuses another account environment selection before opening paths or consum
   const f = fixture()
   const wrong: ExecutionMountGrant = { ...f.grant, environment: { ...f.grant.environment, bankId: 'bank-0' } }
   await expect(f.exports.share(wrong, f.current)).rejects.toMatchObject({ phase: 'selection' })
+  // Scalar negative selection only; this is not an original CloudAccountFiles issued parent or authority fixture.
+  const parent: SkillProjectGrant = { binding: f.grant.binding, workspaceId: f.grant.workspaceId,
+    project: { ...f.grant.project, rootMountId: '83', quota: { ...f.grant.project.quota, device: '999' } },
+    metadataDirectory: f.grant.project.metadataDirectory,
+    skillsDirectory: { ...f.grant.project.metadataDirectory, inode: '1013' } }
+  await expect(f.exports.share(f.grant, f.current, { grant: parent, maxCopies: 4 })).rejects.toMatchObject({ phase: 'selection' })
   expect(fs.open).not.toHaveBeenCalled(); expect(f.exports.retainedShares).toBe(0)
 })
 

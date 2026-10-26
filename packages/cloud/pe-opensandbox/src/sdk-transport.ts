@@ -23,6 +23,7 @@ export interface OwnedTransportLimits {
  */
 export function createOwnedSdkTransport(limits: OwnedTransportLimits): OwnedSdkTransport {
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1 || value > 2147483647) throw new SdkLifecycleFailure('sdk/bounds')
+  // proxy-exempt: Root's protected selected-server control hop owns this bounded no-retry pool and joins its actual close.
   const dispatcher = new Agent({ connections: limits.connections, connectTimeout: limits.connectTimeoutMs,
     headersTimeout: limits.headersTimeoutMs, bodyTimeout: limits.bodyTimeoutMs, keepAliveTimeout: limits.keepAliveTimeoutMs,
     keepAliveMaxTimeout: limits.keepAliveTimeoutMs, maxHeaderSize: limits.maxHeaderBytes, pipelining: 1 })

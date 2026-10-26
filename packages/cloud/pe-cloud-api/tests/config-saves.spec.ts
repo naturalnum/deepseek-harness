@@ -358,3 +358,68 @@ describe('explicit native writer adapter', () => {
     } finally { await ctx.fiber.dispose() }
   })
 })
+
+
+describe('original stopped configuration commit', () => {
+  it('retains nested native hooks and required application on one stopped turn without reopening admission', async () => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding()), hold = deferred()
+    await a.stopConfigSaves(nowDeadline())
+    const entered = deferred(), order: string[] = []
+    const actual = root.commitStoppedConfiguration(a, async () => {
+      expect(a.snapshot().admission).toBe('stopped')
+      await a.admit('config-editor', async () => { order.push('write') })
+      entered.resolve(); await hold.promise; order.push('apply')
+    })
+    await entered.promise
+    expect(a.snapshot()).toMatchObject({ admission: 'stopped', pending: [{ kind: 'config-editor' }], failures: [] })
+    expect(root.snapshot()).toMatchObject({ running: 1, tracked: 1 })
+    const refused = vi.fn(async () => {})
+    expect(() => a.admit('settings', refused)).toThrow()
+    expect(() => { a.resumeAccountChanges() }).toThrow()
+    expect(() => root.commitStoppedConfiguration(a, refused)).toThrow()
+    expect(await a.stopConfigSaves(Date.now())).toMatchObject({ status: 'unknown', reason: 'deadline' })
+    expect(refused).not.toHaveBeenCalled(); hold.resolve(); await actual
+    expect(order).toEqual(['write', 'apply'])
+    expect(await a.stopConfigSaves(nowDeadline())).toMatchObject({ status: 'confirmed', admission: 'stopped' })
+    expect(() => root.commitStoppedConfiguration(a, refused)).toThrow()
+    root.releaseAccount(a); root.close()
+  })
+
+  it('rejects open, paused, copied and foreign save owners before the terminal writer', async () => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding()), submit = vi.fn(async () => {})
+    expect(() => root.commitStoppedConfiguration(a, submit)).toThrow()
+    await a.pauseAccountChanges(nowDeadline())
+    expect(() => root.commitStoppedConfiguration(a, submit)).toThrow()
+    await a.stopConfigSaves(nowDeadline())
+    expect(() => root.commitStoppedConfiguration({ ...a }, submit)).toThrow()
+    const foreign = new ConfigSaveCoordinator(limits)
+    expect(() => foreign.commitStoppedConfiguration(a, submit)).toThrow()
+    expect(submit).not.toHaveBeenCalled()
+    await root.commitStoppedConfiguration(a, async () => {})
+    root.releaseAccount(a); root.close(); foreign.close()
+  })
+
+  it('keeps the stopped owner unavailable while original work is pending or its generation has ended', async () => {
+    const root = new ConfigSaveCoordinator(limits), lifetime = new AbortController()
+    const a = root.createAccount(binding('pending', '1', lifetime)), hold = deferred(), submit = vi.fn(async () => {})
+    const pending = a.admit('settings', () => hold.promise)
+    expect(await a.stopConfigSaves(Date.now())).toMatchObject({ status: 'unknown' })
+    expect(() => root.commitStoppedConfiguration(a, submit)).toThrow()
+    hold.resolve(); await pending; lifetime.abort()
+    expect(() => root.commitStoppedConfiguration(a, submit)).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+    expect(submit).not.toHaveBeenCalled(); root.releaseAccount(a); root.close()
+  })
+
+  it('retains unknown final publication and capacity on the original owner and refuses retry or release', async () => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding()), submit = vi.fn(async () => {})
+    await a.stopConfigSaves(nowDeadline())
+    await expect(root.commitStoppedConfiguration(a, async () => { throw new ConfigSaveOutcomeUnknown() }))
+      .rejects.toBeInstanceOf(ConfigSaveOutcomeUnknown)
+    expect(a.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [{ outcome: 'unknown' }] })
+    expect(root.snapshot()).toMatchObject({ tracked: 1 })
+    expect(() => root.commitStoppedConfiguration(a, submit)).toThrow()
+    expect(() => { a.resumeAccountChanges() }).toThrow()
+    expect(() => { root.releaseAccount(a) }).toThrow()
+    expect(() => { root.close() }).toThrow(); expect(submit).not.toHaveBeenCalled()
+  })
+})

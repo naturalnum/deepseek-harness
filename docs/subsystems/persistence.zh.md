@@ -388,6 +388,12 @@ abstract open(id: SessionId, access: SessionAccess, options?: SessionPersistence
  */
 abstract flush(): Promise<void>
 
+/** Observe provider-owned I/O without starting a flush or cancelling existing work.
+ * @param _maximum Explicit maximum number of retained handles to inspect.
+ * @returns False unless the concrete provider can observe all pending native work.
+ */
+isQuiescent(_maximum: number): boolean
+
 /**
  * Observe one stored session without reading its event log or taking
  * ownership.

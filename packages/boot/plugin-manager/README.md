@@ -105,6 +105,10 @@ A service run whose captured output stays silent for `idleTimeoutMs` is terminat
 
 Results contain the last attempted stage, target, saved-state change, application status and error codes. Web dictionaries render management text; pnpm and Loader diagnostics remain unmodified. Unrelated pre-existing inactive entries return warnings; new or changed failures and inactive explicit enablement targets fail the operation. A failed or cancelled package run, or failed bundle validation, restores the manifest and lockfile snapshotted before pnpm ran ([rationale](../../../.agents/notes/implemented/architecture/2026-09-15-guided-plugin-installation.md)); later failures retain saved changes as described in [Failure behavior](#failure-behavior). Installations are tracked by request id until their call settles, so a cancellation names one run and joins its settlement without taking the profile lock. The CLI inherits authentication variables and terminal descriptors; service operations use a scrubbed environment and captured output.
 
+A sole `registerSelectionGuard` covers entry enablement and bundle selection under the original profile lock. Both prepare through the original profile composer, check the actual native plan, persist through the original writer and reconcile under that plan. The selection planner accepts one existing flat leaf; inserted/removed entries and multi-entry closures reject before either profile file changes. Native no-HMR results retain their original meaning, and an embedding runtime must separately establish actual application.
+
+A trusted `PluginSelectionGuard.application` may request `restart` for a complete bundle selection. `previewBundleSelection` reads the same locked native composition without saving or mounting entries. The guarded writer rejects proposed-layer drift before its sole manifest write and returns the native `restart-required: no-hmr` result without reconciling the old graph. The caller owns complete shutdown, replacement assembly and application verification.
+
 </details>
 
 -----

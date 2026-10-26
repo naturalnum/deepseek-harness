@@ -1,8 +1,10 @@
 /** Root-private exact files-grant exports; only the original allocation releases retained directory descriptors. */
+import type { VerifiedExecutionMount } from './lifecycle-types.ts'
 import { createHash } from 'node:crypto'
 import { constants, openSync, closeSync, readSync, fstatSync, lstatSync, statfsSync } from 'node:fs'
 import { posix } from 'node:path'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import type { SkillProjectGrant } from './skill-files-types.ts'
 import type { ExecutionExportShare, ManagedExecutionDeployment } from './managed-coordinator.ts'
 import { ExecutionStateError } from './errors.ts'
 
@@ -252,7 +254,7 @@ function verifyAlias(batch: Batch, entry: ExportEntry, inventory: readonly Mount
     || inventory.some(row => row.path.startsWith(entry.controlPath + '/'))) invalid('verification')
   return { fd, id }
 }
-function select(entries: readonly ExportEntry[], grant: ExecutionMountGrant, maximum: number): Selection {
+function select(entries: readonly ExportEntry[], grant: ExecutionMountGrant, maximum: number, skills?: SkillProjectGrant): Selection {
   const project = entries.find(entry => entry.accountId === grant.binding.accountId && entry.role === 'projects')
   const environment = entries.find(entry => entry.accountId === grant.binding.accountId && entry.role === 'environment'
     && entry.bankId === grant.environment.bankId && entry.slotId === grant.environment.slotId)
@@ -275,6 +277,17 @@ function select(entries: readonly ExportEntry[], grant: ExecutionMountGrant, max
     || grant.project.mountVersion !== `${grant.project.rootDevice}:${grant.project.rootInode}:${grant.project.rootMountId}`) {
     invalid('selection')
   }
+  if (skills !== undefined && (skills.binding !== grant.binding || skills.workspaceId !== grant.workspaceId
+    || skills.project.rootPath !== grant.project.rootPath || skills.project.rootDevice !== grant.project.rootDevice
+    || skills.project.rootInode !== grant.project.rootInode || skills.project.rootMountId !== grant.project.rootMountId
+    || skills.project.quota.device !== grant.project.quota.device
+    || skills.project.quota.mountId !== grant.project.quota.mountId
+    || skills.project.quota.maximumBytes !== grant.project.quota.maximumBytes
+    || skills.project.quota.maximumInodes !== grant.project.quota.maximumInodes
+    || Buffer.byteLength(`${project.daemonPath}/${leaf}/.pe/skills`) > maximum
+    || (['device', 'inode', 'mountId', 'uid', 'gid', 'mode'] as const).some(key => skills.metadataDirectory[key] !== grant.project.metadataDirectory[key])
+    || skills.skillsDirectory.device !== grant.project.rootDevice || skills.skillsDirectory.mountId !== grant.project.rootMountId
+    || skills.skillsDirectory.uid !== 2000 || skills.skillsDirectory.gid !== 2000 || skills.skillsDirectory.mode !== 0o40700)) invalid('selection')
   for (const leaf of ['home', 'venv', 'tmp'] as const) {
     const expected = grant.environment.layout[leaf]
     if (expected.device !== grant.environment.rootDevice || expected.mountId !== grant.environment.rootMountId
@@ -282,13 +295,15 @@ function select(entries: readonly ExportEntry[], grant: ExecutionMountGrant, max
   }
   return { project, environment, leaf }
 }
-function capture(batch: Batch, selected: Selection, grant: ExecutionMountGrant, maximum: number): Captured {
+function capture(batch: Batch, selected: Selection, grant: ExecutionMountGrant, maximum: number, skills?: SkillProjectGrant): Captured {
   const inventory = mounts(batch, maximum), project = verifyAlias(batch, selected.project, inventory)
   const workspace = open(batch, `/proc/self/fd/${project.fd}/${selected.leaf}`, true)
   const workspaceIdentity = { device: grant.project.rootDevice, inode: grant.project.rootInode, uid: 2000, gid: 2000, mode: 0o40700 }
   verifyDirectory(batch, workspace, workspaceIdentity, selected.project.sourceFacts, project.id)
   const metadata = open(batch, `/proc/self/fd/${workspace}/.pe`, true)
   verifyDirectory(batch, metadata, grant.project.metadataDirectory, selected.project.sourceFacts, project.id)
+  if (skills !== undefined) verifyDirectory(batch, open(batch, `/proc/self/fd/${metadata}/skills`, true),
+    skills.skillsDirectory, selected.project.sourceFacts, project.id)
   const environment = verifyAlias(batch, selected.environment, inventory)
   for (const leaf of ['home', 'venv', 'tmp'] as const) {
     const expected = grant.environment.layout[leaf]
@@ -303,7 +318,7 @@ function capture(batch: Batch, selected: Selection, grant: ExecutionMountGrant, 
  * @param manifest Original complete protected manifest bytes; Root binds these exact bytes/digest to keeper's retained-publication guard.
  * @param manifestSha256 Original protected digest, also used by that original keeper adoption.
  * @param keeper Original live adoption; this utility never adopts/closes its reader or releases exports.
- * @param limits Explicit capacities. Directory FD maximum is 7*maxShares plus one verification's seven FDs and one proc reader.
+ * @param limits Explicit capacities. Directory FD maximum is 8*maxShares plus one verification's eight FDs and one proc reader.
  * @returns Private deployment.share and this process's retained count; only original allocation release closes its directories.
  * @throws On invalid input or unavailable exports. Close uncertainty permanently rejects admission and retains the original share count.
  */
@@ -317,9 +332,9 @@ export function createRetainedExecutionExports(
     }
   }
   const reservation = 8 * limits.maxManifestBytes + 64 * limits.maxMountInfoBytes + 32 * limits.maxPathBytes + 65536
-    + limits.maxShares * (32 * limits.maxPathBytes + 16384)
+    + limits.maxShares * (32 * limits.maxPathBytes + 16896)
   if (limits.maxManifestBytes > 131072 || limits.maxMountInfoBytes > 4194304 || limits.maxPathBytes > 4096
-    || !Number.isSafeInteger(reservation) || reservation > limits.maxResidentBytes || !Number.isSafeInteger(7 * limits.maxShares + 8)) {
+    || !Number.isSafeInteger(reservation) || reservation > limits.maxResidentBytes || !Number.isSafeInteger(8 * limits.maxShares + 9)) {
     throw new ExecutionStateError('cloud/invalid-config',
       'Execution export capacities cannot retain the complete bounded verification and shares.')
   }
@@ -343,8 +358,8 @@ export function createRetainedExecutionExports(
     catch (cause) { failure ??= { cause }; throw cause }
     record.released = true; retained.delete(record)
   }
-  const verify = (record: RetainedShare, selected: Selection, grant: ExecutionMountGrant): Captured => {
-    try { return capture(record, selected, grant, limits.maxMountInfoBytes) }
+  const verify = (record: RetainedShare, selected: Selection, grant: ExecutionMountGrant, skills?: SkillProjectGrant): Captured => {
+    try { return capture(record, selected, grant, limits.maxMountInfoBytes, skills) }
     catch (cause) {
       failure ??= { cause }
       throw cause instanceof ExecutionExportFailure ? cause : new ExecutionExportFailure('verification', cause)
@@ -358,24 +373,26 @@ export function createRetainedExecutionExports(
   const assertRetained = (record: RetainedShare): void => {
     if (record.released || record.unknown !== undefined) invalid('verification')
   }
-  const shareNow = (grant: ExecutionMountGrant, current: () => void): ExecutionExportShare => exclusive(() => {
+  const shareNow = (grant: ExecutionMountGrant, current: () => void, skills?: VerifiedExecutionMount['skills']): ExecutionExportShare => exclusive(() => {
     guard(grant, current)
-    const selected = select(entries, grant, limits.maxPathBytes)
+    const selected = select(entries, grant, limits.maxPathBytes, skills?.grant)
     if (retained.size >= limits.maxShares) throw new ExecutionStateError('cloud/capacity', 'Execution export share capacity is exhausted.')
     const record: RetainedShare = { binding: grant.binding, fds: new Set(), released: false }
     retained.add(record)
     try {
-      const captured = verify(record, selected, grant)
+      const captured = verify(record, selected, grant, skills?.grant)
       guard(grant, current)
       const value = Object.freeze({ grant, exports: Object.freeze({ project: `${selected.project.daemonPath}/${selected.leaf}`,
-        protectedProject: `${selected.project.daemonPath}/${selected.leaf}/.pe`, environment: selected.environment.daemonPath }),
+        protectedProject: `${selected.project.daemonPath}/${selected.leaf}/.pe`, environment: selected.environment.daemonPath,
+        ...skills === undefined ? {} : { skills: `${selected.project.daemonPath}/${selected.leaf}/.pe/skills` } }),
+      ...skills === undefined ? {} : { skills },
       assertCurrent: (): void => { exclusive(() => {
         assertRetained(record)
         guard(grant, current)
         assertRetained(record)
         const temporary: RetainedShare = { binding: grant.binding, fds: new Set(), released: false }
         try {
-          const measured = verify(temporary, selected, grant)
+          const measured = verify(temporary, selected, grant, skills?.grant)
           if (measured.projectMountId !== captured.projectMountId || measured.environmentMountId !== captured.environmentMountId) {
             failure ??= { cause: new ExecutionExportFailure('verification') }; throw failure.cause
           }
@@ -395,8 +412,8 @@ export function createRetainedExecutionExports(
       throw cause
     }
   })
-  const share: ManagedExecutionDeployment['share'] = (grant, current) => {
-    try { return Promise.resolve(shareNow(grant, current)) }
+  const share: ManagedExecutionDeployment['share'] = (grant, current, skills) => {
+    try { return Promise.resolve(shareNow(grant, current, skills)) }
     catch (cause) { return Promise.reject(cause instanceof Error ? cause : new ExecutionExportFailure('verification', cause)) }
   }
   const assertEpochReleased: ManagedExecutionDeployment['assertEpochReleased'] = (binding) => {

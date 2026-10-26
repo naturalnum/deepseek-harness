@@ -218,6 +218,15 @@ describe('package dependency scope', () => {
       '@deepseek-ai/dsh-api-terminal-controller': ['@deepseek-ai/dsh-subprocess'],
     })
     expect(PACKAGE_DEPENDENCY_POLICY.configurationOnlyDevDependencies).toEqual({
+      '@deepseek-ai/dsh-pe-cloud-client': [
+        '@deepseek-ai/dsh-api-gateway',
+        '@deepseek-ai/dsh-api-remote-access',
+        '@deepseek-ai/dsh-api-session-controller',
+        '@deepseek-ai/dsh-api-workspace-controller',
+        '@deepseek-ai/dsh-api-remotes',
+        '@deepseek-ai/dsh-client-file-upload',
+        '@deepseek-ai/dsh-typert-registry',
+      ],
       '@deepseek-ai/dsh-client-locale': ['@deepseek-ai/dsh-api-remotes'],
       '@deepseek-ai/dsh-client-ui-conversation': [
         '@deepseek-ai/dsh-api-remotes',
@@ -237,6 +246,7 @@ describe('package dependency scope', () => {
       '@deepseek-ai/dsh-util-crypto',
       '@deepseek-ai/dsh-util-values',
     ])
+    expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/dsh-credentials']).toEqual(['credentialKey'])
     expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/dsh-deque']).toEqual(['Deque'])
     expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/schemastery']).toEqual(['default'])
     expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/dsh-session/types']).toBeUndefined()

@@ -204,7 +204,7 @@ async function setup(
     },
     beforeHttp: () => {}, beforeStream: () => {}, cleanupFailed: (failure) => { failures.push(failure) },
   }
-  const registry = new LoginPeerRegistry(settings, auth, customize === undefined ? ports : customize(ports))
+  const registry = new LoginPeerRegistry({ ...settings, sessionRecheckLeadMs: 0 }, auth, customize === undefined ? ports : customize(ports))
   lifecycle.registry = registry
   const owned = registry
   cleanups.push(async () => {

@@ -672,12 +672,12 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
  * Remove {@link RETIRED_BUNDLES} from a profile's bundle list, writing the
  * manifest back only when it listed one.
  */
-function dropRetiredBundles(dir: string, manifest: ProfileManifest): ProfileManifest {
+function dropRetiredBundles(dir: string, manifest: ProfileManifest, persist = true): ProfileManifest {
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const kept = bundles.filter(bundle => !RETIRED_BUNDLES.has(bundle))
   if (kept.length === bundles.length) return manifest
   const normalized = withBundles(manifest, kept)
-  writeProfileManifest(dir, normalized)
+  if (persist) writeProfileManifest(dir, normalized)
   return normalized
 }
 
@@ -734,17 +734,17 @@ export function resolveBundleDir(
  * @param binName - the diagnostic prefix on thrown errors.
  * @param dir - absolute profile package directory.
  * @param installAnchor - absolute path of the owning dsh app's package.json.
- * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
+ * @param options - `userLayer: false` skips user patches; `readOnly` skips cleanup writes; `bundles` previews a selection.
  * @returns the successfully loaded bundle layers and optional user patch layer.
  */
 export function loadProfileDirectory(
   binName: string,
   dir: string,
   installAnchor: string,
-  options: { userLayer?: boolean } = {},
+  options: { userLayer?: boolean; bundles?: readonly string[]; readOnly?: boolean } = {},
 ): Profile {
-  const manifest = dropRetiredBundles(dir, readProfileManifest(binName, dir))
-  const bundles = manifest.dsh?.profile?.bundles ?? []
+  const bundles = options.bundles
+    ?? dropRetiredBundles(dir, readProfileManifest(binName, dir), options.readOnly !== true).dsh?.profile?.bundles ?? []
   const layers: ProfileLayer[] = []
   const skippedBundles: SkippedBundle[] = []
   const exemptions = bundles.length === 0 ? {} : readProfileVersionExemptions(dir)

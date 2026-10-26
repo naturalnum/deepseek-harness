@@ -11,7 +11,9 @@ import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork, Di
 export interface BoundFilesWork {
   readonly stopping: AbortSignal
   assertCurrent(): void
-  run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>
+  /** Lease is reserved for inert grants whose later files I/O reenters this original lane; budgets survive until release. */
+  run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+    retention?: 'lease'): Promise<ResidentResult<T>>
   /** Register a bounded private responsibility on this same lane; this does not authorize directory writes. */
   prepareDirectory(
     intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
@@ -69,9 +71,9 @@ export class FilesWorkOwner implements DrainParticipant {
       assertCurrent: () => {
         current()
       },
-      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal) => {
+      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, retention?: 'lease') => {
         current()
-        return lane.run(bytes, work, signal)
+        return lane.run(bytes, work, signal, retention)
       },
       prepareDirectory: (
         intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
@@ -159,6 +161,16 @@ export class FilesWorkOwner implements DrainParticipant {
    * @returns Operation ids whose actual work or held results remain owned.
    */
   pending(): readonly OperationId[] { return this.queue.pending() }
+
+  /** Observe this actual lane without cancelling work or releasing retained results.
+   * @param binding Exact originally bound account generation.
+   * @returns True for an open lane with no actual work, ordinary held result or directory responsibility; passive leases stay owned.
+   */
+  isEpochIdle(binding: AccountBinding): boolean {
+    const generation = this.active.get(binding.accountId)
+    return generation?.binding === binding && !binding.lifetime.aborted && !this.retired.has(binding)
+      && generation.lane.isIdle()
+  }
 
   /**
    * Inspect the existing scheduler without introducing another work table.

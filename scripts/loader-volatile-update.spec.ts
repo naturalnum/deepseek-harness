@@ -632,3 +632,99 @@ it('remounts instead of committing when an ordinary field parses into a fresh cl
   expect(before.live.get()).toBe('old')
   expect((fiber.config as ReturnType<typeof schema>).live.get()).toBe('new')
 })
+
+
+describe('original child update settlement', () => {
+  it('joins overlapping child imports while each update keeps its own original settlement', async () => {
+    const held = Promise.withResolvers<object>()
+    onTestFinished(() => { held.resolve({ apply() {} }) })
+    const ctx = await runtimeContext(), group = ctx.loader.root
+    const imported = Promise.withResolvers<undefined>()
+    vi.spyOn(ctx.loader, 'import').mockImplementation(async () => { imported.resolve(undefined); return held.promise })
+    onTestFinished(() => { vi.restoreAllMocks() })
+    let firstEnded = false, joined = false
+    const first = group.update([{ id: 'old-import', name: 'external-module' }]).then(() => { firstEnded = true })
+    await imported.promise
+    const second = group.update([])
+    await second
+    expect(firstEnded).toBe(false)
+    const all = group.awaitUpdate().then(() => { joined = true })
+    expect(joined).toBe(false)
+    held.resolve({ apply() {} }); await Promise.all([first, all])
+    expect(firstEnded).toBe(true); expect(joined).toBe(true)
+  })
+
+  it('joins an update enrolled after the waiter started before publishing joined completion', async () => {
+    const firstImport = Promise.withResolvers<object>(), lateImport = Promise.withResolvers<object>()
+    onTestFinished(() => { firstImport.resolve({ apply() {} }); lateImport.resolve({ apply() {} }) })
+    const ctx = await runtimeContext(), group = ctx.loader.root, order: string[] = []
+    const firstEntered = Promise.withResolvers<undefined>(), lateEntered = Promise.withResolvers<undefined>()
+    vi.spyOn(ctx.loader, 'import').mockImplementation(async (name) => {
+      if (name === 'first-module') { firstEntered.resolve(undefined); return firstImport.promise }
+      lateEntered.resolve(undefined); return lateImport.promise
+    })
+    onTestFinished(() => { vi.restoreAllMocks() })
+    const first = group.update([{ id: 'first', name: 'first-module' }])
+    await firstEntered.promise
+    const joined = group.awaitUpdate().then(() => { order.push('joined') })
+    await group.update([])
+    const late = group.update([{ id: 'late', name: 'late-module' }]).then(() => { order.push('late-settled') })
+    await lateEntered.promise
+    firstImport.resolve({ apply() {} }); await first
+    lateImport.resolve({ apply() {} }); await Promise.all([late, joined])
+    expect(order).toEqual(['late-settled', 'joined'])
+  })
+
+  it('retains the original failure until overlapping actual work settles without changing that work result', async () => {
+    const held = Promise.withResolvers<object>()
+    onTestFinished(() => { held.resolve({ apply() {} }) })
+    const ctx = await runtimeContext(), group = ctx.loader.root, order: string[] = []
+    const failure = new Error('original group refusal')
+    vi.spyOn(ctx.loader, 'updateGuard', 'get').mockReturnValue({
+      entry() { return undefined }, create() {}, remove() {},
+      group(_owner, rows) { if (rows.some(row => row.id === 'refused')) throw failure },
+    })
+    vi.spyOn(ctx.loader, 'import').mockImplementation(async () => held.promise)
+    onTestFinished(() => { vi.restoreAllMocks() })
+    const refused = group.update([{ id: 'refused', name: 'refused' }])
+    void refused.catch((_cause: unknown) => {})
+    const actual = group.update([{ id: 'accepted', name: 'accepted' }]).then(() => { order.push('actual') })
+    const joined = group.awaitUpdate().catch((cause: unknown) => { order.push('failure'); return cause })
+    await expect(refused).rejects.toBe(failure)
+    held.resolve({ apply() {} }); await actual
+    expect(await joined).toBe(failure); expect(order).toEqual(['actual', 'failure'])
+    await expect(group.awaitUpdate()).rejects.toBe(failure)
+    await group.update([]); await expect(group.awaitUpdate()).resolves.toBeUndefined()
+  })
+
+  it('retains a failure enrolled after an observer began waiting for the original import', async () => {
+    const held = Promise.withResolvers<object>()
+    onTestFinished(() => { held.resolve({ apply() {} }) })
+    const ctx = await runtimeContext(), group = ctx.loader.root
+    const failure = new Error('late original group refusal')
+    vi.spyOn(ctx.loader, 'updateGuard', 'get').mockReturnValue({
+      entry() { return undefined }, create() {}, remove() {},
+      group(_owner, rows) { if (rows.some(row => row.id === 'late-refusal')) throw failure },
+    })
+    vi.spyOn(ctx.loader, 'import').mockImplementation(async () => held.promise)
+    onTestFinished(() => { vi.restoreAllMocks() })
+    const first = group.update([{ id: 'original', name: 'original-module' }])
+    const joined = group.awaitUpdate()
+    void joined.catch((_cause: unknown) => { /* The assertion below observes the original late failure. */ })
+    await expect(group.update([{ id: 'late-refusal', name: 'late-refusal' }])).rejects.toBe(failure)
+    held.resolve({ apply() {} }); await first
+    await expect(joined).rejects.toBe(failure)
+  })
+
+  it('preserves reentrant child update completion without waiting on its own parent import', async () => {
+    const ctx = await runtimeContext(), group = ctx.loader.root
+    let nested = false
+    vi.spyOn(ctx.loader, 'import').mockImplementation(async () => {
+      await group.update([]); nested = true
+      return { apply() {} }
+    })
+    onTestFinished(() => { vi.restoreAllMocks() })
+    await group.update([{ id: 'reentrant', name: 'external-reentrant' }])
+    expect(nested).toBe(true)
+  })
+})

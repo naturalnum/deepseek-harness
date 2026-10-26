@@ -124,14 +124,17 @@ export class ConfigFormController<T> implements ConfigForm<T> {
    * Queue one atomic namespace mutation; see {@link ConfigForm.mutate}.
    * @param ops - ordered field operations copied when queued.
    * @param expectedRevision - optional fixed revision read by the domain editor.
+   * @param assertCurrent Optional synchronous read-only editor check inside the send queue and after actual settlement.
    * @returns whether the Host accepted the mutation, after any recovery read.
    */
-  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number): Promise<boolean> {
+  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number, assertCurrent?: () => void): Promise<boolean> {
     const ownedOps = structuredClone(ops) as SettingsPathOpView[]
     const generation = ++this.writeGeneration
     return this.enqueue(async () => {
+      assertCurrent?.()
       const revision = expectedRevision ?? this.pendingRevision ?? this.getSnapshot().revision
       const response = await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision)
+      assertCurrent?.()
       if (!response.ok) {
         await this.recover(generation)
         return false

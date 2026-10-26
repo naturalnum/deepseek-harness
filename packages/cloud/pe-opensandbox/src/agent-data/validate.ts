@@ -1,4 +1,5 @@
 /** Original Root expectations and authenticated reply-fact validation. */
+import { skillParent, type SkillParent } from './skill-world.ts'
 import { isIP } from 'node:net'
 import { absolute, base64, digest, hex, need, record, text, u64 } from './canonical.ts'
 import { AGENT_SOURCE_SHA256, BWRAP_SHA256 } from './constants.ts'
@@ -26,9 +27,13 @@ export function worldArgv(project: string): readonly string[] {
 /**
  * Derive the expected world digest from the original project path, never from a reply.
  * @param project - Canonical absolute original project target.
- * @returns Lowercase SHA256 of the frozen world argv's canonical bytes.
+ * @param parent - Optional original allocation parent protected by the bootstrap configuration.
+ * @returns Lowercase SHA256 of the fixed world policy; dynamic descriptor numbers are checked at preparation.
  */
-export const expectedWorldHash = (project: string): string => { absolute(project); return digest(worldArgv(project)) }
+export const expectedWorldHash = (project: string, parent?: SkillParent): string => {
+  absolute(project); return digest(parent === undefined ? worldArgv(project)
+    : { base: worldArgv(project), skillParent: skillParent(parent), policy: 'skill-world-fd-v1' })
+}
 /**
  * Validate and copy protected inputs for one fixed private endpoint and runtime.
  * @param options - Root-selected endpoint, token, original identities, quantities and pins.
@@ -42,7 +47,9 @@ export function checkOptions(options: ClientOptions): { origin: string; expected
     || (a === 192 && b === 168), 'private_endpoint_required')
   need(Number.isInteger(options.port) && options.port >= 1024 && options.port <= 65535, 'invalid_port')
   const e = options.expected
-  record(e, ['physicalSandboxId', 'runtimeIdentity', 'projectRoot', 'roots', 'pins', 'declaredImageId'])
+  record(e, ['physicalSandboxId', 'runtimeIdentity', 'projectRoot', 'roots', 'pins', 'declaredImageId',
+    ...e.skillParent === undefined ? [] : ['skillParent']])
+  const parent = e.skillParent === undefined ? undefined : skillParent(e.skillParent)
   text(e.physicalSandboxId); need(e.physicalSandboxId.length >= 1 && Buffer.byteLength(e.physicalSandboxId) <= 256
     && !/[\x00-\x1f\x7f]/.test(e.physicalSandboxId), 'invalid_sandbox_binding')
   hex(e.runtimeIdentity); absolute(e.projectRoot)
@@ -58,11 +65,15 @@ export function checkOptions(options: ClientOptions): { origin: string; expected
   record(e.pins, ['bwrapSha256', 'agentSourceSha256', 'userWorldArgvSha256'])
   Object.values(e.pins).forEach(hex)
   need(e.pins.bwrapSha256 === BWRAP_SHA256 && e.pins.agentSourceSha256 === AGENT_SOURCE_SHA256
-    && e.pins.userWorldArgvSha256 === expectedWorldHash(e.projectRoot), 'unexpected_frozen_payload')
+    && e.pins.userWorldArgvSha256 === expectedWorldHash(e.projectRoot, parent), 'unexpected_frozen_payload')
   need(typeof e.declaredImageId === 'string' && /^sha256:[0-9a-f]{64}$/.test(e.declaredImageId), 'invalid_declared_image')
   // Copy trusted inputs: later caller mutation cannot rebind this carrier.
   const expected = JSON.parse(JSON.stringify(e)) as ExpectedBinding
   Object.freeze(expected.roots.project); Object.freeze(expected.roots.environment); Object.freeze(expected.roots)
+  if (expected.skillParent !== undefined) {
+    need(expected.skillParent.skills.device === expected.roots.project.device, 'skill_parent_domain')
+    Object.freeze(expected.skillParent.metadata); Object.freeze(expected.skillParent.skills); Object.freeze(expected.skillParent)
+  }
   Object.freeze(expected.pins); Object.freeze(expected)
   return { origin: `http://${options.host}:${options.port}`, expected }
 }

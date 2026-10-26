@@ -1,9 +1,11 @@
 /** Internal C-02 login Peer ownership. Root remains closed until native account assembly exists. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { Peer, HostConnectionService, type ConnectionDispatch } from '@deepseek-ai/dsh-client-connection'
 import { TypertGatewayService, type NodeStreamTransport } from '@deepseek-ai/dsh-api-gateway'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountUse, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -14,9 +16,11 @@ import { assertAuthTransport } from './auth-trust.ts'
 import type { AccessConfig, AuthenticatedPrincipal } from './types.ts'
 import type { AuthIngressConfig } from './root-config.ts'
 import { StreamCapacity } from './stream-capacity.ts'
+import type {} from '@deepseek-ai/dsh-pe-cloud-api'
 
 type RequestId = Branded<'pe-request-id'>
 type LoginId = AuthenticatedPrincipal['authSessionId']
+type PeerConfig = AccessConfig & Pick<AuthIngressConfig, 'sessionRecheckLeadMs'>
 type SafeDetails = ReturnType<AuthAccessError['toJSON']>
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -37,6 +41,14 @@ export interface LoginPeer {
   readonly principal: AuthenticatedPrincipal
   readonly binding: AccountBinding
 }
+
+/** Original Peer-to-factory handoff; callbacks are server-owned and no identity is accepted from JSON. */
+export type ConfigurationPeerOperation<T> = (binding: AccountBinding, context: AccountUse['context'],
+  assertLoginCurrent: () => void, closeObservers: () => Promise<void>, handoff: {
+    readonly afterRequest: () => Promise<void>
+    readonly closeAll: (deadlineAtMs: number) => Promise<void>
+    readonly assertPrincipal: () => void
+  }) => Promise<T>
 
 /** Required trusted assembly callbacks; borrow must allocate a new lifecycle Use, without a request signal. */
 export interface LoginPeerPorts {
@@ -62,10 +74,10 @@ interface Entry {
   readonly ready: ReturnType<typeof Promise.withResolvers<LoginPeer>>
   readonly done: ReturnType<typeof Promise.withResolvers<void>>
   readonly waiters: Set<ReadyWaiter>
-  readonly tasks: Set<Promise<void>>
-  readonly carriers: Set<{ destroy(): void }>
+  readonly tasks: Set<Promise<unknown>>
+  readonly carriers: Map<{ destroy(): void }, 'http' | 'websocket'>
   readonly lifetimeEnded: () => void
-  phase: 'preparing' | 'ready' | 'closing' | 'blocked'
+  phase: 'preparing' | 'ready' | 'updating' | 'closing' | 'blocked'
   preparing: boolean
   use: AccountUse | undefined
   handle: LoginPeer | undefined
@@ -79,6 +91,7 @@ interface Entry {
   recheck: Promise<void> | undefined
   carrierCount: number
   streamCount: number
+  businessStreamCount: number
 }
 
 /**
@@ -87,6 +100,11 @@ interface Entry {
  * No request cancellation is passed to runtime borrow or to an Agent.
  */
 export class LoginPeerRegistry {
+  private readonly requestCarrier = new AsyncLocalStorage<{
+    readonly entry: Entry
+    settlement?: Promise<unknown>
+    readonly releaseRequestUse?: () => void
+  }>()
   private readonly entries: Map<string, Entry> = new Map()
   private readonly handles: WeakMap<LoginPeer, Entry> = new WeakMap()
   private readonly peerCounts: Map<AccountId, number> = new Map()
@@ -100,19 +118,26 @@ export class LoginPeerRegistry {
   private readonly streams: StreamCapacity | undefined
 
   /**
-   * @param config - Validated finite admission/cleanup budgets.
+   * @param config - Finite admission/cleanup budgets and explicit recheck lead; only private fixtures may use zero.
    * @param auth - Actual M1 adapter.
    * @param ports - Trusted runtime and exposure callbacks.
    */
-  constructor(private readonly config: AccessConfig, private readonly auth: BetterAuthAccess, private readonly ports: LoginPeerPorts) {
+  constructor(private readonly config: PeerConfig, private readonly auth: BetterAuthAccess, private readonly ports: LoginPeerPorts) {
+    if (!Number.isSafeInteger(config.sessionRecheckLeadMs) || config.sessionRecheckLeadMs < 0
+      || config.sessionRecheckLeadMs >= config.sessionRecheckMs) {
+      throw new RangeError('Login Peer requires an explicit recheck lead below its maximum login age.')
+    }
     this.streams = ports.streams === undefined ? undefined : new StreamCapacity(ports.streams)
   }
 
-  /** Reserved login slots. @returns Count including preparing and uncertain cleanup. */
+  /** Reserved login slots.
+ * @returns Count including preparing and uncertain cleanup. */
   get reservedPeers(): number { return this.entries.size }
-  /** Reserved carrier slots. @returns Actual HTTP/upgrade operations and live upgraded sockets. */
+  /** Reserved carrier slots.
+ * @returns Actual HTTP/upgrade operations and live upgraded sockets. */
   get reservedCarriers(): number { return this.carriers }
-  /** Pending creation callers. @returns Waiting records; abandonment leaves actual creation running. */
+  /** Pending creation callers.
+ * @returns Waiting records; abandonment leaves actual creation running. */
   get waitingCallers(): number { return this.waiters }
 
   /**
@@ -145,10 +170,10 @@ export class LoginPeerRegistry {
       }
       const owned: Entry = {
         key, binding, principal, ready: Promise.withResolvers<LoginPeer>(), done: Promise.withResolvers<void>(),
-        waiters: new Set(), tasks: new Set(), carriers: new Set(), phase: 'preparing', preparing: true,
+        waiters: new Set(), tasks: new Set(), carriers: new Map(), phase: 'preparing', preparing: true,
         use: undefined, handle: undefined, connection: undefined, mux: undefined, cleanupFault: false, removeObserver: undefined,
         nativeCleanup: undefined, cleanup: undefined,
-        timer: undefined, recheck: undefined, carrierCount: 0, streamCount: 0,
+        timer: undefined, recheck: undefined, carrierCount: 0, streamCount: 0, businessStreamCount: 0,
         lifetimeEnded: () => { void this.startClose(owned, requestId) },
       }
       entry = owned
@@ -191,6 +216,152 @@ export class LoginPeerRegistry {
   }
 
   /**
+   * Join trusted native work to the exact existing Peer entry without another borrow or release owner.
+   * @param peer Original Gateway invocation Peer; ids and copied objects cannot select an entry.
+   * @param current Original ingress/generation check, repeated during this same borrowed operation.
+   * @param consume Actual native work, retained in this Entry's existing tasks until settlement.
+   * @returns The actual result; observer loss cannot release the original Use early.
+   */
+  withOriginalUse<T>(peer: PeerScope, current: (handle: LoginPeer) => void,
+    consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
+    const id = this.requestId(), entry = [...this.entries.values()].find(value => value.handle?.peer === peer)
+    const handle = entry?.handle, use = entry?.use
+    if (entry === undefined || handle === undefined || use === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
+    const check = (): void => {
+      this.assertCurrent(handle, id); current(handle); this.assertCurrent(handle, id)
+      if (entry.use !== use || handle.peer !== peer) throw new AuthAccessError('cloud/account-unavailable', id)
+      use.assertCurrent()
+    }
+    check()
+    const deferred = Promise.withResolvers<T>()
+    const actual = this.trackCarrier(entry, deferred.promise, () => {})
+    // Existing Entry task ownership precedes the first possibly reentrant native callback.
+    void (async () => { check(); const value = await consume(use, check); check(); return value })().then(deferred.resolve, deferred.reject)
+    return actual
+  }
+
+  /** Transfer the original Peer borrow to the factory's actual exclusive update, without waiting on this RPC's own task.
+   * @param peer Exact original invocation Peer.
+   * @param current Original ingress check before handoff and after re-borrowing.
+   * @param consume Factory-owned update; closing observers joins their real native resources and releases their Uses.
+   * Observation closure uses the configured finite Peer budget; timeout revokes this handoff while original cleanup stays owned.
+   * @param mode Explicit local idle operation or terminal acceptance followed by original full closure.
+   * @returns Actual update result after a fresh same-generation Use is acquired; failure never fabricates release.
+   */
+  async withConfigurationPeer<T>(peer: PeerScope, current: (handle: LoginPeer) => void,
+    consume: ConfigurationPeerOperation<T>, mode: 'if-idle' | 'stop-and-apply' = 'if-idle'): Promise<T> {
+    const id = this.requestId(), entry = [...this.entries.values()].find(row => row.handle?.peer === peer)
+    const handle = entry?.handle, use = entry?.use
+    if (entry === undefined || handle === undefined || use === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
+    this.assertCurrent(handle, id); current(handle); use.assertCurrent()
+    const binding = use.binding
+    const carrier = this.requestCarrier.getStore()
+    if (carrier?.entry !== entry || carrier.settlement === undefined || !entry.tasks.has(carrier.settlement)) {
+      throw new AuthAccessError('cloud/account-unavailable', id)
+    }
+    const originalRequest = carrier.settlement
+    const handoff = Object.freeze({
+      afterRequest: async (): Promise<void> => { await Promise.allSettled([originalRequest]) },
+      closeAll: (deadlineAtMs: number) => this.closeBinding(entry.binding, deadlineAtMs),
+      assertPrincipal: (): void => { this.auth.assertLoginCurrent(entry.principal, id) },
+    })
+    if (mode === 'stop-and-apply') {
+      // The factory first registers actual work, then waits this request's real settlement before closing the old Peer.
+      return consume(binding, use.context, () => { this.assertCurrent(handle, id); current(handle); use.assertCurrent() },
+        () => Promise.reject(new RemoteError('cloud/config-busy', 'A terminal update must use its original full-close handoff.', {})), handoff)
+    }
+    const related = [...this.entries.values()].filter(row => row.binding.accountId === binding.accountId
+      && row.binding.epoch === binding.epoch && row.binding.lifetime === binding.lifetime)
+    if (related.some(row => row.phase !== 'ready' || row.preparing || row.recheck !== undefined || row.cleanupFault
+      || row.businessStreamCount !== 0 || row.tasks.size > (row === entry ? 1 : 0))) {
+      const peerWork = {
+        nonReadyPeers: related.filter(row => row.phase !== 'ready').length,
+        preparingPeers: related.filter(row => row.preparing).length,
+        recheckingPeers: related.filter(row => row.recheck !== undefined).length,
+        cleanupFaultPeers: related.filter(row => row.cleanupFault).length,
+        businessStreamPeers: related.filter(row => row.businessStreamCount !== 0).length,
+        otherTaskPeers: related.filter(row => row.tasks.size > (row === entry ? 1 : 0)).length,
+      }
+      throw new RemoteError('cloud/config-busy', 'The original account still owns non-observation Peer work.', { peerWork })
+    }
+    const context = use.context
+    // Only the authenticated configuration handoff can release this HTTP request's own reference.
+    carrier.releaseRequestUse?.()
+    entry.phase = 'updating'
+    clearTimeout(entry.timer); entry.timer = undefined
+    entry.use = undefined
+    use.release()
+    let windowOpen = true
+    const login = (): void => {
+      this.auth.assertLoginCurrent(entry.principal, id)
+      if (!windowOpen || entry.phase !== 'updating' || entry.handle !== handle || entry.binding.lifetime.aborted || entry.cleanupFault) {
+        throw new AuthAccessError('cloud/account-unavailable', id)
+      }
+    }
+    const closeObservers = async (): Promise<void> => {
+      login()
+      const mux = entry.mux
+      try {
+        const joins = related.filter(row => row !== entry).map((row) => {
+          void this.startClose(row, id)
+          return row.done.promise
+        })
+        for (const [carrier, kind] of entry.carriers) if (kind === 'websocket') carrier.destroy()
+        // Keep the original mux on its Entry until actual closure, so terminal cleanup joins the same resource.
+        const cleanup = Promise.all([...joins, mux?.close()]).then(() => {})
+        await this.wait(cleanup, Date.now() + this.config.peerCloseTimeoutMs, binding.lifetime, id)
+        login()
+        if (entry.streamCount !== 0 || entry.businessStreamCount !== 0 || entry.cleanupFault) {
+          throw new AuthAccessError('cloud/stop-unconfirmed', id)
+        }
+        if (entry.mux === mux) entry.mux = undefined
+      } catch (cause) {
+        // A late cleanup may release its own resources, but cannot regain this configuration's write/restore capability.
+        windowOpen = false
+        throw cause
+      }
+    }
+    const restore = async (): Promise<void> => {
+      login()
+      const replacement = await this.ports.borrow(binding)
+      try {
+        login(); replacement.assertCurrent()
+        if (replacement.context.root !== context.root || replacement.binding !== binding) {
+          throw new RemoteError('cloud/stale-generation', 'The original configuration Peer generation changed.', {})
+        }
+        entry.use = replacement
+        entry.phase = 'ready'
+        if (entry.mux === undefined) {
+          const gateway = replacement.context.get('typertGateway')
+          if (!(gateway instanceof TypertGatewayService)) throw new AuthAccessError('cloud/account-unavailable', id)
+          entry.mux = this.createMux(entry, handle, gateway)
+        }
+        this.schedule(entry)
+        this.assertCurrent(handle, id); current(handle)
+      } catch (error) {
+        if (entry.use === replacement) entry.use = undefined
+        if (this.entries.get(entry.key)?.phase === 'ready') entry.phase = 'updating'
+        replacement.release()
+        throw error
+      }
+    }
+    try {
+      const value = await consume(binding, context, login, closeObservers, handoff)
+      await restore()
+      return value
+    } catch (error) {
+      if (this.entries.get(entry.key)?.phase === 'updating') {
+        try { await restore() }
+        catch (_restoreFailure) {
+          // Full close joins this original carrier after it rejects; awaiting it here would wait on this RPC itself.
+          void this.startClose(entry, id).catch((_closeFailure: unknown) => {})
+        }
+      }
+      throw error
+    }
+  }
+
+  /**
    * Reauthenticate this carrier before invoking the real native HTTP bridge with the fixed Peer.
    * A finite carrier reservation joins any due original-Cookie recheck before synchronous dispatch guards.
    * @param handle - Shared login Peer; root already checked client account/generation expectations.
@@ -198,15 +369,20 @@ export class LoginPeerRegistry {
    * @param response - Original Node response; disconnect closes only this carrier.
    * @param maxRequestBodyBytes - Required native body budget from trusted assembly.
    * @param requestId - Server correlation id.
+   * @param releaseRequestUse Trusted ingress transfer of this request's own Use after configuration admission;
+   * ordinary HTTP retains its reference.
    * @returns Actual bridge settlement; caller timeout must not release this operation early.
    */
   handleNodeRequest(
     handle: LoginPeer, request: IncomingMessage, response: ServerResponse, maxRequestBodyBytes: number, requestId: RequestId,
+    releaseRequestUse?: () => void,
   ): Promise<void> {
     const entry = this.admitCarrier(handle, requestId)
-    entry.carriers.add(request)
-    entry.carriers.add(response)
-    const task = (async () => {
+    entry.carriers.set(request, 'http')
+    entry.carriers.set(response, 'http')
+    const carrier: { readonly entry: Entry; settlement?: Promise<unknown>; readonly releaseRequestUse?: () => void } = { entry,
+      ...releaseRequestUse === undefined ? {} : { releaseRequestUse } }
+    const task = this.requestCarrier.run(carrier, async () => {
       await this.authenticateCarrier(entry, request, requestId)
       this.ports.beforeHttp(request, handle)
       this.assertCurrent(handle, requestId)
@@ -217,12 +393,14 @@ export class LoginPeerRegistry {
         this.ports.beforeDispatch?.(request, dispatch, handle)
         this.assertCurrent(handle, requestId)
       })
-    })()
-    return this.trackCarrier(entry, task, () => {
+    })
+    const tracked = this.trackCarrier(entry, task, () => {
       entry.carriers.delete(request)
       entry.carriers.delete(response)
       this.releaseCarrier(entry)
     })
+    carrier.settlement = tracked
+    return tracked
   }
 
   /**
@@ -243,7 +421,7 @@ export class LoginPeerRegistry {
   }): Promise<void> {
     const entry = this.admitCarrier(handle, requestId)
     const carrier = { destroy: input.destroy }
-    entry.carriers.add(carrier)
+    entry.carriers.set(carrier, 'http')
     let confirmed = false
     const actual = input.actual.then(() => { confirmed = true }, (error: unknown) => {
       entry.cleanupFault = true
@@ -258,11 +436,11 @@ export class LoginPeerRegistry {
     void tracked.catch((_error: unknown) => {
       // Original ingress observes its failure; Entry cleanupFault/blocked and done retain unknown responsibility.
     })
-    return (async () => {
+    return this.requestCarrier.run({ entry, settlement: tracked }, async () => {
       await this.authenticateCarrier(entry, request, requestId, input.authenticate)
       this.assertCurrent(handle, requestId)
       await input.consume()
-    })()
+    })
   }
 
   /**
@@ -279,7 +457,7 @@ export class LoginPeerRegistry {
     const secure = 'encrypted' in request.socket && request.socket.encrypted === true
     assertAuthTransport(request.headers, request.rawHeaders, request.socket.remoteAddress, secure, this.config, requestId, 'websocket')
     const entry = this.admitCarrier(handle, requestId)
-    entry.carriers.add(socket)
+    entry.carriers.set(socket, 'websocket')
     let upgraded = false
     let settled = false
     let closed = socket.destroyed
@@ -394,35 +572,7 @@ export class LoginPeerRegistry {
         }
       } })
       entry.connection = connection
-      entry.mux = gateway.createNodeStreamTransport(peer, (endpoint) => {
-        const id = this.requestId()
-        try { this.assertCurrent(handle, id); this.ports.beforeStream(endpoint, handle); this.assertCurrent(handle, id) }
-        catch (error) {
-          const failure = error instanceof AuthAccessError || error instanceof RequestBindingError ? error : undefined
-          if (failure === undefined) throw error // Preserve the exposure owner's native RemoteError.
-          throw new RemoteError(failure.code, failure.message, failure.toJSON())
-        }
-      }, this.ports.streams === undefined ? undefined : {
-        maxFrameBytes: this.ports.streams.maxFrameBytes,
-        acquireStream: (_endpoint: string) => {
-          const id = this.requestId()
-          this.assertCurrent(handle, id)
-          const settle = this.streams?.acquire(entry.binding.accountId, entry, id, () => {
-            entry.cleanupFault = true
-            // Never await transport closure from the settlement callback of that same transport.
-            queueMicrotask(() => { void this.startClose(entry, id) })
-          })
-          if (settle === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
-          entry.streamCount++
-          let settled = false
-          return (status: 'confirmed' | 'unknown') => {
-            if (settled) return
-            settled = true
-            settle(status)
-            if (status === 'confirmed') entry.streamCount--
-          }
-        },
-      })
+      entry.mux = this.createMux(entry, handle, gateway)
       this.handles.set(handle, entry)
       entry.phase = 'ready'
       entry.ready.resolve(handle)
@@ -439,8 +589,43 @@ export class LoginPeerRegistry {
 
   private schedule(entry: Entry): void {
     if (entry.phase !== 'ready') return
-    entry.timer = setTimeout(() => { entry.timer = undefined; void this.beginRecheck(entry) }, this.config.sessionRecheckMs)
+    entry.timer = setTimeout(() => { entry.timer = undefined; void this.beginRecheck(entry) },
+      this.config.sessionRecheckMs - this.config.sessionRecheckLeadMs)
     entry.timer.unref()
+  }
+
+  private createMux(entry: Entry, handle: LoginPeer, gateway: TypertGatewayService): NodeStreamTransport {
+    return gateway.createNodeStreamTransport(handle.peer, (endpoint) => {
+      const id = this.requestId()
+      try { this.assertCurrent(handle, id); this.ports.beforeStream(endpoint, handle); this.assertCurrent(handle, id) }
+      catch (error) {
+        const failure = error instanceof AuthAccessError || error instanceof RequestBindingError ? error : undefined
+        if (failure === undefined) throw error // Preserve the exposure owner's native RemoteError.
+        throw new RemoteError(failure.code, failure.message, failure.toJSON())
+      }
+    }, this.ports.streams === undefined ? undefined : {
+      maxFrameBytes: this.ports.streams.maxFrameBytes,
+      acquireStream: (endpoint: string) => {
+        const id = this.requestId()
+        this.assertCurrent(handle, id)
+        const settle = this.streams?.acquire(entry.binding.accountId, entry, id, () => {
+          entry.cleanupFault = true
+          // Never await transport closure from the settlement callback of that same transport.
+          queueMicrotask(() => { void this.startClose(entry, id) })
+        })
+        if (settle === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
+        const business = !['$events', 'workspace/follow', 'remoteAccess/follow', 'session/follow'].includes(endpoint)
+        entry.streamCount++
+        if (business) entry.businessStreamCount++
+        let settled = false
+        return (status: 'confirmed' | 'unknown') => {
+          if (settled) return
+          settled = true
+          settle(status)
+          if (status === 'confirmed') { entry.streamCount--; if (business) entry.businessStreamCount-- }
+        }
+      },
+    })
   }
 
   private beginRecheck(entry: Entry): Promise<void> | undefined {
@@ -470,7 +655,7 @@ export class LoginPeerRegistry {
     clearTimeout(entry.timer)
     entry.timer = undefined
     entry.ready.reject(new AuthAccessError('cloud/account-unavailable', requestId))
-    for (const carrier of entry.carriers) carrier.destroy()
+    for (const carrier of entry.carriers.keys()) carrier.destroy()
     return this.closeKnown(entry, requestId)
   }
 
@@ -580,7 +765,7 @@ export class LoginPeerRegistry {
     return entry
   }
 
-  private trackCarrier(entry: Entry, actual: Promise<void>, release: () => void): Promise<void> {
+  private trackCarrier<T>(entry: Entry, actual: Promise<T>, release: () => void): Promise<T> {
     const tracked = actual.finally(() => { release(); entry.tasks.delete(tracked); this.finish(entry) })
     entry.tasks.add(tracked)
     return tracked

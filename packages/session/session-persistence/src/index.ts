@@ -179,6 +179,12 @@ export abstract class SessionPersistence extends Service {
    */
   abstract flush(): Promise<void>
 
+  /** Observe provider-owned I/O without starting a flush or cancelling existing work.
+   * @param _maximum Explicit maximum number of retained handles to inspect.
+   * @returns False unless the concrete provider can observe all pending native work.
+   */
+  isQuiescent(_maximum: number): boolean { return false }
+
   /**
    * Observe one stored session without reading its event log or taking
    * ownership.

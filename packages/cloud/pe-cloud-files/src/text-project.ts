@@ -53,6 +53,8 @@ export function decodeBoundedText(bytes: Uint8Array): string {
 /** A trusted runtime selection; its current check stays bound to the original operation. */
 export interface AccountFileSelection {
   readonly workspace: Workspace
+  /** Omission retains ordinary selection; trusted factory preparation permits only its one root-directory sequence. */
+  readonly directoryPreparation?: { assertCaller(caller: Context): void }
   assertCurrent(): void
 }
 
@@ -71,12 +73,23 @@ export interface AccountTextBackend {
   project(workspace: Workspace, assertSelection: () => void, signal?: AbortSignal): Promise<TextProjectBackend>
 }
 
+interface DirectoryPreparationState {
+  readonly identity: NonNullable<AccountFileSelection['directoryPreparation']>
+  readonly workspace: Workspace
+  readonly signal?: AbortSignal
+  statSignal?: AbortSignal
+  phase: 'resolving' | 'resolved' | 'stating' | 'stated' | 'consumed' | 'failed'
+  target?: FsTarget
+  readerTarget?: FsTarget
+}
+
 interface IssuedTarget {
   readonly scope: AccountFileSelection
   readonly backend: TextProjectBackend
   readonly relative: string
   readonly key: FsTargetKey
   readonly entryOnly: boolean
+  readonly preparation?: DirectoryPreparationState
 }
 
 /**
@@ -91,6 +104,7 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
     static inject = ['peAccount', 'workspaceRegistry']
     private readonly identity = Symbol()
     private readonly targets = new WeakMap<FsTarget, IssuedTarget>()
+    private readonly preparations = new WeakMap<object, DirectoryPreparationState>()
 
     constructor(ctx: Context) {
       account.assertInstalled(ctx)
@@ -112,6 +126,7 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
     private selection(scope: AccountFileSelection, signal?: AbortSignal): void {
       this.current(signal)
       scope.assertCurrent()
+      scope.directoryPreparation?.assertCaller(this.ctx)
       if (this.ctx.get('workspaceRegistry')?.get(scope.workspace.id) !== scope.workspace) {
         throw new FsError('The selected native Workspace is unavailable.', 'FS_PERMISSION_DENIED')
       }
@@ -133,13 +148,18 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       }
       this.selection(record.scope, signal)
       record.backend.assertCurrent()
+      if (record.preparation !== undefined) this.preparationCurrent(record.preparation, record.scope, signal)
       return record
     }
 
-    private issue(scope: AccountFileSelection, backend: TextProjectBackend, relative: string, entryOnly = false): FsTarget {
+    private issue(
+      scope: AccountFileSelection, backend: TextProjectBackend, relative: string, entryOnly = false,
+      preparation?: DirectoryPreparationState,
+    ): FsTarget {
       const key = FsTargetKey(`${prefix}:${scope.workspace.id}:${relative}`)
       const target = Object.freeze({ targetKey: key, displayPath: relative })
-      this.targets.set(target, { scope, backend, relative, key, entryOnly })
+      this.targets.set(target, { scope, backend, relative, key, entryOnly,
+        ...preparation === undefined ? {} : { preparation } })
       return target
     }
 
@@ -156,44 +176,121 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
     }
 
     private content(record: IssuedTarget): void {
+      if (record.preparation !== undefined) throw this.preparationDenied(record.preparation)
       if (record.entryOnly) throw new FsError('This directory entry grants metadata observation only.', 'FS_PERMISSION_DENIED')
     }
 
-    private async selectedProject(signal?: AbortSignal): Promise<{ scope: AccountFileSelection; backend: TextProjectBackend }> {
+    private preparationDenied(state?: DirectoryPreparationState): FsError {
+      if (state !== undefined) state.phase = 'failed'
+      return new FsError('Only the original preparation directory sequence is permitted.', 'FS_PERMISSION_DENIED')
+    }
+
+    private preparationCurrent(state: DirectoryPreparationState, scope: AccountFileSelection, signal?: AbortSignal): void {
+      this.selection(scope, signal)
+      this.current(state.signal)
+      this.current(state.statSignal)
+      if (scope.directoryPreparation !== state.identity || scope.workspace !== state.workspace
+        || this.preparations.get(state.identity) !== state || state.phase === 'failed' || state.phase === 'consumed') {
+        throw this.preparationDenied(state)
+      }
+      state.identity.assertCaller(this.ctx)
+    }
+
+    private async selectedProject(
+      signal?: AbortSignal, begin?: (scope: AccountFileSelection) => void,
+    ): Promise<{ scope: AccountFileSelection; backend: TextProjectBackend }> {
       this.current(signal)
       const scope = await account.resolveProject(this.ctx, signal)
+      begin?.(scope)
       this.selection(scope, signal)
-      const backend = await account.project(scope.workspace, () => { this.selection(scope) }, signal)
+      if (scope.directoryPreparation !== undefined && begin === undefined) {
+        throw this.preparationDenied(this.preparations.get(scope.directoryPreparation))
+      }
+      const check = (): void => {
+        this.selection(scope)
+        if (scope.directoryPreparation !== undefined) {
+          const state = this.preparations.get(scope.directoryPreparation)
+          if (state === undefined) throw this.preparationDenied()
+          this.preparationCurrent(state, scope)
+        }
+      }
+      const backend = await account.project(scope.workspace, check, signal)
       if (backend.binding !== account.binding || backend.workspace !== scope.workspace) {
         throw new FsError('Project backend belongs to another account.', 'FS_PERMISSION_DENIED')
       }
       this.selection(scope, signal)
+      check()
       return { scope, backend }
     }
 
-    private async selectedTarget(target: FsTarget, signal?: AbortSignal): Promise<{ record: IssuedTarget; check: () => void }> {
+    private async selectedTarget(
+      target: FsTarget, signal?: AbortSignal, directoryStat = false,
+    ): Promise<{ record: IssuedTarget; check: () => void }> {
       const record = this.target(target, signal)
+      const state = record.preparation
+      if (state !== undefined) {
+        if (!directoryStat || state.phase !== 'resolved' || state.target !== target) throw this.preparationDenied(state)
+        state.phase = 'stating'
+        if (signal !== undefined) state.statSignal = signal
+      }
       const selected = await account.resolveProject(this.ctx, signal)
       this.selection(selected, signal)
       if (selected.workspace !== record.scope.workspace) throw new FsError('File target belongs to another project.', 'FS_PERMISSION_DENIED')
-      const check = (): void => { this.target(target); this.selection(selected) }
+      if (selected.directoryPreparation !== state?.identity) throw this.preparationDenied(state)
+      const check = (): void => {
+        this.target(target)
+        this.selection(selected)
+        if (state !== undefined) {
+          this.preparationCurrent(state, selected, signal)
+          if (state.phase !== 'stating' || state.target !== target) throw this.preparationDenied(state)
+        }
+      }
       check()
       return { record, check }
     }
 
-    private denied(): Promise<never> {
+    private denied(target?: FsTarget): Promise<never> {
       return Promise.resolve().then(() => {
         this.current()
+        const preparation = target === undefined ? undefined : this.targets.get(target)?.preparation
+        if (preparation !== undefined && target !== undefined) {
+          this.target(target)
+          throw this.preparationDenied(preparation)
+        }
         throw new FsError('This file capability is not enabled by the text project provider.', 'FS_PERMISSION_DENIED')
       })
     }
 
     override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
       this.current(opts?.signal)
+      let preparation: DirectoryPreparationState | undefined
       try {
-        const { scope, backend } = await this.selectedProject(opts?.signal)
+        const { scope, backend } = await this.selectedProject(opts?.signal, (selected) => {
+          const identity = selected.directoryPreparation
+          if (identity === undefined) return
+          const prior = this.preparations.get(identity)
+          if (prior !== undefined) throw this.preparationDenied(prior)
+          preparation = { identity, workspace: selected.workspace, phase: 'resolving',
+            ...opts?.signal === undefined ? {} : { signal: opts.signal } }
+          this.preparations.set(identity, preparation)
+          this.preparationCurrent(preparation, selected, opts?.signal)
+          if (path !== selected.workspace.path || opts?.cwd !== selected.workspace.path) {
+            throw this.preparationDenied(preparation)
+          }
+        })
+        const check = (): void => {
+          this.selection(scope, opts?.signal)
+          backend.assertCurrent()
+          if (preparation !== undefined) {
+            this.preparationCurrent(preparation, scope, opts?.signal)
+            if (preparation.phase !== 'resolving') throw this.preparationDenied(preparation)
+          }
+        }
+        check()
         const target = await backend.reader.resolve(path, opts)
+        check()
         const relative = this.relative(backend, backend.reader.processPath(target))
+        if (preparation !== undefined && relative !== '.') throw this.preparationDenied(preparation)
         let canonical: string
         try { canonical = await backend.canonicalPath(relative, opts?.signal) } catch (error) {
           if (!(error instanceof DirectoryMetadataFailure) || error.reason !== 'missing' || relative === '.') throw error
@@ -201,40 +298,76 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         }
         this.selection(scope, opts?.signal)
         backend.assertCurrent()
+        check()
         const issuedPath = this.relative(backend, canonical)
-        return this.issue(scope, backend, issuedPath)
-      } catch (error) { throw nativeReadFailure(error) }
+        if (preparation !== undefined && canonical !== scope.workspace.path) throw this.preparationDenied(preparation)
+        const issued = this.issue(scope, backend, issuedPath, false, preparation)
+        if (preparation !== undefined) {
+          preparation.readerTarget = target
+          preparation.target = issued
+          preparation.phase = 'resolved'
+        }
+        return issued
+      } catch (error) {
+        if (preparation !== undefined) preparation.phase = 'failed'
+        throw nativeReadFailure(error)
+      }
     }
 
     override processPath(target: FsTarget): string {
       const record = this.target(target)
+      if (record.preparation !== undefined) {
+        const state = record.preparation
+        if (state.phase !== 'stated' || state.target !== target) throw this.preparationDenied(state)
+        state.phase = 'consumed'
+      }
       return posix.join(record.backend.workspace.path, record.relative)
     }
     override processPathFromHostPath(hostPath: string): string | undefined {
       this.current()
       return account.mapProcessPath?.(this.ctx, hostPath)
     }
-    override fileUrl(target: FsTarget): string { return pathToFileURL(this.processPath(target)).href }
+    override fileUrl(target: FsTarget): string {
+      const record = this.target(target)
+      if (record.preparation !== undefined) throw this.preparationDenied(record.preparation)
+      return pathToFileURL(this.processPath(target)).href
+    }
     override contains(parent: FsTarget, child: FsTarget): boolean {
       const a = this.target(parent), b = this.target(child)
+      if (a.preparation !== undefined || b.preparation !== undefined) throw this.preparationDenied(a.preparation ?? b.preparation)
       if (a.scope.workspace !== b.scope.workspace) return false
       const relative = posix.relative(a.relative, b.relative)
       return relative !== '..' && !relative.startsWith('../') && !posix.isAbsolute(relative)
     }
     override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
-      const { record, check } = await this.selectedTarget(target, signal)
-      if (record.entryOnly) {
-        const result = await record.backend.lstat(record.relative, signal).catch((error: unknown) => { throw nativeReadFailure(error) })
-        try {
+      const preparation = this.targets.get(target)?.preparation
+      try {
+        const { record, check } = await this.selectedTarget(target, signal, true)
+        if (record.preparation !== undefined) {
+          const state = record.preparation, issued = state.readerTarget
+          if (issued === undefined) throw this.preparationDenied(state)
           check()
-          const info = result.value
-          return info === undefined ? undefined : { version: FsVersion(info.version), type: 'other' }
-        } finally { result.release() }
+          const info = await record.backend.reader.stat(issued, signal)
+          check()
+          state.phase = info?.type === 'directory' ? 'stated' : 'failed'
+          return info
+        }
+        if (record.entryOnly) {
+          const result = await record.backend.lstat(record.relative, signal).catch((error: unknown) => { throw nativeReadFailure(error) })
+          try {
+            check()
+            const info = result.value
+            return info === undefined ? undefined : { version: FsVersion(info.version), type: 'other' }
+          } finally { result.release() }
+        }
+        const value = await record.backend.reader.stat(await record.backend.reader.resolve(record.relative,
+          signal === undefined ? undefined : { signal }), signal)
+        check()
+        return value
+      } catch (error) {
+        if (preparation !== undefined) preparation.phase = 'failed'
+        throw nativeReadFailure(error)
       }
-      const value = await record.backend.reader.stat(await record.backend.reader.resolve(record.relative,
-        signal === undefined ? undefined : { signal }), signal)
-      check()
-      return value
     }
     override async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
       try {
@@ -323,10 +456,16 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         } finally { result.release() }
       } catch (error) { throw nativeReadFailure(error) }
     }
-    override editText(): Promise<FsEditOutcome> { return this.denied() }
-    override watch(): Promise<() => Promise<void>> {
+    override editText(target: FsTarget): Promise<FsEditOutcome> { return this.denied(target) }
+    override watch(target: FsTarget): Promise<() => Promise<void>> {
       return new Promise((_resolve, reject) => {
         this.current()
+        const preparation = this.targets.get(target)?.preparation
+        if (preparation !== undefined) {
+          this.target(target)
+          reject(this.preparationDenied(preparation))
+          return
+        }
         reject(new FsError('Cloud filesystem watching is unsupported.', 'FS_PERMISSION_DENIED'))
       })
     }

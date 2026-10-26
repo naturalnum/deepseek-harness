@@ -122,6 +122,8 @@ The default artifact is a standard concatenation of independent Zstandard frames
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard frame compression, decoding, and frame scanning |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through publish and directory creation |
 
+The JSONL idle observation includes actual mutation/read continuations, live-event buffers and timers, active drains, unmaterialized sessions, migration preparations and listing work. Its explicit visit bound also limits inspected open handles. It returns false while any of that original work remains, without flushing or canceling it.
+
 </details>
 
 -----

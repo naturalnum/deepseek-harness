@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import * as appBoot from '@deepseek-ai/dsh-app-boot'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { configurationFixture } from './configuration-fixture.ts'
 
 it('shares composition for entries without config overrides while retaining group and insert inheritance', async () => {
@@ -26,7 +27,7 @@ it('shares composition for entries without config overrides while retaining grou
     ] },
   ]))
   const restored = await start()
-  const compose = vi.spyOn(appBoot, 'composeEntries')
+  const compose = vi.spyOn(appBoot, 'composeProfileEntries')
   try {
     const rows = restored.configEditor.configuration()
     const inherited = Object.fromEntries(rows.map(row => [row.entry.options.id, row.inherited]))
@@ -55,12 +56,12 @@ it('recomposes unoverridden entries after bundle changes and returns empty confi
   const before = read()
   expect(before.find(row => row.entry.options.id === 'config-editor')!.inherited).toEqual({})
   const bundlePath = join(profile.dir, 'node_modules', 'test-bundle', 'cordis.patch.yml')
-  const patches = JSON.parse(readFileSync(bundlePath, 'utf8')) as Array<{ insert: Array<{ id: string; config?: object }> }>
+  const patches = JSON.parse(readFileSync(bundlePath, 'utf8')) as Array<{ insert: EntryOptions[] }>
   patches[0]!.insert.find(row => row.id === 'second')!.config = { ordinary: 'new bundle value' }
   writeFileSync(bundlePath, JSON.stringify(patches))
   expect(read().find(row => row.entry.options.id === 'second')!.inherited).toEqual({ ordinary: 'new bundle value' })
   expect(before.find(row => row.entry.options.id === 'second')!.inherited).toEqual({ ordinary: 'second' })
-  patches[0]!.insert.push({ id: 'second', config: { ordinary: 'duplicate' } })
+  patches[0]!.insert.push({ id: 'second', name: 'cordis:probe', config: { ordinary: 'duplicate' } })
   writeFileSync(bundlePath, JSON.stringify(patches))
   expect(read().find(row => row.entry.options.id === 'second')!.inherited).toEqual({ ordinary: 'new bundle value' })
 })
@@ -69,17 +70,18 @@ it.each([0, 13, 190])('bounds composition work for 190 entries with %i config ov
   const { ctx, profile, start } = await configurationFixture({ hmr: false })
   await ctx.fiber.dispose()
   const bundlePath = join(profile.dir, 'node_modules', 'test-bundle', 'cordis.patch.yml')
-  const patches = JSON.parse(readFileSync(bundlePath, 'utf8')) as Array<{ insert: Array<{ id: string; config?: object }> }>
+  const patches = JSON.parse(readFileSync(bundlePath, 'utf8')) as Array<{ insert: EntryOptions[] }>
   const entries = Array.from({ length: 185 }, (_, index) => ({
     id: `generated-${index}`, name: 'cordis:probe', config: { ordinary: `value-${index}` },
   }))
   patches[0]!.insert.push(...entries)
   writeFileSync(bundlePath, JSON.stringify(patches))
-  writeFileSync(profile.patchPath, JSON.stringify(patches[0]!.insert.slice(0, overrideCount).map(entry => ({
-    id: entry.id, config: entry.config ?? {},
-  }))))
+  writeFileSync(profile.patchPath, JSON.stringify(patches[0]!.insert.slice(0, overrideCount).map((entry) => {
+    const config: unknown = entry.config
+    return { id: entry.id, config: config ?? {} }
+  })))
   const restored = await start()
-  const compose = vi.spyOn(appBoot, 'composeEntries')
+  const compose = vi.spyOn(appBoot, 'composeProfileEntries')
   try {
     const rows = restored.configEditor.configuration()
     expect(rows).toHaveLength(190)

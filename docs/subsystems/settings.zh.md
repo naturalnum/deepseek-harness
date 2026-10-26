@@ -4,6 +4,8 @@
 
 [设置服务](../../packages/settings/settings/README.zh.md) 从活动 profile 条目投影 volatile Config 字段。[配置编辑器](../../packages/boot/config-editor/README.zh.md) 通过 Cordis patch 持久化编辑。业务消费者对自己的 Config 引用调用 `.get()`。
 
+`SettingsWriteControl` 将原 Host 调用方复查传递到原生持久化。Controller 可选 `withWrite` hook 保留 `RemoteInvocation`、脱离调用方的写入事实及原生脱敏结果，不新增 Remote 方法。准入归属见 [Settings Controller](../../packages/api/settings-controller/README.zh.md)。
+
 ## 标识与值
 
 表单命名空间是当前 profile 中可唯一定位条目的本地 id。多个插件实例在条目 id 不同时拥有独立表单。普通字段被排除。描述符包含实际值、继承值、显式 profile 覆盖值和乐观修订号。
@@ -52,23 +54,28 @@ describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
  * @param ns Profile entry id.
  * @param patch Fields to merge.
  * @param expectedRevision Revision returned by describe.
+ * @param control Optional caller recheck at the actual native edit and replacement points.
  */
-async update(ns: string, patch: object, expectedRevision?: number): Promise<void>
+async update(ns: string, patch: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void>
 
 /** Reset all live fields, then set the supplied fields; ordinary config is preserved.
  * @param ns Profile entry id.
  * @param section Complete form values.
  * @param expectedRevision Revision returned by describe.
+ * @param control Optional caller recheck at the actual native edit and replacement points.
  */
-async replace(ns: string, section: object, expectedRevision?: number): Promise<void>
+async replace(ns: string, section: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void>
 
 /** Apply field edits without restating redacted secrets; unsetting an array index removes its element.
  * @param ns Profile entry id.
  * @param ops Ordered form edits.
  * @param expectedRevision Revision returned by describe.
+ * @param control Optional caller recheck at the actual native edit and replacement points.
  */
-async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
+async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number, control?: ConfigEditControl): Promise<void>
 ```
+
+Types: [ConfigEditControl](boot.zh.md#native-edit-controls)
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 

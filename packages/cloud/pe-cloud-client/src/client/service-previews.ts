@@ -1,4 +1,5 @@
 /** Optional native Tool presentation captured from one original immutable Cloud page. */
+import { observeCloudDisposal } from './observe-disposal.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -50,7 +51,7 @@ export function installCloudServicePreviews(ctx: Context, page: CloudServicePrev
     })
   })
   const stop = (): void => {
-    void dependency.dispose().catch((error: unknown) => { console.error('Cloud service preview withdrawal unconfirmed:', error) })
+    void observeCloudDisposal(dependency.dispose).catch((error: unknown) => { console.error('Cloud service preview withdrawal unconfirmed:', error) })
   }
   signal.addEventListener('abort', stop, { once: true })
   ctx.effect(() => async () => {

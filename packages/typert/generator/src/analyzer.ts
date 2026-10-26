@@ -635,9 +635,11 @@ export class WorkspaceAnalyzer {
         rootDir: this.options.root,
       },
     })
+    // The reported scope is this package; imported dependency bodies have their own project checks.
+    const owned = program.getSourceFiles().filter(file => isWithin(file.fileName, registration.root))
     const diagnostics = [
-      ...program.getSyntacticDiagnostics(),
-      ...program.getSemanticDiagnostics(),
+      ...ts.sortAndDeduplicateDiagnostics(owned.flatMap(file => program.getSyntacticDiagnostics(file))),
+      ...ts.sortAndDeduplicateDiagnostics(owned.flatMap(file => program.getSemanticDiagnostics(file))),
     ].filter((diagnostic): diagnostic is ts.DiagnosticWithLocation => diagnostic.file !== undefined
       && diagnostic.start !== undefined
       && isWithin(diagnostic.file.fileName, registration.root))

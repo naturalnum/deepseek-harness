@@ -117,6 +117,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The same Promise on every call, retaining actual cleanup success or failure; Context disposal joins it too.',
       },
       {
+        signature: 'isQuiescent(maximum: number): boolean',
+        description: 'Observe actual driver, maintenance, durable inbox and factory startup work without stopping it.',
+        parameters: [{ name: 'maximum', description: 'Explicit account graph bound on retained Agent lifecycles.' }],
+        returns: 'True only when every original owned activity is quiescent; public idle status alone is insufficient.',
+      },
+      {
         signature: 'create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, \'cwd\'> = {}): Promise<Agent>',
         description: 'Create an agent and session under one caller-supplied identity, owned by the accessing fiber. Constructor-driven config calls mint a fresh combined id before entering this boundary. When a persistence backend is mounted, the session\'s durable identity and any seed are stored before publication.',
         parameters: [{ name: 'id', description: 'shared agent/session identity.' }, { name: 'options', description: 'concrete loop options.' }, { name: 'meta', description: 'optional fresh-session workspace metadata.' }],
@@ -649,6 +655,89 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'cloudModelKey',
+    summary: 'One independent capability; original native persistence, ordering and failure retention stay with AccountSaves.',
+    description: 'One independent capability; original native persistence, ordering and failure retention stay with AccountSaves.',
+    methods: [
+      {
+        signature: '@Remote(\'metadata\') metadata(signal: AbortSignal): Promise<ModelKeyMetadata>',
+        description: 'Read actual metadata through the original Peer/Use.',
+        parameters: [{ name: 'signal', description: 'Original observer signal.' }],
+        returns: 'Bounded readonly native metadata.',
+      },
+      {
+        signature: 'auditProvider(): Promise<void>',
+        description: 'Audit before bootstrap policy checks.',
+        parameters: [],
+        returns: 'Actual native module import settlement.',
+      },
+      {
+        signature: 'assertProvisionableModel(provider: string, model: string): void',
+        description: 'Require the audited configured bootstrap route.',
+        parameters: [{ name: 'provider', description: 'Root provider.' }, { name: 'model', description: 'Root model.' }],
+      },
+      {
+        signature: '@Remote(\'describe\') describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>',
+        description: 'Read redacted state for an explicit edit.',
+        parameters: [{ name: 'request', description: 'Root-approved native reference.' }, { name: 'signal', description: 'Original observer signal.' }],
+        returns: 'Redacted state and version.',
+      },
+      {
+        signature: '@Remote(\'set\') set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>',
+        description: 'Persist the approved Key in the original save turn.',
+        parameters: [{ name: 'request', description: 'Approved reference, secret and captured version.' }, { name: 'signal', description: 'Original observer signal.' }],
+        returns: 'Confirmed persistence.',
+      },
+      {
+        signature: '@Remote(\'unset\') unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>',
+        description: 'Remove the approved Key in the original save turn.',
+        parameters: [{ name: 'request', description: 'Approved reference and captured version.' }, { name: 'signal', description: 'Original observer signal.' }],
+        returns: 'Confirmed removal.',
+      },
+      {
+        signature: 'assertCurrent(): void',
+        description: 'Require this same installed service, independently of public readiness.',
+        parameters: [],
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Inspect actual installed unary registrations.',
+        parameters: [],
+        returns: 'Actual fixed Remote markers and strict descriptors; never a configured availability claim.',
+      },
+    ],
+  },
+  {
+    key: 'cloudPlugins',
+    summary: 'Unary controls for finite approved preinstalled plugins; no installer or raw manager endpoint is granted.',
+    description: 'Unary controls for finite approved preinstalled plugins; no installer or raw manager endpoint is granted.',
+    methods: [
+      {
+        signature: '@Remote(\'current\') current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>',
+        description: 'Read actual approved native inventory and an epoch-bound original save-owner version.',
+        parameters: [{ name: 'request', description: 'Approved catalog id.' }, { name: 'signal', description: 'Original observer cancellation.' }],
+        returns: 'Original native PluginInfo, approved native Config fields and opaque version; no profile bytes or digest.',
+      },
+      {
+        signature: '@Remote(\'change\') change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>',
+        description: 'Edit through the original actual idle window, or explicitly schedule its complete terminal drain and new claim.',
+        parameters: [{ name: 'request', description: 'Approved id, exact operation, original edit and explicit application mode.' }, { name: 'signal', description: 'Observer cancellation before admission; admitted native work retains its actual settlement.' }],
+        returns: 'Applied only after original native apply/re-audit, or acceptance requiring reconnect and read.',
+      },
+      {
+        signature: 'assertCurrent(): void',
+        description: 'Require this same installed Remote and native writer owners, without granting public readiness.',
+        parameters: [],
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Inspect exact generated strict Remote descriptors and original method registrations.',
+        parameters: [],
+        returns: 'Only the two actual authenticated unary endpoints.',
+      },
+    ],
+  },
+  {
     key: 'cloudProjects',
     summary: 'One additive Remote capability; directory allocation and native persistence stay with their owners.',
     description: 'One additive Remote capability; directory allocation and native persistence stay with their owners.',
@@ -670,6 +759,78 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Inspect the actual Remote marker and installed service for the API\'s bounded native inventory.',
         parameters: [],
         returns: 'Exactly the guarded project-creation endpoint; does not publish readiness.',
+      },
+    ],
+  },
+  {
+    key: 'cloudSkills',
+    summary: 'One concrete business capability; it registers no additional persistence or lifecycle owner.',
+    description: 'One concrete business capability; it registers no additional persistence or lifecycle owner.',
+    methods: [
+      {
+        signature: 'restore(): Promise<void>',
+        description: 'Reconstruct the current catalog during trusted assembly.',
+        parameters: [],
+        returns: 'Actual cold-pointer restore; Root calls before opening business admission.',
+      },
+      {
+        signature: '@Remote(\'current\') current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>',
+        description: 'Read this account\'s actual fixed pointer, without activating an Agent or creating a sandbox.',
+        parameters: [{ name: 'request', description: 'Fixed sample slot only.' }, { name: 'signal', description: 'Original observer cancellation.' }],
+        returns: 'Actual durable metadata and opaque edit token; no resource path.',
+      },
+      {
+        signature: '@Remote(\'publish\') publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>',
+        description: 'Publish exactly two complete files through actual native pointer CAS in the original save turn.',
+        parameters: [{ name: 'request', description: 'Fixed slot, opaque edit and bounded complete file fields.' }, { name: 'signal', description: 'Cancellation cannot discard a confirmed native pointer handoff.' }],
+        returns: 'Separate persistence/catalog application and optional per-load resource preparation capability.',
+      },
+      {
+        signature: '@Remote(\'installed\') installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>',
+        description: 'List installed skills with their native selection and precedence metadata.',
+        parameters: [{ name: 'request', description: 'Optional original workspace selector.' }, { name: 'signal', description: 'Observer cancellation.' }],
+        returns: 'Complete installed catalog and one catalog edit token.',
+      },
+      {
+        signature: '@Remote(\'details\') details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>',
+        description: 'Read one installed skill\'s native metadata and complete file inventory.',
+        parameters: [{ name: 'request', description: 'Original installation id.' }, { name: 'signal', description: 'Observer cancellation.' }],
+        returns: 'Complete native and file metadata.',
+      },
+      {
+        signature: '@Remote(\'install\') install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>',
+        description: 'Install a complete skill package through the original save turn and catalog CAS.',
+        parameters: [{ name: 'request', description: 'Complete package and catalog edit token.' }, { name: 'signal', description: 'Cancellation cannot discard a confirmed catalog handoff.' }],
+        returns: 'Persistence and native application facts.',
+      },
+      {
+        signature: '@Remote(\'update\') update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>',
+        description: 'Replace one installation\'s complete package through the original catalog CAS.',
+        parameters: [{ name: 'request', description: 'Complete replacement and catalog edit token.' }, { name: 'signal', description: 'Cancellation cannot discard a confirmed catalog handoff.' }],
+        returns: 'Persistence and native application facts.',
+      },
+      {
+        signature: '@Remote(\'uninstall\') uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>',
+        description: 'Remove one installation from future native discovery and loading.',
+        parameters: [{ name: 'request', description: 'Original installation and catalog edit token.' }, { name: 'signal', description: 'Cancellation cannot discard a confirmed catalog handoff.' }],
+        returns: 'Durable removal and native application facts.',
+      },
+      {
+        signature: '@Remote(\'download\') download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>',
+        description: 'Export the complete authorized files of one installed skill as a ZIP archive.',
+        parameters: [{ name: 'request', description: 'Exact installed content selectors.' }, { name: 'signal', description: 'Observer cancellation.' }],
+        returns: 'Complete authorized ZIP.',
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Inspect actual native registration rather than a configured availability flag.',
+        parameters: [],
+        returns: 'Exact unary inventory.',
+      },
+      {
+        signature: 'assertCurrent(): void',
+        description: 'Require this exact installed account service and files binding; does not grant public readiness.',
+        parameters: [],
       },
     ],
   },
@@ -777,6 +938,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['If synchronous admission rejects the submission.'],
       },
       {
+        signature: 'editFailureOutcome(error: unknown): \'not-published\' | \'unknown\' | undefined',
+        description: 'Read this editor\'s actual guarded replacement disposition without changing the original rejection.',
+        parameters: [{ name: 'error', description: 'Exact object rejected by a guarded edit; copied or unrelated errors have no receipt.' }],
+        returns: 'Not-published before atomic replacement, unknown after it was entered, or undefined for unobserved errors.',
+      },
+      {
         signature: 'entries(): Entry[]',
         description: 'Addressable profile rows; nested Includes have independent configuration ownership.',
         parameters: [],
@@ -789,9 +956,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Detached layer values alongside their Loader entries.',
       },
       {
-        signature: 'async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>',
-        description: 'Validate, persist, and reconcile a plugin\'s next config; ordinary fields keep normal lifecycle rules. An impact guard selects the restricted live path; unsupported plans reject before writing. A required post-replacement failure remains failed with its committed state for caller diagnosis; that path never falls back to an unguarded rollback or remount.',
-        parameters: [{ name: 'entry', description: 'Current Loader entry, also used to detect replacement during the write.' }, { name: 'change', description: 'Derive a raw config from the current entry and its inherited layer.' }],
+        signature: 'async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, control?: ConfigEditControl, ): Promise<void>',
+        description: 'Validate, persist, and reconcile a plugin\'s next config; ordinary fields keep normal lifecycle rules. An impact guard selects the live path; an explicit trusted Host control may select the bounded optional-leaf planner. Unsupported native plans reject before writing. A required post-replacement failure remains failed with its committed state for caller diagnosis; that path never falls back to an unguarded rollback or remount.',
+        parameters: [{ name: 'entry', description: 'Current Loader entry, also used to detect replacement during the write.' }, { name: 'change', description: 'Derive a raw config from the current entry and its inherited layer.' }, { name: 'control', description: 'Optional original caller recheck; omission preserves ordinary native edits.' }],
         returns: 'Fulfillment after Loader reconciliation completes.',
       },
     ],
@@ -1757,6 +1924,28 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly activeInstanceId?: InstanceId | undefined',
+        description: 'Original local startup identity for active ordinary Roots; absent for component, maintenance and stopped Roots.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly ownerResolver?: AccountOwnerResolver | undefined',
+        description: 'Active ordinary Roots expose only bounded reads; component, maintenance and stopped Roots omit this facade.',
+        parameters: [],
+      },
+      {
+        signature: 'registerIngressClose(owner: RootIngressCloseOwner): () => void | Promise<void>',
+        description: 'Register the single original Access ingress shutdown owner in the actual caller effect.',
+        parameters: [{ name: 'owner', description: 'Original close owner, registered before it admits authentication or forwarding work.' }],
+        returns: 'Withdrawal that starts and joins original closure; failed closure retains the registration. Registration grants no seal, database, account, recovery or participant authority.',
+      },
+      {
+        signature: 'borrowOwnedAccount(expected: AccountOwner): Promise<AccountUse>',
+        description: 'Borrow only an existing ready graph owned by this process and the exact observed owner tuple.',
+        parameters: [{ name: 'expected', description: 'Original AccountOwner metadata supplied by trusted Host composition, never an AccountBinding.' }],
+        returns: 'The original AccountUse after owner and Root rechecks; no claim, mount or recreation is attempted. A failed recheck releases any acquired borrow. The consumer releases a successful borrow after its work settles.',
+      },
+      {
         signature: 'controlDatabase(participant: DrainParticipant): RootMetadataDatabase',
         description: 'Borrow the active Root\'s bounded database for an exactly registered Root shutdown owner. Account graphs receive no such capability; borrowing grants no account or execution authority.',
         parameters: [{ name: 'participant', description: 'Original registered object with an actual idempotent closeRoot implementation.' }],
@@ -1867,6 +2056,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Actual current registrations; this creates neither a route nor business admission.',
       },
       {
+        signature: 'withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>',
+        description: 'Delegate one native model-key invocation through the original login registry.',
+        parameters: [{ name: 'peer', description: 'Exact Gateway invocation Peer, never a client identity.' }, { name: 'consume', description: 'Actual native work using the original retained Use and current checks.' }],
+        returns: 'Actual operation settlement; this service issues no additional borrow.',
+      },
+      {
+        signature: 'withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: \'if-idle\' | \'stop-and-apply\' = \'if-idle\'): Promise<T>',
+        description: 'Delegate a guarded configuration handoff to the same original login/Peer owner.',
+        parameters: [{ name: 'peer', description: 'Exact native invocation Peer.' }, { name: 'consume', description: 'Factory-owned exclusive update, without another login or state authority.' }, { name: 'mode', description: 'Explicit local idle operation or terminal acceptance followed by original full closure.' }],
+        returns: 'Actual update settlement and fresh same-generation borrow restoration.',
+      },
+      {
         signature: 'close(): Promise<void>',
         description: 'Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end. Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.',
         parameters: [],
@@ -1885,7 +2086,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'>>',
+        signature: 'readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & { readonly pluginManager?: typeof PluginManager }>',
         description: 'Native constructors fixed before their Loader activation, using this graph\'s existing save hooks.',
         parameters: [],
       },
@@ -1895,10 +2096,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'owner', description: 'Native Loader scope; omitted checks the API owner\'s own scope.' }],
       },
       {
-        signature: 'async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>',
+        signature: 'async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>',
         description: 'Check original native installations and the shared policy without creating or writing business resources. Mount/business admission and native ownership are checked around the awaited policy metadata read. Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.',
         parameters: [{ name: 'owner', description: 'Actual consumer scope in this account graph.' }, { name: 'signal', description: 'Optional observer cancellation, combined with the original graph lifetime.' }],
-        returns: 'Settlement of the current checks; no readiness token, catalog or account authority is issued.',
+        returns: 'Original synchronous native/admission recheck for final transfer; no readiness token, catalog or account authority is issued.',
         throws: ['CloudApiError for absent policy, removed/replaced native installations or closed admission; policy failures and cancellation retain their original identity.'],
       },
       {
@@ -1907,6 +2108,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'owner', description: 'Actual consumer scope in this original graph.' }, { name: 'signal', description: 'Optional observer cancellation, combined with the graph lifetime.' }],
         returns: 'Settlement after original policy/provider checks and the actual handler inventory audit.',
         throws: ['CloudApiError without the original unpublished callback, native owners or bounded policy; original policy/cancellation failures retain identity.'],
+      },
+      {
+        signature: 'auditReconfigured(owner: Context): Promise<void>',
+        description: 'Re-audit the original inventory under the factory\'s same-generation exclusive update window.',
+        parameters: [{ name: 'owner', description: 'Same native account root; no replacement graph is accepted.' }],
+        returns: 'Actual original policy/provider/handler audit; grants no business admission.',
       },
       {
         signature: 'audit(inventory: ExposureInventory): void',
@@ -1937,10 +2144,51 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Its exact audited declaration after business admission.',
       },
       {
-        signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\'>): NativeFirstScreen',
+        signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\'>): NativeFirstScreen',
         description: 'Prepare fixed readonly native constructors; original Loader activation and complete auditing still follow.',
         parameters: [{ name: 'owner', description: 'Independent graph\'s prepare scope.' }, { name: 'input', description: 'Actual files-owned project, shared Session metadata check and explicit native limits.' }],
         returns: 'Original constructor installation, with no readiness publication or directory creation.',
+      },
+      {
+        signature: 'prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService',
+        description: 'Register one key service in its Loader fiber.',
+        parameters: [{ name: 'owner', description: 'Original Loader.' }, { name: 'input', description: 'Root policy and original login callback.' }],
+        returns: 'Installed service.',
+      },
+      {
+        signature: 'prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService',
+        description: 'Prepare one fixed skill capability; Root still supplies and audits explicit exposure separately.',
+        parameters: [{ name: 'owner', description: 'Original account Loader scope after native skills and verified files activate.' }, { name: 'input', description: 'Same files owner, original Peer consumer and explicit finite bounds.' }],
+        returns: 'Concrete native Remote. Restore before business opening; resource loads require original caller/project preparation.',
+      },
+      {
+        signature: 'prepareCloudPlugins(owner: Context): CloudPluginService',
+        description: 'Prepare the fixed plugin Remote after its original guarded manager and editor activate.',
+        parameters: [{ name: 'owner', description: 'Actual original account Loader entry.' }],
+        returns: 'Exact original two-method Remote.',
+      },
+      {
+        signature: 'restoreApprovedPlugins(): Promise<void>',
+        description: 'Audit the actual preinstalled fixed module and original native writer before publication.',
+        parameters: [],
+        returns: 'Original importer/package/native inventory settlement.',
+      },
+      {
+        signature: 'applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>',
+        description: 'Apply a checked intent in the original stopped graph before its native hooks are withdrawn.',
+        parameters: [{ name: 'intent', description: 'Original save-owner CAS result.' }, { name: 'current', description: 'Actual factory terminal window check.' }],
+        returns: 'Actual native writer and application; neither business nor save admission reopens.',
+      },
+      {
+        signature: 'verifyApprovedPluginIntent( intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, current: () => void, ): Promise<PluginRebuildVerification>',
+        description: 'Verify the checked old intent on this unpublished replacement graph.',
+        parameters: [{ name: 'intent', description: 'Original terminal operation.' }, { name: 'persisted', description: 'Original native persistence result.' }, { name: 'current', description: 'Original replacement-graph check before ready CAS.' }],
+        returns: 'Verified new state, with a new save owner version.',
+      },
+      {
+        signature: 'assertProvisionableModel(provider: string, model: string): void',
+        description: 'Require the audited configured bootstrap route.',
+        parameters: [{ name: 'provider', description: 'Root provider.' }, { name: 'model', description: 'Root model.' }],
       },
       {
         signature: 'prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProjectsService',
@@ -1955,7 +2203,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The original native service; existing filesystem provider and native Gateway retain authorization and I/O ownership.',
       },
       {
-        signature: 'installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents',
+        signature: 'installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\' | \'settingsNamespaces\'>): FirstScreenEvents',
         description: 'Register the actual bounded native event subset on the original Gateway.',
         parameters: [{ name: 'owner', description: 'Original registration Loader fiber after readonly native providers activate.' }, { name: 'input', description: 'Exact graph profile home and all required event bounds.' }],
         returns: 'Actual registration/disposer; native Gateway owns ready and wire framing.',
@@ -1979,9 +2227,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Native service; its streamed route remains subject to the audited exposure policy.',
       },
       {
-        signature: 'createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop',
+        signature: 'createAgentLoop( owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1], reserveSubagent?: (depth: number) => SubagentCapacityReservation, ): AgentLoop',
         description: 'Install the sole guarded native factory before business admission opens.',
-        parameters: [{ name: 'owner', description: 'Owning native entry inside this independent graph.' }, { name: 'guards', description: 'Shared pre-write and prepared-Agent checks.' }, { name: 'config', description: 'Original native configuration, with no startup agents.' }],
+        parameters: [{ name: 'owner', description: 'Owning native entry inside this independent graph.' }, { name: 'guards', description: 'Shared pre-write and prepared-Agent checks.' }, { name: 'config', description: 'Original native configuration, with no startup agents.' }, { name: 'reserveSubagent', description: 'Original Root capacity/settlement callback; omission keeps child entry closed.' }],
         returns: 'The real native AgentLoop provider; every operation still checks business admission.',
       },
       {
@@ -1995,6 +2243,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Pause new top-level configuration submissions while retaining admitted native work.',
         parameters: [{ name: 'deadlineAtMs', description: 'Finite observation deadline; actual submitted writes remain owned.' }, { name: 'signal', description: 'Optional observer cancellation; absence waits to the deadline.' }],
         returns: 'The existing save barrier\'s pause evidence.',
+      },
+      {
+        signature: 'inspectConfigurationSaves(): ReturnType<ConfigSaveBarrier[\'snapshot\']>',
+        description: 'Observe actual original configuration work without granting an update window.',
+        parameters: [],
+        returns: 'The original save owner\'s bounded actual work, without native values.',
+      },
+      {
+        signature: 'withPausedPluginChange<T>(submit: () => Promise<T>): Promise<T>',
+        description: 'Run the factory\'s exclusive native plugin writer in the original paused save turn.',
+        parameters: [{ name: 'submit', description: 'Original writer and required application, with no observer-cancellation race.' }],
+        returns: 'Actual settlement under this same barrier; missing exclusive authority rejects before submit.',
       },
       {
         signature: 'resumeAccountChanges(): void',
@@ -2012,6 +2272,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Withdraw only after confirmed terminal save settlement, before disposing native providers.',
         parameters: [],
       },
+      {
+        signature: 'modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess',
+        description: 'Bind a trusted request borrow to the existing native credential installation; registers no endpoint.',
+        parameters: [{ name: 'use', description: 'Original runtime-issued AccountUse; its caller retains release ownership through settlement.' }, { name: 'limits', description: 'Explicit deployment byte bounds, never client input.' }, { name: 'assertRequestCurrent', description: 'Original request/Peer check; production ingress must supply it. Omission preserves trusted in-process calls without adding login admission.' }],
+        returns: 'A request-local adapter; every call still requires actual business and exposure admission.',
+      },
     ],
   },
   {
@@ -2023,6 +2289,104 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'readonly binding: AccountBinding',
         description: 'Exact runtime-installed graph binding, independent of account business readiness.',
         parameters: [],
+      },
+      {
+        signature: 'skillVersions(): SkillVersionPort',
+        description: 'Return this installed graph\'s original fixed private skill port; no model or raw-file entry is exposed.',
+        parameters: [],
+        returns: 'The original bound port, rejecting when static storage or the native capability is absent.',
+      },
+      {
+        signature: 'prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>',
+        description: 'Prepare a complete immutable tree through the original lane and reviewed helper.',
+        parameters: [{ name: 'input', description: 'Complete package files or archive bytes.' }, { name: 'signal', description: 'Caller observation cancellation; actual work remains owned to settlement.' }],
+        returns: 'A files-issued version whose result remains retained through release.',
+      },
+      {
+        signature: 'observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>',
+        description: 'Observe the complete single catalog; schema1 is projected without migration writes.',
+        parameters: [{ name: 'signal', description: 'Caller observation cancellation.' }],
+        returns: 'A complete issued observation retained through release.',
+      },
+      {
+        signature: 'commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>',
+        description: 'CAS one installation in the original current.json, inside the caller\'s existing save observation.',
+        parameters: [{ name: 'expected', description: 'Exact catalog observation issued by this files generation.' }, { name: 'change', description: 'One installation change using issued bundle authority.' }, { name: 'signal', description: 'Caller observation cancellation; confirmed durable outcomes remain observable.' }],
+        returns: 'The confirmed catalog and affected entry, retained through release; unknown publication rejects without rollback.',
+      },
+      {
+        signature: 'withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>',
+        description: 'Borrow one issued complete source; the callback and its resident result retain the original borrow.',
+        parameters: [{ name: 'version', description: 'Exact issued source selected under the original save ordering.' }, { name: 'consume', description: 'Consumes source methods while their operation lease remains active.' }, { name: 'signal', description: 'Caller observation cancellation.' }],
+        returns: 'The consumed value with actual reservation and source retention held until release.',
+      },
+      {
+        signature: 'exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>',
+        description: 'Export every member of the exact authorized version as a bounded ZIP.',
+        parameters: [{ name: 'version', description: 'Exact issued authorized source version.' }, { name: 'signal', description: 'Actual export observation cancellation.' }],
+        returns: 'The complete owned archive, retained through release.',
+      },
+      {
+        signature: 'materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>',
+        description: 'Materialize the complete tree under the original issued project, preserving existing writable copies.',
+        parameters: [{ name: 'project', description: 'Original issued active project grant.' }, { name: 'version', description: 'The exact operation-scoped source.version lease when called inside source consumption.' }, { name: 'signal', description: 'Observation cancellation; actual copy work retains its original owner.' }],
+        returns: 'An issued complete working copy after confirmed publication and protected association CAS.',
+      },
+      {
+        signature: 'async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>',
+        description: 'Fix the actual skills parent before allocation, without creating any sandbox or binding an environment slot.',
+        parameters: [{ name: 'project', description: 'Exact installed/projectFor object after Root\'s actual native caller selection.' }, { name: 'signal', description: 'Cancellation leaves all actual I/O with the original files lane.' }],
+        returns: 'Parent facts retained until the original allocation/export actual joins release the result.',
+      },
+      {
+        signature: 'materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal) : Promise<ResidentResult<SkillWorkingCopyGrant>>',
+        description: 'Fully publish a fixed two-file version or reuse its protected association while preserving user edits.',
+        parameters: [{ name: 'project', description: 'Exact actively borrowed parent grant from this owner.' }, { name: 'version', description: 'Exact original immutable version capability.' }, { name: 'signal', description: 'Observer cancellation cannot settle running native work or ambiguous publication.' }],
+        returns: 'A complete current-project resource base and persistent issued copy handle; release ends this I/O result, not the copy.',
+      },
+      {
+        signature: 'borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[], signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>',
+        description: 'Borrow complete issued full-tree copies through actual operation settlement, independently of the parent lease.',
+        parameters: [{ name: 'project', description: 'Original active project grant.' }, { name: 'copies', description: 'Exact issued same-project copies.' }, { name: 'signal', description: 'Preparation observation cancellation.' }],
+        returns: 'The complete operation borrow retained through actual remote, local and physical settlement.',
+      },
+      {
+        signature: 'borrowAllBundleWorkingCopies(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>',
+        description: 'Derive the complete bounded persisted copy set, including legacy copies, and retain it for one operation.',
+        parameters: [{ name: 'project', description: 'Original active project grant.' }, { name: 'signal', description: 'Preparation observation cancellation.' }],
+        returns: 'The complete confirmed operation set retained through release.',
+      },
+      {
+        signature: 'assertBundleOperationCopies(value: SkillBundleOperationCopies): void',
+        description: 'Require the original unreleased full-tree operation result before granting execution access.',
+        parameters: [{ name: 'value', description: 'Exact original operation borrow.' }],
+      },
+      {
+        signature: 'borrowSkillWorkingCopies(project: SkillProjectGrant, copies: readonly SkillWorkingCopyGrant[], signal: AbortSignal) : Promise<ResidentResult<SkillOperationCopies>>',
+        description: 'Revalidate protected associations and actual directories for each original operation before role issuance.',
+        parameters: [{ name: 'project', description: 'Original allocation parent grant still retained by its export/allocation.' }, { name: 'copies', description: 'Exact issued same-project handles selected by the original trusted caller.' }, { name: 'signal', description: 'Actual preparation cancellation; the result must survive any subsequent observer cancellation.' }],
+        returns: 'Bounded facts held through original whenEmpty+localSettled or joined physical-stop completion.',
+      },
+      {
+        signature: 'borrowAllSkillWorkingCopies(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillOperationCopies>>',
+        description: 'Derive and borrow every confirmed copy for this project without an API/execution-owned membership cache.',
+        parameters: [{ name: 'project', description: 'Original active allocation parent capability.' }, { name: 'signal', description: 'Preparation cancellation; actual work and the returned result retain original ownership.' }],
+        returns: 'The complete bounded set after actual association/source/directory checks; any unqualified version or excess rejects the whole set.',
+      },
+      {
+        signature: 'assertSkillProjectGrant(grant: SkillProjectGrant): void',
+        description: 'Require an exact active parent result before Root captures export/allocation facts.',
+        parameters: [{ name: 'grant', description: 'Original issued capability from this owner.' }],
+      },
+      {
+        signature: 'assertSkillWorkingCopy(grant: SkillWorkingCopyGrant): void',
+        description: 'Require an exact current persistent copy handle; execution additionally needs a live operation borrow.',
+        parameters: [{ name: 'grant', description: 'Original issued capability from this owner.' }],
+      },
+      {
+        signature: 'assertSkillOperationCopies(grant: SkillOperationCopies): void',
+        description: 'Require the original unreleased operation result before signing/using its fixed facts.',
+        parameters: [{ name: 'grant', description: 'Original issued capability from this owner.' }],
       },
       {
         signature: 'attachmentStore(): typeof LocalAttachmentStore',
@@ -2165,6 +2529,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'A concrete implementation must register as runtime\'s mandatory execution participant and verify its own required execution capabilities or explicit closed mode before readiness. This definition supplies neither an implementation nor an empty-work stopping receipt.',
     methods: [
       {
+        signature: 'isEpochIdle(_binding: AccountBinding): boolean',
+        description: 'Closed/unqualified coordinators cannot certify account idleness.',
+        parameters: [{ name: '_binding', description: 'Original account generation.' }],
+        returns: 'False until an actual coordinator implements its own work observation.',
+      },
+      {
         signature: 'abstract assertReady(): void',
         description: 'Check actual registration and declared requirements; closed mode authorizes no execution.',
         parameters: [],
@@ -2213,6 +2583,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'hook', description: 'synchronous admission and typed ChangeResult observation.' }],
         returns: 'awaitable disposer; caller unload also removes the hook.',
         throws: ['If a hook is already installed.'],
+      },
+      {
+        signature: 'registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>',
+        description: 'Bind the sole native selection guard; entry and bundle writes share preparation, persistence and reconcile.',
+        parameters: [{ name: 'guard', description: 'Original owner policy, not a replacement patch composer or supplied stop list.' }],
+        returns: 'Disposer; the caller retains this fiber until actual updates settle.',
+      },
+      {
+        signature: 'changeFailureOutcome(result: ChangeResult): \'not-published\' | \'unknown\' | undefined',
+        description: 'Read the original guarded writer\'s actual replacement disposition without changing its ChangeResult.',
+        parameters: [{ name: 'result', description: 'Exact native result object; copies and unrelated failures have no receipt.' }],
+        returns: 'Owner-observed zero-publication refusal or unknown after replacement was entered.',
       },
       {
         signature: '@Remote listVersionExemptions(): { exemptions: Record<string, string[]>; warnings: string[] }',
@@ -2285,6 +2667,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path; a selected name no dependency holds is only deselected.',
         parameters: [{ name: 'name', description: 'Installed dependency or selected bundle name.' }],
         returns: 'Removal diagnostics and the remaining profile state.',
+      },
+      {
+        signature: 'previewBundleSelection(name: string, enabled: boolean, maximum: number, application: \'reconcile\' | \'restart\' = \'reconcile\'): Promise<ProfileConfigUpdatePlan>',
+        description: 'Inspect the complete original bundle composition without writing or activating entries.',
+        parameters: [{ name: 'name', description: 'Preinstalled native bundle name.' }, { name: 'enabled', description: 'Desired selection.' }, { name: 'maximum', description: 'Bound on composed rows.' }, { name: 'application', description: 'Whether the original caller will reconcile or restart the graph.' }],
+        returns: 'Opaque original profile plan; the writer prepares and checks it again under this same lock.',
       },
     ],
   },
@@ -2764,6 +3152,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{AggregateError} naming each session whose flush failed; the remaining handles still flush.'],
       },
       {
+        signature: 'isQuiescent(_maximum: number): boolean',
+        description: 'Observe provider-owned I/O without starting a flush or cancelling existing work.',
+        parameters: [{ name: '_maximum', description: 'Explicit maximum number of retained handles to inspect.' }],
+        returns: 'False unless the concrete provider can observe all pending native work.',
+      },
+      {
         signature: 'abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined>',
         description: 'Observe one stored session without reading its event log or taking ownership.\n\nThe snapshot\'s `revision` is an opaque change token comparable only against revisions from the same service instance and session id: equal revisions may be treated as an unchanged log; unequal revisions promise nothing. Write-ownership churn does not change a revision. It exists for derived read-model caches keyed off `stat`/`list`; it plays no part in open, read, or resume.',
         parameters: [{ name: 'id', description: 'the stored session to observe.' }, { name: 'options', description: 'optional cancellation.' }],
@@ -3178,19 +3572,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Forms keyed by unique profile entry ids.',
       },
       {
-        signature: 'async update(ns: string, patch: object, expectedRevision?: number): Promise<void>',
+        signature: 'async update(ns: string, patch: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void>',
         description: 'Merge editable fields into an entry\'s config.',
-        parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'patch', description: 'Fields to merge.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }],
+        parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'patch', description: 'Fields to merge.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }, { name: 'control', description: 'Optional caller recheck at the actual native edit and replacement points.' }],
       },
       {
-        signature: 'async replace(ns: string, section: object, expectedRevision?: number): Promise<void>',
+        signature: 'async replace(ns: string, section: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void>',
         description: 'Reset all live fields, then set the supplied fields; ordinary config is preserved.',
-        parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'section', description: 'Complete form values.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }],
+        parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'section', description: 'Complete form values.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }, { name: 'control', description: 'Optional caller recheck at the actual native edit and replacement points.' }],
       },
       {
-        signature: 'async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>',
+        signature: 'async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number, control?: ConfigEditControl): Promise<void>',
         description: 'Apply field edits without restating redacted secrets; unsetting an array index removes its element.',
-        parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'ops', description: 'Ordered form edits.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }],
+        parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'ops', description: 'Ordered form edits.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }, { name: 'control', description: 'Optional caller recheck at the actual native edit and replacement points.' }],
       },
     ],
   },
@@ -3309,6 +3703,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Observe the current invocation-neutral catalog and whether discovery completed within a stable revision. Incomplete observations are never cached, allowing consumers to retain last-good state and retry on their next request boundary.',
         parameters: [{ name: 'options', description: 'view options; `scope` selects the viewing agent\'s layers, `cwd` selects project roots, and `signal` cancels discovery.' }],
         returns: 'sorted summaries plus discovery-completeness state.',
+      },
+      {
+        signature: 'async inspect(options: SkillViewOptions = {}): Promise<SkillCatalogInspection>',
+        description: 'Inspect every contributed candidate and its actual winner in the same observation used by list/get. Candidate values and locators remain borrowed readonly provider objects; inspection loads no bodies and grants no resource authority. Incomplete results describe only the observed candidates and are not cached. Scope, invalidation and cancellation use the original catalog collection.',
+        parameters: [{ name: 'options', description: 'original scope/cwd lookup context and optional discovery cancellation signal.' }],
+        returns: 'name-sorted candidates with selected/overridden relationships and discovery completeness.',
       },
       {
         signature: 'async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined>',
@@ -3625,6 +4025,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List registered provider names in insertion order.',
         parameters: [],
         returns: 'the registered names.',
+      },
+      {
+        signature: 'registerAdmission(check: SubagentAdmission): () => void | Promise<void>',
+        description: 'Add a check owned by the calling fiber, in registration order. Withdrawal or replacement invalidates waiting operations before dispatch. Already dispatched provider work remains owned by the activation manager.',
+        parameters: [{ name: 'check', description: 'trusted check of original provider/start or cold-resume facts.' }],
+        returns: 'the original effect disposer; a retired invocation may return void.',
       },
     ],
   },
@@ -5177,11 +5583,11 @@ export const EVENT_API: readonly EventApiEntry[] = [
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountApiInstall',
-    declaration: 'export interface AccountApiInstall {\n    readonly binding: AccountBinding;\n    readonly exposure: ExposurePolicy;\n    readonly configEditor: typeof ConfigEditor;\n    readonly credentials: typeof LocalCredentialProvider;\n    assertInstalled(owner: Context): void;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): void;\n    stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    withdraw(): Promise<void>;\n}',
+    declaration: 'export interface AccountApiInstall {\n    readonly binding: AccountBinding;\n    readonly exposure: ExposurePolicy;\n    readonly configEditor: typeof ConfigEditor;\n    readonly credentials: typeof LocalCredentialProvider;\n    assertInstalled(owner: Context): void;\n    describeCredentialEdit(ref: CredentialRef, assertCurrent?: () => void): Promise<CredentialEditView>;\n    setCredential(ref: CredentialRef, value: string, version: CredentialEditVersion, assertCurrent?: () => void): Promise<CredentialEditVersion>;\n    unsetCredential(ref: CredentialRef, version: CredentialEditVersion, assertCurrent?: () => void): Promise<CredentialEditVersion>;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): void;\n    stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    withdraw(): Promise<void>;\n}',
   },
   {
     name: 'AccountApiPreparation',
-    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n}',
+    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n}',
   },
   {
     name: 'AccountAttachmentBackend',
@@ -5213,11 +5619,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountFileSelection',
-    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    assertCurrent(): void;\n}',
+    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    readonly directoryPreparation?: {\n        assertCaller(caller: Context): void;\n    };\n    assertCurrent(): void;\n}',
   },
   {
     name: 'AccountFilesPreparation',
-    declaration: 'export interface AccountFilesPreparation {\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'runNativeMutation\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n    readonly withInstructionReaders?: <T>(workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void) => Promise<ResidentResult< /* …truncated — full shape in source */',
+    declaration: 'export interface AccountFilesPreparation {\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'runNativeMutation\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n    readonly withInstructionReaders?: <T>(workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, contro /* …truncated — full shape in source */',
   },
   {
     name: 'AccountFilesProject',
@@ -5226,6 +5632,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountLinks',
     declaration: 'export interface AccountLinks {\n    readonly usageUrl: string;\n    readonly topUpUrl: string;\n}',
+  },
+  {
+    name: 'AccountPluginControl',
+    declaration: 'export class AccountPluginControl {\n    readonly provider: typeof PluginManager;\n    readonly requests: ReturnType<typeof pluginRequests>;\n    constructor(private readonly owner: Context, private readonly saves: ConfigSaveBarrier, readonly input: CloudPluginPreparation, private readonly installed: () => void);\n    async restore(): Promise<void>;\n    async current(id: string, check: () => void): Promise<PluginCurrentState>;\n    change(id: string, version: PluginEditVersion, operation: PluginOperation, check: () => void): Promise<PluginEditCommit<{\n        readonly value: PluginCurrentState;\n        readonly native?: ChangeResult;\n    }>>;\n    async prepareRebuild(id: string, version: PluginEditVersion, operation: PluginOperation, check: () => void): Promise<Readonly<{\n        accepted: true;\n        intent: PluginRebuildIntent;\n    }> | Readonly<{\n        accepted: false;\n        error: CloudApiError;\n    }>>;\n    async applyRebuild(intent: PluginRebuildIntent, check: () => void): Promise<PluginRebuildPersistence>;\n    async verifyRebuild(intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, check: () => void): Promise<PluginRebuildVerification>;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'AccountProfile',
@@ -5264,6 +5674,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
   },
   {
+    name: 'AgentDisposalObserver',
+    declaration: 'export type AgentDisposalObserver = (status: AgentDisposalStatus) => void;',
+  },
+  {
+    name: 'AgentDisposalStatus',
+    declaration: 'export type AgentDisposalStatus = \'confirmed\' | \'unknown\';',
+  },
+  {
     name: 'AgentFactory',
     declaration: 'export interface AgentFactory {\n    createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
   },
@@ -5273,7 +5691,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentLoop',
-    declaration: 'export class AgentLoop extends Service implements AgentFactory {\n    static inject;\n    static Config: z<{\n        agents?: Config[\'agents\'];\n        maxParallelToolCalls?: number;\n    }, Config>;\n    readonly config: Config;\n    constructor(ctx: Context, config: Config);\n    stop(): Promise<void>;\n    create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, \'cwd\'> = {}): Promise<Agent>;\n    async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
+    declaration: 'export class AgentLoop extends Service implements AgentFactory {\n    static inject;\n    static Config: z<{\n        agents?: Config[\'agents\'];\n        maxParallelToolCalls?: number;\n    }, Config>;\n    readonly config: Config;\n    constructor(ctx: Context, config: Config);\n    stop(): Promise<void>;\n    isQuiescent(maximum: number): boolean;\n    create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, \'cwd\'> = {}): Promise<Agent>;\n    async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
   },
   {
     name: 'AgentOptions',
@@ -5313,7 +5731,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentSetupCommit',
-    declaration: 'export interface AgentSetupCommit {\n    commit(): void;\n}',
+    declaration: 'export interface AgentSetupCommit {\n    commit(): void;\n    assertCurrent?(): void;\n}',
   },
   {
     name: 'AgentStatus',
@@ -5360,12 +5778,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n    readonly signal?: AbortSignal;\n}',
   },
   {
+    name: 'ApprovedConfigurationBundle',
+    declaration: 'export interface ApprovedConfigurationBundle {\n    readonly id: string;\n    readonly packageName: string;\n    readonly packageVersion: string;\n    readonly control: ApprovedPluginControl;\n    readonly members: readonly Pick<ApprovedConfigurationPlugin, \'entryId\' | \'moduleName\' | \'packageName\' | \'packageVersion\'>[];\n}',
+  },
+  {
     name: 'ApprovedConfigurationCatalog',
-    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly fields: readonly never[];\n}',
+    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly bundles?: readonly ApprovedConfigurationBundle[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }> | Readonly<{\n        mode: \'sample\';\n        limits: Readonly<SkillPublicationLimits>;\n    }> | Readonly<{\n        mode: \'managed\';\n        limits: Readonly<SkillPublicationLimits>;\n        management: Readonly<ManagedSkillApiLimits>;\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly modelKey?: ApprovedModelKeyConfiguration;\n    readonly pluginControl?: Readonly<PluginControlLimits>;\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
+  },
+  {
+    name: 'ApprovedConfigurationField',
+    declaration: 'export interface ApprovedConfigurationField {\n    readonly namespace: string;\n    readonly field: string;\n    readonly values?: readonly (string | number | boolean | null)[];\n}',
   },
   {
     name: 'ApprovedConfigurationPlugin',
-    declaration: 'export interface ApprovedConfigurationPlugin {\n    readonly id: string;\n    readonly entryId: string;\n    readonly moduleName: string;\n    readonly packageName: string;\n    readonly packageVersion: string;\n    readonly installable: false;\n    readonly toggleable: false;\n}',
+    declaration: 'export interface ApprovedConfigurationPlugin {\n    readonly id: string;\n    readonly entryId: string;\n    readonly moduleName: string;\n    readonly packageName: string;\n    readonly packageVersion: string;\n    readonly installable: false;\n    readonly toggleable: boolean;\n    readonly control?: ApprovedPluginControl;\n}',
+  },
+  {
+    name: 'ApprovedModelKeyBinding',
+    declaration: 'export interface ApprovedModelKeyBinding {\n    readonly provider: string;\n    readonly providerEntryId: string;\n    readonly moduleName: string;\n    readonly ref: CredentialRef;\n}',
+  },
+  {
+    name: 'ApprovedModelKeyConfiguration',
+    declaration: 'export interface ApprovedModelKeyConfiguration {\n    readonly bindings: readonly ApprovedModelKeyBinding[];\n    readonly maxKeyBytes: number;\n    readonly maxVersionBytes: number;\n    readonly maxReplyBytes: number;\n    readonly maxMetadataBytes: number;\n}',
+  },
+  {
+    name: 'ApprovedPluginControl',
+    declaration: 'export interface ApprovedPluginControl {\n    readonly selectionTarget: Readonly<{\n        kind: \'entry\';\n        id: string;\n    }> | Readonly<{\n        kind: \'bundle\';\n        name: string;\n    }>;\n    readonly operations: readonly (\'enabled\' | \'configure\' | \'selected\')[];\n    readonly maxImpact: \'live\' | \'local\' | \'graph\';\n    readonly fields: readonly (readonly string[])[];\n}',
   },
   {
     name: 'ArchiveSessionOptions',
@@ -5565,11 +6003,35 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'>>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\'>): NativeFirstScreen;\n    prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProjectsService;\n    createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]): WorkspaceFiles;\n    installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents;\n    async stopFirstScreenEvents(): Promise<void>;\n    createController(owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1]): SessionController;\n    createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads;\n    createAgentLoop(owner: Context, guards: NativeAgentFactory /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>;\n    verifyApprovedPluginIntent(intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, current: () => void): Pr /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
-    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    attachmentStore(): typeof LocalAttachmentStore;\n    async stageAttachments(workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runAttachmentIntake<T>(reservationBytes: number, assertAuthorized: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    assertInstalled(owner: Context = this.ctx): void;\n    install(owner: Context): Promise<AccountFilesProject>;\n    project(): AccountFilesProject;\n    assertContentAvailable(): void;\n    async projectFor(workspace: Workspace, signal?: AbortSignal): Promise<AccountFilesProject>;\n    async prepareExecutionMounts(project: AccountFilesProject, sessionId: EnvironmentSessionId, environmentVersion: string, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    assertExecutionMountGrant(grant: ExecutionMountGrant): void;\n    async createProject(use: AccountUse, title: string | undefined, signal: AbortSignal): Promise<Workspace>;\n    async withInstructionReaders<T>(workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n}',
+    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal): Promise<ResidentResult<SkillWorkingCopyGrant>>;\n    borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[], signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>;\n    borrowAllBundleWorkingCopies(project: SkillProjectG /* …truncated — full shape in source */',
+  },
+  {
+    name: 'CloudApiError',
+    declaration: 'export class CloudApiError extends RemoteError<CloudApiErrorCode> {\n    override readonly name: string;\n    constructor(code: CloudApiErrorCode, message: string);\n}',
+  },
+  {
+    name: 'CloudApiErrorCode',
+    declaration: 'export type CloudApiErrorCode = \'cloud/forbidden\' | \'cloud/invalid-config\' | \'cloud/account-unavailable\' | \'cloud/stale-generation\' | \'cloud/model-not-allowed\' | \'cloud/config-busy\' | \'cloud/config-conflict\' | \'cloud/capacity\' | \'cloud/invalid-project-title\';',
+  },
+  {
+    name: 'CloudModelKeyPreparation',
+    declaration: 'export interface CloudModelKeyPreparation extends ModelKeyPeerConsumer {\n    readonly limits: ApprovedModelKeyConfiguration;\n    readonly maxNativeInventoryEntries: number;\n}',
+  },
+  {
+    name: 'CloudModelKeyService',
+    declaration: 'export class CloudModelKeyService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation);\n    @Remote(\'metadata\')\n    metadata(signal: AbortSignal): Promise<ModelKeyMetadata>;\n    auditProvider(): Promise<void>;\n    assertProvisionableModel(provider: string, model: string): void;\n    @Remote(\'describe\')\n    describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>;\n    @Remote(\'set\')\n    set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>;\n    @Remote(\'unset\')\n    unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'CloudPluginPreparation',
+    declaration: 'export interface CloudPluginPreparation extends ModelKeyPeerConsumer, ConfigurationPeerConsumer, PluginFactoryControl {\n    readonly limits: PluginControlLimits;\n    readonly catalog: Readonly<ApprovedConfigurationCatalog>;\n    readonly maxNativeInventoryEntries: number;\n    readonly requiredEntryIds: readonly string[];\n    readonly resolvePackages: () => PluginPackages | undefined;\n    scheduleRebuild(binding: AccountBinding, handoff: PluginPeerHandoff, prepare: (ctx: Context, assertCurrent: () => void) => Promise<Readonly<{\n        accepted: true;\n        intent: PluginRebuildIntent;\n    }> | Readonly<{\n        accepted: false;\n        error: Error;\n    }>>): Readonly<{\n        operationId: OperationId;\n        completion: Promise<ConfigurationRebuildReceipt<PluginRebuildPersistence, PluginRebuildVerification>>;\n    }>;\n}',
+  },
+  {
+    name: 'CloudPluginService',
+    declaration: 'export class CloudPluginService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly control: AccountPluginControl);\n    @Remote(\'current\')\n    current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>;\n    @Remote(\'change\')\n    change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'CloudProjectCreateRequest',
@@ -5582,6 +6044,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CloudProjectsService',
     declaration: 'export class CloudProjectsService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, input: CloudProjectsPreparation);\n    @Remote(\'create\')\n    async create(request: CloudProjectCreateRequest, signal: AbortSignal): Promise<WorkspaceValue>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'CloudSkillPreparation',
+    declaration: 'export interface CloudSkillPreparation extends ModelKeyPeerConsumer {\n    readonly files: CloudAccountFiles;\n    readonly limits: SkillPublicationLimits;\n    readonly resources?: SkillResourcePreparation;\n    readonly managed: ManagedSkillPreparation;\n}',
+  },
+  {
+    name: 'CloudSkillService',
+    declaration: 'export class CloudSkillService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudSkillPreparation, saves: ConfigSaveBarrier);\n    restore(): Promise<void>;\n    @Remote(\'current\')\n    current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>;\n    @Remote(\'publish\')\n    publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>;\n    @Remote(\'installed\')\n    installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>;\n    @Remote(\'details\')\n    details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>;\n    @Remote(\'install\')\n    install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'update\')\n    update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'uninstall\')\n    uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'download\')\n    download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>;\n    inspect(): ExposureInventory;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'CollectedOutput',
@@ -5668,20 +6138,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ComputerUseProviderName = Branded<\'ComputerUseProviderName\'>;',
   },
   {
+    name: 'ConfigEditControl',
+    declaration: 'export interface ConfigEditControl {\n    assertCurrent(): void;\n    readonly maxRemountRegistryEntries?: number;\n    check?(plan: ProfileConfigUpdatePlan): void | Promise<void>;\n}',
+  },
+  {
     name: 'ConfigEditor',
-    declaration: 'export class ConfigEditor extends Service {\n    static inject;\n    constructor(private readonly ownerContext: Context);\n    registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void>;\n    registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>;\n    submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>;\n    get documentPath(): string;\n    entries(): Entry[];\n    configuration(): Array<{\n        entry: Entry;\n        inherited: Record<string, unknown>;\n        override: Record<string, unknown>;\n    }>;\n    async edit(entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>): Promise<void>;\n}',
+    declaration: 'export class ConfigEditor extends Service {\n    static inject;\n    constructor(private readonly ownerContext: Context);\n    registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void>;\n    registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>;\n    submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>;\n    editFailureOutcome(error: unknown): \'not-published\' | \'unknown\' | undefined;\n    get documentPath(): string;\n    entries(): Entry[];\n    configuration(): Array<{\n        entry: Entry;\n        inherited: Record<string, unknown>;\n        override: Record<string, unknown>;\n    }>;\n    async edit(entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, control?: ConfigEditControl): Promise<void>;\n}',
   },
   {
     name: 'ConfigImpactGuard',
     declaration: 'export interface ConfigImpactGuard {\n    check(plan: ProfileConfigUpdatePlan): void | Promise<void>;\n}',
   },
   {
-    name: 'ConfigSaveAdmission',
-    declaration: 'export type ConfigSaveAdmission = \'open\' | \'paused\' | \'stopped\';',
-  },
-  {
     name: 'ConfigSaveBarrier',
-    declaration: 'export interface ConfigSaveBarrier extends NativeConfigSaveHook {\n    readonly binding: AccountBinding;\n    admitWithApply<T>(kind: ConfigSaveKind, persist: () => Promise<T>, apply: (value: T) => Promise<void>): Promise<T>;\n    snapshot(): ConfigSaveSnapshot;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): void;\n    stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n}',
+    declaration: 'export interface ConfigSaveBarrier extends NativeConfigSaveHook {\n    readonly binding: AccountBinding;\n    withPausedPluginChange<T>(submit: () => Promise<T>): Promise<T>;\n    describePluginEdit<T>(observe: () => Promise<{\n        readonly value: T;\n        readonly revision: string;\n    }>, assertCurrent: () => void): Promise<{\n        readonly value: T;\n        readonly version: PluginEditVersion;\n    }>;\n    commitPluginEdit<T>(version: PluginEditVersion, revision: () => string, publish: () => Promise<PluginEditCommit<T>>, assertCurrent: () => void): Promise<PluginEditCommit<{\n        readonly value: T;\n        readonly version: PluginEditVersion;\n    }>>;\n    checkPluginEdit(version: PluginEditVersion, revision: () => string, assertCurrent: () => void): Promise<Readonly<{\n        accepted: true;\n    }> | Readonly<{\n        accepted: false;\n        error: CloudApiError;\n    }>>;\n    describeCredentialEdit(ref: CredentialRef, describe: () => Promise<CredentialInfo>, assertCurrent?: () => void): Promise<CredentialEditView>;\n    commitCredentialEdit(ref: CredentialRef, version: CredentialEditVersion, save: () => Promise<void>, assertCurrent?: () => void): Promise<CredentialEditVersion>;\n    admitCredentialSave<T>(operation: CredentialSaveOperation, submit: () => Promise<T>): Promise<T>;\n    admitWithApply<T>(kind: ConfigSaveKind, persist: () => Promise<T>, apply: (value: T) => Promise<void>): Promise<T>;\n    describeSkillEdit<T>(observe: () => Promise<{\n        readonly valu /* …truncated — full shape in source */',
   },
   {
     name: 'ConfigSaveFailure',
@@ -5700,12 +6170,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConfigSaveReceipt = Readonly<{\n    accountId: AccountId;\n    epoch: OwnerEpoch;\n    admission: \'paused\' | \'stopped\';\n    evidenceRefs: readonly string[];\n}> & (Readonly<{\n    status: \'confirmed\';\n    pendingOperationIds: readonly [\n    ];\n    failures: readonly [\n    ];\n}> | Readonly<{\n    status: \'unknown\';\n    pendingOperationIds: readonly OperationId[];\n    failures: readonly ConfigSaveFailure[];\n    reason: \'pending\' | \'failed\' | \'deadline\' | \'observer-cancelled\';\n}>);',
   },
   {
-    name: 'ConfigSaveSnapshot',
-    declaration: 'export interface ConfigSaveSnapshot {\n    readonly accountId: AccountId;\n    readonly epoch: OwnerEpoch;\n    readonly admission: ConfigSaveAdmission;\n    readonly pending: readonly ConfigSaveOperation[];\n    readonly failures: readonly ConfigSaveFailure[];\n}',
-  },
-  {
     name: 'ConfigSaveSubmissionHook',
     declaration: 'export interface ConfigSaveSubmissionHook {\n    submit<T>(writer: string, submit: () => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'ConfigurationPeerConsumer',
+    declaration: 'export interface ConfigurationPeerConsumer {\n    withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode?: \'if-idle\' | \'stop-and-apply\'): Promise<T>;\n}',
   },
   {
     name: 'ConfigureCall',
@@ -5885,7 +6355,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateAgentOptions',
-    declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+    declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n    readonly observeDisposal?: AgentDisposalObserver;\n}',
   },
   {
     name: 'CreatedWorktree',
@@ -5910,6 +6380,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateWorktreeRequest',
     declaration: 'export interface CreateWorktreeRequest {\n    name?: string;\n    from?: string;\n}',
+  },
+  {
+    name: 'CredentialEditToken',
+    declaration: 'export type CredentialEditToken = Branded<\'CredentialEditToken\'>;',
+  },
+  {
+    name: 'CredentialEditVersion',
+    declaration: 'export interface CredentialEditVersion {\n    readonly epoch: OwnerEpoch;\n    readonly editToken: CredentialEditToken;\n}',
+  },
+  {
+    name: 'CredentialEditView',
+    declaration: 'export interface CredentialEditView {\n    readonly credential: CredentialInfo;\n    readonly version: CredentialEditVersion;\n}',
   },
   {
     name: 'CredentialInfo',
@@ -6002,10 +6484,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryListing',
     declaration: 'export interface DirectoryListing {\n    path: string;\n    home: string;\n    crumbs: DirectoryEntry[];\n    entries: DirectoryEntry[];\n    truncated: boolean;\n}',
-  },
-  {
-    name: 'DirectoryObservation',
-    declaration: 'export interface DirectoryObservation {\n    readonly id: OperationId;\n    waitPrepared(signal?: AbortSignal): Promise<\'created\' | \'unchanged\'>;\n}',
   },
   {
     name: 'DirectoryPickerBrowseCapability',
@@ -6220,6 +6698,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export abstract class FileSystem extends Service {\n    constructor(ctx: Context);\n    watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>;\n    get sandboxMode(): SandboxMode | undefined;\n    abstract resolve(path: string, opts?: {\n        cwd?: string;\n        signal?: AbortSignal;\n    }): Promise<FsTarget>;\n    abstract processPath(target: FsTarget): string;\n    processPathFromHostPath(hostPath: string): string | undefined;\n    abstract fileUrl(target: FsTarget): string;\n    abstract contains(parent: FsTarget, child: FsTarget): boolean;\n    abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>;\n    abstract lstat(path: string, opts?: {\n        cwd?: string;\n    }, signal?: AbortSignal): Promise<FsPathInfo | undefined>;\n    abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>;\n    abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>;\n    abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>;\n    abstract readByteRange(target: FsTarget, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<Uint8Array>;\n    abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>;\n    abstract writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise< /* …truncated — full shape in source */',
   },
   {
+    name: 'FileSystemSkillResources',
+    declaration: 'export interface FileSystemSkillResources {\n    readonly resourceBase: SkillResourceBase;\n    readonly path?: string;\n}',
+  },
+  {
     name: 'FileUploadReceiptId',
     declaration: 'export type FileUploadReceiptId = Branded<\'file-upload-receipt-id\'>;',
   },
@@ -6241,7 +6723,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenEventInput',
-    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
+    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
   },
   {
     name: 'FirstScreenEvents',
@@ -6249,7 +6731,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenNativeInput',
-    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n}',
+    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly settingsWrites?: NativeSettingsWritePolicy;\n    readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void;\n}',
   },
   {
     name: 'FixedRootReader',
@@ -6648,6 +7130,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
   },
   {
+    name: 'LinkedRoot',
+    declaration: 'export interface LinkedRoot {\n    readonly name: string;\n    readonly realPath: string;\n}',
+  },
+  {
     name: 'LlmAdapter',
     declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    imageRequestTarget(_provider: string, _model: string, image: ImageAttachmentRef): ImageRequestTarget;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
@@ -6782,6 +7268,90 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LspRange',
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
+  },
+  {
+    name: 'ManagedSkillApiLimits',
+    declaration: 'export interface ManagedSkillApiLimits {\n    readonly maxRequestBytes: number;\n    readonly maxReplyBytes: number;\n    readonly maxMetadataBytes: number;\n    readonly maxRetainedProviders: number;\n}',
+  },
+  {
+    name: 'ManagedSkillBundleUpload',
+    declaration: 'export type ManagedSkillBundleUpload = SkillBundleInput;',
+  },
+  {
+    name: 'ManagedSkillContentVersion',
+    declaration: 'export type ManagedSkillContentVersion = SkillVersionId;',
+  },
+  {
+    name: 'ManagedSkillDetails',
+    declaration: 'export interface ManagedSkillDetails {\n    readonly entry: ManagedSkillEntry;\n    readonly files: readonly ManagedSkillFileMetadata[];\n    readonly version: SkillEditVersion;\n}',
+  },
+  {
+    name: 'ManagedSkillDetailsRequest',
+    declaration: 'export interface ManagedSkillDetailsRequest {\n    readonly skillId: ManagedSkillId;\n}',
+  },
+  {
+    name: 'ManagedSkillDownload',
+    declaration: 'export interface ManagedSkillDownload {\n    readonly skillId: ManagedSkillId;\n    readonly contentVersion: ManagedSkillContentVersion;\n    readonly fileName: string;\n    readonly mediaType: \'application/zip\';\n    readonly bytes: number;\n    readonly sha256: string;\n    readonly dataBase64: string;\n}',
+  },
+  {
+    name: 'ManagedSkillDownloadRequest',
+    declaration: 'export interface ManagedSkillDownloadRequest extends ManagedSkillDetailsRequest {\n    readonly contentVersion: ManagedSkillContentVersion;\n}',
+  },
+  {
+    name: 'ManagedSkillEntry',
+    declaration: 'export interface ManagedSkillEntry extends ManagedSkillOrigin {\n    readonly skillId: ManagedSkillId;\n    readonly description: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly contentVersion: ManagedSkillContentVersion;\n    readonly fileCount: number;\n    readonly contentBytes: number;\n    readonly legacySample: boolean;\n    readonly selection: ManagedSkillSelection;\n    readonly mutable: boolean;\n    readonly actions: Readonly<{\n        update: boolean;\n        uninstall: boolean;\n        download: boolean;\n    }>;\n}',
+  },
+  {
+    name: 'ManagedSkillFileMetadata',
+    declaration: 'export interface ManagedSkillFileMetadata {\n    readonly relativePath: string;\n    readonly bytes: number;\n    readonly sha256: string;\n}',
+  },
+  {
+    name: 'ManagedSkillId',
+    declaration: 'export type ManagedSkillId = SkillInstallationId;',
+  },
+  {
+    name: 'ManagedSkillInstallRequest',
+    declaration: 'export interface ManagedSkillInstallRequest {\n    readonly version: SkillEditVersion;\n    readonly bundle: ManagedSkillBundleUpload;\n}',
+  },
+  {
+    name: 'ManagedSkillMutationResult',
+    declaration: 'export type ManagedSkillMutationResult = Readonly<{\n    persisted: true;\n    applied: boolean;\n    version: SkillEditVersion;\n    entry: ManagedSkillEntry | null;\n}> | Readonly<{\n    persisted: \'unknown\';\n    applied: false;\n}>;',
+  },
+  {
+    name: 'ManagedSkillOrigin',
+    declaration: 'export interface ManagedSkillOrigin {\n    readonly name: string;\n    readonly source: SkillSource;\n    readonly provider: string;\n}',
+  },
+  {
+    name: 'ManagedSkillPreparation',
+    declaration: 'export interface ManagedSkillPreparation {\n    readonly limits: ManagedSkillApiLimits;\n    readonly bundleLimits: SkillBundleLimits;\n    assertWorkspace(workspace: Workspace): void;\n    readonly resources?: ManagedSkillResourcePreparation;\n}',
+  },
+  {
+    name: 'ManagedSkillPublicLimits',
+    declaration: 'export interface ManagedSkillPublicLimits {\n    readonly maxSkills: number;\n    readonly maxFilesPerBundle: number;\n    readonly maxDirectoriesPerBundle: number;\n    readonly maxFileBytes: number;\n    readonly maxBundleBytes: number;\n    readonly maxZipBytes: number;\n    readonly maxPathBytes: number;\n    readonly maxPathDepth: number;\n    readonly maxRequestBytes: number;\n    readonly maxReplyBytes: number;\n}',
+  },
+  {
+    name: 'ManagedSkillResourcePreparation',
+    declaration: 'export interface ManagedSkillResourcePreparation {\n    assertCaller(options: SkillViewOptions): void;\n    materialize(version: SkillBundleVersion, options: SkillViewOptions): Promise<FileSystemSkillResources>;\n}',
+  },
+  {
+    name: 'ManagedSkillSelection',
+    declaration: 'export type ManagedSkillSelection = Readonly<{\n    kind: \'effective\';\n}> | Readonly<{\n    kind: \'shadowed\';\n    by: ManagedSkillOrigin;\n}> | Readonly<{\n    kind: \'incomplete\';\n}>;',
+  },
+  {
+    name: 'ManagedSkillsInstalled',
+    declaration: 'export interface ManagedSkillsInstalled {\n    readonly entries: readonly ManagedSkillEntry[];\n    readonly version: SkillEditVersion;\n    readonly complete: boolean;\n    readonly actions: Readonly<{\n        install: boolean;\n    }>;\n    readonly limits: ManagedSkillPublicLimits;\n}',
+  },
+  {
+    name: 'ManagedSkillsInstalledRequest',
+    declaration: 'export interface ManagedSkillsInstalledRequest {\n    readonly workspaceId?: Workspace[\'id\'];\n}',
+  },
+  {
+    name: 'ManagedSkillUninstallRequest',
+    declaration: 'export interface ManagedSkillUninstallRequest extends ManagedSkillDetailsRequest {\n    readonly version: SkillEditVersion;\n}',
+  },
+  {
+    name: 'ManagedSkillUpdateRequest',
+    declaration: 'export interface ManagedSkillUpdateRequest extends ManagedSkillInstallRequest {\n    readonly skillId: ManagedSkillId;\n}',
   },
   {
     name: 'ManagementError',
@@ -6988,6 +7558,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
   },
   {
+    name: 'ModelKeyAccess',
+    declaration: 'export interface ModelKeyAccess {\n    describe(request: unknown): Promise<ModelKeyState>;\n    set(request: unknown): Promise<ModelKeySaved>;\n    unset(request: unknown): Promise<ModelKeySaved>;\n}',
+  },
+  {
+    name: 'ModelKeyMetadata',
+    declaration: 'export interface ModelKeyMetadata {\n    readonly providers: LlmProviderInfo[];\n    readonly configurableProviders: LlmConfigurableProvider[];\n    readonly settings: SettingsDescribeValue;\n}',
+  },
+  {
+    name: 'ModelKeyPeerConsumer',
+    declaration: 'export interface ModelKeyPeerConsumer {\n    withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'ModelKeyReference',
+    declaration: 'export interface ModelKeyReference {\n    readonly ref: CredentialRef;\n}',
+  },
+  {
+    name: 'ModelKeySaved',
+    declaration: 'export interface ModelKeySaved {\n    readonly version: CredentialEditVersion;\n    readonly persisted: true;\n}',
+  },
+  {
+    name: 'ModelKeySet',
+    declaration: 'export interface ModelKeySet extends ModelKeyUnset {\n    readonly value: string;\n}',
+  },
+  {
+    name: 'ModelKeyState',
+    declaration: 'export interface ModelKeyState extends ModelKeyUnset {\n    readonly configured: boolean;\n    readonly writable: boolean;\n    readonly source?: \'file\';\n}',
+  },
+  {
+    name: 'ModelKeyUnset',
+    declaration: 'export interface ModelKeyUnset extends ModelKeyReference {\n    readonly version: CredentialEditVersion;\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProviderMetadata {\n    kind: \'model\';\n}',
   },
@@ -7041,7 +7643,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativeAgentFactoryGuards',
-    declaration: 'export interface NativeAgentFactoryGuards {\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void>;\n    assertPrepared(agent: PreparedAgent): void;\n}',
+    declaration: 'export interface NativeAgentFactoryGuards {\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void | number>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void | number>;\n    assertPrepared(agent: PreparedAgent, parent?: CreateOptions[\'parentAgent\']): void;\n    prepareChild?(agent: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal): Promise<void>;\n    withChildPreparation?<T>(this: void, child: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal, operation: () => Promise<T>): Promise<T>;\n}',
   },
   {
     name: 'NativeConfigSaveHook',
@@ -7066,6 +7668,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'NativeSessionReadGuards',
     declaration: 'export interface NativeSessionReadGuards {\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly assertSessionRead: (id: SessionId, summary?: SessionSummary) => void;\n}',
+  },
+  {
+    name: 'NativeSettingsWritePolicy',
+    declaration: 'export interface NativeSettingsWritePolicy extends ModelKeyPeerConsumer {\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
   },
   {
     name: 'NativeTextFileSystemConstructor',
@@ -7192,8 +7798,48 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\';\n}',
   },
   {
+    name: 'PluginChangeRequest',
+    declaration: 'export interface PluginChangeRequest extends PluginCurrentRequest {\n    readonly version: PluginEditVersion;\n    readonly mode: \'if-idle\' | \'stop-and-apply\';\n    readonly operation: PluginOperation;\n}',
+  },
+  {
+    name: 'PluginChangeResult',
+    declaration: 'export type PluginChangeResult = Readonly<{\n    kind: \'applied\';\n    value: PluginCurrentState;\n    native?: ChangeResult;\n}> | Readonly<{\n    kind: \'accepted-rebuild\';\n    operationId: OperationId;\n}>;',
+  },
+  {
+    name: 'PluginConfigurationField',
+    declaration: 'export interface PluginConfigurationField {\n    readonly path: readonly string[];\n    readonly schema: JsonValue;\n    readonly acceptsMissing: boolean | \'unknown\';\n    readonly limitations: readonly string[];\n    readonly writable: boolean;\n    readonly readOnlyReason?: \'secret\' | \'live\' | \'protected\' | \'unproven\';\n    readonly secrets: readonly {\n        readonly path: readonly string[];\n        readonly set: boolean;\n    }[];\n    readonly value?: JsonValue;\n}',
+  },
+  {
+    name: 'PluginControlLimits',
+    declaration: 'export interface PluginControlLimits {\n    readonly maxProfileBytes: number;\n    readonly maxRequestBytes: number;\n    readonly maxReplyBytes: number;\n    readonly maxVersionBytes: number;\n}',
+  },
+  {
+    name: 'PluginCurrentRequest',
+    declaration: 'export interface PluginCurrentRequest {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'PluginCurrentState',
+    declaration: 'export interface PluginCurrentState {\n    readonly id: string;\n    readonly plugin?: PluginInfo;\n    readonly bundle?: BundleInfo;\n    readonly selectionTarget: ApprovedPluginControl[\'selectionTarget\'];\n    readonly operations: ApprovedPluginControl[\'operations\'];\n    readonly maxImpact?: ApprovedPluginControl[\'maxImpact\'];\n    readonly configuration: Readonly<{\n        fields: readonly PluginConfigurationField[];\n    }>;\n    readonly version: PluginEditVersion;\n}',
+  },
+  {
+    name: 'PluginEditCommit',
+    declaration: 'export type PluginEditCommit<T> = Readonly<{\n    published: true;\n    readonly value: T;\n    readonly revision: string;\n}> | Readonly<{\n    published: false;\n    readonly error: CloudApiError;\n}>;',
+  },
+  {
+    name: 'PluginEditToken',
+    declaration: 'export type PluginEditToken = Branded<\'PluginEditToken\'>;',
+  },
+  {
+    name: 'PluginEditVersion',
+    declaration: 'export interface PluginEditVersion {\n    readonly epoch: OwnerEpoch;\n    readonly editToken: PluginEditToken;\n}',
+  },
+  {
     name: 'PluginEntryId',
     declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
+  },
+  {
+    name: 'PluginFactoryControl',
+    declaration: 'export interface PluginFactoryControl {\n    withIdleConfiguration<T>(binding: AccountBinding, closeObservers: () => Promise<void>, operation: (ctx: Context, assertCurrent: () => void) => Promise<T>): Promise<T>;\n}',
   },
   {
     name: 'PluginFiberPhase',
@@ -7236,12 +7882,48 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginLocalizedMeta {\n    readonly title?: LocalizedText;\n    readonly description?: LocalizedText;\n    readonly icon?: string;\n    readonly error?: string;\n}',
   },
   {
+    name: 'PluginManager',
+    declaration: 'export class PluginManager extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>;\n    registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>;\n    changeFailureOutcome(result: ChangeResult): \'not-published\' | \'unknown\' | undefined;\n    @Remote\n    listVersionExemptions(): {\n        exemptions: Record<string, string[]>;\n        warnings: string[];\n    };\n    @Remote\n    setVersionExemption(packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk?: boolean): Promise<ChangeResult>;\n    @Remote\n    async listPlugins(): Promise<PluginInfo[]>;\n    @Remote\n    listBundles(): Promise<BundleInfo[]>;\n    @Remote\n    async registries(): Promise<PluginRegistries>;\n    @Remote\n    async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>;\n    @Remote\n    setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>;\n    @Remote\n    async waitForInstall(requestId: PluginInstallRequestId): Promise<ChangeResult | null>;\n    @Remote\n    async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>;\n    @Remote\n    removeBundle(name: str /* …truncated — full shape in source */',
+  },
+  {
+    name: 'PluginOperation',
+    declaration: 'export type PluginOperation = Readonly<{\n    kind: \'enabled\';\n    enabled: boolean;\n}> | Readonly<{\n    kind: \'selected\';\n    selected: boolean;\n}> | Readonly<{\n    kind: \'configure\';\n    path: readonly string[];\n    value: JsonValue;\n}>;',
+  },
+  {
     name: 'PluginOptions',
     declaration: 'export type PluginOptions = Readonly<Record<string, PluginOptionValue>>;',
   },
   {
     name: 'PluginOptionValue',
     declaration: 'export type PluginOptionValue = string | number | boolean | readonly string[];',
+  },
+  {
+    name: 'PluginPackage',
+    declaration: 'export interface PluginPackage {\n    name: string;\n    version: string | undefined;\n    dir: string;\n    manifestPath: string;\n    manifest: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'PluginPackages',
+    declaration: 'export class PluginPackages extends Service {\n    constructor(ctx: Context, config: PluginPackagesConfig = {});\n    get resolution(): RuntimeResolution | undefined;\n    replace(successor: RuntimeResolution): void;\n    async refresh(): Promise<void>;\n    packageOf(specifier: string, parentURL: string, options?: {\n        fresh?: boolean;\n    }): PluginPackage | undefined;\n    metaOf(specifier: string, parentURL: string): PluginLocalizedMeta | undefined;\n}',
+  },
+  {
+    name: 'PluginPackagesConfig',
+    declaration: 'export interface PluginPackagesConfig {\n    resolution?: RuntimeResolution;\n}',
+  },
+  {
+    name: 'PluginPeerHandoff',
+    declaration: 'export interface PluginPeerHandoff {\n    readonly afterRequest: () => Promise<void>;\n    readonly closeAll: (deadlineAtMs: number) => Promise<void>;\n    readonly assertPrincipal: () => void;\n}',
+  },
+  {
+    name: 'PluginRebuildIntent',
+    declaration: 'export interface PluginRebuildIntent {\n    readonly id: string;\n    readonly revision: string;\n    readonly operation: PluginOperation;\n}',
+  },
+  {
+    name: 'PluginRebuildPersistence',
+    declaration: 'export interface PluginRebuildPersistence {\n    readonly epoch: PluginEditVersion[\'epoch\'];\n    readonly id: string;\n    readonly revision: string;\n    readonly operation: PluginOperation;\n    readonly native?: ChangeResult;\n}',
+  },
+  {
+    name: 'PluginRebuildVerification',
+    declaration: 'export interface PluginRebuildVerification {\n    readonly persisted: PluginRebuildPersistence;\n    readonly value: PluginCurrentState;\n}',
   },
   {
     name: 'PluginRegistries',
@@ -7256,12 +7938,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginSaveSubmissionHook {\n    submit(operation: PluginSaveOperation, submit: () => Promise<ChangeResult>): Promise<ChangeResult>;\n}',
   },
   {
+    name: 'PluginSelectionGuard',
+    declaration: 'export interface PluginSelectionGuard {\n    readonly maxRegistryEntries: number;\n    application?(): \'reconcile\' | \'restart\';\n    assertCurrent(): void;\n    check(plan: ProfileConfigUpdatePlan, target: Readonly<{\n        kind: \'entry\';\n        id: PluginEntryId;\n    }> | Readonly<{\n        kind: \'bundle\';\n        name: string;\n    }>, enabled: boolean): void | Promise<void>;\n}',
+  },
+  {
     name: 'PluginSpecInspection',
     declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n    readonly registry: Registry;\n    readonly host?: string;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n    readonly registries?: Registry[];\n};',
   },
   {
     name: 'PoolReadPort',
-    declaration: 'export interface PoolReadPort {\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>;\n    withInstructionReaders<T>(this: void, workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void): Promise<ResidentResult<T>>;\n    derivePreparedLeaf(grant: IsolatedLeafGrant): PreparedLeafPort;\n    createWorkspaceRegistry(defaultGrant: Is /* …truncated — full shape in source */',
+    declaration: 'export interface PoolReadPort {\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>;\n    withInstructionReaders<T>(this: void, workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void): Promise<ResidentResult<T>>;\n    derivePreparedLeaf(grant: Is /* …truncated — full shape in source */',
   },
   {
     name: 'PostToolDecision',
@@ -7278,10 +7964,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreparedDeepSeekLlmApiExtensions',
     declaration: 'export interface PreparedDeepSeekLlmApiExtensions {\n    readonly fields: Readonly<Partial<DeepSeekLlmApiExtensionMap>>;\n    accept(): Promise<void>;\n}',
-  },
-  {
-    name: 'PreparedLeafPort',
-    declaration: 'export interface PreparedLeafPort {\n    prepare(): {\n        readonly observation: DirectoryObservation;\n        readonly control: {\n            expose(): string;\n            cleanup(signal?: AbortSignal): Promise<\'cleaned\' | \'unknown\'>;\n        };\n    };\n}',
   },
   {
     name: 'PreparedLlmCall',
@@ -7337,7 +8019,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProfileConfigUpdatePlan',
-    declaration: 'export interface ProfileConfigUpdatePlan {\n    readonly entries: readonly EntryConfigUpdatePlan[];\n    readonly impact: EntryConfigUpdatePlan[\'impact\'];\n}',
+    declaration: 'export interface ProfileConfigUpdatePlan {\n    readonly entries: readonly EntryConfigUpdatePlan[];\n    readonly impact: EntryConfigUpdatePlan[\'impact\'] | \'graph\';\n    readonly restart?: Readonly<{\n        before: readonly EntryOptions[];\n        after: readonly EntryOptions[];\n        baseUrl: string;\n        entryPrefix: string;\n        active: readonly EntryOptions[];\n    }>;\n}',
   },
   {
     name: 'ProfilePnpmInvocation',
@@ -7576,6 +8258,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteEventQueueLimits {\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
   },
   {
+    name: 'RemoteInvocation',
+    declaration: 'export interface RemoteInvocation {\n    readonly request: {\n        readonly namespace: string;\n        readonly method: string;\n        readonly args: Readonly<Record<string, unknown>>;\n    };\n    readonly service: string;\n    readonly peer: PeerScope;\n    readonly signal: AbortSignal;\n    readonly uplinkWindow?: RemoteUplinkWindow | undefined;\n    uplink<In = unknown>(): AsyncIterable<In>;\n}',
+  },
+  {
     name: 'RemoteStream',
     declaration: 'export type RemoteStream<Out, In = never> = AsyncIterable<Out> & {\n    readonly [STREAM_UPLINK]?: In;\n};',
   },
@@ -7661,7 +8347,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ResumeAgentOptions',
-    declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+    declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n    readonly observeDisposal?: AgentDisposalObserver;\n}',
   },
   {
     name: 'RpcId',
@@ -7670,6 +8356,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
+  },
+  {
+    name: 'RuntimeResolution',
+    declaration: 'export interface RuntimeResolution {\n    readonly profilesDir: string;\n    readonly profileDir: string | undefined;\n    readonly localPackageNames: readonly string[];\n    readonly entries: readonly RuntimeResolutionEntry[];\n    readonly linkedRoots: readonly LinkedRoot[];\n}',
+  },
+  {
+    name: 'RuntimeResolutionEntry',
+    declaration: 'export interface RuntimeResolutionEntry {\n    readonly name: string;\n    readonly packageDir: string;\n    readonly version: string | undefined;\n    readonly declarer: string;\n    readonly scope: \'installation\' | \'profile\';\n}',
   },
   {
     name: 'S2FileSystemConstructor',
@@ -7921,7 +8615,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionControllerInternals',
-    declaration: 'export interface SessionControllerInternals {\n    readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly fileApplications?: typeof nativeFileApplications;\n    readonly openFileApplication?: typeof openNativeFileApplication;\n    readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly canOpenPath?: () => boolean;\n}',
+    declaration: 'export interface SessionControllerInternals {\n    readonly skillCatalog?: typeof SessionSkillCatalog;\n    readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly fileApplications?: typeof nativeFileApplications;\n    readonly openFileApplication?: typeof openNativeFileApplication;\n    readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly canOpenPath?: () => boolean;\n}',
   },
   {
     name: 'SessionCreateRequest',
@@ -8304,6 +8998,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionSeqCursor = SessionSeq | -1;',
   },
   {
+    name: 'SessionSkillCatalog',
+    declaration: 'export class SessionSkillCatalog extends TypertRemoteService {\n    static inject;\n    constructor(ctx: Context);\n    @Remote\n    async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue>;\n}',
+  },
+  {
     name: 'SessionStartInput',
     declaration: 'export interface SessionStartInput {\n    cwd: string;\n    surface: string | null;\n    isInteractive: boolean;\n}',
   },
@@ -8409,11 +9107,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsController',
-    declaration: 'export class SettingsController extends TypertRemoteService {\n    constructor(ctx: Context, internals: SettingsControllerInternals = {});\n    @Remote\n    describe(): SettingsDescribeValue;\n    @Remote\n    update(ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    replace(ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    async mutate(ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>;\n}',
+    declaration: 'export class SettingsController extends TypertRemoteService {\n    constructor(ctx: Context, private readonly internals: SettingsControllerInternals = {});\n    @Remote\n    describe(): SettingsDescribeValue;\n    @Remote\n    update(ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    replace(ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    async mutate(ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>;\n}',
   },
   {
     name: 'SettingsControllerInternals',
-    declaration: 'export interface SettingsControllerInternals {\n    readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>;\n}',
+    declaration: 'export interface SettingsControllerInternals {\n    readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly withWrite?: <T>(request: SettingsWriteRequest, apply: (control?: import(\'@deepseek-ai/dsh-settings\').SettingsWriteControl) => Promise<T>) => Promise<T>;\n}',
   },
   {
     name: 'SettingsDescribeOptions',
@@ -8454,6 +9152,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsSecretView',
     declaration: 'export interface SettingsSecretView {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'SettingsWriteRequest',
+    declaration: 'export interface SettingsWriteRequest {\n    readonly invocation: import(\'@deepseek-ai/dsh-typert-protocol\').RemoteInvocation | undefined;\n    readonly namespace: string;\n    readonly mode: \'update\' | \'replace\' | \'mutate\';\n    readonly input: Record<string, JsonValue> | SettingsPathOpView[];\n    readonly expectedRevision: number | undefined;\n}',
   },
   {
     name: 'ShellExecRequest',
@@ -8508,20 +9210,100 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SignInErrorCode = \'no-response\' | \'network\' | \'protocol\' | \'expired\' | \'storage\';',
   },
   {
+    name: 'SkillBundleFile',
+    declaration: 'export interface SkillBundleFile {\n    readonly relativePath: string;\n    readonly bytes: number;\n    readonly sha256: string;\n}',
+  },
+  {
+    name: 'SkillBundleInput',
+    declaration: 'export type SkillBundleInput = {\n    readonly kind: \'files\';\n    readonly files: readonly {\n        readonly relativePath: string;\n        readonly dataBase64: string;\n    }[];\n} | {\n    readonly kind: \'zip\';\n    readonly dataBase64: string;\n};',
+  },
+  {
+    name: 'SkillBundleLimits',
+    declaration: 'export interface SkillBundleLimits {\n    readonly maxInstallations: number;\n    readonly maxFiles: number;\n    readonly maxDirectories: number;\n    readonly maxDepth: number;\n    readonly maxPathBytes: number;\n    readonly maxFileBytes: number;\n    readonly maxContentBytes: number;\n    readonly maxArchiveBytes: number;\n    readonly maxArchiveEntries: number;\n    readonly maxExpandedArchiveBytes: number;\n    readonly maxInputBytes: number;\n    readonly maxManifestBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly maxDownloadBytes: number;\n    readonly maxRequestBytes: number;\n    readonly maxReplyBytes: number;\n    readonly maxStagingBytes: number;\n    readonly reservationBytes: number;\n}',
+  },
+  {
+    name: 'SkillBundleOperationCopies',
+    declaration: 'export interface SkillBundleOperationCopies {\n    readonly project: SkillProjectGrant;\n    readonly copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[];\n}',
+  },
+  {
+    name: 'SkillBundlePort',
+    declaration: 'export interface SkillBundlePort {\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n}',
+  },
+  {
+    name: 'SkillBundleSource',
+    declaration: 'export interface SkillBundleSource {\n    readonly version: SkillBundleVersion;\n    readonly files: readonly SkillBundleFile[];\n    readonly directories: readonly string[];\n    readText(relativePath: \'SKILL.md\', signal?: AbortSignal): Promise<string>;\n    readBytes(relativePath: string, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;\n}',
+  },
+  {
+    name: 'SkillBundleVersion',
+    declaration: 'export interface SkillBundleVersion {\n    readonly binding: AccountBinding;\n    readonly id: SkillVersionId;\n    readonly format: \'legacy-two-file\' | \'bundle-tree-v1\';\n    readonly files: readonly SkillBundleFile[];\n    readonly directories: readonly string[];\n    readonly treeSha256: string;\n    readonly contentBytes: number;\n    readonly directoryCount: number;\n    readonly chargedBytes: number;\n    readonly chargedInodes: number;\n}',
+  },
+  {
+    name: 'SkillBundleWorkingCopy',
+    declaration: 'export interface SkillBundleWorkingCopy extends Omit<SkillWorkingCopyGrant, \'version\'> {\n    readonly version: SkillBundleVersion;\n}',
+  },
+  {
     name: 'SkillCandidate',
     declaration: 'export interface SkillCandidate extends SkillSummary {\n    readonly rank: number;\n    readonly locator: unknown;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'SkillCandidateInspection',
+    declaration: 'export interface SkillCandidateInspection {\n    readonly candidate: SkillCandidate;\n    readonly selected: boolean;\n    readonly overriddenBy?: SkillCandidate;\n}',
+  },
+  {
+    name: 'SkillCatalog',
+    declaration: 'export interface SkillCatalog {\n    readonly entries: readonly SkillCatalogEntry[];\n    readonly revision: FsVersion | null;\n}',
+  },
+  {
+    name: 'SkillCatalogChange',
+    declaration: 'export type SkillCatalogChange = {\n    readonly kind: \'install\';\n    readonly bundle: SkillBundleVersion;\n} | {\n    readonly kind: \'update\';\n    readonly skillId: SkillInstallationId;\n    readonly bundle: SkillBundleVersion;\n} | {\n    readonly kind: \'uninstall\';\n    readonly skillId: SkillInstallationId;\n};',
+  },
+  {
+    name: 'SkillCatalogCommit',
+    declaration: 'export interface SkillCatalogCommit {\n    readonly catalog: SkillCatalog;\n    readonly entry: SkillCatalogEntry | null;\n}',
+  },
+  {
+    name: 'SkillCatalogEntry',
+    declaration: 'export interface SkillCatalogEntry {\n    readonly skillId: SkillInstallationId;\n    readonly kind: \'legacy-sample\' | \'managed\';\n    readonly version: SkillBundleVersion;\n}',
+  },
+  {
+    name: 'SkillCatalogInspection',
+    declaration: 'export interface SkillCatalogInspection {\n    readonly candidates: readonly SkillCandidateInspection[];\n    readonly complete: boolean;\n}',
   },
   {
     name: 'SkillCatalogSnapshot',
     declaration: 'export interface SkillCatalogSnapshot {\n    readonly skills: SkillSummary[];\n    readonly complete: boolean;\n}',
   },
   {
+    name: 'SkillCurrent',
+    declaration: 'export interface SkillCurrent {\n    readonly version: SkillVersion;\n    readonly revision: FsVersion;\n}',
+  },
+  {
+    name: 'SkillCurrentRequest',
+    declaration: 'export interface SkillCurrentRequest {\n    readonly slot: \'sample\';\n}',
+  },
+  {
+    name: 'SkillCurrentState',
+    declaration: 'export interface SkillCurrentState extends SkillCurrentRequest {\n    readonly version: SkillEditVersion;\n    readonly current: SkillVersionMetadata | null;\n    readonly applied: boolean;\n    readonly resources: SkillResourceMode;\n}',
+  },
+  {
     name: 'SkillDefinition',
     declaration: 'export interface SkillDefinition extends SkillSummary {\n    readonly content: string;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
   },
   {
+    name: 'SkillEditToken',
+    declaration: 'export type SkillEditToken = Branded<\'SkillEditToken\'>;',
+  },
+  {
+    name: 'SkillEditVersion',
+    declaration: 'export interface SkillEditVersion {\n    readonly epoch: OwnerEpoch;\n    readonly editToken: SkillEditToken;\n}',
+  },
+  {
     name: 'SkillEntry',
     declaration: 'export interface SkillEntry {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}',
+  },
+  {
+    name: 'SkillInstallationId',
+    declaration: 'export type SkillInstallationId = Branded<\'SkillInstallationId\'>;',
   },
   {
     name: 'SkillInvocationPolicy',
@@ -8540,8 +9322,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillLookupOptions {\n    readonly cwd?: string | undefined;\n    readonly signal?: AbortSignal | undefined;\n}',
   },
   {
+    name: 'SkillProjectPort',
+    declaration: 'export interface SkillProjectPort {\n    materializeBundle(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    borrowBundles(project: SkillProjectGrant, copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[] | undefined, signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>;\n    assertBundleBorrow(value: SkillBundleOperationCopies): void;\n    prepareProject(workspace: Workspace, assertRegistered: () => void, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    materialize(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal): Promise<ResidentResult<SkillWorkingCopyGrant>>;\n    borrow(project: SkillProjectGrant, copies: readonly SkillWorkingCopyGrant[], signal: AbortSignal): Promise<ResidentResult<SkillOperationCopies>>;\n    borrowAll(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillOperationCopies>>;\n    assertProject(project: SkillProjectGrant): void;\n    assertCopy(copy: SkillWorkingCopyGrant): void;\n    assertBorrow(borrow: SkillOperationCopies): void;\n}',
+  },
+  {
     name: 'SkillProvider',
-    declaration: 'export interface SkillProvider {\n    readonly name: string;\n    readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>;\n    readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>;\n}',
+    declaration: 'export interface SkillProvider {\n    readonly name: string;\n    readonly list: (options: SkillViewOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>;\n    readonly get: (candidate: SkillCandidate, options: SkillViewOptions) => Promise<SkillDefinition | undefined>;\n}',
   },
   {
     name: 'SkillProviderControl',
@@ -8552,6 +9338,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillProviderObservation {\n    readonly candidates: readonly SkillCandidate[];\n    readonly complete: boolean;\n}',
   },
   {
+    name: 'SkillPublicationLimits',
+    declaration: 'export interface SkillPublicationLimits {\n    readonly maxFileBytes: number;\n    readonly maxRequestBytes: number;\n    readonly maxReplyBytes: number;\n    readonly maxRetainedVersions: number;\n}',
+  },
+  {
+    name: 'SkillPublishRequest',
+    declaration: 'export interface SkillPublishRequest extends SkillCurrentRequest {\n    readonly version: SkillEditVersion;\n    readonly skillMarkdown: string;\n    readonly resourceBase64: string;\n}',
+  },
+  {
+    name: 'SkillPublishResult',
+    declaration: 'export type SkillPublishResult = Readonly<{\n    persisted: true;\n    applied: boolean;\n    version: SkillEditVersion;\n    current: SkillVersionMetadata;\n    resources: SkillResourceMode;\n}> | Readonly<{\n    persisted: \'unknown\';\n    applied: false;\n    resources: \'unavailable\';\n}>;',
+  },
+  {
     name: 'SkillRegistration',
     declaration: 'export type SkillRegistration = Omit<SkillDefinition, \'invocation\' | \'provider\'> & {\n    readonly invocation?: SkillInvocationPolicy;\n    readonly provider?: string;\n};',
   },
@@ -8560,12 +9358,48 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
   },
   {
+    name: 'SkillResourceMaterializer',
+    declaration: 'export type SkillResourceMaterializer = (version: SkillVersion, options: SkillViewOptions) => Promise<FileSystemSkillResources>;',
+  },
+  {
+    name: 'SkillResourceMode',
+    declaration: 'export type SkillResourceMode = \'unavailable\' | \'project-on-load\';',
+  },
+  {
+    name: 'SkillResourcePreparation',
+    declaration: 'export interface SkillResourcePreparation {\n    assertCaller(options: SkillViewOptions): void;\n    readonly materialize: SkillResourceMaterializer;\n}',
+  },
+  {
     name: 'SkillSource',
     declaration: 'export type SkillSource = \'project-dsh\' | \'project-agents\' | \'runtime\' | \'user-dsh\' | \'user-agents\' | \'custom\' | \'bundled\' | (string & {});',
   },
   {
     name: 'SkillSummary',
     declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n}',
+  },
+  {
+    name: 'SkillVersion',
+    declaration: 'export interface SkillVersion {\n    readonly binding: AccountBinding;\n    readonly id: SkillVersionId;\n    readonly skillSha256: string;\n    readonly resourceSha256: string;\n    readonly skillBytes: number;\n    readonly resourceBytes: number;\n}',
+  },
+  {
+    name: 'SkillVersionId',
+    declaration: 'export type SkillVersionId = Branded<\'SkillVersionId\'>;',
+  },
+  {
+    name: 'SkillVersionInput',
+    declaration: 'export interface SkillVersionInput {\n    readonly skillMarkdown: string;\n    readonly resource: Uint8Array<ArrayBuffer>;\n}',
+  },
+  {
+    name: 'SkillVersionMetadata',
+    declaration: 'export interface SkillVersionMetadata {\n    readonly id: string;\n    readonly skillSha256: string;\n    readonly resourceSha256: string;\n    readonly skillBytes: number;\n    readonly resourceBytes: number;\n}',
+  },
+  {
+    name: 'SkillVersionPort',
+    declaration: 'export interface SkillVersionPort {\n    readonly bundles?: SkillBundlePort;\n    prepare(input: SkillVersionInput, signal: AbortSignal): Promise<ResidentResult<SkillVersion>>;\n    current(signal: AbortSignal): Promise<ResidentResult<SkillCurrent | undefined>>;\n    commit(version: SkillVersion, expected: FsVersion | null, signal: AbortSignal): Promise<ResidentResult<SkillCurrent>>;\n    withSource<T>(version: SkillVersion, consume: (source: SkillVersionSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n}',
+  },
+  {
+    name: 'SkillVersionSource',
+    declaration: 'export interface SkillVersionSource {\n    readonly version: SkillVersion;\n    readText(name: \'SKILL.md\', signal?: AbortSignal): Promise<string>;\n    readBytes(name: \'SKILL.md\' | \'resource.bin\', signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;\n}',
   },
   {
     name: 'SkillViewOptions',
@@ -8726,6 +9560,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentActivationSpec',
     declaration: 'export interface SubagentActivationSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\'>;\n    readonly signal: AbortSignal;\n    readonly delivery: \'parent\' | \'caller\';\n}',
+  },
+  {
+    name: 'SubagentAdmission',
+    declaration: 'export type SubagentAdmission = (request: SubagentAdmissionRequest) => void | Promise<void>;',
+  },
+  {
+    name: 'SubagentAdmissionRequest',
+    declaration: 'export type SubagentAdmissionRequest = {\n    readonly kind: \'start\';\n    readonly owner: Context;\n    readonly provider: SubagentProvider;\n    readonly cwd: string;\n    readonly spec: SubagentActivationSpec;\n} | {\n    readonly kind: \'resume\';\n    readonly owner: Context;\n    readonly parent: Agent;\n    readonly childId: SessionId;\n    readonly providerName: string;\n    readonly provider: SubagentProvider | undefined;\n    readonly header: SessionHeader;\n    readonly agentOptions: AgentOptions;\n    readonly agentPreset: string | undefined;\n    readonly signal: AbortSignal;\n};',
   },
   {
     name: 'SubagentCapabilities',

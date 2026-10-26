@@ -85,7 +85,16 @@
     "@deepseek-ai/dsh-util-values": "workspace:*",
     "@deepseek-ai/dsh-deque": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-files": "workspace:*",
-    "@deepseek-ai/dsh-client-file-upload": "workspace:*"
+    "@deepseek-ai/dsh-client-file-upload": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
+    "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-subagent": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -128,6 +137,22 @@
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-client-file-upload": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
-    "@deepseek-ai/dsh-commands": "workspace:*"
+    "@deepseek-ai/dsh-commands": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
+    "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
+    "@deepseek-ai/dsh-typert-generator": "workspace:*",
+    "@deepseek-ai/dsh-typert-loader": "workspace:*",
+    "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
+    "@deepseek-ai/dsh-tool-skill": "workspace:*",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-repeat-tool-reminder": "workspace:*",
+    "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "workspace:*"
   }
 }

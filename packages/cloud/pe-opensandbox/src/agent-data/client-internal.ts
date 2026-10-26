@@ -1,6 +1,7 @@
 /** Per-client request ownership and finite data facts; global operation/allocation authority stays with Root. */
+import { skillWorld, assertSkillParent } from './skill-world.ts'
 import { performance } from 'node:perf_hooks'
-import { asciiJSON, digest, need, record, spec } from './canonical.ts'
+import { asciiJSON, preparedDigest, need, record, spec } from './canonical.ts'
 import { parseReply } from './strict-json.ts'
 import { checkOptions, envelope, handshake, operation, ref as checkRef } from './validate.ts'
 import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L } from './constants.ts'
@@ -59,10 +60,13 @@ export class DataClient implements AgentDataClient {
   }
   handshake(options?: CallOptions): Promise<Handshake> { return this.#call('/handshake', {}, undefined, options) as Promise<Handshake> }
   prepare(request: PreparedRequest, options?: CallOptions): Promise<OperationSnapshot> {
-    record(request, ['ref', 'spec'])
+    record(request, request.skillWorld === undefined ? ['ref', 'spec'] : ['ref', 'spec', 'skillWorld'])
     const reference = checkRef(request.ref, this.#expected.runtimeIdentity), normalized = spec(request.spec, this.#expected.projectRoot)
-    need(digest(normalized) === reference.specHash, 'spec_hash_mismatch')
-    return this.#call('/prepare', { ...reference, spec: normalized }, reference, options) as Promise<OperationSnapshot>
+    const fixed = request.skillWorld === undefined ? undefined : skillWorld(request.skillWorld)
+    if (fixed !== undefined) assertSkillParent(fixed, this.#expected.skillParent)
+    need((this.#expected.skillParent === undefined) === (fixed === undefined), 'skill_parent_required')
+    need(preparedDigest(normalized, fixed) === reference.specHash, 'spec_hash_mismatch')
+    return this.#call('/prepare', { ...reference, spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed } }, reference, options) as Promise<OperationSnapshot>
   }
   /**
    * Attempt commit once using the original reference; this method never retries a lost response.

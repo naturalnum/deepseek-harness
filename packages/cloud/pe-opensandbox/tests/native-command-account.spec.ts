@@ -10,6 +10,10 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { NativeAccountExecutionAuthority } from '../src/coordinator.ts'
 import type { CommandChannel, CommandSnapshot, ManagedCommandOperation } from '../src/command-operation.ts'
+import { FilesWorkOwner } from '@deepseek-ai/dsh-pe-cloud-files/src/work-owner.ts'
+import { SessionAllocationOwner } from '../src/allocation-owner.ts'
+import type { PostgresAllocationStore } from '../src/allocation-store.ts'
+import type { AllocationCreateIntent, AllocationExpectation, AllocationChange, SandboxAllocation } from '../src/allocation-types.ts'
 import { NativeCommandAccount, type NativeCommandRoot } from '../src/native-command-account.ts'
 
 const result: ToolExecutionResult = { isError: false, value: null, content: [] }
@@ -219,4 +223,135 @@ it('settles an unstarted Root reservation refusal without invoking allocation', 
     return result
   })
   f.owner.calls.release(call.token)
+})
+
+it('observes original invocation and subprocess range settlement without cancelling busy work', async () => {
+  const f = fixture(), call = f.exec()
+  expect(f.owner.isIdle()).toBe(true)
+  await f.owner.calls.run(call, async () => {
+    expect(f.owner.isIdle()).toBe(false)
+    const op = f.create(); op.publish(); op.begin(); await op.handle.done
+    // Direct child/output completion is not complete descendant-range and process-I/O closure.
+    expect(f.owner.isIdle()).toBe(false)
+    expect(f.channels[0]!.channel.stop).not.toHaveBeenCalled()
+    expect(f.root.close).not.toHaveBeenCalled()
+    f.channels[0]!.poll.resolve(complete()); await op.whenEmpty
+    expect(f.owner.isIdle()).toBe(false)
+    expect(f.reservations[0]!.releaseActive).toHaveBeenCalledTimes(1)
+    expect(f.reservations[0]!.releaseResident).not.toHaveBeenCalled()
+    return result
+  })
+  f.owner.calls.release(call.token)
+  expect(f.owner.isIdle()).toBe(true)
+  f.closeBusiness()
+  expect(f.owner.isIdle()).toBe(true)
+  f.generation.abort()
+  expect(f.owner.isIdle()).toBe(false)
+})
+
+it('refuses original pending subprocess acquisition even before a channel exists', async () => {
+  const f = fixture(), call = f.exec()
+  const acquisition = Promise.withResolvers<CommandChannel>()
+  f.root.acquire.mockImplementation(() => acquisition.promise)
+  await f.owner.calls.run(call, async () => {
+    const op = f.create(); op.publish(); op.begin()
+    expect(f.owner.isIdle()).toBe(false)
+    const entry = f.makeChannel()
+    acquisition.resolve(entry.channel)
+    await op.handle.done
+    expect(f.owner.isIdle()).toBe(false)
+    entry.poll.resolve(complete()); await op.whenEmpty
+    return result
+  })
+  f.owner.calls.release(call.token)
+  expect(f.owner.isIdle()).toBe(true)
+})
+
+
+it('keeps both original files leases and warm compute through quiet observation and a second native command', async () => {
+  const f = fixture(), binding = f.ctx.peAccount
+  const files = new FilesWorkOwner({ maxLanes: 1, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 2,
+    maxQueuedPerLane: 2, maxResidentBytes: 64, maxResidentBytesPerLane: 64, waitTimeoutMs: 1000 })
+  const port = files.bind(binding, () => {})
+  const rows = new Map<string, SandboxAllocation>()
+  // Only metadata and authenticated process transport are scripted; all work/lease observers are original owners.
+  const store: Pick<PostgresAllocationStore, 'begin' | 'transition' | 'failNotCreated' | 'releaseStopped' | 'reconcileCommitted'> = {
+    begin: vi.fn(async (intent: AllocationCreateIntent) => {
+      const allocation: SandboxAllocation = { ...intent, state: 'creating', sandboxId: null,
+        lastActivityAt: intent.requestedAt, lastCheckedAt: intent.requestedAt, runtimeIdentity: null,
+        executionProtocolVersion: null, executionCapabilities: [], failureCode: null }
+      rows.set(intent.allocationId, allocation); return { allocation, inserted: true }
+    }),
+    transition: vi.fn(async (expected: AllocationExpectation, change: AllocationChange) => {
+      const row = rows.get(expected.allocationId)
+      if (row === undefined || row.state !== expected.state) throw new Error('External metadata CAS conflict')
+      const next: SandboxAllocation = { ...row, state: change.to, sandboxId: change.sandboxId ?? row.sandboxId,
+        ...(change.to === 'ready' ? { runtimeIdentity: change.runtimeIdentity, executionProtocolVersion: change.executionProtocolVersion,
+          executionCapabilities: change.executionCapabilities } : {}) }
+      rows.set(next.allocationId, next); return next
+    }),
+    failNotCreated: vi.fn(async () => { throw new Error('No failed creation expected') }),
+    releaseStopped: vi.fn(async (expected: AllocationExpectation) => {
+      const row = rows.get(expected.allocationId)
+      if (row?.state !== 'stopping') throw new Error('External metadata is not stopped')
+      const next: SandboxAllocation = { ...row, state: 'released' }; rows.set(next.allocationId, next); return next
+    }),
+    reconcileCommitted: vi.fn(async () => { throw new Error('No uncertain metadata expected') }),
+  }
+  const ready = { sandboxId: 'warm-compute', runtimeIdentity: 'same-runtime', protocolVersion: 'scripted-original-channel',
+    capabilities: ['argv-collect'] as const }
+  const backend = { create: vi.fn(async () => ({ sandboxId: ready.sandboxId })),
+    prepare: vi.fn(async () => ready), stop: vi.fn(async () => {}) }
+  const allocations = new SessionAllocationOwner(store, backend, { environmentVersion: 'warm-fixture', provider: 'scripted',
+    createBudgetMs: 1000, maxAllocations: 1, maxAllocationsPerAccount: 1, maxWaiters: 2, maxWaitersPerAllocation: 2 })
+  const request = { binding, sessionId: f.exec().agent!.session.id, workspaceId: f.workspace.id,
+    assertCurrent: () => { binding.lifetime.throwIfAborted() }, prepareMount: async () => {
+      const mounts = await port.run(8, async () => Object.freeze({ mount: 'same-original-grant' }), undefined, 'lease')
+      const parent = await port.run(8, async () => Object.freeze({ parent: 'same-original-project' }), undefined, 'lease')
+      return { value: { mounts: mounts.value, parent: parent.value }, projectMountVersion: 'same-version',
+        assertCurrent: () => { binding.lifetime.throwIfAborted() }, release: () => { parent.release(); mounts.release() } }
+    } }
+  f.root.acquire.mockImplementation(async () => {
+    expect(await allocations.prepare(request)).toBe(ready)
+    const channel = f.makeChannel(); f.channels.push(channel); return channel.channel
+  })
+  try {
+    for (let command = 0; command < 2; command++) {
+      const call = f.exec()
+      await f.owner.calls.run(call, async () => {
+        const operation = f.create(); operation.publish(); operation.begin(); await operation.handle.done
+        expect(f.owner.isIdle()).toBe(false)
+        expect(allocations.isEpochIdle(binding)).toBe(true)
+        expect(files.isEpochIdle(binding)).toBe(true)
+        f.channels.at(-1)!.poll.resolve(complete()); await operation.whenEmpty
+        return result
+      })
+      f.owner.calls.release(call.token)
+      expect(f.owner.isIdle()).toBe(true)
+      expect(allocations.isEpochIdle(binding)).toBe(true)
+      expect(files.isEpochIdle(binding)).toBe(true)
+      expect(allocations.inspect().allocations).toBe(1)
+      expect(files.inspect()).toMatchObject({ residentBytes: 16, pending: 2 })
+      expect(backend.create).toHaveBeenCalledTimes(1); expect(backend.stop).not.toHaveBeenCalled()
+      expect(binding.lifetime.aborted).toBe(false)
+    }
+    const io = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+    const write = port.run(4, async () => { entered.resolve(undefined); await io.promise })
+    await entered.promise
+    expect(files.isEpochIdle(binding)).toBe(false)
+    io.resolve(undefined); const retained = await write
+    expect(files.isEpochIdle(binding)).toBe(false)
+    retained.release()
+    expect(files.isEpochIdle(binding)).toBe(true)
+  } finally { await allocations.close(); files.close(); await files.whenClosed() }
+  expect(backend.stop).toHaveBeenCalledTimes(1)
+  expect(files.inspect().residentBytes).toBe(0)
+})
+
+
+it('refuses quiet after the original invocation issuer has terminally closed', () => {
+  const f = fixture()
+  expect(f.owner.isIdle()).toBe(true)
+  f.owner.calls.close()
+  expect(f.owner.isIdle()).toBe(false)
 })

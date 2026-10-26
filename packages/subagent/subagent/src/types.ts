@@ -9,10 +9,11 @@
  * @module @deepseek-ai/dsh-subagent/types
  */
 
+import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
 /** Identifies one accepted subagent run across its lifecycle event pair. */
@@ -42,6 +43,43 @@ export interface SubagentActivationSpec {
   /** Parent delivery notifies the model; caller delivery only returns the result. Local children always enter the parent catalog. */
   readonly delivery: 'parent' | 'caller'
 }
+
+/** Facts checked before a provider starts or a persisted child acquires a new residency. */
+export type SubagentAdmissionRequest =
+  | {
+    readonly kind: 'start'
+    /** Original activation owner; also supplies the native factory caller. */
+    readonly owner: Context
+    /** Actual registered provider, not a name-derived approval. */
+    readonly provider: SubagentProvider
+    /** Absolute directory actually captured for this provider dispatch. */
+    readonly cwd: string
+    /** Original borrowed start specification, including the exact live parent. */
+    readonly spec: SubagentActivationSpec
+  }
+  | {
+    readonly kind: 'resume'
+    readonly owner: Context
+    readonly parent: Agent
+    readonly childId: SessionId
+    /** Original descriptor's provider name; cold resume need not invoke that provider. */
+    readonly providerName: string
+    /** Current registration, or absent after provider withdrawal. */
+    readonly provider: SubagentProvider | undefined
+    /** Header observed through the native Session query. */
+    readonly header: SessionHeader
+    readonly agentOptions: AgentOptions
+    readonly agentPreset: string | undefined
+    readonly signal: AbortSignal
+  }
+
+/**
+ * Check one native delegation before provider work or cold reconstruction.
+ * Throwing rejects that operation without granting creation or teardown authority.
+ * @param request - original native operation facts; typed collaborators borrow them immutably.
+ * @returns after required checks settle; the runtime rechecks registration and parent identity.
+ */
+export type SubagentAdmission = (request: SubagentAdmissionRequest) => void | Promise<void>
 
 /** A managed execution; disposal addresses this exact activation, never a later resume. */
 export interface SubagentActivation {

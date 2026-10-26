@@ -4,6 +4,17 @@ English | [中文](boot.zh.md)
 
 The [boot package group](../../packages/boot/README.md) owns launcher-provided profile access and the plugin manager. [Plugin Manager](../../packages/boot/plugin-manager/README.md) documents persistence, reload and package-operation behavior.
 
+<a id="native-edit-controls"></a>
+## Native edit controls
+
+`ConfigEditControl` is an optional trusted Host argument to native ConfigEditor and Settings writes ([declaration](../../packages/boot/config-editor/src/index.ts)). Its `assertCurrent()` rechecks the original caller before persistence and after awaited policy work. In the guarded path, optional `maxRemountRegistryEntries` explicitly selects the bounded native leaf planner; omission retains live-only planning. Settings exposes the same type as `SettingsWriteControl` and forwards the control to the editor; browser requests cannot supply its callback or select that Host planner.
+
+`ConfigEditor.editFailureOutcome` reads an editor-issued failure disposition without replacing its error. Native profile plans compose immutable nonempty base entries with the original Include patches; unchanged entries keep native `none` decisions. See [ConfigEditor](../../packages/boot/config-editor/README.md).
+
+`PluginSelectionGuard` is the sole optional trusted Host guard registered on the original Plugin Manager ([declaration](../../packages/boot/plugin-manager/src/index.ts)). It supplies `maxRegistryEntries`, an `assertCurrent()` recheck and `check(plan, target, enabled)` over the native prepared plan, the original entry id or bundle name, and requested selection. The idle owner retains the guard through actual application; a completed policy check alone does not establish application. These functions and limits are Host inputs, not fields in the manager's remote request.
+
+`ProfileConfigUpdatePlan` has native per-entry decisions for local reconciliation or `impact: graph` with a complete `restart` composition. The latter binds before/after/active native rows and Include identity; it cannot apply through `withProfileConfigUpdate`. A trusted selection guard requests restart persistence, while a new normal boot owns actual application. Proposed layers are reread before persistence.
+
 ## Management records
 
 `PluginEntryId` identifies one Loader entry; callers obtain it from `listPlugins` rather than constructing a patch id.
@@ -103,6 +114,12 @@ registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>
  */
 submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>
 
+/** Read this editor's actual guarded replacement disposition without changing the original rejection.
+ * @param error Exact object rejected by a guarded edit; copied or unrelated errors have no receipt.
+ * @returns Not-published before atomic replacement, unknown after it was entered, or undefined for unobserved errors.
+ */
+editFailureOutcome(error: unknown): 'not-published' | 'unknown' | undefined
+
 /** Addressable profile rows; nested Includes have independent configuration ownership.
  * @returns Active entries with unique profile patch ids.
  */
@@ -114,17 +131,19 @@ entries(): Entry[]
 configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }>
 
 /** Validate, persist, and reconcile a plugin's next config; ordinary fields keep normal lifecycle rules.
- * An impact guard selects the restricted live path; unsupported plans reject before writing.
+ * An impact guard selects the live path; an explicit trusted Host control may select the bounded optional-leaf planner.
+ * Unsupported native plans reject before writing.
  * A required post-replacement failure remains failed with its committed state for caller diagnosis;
  * that path never falls back to an unguarded rollback or remount.
  * @param entry Current Loader entry, also used to detect replacement during the write.
  * @param change Derive a raw config from the current entry and its inherited layer.
+ * @param control Optional original caller recheck; omission preserves ordinary native edits.
  * @returns Fulfillment after Loader reconciliation completes.
  */
-async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
+async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, control?: ConfigEditControl, ): Promise<void>
 ```
 
-Types: [ConfigImpactGuard](../../packages/boot/config-editor/README.md) · [ConfigSaveSubmissionHook](../../packages/boot/config-editor/README.md)
+Types: [ConfigEditControl](boot.md#native-edit-controls) · [ConfigImpactGuard](../../packages/boot/config-editor/README.md) · [ConfigSaveSubmissionHook](../../packages/boot/config-editor/README.md)
 
 Source: [`packages/boot/config-editor/src/index.ts`](../../packages/boot/config-editor/src/index.ts)
 
@@ -187,6 +206,18 @@ Manage profile files and apply their declared reload lifecycle.
  * @throws If a hook is already installed.
  */
 registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>
+
+/** Bind the sole native selection guard; entry and bundle writes share preparation, persistence and reconcile.
+ * @param guard Original owner policy, not a replacement patch composer or supplied stop list.
+ * @returns Disposer; the caller retains this fiber until actual updates settle.
+ */
+registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>
+
+/** Read the original guarded writer's actual replacement disposition without changing its ChangeResult.
+ * @param result Exact native result object; copies and unrelated failures have no receipt.
+ * @returns Owner-observed zero-publication refusal or unknown after replacement was entered.
+ */
+changeFailureOutcome(result: ChangeResult): 'not-published' | 'unknown' | undefined
 
 /** Read exact plugin-version exemptions saved in this profile.
  * @returns Accepted package-name@version keys with the runtime versions they may run on, and any
@@ -275,9 +306,18 @@ registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>
  * @returns Removal diagnostics and the remaining profile state.
  */
 @Remote removeBundle(name: string): Promise<ChangeResult>
+
+/** Inspect the complete original bundle composition without writing or activating entries.
+ * @param name Preinstalled native bundle name.
+ * @param enabled Desired selection.
+ * @param maximum Bound on composed rows.
+ * @param application Whether the original caller will reconcile or restart the graph.
+ * @returns Opaque original profile plan; the writer prepares and checks it again under this same lock.
+ */
+previewBundleSelection(name: string, enabled: boolean, maximum: number, application: 'reconcile' | 'restart' = 'reconcile'): Promise<ProfileConfigUpdatePlan>
 ```
 
-Types: [PluginSaveSubmissionHook](../../packages/boot/plugin-manager/README.md)
+Types: [PluginSaveSubmissionHook](../../packages/boot/plugin-manager/README.md) · [PluginSelectionGuard](boot.md#native-edit-controls) · [ProfileConfigUpdatePlan](boot.md#native-edit-controls)
 
 Source: [`packages/boot/plugin-manager/src/index.ts`](../../packages/boot/plugin-manager/src/index.ts)
 

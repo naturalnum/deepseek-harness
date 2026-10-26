@@ -34,6 +34,7 @@ export const Config: z<Config> = z.object({
     maxPlanBytes: z.natural().min(1).max(262144).required(),
     maxMountInfoBytes: z.natural().min(1).max(1048576).required(),
     probeTimeoutMs: z.natural().min(1).max(2147483647).required(),
+    skillRevalidation: z.union([z.object({ proofPath: z.string().required(), proofSha256: z.string().required() })]),
   })]),
   maxLanes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxRunning: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
@@ -54,6 +55,44 @@ export const Config: z<Config> = z.object({
   maxPathBytes: z.natural().min(1).max(16384).required(),
   maxResolveRetries: z.natural().max(Number.MAX_SAFE_INTEGER).required(),
   readChunkBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  skillBundles: z.union([z.object({
+    maxInstallations: z.natural().min(1).max(2147483647).required(),
+    maxFiles: z.natural().min(1).max(2147483647).required(),
+    maxDirectories: z.natural().min(1).max(2147483647).required(),
+    maxDepth: z.natural().min(1).max(64).required(),
+    maxPathBytes: z.natural().min(1).max(2147483647).required(),
+    maxFileBytes: z.natural().min(1).max(2147483647).required(),
+    maxContentBytes: z.natural().min(1).max(2147483647).required(),
+    maxArchiveBytes: z.natural().min(1).max(2147483647).required(),
+    maxArchiveEntries: z.natural().min(1).max(2147483647).required(),
+    maxExpandedArchiveBytes: z.natural().min(1).max(2147483647).required(),
+    maxInputBytes: z.natural().min(1).max(2147483647).required(),
+    maxManifestBytes: z.natural().min(1).max(2147483647).required(),
+    maxCatalogBytes: z.natural().min(1).max(2147483647).required(),
+    maxDownloadBytes: z.natural().min(1).max(2147483647).required(),
+    maxRequestBytes: z.natural().min(1).max(2147483647).required(),
+    maxReplyBytes: z.natural().min(1).max(2147483647).required(),
+    maxStagingBytes: z.natural().min(1).max(2147483647).required(),
+    reservationBytes: z.natural().min(1).max(2147483647).required(),
+  })]),
+  skillProjection: z.union([z.object({
+    maxProjects: z.natural().min(1).max(65536).required(),
+    maxCopiesPerProject: z.natural().min(1).max(65536).required(),
+    maxCopiesPerOperation: z.natural().min(1).max(65536).required(),
+    maxParentBorrows: z.natural().min(1).max(65536).required(),
+    maxOperationBorrows: z.natural().min(1).max(65536).required(),
+    maxRecordBytes: z.natural().min(1).max(2147483647).required(),
+    maxMetadataBytes: z.natural().min(1).max(2147483647).required(),
+    maxMetadataInodes: z.natural().min(1).max(2147483647).required(),
+    reservationBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  })]),
+  skillVersions: z.union([z.object({
+    maxVersions: z.natural().min(1).max(65536).required(),
+    maxTotalBytes: z.natural().min(1024).max(2147483647).required(),
+    maxTotalInodes: z.natural().min(6).max(2147483647).required(),
+    maxFileBytes: z.natural().min(1).max(2147483646).required(),
+    reservationBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  })]),
   content: z.union([z.object({
     maxEntries: z.natural().min(1).max(2147483647).required(),
     maxNameBytes: z.natural().min(1).max(16384).required(),
@@ -78,6 +117,7 @@ export const Config: z<Config> = z.object({
  * @returns Completes after worker handshakes, configured storage verification and unique participant registration.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
-  if (process.platform !== 'linux') throw new FilesFailure('files/prerequisite-missing', 'files/root requires the real Linux FD worker backend')
+  if (process.platform !== 'linux') throw new FilesFailure('files/prerequisite-missing',
+    'files/root requires the real Linux FD worker backend')
   await mountRootPool(ctx, Config(config))
 }

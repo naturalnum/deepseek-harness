@@ -4,7 +4,9 @@ import type { AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { accountEnvironmentBank, parseStaticStoragePlan, parseStorageProbeFrame, staticStorageReservation } from '../src/storage-probe.ts'
 import { RootStorageOwner, validateStorageView, type StaticAccountStorageLease, type StaticStorageDriver } from '../src/storage-owner.ts'
 import { storageRequest, createStorageWorker } from '../src/storage-worker.ts'
+import { skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
 import type { StaticStorageConfig, StorageProbeFacts } from '../src/storage-types.ts'
+import type { PoolReadPort } from '../src/worker-pool.ts'
 
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
 function domain(index: number) {
@@ -157,11 +159,12 @@ describe('two retained static preparations with serial verification', () => {
     vi.unstubAllGlobals()
   })
 
-  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> = raw()) {
+  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> = raw(), withSkillProof = false) {
     record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = record.version === 2 ? '131072' : '65536'
     for (const row of record.accounts) {
       row.private.rootPath = `${row.accountRoot}/private`
       row.projects.rootPath = `${row.accountRoot}/projects`
+      if (withSkillProof) for (const d of [row.private, row.projects]) { d.minimumBytes = d.maximumBytes = '8192'; d.minimumInodes = d.maximumInodes = '100' }
     }
     const extras = record.accounts.flatMap(row => 'environmentBank' in row ? row.environmentBank.slots.map(slot => slot.domain) : [])
     for (const domain of [record.control, ...record.accounts.flatMap(row => [row.private, row.projects]), ...extras]) {
@@ -188,17 +191,21 @@ describe('two retained static preparations with serial verification', () => {
     }
     const mounts = ['1 0 8:0 / / ro - ext4 /dev/test-root ro', ...domains.map((domain, index) =>
       `${domain.rootMountId} 1 8:${index + 1} / ${domain.rootPath} rw - ext4 /dev/test-${index} rw`)].join('\n')
+    const planSha256 = createHash('sha256').update(encoded).digest('hex')
+    const proofBytes = encode(skillRevalidationProof(plan.accounts[0]))
     const driver = {
+      skillProof: vi.fn(async () => ({ bytes: proofBytes, process: { pid: process.pid, startTicks: '123' } })),
       record: vi.fn(async () => encoded), view: vi.fn(async () => view(mounts)),
       probe: vi.fn(async (path: string) => {
         const observed = facts.get(path)
         if (observed === undefined) throw new Error('Unexpected fixture probe')
         return observed
       }),
-      assertPoolCurrent: vi.fn(() => {}), bind: vi.fn((): never => { throw new Error('No native lane expected') }),
+      assertPoolCurrent: vi.fn(() => {}), bind: vi.fn<StaticStorageDriver['bind']>(() => { throw new Error('No native lane expected') }),
       joinEpoch: vi.fn(async () => {}),
     } satisfies StaticStorageDriver
-    const owner = new RootStorageOwner({ ...config, planSha256: createHash('sha256').update(encoded).digest('hex') }, 1024, driver)
+    const owner = new RootStorageOwner({ ...config, planSha256, ...withSkillProof ? { skillRevalidation: { proofPath: '/deployment/cold-skill.json',
+      proofSha256: createHash('sha256').update(proofBytes).digest('hex') } } : {} }, 1024, driver)
     owners.push(owner)
     await owner.initializeStatic()
     const probePaths = driver.probe.mock.calls.map(call => call[0])
@@ -207,7 +214,7 @@ describe('two retained static preparations with serial verification', () => {
     const inputs = plan.accounts.map((row, index): AccountMountInput => {
       const root = row.private.rootPath
       return Object.freeze({ binding: Object.freeze({ accountId: row.accountId,
-        epoch: '1' as AccountMountInput['binding']['epoch'], recipeVersion: plan.recipeVersion, lifetime: controllers[index]!.signal }),
+        epoch: (withSkillProof && index === 0 ? '2' : '1') as AccountMountInput['binding']['epoch'], recipeVersion: plan.recipeVersion, lifetime: controllers[index]!.signal }),
       instanceId: 'fixture-instance' as AccountMountInput['instanceId'],
       layout: Object.freeze({ storageKey: row.storageKey, accountRoot: row.accountRoot, privateRoot: root,
         profileRoot: `${root}/profile`, patchPath: `${root}/profile/cordis.patch.yml`, credentialsRoot: `${root}/credentials`,
@@ -221,8 +228,71 @@ describe('two retained static preparations with serial verification', () => {
       pending.push(result)
       return result
     }
-    return { owner, driver, facts, plan, encoded, controllers, inputs, prepare, probePaths }
+    return { owner, driver, facts, plan, encoded, proofBytes, controllers, inputs, prepare, probePaths }
   }
+
+  it('accepts the original next owner when Root proof was fixed before the recipient identity existed', async () => {
+    // Free39 reproduced the startup cycle here; the proof contains only prior terminal/record/volume facts.
+    const f = await fixture(raw(), true)
+    expect(f.driver.skillProof).toHaveBeenCalledTimes(1)
+    const original = f.inputs[0]!, pinned = createHash('sha256').update(f.proofBytes).digest('hex')
+    const actualRecipient = { ...original, instanceId: 'new-runtime-random-instance' as AccountMountInput['instanceId'] }
+    await expect(f.prepare(actualRecipient)).resolves.toBeDefined()
+    await expect(f.prepare(f.inputs[1]!)).resolves.toBeDefined()
+    expect(createHash('sha256').update(f.proofBytes).digest('hex')).toBe(pinned)
+    const foreign = { ...original, instanceId: 'foreign-instance' as AccountMountInput['instanceId'] }
+    expect(() => f.prepare(foreign)).toThrow('static storage lease')
+    const wrongEpoch = { ...f.inputs[0]!, binding: { ...f.inputs[0]!.binding, epoch: '3' as AccountMountInput['binding']['epoch'] } }
+    expect(() => f.prepare(wrongEpoch)).toThrow('static storage lease')
+  })
+
+  it('keeps ordinary next-generation acquisition available after the first qualified lease actually closes', async () => {
+    const f = await fixture(raw(), true), previous = f.inputs[0]!
+    const first = await f.prepare(previous)
+    first.assertCurrent()
+    await first.closeAfterActualDrain()
+    const next = { ...previous, binding: { ...previous.binding,
+      epoch: '3' as AccountMountInput['binding']['epoch'], lifetime: new AbortController().signal } }
+    const second = await f.prepare(next)
+    second.assertCurrent()
+    expect(() => { first.assertCurrent() }).toThrow('static storage lease')
+    expect(f.driver.skillProof).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains confirmed revalidation consumption across original installed leases without weakening the old revision check', async () => {
+    const f = await fixture(raw(), true), original = f.inputs[0]!
+    const unused = (): never => { throw new Error('No native operation belongs to this owner-only fixture') }
+    const port: PoolReadPort = {
+      get reader() { return unused() }, get directory() { return unused() },
+      skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
+      prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
+      projectFor: unused, withInstructionReaders: unused, derivePreparedLeaf: unused, createWorkspaceRegistry: unused,
+      stat: unused, streamText: unused, readBytes: unused,
+    }
+    f.driver.bind.mockReturnValue(port)
+    const resolveProject = async () => unused(), first = await f.prepare(original)
+    first.bindInstalled(original.binding, () => {}, () => {}, resolveProject)
+    const qualification = f.driver.bind.mock.calls[0]?.[4]
+    if (qualification === undefined) throw new Error('Expected the original Root qualification')
+    expect(qualification.pending).toBe(true)
+    expect(() => { qualification.assertRecord('1:2:3:4:6') }).toThrow('static storage lease')
+    expect(() => { qualification.confirmRecord('1:2:3:4:6', '1:2:3:4:7') }).toThrow('static storage lease')
+    expect(qualification.pending).toBe(true)
+    qualification.assertRecord('1:2:3:4:5')
+    qualification.confirmRecord('1:2:3:4:5', '1:2:3:4:6')
+    expect(qualification.pending).toBe(false)
+    expect(() => { qualification.assertRecord('1:2:3:4:5') }).toThrow('static storage lease')
+    await first.closeAfterActualDrain()
+    expect(f.driver.joinEpoch).toHaveBeenCalledExactlyOnceWith(original.binding)
+    const next = { ...original, binding: { ...original.binding,
+      epoch: '3' as AccountMountInput['binding']['epoch'], lifetime: new AbortController().signal } }
+    const second = await f.prepare(next)
+    second.bindInstalled(next.binding, () => {}, () => {}, resolveProject)
+    const later = f.driver.bind.mock.calls[1]?.[4]
+    expect(later?.pending).toBe(false)
+    expect(() => { later?.assertRecord('1:2:3:4:5') }).toThrow('static storage lease')
+    expect(() => { first.assertCurrent() }).toThrow('static storage lease')
+  })
 
   function pauseLastProbe(f: Awaited<ReturnType<typeof fixture>>) {
     const path = f.plan.accounts[1].projects.backing.path

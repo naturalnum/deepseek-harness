@@ -215,6 +215,11 @@ export class NativeExecutionCalls<Project> {
    */
   inspect(): number { return this.calls.size }
 
+  /** Observe this original invocation issuer without acquiring business admission.
+   * @returns True only while its admission is open and every issued invocation has released.
+   */
+  isIdle(): boolean { return this.admission.open && !this.authority.binding.lifetime.aborted && this.calls.size === 0 }
+
   private assertOpen(): void {
     if (!this.admission.open) this.stale()
     this.ctx.fiber.assertActive()

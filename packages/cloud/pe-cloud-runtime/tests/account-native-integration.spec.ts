@@ -1,4 +1,6 @@
+import { MODEL_KEY_FIXTURE as APPROVED_MODEL_KEY, modelKeyBinding } from '../../pe-cloud-api/tests/model-key-policy-data.ts'
 /** Actual Profile/Include/native providers with factory or component admission; owned Node paths never prove quota or ready. */
+import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
 import * as fs from 'node:fs/promises'
@@ -9,7 +11,7 @@ import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
 import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, AccountModelKeyEnvironment, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -83,6 +85,8 @@ afterEach(async () => {
 })
 
 async function fixture(options: {
+  modelKey?: boolean
+  terminalProbe?: boolean
   missingGuards?: boolean
   firstScreen?: boolean
   copiedFilesBinding?: boolean
@@ -96,6 +100,7 @@ async function fixture(options: {
   auditedFileCalls?: boolean
   installFileApi?: boolean
   beforeBootstrap?: (ctx: Context) => void
+  verifyBootstrap?: (api: CloudAccountApi) => Promise<void>
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8s-native-integration-')))
   directories.push(directory)
@@ -104,7 +109,7 @@ async function fixture(options: {
     maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 1, maxWaitersPerAccount: 2 })
   const barriers: ConfigSaveBarrier[] = []
   const issue = saves.createAccount.bind(saves)
-  vi.spyOn(saves, 'createAccount').mockImplementation((binding) => { const barrier = issue(binding); barriers.push(barrier); return barrier })
+  vi.spyOn(saves, 'createAccount').mockImplementation((binding, ...policy) => { const barrier = issue(binding, ...policy); barriers.push(barrier); return barrier })
   writeFileSync(sharedPath, JSON.stringify([
     { id: 'runtime', name: 'cordis:runtime', config: { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 } },
     { id: 'exposure', name: 'cordis:exposure', config: { recipeVersion: 'm8s',
@@ -142,7 +147,8 @@ async function fixture(options: {
   const binding: AccountBinding = Object.freeze({ accountId, epoch: brandString<OwnerEpoch>('1'),
     recipeVersion: 'm8s', lifetime: lifetime.signal })
   const input: AccountMountInput = { binding, instanceId: identity.instanceId, layout,
-    environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }]) }
+    environment: options.modelKey ? new AccountModelKeyEnvironment(createLaunchEnvironmentSnapshot([]), [APPROVED_MODEL_KEY.ref])
+      : createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }]) }
   let componentGraph: { ctx: Context; binding: AccountBinding } | undefined
   const assertCurrent = (current: AccountBinding): void => {
     if (options.instructionSources === undefined) { factory.assertMountCurrent(current); return }
@@ -199,6 +205,8 @@ async function fixture(options: {
     { id: 'editor', name: 'cordis:' + names.editor },
     { id: 'credentials', name: 'cordis:' + names.credentials, config: { path: credentialPath, watch: false } },
     { id: 'dependencies', name: 'cordis:m8s-dependencies' },
+    ...options.terminalProbe ? [{ id: 'terminal-probe', name: 'cordis:m8s-terminal-probe', config: { value: 1 } }] : [],
+    ...options.modelKey ? [{ id: 'model-key', name: 'cordis:' + names.modelKey }] : [],
     { id: 'llm', name: 'cordis:' + (options.earlyLlmAndController ? 'm8s-early-llm' : names.llm) },
     { id: 'jsonl', name: 'cordis:m8s-jsonl', config: { root: layout.sessionsRoot, compression: 'none' } },
     { id: 'default-model', name: 'cordis:m8s-model', config: options.instructionSources === undefined
@@ -232,6 +240,10 @@ async function fixture(options: {
     requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16, maxPathBytes: 4096,
     native: { saves, exposure: root.peExposure.policy, execution: root.peSandboxCoordinator, stopTimeoutMs: options.stopTimeoutMs ?? 5000,
       maxNativeInventoryEntries: 128,
+      ...options.modelKey ? { modelKey: { limits: { bindings: [modelKeyBinding('provider')], maxKeyBytes: 128, maxVersionBytes: 128,
+        maxReplyBytes: 4096, maxMetadataBytes: 65536 }, maxNativeInventoryEntries: 128,
+      withModelKeyPeerUse: async () => { throw new Error('No component login or production ready borrow') },
+      } } : {},
       ...options.firstScreen ? { firstScreen: { home: layout.privateRoot, maxHomeBytes: 4096,
         maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 16, maxQueuedBytes: 131072 } } : {},
       assertRootCurrent: () => {
@@ -279,6 +291,7 @@ async function fixture(options: {
     prepare(ctx) {
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
         'm8s-sandbox-policy': SandboxPolicyService,
+        'm8s-terminal-probe': { Config: z.object({ value: z.number().default(1).volatile() }), apply() {} },
         'm8s-working-directory': WorkingDirectory, 'm8ax-settings': Settings, 'm8ax-locale': Locale,
         // A separately guarded native LLM lets all Controller dependencies activate before files/account settles.
         'm8s-early-llm': { inject: ['peCloudApi'], apply(owner: Context) {
@@ -319,7 +332,9 @@ async function fixture(options: {
         const receipt = await barrier.stopConfigSaves(Date.now() + 1000)
         if (receipt.status === 'confirmed') saves.releaseAccount(barrier)
       }
-      saves.close()
+      if (options.modelKey && barriers.some(barrier => barrier.snapshot().failures.length !== 0)) {
+        expect(() => { saves.close() }).toThrow(expect.objectContaining({ code: 'cloud/config-busy' }))
+      } else saves.close()
       await root.fiber.dispose()
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
@@ -340,7 +355,7 @@ async function fixture(options: {
       const outcome = await componentNative.result
       if (outcome.status === 'mounted') {
         options.beforeBootstrap?.(outcome.context)
-        await integration?.finishBootstrap()
+        await integration?.finishBootstrap(options.verifyBootstrap)
       }
       return outcome
     }
@@ -349,6 +364,14 @@ async function fixture(options: {
     return outcome
   }
   return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime,
+    finishBootstrap: () => {
+      if (integration === undefined) throw new Error('The original native component integration is absent')
+      return integration.finishBootstrap()
+    },
+    stopComponent: (hook: Parameters<AccountNativeIntegration['stop']>[0]) => {
+      if (integration === undefined) throw new Error('The original native component integration is absent')
+      return integration.stop(hook)
+    },
     fileProject: (caller: Context, signal?: AbortSignal) => {
       if (resolveFiles === undefined) throw new Error('Original native Files callback absent')
       return resolveFiles(caller, signal)
@@ -932,4 +955,105 @@ it('rejects an unavailable instruction source without logging partial sources or
   expect(sources.state.releases).toBe(1)
   expect(sources.state.heldBytes).toBe(0)
   expect(agent.session.deriveMessages().some(message => message.source.kind === 'pe-account-instructions')).toBe(false)
+})
+
+
+it.each([false, true])('retains an unknown approved native key write through original factory containment (drain full: %s)', async (full) => {
+  const f = await fixture({ firstScreen: true, modelKey: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, barrier = f.barriers[0]
+  if (barrier === undefined) throw new Error('Original save barrier absent')
+  const ref = APPROVED_MODEL_KEY.ref
+  const version = await barrier.describeCredentialEdit(ref, () => ctx.credentials.describe(ref))
+  const otherId = brandString<AccountId>('other-component-account')
+  const otherMount = full ? f.capacity.reserveMount(otherId) : undefined
+  otherMount?.settleMount()
+  const occupied = full ? f.capacity.reserveDrain(otherId) : undefined
+  const actual = await vi.importActual<typeof fs>('node:fs/promises')
+  vi.mocked(fs.rename).mockImplementationOnce(async (...args) => {
+    await actual.rename(...args)
+    throw new Error('Synthetic response loss after actual native persistence')
+  })
+  await expect(barrier.commitCredentialEdit(ref, version.version, () => ctx.credentials.set(ref, 'r05-native-unknown-canary')))
+    .rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(readFileSync(f.credentialPath, 'utf8')).toContain('r05-native-unknown-canary')
+  expect(ctx.fiber.state).toBe(FiberState.ACTIVE)
+  expect(ctx.get('credentials')).toBeDefined()
+  expect(() => { f.factory.assertMountCurrent(outcome.binding) }).toThrow()
+  expect(barrier.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [{ outcome: 'unknown' }] })
+  expect(f.saves.snapshot()).toMatchObject({ accounts: 1, tracked: 1 })
+  if (occupied !== undefined) occupied.release()
+  otherMount?.releaseAccount()
+  await expect(f.factory.stopNative(outcome.binding.accountId)).resolves.toMatchObject({ status: 'unknown' })
+  expect(f.factory.inspect()).toMatchObject({ slots: 1, unknown: 1 })
+  expect(() => { f.saves.releaseAccount(barrier) }).toThrow()
+  await expect(barrier.describeCredentialEdit(ref, () => ctx.credentials.describe(ref))).rejects.toBeDefined()
+  expect(ctx.fiber.state).toBe(FiberState.ACTIVE)
+})
+
+
+it('commits on the stopped original graph after native flush and before save-hook withdrawal or disposal', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), terminalProbe: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, barrier = f.barriers[0]
+  if (barrier === undefined) throw new Error('Original save barrier absent')
+  const raw: unknown = Reflect.get(ctx.sessionPersistence, symbols.original) ?? ctx.sessionPersistence
+  if (!(raw instanceof SessionPersistence)) throw new Error('Original native persistence absent')
+  const flush = vi.spyOn(raw, 'flush'), hold = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+  cleanups.push(async () => { hold.resolve(undefined) })
+  let disposed = false, terminalEntered = false
+  ctx.effect(() => () => { disposed = true })
+  let late: Parameters<NonNullable<Parameters<AccountNativeIntegration['stop']>[0]>>[0] | undefined
+  const stopped = f.stopComponent(async (commit) => {
+    late = commit
+    expect(flush).toHaveBeenCalled(); expect(disposed).toBe(false); ctx.fiber.assertActive()
+    expect(barrier.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [] })
+    await commit(async (api) => {
+      api.assertInstalled(); expect(flush).toHaveBeenCalledTimes(2)
+      const entry = [...ctx.loader.entries()].find(row => row.options.id === 'terminal-probe')
+      if (entry === undefined) throw new Error('Original native probe entry absent')
+      await ctx.configEditor.edit(entry, () => ({ value: 2 }))
+      expect(readFileSync(f.layout.patchPath, 'utf8')).toContain('value: 2')
+      terminalEntered = true; entered.resolve(undefined); await hold.promise
+    })
+  })
+  await Promise.race([entered.promise, stopped.then(() => {
+    if (!terminalEntered) throw new Error('Original shutdown withdrew hooks before its terminal commit')
+  })])
+  expect(disposed).toBe(false)
+  expect(barrier.snapshot()).toMatchObject({ admission: 'stopped', pending: [{ kind: 'config-editor' }] })
+  expect(() => barrier.admit('settings', async () => {})).toThrow()
+  hold.resolve(undefined)
+  await expect(stopped).resolves.toMatchObject({ status: 'confirmed', admission: 'stopped' })
+  expect(disposed).toBe(false); ctx.fiber.assertActive()
+  expect(() => { ctx.peCloudApi.assertInstalled() }).toThrow()
+  const settledCommit = late
+  if (settledCommit === undefined) throw new Error('Original terminal capability absent')
+  await expect(settledCommit(async () => {})).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  expect(flush).toHaveBeenCalledTimes(3)
+  expect(barrier.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [] })
+})
+
+
+it('retains replacement verification inside the real unpublished native bootstrap and propagates its failure', async () => {
+  const entered = Promise.withResolvers<CloudAccountApi>(), hold = Promise.withResolvers<undefined>()
+  const failure = new Error('Replacement intent verification refused')
+  cleanups.push(async () => { hold.resolve(undefined) })
+  const f = await fixture({ instructionSources: instructionSourceFixture(), verifyBootstrap: async (api) => {
+    api.assertInstalled()
+    entered.resolve(api)
+    await hold.promise
+    throw failure
+  } })
+  const started = f.start()
+  const rejected = expect(started).rejects.toBe(failure)
+  const api = await entered.promise
+  expect(f.factory.inspect().slots).toBe(0)
+  await expect(f.factory.borrowCurrent(api.binding)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  hold.resolve(undefined)
+  await rejected
+  await expect(f.finishBootstrap()).rejects.toBe(failure)
+  expect(f.factory.inspect().slots).toBe(0)
 })

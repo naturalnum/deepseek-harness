@@ -5,6 +5,28 @@ import { AccessConfigSchema } from './config-schema.ts'
 import { parseAccessConfig } from './config.ts'
 import type { AccessConfig } from './types.ts'
 import type { ApplicationReadLimits } from '@deepseek-ai/dsh-pe-opensandbox/types'
+import type { ForwardLimits } from './forward-types.ts'
+import { OWNER_HOP_HEADER } from './owner-hop.ts'
+
+/** Fixed deployment entries; PG metadata can select only an exact reviewed HTTPS address. */
+export interface OwnerForwardingConfig {
+  readonly maxIdentities: number
+  readonly maxPemBytes: number
+  readonly maxPemPathBytes: number
+  readonly maxPeerPins: number
+  readonly maxHopBytes: number
+  readonly peerCertificateSha256: string[]
+  readonly identities: {
+    readonly id: string
+    readonly caFile: string
+    readonly certFile: string
+    readonly keyFile: string
+    readonly serverCertificateSha256: string
+    readonly servername?: string
+  }[]
+  readonly targets: { readonly id: string; readonly origin: string; readonly serviceIdentityRef: string }[]
+  readonly limits: ForwardLimits & { readonly maxTlsIdentityBytes: number }
+}
 
 /** Explicit bounds for the fixed isolated GET preview; no field chooses an upstream target or application path. */
 export interface ServicePreviewIngressLimits {
@@ -17,6 +39,10 @@ export interface ServicePreviewIngressLimits {
 
 /** Optional shared-Web registration inputs; none grants recipe, account or transport readiness. */
 export interface AuthIngressConfig {
+  /** Omission keeps local acquisition only and accepts no internal marker. */
+  readonly ownerForwarding?: OwnerForwardingConfig
+  /** Start the original Cookie recheck this many milliseconds before the maximum login age. */
+  readonly sessionRecheckLeadMs: number
   /** Absence registers no application preview route, independently of cookie-domain configuration. */
   readonly servicePreview?: ServicePreviewIngressLimits
   readonly maxOperations: number
@@ -64,6 +90,20 @@ export interface AuthRootConfig extends AccessConfig {
 const positive = () => z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required()
 const timer = () => z.natural().min(1).max(2_147_483_647).required()
 const text = () => z.string().pattern(/^\S+$/).required()
+const fingerprint = () => z.string().pattern(/^[a-f0-9]{64}$/).required()
+const ownerForwarding: z<OwnerForwardingConfig> = z.object({
+  maxIdentities: positive(), maxPemBytes: positive(), maxPemPathBytes: positive(), maxPeerPins: positive(), maxHopBytes: positive(),
+  peerCertificateSha256: z.array(fingerprint()).required(),
+  identities: z.array(z.object({ id: text(), caFile: text(), certFile: text(), keyFile: text(),
+    serverCertificateSha256: fingerprint(), servername: z.string().pattern(/^\S+$/) })).required(),
+  targets: z.array(z.object({ id: text(), origin: text(), serviceIdentityRef: text() })).required(),
+  limits: z.object({ maxTargets: positive(), maxTargetBytes: positive(), maxTlsIdentityBytes: positive(), maxPathBytes: positive(),
+    maxConcurrent: positive(), maxQueued: positive(), maxConnections: positive(),
+    maxHeaderPairs: z.natural().min(1).max(0x3fff_fffe).required(), maxHeaderBytes: positive(), maxHeadBytes: positive(),
+    maxChunkBytes: positive(), maxBufferedBytes: positive(), maxPendingBytes: positive(),
+    maxBodyBytes: positive(), maxTunnelBytes: positive(),
+    queueTimeoutMs: timer(), connectTimeoutMs: timer(), operationTimeoutMs: timer(), closeTimeoutMs: timer() }).required(),
+})
 
 /** Root Loader inputs have no connection, secret or timeout defaults. */
 export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
@@ -81,6 +121,8 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
     }).required(),
     startupTimeoutMs: timer(), secretResolveTimeoutMs: timer(), maxSecretOperations: positive(), maxSecretBytes: positive(),
     ingress: z.object({
+      ownerForwarding: ownerForwarding.default(undefined as never),
+      sessionRecheckLeadMs: timer(),
       servicePreview: z.object({
         maxUrlBytes: z.natural().min(1).max(65536).required(),
         maxFieldBytes: z.natural().min(1).max(65536).required(),
@@ -113,13 +155,22 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
   try {
     const config = structuredClone(AuthRootConfigSchema(input))
     parseAccessConfig(config)
+    if ([config.bindingFields.accountHeader, config.bindingFields.generationHeader]
+      .some(name => name.toLowerCase() === OWNER_HOP_HEADER)) throw new TypeError()
     credentialRef(config.authSecretRef)
     credentialRef(config.database.passwordRef)
     if (config.maxSecretBytes < 32 || config.pool.lockTimeoutMs > config.pool.statementTimeoutMs) throw new TypeError()
-    if (config.ingress !== undefined && config.ingress.maxOperationsPerAccount > config.ingress.maxOperations) throw new TypeError()
+    if (config.ingress !== undefined && (config.ingress.sessionRecheckLeadMs >= config.sessionRecheckMs
+      || config.ingress.maxOperationsPerAccount > config.ingress.maxOperations)) throw new TypeError()
     if (config.ingress !== undefined && (config.ingress.maxLogicalStreamsPerAccount > config.ingress.maxLogicalStreams
       || config.ingress.maxLogicalStreamsPerPeer > config.ingress.maxLogicalStreamsPerAccount)) throw new TypeError()
     const preview = config.ingress?.servicePreview
+    const forwarding = config.ingress?.ownerForwarding
+    if (forwarding !== undefined && (forwarding.identities.length === 0 || forwarding.identities.length > forwarding.maxIdentities
+      || forwarding.targets.length === 0 || forwarding.targets.length > forwarding.limits.maxTargets
+      || forwarding.peerCertificateSha256.length === 0 || forwarding.peerCertificateSha256.length > forwarding.maxPeerPins
+      || new Set(forwarding.peerCertificateSha256).size !== forwarding.peerCertificateSha256.length
+      || forwarding.maxHopBytes > forwarding.limits.maxHeaderBytes)) throw new TypeError()
     if (preview !== undefined && (config.servicePreview === undefined
       || preview.response.maxChunkBytes > preview.response.maxBodyBytes + 1
       || Object.keys(preview).some(name => !['maxUrlBytes', 'maxFieldBytes', 'maxRequestHeaderCount', 'maxRequestHeaderBytes', 'response'].includes(name))

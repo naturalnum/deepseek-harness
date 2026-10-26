@@ -40,6 +40,8 @@ kind: "package-reference"
 
 设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩或为 `multipart/form-data`；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度的流则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE（Server-Sent Events）、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
 
+设置 `transportLimits` 并明确给出正整数 `maxHeaderPairs`、`maxHeaderBytes`、`highWaterMark` 和 `maxConnections`，即可在绑定前配置原 HTTP/HTTPS 监听器。`maxHeaderPairs` 最大为 `0x3fff_fffe`；parser 会多保留一对头，每个路由必须在解释或转发前拒绝超过上限的原始头数。Node 执行头字节与连接上限；高水位控制流缓冲，不限制整个进程内存。选用该配置时，普通 `Expect` 请求在自动 100 Continue 前返回417，带 `Expect` 的升级请求直接关闭。升级后的原始 socket 在收到对端 FIN 后保持可写，直到其所有者结束或销毁；普通 HTTP framing 仍遵循 Node 行为。省略该配置或设为 null 时保留原传输默认值和 Expect 处理。TLS 必须由 Root 明确选择当前 `getDefaultHighWaterMark(false)` 返回值，因为原生 HTTPS 监听器不应用自定义高水位。选择其他值会拒绝初始化；PEM 读取后会再次复核默认值，实际流高水位不同的连接或请求会在路由派发前关闭。HTTP 直接应用选定值。原始转发配方应明确选择 `compression: 'none'`。
+
 ### 服务 HTTPS
 
 `tls` 在同一地址上以 TLS 提供同一批路由：载体不会另开一个 HTTP 监听，也从不重定向。两个文件在激活期间、socket 绑定之前各读取一次，因此不可读、为空或格式错误的文件、与证书不匹配的私钥，或绑定失败都会拒绝初始化——配置错误的证书绝不会退回 HTTP。路径相对进程工作目录解析，私钥必须是无口令的 PEM，`certFile` 可以包含证书链且叶子证书在前。替换任一文件都需要重新加载；本载体既不申请也不续期证书。
@@ -55,6 +57,8 @@ kind: "package-reference"
 ```
 
 `ctx.webServer.protocol` 读出所绑定监听是 `'http:'` 还是 `'https:'`，因此按传输层制定请求策略（会话 Cookie 的 `Secure` 属性、来源检查）的插件只需读一个源自配置的值，无需检查 socket，也无需信任转发头。客户端仍会校验你提供的证书：本载体不附带信任库、不做 HTTP 到 HTTPS 的重定向，也不发送 HSTS 头。
+
+将 `tls.clientCa` 设为 `{ certFile, maxBytes }`，即可在同一个监听器上按受控 CA PEM bundle 请求客户端证书。该 bundle 必须是仅含 CA 证书块的普通文件，大小不超过明确的正字节预算；读取时多保留一字节检测文件增长，校验结束前关闭读取句柄。文件缺失、为空、超量或无效都会在监听前拒绝初始化。原服务器证书与私钥的读取行为保持不变。选用时 Node 使用 `requestCert: true` 和 `rejectUnauthorized: false`，匿名及未授权对端仍可访问普通公共路由。路由所有者检查原 `TLSSocket.authorized` 和 `getPeerCertificate()` 结果；证书或任何 HTTP 头均不授予账户或节点身份。省略 `clientCa` 或设为 null 时保留不请求客户端证书的普通 HTTPS。CA 只在激活时读取一次，替换后需要重新加载。
 
 ### 注册路由
 
@@ -126,9 +130,9 @@ index 启动输入分两层。`collectIndexInjections()` 收集一张全新的�
 
 这些限制说明服务器在何处有意保持最小。它们是当前包约束，不是任务积压。
 
-- **不管理证书生命周期**：`tls` 只提供激活时存在的 PEM 文件——载体从不申请、续期或监视它们，并采用 Node 默认的 TLS 策略。替换证书需要重新加载。
+- **不管理证书生命周期**：`tls` 只提供激活时存在的 PEM 文件——载体从不申请、续期或监视它们，除明确的客户端 CA 选项外，采用 Node 默认 TLS 策略。替换证书需要重新加载。
 - **不提供服务器级认证或来源策略**：`dsh-client-connection` 等 route owner 会实施自己的请求策略。绑定非回环地址仍会向该网络公开未受保护的 route 与静态资源。
-- **Socket 选项固定不变**：配置只选择绑定宿主与端口；在具体部署产生需求前，backlog 和其他 socket 设置仍保持内部实现。
+- **监听 backlog**：backlog 使用 Node 默认值；`transportLimits` 只配置已说明的 parser、流和连接上限。
 
 <a id="dev-note"></a>
 ### 开发备注

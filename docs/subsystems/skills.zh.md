@@ -36,18 +36,18 @@ interface SkillProvider {
    * plugins register synchronously during `apply()`; remote initialization,
    * authentication, and discovery are awaited inside this method. Implementations
    * should settle promptly when `options.signal` aborts.
-   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns provider candidates as a complete-array shorthand, or an explicit
    *   observation when usable candidates came from incomplete discovery.
    */
-  readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
+  readonly list: (options: SkillViewOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
   /**
    * Load a complete skill body for a previously listed candidate.
    * @param candidate - the winning candidate originally returned by this provider.
-   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns the full skill body, or `undefined` if it is no longer loadable.
    */
-  readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>
+  readonly get: (candidate: SkillCandidate, options: SkillViewOptions) => Promise<SkillDefinition | undefined>
 }
 ```
 
@@ -79,6 +79,54 @@ interface SkillProviderControl {
 `dsh-skill-badge` 在 `BUNDLED_SKILL_RANK` 注册一个不可变的 `bundled` 候选项，并通过 `resourceBase` 公开其随包资产目录。交付的 CLI（命令行界面）将该插件声明为禁用，因此启用其组合配置行即为显式选择加入。
 
 Chokidar 会监视现有根目录中直属 bundle 和平铺条目的添加与移除，以及直属 skill 条目的变更。缺失的根目录会从最近的现有祖先开始，逐个跟踪缺失路径段，直至 Chokidar 可以附加。bundle 下的资源文件变更不属于目录变更。面向模型的 `write` 和 `edit` 观测会在目标路径与目录相关时同步使提供方目录失效，而宿主 watcher 覆盖 IDE、Git、shell 和外部进程产生的变更。watcher 失败会使当前观测不完整，但不会在直接加载时隐藏可读候选项；项目作用域 watcher 使用按配置设限的 LRU。
+
+## 受限程序化 source
+
+`FileSystemSkillProvider` 的可选代码参数接入受限读取来源，继续使用原生发现和 YAML 解析；它要求显式根、关闭 watcher 且不配置宿主 bundled 根。每个实例固定一个来源版本，发现与加载分别借用该版本；加载在同一次借用中解析正文并等待资源准备完成，失败不发布可用路径。来源拥有者须核验实际调用者、保留版本和实际 I/O，并只返回调用者可访问的资源指引。普通插件没有该参数时保留既有文件系统行为。
+
+```ts type-equiv
+/** Read operations borrowed from an explicit filesystem source; no writer or host fallback is granted. */
+type FileSystemSkillReader = Pick<FileSystem, 'resolve' | 'stat' | 'listDir' | 'readText' | 'processPath'>
+```
+
+```ts type-equiv
+/** Resource guidance returned only after the source finishes making the loaded version available to this caller. */
+interface FileSystemSkillResources {
+  /** Caller-usable directory, URL or provider description; never an inaccessible source location. */
+  readonly resourceBase: SkillResourceBase
+  /** Optional caller-usable instruction path; source-private paths remain inside provider locators. */
+  readonly path?: string
+}
+```
+
+```ts type-equiv
+/** One borrowed source scope binds native parsing and caller resource preparation to the same source version. */
+interface FileSystemSkillRead {
+  /** Read-only operations valid for this borrowed source scope. */
+  readonly files: FileSystemSkillReader
+  /**
+   * Finish caller-specific resource preparation for the same source version while its read scope remains borrowed.
+   * @param directory Directory selected by this provider's native discovery, not a caller-chosen path.
+   * @param options Original lookup context; the source derives actual caller/project authority independently of cwd.
+   * @returns Complete usable guidance; failures must reject without publishing a partial location.
+   */
+  materialize(directory: string, options: SkillViewOptions): Promise<FileSystemSkillResources>
+}
+```
+
+```ts type-equiv
+/** Optional programmatic source for explicit roots; ordinary ctx.fs/Node discovery remains unchanged without it. */
+interface FileSystemSkillSource {
+  /**
+   * Borrow the source for one discovery or load, retaining actual work until the callback and I/O settle.
+   * Candidate locators may outlive this call; the source must continue to identify their exact version.
+   * @param read Native discovery/body reader and same-version resource preparation.
+   * @param options Original lookup context; scope identifies a caller only after the source owner's admission checks.
+   * @returns The native result after actual source work has settled; cancellation alone is not settlement.
+   */
+  withFiles<T>(read: (source: FileSystemSkillRead) => Promise<T>, options: SkillViewOptions): Promise<T>
+}
+```
 
 ## skill 身份
 
@@ -139,7 +187,9 @@ interface SkillCatalogSnapshot {
 }
 ```
 
-`SkillCandidate` 是提供方到注册表的形状。`locator` 是提供方的不透明状态；注册表只存储它并在调用获胜提供方的 `get()` 时传回。
+`ctx.skills.inspect(options)` 从与 `snapshot()`、`get()` 相同的收集和胜出映射中返回仅供 Host 使用的 `SkillCatalogInspection`。按名称排序的 `candidates` 包含每个借用的原始 `candidate`、`selected` 标记，以及被覆盖行的 `overriddenBy`。来源元数据和 opaque locator 会被保留，但不加载正文，也不授予资源权限。`complete` 与快照含义相同；不完整结果中的覆盖关系仅描述已观测候选项。消费方必须授权并限制公开投影，不得序列化私有路径或 locator。
+
+`SkillCandidate` 是提供方到注册表的形状。`locator` 是提供方拥有的不透明状态；注册表为获胜提供方的 `get()` 和仅供 Host 使用的检查接口保留它，它不是资源能力。
 
 ```ts type-equiv
 /** Provider catalog entry used by the registry to merge and later load skills. */
@@ -187,7 +237,7 @@ type SkillRegistration = Omit<SkillDefinition, 'invocation' | 'provider'> & {
 
 ## 查找与配置
 
-skill 查找对 cwd 敏感，因为提供方可能暴露工作区本地的 skill；可选的 signal 为调用方取消提供方的工作。注册表读取还通过 `SkillViewOptions` 携带观察 scope——消费方传入调用中的 agent，agent 本身就是自己的 scope key；注册表消费 `scope` 做层选择，提供方只从同一个借用的选项对象中读取其 `SkillLookupOptions` 约定。取消在目录选择前后（包括缓存命中时）都会检查，并与发现和完整定义加载竞争。如果找不到 git root，本地提供方将所提供的 cwd 本身视为项目根目录。
+skill 查找对 cwd 敏感，因为提供方可能暴露工作区本地的 skill；可选的 signal 为调用方取消提供方的工作。注册表读取还通过 `SkillViewOptions` 携带观察 scope——消费方传入调用中的 agent，agent 本身就是自己的 scope key；注册表消费 `scope` 做层选择，提供方收到同一个借用的选项对象，也可读取调用者 scope；提供方必须独立核验调用者和项目，`scope` 或 `cwd` 本身不授予权限。取消在目录选择前后（包括缓存命中时）都会检查，并与发现和完整定义加载竞争。如果找不到 git root，本地提供方将所提供的 cwd 本身视为项目根目录。
 
 注册表不缓存完整定义。每次调用 `get()` 都会携所选候选项调用胜出提供方，因此本地提供方会重新读取当前正文。名称与该候选项不再匹配的定义会被拒绝，并使该提供方实例失效以便重新发现。
 
@@ -205,8 +255,8 @@ interface SkillLookupOptions {
 /**
  * Registry read options: provider lookup context plus the viewing scope.
  * The registry consumes `scope` to select layers; providers receive the same
- * borrowed options object and read only their {@link SkillLookupOptions}
- * contract from it.
+ * borrowed options object and may use its caller context. Scope is not
+ * authorization: providers must validate caller identity before preparing resources.
  */
 interface SkillViewOptions extends SkillLookupOptions {
   /** Viewing scope (the calling agent); omitted reads the global layer alone. */
@@ -314,6 +364,16 @@ async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 
 /**
+ * Inspect every contributed candidate and its actual winner in the same observation used by list/get.
+ * Candidate values and locators remain borrowed readonly provider objects; inspection loads no bodies
+ * and grants no resource authority. Incomplete results describe only the observed candidates and are
+ * not cached. Scope, invalidation and cancellation use the original catalog collection.
+ * @param options - original scope/cwd lookup context and optional discovery cancellation signal.
+ * @returns name-sorted candidates with selected/overridden relationships and discovery completeness.
+ */
+async inspect(options: SkillViewOptions = {}): Promise<SkillCatalogInspection>
+
+/**
  * Load and validate the winning candidate, passing its opaque discovery locator back to the
  * provider. Cancellation is rechecked after selection, including cache hits, and raced against
  * loading so an uncooperative provider cannot hang the caller.
@@ -348,5 +408,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
 'skills/change'(): void
 ```
 
-Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
 <!-- END GENERATED cordis-surface -->

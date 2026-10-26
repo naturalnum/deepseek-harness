@@ -31,10 +31,28 @@ function isAborted(signal: AbortSignal): boolean {
   return signal.aborted
 }
 
+/** Native write facts supplied to an optional Host admission owner. */
+export interface SettingsWriteRequest {
+  /** Original Remote invocation, or undefined for a trusted in-process call. */
+  readonly invocation: import('@deepseek-ai/dsh-typert-protocol').RemoteInvocation | undefined
+  /** Validated native Settings namespace addressed by this write. */
+  readonly namespace: string
+  /** Native merge, whole-section replacement, or ordered path mutation. */
+  readonly mode: 'update' | 'replace' | 'mutate'
+  /** Owned admission input: namespace fields or the ordered path edits for the selected mode. */
+  readonly input: Record<string, JsonValue> | SettingsPathOpView[]
+  /** Revision read by the caller; undefined requests an unconditional native write. */
+  readonly expectedRevision: number | undefined
+}
+
 /** Host integrations replaceable by direct unit tests. */
 export interface SettingsControllerInternals {
   /** Host text-editor integration used to open the settings document. */
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Retain original request admission through native persistence and the redacted result.
+   * Omission preserves native writes without an additional policy. */
+  readonly withWrite?: <T>(request: SettingsWriteRequest,
+    apply: (control?: import('@deepseek-ai/dsh-settings').SettingsWriteControl) => Promise<T>) => Promise<T>
 }
 
 /**
@@ -82,7 +100,7 @@ export class SettingsController extends TypertRemoteService {
    * return the configuration API's actionable missing-provider diagnostic.
    * @param ctx - Host context where settings and credential providers may be mounted.
    */
-  constructor(ctx: Context, internals: SettingsControllerInternals = {}) {
+  constructor(ctx: Context, private readonly internals: SettingsControllerInternals = {}) {
     super(ctx, 'settingsController', { namespace: 'settings' })
     this.openTextFile = internals.openTextFile ?? openNativeTextFile
     ctx.plugin(CredentialsController)
@@ -196,20 +214,25 @@ export class SettingsController extends TypertRemoteService {
     }
     const settings = this.provider()
     const namespace = parsed.data.ns
-    try {
-      if (mode === 'update') await settings.update(namespace, input, expectedRevision)
-      else if (mode === 'replace') await settings.replace(namespace, input, expectedRevision)
-      else await settings.mutate(namespace, input as SettingsPathOp[], expectedRevision)
-    } catch (error: unknown) {
-      throw rejected(ns, error)
+    const owned = this.internals.withWrite === undefined ? input : structuredClone(input)
+    const apply = async (control?: import('@deepseek-ai/dsh-settings').SettingsWriteControl): Promise<SettingsNamespaceView> => {
+      try {
+        if (mode === 'update') await settings.update(namespace, owned, expectedRevision, control)
+        else if (mode === 'replace') await settings.replace(namespace, owned, expectedRevision, control)
+        else await settings.mutate(namespace, owned as SettingsPathOp[], expectedRevision, control)
+      } catch (error: unknown) {
+        throw rejected(ns, error)
+      }
+      const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === namespace)
+      if (descriptor === undefined) {
+        // The write committed but the namespace vanished before this read: only a
+        // concurrent registrant disposal can produce it.
+        throw new RemoteError('gateway/internal', `settings namespace "${ns}" was disposed after the ${mode}`, {})
+      }
+      return namespaceView(descriptor)
     }
-    const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === namespace)
-    if (descriptor === undefined) {
-      // The write committed but the namespace vanished before this read: only a
-      // concurrent registrant disposal can produce it.
-      throw new RemoteError('gateway/internal', `settings namespace "${ns}" was disposed after the ${mode}`, {})
-    }
-    return namespaceView(descriptor)
+    return this.internals.withWrite === undefined ? apply()
+      : this.internals.withWrite({ invocation: this.ctx.invocation, namespace, mode, input: owned, expectedRevision }, apply)
   }
 
   /** Resolve the optional provider or report how to supply it. */

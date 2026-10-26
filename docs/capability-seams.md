@@ -8,8 +8,12 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 ```mermaid
 flowchart LR
   pkg_pe_cloud_api["pe-cloud-api"]
-  svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
+  svc_cloudModelKey["ctx.cloudModelKey<br/>Account model-key editing"]
+  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
+  pkg_pe_cloud_client["pe-cloud-client"]
   pkg_pe_cloud_runtime["pe-cloud-runtime"]
+  svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
+  svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
   svc_peAccount["ctx.peAccount<br/>Installed account generation"]
   pkg_pe_cloud_files["pe-cloud-files"]
   pkg_pe_opensandbox["pe-opensandbox"]
@@ -395,7 +399,10 @@ flowchart LR
   pkg_otel --> svc_otel
   pkg_pe_account_instructions --> svc_peAccountInstructions
   pkg_pe_cloud_access --> svc_peAuth
+  pkg_pe_cloud_api --> svc_cloudModelKey
+  pkg_pe_cloud_api --> svc_cloudPlugins
   pkg_pe_cloud_api --> svc_cloudProjects
+  pkg_pe_cloud_api --> svc_cloudSkills
   pkg_pe_cloud_api --> svc_peCloudApi
   pkg_pe_cloud_api --> svc_peExposure
   pkg_pe_cloud_files --> svc_peCloudFiles
@@ -497,8 +504,14 @@ flowchart LR
   svc_browserUse --> pkg_experimental_browser_use_playwright_mcp
   svc_browserUse --> pkg_experimental_browser_use_stagehand_native
   svc_clientModules --> pkg_client_hmr
+  svc_cloudModelKey --> pkg_pe_cloud_api
+  svc_cloudPlugins --> pkg_pe_cloud_client
+  svc_cloudPlugins --> pkg_pe_cloud_runtime
   svc_cloudProjects --> pkg_pe_cloud_api
   svc_cloudProjects --> pkg_pe_cloud_runtime
+  svc_cloudSkills --> pkg_pe_cloud_api
+  svc_cloudSkills --> pkg_pe_cloud_client
+  svc_cloudSkills --> pkg_pe_cloud_runtime
   svc_compaction --> pkg_compaction_basic
   svc_computerUse --> pkg_experimental_computer_use_cua_driver_mcp
   svc_computerUse --> pkg_experimental_computer_use_cua_driver_native
@@ -660,7 +673,10 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner. |
+| `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts fixed plugin edits to original Peer admission, account saves and native profile application. |
 | `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts native Workspace operations to the installed account files owner and approved project roots. |
+| `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Manages account skill installations and complete packages through original Peer admission, account saves and files-owned catalog/version CAS. |
 | `ctx.peAccount` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | Carries the immutable account binding and lifetime for one independent account Context. |
 | `ctx.peAccountExecution` | `service` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Exposes only the original Root-issued account capability; closed mode refuses native execution. |
 | `ctx.peAccountInstructions` | `service` | [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | Reads bounded private and project instruction snapshots through the original account files owner. |

@@ -1,13 +1,13 @@
 /** One account's original work rows; Root retains allocation, physical stop and global reservations. */
 import { randomUUID } from 'node:crypto'
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
-import { guardianEncodedBudget } from './agent-data/encoded-budget.ts'
+import { guardianEncodedBudget, guardianWorkingCopiesBudget } from './agent-data/encoded-budget.ts'
 import { assertInstalledExecutionBinding } from './account-port.ts'
 import type { AllocationId } from './allocation-types.ts'
 import type { NativeAccountExecutionAuthority } from './coordinator.ts'
@@ -72,6 +72,8 @@ export interface NativeCommandAccountLimits {
   readonly allowedTools: readonly string[]
   readonly maxScopes: number
   readonly commandLimits: CommandOperationLimits
+  /** Trusted original files count bound; no copy membership or public command field. */
+  readonly maxSkillCopiesPerOperation?: number
   readonly services?: NativeServiceAccountConfig
 }
 
@@ -140,6 +142,21 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       allowedTools: Object.freeze([...config.allowedTools]), getAgent: authority.getAgent,
       projectForAgent: authority.projectForAgent, assertCurrent: (scope) => { this.assertScope(scope) },
       released: (scope) => { this.releaseScope(scope) } })
+  }
+
+  /**
+   * Observe original invocation, process-range and service-request settlement without business admission.
+   * @returns True only while open, with no invocation or unfinished range/request; completed output stays charged.
+   */
+  isIdle(): boolean {
+    if (!this.state.open || this.state.closing !== undefined || this.binding.lifetime.aborted
+      || this.ctx.fiber.state !== FiberState.ACTIVE || this.ctx.get('peAccount') !== this.binding
+      || !this.calls.isIdle() || this.active.size !== 0) return false
+    for (const record of this.records.values()) {
+      if (record.scope.binding !== this.binding || !record.activeReleased || record.unknownReported
+        || record.privateFailure !== undefined || record.service !== undefined && record.service.requests.size !== 0) return false
+    }
+    return true
   }
 
   /**
@@ -646,8 +663,10 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     const project = scope.project.path, stdin = spec.stdio.stdin
     if (spec.cwd !== project && !spec.cwd.startsWith(project + '/')) throw this.failure()
     if (stdin === 'pipe') throw new ExecutionStateError('cloud/execution-unavailable', 'Closed or batch input is required.')
-    guardianEncodedBudget(project, { argv: spec.argv, cwd: spec.cwd,
-      stdin: stdin === 'ignore' ? { mode: 'ignore' } : { mode: 'batch', base64: Buffer.from(stdin.data).toString('base64') } })
+    const value = { argv: spec.argv, cwd: spec.cwd,
+      stdin: stdin === 'ignore' ? { mode: 'ignore' as const } : { mode: 'batch' as const, base64: Buffer.from(stdin.data).toString('base64') } }
+    if (this.config.maxSkillCopiesPerOperation === undefined) guardianEncodedBudget(project, value)
+    else guardianWorkingCopiesBudget(project, value, this.config.maxSkillCopiesPerOperation)
   }
   private fingerprint(spec: SubprocessSpawnSpec): string {
     return JSON.stringify({ argv: spec.argv, cwd: spec.cwd, stdio: spec.stdio, graceMs: spec.graceMs, env: spec.env })
@@ -657,7 +676,8 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       try { return await request() }
       catch (cause) { record.privateFailure ??= { cause }; throw this.failure() }
     }
-    return { prepare: spec => observe(() => channel.prepare(spec)), commit: () => observe(() => channel.commit()),
+    return { ...(channel.release === undefined ? {} : { release: () => channel.release?.() }),
+      prepare: spec => observe(() => channel.prepare(spec)), commit: () => observe(() => channel.commit()),
       poll: () => observe(() => channel.poll()), stop: () => observe(() => channel.stop()) }
   }
   private reportUnknown(record: CommandRecord, cause: unknown): void {

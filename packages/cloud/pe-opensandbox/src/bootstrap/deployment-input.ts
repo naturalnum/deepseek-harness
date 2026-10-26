@@ -14,6 +14,8 @@ export interface RootDeploymentInput {
   readonly lifecycle: SdkLifecycleConfig
   readonly bootstrap: Omit<BootstrapConfig, 'lifecycle' | 'assertDeploymentCurrent'>
   readonly exports: Readonly<{ manifest: RootDeploymentReference; limits: ExecutionExportLimits }>
+  /** Optional explicit original-owner count bound; omission leaves copy execution disabled. */
+  readonly skillCopies?: Readonly<{ maxCopiesPerOperation: number }>
 }
 function need(value: boolean, field: string): asserts value {
   if (!value) throw new ExecutionStateError('cloud/invalid-config', `Root deployment field ${field} is absent, unsupported or out of bounds.`)
@@ -90,21 +92,28 @@ function bootstrap(value: unknown): RootDeploymentInput['bootstrap'] {
 /**
  * Parse the complete protected Root configuration with no defaults or executable/endpoint alternatives.
  * @param value Exact decoded readonly Root file; credential values remain private to this assembly.
- * @returns Independent frozen selection, limits, original credentials and export-manifest reference.
+ * @returns Independent frozen selection, limits, optional copy policy, original credentials and export reference.
  */
 export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
-  const v = object(value, ['schema', 'selection', 'lifecycle', 'bootstrap', 'exports'], 'configuration')
+  const fields = ['schema', 'selection', 'lifecycle', 'bootstrap', 'exports']
+  const hasCopies = value !== null && typeof value === 'object' && Object.hasOwn(value, 'skillCopies')
+  const v = object(value, hasCopies ? [...fields, 'skillCopies'] : fields, 'configuration')
   need(v.schema === 'pe-opensandbox-root-deployment-v1', 'schema')
   const life = lifecycle(v.lifecycle), boot = bootstrap(v.bootstrap)
   const s = object(v.selection, ['serverImageDigest', 'execdImageDigest', 'apiKeyDeploymentIdentity'], 'selection')
-  need(s.serverImageDigest === 'sha256:4900c9b13a02e0cdbec19733b9cc140d7af6d3fa06a06c752d19a3d2e5ee7ca7'
+  need(s.serverImageDigest === 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17'
     && s.execdImageDigest === 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
   const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')
   const limits = object(e.limits, ['maxManifestBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'exports.limits')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')
-  return Object.freeze({ schema: v.schema,
+  let copies: RootDeploymentInput['skillCopies']
+  if (hasCopies) {
+    const policy = object(v.skillCopies, ['maxCopiesPerOperation'], 'skillCopies')
+    copies = Object.freeze({ maxCopiesPerOperation: integer(policy.maxCopiesPerOperation, 'skillCopies.maxCopiesPerOperation') })
+  }
+  return Object.freeze({ schema: v.schema, ...(copies === undefined ? {} : { skillCopies: copies }),
     selection: Object.freeze({ serverImageDigest: s.serverImageDigest, execdImageDigest: s.execdImageDigest,
       apiKeyDeploymentIdentity: s.apiKeyDeploymentIdentity }), lifecycle: life, bootstrap: boot,
     exports: Object.freeze({ manifest: Object.freeze({ path: text(m.path, 'exports.manifest.path', 4096), sha256: text(m.sha256, 'exports.manifest.sha256', 64) }),

@@ -1,4 +1,15 @@
 /** Root-owned prestarted slots; tasks reuse workers and never allocate a replacement on failure. */
+import { skillBundleLimits } from './bundle-codec.ts'
+import type { BundleTree } from './bundle-codec.ts'
+import type { SkillBundleVersion } from './skill-bundles.ts'
+import { createSkillProjectWork } from './skill-project-work.ts'
+import type { SkillProjectPort } from './skill-project-work.ts'
+import type { SkillRecordRevalidation } from './skill-revalidation.ts'
+import { skillProjectionLimits, skillProjectionBudget } from './skill-projection.ts'
+import type { SkillVersion, SkillVersionId } from './skill-versions.ts'
+import { createSkillVersionWork, retireSkillVersionsAfterDrain } from './skill-version-work.ts'
+import { SKILL_VERSION_HANDLE_BYTES, skillVersionLimits } from './skill-versions.ts'
+import type { SkillVersionPort } from './skill-versions.ts'
 import { randomUUID } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import { isAbsolute, posix } from 'node:path'
@@ -78,6 +89,10 @@ export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'stora
 
 /** Internal fixed-root read capability, not the native FileSystem or a client-facing project scope. */
 export interface PoolReadPort {
+  /** Exact account-private capability, issued only after real static storage verification. */
+  skillVersions(): SkillVersionPort
+  /** Original bound projection issuer; omission of explicit limits or the independent helper refuses. */
+  skillProjection(): SkillProjectPort
   readonly reader: FixedRootReader
   readonly directory: DirectoryReadPort
   /** Require this current healthy lane, explicit content limits and actual ABI8 handshakes for every pool slot. */
@@ -179,14 +194,26 @@ function workerInput(config: FilesPoolConfig): FdWorkerInput {
     helperPath: config.helperPath, maxReadBytes: config.maxReadBytes, maxPathBytes: config.maxPathBytes,
     maxResolveRetries: config.maxResolveRetries, readChunkBytes: config.readChunkBytes,
     ...config.content === undefined ? {} : { content: { ...config.content } },
+    ...config.skillProjection === undefined ? {} : { skillProjection: { ...config.skillProjection } },
+    ...config.skillBundles === undefined ? {} : { skillBundles: { ...config.skillBundles } },
+    ...config.skillVersions === undefined ? {} : { skillVersions: { ...config.skillVersions } },
     ...config.staging === undefined ? {} : { staging: { ...config.staging, maxReplyBytes: config.replyOverheadBytes } },
     ...config.staticStorage === undefined ? {} : { storageProbe: config.staticStorage },
   }
 }
 
+function skillMetadataBytes(config: FilesPoolConfig): number {
+  const projection = config.skillProjection
+  return (config.skillVersions?.maxVersions ?? 0) * (SKILL_VERSION_HANDLE_BYTES
+    + (config.skillBundles === undefined ? 0 : 8 * config.skillBundles.maxManifestBytes))
+    + (projection === undefined || config.skillVersions === undefined ? 0 : skillProjectionBudget(projection, config.skillVersions, {
+      ...config, replyBytes: config.content?.maxReplyBytes ?? 0 }).handles)
+}
+
 function rootReservation(config: FilesPoolConfig): number {
   return config.workerCount * config.workerReservationBytes
     + (config.staticStorage === undefined ? 0 : staticStorageReservation(config.staticStorage, config.maxPathBytes, config.workerCount))
+    + config.maxLanes * skillMetadataBytes(config)
 }
 
 function limits(config: FilesPoolConfig): FilesLimits {
@@ -194,7 +221,8 @@ function limits(config: FilesPoolConfig): FilesLimits {
   return {
     maxLanes: config.maxLanes, maxRunning: config.maxRunning, maxRunningPerLane: config.maxRunningPerLane,
     maxQueued: config.maxQueued, maxQueuedPerLane: config.maxQueuedPerLane,
-    maxResidentBytes: config.maxResidentBytes - rootBytes, maxResidentBytesPerLane: config.maxResidentBytesPerLane,
+    maxResidentBytes: config.maxResidentBytes - rootBytes, maxResidentBytesPerLane
+    : config.maxResidentBytesPerLane - skillMetadataBytes(config),
     waitTimeoutMs: config.waitTimeoutMs,
   }
 }
@@ -208,6 +236,59 @@ function deadline(value: number): number {
 }
 
 function validate(config: FilesPoolConfig): void {
+  if (config.skillBundles !== undefined) {
+    const b = skillBundleLimits(config.skillBundles), v = config.skillVersions, p = config.skillProjection, content = config.content
+    const required = b === undefined ? Infinity : 64 * (b.maxInputBytes + b.maxArchiveBytes + b.maxExpandedArchiveBytes
+      + b.maxContentBytes * (p?.maxCopiesPerOperation ?? 1) + b.maxDownloadBytes + b.maxCatalogBytes
+      + b.maxManifestBytes + b.maxRequestBytes + b.maxReplyBytes)
+    if (b === undefined || v === undefined || p === undefined || content === undefined || config.staticStorage === undefined
+      || b.maxInstallations > v.maxVersions || b.maxFileBytes > v.maxFileBytes || b.maxFileBytes > config.maxReadBytes
+      || b.maxManifestBytes > config.maxReadBytes || b.maxCatalogBytes > config.maxReadBytes
+      || b.maxCatalogBytes * 2 + b.maxStagingBytes > v.maxTotalBytes
+      || b.maxRequestBytes < b.maxContentBytes + b.maxManifestBytes
+      + (b.maxFiles + b.maxDirectories + 2) * (2 * b.maxPathBytes + 256) + 2048
+      || b.maxReplyBytes > content.maxReplyBytes || b.maxReplyBytes < 128
+      || Math.max(b.maxFiles + b.maxDirectories + 2, v.maxVersions + 1) > content.maxEntries || b.maxPathBytes > content.maxNameBytes
+      || b.maxPathBytes + 96 > config.maxPathBytes || b.reservationBytes < required
+      || b.reservationBytes + p.reservationBytes + v.reservationBytes + skillMetadataBytes(config) > config.maxResidentBytesPerLane
+      || b.reservationBytes > config.staticStorage.rootProbeReservationBytes) {
+      throw new FilesFailure('files/prerequisite-missing', 'Managed bundle complete input, tree, catalog, staging or resident capacities are unavailable')
+    }
+  }
+  if (config.skillProjection !== undefined) {
+    const configured = skillProjectionLimits(config.skillProjection), originalSource = config.skillVersions
+    const value = configured === undefined ? undefined : { ...configured,
+      reservationBytes: Math.max(configured.reservationBytes, config.skillBundles?.reservationBytes ?? 0) }
+    const source = originalSource === undefined ? undefined : { ...originalSource,
+      reservationBytes: Math.max(originalSource.reservationBytes, config.skillBundles?.reservationBytes ?? 0) }
+    if (value === undefined || source === undefined || config.content === undefined || config.staticStorage === undefined) {
+      throw new FilesFailure('files/prerequisite-missing',
+        'Projection requires explicit finite budgets and original skill/static storage capabilities')
+    }
+    const model = skillProjectionBudget(value, source, { ...config, replyBytes: config.content.maxReplyBytes })
+    if (value.maxRecordBytes > config.maxReadBytes || value.maxRecordBytes < 8 * config.maxPathBytes + 1024
+      + value.maxCopiesPerProject * 1024
+      || value.reservationBytes < model.operation || config.content.maxEntries < Math.max(value.maxProjects, value.maxCopiesPerProject)
+      || config.content.maxNameBytes < 77 || config.content.maxReplyBytes < Math.max(192, 1024 * value.maxProjects,
+      1024 * value.maxCopiesPerProject)
+      || model.overlap + skillMetadataBytes(config) > config.maxResidentBytesPerLane
+      || config.maxLanes * model.overlap + rootReservation(config) > config.maxResidentBytes) {
+      throw new FilesFailure('files/prerequisite-missing',
+        'Projection metadata, scans, borrows and overlapping source/copy work exceed explicit capacities')
+    }
+  }
+  if (config.skillVersions !== undefined) {
+    const value = skillVersionLimits(config.skillVersions)
+    const required = value === undefined ? Infinity : 64 * (2 * value.maxFileBytes + config.maxReadBytes + 1024)
+      + 32 * config.maxPathBytes + 131072
+    if (value === undefined || config.content === undefined || config.content.maxReplyBytes < 128 || config.maxReadBytes < 512
+      || value.maxFileBytes > config.maxReadBytes || value.reservationBytes < required
+      || value.reservationBytes + skillMetadataBytes(config) > config.maxResidentBytesPerLane || config.staticStorage === undefined
+      || config.staticStorage.rootProbeReservationBytes < value.reservationBytes) {
+      throw new FilesFailure('files/prerequisite-missing',
+        'Skill versions require explicit bounded storage, content and complete resident capacities')
+    }
+  }
   if (config.staging !== undefined) validateStagingLimits(config.staging, config.maxPathBytes, config.readChunkBytes)
   const content = config.content
   if (content !== undefined && ([content.maxEntries, content.maxNameBytes, content.maxReplyBytes, content.operationTimeoutMs]
@@ -219,7 +300,8 @@ function validate(config: FilesPoolConfig): void {
     config.workerCount, config.minimumHealthyWorkers, config.workerReservationBytes, config.replyOverheadBytes,
     config.readyTimeoutMs, config.drainTimeoutMs, config.maxReadBytes, config.maxPathBytes, config.readChunkBytes,
   ]) {
-    if (!Number.isSafeInteger(value) || value < 1) throw new FilesFailure('files/prerequisite-missing', 'files pool capacities must be positive safe integers')
+    if (!Number.isSafeInteger(value) || value < 1) throw new FilesFailure('files/prerequisite-missing',
+      'files pool capacities must be positive safe integers')
   }
   if (!Number.isSafeInteger(config.maxResolveRetries) || config.maxResolveRetries < 0
     || !isAbsolute(config.helperPath) || !config.helperPath.endsWith('.node')
@@ -239,6 +321,14 @@ function validate(config: FilesPoolConfig): void {
  */
 export class LinuxFilesPool implements DrainParticipant {
   readonly id: Extract<DrainParticipant['id'], 'files'> = 'files'
+  /** Observe only the original healthy pool and actual account lane.
+   * @param binding Exact native generation.
+   * @returns False for root probe work, pending lane work, ordinary results or unavailable health; passive leases stay owned.
+   */
+  isEpochIdle(binding: AccountBinding): boolean {
+    this.assertHealthy()
+    return this.rootOperation === undefined && this.owner.isEpochIdle(binding)
+  }
   private readonly owner: FilesWorkOwner
   private readonly slots: Slot[] = []
   private readonly closed = Promise.withResolvers<void>()
@@ -246,7 +336,7 @@ export class LinuxFilesPool implements DrainParticipant {
   private state: 'new' | 'starting' | 'running' | 'closing' | 'closed' = 'new'
   private startTask: Promise<void> | undefined
   private readonly storageOwner?: RootStorageOwner
-  private rootOperation: { readonly id: OperationId; readonly settled: Promise<void> } | undefined
+  private rootOperation: { readonly id: OperationId; readonly settled: Promise<void>; failure?: unknown } | undefined
 
   constructor(
     private readonly config: FilesPoolConfig,
@@ -260,9 +350,23 @@ export class LinuxFilesPool implements DrainParticipant {
       record: () => this.probeOperation((client, signal) => client.storageRecord(storage.maxPlanBytes, signal)),
       probe: path => this.probeOperation((client, signal) => client.storageProbe(path, signal)),
       view: () => this.probeOperation((client, signal) => client.storageView(storage.maxMountInfoBytes, signal)),
+      skillProof: () => this.probeOperation((client, signal) => client.storageSkillProof(storage.maxPlanBytes, signal)),
       assertPoolCurrent: () => { this.assertHealthy() },
-      bind: (binding, root, current, privateParent) => this.bind(binding, root, current, privateParent),
+      bind: (binding, root, current, privateParent, revalidation) => this.bind(binding, root, current, privateParent, revalidation),
       joinEpoch: binding => this.owner.joinEpoch(binding),
+      retireSkillVersions: async (binding, root, uid, gid) => {
+        const config = this.config.skillVersions
+        if (config === undefined) return
+        this.requireStorageOwner().assertRootCurrent()
+        await this.probeOperation(async (client, signal) => {
+          await retireSkillVersionsAfterDrain({ binding, root, uid, gid, limits: config,
+            projectionConfigured: this.config.skillProjection !== undefined,
+            ...this.config.skillBundles === undefined || this.config.skillProjection === undefined || this.config.content === undefined
+              ? {} : { bundles: { limits: this.config.skillBundles, projectionLimits: this.config.skillProjection,
+                maxPathBytes: this.config.maxPathBytes, maxReplyBytes: this.config.content.maxReplyBytes } },
+            assertCurrent: () => { this.requireStorageOwner().assertRootCurrent() } }, client, signal)
+        }, true)
+      },
     })
   }
 
@@ -286,17 +390,35 @@ export class LinuxFilesPool implements DrainParticipant {
   }
 
   /**
+   * Read the original configured full-tree limits after actual Root and independent helper readiness.
+   * @returns A frozen numeric policy; this grants no account, source or projection authority.
+   * @throws FilesFailure while complete source, projection or helper support is unavailable.
+   */
+  requireSkillBundleLimits(): import('./skill-bundles.ts').SkillBundleLimits {
+    this.requireStorageOwner()
+    const limits = this.config.skillBundles
+    if (limits === undefined || this.config.skillVersions === undefined || this.config.skillProjection === undefined
+      || this.config.content === undefined || this.slots.some(slot => !slot.client.supportsSkillBundles
+        || !slot.client.supportsSkillVersions || !slot.client.supportsSkillProjection)) {
+      throw new FilesFailure('files/prerequisite-missing', 'Complete skill source and projection capabilities are unavailable.')
+    }
+    return Object.freeze({ ...limits })
+  }
+
+  /**
    * Bind exact runtime input to one already-authorized root. No worker is created here.
    * @param binding Runtime-owned immutable account generation.
    * @param root Independently verified root identity; this method does not grant authorization or quota.
    * @param assertCurrent Trusted factory's owner/admission check, invoked for every operation.
    * @param privateParent Optional verified private-files parent for instruction reads and environment banks;
    * omission leaves those operations unavailable.
+   * @param revalidation Optional single-record authority minted only by the original verified Root lease.
    * @returns A fixed-root internal read port with no shared-pool close capability.
    */
   bind(
     binding: AccountBinding, root: FdRootIdentity, assertCurrent: () => void,
     privateParent?: FdRootIdentity & { readonly rootMountId: string },
+    revalidation?: SkillRecordRevalidation,
   ): PoolReadPort {
     this.assertHealthy()
     if (root.rootPath.length > this.config.maxPathBytes || !isAbsolute(root.rootPath)
@@ -427,7 +549,7 @@ export class LinuxFilesPool implements DrainParticipant {
       reservation: number, assertProject: () => void,
       execute: (client: FdWorkerClient, control: AbortSignal) => Promise<T>,
       failure: (outcome: 'not-published' | 'unknown', code: FsErrorCode, cause?: unknown) => FdMutationFailure,
-      signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' = 'native-handoff',
+      signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' | 'retained-lease' = 'native-handoff',
     ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
@@ -449,7 +571,7 @@ export class LinuxFilesPool implements DrainParticipant {
           try {
             const value = await this.withSlot(false, (client) => { execution.entered = true; return execute(client, control) })
             // Stage releases running capacity at actual closure; the original queue keeps its resident result.
-            if (delivery === 'retained-result') return value
+            if (delivery !== 'native-handoff') return value
             const consumed = Promise.withResolvers<void>()
             // Actual publication facts survive cancellation/deadline of the queue observer.
             answer.resolve({ value, release: consumed.resolve })
@@ -472,15 +594,115 @@ export class LinuxFilesPool implements DrainParticipant {
           answer.reject(error)
           throw error
         } finally { turn.resolve() }
-      }, signal)
+      }, signal, delivery === 'retained-lease' ? 'lease' : undefined)
       void work.then((result) => {
-        if (delivery === 'retained-result') answer.resolve(result)
+        if (delivery !== 'native-handoff') answer.resolve(result)
         else result.release()
       }, (error: unknown) => {
-        if (!invoked || delivery === 'retained-result') answer.reject(signal?.aborted && delivery === 'native-handoff'
+        if (!invoked || delivery !== 'native-handoff') answer.reject(signal?.aborted && delivery === 'native-handoff'
           ? failure('not-published', 'FS_ABORTED', error) : error)
       })
       return answer.promise
+    }
+    const skillCell: { port?: SkillVersionPort
+      bundleRead?: (client: FdWorkerClient, version: SkillBundleVersion, control: AbortSignal) => Promise<BundleTree>
+      bundleResolve?: (version: Omit<SkillBundleVersion, 'binding'>) => SkillBundleVersion
+      bundleAuthorize?: (client: FdWorkerClient, version: SkillBundleVersion, control: AbortSignal) => Promise<void>
+      projection?: SkillProjectPort
+      resolve?: (id: SkillVersionId, expected
+      : Omit<SkillVersion, 'binding'>) => SkillVersion | undefined
+      read?: (client: FdWorkerClient, version: SkillVersion, control
+      : AbortSignal) => Promise<{ skill: Uint8Array<ArrayBuffer>; resource: Uint8Array<ArrayBuffer> }> } = {}
+    const skillVersions = (): SkillVersionPort => {
+      checkCurrent()
+      const config = this.config.skillVersions
+      if (config === undefined || preferencesParent === undefined || this.slots.some(slot => !slot.client.supportsSkillVersions)) {
+        throw new FilesFailure('files/prerequisite-missing', 'Fixed private skill capability is unavailable')
+      }
+      const current = (): void => {
+        checkCurrent()
+        this.requireStorageOwner().skillStorageIdentity(binding, preferencesParent)
+      }
+      current()
+      const identity = this.requireStorageOwner().skillStorageIdentity(binding, preferencesParent)
+      const bundleLimits = this.config.skillBundles
+      if (bundleLimits !== undefined && this.slots.some(slot => !slot.client.supportsSkillBundles)) {
+        throw new FilesFailure('files/prerequisite-missing', 'Independent complete bundle helper is unavailable')
+      }
+      const reservation = Math.max(config.reservationBytes, bundleLimits?.reservationBytes ?? 0)
+      skillCell.port ??= createSkillVersionWork({
+        ...bundleLimits === undefined || this.config.skillProjection === undefined || this.config.content === undefined ? {} : { bundles: {
+          limits: bundleLimits, reclaim: { projectionLimits: this.config.skillProjection, maxPathBytes: this.config.maxPathBytes,
+            maxReplyBytes: this.config.content.maxReplyBytes },
+          bind: (read, resolve, authorize) => {
+            skillCell.bundleRead = read; skillCell.bundleResolve = resolve; skillCell.bundleAuthorize = authorize
+          },
+          materialize: (project, version, signal) => skillProjection().materializeBundle(project, version, signal),
+        } }, binding, root: preferencesParent, uid: identity.uid, gid: identity.gid, limits
+        : config, maxReadBytes: this.config.maxReadBytes,
+        assertCurrent: current,
+        bindProjectionRead: (read, resolve) => { skillCell.read = read; skillCell.resolve = resolve },
+        mutate: (kind, work, signal) => runMutation(reservation, current, work,
+          (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal,
+          kind === 'prepare' ? 'retained-result' : 'native-handoff'),
+        read: (work, signal) => run(reservation, (client, control) => { current(); return work(client, control) }, signal),
+      })
+      return skillCell.port
+    }
+    const skillProjection = (): SkillProjectPort => {
+      checkCurrent(); skillVersions()
+      const config = this.config.skillProjection, sourceConfig = this.config.skillVersions, privateRoot = preferencesParent
+      const sourceRead = skillCell.read, resolveSource = skillCell.resolve
+      if (config === undefined || sourceConfig === undefined || privateRoot === undefined || sourceRead === undefined
+        || resolveSource === undefined
+        || this.config.content === undefined || this.slots.some(slot => !slot.client.supportsSkillProjection)) {
+        throw new FilesFailure('files/prerequisite-missing', 'Independent fixed project-copy helper or explicit budget is unavailable')
+      }
+      const identity = this.requireStorageOwner().skillStorageIdentity(binding, privateRoot)
+      if (fixedRoot.rootPath !== identity.projects.rootPath || fixedRoot.rootDevice !== identity.projects.rootDevice
+        || fixedRoot.rootInode !== identity.projects.rootInode || fixedRoot.rootMountId !== identity.projects.rootMountId
+        || BigInt(config.maxMetadataBytes) + BigInt(sourceConfig.maxTotalBytes) > BigInt(identity.privateDomain.minimumBytes)
+        || BigInt(config.maxMetadataInodes) + BigInt(sourceConfig.maxTotalInodes) > BigInt(identity.privateDomain.minimumInodes)) {
+        throw new FilesFailure('files/prerequisite-missing',
+          'Projection metadata and source storage do not fit the original qualified hard domains')
+      }
+      const current = (): void => { checkCurrent(); this.requireStorageOwner().skillStorageIdentity(binding, privateRoot) }
+      skillCell.projection ??= createSkillProjectWork({
+        ...this.config.skillBundles === undefined ? {} : { bundleLimits: this.config.skillBundles,
+          bundleSource: async (client, version, control) => {
+            if (skillCell.bundleRead === undefined) throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+            return skillCell.bundleRead(client, version, control)
+          },
+          bundleAuthorize: async (client, version, control) => {
+            if (skillCell.bundleAuthorize === undefined) throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+            return skillCell.bundleAuthorize(client, version, control)
+          },
+          resolveBundle: (version) => {
+            if (skillCell.bundleResolve === undefined) throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
+            return skillCell.bundleResolve(version)
+          },
+        }, binding, privateRoot, uid: identity.uid, gid: identity.gid,
+        quota: identity.projects, limits: config, sourceLimits: sourceConfig, maxReadBytes: this.config.maxReadBytes,
+        maxPathBytes: this.config.maxPathBytes,
+        maxReplyBytes: this.config.content.maxReplyBytes, assertCurrent: current, source: sourceRead,
+        ...revalidation === undefined ? {} : { revalidation },
+        resolveSource: descriptor => resolveSource(descriptor.id, descriptor),
+        project: async (client, workspace, control) => {
+          current(); const leaf = projectLeaf(workspace)
+          const info = await client.stat(fixedRoot, leaf, control), directory = await client.directory(fixedRoot, leaf,
+            this.config.maxPathBytes, control)
+          const [device, inode] = info?.identity.split(':') ?? []
+          if (info?.type !== 'directory' || device !== fixedRoot.rootDevice || inode === undefined || fixedRoot.rootMountId === undefined
+            || !directory.directory || directory.canonicalPath !== workspace.path) throw new FdMutationFailure('not-published',
+            'FS_PERMISSION_DENIED')
+          return Object.freeze({ rootPath: workspace.path, rootDevice: device, rootInode: inode, rootMountId: fixedRoot.rootMountId })
+        },
+        mutate: (work, signal, retention) => runMutation(
+          Math.max(config.reservationBytes, this.config.skillBundles?.reservationBytes ?? 0), current, work,
+          (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal,
+          retention === 'lease' ? 'retained-lease' : 'retained-result'),
+      })
+      return skillCell.projection
     }
     const writeText = (
       project: FdRootIdentity, path: string, content: string, expected: FsWriteIntent | undefined, signal?: AbortSignal,
@@ -489,8 +711,10 @@ export class LinuxFilesPool implements DrainParticipant {
       checkCurrent()
       assertProject()
       if (mutationUnknown) return Promise.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR'))
-      if (this.slots.some(slot => !slot.client.supportsTextWrites)) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_PERMISSION_DENIED'))
-      if (Buffer.byteLength(content) > this.config.maxReadBytes) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_TOO_LARGE'))
+      if (this.slots.some(slot => !slot.client.supportsTextWrites)) return Promise.reject(new FdTextWriteFailure('not-published',
+        'FS_PERMISSION_DENIED'))
+      if (Buffer.byteLength(content) > this.config.maxReadBytes) return Promise.reject(new FdTextWriteFailure('not-published',
+        'FS_TOO_LARGE'))
       const reservation = pathBytes(path) + 2 * Buffer.byteLength(project.rootPath)
         + 32 * (this.config.maxReadBytes + 1) + 8 * Buffer.byteLength(content) + 4 * 320 + this.config.replyOverheadBytes
       return runMutation(reservation, assertProject, async (client, control) => {
@@ -521,7 +745,8 @@ export class LinuxFilesPool implements DrainParticipant {
       })
       const contentLimits = () => {
         current()
-        try { assertContentAvailable() } catch (error) { throw new FsError('ABI8 content capability is unavailable.', 'FS_PERMISSION_DENIED', { cause: error }) }
+        try { assertContentAvailable() } catch (error) { throw new FsError('ABI8 content capability is unavailable.',
+          'FS_PERMISSION_DENIED', { cause: error }) }
         if (this.config.content === undefined) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
         return this.config.content
       }
@@ -529,7 +754,8 @@ export class LinuxFilesPool implements DrainParticipant {
         const bytes = pathBytes(path) + 4 * Buffer.byteLength(project.rootPath) + 12 * (this.config.maxPathBytes + 1)
           + 8 * resultBytes + entries * (2048 + 8 * (Buffer.byteLength(path) + this.config.maxPathBytes + 128))
           + 4 * this.config.replyOverheadBytes
-        if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > this.config.maxResidentBytesPerLane) throw new FdWorkerFailure('FS_TOO_LARGE')
+        if (!Number.isSafeInteger(bytes) || bytes <= 0
+          || bytes > this.config.maxResidentBytesPerLane) throw new FdWorkerFailure('FS_TOO_LARGE')
         return bytes
       }
       const contentRun = <T>(
@@ -594,7 +820,8 @@ export class LinuxFilesPool implements DrainParticipant {
       if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) throw new FdWorkerFailure('FS_TOO_LARGE')
       if (grant.binding !== binding
         || grant.parent.rootPath !== fixedRoot.rootPath || grant.parent.rootDevice !== fixedRoot.rootDevice
-        || grant.parent.rootInode !== fixedRoot.rootInode || grant.parent.rootMountId !== fixedRoot.rootMountId) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+        || grant.parent.rootInode !== fixedRoot.rootInode
+          || grant.parent.rootMountId !== fixedRoot.rootMountId) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       const intent: DirectoryIntent = Object.freeze({ parent: fixedRoot, leaf: grant.leaf })
       const directoryLimits = { maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes + retainedBytes }
       directoryWorkBudget(intent, directoryLimits)
@@ -641,7 +868,8 @@ export class LinuxFilesPool implements DrainParticipant {
           throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified fixed project metadata capability.')
         }
         if (this.slots.some(slot => !slot.client.supportsEnvironmentLayout)) {
-          throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified fixed environment layout capability.')
+          throw new FilesFailure('files/prerequisite-missing',
+            'The original files pool has no verified fixed environment layout capability.')
         }
         if (preferencesParent === undefined || fixedRoot.rootMountId === undefined) {
           throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
@@ -707,7 +935,7 @@ export class LinuxFilesPool implements DrainParticipant {
             }
             throw error
           }
-        }, (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal, 'retained-result')
+        }, (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal, 'retained-lease')
         try { current(); signal?.throwIfAborted(); return held } catch (error) { held.release(); throw error }
       },
       runNativeMutation: <T>(reservationBytes: number, assertOwner: () => void,
@@ -748,7 +976,8 @@ export class LinuxFilesPool implements DrainParticipant {
           try {
             const directory = await client.directory(fixedRoot, leaf, this.config.maxPathBytes, control)
             current()
-            if (!directory.directory || directory.canonicalPath !== workspace.path) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+            if (!directory.directory || directory.canonicalPath !== workspace.path) throw new FdStageFailure('not-published',
+              'FS_PERMISSION_DENIED')
             const info = await client.stat(fixedRoot, leaf, control)
             current()
             if (info?.type !== 'directory') throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
@@ -874,6 +1103,8 @@ export class LinuxFilesPool implements DrainParticipant {
         backend.assertCurrent()
         return Object.freeze({ binding, workspace, projectDirectory })
       },
+      skillVersions,
+      skillProjection,
       withInstructionReaders: async <T>(
         workspace: Workspace, reservedBytes: number,
         build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal,
@@ -898,7 +1129,8 @@ export class LinuxFilesPool implements DrainParticipant {
       streamText,
       readBytes: async (relativePath: string, maxBytes: number, signal?: AbortSignal) => {
         const paths = pathBytes(relativePath)
-        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > this.config.maxReadBytes) throw new FdWorkerFailure('FS_TOO_LARGE')
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0
+          || maxBytes > this.config.maxReadBytes) throw new FdWorkerFailure('FS_TOO_LARGE')
         return await run(2 * (maxBytes + 1) + paths + this.config.replyOverheadBytes,
           (client, control) => client.read(fixedRoot, relativePath, maxBytes, control), signal)
       },
@@ -983,7 +1215,15 @@ export class LinuxFilesPool implements DrainParticipant {
       if (this.slots.some(slot => slot.client.supportsContentReads !== (this.config.content !== undefined))) {
         throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       }
-      if (this.slots.some(slot => slot.client.supportsStaging !== (this.config.staging !== undefined))) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      if (this.slots.some(slot =>
+        slot.client.supportsStaging !== (this.config.staging !== undefined))) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      if (this.config.skillBundles !== undefined && this.slots.some(slot => !slot.client.supportsSkillBundles)) {
+        throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      }
+      if (this.config.skillVersions !== undefined && this.slots.some(slot =>
+        !slot.client.supportsSkillVersions)) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      if (this.config.skillProjection !== undefined && this.slots.some(slot =>
+        !slot.client.supportsSkillProjection)) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       if (this.state !== 'starting') throw new FdWorkerFailure('FS_IO_ERROR')
       this.state = 'running'
       this.assertHealthy()
@@ -1009,7 +1249,7 @@ export class LinuxFilesPool implements DrainParticipant {
     })
   }
 
-  private probeOperation<T>(work: (client: FdWorkerClient, signal: AbortSignal) => Promise<T>): Promise<T> {
+  private probeOperation<T>(work: (client: FdWorkerClient, signal: AbortSignal) => Promise<T>, retainUnknown = false): Promise<T> {
     this.assertHealthy()
     const storage = this.config.staticStorage
     if (storage === undefined) throw new FilesFailure('files/prerequisite-missing', 'files root has no static probe configuration')
@@ -1018,18 +1258,28 @@ export class LinuxFilesPool implements DrainParticipant {
     const observed = Promise.withResolvers<T>()
     const actual = this.withSlot(false, client => work(client, controller.signal))
     const completion = Promise.withResolvers<void>()
-    const operation = { id: randomUUID() as OperationId, settled: completion.promise }
+    const operation: { readonly id: OperationId; readonly settled: Promise<void>; failure?: unknown } = { id
+    : randomUUID() as OperationId, settled: completion.promise }
     this.rootOperation = operation
     const timer = setTimeout(() => {
       controller.abort()
-      observed.reject(new FilesFailure('files/prerequisite-missing', 'files root probe observation expired; actual operation remains owned'))
+      observed.reject(new FilesFailure('files/prerequisite-missing',
+        'files root probe observation expired; actual operation remains owned'))
     }, storage.probeTimeoutMs)
     const finish = (): void => {
       clearTimeout(timer)
       if (this.rootOperation === operation) this.rootOperation = undefined
       completion.resolve()
     }
-    void actual.then((value) => { finish(); observed.resolve(value) }, (error: unknown) => { finish(); observed.reject(error) })
+    void actual.then((value) => { finish(); observed.resolve(value) }, (error: unknown) => {
+      if (retainUnknown && error instanceof FdMutationFailure && error.outcome === 'unknown') {
+        clearTimeout(timer)
+        operation.failure = error
+        observed.reject(error)
+        return
+      }
+      finish(); observed.reject(error)
+    })
     return observed.promise
   }
 

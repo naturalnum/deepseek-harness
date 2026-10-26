@@ -1,26 +1,34 @@
+import { projectApprovedSettings, projectApprovedSettingsNamespace } from './approved-settings.ts'
+import type { ApprovedConfigurationField } from './types.ts'
 /** Fixed native first-screen readers; original registries, DTOs and iteration remain authoritative. */
+import { isDeepStrictEqual } from 'node:util'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
 import type {
   WorkspaceCreateRequest, WorkspaceCreateValue, WorkspaceFollowFrame, WorkspaceValue, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/types'
-import SettingsController from '@deepseek-ai/dsh-api-settings-controller'
+import SettingsController, { type SettingsControllerInternals } from '@deepseek-ai/dsh-api-settings-controller'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
 import Settings from '@deepseek-ai/dsh-settings'
-import type { SettingsDescribeValue } from '@deepseek-ai/dsh-settings/types'
+import type { SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 import * as Locale from '@deepseek-ai/dsh-client-locale'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { CloudAccountApi } from './account-service.ts'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
 import type { ExposureInventory } from './types.ts'
+import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
 
 /** Original service and its actual registration fiber, not a readiness or authorization certificate. */
 export interface FirstScreenNativeOwner { readonly value: object; readonly fiber: Fiber }
+
+/** The original login consumer and its finite native field approvals. */
+export interface NativeSettingsWritePolicy extends ModelKeyPeerConsumer {
+  readonly fields: readonly ApprovedConfigurationField[]
+}
 
 /** Trusted graph inputs; the project callback reads the original installed files owner. */
 export interface FirstScreenNativeInput {
@@ -34,6 +42,10 @@ export interface FirstScreenNativeInput {
   readonly maxInventoryEntries: number
   readonly maxCollectionItems: number
   readonly maxFrameBytes: number
+  /** Optional original login Peer consumer; omission keeps native settings writes closed. */
+  readonly settingsWrites?: NativeSettingsWritePolicy
+  /** Account-owned C04 field check captured by the API preparation. */
+  readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void
 }
 
 /** Fixed constructors and actual facts for later assembly into the API owner's complete inventory. */
@@ -61,7 +73,7 @@ function original(value: object): object {
 /**
  * Find a fixed native service's actual owner through bounded public Cordis registration metadata.
  * @param ctx - original account scope.
- * @param key - one reviewed first-screen service key.
+   * @param key - one reviewed account reader service key.
  * @param value - actual class instance already checked by its consumer.
  * @param maximum - required positive visit bound, with no production default.
  * @returns the sole original service registration and fiber.
@@ -69,7 +81,8 @@ function original(value: object): object {
  */
 export function firstScreenNativeOwner(
   ctx: Context,
-  key: 'workspaceRegistry' | 'settings' | 'remoteAccess' | 'typertGateway' | 'workspaceController' | 'settingsController',
+  key: 'workspaceRegistry' | 'settings' | 'remoteAccess' | 'typertGateway' | 'workspaceController' | 'settingsController'
+    | 'sessionSkillCatalog',
   value: object, maximum: number,
 ): FirstScreenNativeOwner {
   if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()
@@ -277,6 +290,55 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       return result
     }
   }
+  const thisSettings = (): SettingsDescribeValue => {
+    const actual = ctx.get('settingsController')
+    if (actual === undefined || original(actual) !== settingsOwner?.value) unavailable()
+    return actual.describe()
+  }
+  const withSettingsWrite: NonNullable<SettingsControllerInternals['withWrite']> = (request, apply) => {
+    const consumer = input.settingsWrites
+    const invocation = request.invocation
+    if (consumer === undefined || invocation === undefined) unavailable()
+    const ops = request.input, raw = invocation.request
+    if (invocation.service !== 'settingsController' || raw.namespace !== 'settings' || raw.method !== 'mutate'
+      || Object.keys(raw.args).length !== 3 || Object.keys(raw.args).some(key => !['ns', 'ops', 'expectedRevision'].includes(key))
+      || raw.args.ns !== request.namespace || raw.args.expectedRevision !== request.expectedRevision
+      || !isDeepStrictEqual(raw.args.ops, ops)) {
+      throw new CloudApiError('cloud/forbidden', 'The original settings mutation request is not approved.')
+    }
+    const fields = consumer.fields.filter(field => field.namespace === request.namespace)
+    if (request.mode !== 'mutate' || !Array.isArray(ops) || ops.length === 0 || ops.length > fields.length
+      || !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision === undefined || request.expectedRevision < 0) {
+      throw new CloudApiError('cloud/forbidden', 'Only an approved versioned native settings mutation is permitted.')
+    }
+    const selected = new Set<string>()
+    for (const op of ops) {
+      const name = op.path.length === 1 ? op.path[0] : undefined
+      const field = fields.find(field => field.field === name)
+      if (field === undefined || name === undefined || selected.has(name)
+        || !['set', 'unset'].includes(op.op)
+        || field.values !== undefined && (op.op !== 'set' || !field.values.some(value => Object.is(value, op.value)))) {
+        throw new CloudApiError('cloud/forbidden', 'The native settings field or operation is not approved.')
+      }
+      selected.add(name)
+    }
+    return consumer.withModelKeyPeerUse(invocation.peer, async (use, peerCurrent) => {
+      const check = (): void => {
+        peerCurrent(); use.assertCurrent()
+        if (use.binding !== input.binding || use.context.root !== ctx.root) unavailable()
+        input.api.assertInstalled(use.context)
+        input.api.requireRpc('settings/mutate')
+        input.assertSettingsFields(request.namespace, [...selected])
+        current()
+      }
+      check()
+      // A native description proves that approved paths still resolve to supported schema leaves.
+      projectApprovedSettings(thisSettings(), fields, input.maxCollectionItems)
+      const value = await apply({ assertCurrent: check })
+      check()
+      return value
+    })
+  }
   class AccountSettingsController extends SettingsController {
     static inject = ['typert', 'settings', 'loader', 'peCloudApi', 'peAccount']
     constructor(owner: Context) {
@@ -285,20 +347,26 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       const actualProvider = owner.get('settings')
       if (!(actualProvider instanceof Settings)) unavailable()
       provider = original(actualProvider)
-      super(owner)
+      super(owner, { withWrite: withSettingsWrite })
       settingsOwner = { value: this, fiber: owner.fiber }
       owner.effect(() => () => { input.api.invalidate() })
+    }
+    override async mutate(ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined): Promise<SettingsNamespaceView> {
+      const result = await super.mutate(ns, ops, expectedRevision)
+      current()
+      const fields = input.settingsWrites?.fields.filter(field => field.namespace === ns) ?? []
+      const projected = projectApprovedSettingsNamespace(result, fields, input.maxCollectionItems)
+      bounded(projected)
+      current()
+      return projected
     }
     override describe(): SettingsDescribeValue {
       admit('settings/describe')
       const result = super.describe()
       if (result.namespaces.length > input.maxCollectionItems) unavailable()
-      const rows = result.namespaces.filter(row => row.ns === 'locale')
-      const locale = rows[0]
-      if (rows.length !== 1 || locale === undefined) unavailable()
-      for (const value of [locale.value, locale.base, locale.user]) preference(value)
-      // These flags describe this Cloud face's unavailable write/document operations, not physical disk absence.
-      const projected: SettingsDescribeValue = { writable: false, hasDocument: false, namespaces: rows }
+      const fields = input.settingsWrites?.fields ?? [{ namespace: 'locale', field: 'preference' }]
+      const projected = projectApprovedSettings(result, fields, input.maxCollectionItems)
+      projected.writable = input.settingsWrites !== undefined && result.writable
       bounded(projected)
       admit('settings/describe')
       return projected
@@ -313,7 +381,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       const rpc: ExposureInventory['rpcEndpoints'][number][] = [], streams: ExposureInventory['streamEndpoints'][number][] = []
       for (const [expected, key, namespace, selected, prototype] of [
         [workspaceOwner, 'workspaceController', 'workspace', ['follow', 'initializeDefault', 'create'], AccountWorkspaceController.prototype],
-        [settingsOwner, 'settingsController', 'settings', ['describe'], AccountSettingsController.prototype],
+        [settingsOwner, 'settingsController', 'settings', input.settingsWrites === undefined ? ['describe'] : ['describe', 'mutate'], AccountSettingsController.prototype],
         [accessOwner, 'remoteAccess', 'remoteAccess', ['follow'], RemoteAccess.prototype],
       ] as const) {
         if (expected === undefined) unavailable()
@@ -338,10 +406,4 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
         streamEndpoints: Object.freeze(streams), exactFetchRoutes: Object.freeze([]) })
     },
   })
-}
-
-function preference(value: JsonValue | undefined): void {
-  if (value === undefined) return
-  if (value === null || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).some(key => key !== 'preference') || (value.preference !== undefined && typeof value.preference !== 'string')) unavailable()
 }

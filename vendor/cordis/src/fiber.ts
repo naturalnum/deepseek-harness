@@ -47,7 +47,7 @@ Object.defineProperty(ValidationError.prototype, kValidationError, {
  * @returns the validated config, or `config` unchanged if the runtime has no schema.
  * @throws {ValidationError} when validation reports issues.
  */
-export function resolveConfig(runtime: Plugin.Runtime, config: any) {
+export function resolveConfig(runtime: Pick<Plugin.Runtime, 'Config'>, config: any) {
   if (!runtime.Config) return config
   // TODO: async validation
   const result = runtime.Config['~standard'].validate(config)

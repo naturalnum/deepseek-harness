@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
-import { boot } from '../src/index.ts'
+import { boot, reconcileProfilePatches } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
 
@@ -300,5 +300,39 @@ describe('shipped builtins', () => {
       delete (globalThis as { __REALM_SEEN__?: string }).__REALM_SEEN__
       await ctx.fiber.dispose()
     }
+  })
+})
+
+
+describe('native recomposition settlement', () => {
+  it('joins actual old-fiber cleanup before judging its replacement activation', async () => {
+    const { ctx } = await bootTree('- id: target\n  name: ./noop.mjs\n  config: { value: 1 }\n')
+    const release = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+    try {
+      const entry = [...ctx.loader.entries()].find(row => row.options.id === 'target')
+      if (entry?.fiber === undefined) throw new Error('Original target fiber absent')
+      entry.fiber.effect(() => async () => { entered.resolve(undefined); await release.promise })
+      let settled = false
+      const actual = reconcileProfilePatches(ctx, [{ id: 'target', config: { value: 2 } }], NAME, ['target'])
+        .then(() => { settled = true })
+      await entered.promise
+      expect(settled).toBe(false)
+      release.resolve(undefined); await actual
+      expect(entry.options.config).toEqual({ value: 2 })
+      expect(entry.fiber?.state).toBe(FiberState.ACTIVE)
+    } finally { release.resolve(undefined); await ctx.fiber.dispose() }
+  })
+
+  it('keeps an actual asynchronous native failure after child update settlement', async () => {
+    const { ctx } = await bootTree('- id: target\n  name: ./failure.mjs\n  config: { fail: false }\n', {
+      'failure.mjs': 'export async function apply(_ctx, config) { if (config.fail) throw new Error("actual reload failure") }\n',
+    })
+    try {
+      await expect(reconcileProfilePatches(ctx, [{ id: 'target', config: { fail: true } }], NAME, ['target']))
+        .rejects.toThrow('actual reload failure')
+      const entry = [...ctx.loader.entries()].find(row => row.options.id === 'target')
+      expect(entry?.fiber?.state).toBe(FiberState.FAILED)
+      expect(ctx.fiber.state).toBe(FiberState.ACTIVE)
+    } finally { await ctx.fiber.dispose() }
   })
 })

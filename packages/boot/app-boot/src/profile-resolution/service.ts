@@ -114,15 +114,17 @@ export class PluginPackages extends Service {
    * Locate the package named by a specifier without requiring a package export.
    * @param specifier - module specifier whose package owns the requested module.
    * @param parentURL - URL whose Node lookup order applies.
+   * @param options Fresh inspection reads the resolved manifest without replacing cached running-module metadata.
    * @returns the parsed package, or undefined when no package owns the request.
    */
-  packageOf(specifier: string, parentURL: string): PluginPackage | undefined {
+  packageOf(specifier: string, parentURL: string, options?: { fresh?: boolean }): PluginPackage | undefined {
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
     const dir = this.interception === undefined
       ? packageDirFromParent(name, parentURL)
       : this.interception.packageDir(name, parentURL)
     if (dir === undefined) return undefined
+    if (options?.fresh) return readPackage(dir, name)
     const key = JSON.stringify({ dir, name })
     if (!this.packages.has(key)) this.packages.set(key, readPackage(dir, name))
     return this.packages.get(key)

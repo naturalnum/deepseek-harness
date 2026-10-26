@@ -1,4 +1,5 @@
 /** Optional download actions bound to one original prepared page and actual native Remote. */
+import { observeCloudDisposal } from './observe-disposal.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -69,7 +70,7 @@ export function installCloudFileDownloads(ctx: Context, page: FileDownloadPage):
     }
   })
   const stop = (): void => {
-    void dependency.dispose().catch((error: unknown) => { console.error('Cloud download withdrawal unconfirmed:', error) })
+    void observeCloudDisposal(dependency.dispose).catch((error: unknown) => { console.error('Cloud download withdrawal unconfirmed:', error) })
   }
   signal.addEventListener('abort', stop, { once: true })
   ctx.effect(() => async () => {

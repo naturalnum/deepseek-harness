@@ -2,8 +2,8 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -13,8 +13,9 @@ import { AccountMountPrerequisiteError, requireAccountProductionPorts, type Acco
 import { deriveAccountLayout, defaultProjectLayout } from '../src/account-layout.ts'
 import { RuntimeCapacity } from '../src/capacity.ts'
 import { createProcessInstanceIdentity } from '../src/instance-identity.ts'
-import type { AccountId, AccountMountInput, OwnerEpoch, RuntimeConfig } from '../src/types.ts'
+import type { AccountId, AccountMountInput, AccountOwner, OwnerEpoch, RuntimeConfig } from '../src/types.ts'
 import NativeAccountProbe from './fixtures/native-probe.ts'
+import { PostgresOwnerStore } from '../src/owner-store.ts'
 
 const factories: AccountFactory[] = []
 const directories: string[] = []
@@ -220,6 +221,9 @@ describe('bounded concrete native account mounts', () => {
     finish.resolve(undefined)
     await expect(closed).resolves.toMatchObject({ status: 'unknown', native: { status: 'unknown', errorEvents: 1 } })
     expect(value.inspect()).toMatchObject({ slots: 2, unknown: 1 })
+    expect(value.stopNative(a.input.binding.accountId)).toBe(closed)
+    expect(() => capacity.reserveMount(a.input.binding.accountId)).toThrow('already reserved')
+    expect(() => capacity.reserveDrain(a.input.binding.accountId)).toThrow('drain capacity')
     expect(outcomeA.context.get('loader')).toBeUndefined()
     expect(() => { value.assertMountCurrent(outcomeA.binding) }).toThrow('no longer current')
     expect(() => { value.assertMountCurrent(outcomeB.binding) }).not.toThrow()
@@ -250,4 +254,115 @@ describe('bounded concrete native account mounts', () => {
     await expect(actual).resolves.toMatchObject({ status: 'failed' })
     await expect(value.borrowCurrent(f.input.binding)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   })
+
+  it('cannot issue a configuration completion receipt from a native-only graph without production ready ownership', async () => {
+    const { value } = factory(), f = fixture('configuration-requires-ready')
+    const actual = value.startNativeMount(f.input, f.recipe)
+    f.resume.resolve(undefined)
+    const outcome = await actual
+    if (outcome.status !== 'mounted') throw new Error('Actual native mount must succeed')
+    let calls = 0
+    expect(() => value.scheduleConfigurationRebuild(outcome.binding, {
+      async afterRequest() { calls++ }, async closePeers() { calls++ }, assertPrincipal() { calls++ },
+      async prepare() { calls++; return { accepted: true as const, intent: 'unreachable' } },
+      async apply() { calls++; return 'unreachable' }, async verify() { calls++; return 'unreachable' },
+      failed() { calls++ },
+    })).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+    expect(calls).toBe(0)
+    expect(value.inspect()).toMatchObject({ pending: 0, borrows: 0 })
+  })
+
+})
+
+
+function observedOwner(f: ReturnType<typeof fixture>): AccountOwner {
+  return Object.freeze({ accountId: f.input.binding.accountId, ownerInstanceId: f.input.instanceId,
+    epoch: f.input.binding.epoch, recipeVersion: f.input.binding.recipeVersion, phase: 'ready',
+    heartbeatAt: '2026-10-25T00:00:00.000Z', updatedAt: '2026-10-25T00:00:00.000Z' })
+}
+
+it('never claims or mounts an absent graph when borrowing observed local ownership', async () => {
+  const { value } = factory(), f = fixture('borrow-absent')
+  const query = vi.fn(() => Promise.reject(new Error('No SQL is permitted at the factory borrow operation')))
+  const owners = new PostgresOwnerStore({ query }, { instanceId: f.input.instanceId },
+    { maxMountedAccounts: 4, maxConcurrentMounts: 2, maxConcurrentDrains: 2 })
+  const claim = vi.spyOn(value, 'claimAndMount'), mount = vi.spyOn(value, 'startNativeMount')
+  const ownerClaim = vi.spyOn(owners, 'claim')
+  await expect(value.borrowOwned(owners, observedOwner(f))).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  expect(value.inspect()).toMatchObject({ slots: 0, borrows: 0 })
+  expect(f.starts()).toBe(0)
+  expect(query).not.toHaveBeenCalled(); expect(ownerClaim).not.toHaveBeenCalled()
+  expect(claim).not.toHaveBeenCalled(); expect(mount).not.toHaveBeenCalled()
+})
+
+it.each(['mounting', 'mounted-unpublished'] as const)
+('does not promote a real native %s graph or recreate its slot for an observed owner borrow', async (phase) => {
+  const { value } = factory(), f = fixture('borrow-' + phase)
+  const query = vi.fn(() => Promise.reject(new Error('No SQL is permitted at the factory borrow operation')))
+  const owners = new PostgresOwnerStore({ query }, { instanceId: f.input.instanceId },
+    { maxMountedAccounts: 4, maxConcurrentMounts: 2, maxConcurrentDrains: 2 })
+  const actual = value.startNativeMount(f.input, f.recipe)
+  await f.entered.promise
+  if (phase === 'mounted-unpublished') { f.resume.resolve(undefined); await actual }
+  const claim = vi.spyOn(value, 'claimAndMount'), mount = vi.spyOn(value, 'startNativeMount')
+  const before = value.inspect()
+  await expect(value.borrowOwned(owners, observedOwner(f))).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  expect(value.inspect()).toEqual(before)
+  expect(query).not.toHaveBeenCalled(); expect(claim).not.toHaveBeenCalled(); expect(mount).not.toHaveBeenCalled()
+  expect(f.starts()).toBe(1)
+  f.resume.resolve(undefined)
+  await actual
+})
+
+
+it('[observation] reads actual empty, pending, attached and disposed native objects without making them ready', async () => {
+  const rows: Readonly<Record<string, string | number | boolean | null>>[] = []
+  const capacity = new RuntimeCapacity({ maxMountedAccounts: 4, maxConcurrentMounts: 2, maxConcurrentDrains: 2 })
+  const value = new AccountFactory(capacity, limits, (row) => { rows.push(row) })
+  factories.push(value)
+  value.logObservation()
+  expect(rows.at(-1)).toMatchObject({ slots: 0, retainedContexts: 0, activeContexts: 0 })
+  const f = fixture('native-object-observation')
+  value.logObservation(f.input.binding.accountId)
+  expect(rows.at(-1)).toMatchObject({
+    accountId: f.input.binding.accountId, slotPresent: false, nativeContextPresent: false, workspaceRecords: 0,
+  })
+  const actual = value.startNativeMount(f.input, f.recipe)
+  value.logObservation()
+  expect(rows.findLast(row => row.event === 'factory-snapshot')).toMatchObject({ slots: 1, retainedContexts: 0, activeContexts: 0 })
+  const ctx = await f.entered.promise
+  value.logObservation()
+  expect(rows.findLast(row => row.event === 'factory-snapshot')).toMatchObject({ slots: 1, retainedContexts: 1, activeContexts: 1 })
+  expect(rows.at(-1)).toMatchObject({ nativeContextPresent: true, workspaceRegistryPresent: false, workspaceRecords: null })
+  expect(rows.find(row => row.event === 'context-attached')).toMatchObject({
+    accountId: f.input.binding.accountId, epoch: f.input.binding.epoch, rootFiberUid: ctx.root.fiber.uid,
+  })
+  f.resume.resolve(undefined)
+  await actual
+  expect(() => { value.assertBusinessCurrent(ctx.get('peAccount')!) }).toThrow('production readiness')
+  await value.stopNative(f.input.binding.accountId)
+  expect(rows.find(row => row.event === 'native-disposal-observed')).toMatchObject({
+    nativeDisposal: 'confirmed', contextActive: ctx.fiber.state === FiberState.ACTIVE,
+  })
+  value.logObservation()
+  expect(rows.findLast(row => row.event === 'factory-snapshot')).toMatchObject({
+    slots: 1, retainedContexts: 1, activeContexts: ctx.fiber.state === FiberState.ACTIVE ? 1 : 0,
+  })
+  expect(JSON.stringify(rows)).not.toContain(f.input.layout.privateRoot)
+})
+
+it('[observation] contains a failed output callback while the same native mount and close settle', async () => {
+  const capacity = new RuntimeCapacity({ maxMountedAccounts: 4, maxConcurrentMounts: 2, maxConcurrentDrains: 2 })
+  const observed = vi.fn(() => { throw new Error('Synthetic unavailable log output') })
+  const value = new AccountFactory(capacity, limits, observed)
+  factories.push(value)
+  expect(() => { value.logObservation() }).not.toThrow()
+  const f = fixture('failed-output-observation')
+  const actual = value.startNativeMount(f.input, f.recipe)
+  await f.entered.promise
+  f.resume.resolve(undefined)
+  expect((await actual).status).toBe('mounted')
+  await value.stopNative(f.input.binding.accountId)
+  expect(value.inspect()).toMatchObject({ slots: 1, borrows: 0 })
+  expect(observed).toHaveBeenCalled()
 })

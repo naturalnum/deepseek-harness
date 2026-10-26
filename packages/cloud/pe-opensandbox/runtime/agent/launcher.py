@@ -9,8 +9,8 @@ import struct
 import subprocess
 import time
 
-from paths import ENV, ENV_ROOT, project_path
-from wire import LIMITS
+from paths import ENV, ENV_ROOT, project_path, open_skill_world, skill_world_argv
+from wire import LIMITS, skill_parent, skill_world
 
 BWRAP_HASH = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 
@@ -45,7 +45,7 @@ def exited(fd):
 
 
 class Owner:
-    def __init__(self, project, roots):
+    def __init__(self, project, roots, skill_policy=None):
         if not __debug__:
             raise RuntimeError('optimized Python is unsupported by this reviewed fixture')
         assert os.getuid() == 0 and len(os.listdir('/proc/self/task')) == 1
@@ -54,9 +54,10 @@ class Owner:
         with open('/trusted/bwrap', 'rb') as f:
             assert os.fstat(f.fileno()).st_size == 814328 and hashlib.sha256(f.read(814329)).hexdigest() == BWRAP_HASH
         self.project, self.roots, self.base = project_path(project), roots, world_argv(project)
+        self.skill_parent = None if skill_policy is None else skill_parent(skill_policy)
         self.slots, self.closed = {}, False
 
-    def register(self, identity, argv, cwd, stdin_mode, batch=b'', *, role):
+    def register(self, identity, argv, cwd, stdin_mode, batch=b'', *, role, working_copies=None):
         assert type(identity) is str and 1 <= len(identity) <= 64
         assert not self.closed and identity not in self.slots and len(self.slots) < 4
         assert type(argv) is list and 1 <= len(argv) <= 16 and os.path.isabs(argv[0])
@@ -65,17 +66,22 @@ class Owner:
         assert type(stdin_mode) is str and stdin_mode in ['ignore', 'batch']
         assert stdin_mode != 'ignore' or batch == b''
         assert role in ['foreground', 'service']
-        op = Operation(self, identity, argv, cwd, stdin_mode, batch, role)
+        assert (self.skill_parent is None) == (working_copies is None)
+        fixed = None if working_copies is None else skill_world(working_copies)
+        assert fixed is None or {k: fixed[k] for k in ['metadata', 'skills', 'maxCopies']} == self.skill_parent
+        op = Operation(self, identity, argv, cwd, stdin_mode, batch, role, fixed)
         self.slots[identity] = op  # Slot/intent retained before any FD or process; never reused.
         return op
 
 
 class Operation:
-    def __init__(self, owner, identity, argv, cwd, stdin_mode, batch, role):
+    def __init__(self, owner, identity, argv, cwd, stdin_mode, batch, role, working_copies=None):
         self.owner, self.identity, self.batch = owner, identity, batch
         self.role = role
+        self.working_copies = working_copies
         self.spec = json.dumps({'argv': argv, 'env': ENV, 'roots': owner.roots,
-                                'projectRoot': owner.project, 'cwd': cwd, 'stdinMode': stdin_mode}, separators=(',', ':')).encode()
+                                'projectRoot': owner.project, 'cwd': cwd, 'stdinMode': stdin_mode,
+                                **({} if working_copies is None else {'skillWorld': working_copies})}, separators=(',', ':')).encode()
         assert len(self.spec) <= 4096
         self.fds, self.eof, self.selector = set(), set(), None
         self.process = self.pidfd = self.gate = None
@@ -168,17 +174,21 @@ class Operation:
         self.attempted, self.phase = True, 'bwrap-launch'
         self.prepare_deadline = time.monotonic() + LIMITS['prepareMs'] / 1000
         self.selector = selectors.DefaultSelector()
+        opened = None if self.working_copies is None else open_skill_world(self.owner.project, self.owner.roots[self.owner.project], self.working_copies, self.fds)
+        source_fds = [] if opened is None else [opened['metadataFd']] + [copy['fd'] for copy in opened['copies']]
+        anchors = set(self.fds) - set(source_fds)
+        base = self.owner.base if opened is None else skill_world_argv(self.owner.base, self.owner.project, opened)
         cfg_r, cfg_w = self.pipe(); status_r, status_w = self.pipe(); gate_r, self.gate = self.pipe()
         in_r, in_w = self.pipe(); out_r, out_w = self.pipe(); err_r, err_w = self.pipe()
         meta_r, meta_w = self.pipe(); block_r, block_w = self.pipe(); diag_r, diag_w = self.pipe()
         child = [cfg_r, status_w, gate_r, in_r, out_w, err_w, meta_w, block_r]
-        command = self.owner.base + ['--as-pid-1', '--json-status-fd', str(meta_w), '--block-fd', str(block_r), '--',
+        command = base + ['--as-pid-1', '--json-status-fd', str(meta_w), '--block-fd', str(block_r), '--',
                           '/usr/local/bin/python3', '-I', '-S', '-B', '/trusted/bwrap-revision/guardian.py',
                           *(str(fd) for fd in child[:6])]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=diag_w,
                                         user=2000, group=2000, extra_groups=[], env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': ENV['LANG']},
-                                        close_fds=True, pass_fds=tuple(child))
-        for fd in child + [diag_w]:
+                                        close_fds=True, pass_fds=tuple(child + source_fds))
+        for fd in child + [diag_w] + source_fds + list(anchors):
             self.close(fd)
         for fd, name in [(out_r, 'stdout'), (err_r, 'stderr'), (status_r, 'status'), (meta_r, 'metadata'), (diag_r, 'diagnostic')]:
             os.set_blocking(fd, False)
@@ -274,6 +284,7 @@ class Operation:
         self.gate = None
         self.selector.close()
         self.spec = self.batch = b''
+        self.working_copies = None
         self.released = True  # Retained finite raw/results stay charged in the four Owner slots.
 
     def result(self):

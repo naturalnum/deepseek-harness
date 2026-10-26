@@ -79,7 +79,9 @@ it('does not start late recovery after Cordis disposal while original runtime st
 })
 
 
-it.each(['creating', 'failed', 'unknown'] as const)('audits verified refused %s metadata through the original maintenance participant', async (initial) => {
+it.each((['fixed-ttl-bounds', 'host-bind-bounds'] as const).flatMap(refusalCode =>
+  (['creating', 'failed', 'unknown'] as const).map(initial => ({ refusalCode, initial }))))
+('audits verified $refusalCode $initial metadata through the original maintenance participant', async ({ refusalCode, initial }) => {
   const f = fixture(), now = Date.parse('2026-10-22T02:15:00.000Z')
   const registeredVerifier = vi.spyOn(f.recovery, 'registerVerifier')
   f.recovery.migrate = vi.fn(); f.recovery.locateInstance = vi.fn(); f.recovery.recoverAccount = vi.fn()
@@ -91,7 +93,7 @@ it.each(['creating', 'failed', 'unknown'] as const)('audits verified refused %s 
     executionProtocolVersion: null, executionCapabilities: [], lastActivityAt: intent.requestedAt,
     lastCheckedAt: intent.requestedAt, failureCode: initial === 'failed' ? PROVIDER_CREATE_REFUSAL_CODE : null }
   const item = { createOutcome: 'rejected-before-provider-create', sandboxId: null, intent, intentDigest: recoveryIntentDigest(intent),
-    refusalCode: 'fixed-ttl-bounds', knownRefusalEvidenceRef: 'test:refusal', completedRequestEvidenceRef: 'test:completed',
+    refusalCode, knownRefusalEvidenceRef: 'test:refusal', completedRequestEvidenceRef: 'test:completed',
     providerCreateNotStartedEvidenceRef: 'test:not-started', lateStartsRevokedEvidenceRef: 'test:late-loss' }
   // Publication intent has exactly the original ten immutable fields.
   const originalIntent = Object.fromEntries(['allocationId', 'accountId', 'epoch', 'sessionId', 'workspaceId', 'environmentVersion',
@@ -104,6 +106,7 @@ it.each(['creating', 'failed', 'unknown'] as const)('audits verified refused %s 
   const witness = new RootRecoveryWitness({ value: () => value, assertCurrent() {} },
     { maxBytes: 32768, maxAccounts: 2, maxAllocations: 8, maxFieldBytes: 256, maxAgeMs: 30000 },
     i => ({ bootId: i.bootId, pidNamespace: i.pidNamespace, original: 'absent' }), () => now)
+  expect(witness.verifyAllocation(current)).toMatchObject({ refusalCode })
   const close = vi.fn(); seam.open.mockReturnValue({ witness, close })
   vi.spyOn(PostgresAllocationStore.prototype, 'migrate').mockResolvedValue(undefined)
   vi.spyOn(PostgresAllocationStore.prototype, 'get').mockImplementation(async () => current)

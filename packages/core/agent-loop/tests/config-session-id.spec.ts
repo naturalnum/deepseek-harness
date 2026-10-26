@@ -333,15 +333,16 @@ describe('config-driven session id', () => {
   })
 
   it.each(['resolve', 'reject'] as const)(
-    'abandons an exact-id open that later %ss when AgentLoop disposal starts',
+    'waits for an exact-id open that later %ss after AgentLoop disposal starts',
     async (outcome) => {
       const root = await mkdtemp(join(tmpdir(), 'dsh-cfg-exact-dispose-'))
       dirs.push(root)
       const ctx = await makeCoreContext()
       await ctx.plugin(JsonlSessionPersistence, { root })
       const opening = Promise.withResolvers<SessionHandle>()
-      vi.spyOn(ctx.sessionPersistence, 'open').mockReturnValue(opening.promise)
-      const closed = vi.fn(async () => {})
+      const open = vi.spyOn(ctx.sessionPersistence, 'open').mockReturnValue(opening.promise)
+      const closeFinished = Promise.withResolvers<undefined>()
+      const closed = vi.fn(async () => { await closeFinished.promise })
       const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
       const failures: unknown[] = []
       ctx.on('agent-loop/config-start-failed', ({ error }) => { failures.push(error) })
@@ -349,20 +350,32 @@ describe('config-driven session id', () => {
       const loop = await ctx.plugin(AgentLoop, {
         agents: [{ id: 'main', sessionId: SessionId('config-exact-dispose'), model: 'mock' }],
       })
-      await loop.dispose()
-      if (outcome === 'resolve') {
-        opening.resolve({ close: closed } as unknown as SessionHandle)
-      } else {
-        opening.reject(new Error('startup cancelled by teardown'))
+      await expect.poll(() => open).toHaveBeenCalledOnce()
+      const disposal = loop.dispose()
+      let settled = false
+      void disposal.then(() => { settled = true }, () => { settled = true })
+      try {
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        expect(settled).toBe(false)
+        if (outcome === 'resolve') {
+          opening.resolve({ close: closed } as unknown as SessionHandle)
+          await expect.poll(() => closed).toHaveBeenCalledOnce()
+          expect(settled).toBe(false)
+          closeFinished.resolve(undefined)
+        } else {
+          opening.reject(new Error('startup cancelled by teardown'))
+        }
+        await disposal
+        if (outcome === 'resolve') expect(closed).toHaveBeenCalledOnce()
+        expect(ctx.agents.get(SessionId('config-exact-dispose'))).toBeUndefined()
+        expect(failures).toEqual([])
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        opening.reject(new Error('exact-id fixture finished'))
+        closeFinished.resolve(undefined)
+        try { await disposal }
+        finally { warn.mockRestore(); await ctx.fiber.dispose() }
       }
-      await Promise.resolve()
-      // The abandoned handle is closed; the rejected open is silently released.
-      if (outcome === 'resolve') await expect.poll(() => closed).toHaveBeenCalledOnce()
-      expect(ctx.agents.get(SessionId('config-exact-dispose'))).toBeUndefined()
-      expect(failures).toEqual([])
-      expect(warn).not.toHaveBeenCalled()
-      warn.mockRestore()
-      await ctx.fiber.dispose()
     },
   )
 

@@ -457,6 +457,12 @@ Concrete agent factory and driver service.
  */
 stop(): Promise<void>
 
+/** Observe actual driver, maintenance, durable inbox and factory startup work without stopping it.
+ * @param maximum Explicit account graph bound on retained Agent lifecycles.
+ * @returns True only when every original owned activity is quiescent; public idle status alone is insufficient.
+ */
+isQuiescent(maximum: number): boolean
+
 /**
  * Create an agent and session under one caller-supplied identity, owned by
  * the accessing fiber. Constructor-driven config calls mint a fresh combined

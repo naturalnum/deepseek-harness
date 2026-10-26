@@ -40,10 +40,13 @@
     "@deepseek-ai/dsh-attachment-local": "workspace:*",
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
-    "@deepseek-ai/dsh-workspace": "workspace:*"
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:~"
+    "@deepseek-ai/schemastery": "workspace:~",
+    "yauzl": "3.4.0",
+    "fflate": "0.8.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -58,7 +61,9 @@
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/dsh-storage-json": "workspace:*",
-    "@deepseek-ai/dsh-storage-domain": "workspace:*"
+    "@deepseek-ai/dsh-storage-domain": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@types/yauzl": "2.10.3"
   },
   "repository": {
     "type": "git",

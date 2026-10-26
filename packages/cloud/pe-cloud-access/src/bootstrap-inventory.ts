@@ -2,7 +2,7 @@
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import { CloudApiError, type ApprovedConfigurationCatalog } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, CloudPluginService, projectApprovedSettings, type ApprovedConfigurationCatalog } from '@deepseek-ai/dsh-pe-cloud-api'
 import type { BootstrapConfiguration } from './types.ts'
 
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The actual approved plugin inventory could not be confirmed.') }
@@ -50,18 +50,28 @@ export async function inspectBootstrapConfiguration(
   for (const approved of catalog.plugins) {
     sameOwners()
     const matching = leaves.filter(entry => entry.id === approved.entryId), entry = matching[0]
-    if (matching.length !== 1 || entry === undefined || seen.has(entry) || entry.disabled
-      || entry.options.name !== approved.moduleName || entry.fiber?.state !== FiberState.ACTIVE) unavailable()
+    const optional = approved.control?.operations.includes('enabled') === true && catalog.pluginControl !== undefined
+    const controls = ctx.get('cloudPlugins')
+    if (optional) {
+      if (!(controls instanceof CloudPluginService)) unavailable()
+      controls.inspect()
+    }
+    if (matching.length !== 1 || entry === undefined || seen.has(entry)
+      || entry.options.name !== approved.moduleName
+      || (entry.disabled ? !optional || entry.options.disabled !== true
+        || entry.fiber !== undefined && entry.fiber.state !== FiberState.DISPOSED : entry.fiber?.state !== FiberState.ACTIVE)) unavailable()
     seen.add(entry)
     const fiber = entry.fiber, namespace = entry.moduleNamespace, baseUrl = entry.parent.tree.ctx.baseUrl
-    if (baseUrl === undefined || namespace === undefined || fiber.ctx.root !== ctx.root) unavailable()
+    if (baseUrl === undefined || !entry.disabled && (namespace === undefined || fiber?.ctx.root !== ctx.root)) unavailable()
     const plan = entry.prepareConfigUpdate(entry.options.config)
     if (plan.impact !== 'none') unavailable()
     const metadata = packages.packageOf(entry.options.name, baseUrl)
     if (metadata?.name !== approved.packageName || metadata.version !== approved.packageVersion) unavailable()
     const check = (): void => {
       sameOwners()
-      if (entry.disabled || entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE
+      if (entry.disabled ? !optional || entry.options.disabled !== true || fiber !== undefined && fiber.state !== FiberState.DISPOSED
+        : fiber?.state !== FiberState.ACTIVE) unavailable()
+      if (entry.fiber !== fiber
         || entry.moduleNamespace !== namespace || entry.options.name !== approved.moduleName
         || entry.id !== approved.entryId || entry.parent.tree.ctx.baseUrl !== baseUrl
         || packages.packageOf(entry.options.name, baseUrl) !== metadata) unavailable()
@@ -70,16 +80,32 @@ export async function inspectBootstrapConfiguration(
     check()
     const imported: unknown = await entry.parent.tree.import(entry.options.name)
     check()
-    if (imported !== namespace) unavailable()
+    if (namespace !== undefined && imported !== namespace) unavailable()
     facts.push(check)
+  }
+  if (catalog.fields.length !== 0) {
+    const settings = ctx.get('settingsController')
+    if (settings === undefined) unavailable()
+    const check = (): void => {
+      sameOwners()
+      const actual = ctx.get('settingsController')
+      if (actual === undefined || original(actual) !== original(settings)) unavailable()
+      const form = projectApprovedSettings(settings.describe(), catalog.fields, catalog.maxEntries)
+      if (!form.writable) unavailable()
+    }
+    check(); facts.push(check)
   }
   const assertCurrent = (): void => { sameOwners(); for (const check of facts) check() }
   assertCurrent()
   return {
     configuration: Object.freeze({ catalogVersion: catalog.catalogVersion,
-      plugins: Object.freeze(catalog.plugins.map(plugin => Object.freeze({ id: plugin.id,
-        installable: plugin.installable, toggleable: plugin.toggleable }))),
-      skills: Object.freeze({ manage: false }), credentials: Object.freeze({ write: false }), fields: Object.freeze([]),
+      plugins: Object.freeze([...catalog.plugins.map(plugin => Object.freeze({ id: plugin.id,
+        installable: plugin.installable, toggleable: plugin.toggleable })),
+      ...(catalog.bundles ?? []).map(bundle => Object.freeze({ id: bundle.id, installable: true, toggleable: false }))]),
+      skills: Object.freeze({ manage: catalog.skills.mode !== 'closed' }),
+      credentials: Object.freeze({ write: false }), fields: Object.freeze(catalog.fields.map(field => Object.freeze({
+        namespace: field.namespace, path: field.field, application: 'live' as const,
+      }))),
     }), assertCurrent,
   }
 }

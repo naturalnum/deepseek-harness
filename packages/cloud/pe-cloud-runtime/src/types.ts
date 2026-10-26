@@ -7,6 +7,18 @@ import type { OwnerRecoveryAudit, OwnerRecoveryExpectation, OwnerRecoveryObserva
 
 export type * from './owner-types.ts'
 
+/** One original terminal operation's native persistence and independently verified new epoch. */
+export interface ConfigurationRebuildReceipt<T, V = void> {
+  readonly verification?: V
+  readonly operationId: OperationId
+  readonly persisted: T
+  readonly application: 'graph'
+  readonly previousEpoch: AccountBinding['epoch']
+  readonly epoch: AccountBinding['epoch']
+  readonly accountId: AccountId
+  readonly recipeVersion: string
+}
+
 /** Authenticated database user id, admitted by access before runtime use. */
 export type AccountId = Branded<'pe-account-id'>
 /** Stable server-derived directory key; it grants no account or filesystem authority. */
@@ -121,6 +133,11 @@ export type ParticipantReceipt = Readonly<{
 /** Root-owned actual work tracker that retains observation after the waiting deadline. */
 export interface DrainParticipant {
   readonly id: ParticipantId
+  /** Observe the original exact epoch without changing admission; omission cannot qualify an idle update.
+   * @param binding Original installed generation.
+   * @returns True only when this owner has no actual work or retained uncertainty for that epoch; passive leases may remain.
+   */
+  isEpochIdle?(binding: AccountBinding): boolean
   /**
    * Join all Root-owned work, including allocations not mounted in an account graph.
    * Required before borrowing the Root metadata database. Repeated calls retain the same actual
@@ -161,6 +178,25 @@ export interface RuntimeConfig {
   readonly maxMountedAccounts: number
   readonly maxConcurrentMounts: number
   readonly maxConcurrentDrains: number
+  /** Explicit Root-instance child hard limits; omission keeps child reservations closed. */
+  readonly subagentCapacity?: SubagentCapacityLimits
+}
+
+/** Immutable instance-local hard limits, separate from native root-subtree Settings. */
+export interface SubagentCapacityLimits {
+  readonly maxActivePerAccount: number
+  readonly maxActiveTotal: number
+  readonly maxDepth: number
+}
+
+/** One actual child residency; an unknown cleanup permanently retains its slot. */
+export interface SubagentCapacityReservation {
+  /**
+   * Settle once from actual native cleanup, never from cancellation or a request deadline.
+   * Unknown retains capacity and prevents account release; later calls cannot clear it.
+   * @param status Actual prepared-Agent cleanup result, or unknown without a native receipt.
+   */
+  settle(status: 'confirmed' | 'unknown'): void
 }
 
 /** Local capacity reservation for a factory; it neither acquires an owner nor publishes a graph. */
@@ -261,10 +297,56 @@ export interface AccountRecoveryRuntime {
   inspectInstance(participant: DrainParticipant, expected: RecoveredInstanceExpectation): Promise<RecoveredInstanceObservation>
 }
 
+/** Rechecked ready ownership and a registered instance; neither an atomic snapshot nor account admission. */
+export interface AccountOwnerResolution {
+  readonly owner: AccountOwner
+  readonly instance: RuntimeInstanceRecord
+}
+
+/** Root-only read facade, separate from recovery and local account acquisition. */
+export interface AccountOwnerResolver {
+  /**
+   * Read an existing owner and its instance, then recheck the ownership tuple without retrying.
+   * @param accountId Authenticated identity supplied by trusted access composition.
+   * Admission and capacity checks may throw before returning a Promise; started reads reject through that Promise.
+   * The Root retains every started read through actual driver settlement; caller cancellation is not exposed.
+   * @returns Existing decoded metadata after at most three original reads; no AccountUse or transport authority.
+   * @throws AccountRuntimeError when metadata is absent, not ready, stopped, inconsistent or changed; original read errors propagate.
+   */
+  resolve(accountId: AccountId): Promise<AccountOwnerResolution>
+}
+
+/** The one actual Access ingress owner; registration grants only ordered Root shutdown. */
+export interface RootIngressCloseOwner {
+  /**
+   * Stop admission synchronously and retain original carrier/auth/pool work through actual closure.
+   * @returns The same actual closure outcome; it must never wait for RuntimeRoot.close().
+   */
+  closeActual(): Promise<void>
+}
+
 /** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
 export interface AccountRuntimeService {
   /** Explicit maintenance Roots expose recovery while rejecting all ordinary account admission; omission keeps recovery closed. */
   readonly recovery?: AccountRecoveryRuntime | undefined
+  /** Original local startup identity for active ordinary Roots; absent for component, maintenance and stopped Roots. */
+  readonly activeInstanceId?: InstanceId | undefined
+  /** Active ordinary Roots expose only bounded reads; component, maintenance and stopped Roots omit this facade. */
+  readonly ownerResolver?: AccountOwnerResolver | undefined
+  /**
+   * Register the single original Access ingress shutdown owner in the actual caller effect.
+   * @param owner Original close owner, registered before it admits authentication or forwarding work.
+   * @returns Withdrawal that starts and joins original closure; failed closure retains the registration.
+   * Registration grants no seal, database, account, recovery or participant authority.
+   */
+  registerIngressClose(owner: RootIngressCloseOwner): () => void | Promise<void>
+  /**
+   * Borrow only an existing ready graph owned by this process and the exact observed owner tuple.
+   * @param expected Original AccountOwner metadata supplied by trusted Host composition, never an AccountBinding.
+   * @returns The original AccountUse after owner and Root rechecks; no claim, mount or recreation is attempted.
+   * A failed recheck releases any acquired borrow. The consumer releases a successful borrow after its work settles.
+   */
+  borrowOwnedAccount(expected: AccountOwner): Promise<AccountUse>
   /**
    * Borrow the active Root's bounded database for an exactly registered Root shutdown owner.
    * Account graphs receive no such capability; borrowing grants no account or execution authority.

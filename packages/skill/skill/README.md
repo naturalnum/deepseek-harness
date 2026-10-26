@@ -48,9 +48,12 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 ### What the registry gives you
 
 - **One merged catalog.** A consumer asks for the current catalog of a workspace and receives every winning skill summary from every provider, sorted by name — no provider-specific ordering or deduplication to do.
+- **Candidate inspection.** `ctx.skills.inspect(options)` reports every contributed candidate, its `selected` state, and the winning `overriddenBy` candidate for covered rows. It uses the same collected selection as `list()` and `get()` and loads no skill bodies.
 - **On-demand loading.** Asking for one skill by name returns the full instruction body from whichever provider owns the winning candidate; the registry re-validates the loaded definition and rejects a stale selection whose name changed between discovery and load.
 - **Embedded skills.** Plugins register an in-memory skill with `ctx.skills.register(...)`; the registry fills in a default invocation policy and the `runtime` provider label. Same-name runtime registrations in one layer are first-wins with a warning.
 - **Provider registration.** A provider contributes its catalog with `ctx.skills.registerProvider(...)`; registration is synchronous, and the returned disposer removes the provider. `runtime` is a reserved provider name.
+
+Providers receive the original borrowed `SkillViewOptions` in both `list` and `get`, including the optional caller `scope`. A provider preparing caller-specific resources must validate the exact live caller and its project through its owning services; neither `scope` nor `cwd` grants authority by itself. Existing providers can continue to use only `cwd` and `signal`.
 
 An invocation policy on every skill decides which surfaces may advertise and load it: `modelInvocable` for model-facing tools and catalogs, `userInvocable` for human-facing commands. The registry keeps all four combinations, so one discovery result can serve both surfaces without conflating their catalogs.
 
@@ -91,7 +94,7 @@ The registry is host+per-scope layered, the shape the tools registry established
 
 ### Catalog collection
 
-A read (`list`/`snapshot`) collects each layer's candidates: runtime skills first, then each provider's `list()` result, awaiting providers sequentially and containing failures. Candidates are validated, deduplicated within the layer, and merged across layers; summaries sort by name. Completed collections are cached per cwd, scope chain, and revision up to `collectCacheMaxEntries`; an in-flight collection retries once when a provider or runtime mutation bumps the revision mid-read, and a second change returns the latest candidates as an incomplete, uncached observation.
+A read (`list`/`snapshot`/`inspect`) collects each layer's candidates: runtime skills first, then each provider's `list()` result, awaiting providers sequentially and containing failures. Candidates are validated, deduplicated within the layer, and merged across layers; summaries sort by name. Completed collections retain both contributed candidates and the winning map and are cached per cwd, scope chain, and revision up to `collectCacheMaxEntries`; an in-flight collection retries once when a provider or runtime mutation bumps the revision mid-read, and a second change returns the latest candidates as an incomplete, uncached observation.
 
 ### Loading and staleness
 
@@ -99,7 +102,7 @@ A read (`list`/`snapshot`) collects each layer's candidates: runtime skills firs
 
 ### Invalidation
 
-The registry has no TTL: only a provider calling its registration-scoped `invalidate()`, or a runtime registration or disposal, clears completed catalogs. Each invalidation bumps a revision, clears the cache, and emits the unfiltered `skills/change` event; consumers refetch with their own lookup options. `invalidate()` takes effect only while the exact registration that received it is still active, so a late callback cannot disturb a replacement provider with the same name.
+The registry has no TTL: only a provider calling its registration-scoped `invalidate()`, or a runtime registration or disposal, clears completed catalogs. Each invalidation bumps a revision, clears the cache, and emits the unfiltered `skills/change` event; consumers refetch with their own lookup options. `invalidate()` takes effect only while the exact registration that received it is still active, so a late callback cannot disturb a replacement provider with the same name. The event declaration is also available from the client-safe type module; importing it loads no registry implementation.
 
 </details>
 
@@ -137,7 +140,7 @@ These limits define when the registry is a poor fit or needs special operational
 - **Invalidation is provider-driven** — the registry has no TTL and cannot infer that an arbitrary remote source changed; each mutable provider must retain and call its registration-scoped `invalidate()` capability from its own observation mechanism.
 - **Providers are queried sequentially** — one slow provider delays every provider registered after it; cancellation stops the caller's wait but cannot terminate work an uncooperative provider keeps running.
 - **Incomplete observations are not retained** — rejected providers are omitted and explicitly supplied candidates remain available only to the current lookup; the registry owns neither a last-good catalog nor per-provider diagnostics.
-- **Duplicate resolution is first-wins** — later lower-priority candidates within a layer are logged and hidden, and a nearer layer shadows a farther one silently; there is no API to inspect all shadowed definitions.
+- **Inspection is Host-only** — candidates and opaque locators remain borrowed readonly provider objects, not resource capabilities or client DTOs. Consumers must authorize and bound their own public projection without exposing private paths or locators. It covers only contributed candidates; rejected duplicate runtime registrations and entries a provider never reported are absent. `complete: false` describes selection only among the observed candidates.
 
 <a id="dev-note"></a>
 ### Dev Note

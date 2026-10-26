@@ -1,6 +1,6 @@
 /** C11 projection from original graph owners and explicitly audited execution/file policies. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
-import { CloudAccountApi, CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, CloudApiError, ExposureService, approvedSettingsMatch, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
 import type { PluginPackages } from '@deepseek-ai/dsh-app-boot'
@@ -24,6 +24,7 @@ const fileStreamEndpoint = 'workspaceFiles/changes'
 
 /**
  * Read original account providers and emit only the existing bounded C11 wire fields.
+ * Open skill/plugin groups and the single approved locale writer retain the original endpoint audits.
  * @param ctx Exact context from the actual AccountUse.
  * @param binding Exact runtime-issued AccountUse binding.
  * @param exposure Original Root exposure owner captured by PeAuthService.
@@ -46,6 +47,13 @@ export async function produceCloudBootstrap(
   const catalog = exposure.approvedConfiguration, manifest = exposure.policy.manifest
   if (catalog === undefined || catalog.recipeVersion !== binding.recipeVersion
     || manifest.recipeVersion !== binding.recipeVersion) unavailable()
+  const skillRpcEndpoints = catalog.skills.mode === 'closed' ? [] : catalog.skills.mode === 'sample'
+    ? ['cloudSkills/current', 'cloudSkills/publish']
+    : ['cloudSkills/current', 'cloudSkills/publish', 'cloudSkills/installed', 'cloudSkills/details',
+      'cloudSkills/install', 'cloudSkills/update', 'cloudSkills/uninstall', 'cloudSkills/download']
+  const pluginRpcEndpoints = catalog.pluginControl === undefined ? [] : PLUGIN_RPC_ENDPOINTS
+  const settingsWrites = catalog.fields.length !== 0
+  const settingsWriter = manifest.rpcEndpoints.find(row => row.endpoint === 'settings/mutate')
   const api = ctx.get('peCloudApi'), files = ctx.get('peCloudFiles')
   if (!(api instanceof CloudAccountApi) || !(files instanceof CloudAccountFiles)
     || files.binding !== binding || api.binding !== binding) unavailable()
@@ -59,7 +67,7 @@ export async function produceCloudBootstrap(
   const services = accountServiceAvailability(ctx)
   const previewRouteSelected = manifest.exactFetchRoutes.some(row => row.method === SERVICE_PREVIEW_ROUTE.method
     && row.path === SERVICE_PREVIEW_ROUTE.path)
-  const factsCurrent = (): void => {
+  const identitiesCurrent = (): void => {
     signal.throwIfAborted()
     current()
     const currentApi = ctx.get('peCloudApi'), currentFiles = ctx.get('peCloudFiles'), currentRegistry = ctx.get('workspaceRegistry')
@@ -75,8 +83,16 @@ export async function produceCloudBootstrap(
     const liveServices = accountServiceAvailability(ctx)
     if (liveServices.developmentServices !== services.developmentServices
       || liveServices.servicePreview !== services.servicePreview) unavailable()
+  }
+  const factsCurrent = (): void => {
+    identitiesCurrent()
     // Only the original native upload and Root's protocol-fixed preview route may coexist.
-    if (manifest.allowedSettings.length !== 0 || manifest.exactFetchRoutes.length > 2) unavailable()
+    const settings = manifest.allowedSettings
+    // Every approved native leaf agrees with the original C04 field declarations.
+    if (!approvedSettingsMatch(catalog.fields, settings)
+      || settingsWrites && (settingsWriter === undefined
+        || settingsWriter.handlerId !== 'native:settingsController' || settingsWriter.guard !== 'authenticated-account')
+      || manifest.exactFetchRoutes.length > 2) unavailable()
     const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
       const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
@@ -90,10 +106,21 @@ export async function produceCloudBootstrap(
     }
     const budget = catalog.maxEntries
     if (manifest.rpcEndpoints.length + manifest.streamEndpoints.length > budget) unavailable()
+    if (skillRpcEndpoints.some(endpoint => !manifest.rpcEndpoints.some(row => row.endpoint === endpoint))) unavailable()
+    if (pluginRpcEndpoints.some(endpoint => !manifest.rpcEndpoints.some(row => row.endpoint === endpoint))) unavailable()
     for (const row of manifest.rpcEndpoints) {
+      const settingsMutation = settingsWrites && row === settingsWriter
+      const plugins = catalog.pluginControl !== undefined && PLUGIN_RPC_ENDPOINTS.includes(row.endpoint)
+        && row.handlerId === 'native:cloudPlugins' && row.guard === 'authenticated-account'
+      const modelKey = catalog.modelKey !== undefined && MODEL_KEY_RPC_ENDPOINTS.includes(row.endpoint)
+        && row.handlerId === 'native:cloudModelKey' && row.guard === 'authenticated-account'
+      const skills = catalog.skills.mode !== 'closed' && (
+        skillRpcEndpoints.includes(row.endpoint)
+          && row.handlerId === 'native:cloudSkills' && row.guard === 'authenticated-account'
+        || row.endpoint === 'skills/list' && row.handlerId === 'native:sessionSkillCatalog' && row.guard === 'account-session')
       if (!/^(?:session|workspace|remoteAccess)\//.test(row.endpoint) && row.endpoint !== 'settings/describe'
         && row.endpoint !== '$events/result' && row.endpoint !== 'cloudProjects/create'
-        && !fileRpcEndpoints.includes(row.endpoint)) unavailable()
+        && !fileRpcEndpoints.includes(row.endpoint) && !modelKey && !skills && !plugins && !settingsMutation) unavailable()
       api.requireRpc(row.endpoint)
     }
     for (const row of manifest.streamEndpoints) {
@@ -105,15 +132,16 @@ export async function produceCloudBootstrap(
     if (selectedFiles) files.assertContentAvailable()
   }
   factsCurrent()
-  const inventory = await inspectBootstrapConfiguration(ctx, catalog, factsCurrent, resolvePackages)
+  const inventory = await inspectBootstrapConfiguration(ctx, catalog, identitiesCurrent, resolvePackages)
   factsCurrent()
-  await api.assertBootstrapCurrent(ctx, signal)
+  const nativeCurrent = await api.assertBootstrapCurrent(ctx, signal)
   factsCurrent()
   inventory.assertCurrent()
   const token = generation()
   const assertCurrent = (): void => {
     factsCurrent()
     inventory.assertCurrent()
+    nativeCurrent()
     if (generation() !== token) unavailable()
   }
   assertCurrent()

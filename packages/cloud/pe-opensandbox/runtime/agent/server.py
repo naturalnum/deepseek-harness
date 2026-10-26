@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from launcher import BWRAP_HASH, Owner
 from manager import Manager
 from paths import ENV_ROOT, project_path
-from wire import AUTH_HEADER, MAX_BODY, MAX_REPLY, Refused, dumps, hex64, keys, loads, require
+from wire import AUTH_HEADER, MAX_BODY, MAX_REPLY, Refused, dumps, hex64, keys, loads, require, skill_parent
 
 ROUTES = {'/handshake', '/prepare', '/commit', '/cancel', '/poll', '/stop', '/seal'}
 
@@ -69,7 +69,7 @@ def configuration(path):
 
 def checked_configuration(config):
     keys(config, ['runtimeIdentity', 'token', 'listenAddress', 'port', 'declaredImageId',
-                  'projectRoot', 'envRoot', 'expectedRoots'])
+                  'projectRoot', 'envRoot', 'expectedRoots'] + (['skillParent'] if 'skillParent' in config else []))
     hex64(config['runtimeIdentity']); hex64(config['token'])
     require(config['listenAddress'] in ['127.0.0.1', '0.0.0.0'] and type(config['port']) is int
             and 1024 <= config['port'] <= 65535, 'invalid_listen')
@@ -89,6 +89,9 @@ def checked_configuration(config):
         root_decimal(row['grant']['maximumBytes']); root_decimal(row['grant']['maximumInodes'])
     require(config['expectedRoots']['project']['device'] != config['expectedRoots']['environment']['device'],
             'independent_filesystems_required')
+    if 'skillParent' in config:
+        fixed = skill_parent(config['skillParent'])
+        require(fixed['skills']['device'] == config['expectedRoots']['project']['device'], 'skill_parent_domain')
     return config
 
 
@@ -129,6 +132,14 @@ def mount_facts(config):
     for path in [config['projectRoot'] + '/.pe']:
         item = os.lstat(path)
         require(stat.S_ISDIR(item.st_mode) and item.st_uid == item.st_gid == 2000, 'world_path_required')
+    if 'skillParent' in config:
+        parent = config['skillParent']
+        for leaf, expected in [('.pe', parent['metadata']), ('.pe/skills', parent['skills'])]:
+            path = config['projectRoot'] + '/' + leaf
+            item = os.lstat(path)
+            require(stat.S_ISDIR(item.st_mode) and item.st_uid == item.st_gid == 2000 and stat.S_IMODE(item.st_mode) == 0o700
+                    and os.path.realpath(path, strict=True) == path and [item.st_dev, item.st_ino] == [int(expected['device']), int(expected['inode'])], 'skill_parent_identity')
+            require(bool(os.statvfs(path).f_flag & os.ST_RDONLY) == (leaf == '.pe'), 'skill_parent_access')
     return result
 
 
@@ -231,9 +242,9 @@ def main():
     config = configuration(sys.argv[1])
     mounts = mount_facts(config)
     roots = kernel_roots(mounts)
-    owner = Owner(config['projectRoot'], roots)  # Same thread/SIGCHLD/hash/physical-root checks.
+    owner = Owner(config['projectRoot'], roots, config.get('skillParent'))  # Same thread/SIGCHLD/hash/physical-root checks.
     manager = Manager(config['runtimeIdentity'], owner, mounts, config['declaredImageId'], config['token'])
-    manager.pins = {'bwrapSha256': BWRAP_HASH, 'userWorldArgvSha256': hashlib.sha256(dumps(owner.base)).hexdigest()}
+    manager.pins = {'bwrapSha256': BWRAP_HASH, 'userWorldArgvSha256': hashlib.sha256(dumps(owner.base if owner.skill_parent is None else {'base': owner.base, 'skillParent': owner.skill_parent, 'policy': 'skill-world-fd-v1'})).hexdigest()}
     sources = {}
     for name in ['server.py', 'wire.py', 'manager.py', 'launcher.py', 'guardian.py', 'paths.py']:
         with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), name), 'rb') as f:

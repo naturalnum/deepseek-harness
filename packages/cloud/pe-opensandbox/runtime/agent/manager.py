@@ -155,7 +155,7 @@ class Manager:
                 row = self.register(body)
                 try:
                     row['kernel'] = self.owner.register(row['id'], spec['argv'], spec['cwd'], spec['stdin']['mode'],
-                                                        batch, role=row['authorization']['role'])
+                                                        batch, role=row['authorization']['role'], working_copies=body.get('skillWorld'))
                     row['kernel'].begin_prepare()
                 except Exception as error:
                     row['failure'] = self.error(error, row['kernel'].phase if row['kernel'] else 'register')

@@ -83,6 +83,8 @@ export interface StorageHandleState {
  * window and drain through the same chain as explicit appends.
  */
 export class JsonlSessionHandle implements SessionHandle {
+  private pendingMutations = 0
+  private pendingReads = 0
   private chain: Promise<unknown> = Promise.resolve()
   private closing: Promise<void> | undefined
   private observedLength = 0
@@ -108,6 +110,13 @@ export class JsonlSessionHandle implements SessionHandle {
     return this.state.inheritedEventCount
   }
 
+  /** Observe the actual handle chain and live buffer; no write or flush is started. */
+  get isQuiescent(): boolean {
+    return this.closing === undefined && this.pendingMutations === 0 && this.pendingReads === 0
+      && this.buffered.length === 0 && this.batchTimer === undefined && !this.drainPaused && this.draining === undefined
+      && (this.access === 'read' || this.state.materialized)
+  }
+
   /**
    * Read a slice of the valid contiguous logical log; see the seam contract.
    * @param offset - first logical seq to include (default 0).
@@ -116,6 +125,11 @@ export class JsonlSessionHandle implements SessionHandle {
    * @returns a slice carrying the aliasing state established by its producer.
    */
   async read(offset = 0, length = Number.MAX_SAFE_INTEGER, options?: SessionHandleReadOptions): Promise<SessionHandleReadResult> {
+    this.pendingReads++
+    try { return await this.readOwned(offset, length, options) } finally { this.pendingReads-- }
+  }
+
+  private async readOwned(offset: number, length: number, options?: SessionHandleReadOptions): Promise<SessionHandleReadResult> {
     // Closed-handle refusal precedes argument validation: a closed handle
     // rejects SessionHandleClosedError regardless of the arguments.
     this.assertOpen('read')
@@ -355,7 +369,8 @@ export class JsonlSessionHandle implements SessionHandle {
 
   /** Serialize one operation onto the chain without the closed-handle refusal (drain-from-close). */
   private enqueueChain(op: () => Promise<void>): Promise<void> {
-    const next = this.chain.then(op)
+    this.pendingMutations++
+    const next = this.chain.then(op).finally(() => { this.pendingMutations-- })
     this.chain = next.catch(() => {})
     return next
   }
@@ -398,6 +413,17 @@ export class JsonlBackendTracker {
 
   /** @param name - backend label used in in-memory revision tokens and teardown errors. */
   constructor(private readonly name: string) {}
+
+  /** Observe the original handles and claims without constructing a second work table.
+   * @param maximum Explicit retained-handle bound.
+   * @returns True only after all created sessions, handle I/O, buffers and write claims have settled.
+   */
+  isQuiescent(maximum: number): boolean {
+    if (!Number.isSafeInteger(maximum) || maximum < 1 || this.openHandles.size > maximum || this.pending.size !== 0) return false
+    for (const writer of this.writers.values()) if (writer === null) return false
+    for (const handle of this.openHandles) if (!(handle instanceof JsonlSessionHandle) || !handle.isQuiescent) return false
+    return true
+  }
 
   /**
    * Claim write ownership and record the created session as pending, making

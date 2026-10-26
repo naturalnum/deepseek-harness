@@ -22,25 +22,25 @@ export interface ConfigFieldProps {
   labels: { reset: string; inherited: string; invalid: string }
   /** Stage a new text value. */
   onChange: (value: string) => void
-  /** Stage removal of the user override. */
-  onReset: () => void
+  /** Stage removal of the user override; omission hides reset and inherited-value controls. */
+  onReset?: () => void
 }
 
 /** Render a field without owning its schema, draft, or persistence.
  * @param props Controlled field state and actions.
- * @returns A labelled input with reset and validation feedback.
+ * @returns A labelled input with validation feedback and an optional reset action.
  */
 export function ConfigField(props: ConfigFieldProps) {
   const id = useId()
   return <div className={css.field}>
     <div className={css.head}>
       <label htmlFor={id}>{props.label}</label>
-      {props.overridden ? <button type="button" disabled={props.disabled} onClick={props.onReset}>{props.labels.reset}</button> : null}
+      {props.overridden && props.onReset !== undefined ? <button type="button" disabled={props.disabled} onClick={props.onReset}>{props.labels.reset}</button> : null}
     </div>
     {props.choices.length > 0
       ? <select id={id} value={props.value} disabled={props.disabled} aria-invalid={props.invalid}
-        onChange={(event) => { if (event.target.value === '') props.onReset(); else props.onChange(event.target.value) }}>
-        <option value="">{props.labels.inherited}</option>
+        onChange={(event) => { if (event.target.value === '' && props.onReset !== undefined) props.onReset(); else props.onChange(event.target.value) }}>
+        {props.onReset === undefined ? null : <option value="">{props.labels.inherited}</option>}
         {props.choices.map(choice => <option key={choice} value={choice}>{choice}</option>)}
       </select>
       : props.secret

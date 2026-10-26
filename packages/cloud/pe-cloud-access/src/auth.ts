@@ -41,6 +41,30 @@ interface AuthNodeLimits {
   readonly assertCurrent?: () => void
 }
 
+/** Read-only view of the original library plan; finding records remain library-owned. */
+export interface AuthMigrationPlan {
+  /** Original findings for tables that must be created. */
+  readonly toBeCreated: readonly unknown[]
+  /** Original findings for fields that must be added. */
+  readonly toBeAdded: readonly unknown[]
+  /** Original findings for indexes that must be added. */
+  readonly toBeAddedIndexes: readonly unknown[]
+  /** Original library-reported unsafe migration messages. */
+  readonly unsafeChanges: readonly string[]
+  /** Original library-reported schema problems. */
+  readonly schemaProblems: readonly string[]
+  /**
+   * Execute the library's original prepared migrations when the caller authorizes DDL.
+   * @returns Completion of the original library migration callback.
+   */
+  readonly runMigrations: () => Promise<void>
+  /**
+   * Compile the library's original prepared migrations without executing them.
+   * @returns The original library-generated SQL string.
+   */
+  readonly compileMigrations: () => Promise<string>
+}
+
 /**
  * Owns library-backed identity extraction and revocation, without owning native Peer or Session state.
  * The caller owns the finite PG pool and root request admission. Construction does not migrate or listen.
@@ -196,11 +220,13 @@ export class BetterAuthAccess {
    * Recheck a previously authenticated login using its captured cookie, never a later browser cookie.
    * @param principal - Exact object previously returned by this adapter.
    * @param requestId - Server-generated correlation id.
+   * @param retainActual - Optional carrier owner retains the original query completion, including a late result after timeout.
    * @throws AuthAccessError on expiry, revocation, capacity, failure or timeout.
    * Admitted verification failure invokes the login invalidator. A Peer watcher must run within sessionRecheckMs
    * and close its exact Peer on every rejection, including admission/capacity denial; the owning ingress registry schedules it.
    */
-  async recheckLogin(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): Promise<void> {
+  async recheckLogin(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>,
+    retainActual?: (actual: Promise<void>) => void): Promise<void> {
     if (!this.accepting) throw new AuthAccessError('cloud/account-unavailable', requestId)
     const record = this.record(principal, requestId)
     await this.withDeadline(async (ordinal) => {
@@ -213,7 +239,7 @@ export class BetterAuthAccess {
     }, requestId, async () => {
       record.state.invalidated = true
       await this.invalidateLogin(principal.authSessionId, record.state)
-    })
+    }, retainActual)
   }
 
   /**
@@ -273,10 +299,10 @@ export class BetterAuthAccess {
   /**
    * Obtain the library-generated migration plan without running it or hand-writing authentication DDL.
    * @param requestId - Server-generated deployment operation correlation id.
-   * @returns Better Auth's own executable/SQL compilation plan; the caller owns executing that plan.
+   * @returns The original library plan through its read-only findings and original execution/SQL compilation callbacks.
    * @throws Error when DB inspection or a safe migration plan is unavailable.
    */
-  async planMigrations(requestId: Branded<'pe-request-id'>): Promise<Awaited<ReturnType<typeof import('better-auth/db/migration')['getMigrations']>>> {
+  async planMigrations(requestId: Branded<'pe-request-id'>): Promise<AuthMigrationPlan> {
     return this.withDeadline(async () => {
       const { getMigrations } = await import('better-auth/db/migration')
       return getMigrations(this.options)
@@ -446,6 +472,7 @@ export class BetterAuthAccess {
 
   private async withDeadline<T>(
     operation: (ordinal: bigint) => Promise<T>, requestId: Branded<'pe-request-id'>, onFailure?: () => Promise<void>,
+    retainActual?: (actual: Promise<void>) => void,
   ): Promise<T> {
     if (!this.accepting) throw new AuthAccessError('cloud/account-unavailable', requestId)
     if (this.pending.size >= this.config.maxAuthOperations) throw new AuthAccessError('cloud/capacity', requestId)
@@ -475,6 +502,7 @@ export class BetterAuthAccess {
       this.pruneInvalidations()
     })
     this.pending.set(completion, ordinal)
+    retainActual?.(completion)
     try {
       const result = await waited
       await completion

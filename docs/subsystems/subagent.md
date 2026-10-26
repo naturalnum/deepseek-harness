@@ -6,6 +6,8 @@ The unified activation API manages local conversations and external executions.
 
 ## Capabilities and activation requests
 
+`SubagentAdmission` checks original start or cold-resume facts carried by `SubagentAdmissionRequest` before dispatch ([declarations](../../packages/subagent/subagent/src/types.ts)). Checks belong to their registering fiber and grant no factory or teardown authority; the [native runtime](../../packages/subagent/subagent/README.md#local-and-external-children) owns registration, revocation and rollback.
+
 Every backend uses startActivation. Capability flags validate request options; prepareContinuable selects local Agent creation, while start selects one external execution. The model-facing tool uses parent delivery. Workflow and code mode consumers can await caller results without injecting another parent message. Historical children with unavailable descriptors remain discoverable as `mode: 'unknown'` without granting continuation capabilities; the [package README](../../packages/subagent/subagent/README.md) defines catalog persistence.
 
 Optional `request.cwd` selects the child's initial directory; relative paths resolve against the parent's current effective directory. Omitting it captures that directory at admission. Local child Sessions retain the parent's original project, and cold resume retains their logged directory state.
@@ -596,9 +598,18 @@ getProvider(name: string): SubagentProvider | undefined
  * @returns the registered names.
  */
 list(): string[]
+
+/**
+ * Add a check owned by the calling fiber, in registration order.
+ * Withdrawal or replacement invalidates waiting operations before dispatch.
+ * Already dispatched provider work remains owned by the activation manager.
+ * @param check - trusted check of original provider/start or cold-resume facts.
+ * @returns the original effect disposer; a retired invocation may return void.
+ */
+registerAdmission(check: SubagentAdmission): () => void | Promise<void>
 ```
 
-Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)
+Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md) · [SubagentAdmission](subagent.md#capabilities-and-activation-requests)
 
 Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
 

@@ -21,7 +21,7 @@ export interface RecoveryWitnessLimits {
   readonly maxAgeMs: number
 }
 
-/** Exact old local process domain; a different host or PID namespace cannot establish this local proof. */
+/** Exact old local process domain; legacy receipts require independent absence in this same domain. */
 export interface RecoveryProcessIdentity {
   readonly pid: number
   readonly startTicks: string
@@ -46,10 +46,22 @@ export interface RecoveryCreatedAllocationWitness {
   readonly lateStartsRevokedEvidenceRef: string
 }
 
-/** Only the selected provider's fixed TTL admission refusal is qualified by this version. */
+/** Fixed terminal metadata code; a provider outcome still requires complete protected refusal evidence. */
 export const PROVIDER_CREATE_REFUSAL_CODE = 'provider-create-refused-before-create'
-/** Selected backend admission rule whose completed pre-provider refusal this verifier recognizes. */
+/** Original qualified TTL refusal, retained unchanged for existing verifier callers. */
 export const KNOWN_PROVIDER_REFUSAL = 'fixed-ttl-bounds'
+
+/** Closed backend admission refusals eligible for independently verified pre-provider non-creation. */
+export type KnownProviderRefusal = typeof KNOWN_PROVIDER_REFUSAL | 'host-bind-bounds'
+
+/**
+ * Recognize only the selected completed pre-provider admission rules; a code alone is not evidence.
+ * @param value Decoded protected-publication or trusted-verifier refusal code.
+ * @returns Whether the value is one of the two exact qualified refusal discriminators.
+ */
+export function isKnownProviderRefusal(value: unknown): value is KnownProviderRefusal {
+  return value === KNOWN_PROVIDER_REFUSAL || value === 'host-bind-bounds'
+}
 
 /** Completed provider admission refusal; this branch contains no physical sandbox or destruction claim. */
 export interface RecoveryRefusedAllocationWitness {
@@ -57,7 +69,7 @@ export interface RecoveryRefusedAllocationWitness {
   readonly sandboxId: null
   readonly intent: AllocationCreateIntent
   readonly intentDigest: string
-  readonly refusalCode: typeof KNOWN_PROVIDER_REFUSAL
+  readonly refusalCode: KnownProviderRefusal
   readonly knownRefusalEvidenceRef: string
   readonly completedRequestEvidenceRef: string
   readonly providerCreateNotStartedEvidenceRef: string
@@ -97,9 +109,49 @@ export interface RecoveryAccountWitness {
   readonly allocations: readonly RecoveryAllocationWitness[]
 }
 
-/** Closed local operational receipt; it is not a browser DTO or an authorization flag. */
-export interface RecoveryWitness {
-  readonly schema: 'pe-local-controlled-recovery-v1' | 'pe-local-controlled-recovery-v2'
+/** Current Linux domain, independently observed without interpreting an old PID after kernel replacement. */
+export interface RecoveryKernelIdentity {
+  readonly bootId: string
+  readonly pidNamespace: string
+}
+
+/** Root-verified continuity of this exact deployment, original container, data volume and control backing. */
+export interface RecoveryDeploymentIdentity {
+  readonly deploymentId: string
+  readonly containerId: string
+  readonly volumeName: string
+  readonly controlIdentity: string
+  readonly imageDigest: string
+}
+
+/** Complete domain-bound zero-work observation; Root verifies the referenced full writer/SQL coverage. */
+export interface RecoveryZeroWorkSnapshot {
+  readonly kernel: RecoveryKernelIdentity
+  readonly observedAt: string
+  readonly uid: 2000
+  readonly uidProcessCount: 0
+  readonly databaseConnectionCount: 0
+  readonly allocationCount: 0
+  readonly evidenceRef: string
+}
+
+/** Only a pre-stopped, zero-work original local deployment qualifies for the kernel-termination branch. */
+export interface RecoveryKernelTermination {
+  readonly kind: 'local-prestopped-zero-work-v1'
+  readonly previousDeployment: RecoveryDeploymentIdentity
+  readonly currentDeployment: RecoveryDeploymentIdentity
+  readonly lineageEvidenceRef: string
+  readonly newKernel: RecoveryKernelIdentity
+  readonly kernelTerminatedAt: string
+  readonly kernelTerminationEvidenceRef: string
+  readonly processTerminationEvidenceRef: string
+  readonly executionDomainEvidenceRef: string
+  readonly ledgerBeforeProviderEvidenceRef: string
+  readonly applicationExit: Readonly<{ exitCode: 0; observedAt: string; evidenceRef: string }>
+  readonly quiescence: Readonly<{ beforeTermination: RecoveryZeroWorkSnapshot; current: RecoveryZeroWorkSnapshot }>
+}
+
+interface RecoveryWitnessFacts {
   readonly verifierId: 'local-original-process-and-provider-v1'
   readonly auditRef: string
   readonly verifiedAt: string
@@ -111,6 +163,12 @@ export interface RecoveryWitness {
   readonly writersEvidenceRef: string
   readonly accounts: readonly RecoveryAccountWitness[]
 }
+
+/** Closed protected receipt; v3 requires complete explicit local termination facts, never a restart flag. */
+export type RecoveryWitness = RecoveryWitnessFacts & (
+  | Readonly<{ schema: 'pe-local-controlled-recovery-v1' | 'pe-local-controlled-recovery-v2' }>
+  | Readonly<{ schema: 'pe-local-controlled-recovery-v3'; kernelTermination: RecoveryKernelTermination }>
+)
 
 const intentFields = ['allocationId', 'accountId', 'sessionId', 'workspaceId', 'epoch', 'environmentVersion',
   'provider', 'projectMountVersion', 'requestedAt', 'createDeadlineAt'] as const
@@ -155,6 +213,64 @@ function intent(value: unknown, maximum: number): AllocationCreateIntent {
   return result
 }
 
+function kernelIdentity(value: unknown): RecoveryKernelIdentity {
+  const row = object(value, ['bootId', 'pidNamespace'])
+  const bootId = text(row.bootId, 36), pidNamespace = text(row.pidNamespace, 32)
+  need(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(bootId) && /^pid:\[[1-9]\d{0,19}\]$/.test(pidNamespace))
+  return Object.freeze({ bootId, pidNamespace })
+}
+function evidenceRef(value: unknown, maximum: number): string {
+  const result = text(value, maximum)
+  need(/^sha256:[a-f0-9]{64}$/.test(result))
+  return result
+}
+const deploymentFields = ['deploymentId', 'containerId', 'volumeName', 'controlIdentity', 'imageDigest'] as const
+function deploymentIdentity(value: unknown, maximum: number): RecoveryDeploymentIdentity {
+  const row = object(value, deploymentFields)
+  const deploymentId = text(row.deploymentId, maximum), containerId = text(row.containerId, maximum)
+  const volumeName = text(row.volumeName, maximum), controlIdentity = text(row.controlIdentity, maximum)
+  const imageDigest = evidenceRef(row.imageDigest, maximum)
+  need(/^[a-f0-9]{64}$/.test(containerId) && /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(volumeName))
+  return Object.freeze({ deploymentId, containerId, volumeName, controlIdentity, imageDigest })
+}
+function zeroWorkSnapshot(value: unknown, maximum: number, expected: RecoveryKernelIdentity): RecoveryZeroWorkSnapshot {
+  const row = object(value, ['kernel', 'observedAt', 'uid', 'uidProcessCount', 'databaseConnectionCount', 'allocationCount', 'evidenceRef'])
+  const kernel = kernelIdentity(row.kernel)
+  need(kernel.bootId === expected.bootId && kernel.pidNamespace === expected.pidNamespace)
+  need(row.uid === 2000 && row.uidProcessCount === 0 && row.databaseConnectionCount === 0 && row.allocationCount === 0)
+  return Object.freeze({ kernel, observedAt: timestamp(row.observedAt), uid: 2000, uidProcessCount: 0,
+    databaseConnectionCount: 0, allocationCount: 0, evidenceRef: evidenceRef(row.evidenceRef, maximum) })
+}
+function terminatedKernel(value: unknown, maximum: number, original: RecoveryProcessIdentity,
+  verifiedAt: string, writersVerifiedAt: string): RecoveryKernelTermination {
+  const row = object(value, ['kind', 'previousDeployment', 'currentDeployment', 'lineageEvidenceRef', 'newKernel',
+    'kernelTerminatedAt', 'kernelTerminationEvidenceRef', 'processTerminationEvidenceRef', 'executionDomainEvidenceRef',
+    'ledgerBeforeProviderEvidenceRef', 'applicationExit', 'quiescence'])
+  need(row.kind === 'local-prestopped-zero-work-v1')
+  const previousDeployment = deploymentIdentity(row.previousDeployment, maximum)
+  const currentDeployment = deploymentIdentity(row.currentDeployment, maximum)
+  need(deploymentFields.every(field => previousDeployment[field] === currentDeployment[field]))
+  const newKernel = kernelIdentity(row.newKernel), kernelTerminatedAt = timestamp(row.kernelTerminatedAt)
+  need(newKernel.bootId !== original.bootId && newKernel.pidNamespace !== original.pidNamespace)
+  const exit = object(row.applicationExit, ['exitCode', 'observedAt', 'evidenceRef'])
+  need(exit.exitCode === 0)
+  const applicationExit = Object.freeze({ exitCode: 0 as const, observedAt: timestamp(exit.observedAt),
+    evidenceRef: evidenceRef(exit.evidenceRef, maximum) })
+  const quiet = object(row.quiescence, ['beforeTermination', 'current'])
+  const beforeTermination = zeroWorkSnapshot(quiet.beforeTermination, maximum, original)
+  const current = zeroWorkSnapshot(quiet.current, maximum, newKernel)
+  need(applicationExit.observedAt <= beforeTermination.observedAt && beforeTermination.observedAt < kernelTerminatedAt
+    && kernelTerminatedAt <= current.observedAt && current.observedAt <= verifiedAt && writersVerifiedAt === current.observedAt
+    && beforeTermination.evidenceRef !== current.evidenceRef)
+  return Object.freeze({ kind: 'local-prestopped-zero-work-v1', previousDeployment, currentDeployment,
+    lineageEvidenceRef: evidenceRef(row.lineageEvidenceRef, maximum), newKernel, kernelTerminatedAt,
+    kernelTerminationEvidenceRef: evidenceRef(row.kernelTerminationEvidenceRef, maximum),
+    processTerminationEvidenceRef: evidenceRef(row.processTerminationEvidenceRef, maximum),
+    executionDomainEvidenceRef: evidenceRef(row.executionDomainEvidenceRef, maximum),
+    ledgerBeforeProviderEvidenceRef: evidenceRef(row.ledgerBeforeProviderEvidenceRef, maximum), applicationExit,
+    quiescence: Object.freeze({ beforeTermination, current }) })
+}
+
 /**
  * Hash immutable creation identity independently of terminal metadata.
  * @param value Original durable creation fields.
@@ -172,24 +288,30 @@ export function recoveryIntentDigest(value: AllocationCreateIntent): string {
  */
 export function parseRecoveryWitness(value: unknown, limits: RecoveryWitnessLimits): RecoveryWitness {
   for (const limit of Object.values(limits)) need(Number.isSafeInteger(limit) && limit > 0 && limit <= 2147483647)
+  const kernelTerminated = value !== null && typeof value === 'object' && 'schema' in value
+    && value.schema === 'pe-local-controlled-recovery-v3'
   const row = object(value, ['schema', 'verifierId', 'auditRef', 'verifiedAt', 'oldInstanceId', 'databaseRole',
-    'writersVerifiedAt', 'oldProcess', 'processEvidenceRef', 'writersEvidenceRef', 'accounts'])
+    'writersVerifiedAt', 'oldProcess', 'processEvidenceRef', 'writersEvidenceRef', 'accounts',
+    ...(kernelTerminated ? ['kernelTermination'] : [])])
   need(limits.maxBytes <= 131072 && limits.maxFieldBytes <= 4096
     && Buffer.byteLength(JSON.stringify(row)) <= limits.maxBytes)
-  need((row.schema === 'pe-local-controlled-recovery-v1' || row.schema === 'pe-local-controlled-recovery-v2')
+  need((row.schema === 'pe-local-controlled-recovery-v1' || row.schema === 'pe-local-controlled-recovery-v2'
+    || row.schema === 'pe-local-controlled-recovery-v3')
     && row.verifierId === 'local-original-process-and-provider-v1')
   const process = object(row.oldProcess, ['pid', 'startTicks', 'bootId', 'pidNamespace'])
   need(typeof process.pid === 'number' && Number.isSafeInteger(process.pid) && process.pid > 1 && process.pid <= 2147483647)
   const startTicks = text(process.startTicks, 20), bootId = text(process.bootId, 36), pidNamespace = text(process.pidNamespace, 32)
   need(/^[1-9]\d{0,19}$/.test(startTicks) && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(bootId)
     && /^pid:\[[1-9]\d{0,19}\]$/.test(pidNamespace))
-  need(Array.isArray(row.accounts) && row.accounts.length > 0 && row.accounts.length <= limits.maxAccounts)
+  need(Array.isArray(row.accounts) && row.accounts.length > 0 && row.accounts.length <= limits.maxAccounts
+    && (!kernelTerminated || row.accounts.length === 1))
   const accountIds = new Set<string>(), allocationIds = new Set<string>()
   const accounts = row.accounts.map((item: unknown): RecoveryAccountWitness => {
     const account = object(item, ['accountId', 'epoch', 'allocations']), accountId = text(account.accountId, limits.maxFieldBytes)
     need(!accountIds.has(accountId)); accountIds.add(accountId)
     const oldEpoch = epoch(account.epoch)
-    need(Array.isArray(account.allocations) && account.allocations.length <= limits.maxAllocations)
+    need(Array.isArray(account.allocations) && account.allocations.length <= limits.maxAllocations
+      && (!kernelTerminated || account.allocations.length === 0))
     const allocations = account.allocations.map((raw: unknown): RecoveryAllocationWitness => {
       const candidate = raw as Record<string, unknown> | null
       const refusedCreate = row.schema === 'pe-local-controlled-recovery-v2'
@@ -206,9 +328,9 @@ export function parseRecoveryWitness(value: unknown, limits: RecoveryWitnessLimi
       need(allocationIds.size <= limits.maxAllocations)
       if (refusedCreate) {
         need(allocation.sandboxId === null && allocation.intentDigest === recoveryIntentDigest(original)
-          && allocation.refusalCode === KNOWN_PROVIDER_REFUSAL)
+          && isKnownProviderRefusal(allocation.refusalCode))
         return Object.freeze({ createOutcome: 'rejected-before-provider-create', sandboxId: null, intent: original,
-          intentDigest: recoveryIntentDigest(original), refusalCode: KNOWN_PROVIDER_REFUSAL,
+          intentDigest: recoveryIntentDigest(original), refusalCode: allocation.refusalCode,
           knownRefusalEvidenceRef: text(allocation.knownRefusalEvidenceRef, limits.maxFieldBytes),
           completedRequestEvidenceRef: text(allocation.completedRequestEvidenceRef, limits.maxFieldBytes),
           providerCreateNotStartedEvidenceRef: text(allocation.providerCreateNotStartedEvidenceRef, limits.maxFieldBytes),
@@ -225,12 +347,18 @@ export function parseRecoveryWitness(value: unknown, limits: RecoveryWitnessLimi
   })
   const verifiedAt = timestamp(row.verifiedAt), writersVerifiedAt = timestamp(row.writersVerifiedAt)
   need(writersVerifiedAt <= verifiedAt)
-  return Object.freeze({ schema: row.schema, verifierId: row.verifierId, auditRef: text(row.auditRef, limits.maxFieldBytes),
+  const facts = Object.freeze({ verifierId: row.verifierId, auditRef: text(row.auditRef, limits.maxFieldBytes),
     verifiedAt, oldInstanceId: text(row.oldInstanceId, limits.maxFieldBytes), databaseRole: text(row.databaseRole, limits.maxFieldBytes),
     writersVerifiedAt, oldProcess: Object.freeze({ pid: process.pid, startTicks, bootId, pidNamespace }),
     processEvidenceRef: text(row.processEvidenceRef, limits.maxFieldBytes),
-    writersEvidenceRef: text(row.writersEvidenceRef, limits.maxFieldBytes),
-    accounts: Object.freeze(accounts) })
+    writersEvidenceRef: text(row.writersEvidenceRef, limits.maxFieldBytes), accounts: Object.freeze(accounts) })
+  if (row.schema === 'pe-local-controlled-recovery-v3') {
+    const kernelTermination = terminatedKernel(row.kernelTermination, limits.maxFieldBytes, facts.oldProcess, verifiedAt, writersVerifiedAt)
+    need(facts.processEvidenceRef === kernelTermination.processTerminationEvidenceRef
+      && facts.writersEvidenceRef === kernelTermination.quiescence.current.evidenceRef)
+    return Object.freeze({ ...facts, schema: row.schema, kernelTermination })
+  }
+  return Object.freeze({ ...facts, schema: row.schema })
 }
 
 function proc(path: string, maximum: number): string {
@@ -246,6 +374,15 @@ function proc(path: string, maximum: number): string {
     need(size <= maximum)
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size))
   } finally { closeSync(fd) }
+}
+
+/**
+ * Read only the current kernel domain; this does not infer host continuity or death of an old process.
+ * @returns Current Linux boot/PID namespace, or a rejection for unavailable kernel facts.
+ */
+export function observeRecoveryKernel(): RecoveryKernelIdentity {
+  need(process.platform === 'linux')
+  return kernelIdentity({ bootId: proc('/proc/sys/kernel/random/boot_id', 64).trim(), pidNamespace: readlinkSync('/proc/self/ns/pid') })
 }
 
 /**
@@ -280,19 +417,30 @@ export class RootRecoveryWitness {
    * @param limits Explicit deployment capacities and maximum receipt age.
    * @param observe Independent kernel observer; omission uses actual Linux proc and namespace data.
    * @param now Current clock; omission uses the system clock.
+   * @param observeKernel Independent current-domain observer for the explicitly selected v3 receipt.
    */
   constructor(private readonly publication: RecoveryPublication, private readonly limits: RecoveryWitnessLimits,
-    private readonly observe = observeRecoveryProcess, private readonly now: () => number = Date.now) {
+    private readonly observe = observeRecoveryProcess, private readonly now: () => number = Date.now,
+    private readonly observeKernel = observeRecoveryKernel) {
     this.limits = Object.freeze({ ...limits })
     publication.assertCurrent()
     this.facts = parseRecoveryWitness(publication.value(), limits)
     this.assertCurrent()
   }
 
-  /** Recheck the original publication, receipt age and permanent loss of the exact old local process. */
+  /** Recheck protected publication, age and the selected same-domain absence or explicit local kernel-termination proof. */
   assertCurrent(): void {
     this.publication.assertCurrent()
-    const age = this.now() - Date.parse(this.facts.verifiedAt), observation = this.observe(this.facts.oldProcess)
+    const age = this.now() - Date.parse(this.facts.verifiedAt)
+    if (this.facts.schema === 'pe-local-controlled-recovery-v3') {
+      const current = this.observeKernel(), expected = this.facts.kernelTermination.newKernel
+      const snapshotAge = this.now() - Date.parse(this.facts.kernelTermination.quiescence.current.observedAt)
+      need(Number.isSafeInteger(age) && age >= 0 && age <= this.limits.maxAgeMs
+        && Number.isSafeInteger(snapshotAge) && snapshotAge >= 0 && snapshotAge <= this.limits.maxAgeMs
+        && current.bootId === expected.bootId && current.pidNamespace === expected.pidNamespace)
+      return
+    }
+    const observation = this.observe(this.facts.oldProcess)
     need(Number.isSafeInteger(age) && age >= 0 && age <= this.limits.maxAgeMs
       && observation.bootId === this.facts.oldProcess.bootId && observation.pidNamespace === this.facts.oldProcess.pidNamespace
       && observation.original === 'absent')

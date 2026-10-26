@@ -1,7 +1,7 @@
 /** Form projection preserves live containers and removes secret defaults. */
 import { expect, it } from 'vitest'
 import z from '@deepseek-ai/schemastery'
-import { isVolatilePath, plainConfig, projectForm, volatileForm } from '../src/schema.ts'
+import { isVolatilePath, ordinaryConfigPolicy, plainConfig, projectForm, volatileForm } from '../src/schema.ts'
 
 it('exposes nested live fields while omitting ordinary fields', () => {
   const schema = z.object({
@@ -39,4 +39,22 @@ it('omits an object schema with no declared fields', () => {
   const schema = new z({ type: 'object' })
   expect(volatileForm(schema)).toBeUndefined()
   expect(projectForm(schema, { undeclared: true })).toEqual({})
+})
+
+it('classifies whole ordinary replacements from schema metadata rather than current container contents', () => {
+  const schema = z.object({
+    ordinary: z.object({ names: z.array(z.string()), ref: z.string().role('credential-ref') }),
+    mixed: z.object({ fixed: z.number(), live: z.number().volatile() }),
+    secret: z.object({ value: z.string() }).role('secret'),
+    rows: z.array(z.object({ token: z.string().role('secret') })),
+    tuple: z.tuple([z.string(), z.string().role('secret')]),
+    unresolved: z.lazy(() => { throw new Error('must not run a builder') }),
+  })
+  expect(ordinaryConfigPolicy(schema, ['ordinary'])).toMatchObject({ writable: true })
+  expect(ordinaryConfigPolicy(schema, ['mixed'])).toMatchObject({ writable: false, readOnlyReason: 'protected', volatile: true })
+  expect(ordinaryConfigPolicy(schema, ['mixed', 'fixed'])).toMatchObject({ writable: true })
+  expect(ordinaryConfigPolicy(schema, ['mixed', 'live'])).toMatchObject({ writable: false, readOnlyReason: 'live' })
+  expect(ordinaryConfigPolicy(schema, ['secret', 'value'])).toMatchObject({ writable: false, readOnlyReason: 'secret' })
+  for (const key of ['rows', 'tuple']) expect(ordinaryConfigPolicy(schema, [key])).toMatchObject({ writable: false, readOnlyReason: 'protected' })
+  expect(ordinaryConfigPolicy(schema, ['unresolved'])).toMatchObject({ writable: false, readOnlyReason: 'unproven' })
 })

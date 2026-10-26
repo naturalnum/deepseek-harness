@@ -5,15 +5,44 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { flattenDiagnosticMessageText, parseConfigFileTextToJson } from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
+const sourceRepositoryRoot = fileURLToPath(new URL('..', import.meta.url))
+let repositoryRoot: string
+const temporaryRoots: string[] = []
 const oxlintCli = fileURLToPath(new URL('../node_modules/oxlint/bin/oxlint', import.meta.url))
 const tsxCli = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url))
+
+beforeAll(async () => {
+  const temporary = await mkdtemp(join(tmpdir(), 'dsh-oxlint-contract-'))
+  temporaryRoots.push(temporary)
+  repositoryRoot = await realpath(temporary)
+  const directories = new Set(['packages', 'apps', 'scripts', 'vendor', 'native', 'benchmarks', 'website'])
+  const files = new Set(['package.json', 'pnpm-workspace.yaml', 'lefthook.yml', '.oxlintrc.json', '.oxlintrc.staged.json',
+    '.gitignore', 'eslint.format.config.mjs'])
+  const entries = (await readdir(sourceRepositoryRoot, { withFileTypes: true }))
+    .filter(entry => directories.has(entry.name) || files.has(entry.name) || /^tsconfig.*\.json$/.test(entry.name))
+  await Promise.all(entries.map(entry => cp(join(sourceRepositoryRoot, entry.name), join(repositoryRoot, entry.name), {
+    recursive: true,
+    async filter(path) {
+      const parts = relative(sourceRepositoryRoot, path).split(sep)
+      if (parts.some(part => ['node_modules', '.git', 'lib', 'dist'].includes(part))) return false
+      return (await stat(path)).isDirectory()
+          || /\.(?:[cm]?[jt]sx?|json|ya?ml)$/.test(path)
+          || files.has(relative(sourceRepositoryRoot, path))
+    },
+  })))
+  await symlink(join(sourceRepositoryRoot, 'node_modules'), join(repositoryRoot, 'node_modules'), 'junction')
+}, 90_000)
+
+afterAll(async () => {
+  for (const root of temporaryRoots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 3 })
+}, 90_000)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

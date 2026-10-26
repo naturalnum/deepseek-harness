@@ -5,6 +5,7 @@ import { boot, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { installAccountBinding, requireAccountBinding } from './binding.ts'
 import { AccountRuntimeError } from './errors.ts'
+import { observeStartup, startupFailureObserver, type StartupObserver } from './startup-observation.ts'
 import type { AccountBinding } from './types.ts'
 
 /** Factory-owned native inputs; generation-bound ports are constructed in prepare. */
@@ -18,6 +19,8 @@ export interface NativeAccountBootInput {
   readonly maxObservedEvents: number
   /** Production uses its existing native entry budget; omission remains native-mechanism-only. */
   readonly maxEntries?: number
+  /** Private original-owner observation only; callback failures never affect startup. */
+  readonly observeStartup?: StartupObserver
   /** Original files lease checks exact Profile/base addresses before native Profile or configuration I/O. */
   readonly assertBeforeNativeRead?: () => void
   /** Build/verify/inject ports from this exact installed binding; await setup and register native teardown. */
@@ -71,15 +74,21 @@ function validateLocations(input: NativeAccountBootInput): void {
  * @throws Native profile read/parse failures before creating any Context.
  */
 export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAccountBootHandle {
-  validateLocations(input)
+  const diagnostic = input.observeStartup ?? startupFailureObserver(input.requiredEntryIds)
+  observeStartup(diagnostic, { phase: 'prepare' })
+  try { validateLocations(input) } catch (cause) { observeStartup(diagnostic, { failure: cause }); throw cause }
   if (input.binding.lifetime.aborted) {
     throw new AccountRuntimeError('cloud/stale-generation', 'Account generation lifetime has ended')
   }
   const profile = Object.freeze(structuredClone(input.profile))
   const environment = input.environment
   const requiredIds = [...input.requiredEntryIds]
-  input.assertBeforeNativeRead?.()
-  const patches = readProfilePatches('pe-cloud-account', profile)
+  observeStartup(diagnostic, { phase: 'storage-before-read' })
+  let patches: ReturnType<typeof readProfilePatches>
+  try {
+    input.assertBeforeNativeRead?.()
+    patches = readProfilePatches('pe-cloud-account', profile)
+  } catch (cause) { observeStartup(diagnostic, { failure: cause }); throw cause }
   const observer = new Context()
   let context: Context | undefined
   let disposeRequested = false
@@ -94,32 +103,43 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
     errorEvents, warningEvents, overflow,
   })
   const disposeContext = async (): Promise<void> => { await context?.fiber.dispose() }
+  let requiredEntryId: string | undefined
   const result: Promise<NativeAccountBootOutcome> = (async () => {
     try {
+      observeStartup(diagnostic, { phase: 'storage-before-read' })
       input.assertBeforeNativeRead?.()
+      observeStartup(diagnostic, { phase: 'nativeboot' })
       const mounted = await boot('pe-cloud-account', input.configPath, patches, async (ctx) => {
         context = ctx
+        observeStartup(diagnostic, { phase: 'prepare' })
         // The observer's own fiber survives the account root's disposable chain.
         observer.logger = ctx.logger
         observer.logger.exporter({ levels: { default: 1 }, export(message) {
           if (message.type !== 'error' && message.type !== 'warn') return
           if (errorEvents + warningEvents >= input.maxObservedEvents) { overflow = true; return }
-          if (message.type === 'error') errorEvents++
-          else warningEvents++
+          if (message.type === 'error') {
+            errorEvents++
+            const failure: unknown = message.args.slice(0, 3).find(value => value !== null
+              && (typeof value === 'object' || typeof value === 'function'))
+            observeStartup(diagnostic, { nativeError: failure })
+          } else warningEvents++
         } })
         if (disposeRequested) throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup was closed')
         ctx.provide('profileContext', profile)
         ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, environment)
         const binding = installAccountBinding(ctx, input.binding)
-        await input.prepare(ctx, binding)
+        try { await input.prepare(ctx, binding) }
+        catch (cause) { observeStartup(diagnostic, { failure: cause }); throw cause }
         if (closing(binding)) {
           throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup ended during preparation')
         }
+        observeStartup(diagnostic, { phase: 'nativeboot' })
       }, input.bareModuleBaseUrl)
       const loader = mounted.get('loader')
       if (closing(input.binding) || loader === undefined) {
         throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup ended before assembly settled')
       }
+      observeStartup(diagnostic, { phase: 'required-entry' })
       const entries: NonNullable<Context['fiber']['entry']>[] = []
       for (const entry of loader.entries()) {
         if (input.maxEntries !== undefined && entries.length >= input.maxEntries) {
@@ -130,11 +150,13 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
       for (const id of requiredIds) {
         const matches = entries.filter(entry => entry.options.id === id)
         if (matches.length !== 1 || matches[0]?.fiber?.state !== FiberState.ACTIVE) {
+          requiredEntryId = id
           throw new AccountRuntimeError('cloud/account-unavailable', 'A required native recipe entry is absent, disabled, duplicated, or inactive')
         }
       }
       return Object.freeze({ status: 'mounted', context: mounted, binding: requireAccountBinding(mounted) })
     } catch (cause) {
+      observeStartup(diagnostic, { failure: cause, ...requiredEntryId === undefined ? {} : { requiredEntryId } })
       await disposeContext()
       await observer.fiber.dispose()
       return Object.freeze({ status: 'failed', cause, disposal: observation() })

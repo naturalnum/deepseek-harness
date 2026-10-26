@@ -42,6 +42,10 @@ await handle.dispose()   // stops the loop, unregisters, removes the session, un
 
 `AgentOptions` 提供初始提供方／模型路由、可选的由适配器定义的 `reasoningEffort`，以及可选的正数 `maxTokens` 输出上限。循环会校验确切模型的推理（reasoning）支持、解析适配器默认值、把生效值记录在请求头中，并将它们应用到每个对话请求。可选的 `setup(agentCtx, agent)` 回调会在 agent 发布之前组合其作用域世界：`agentCtx` 拥有注册，显式的未发布 Agent 则提供其 Session；Context 不含反向 Agent 属性。作用域工具、提示词段与监听器在任何创建公告之前就已存在。Setup 只做组合：创建完成后才能驱动 agent。
 
+setup 返回值可提供 `AgentSetupCommit.assertCurrent`，在原生持久化及发布等待后同步复核其 owner。该复核可拒绝并回滚发布，但不能再次 commit 或取得清理所有权。
+
+可选的 `observeDisposal` 是同步回调，观察已准备 Agent 实际执行且复用的同一次清理。只有 setup 已结算，且驱动器、作用域、writer 与注册表清理全部成功，才返回 `confirmed`；被放弃的 setup 仍在运行时，结果为 `unknown`。准备前失败不产生观察回执，因此创建被拒本身不能证明清理完成。回调不得抛错，也不授予创建、销毁或预留权限。
+
 ### 驱动 agent 的对话
 
 句柄的方法把带标识的 user 角色消息路由进 agent 的收件箱。`followup()` 排队一条普通的下一个轮次提示词并唤醒驱动器；`steer()` 提交下一步输入并唤醒它；`inject()` 添加面向模型的上下文但不唤醒驱动器，因此它落在下一个被接纳的步骤中。`cancel(cause)` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；`whenIdle()` 会在整个 agent 达到完全停稳后完成。

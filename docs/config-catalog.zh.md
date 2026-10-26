@@ -94,7 +94,7 @@ export interface Config {
 
 - `inject`: `agents` · `sessions` · `llm` · `tools` · `systemPrompt` · `sessionProjections`
 - `refs`: [`AgentOptions`](subsystems/core.zh.md) · [`SessionId`](subsystems/core.zh.md) · `Volatile` (`@deepseek-ai/cosmokit`)
-- `source`: [`packages/core/agent-loop/src/index.ts:326`](../packages/core/agent-loop/src/index.ts)
+- `source`: [`packages/core/agent-loop/src/index.ts:334`](../packages/core/agent-loop/src/index.ts)
 
 ```ts config-catalog
 /** Agent-loop plugin configuration. */
@@ -240,13 +240,32 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-settings-controller`
 
-- `source`: [`packages/api/settings-controller/src/index.ts:35`](../packages/api/settings-controller/src/index.ts)
+- `refs`: [`JsonValue`](../packages/util/values/src/index.ts) · [`SettingsPathOpView`](subsystems/settings.zh.md)
+- `source`: [`packages/api/settings-controller/src/index.ts:49`](../packages/api/settings-controller/src/index.ts)
 
 ```ts config-catalog
 /** Host integrations replaceable by direct unit tests. */
 export interface SettingsControllerInternals {
   /** Host text-editor integration used to open the settings document. */
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Retain original request admission through native persistence and the redacted result.
+   * Omission preserves native writes without an additional policy. */
+  readonly withWrite?: <T>(request: SettingsWriteRequest,
+    apply: (control?: import('@deepseek-ai/dsh-settings').SettingsWriteControl) => Promise<T>) => Promise<T>
+}
+
+/** Native write facts supplied to an optional Host admission owner. */
+export interface SettingsWriteRequest {
+  /** Original Remote invocation, or undefined for a trusted in-process call. */
+  readonly invocation: import('@deepseek-ai/dsh-typert-protocol').RemoteInvocation | undefined
+  /** Validated native Settings namespace addressed by this write. */
+  readonly namespace: string
+  /** Native merge, whole-section replacement, or ordered path mutation. */
+  readonly mode: 'update' | 'replace' | 'mutate'
+  /** Owned admission input: namespace fields or the ordered path edits for the selected mode. */
+  readonly input: Record<string, JsonValue> | SettingsPathOpView[]
+  /** Revision read by the caller; undefined requests an unconditional native write. */
+  readonly expectedRevision: number | undefined
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-settings-controller -->
@@ -1666,7 +1685,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-webserver`
 
-- `source`: [`packages/host/webserver/src/index.ts:76`](../packages/host/webserver/src/index.ts)
+- `source`: [`packages/host/webserver/src/index.ts:88`](../packages/host/webserver/src/index.ts)
 
 ```ts config-catalog
 /** Web server listen, TLS, and response-compression config. */
@@ -1698,18 +1717,39 @@ export interface Config {
   compressionLevel?: number
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
+  /** Limits selected before listen; omission or null keeps defaults. TLS requires the current public default stream watermark. */
+  transportLimits?: {
+    /** Route-enforced pair budget; the parser retains one excess pair so routes can reject silent truncation. Maximum 0x3fff_fffe. */
+    maxHeaderPairs: number
+    /** Positive finite request-header byte limit, enforced by Node's parser. */
+    maxHeaderBytes: number
+    /** Positive finite stream high-water mark in bytes; not a hard process-memory limit. */
+    highWaterMark: number
+    /** Positive finite simultaneous connection limit on this listener. */
+    maxConnections: number
+  }
 }
 
 /**
  * TLS material for the HTTPS listener: one certificate chain file and the
- * private key file it pairs with. Both hold PEM text and both resolve against
- * the process working directory.
+ * private key file it pairs with, plus optional client CA certificates. PEM
+ * file paths resolve against the process working directory.
  */
 export interface TlsConfig {
   /** Certificate chain file, leaf certificate first, PEM, no passphrase. */
   certFile: string
   /** Private key file for the chain's leaf certificate; unencrypted PEM. */
   keyFile: string
+  /**
+   * Request client certificates using only this CA bundle, while accepting anonymous or unauthorized TLS peers.
+   * Omission/null keeps ordinary HTTPS.
+   */
+  clientCa?: {
+    /** PEM file containing only CA certificates; paths resolve against the process working directory. */
+    certFile: string
+    /** Positive safe-integer file-byte limit; the reader reserves one extra byte to detect growth. */
+    maxBytes: number
+  }
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
@@ -2355,7 +2395,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-pe-cloud-client`
 
 - `refs`: `BindingFieldNames` (`@deepseek-ai/dsh-pe-cloud-access/types`) · `BootstrapDecodeLimits` (`@deepseek-ai/dsh-pe-cloud-access/types`)
-- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:25`](../packages/cloud/pe-cloud-client/src/index.ts)
+- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:29`](../packages/cloud/pe-cloud-client/src/index.ts)
 
 ```ts config-catalog
 /** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
@@ -2403,6 +2443,10 @@ export interface CloudClientConfig {
   closeTimeoutMs: number
   /** Optional complete-file download acceptance cap; absence keeps download actions unregistered. */
   maxDownloadBytes?: number
+  /** Finite native model-settings RPC observer deadline; omission keeps model editing closed. */
+  modelSettingsRequestTimeoutMs?: number
+  /** Omission leaves the native sample skill section unregistered. */
+  skillSettings?: Readonly<CloudSkillSettingsConfig>
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
 }
@@ -2419,6 +2463,14 @@ export interface CloudPersistenceLimits {
   readonly maxTotalBytes: number
   /** Maximum UTF-8 bytes of the physical namespace key, including its prefix and account/generation encoding. */
   readonly maxNamespaceBytes: number
+}
+
+/** Explicit observer and complete-file memory bounds for the fixed sample editor. */
+export interface CloudSkillSettingsConfig {
+  /** Positive safe-integer RPC observation deadline within the platform timer range. */
+  readonly requestTimeoutMs: number
+  /** Positive safe-integer acceptance cap for each complete file; match the approved account bound. */
+  readonly maxFileBytes: number
 }
 
 /** Root-owned public inputs for one exact GET preview entry; no account identity or application target. */
@@ -2530,7 +2582,7 @@ export interface PlanModeConfig {
 ## `@deepseek-ai/dsh-plugin-manager`
 
 - `inject`: `loader` · `profileContext`
-- `source`: [`packages/boot/plugin-manager/src/index.ts:64`](../packages/boot/plugin-manager/src/index.ts)
+- `source`: [`packages/boot/plugin-manager/src/index.ts:81`](../packages/boot/plugin-manager/src/index.ts)
 
 ```ts config-catalog
 /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
@@ -3172,7 +3224,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-skill`
 
-- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
+- `source`: [`packages/skill/skill/src/index.ts:298`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
@@ -3189,7 +3241,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-filesystem`
 
 - `inject`: `skills`
-- `source`: [`packages/skill/skill-filesystem/src/index.ts:48`](../packages/skill/skill-filesystem/src/index.ts)
+- `source`: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
 
 ```ts config-catalog
 /** Local filesystem skill provider configuration. */
@@ -3432,7 +3484,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 - `inject`: `workingDirectory`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:186`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:192`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */

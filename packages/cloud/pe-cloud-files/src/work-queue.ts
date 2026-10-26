@@ -21,9 +21,11 @@ export interface WorkLane {
    * @param reservedBytes Positive safe integer covering the operation's buffers and overhead.
    * @param work Backend work whose actual settlement remains owned after caller cancellation.
    * @param signal Cancels this caller's wait and signals actual work to stop.
-   * @returns A result whose reservation remains held until release.
+   * @param retention Only trusted inert grants may use lease; later files I/O must reenter this lane.
+   * @returns A result whose reservation remains held until release; lease never shortens actual work.
    */
-  run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>
+  run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+    retention?: 'lease'): Promise<ResidentResult<T>>
   /** Register responsibility and preparation I/O atomically; no storage authority is issued. */
   prepareDirectory(
     intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
@@ -32,6 +34,8 @@ export interface WorkLane {
   captureRegistration(observation: DirectoryObservation): DirectoryResponsibility
   close(): void
   pending(): readonly OperationId[]
+  /** @returns True only for open admission with no actual work, ordinary results or directory responsibility; leases stay owned. */
+  isIdle(): boolean
   onSettled(listener: () => void): () => void
 }
 
@@ -49,6 +53,7 @@ interface RecordState {
   readonly id: OperationId
   readonly lane: LaneState
   readonly reservedBytes: number
+  readonly retention: 'result' | 'lease'
   readonly controller: AbortController
   readonly work: (signal: AbortSignal) => Promise<unknown>
   readonly deliver: (value: unknown, release: () => void) => void
@@ -113,8 +118,8 @@ export class FilesWorkQueue {
     }
     this.lanes.add(lane)
     return Object.freeze({
-      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal) =>
-        this.submit(lane, bytes, work, signal),
+      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, retention?: 'lease') =>
+        this.submit(lane, bytes, work, signal, retention),
       prepareDirectory: (
         intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
       ) =>
@@ -130,6 +135,8 @@ export class FilesWorkQueue {
       },
       close: () => { this.closeLane(lane) },
       pending: () => this.lanePending(lane),
+      isIdle: () => this.accepting && lane.accepting && lane.directories.size === 0
+        && [...lane.records].every(record => record.phase === 'retained' && record.retention === 'lease'),
       onSettled: (listener: () => void) => {
         if (!lane.accepting && this.lanePending(lane).length === 0) this.notify(listener)
         else lane.settledListeners.add(listener)
@@ -173,6 +180,7 @@ export class FilesWorkQueue {
     bytes: number,
     work: (signal: AbortSignal) => Promise<T>,
     signal: AbortSignal | undefined,
+    retention?: 'lease',
   ): Promise<ResidentResult<T>> {
     try {
       this.assertBusiness(lane)
@@ -184,7 +192,7 @@ export class FilesWorkQueue {
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new FilesFailure('files/prerequisite-missing', 'files admission failed', { cause: error }))
     }
-    return this.enqueue(lane, bytes, work, signal)
+    return this.enqueue(lane, bytes, work, signal, undefined, retention)
   }
 
   private assertBusiness(lane: LaneState): void {
@@ -262,12 +270,13 @@ export class FilesWorkQueue {
 
   private enqueue<T>(
     lane: LaneState, bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
-    owned?: RecordState['owned'],
+    owned?: RecordState['owned'], retention: RecordState['retention'] = 'result',
   ): Promise<ResidentResult<T>> {
     const canRun = this.running < this.limits.maxRunning && lane.running < this.limits.maxRunningPerLane
     return new Promise<ResidentResult<T>>((resolve, reject) => {
       const record: RecordState = {
-        id: owned?.responsibility.id ?? randomUUID() as OperationId, lane, reservedBytes: bytes, controller: new AbortController(),
+        id: owned?.responsibility.id ?? randomUUID() as OperationId, lane, reservedBytes: bytes, retention,
+        controller: new AbortController(),
         work,
         deliver: (value, release) => { resolve({ value: value as T, release }) },
         reject, cleanupWait: () => {}, phase: 'queued', abandoned: false, invoked: false,

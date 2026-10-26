@@ -107,6 +107,8 @@ await ctx.sessionPersistence.flush()                           // backend-wide d
 
 seam 的共享辅助函数校验由 `SESSION_FORMAT_VERSION` 标识的当前逻辑记录，append 只写当前格式（[理由](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)）。历史解码与不可变后继发布属于各提供方内部，并在其返回句柄前完成。每个后端都在句柄读取与写 open 预热时运行 `storage-contract` 校验，把未知事件类型作为 `SessionFormatUnsupportedError` 拒绝，把格式错误的当前记录作为 `SessionPersistenceCorruptionError` 拒绝，并在后端为每个会话保留一份产物时附上原始日志的 `SessionLocation`。
 
+`isQuiescent(maximum)` 是只读的 producer 观察。基础 provider 返回 false，因此没有实现实际待处理工作观察的 provider 不能授权 idle 配置更新。该观察不会 flush 或关闭持久化。
+
 </details>
 -----
 

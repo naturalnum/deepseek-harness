@@ -115,6 +115,10 @@ Creation is one rollback-covered transaction: construct a private session, concr
 
 Factory unload retains the inbox and turn-boundary projections through scope cleanup, including cancellation from scoped abort listeners, until every Agent teardown and startup task settles. Cleanup failures do not release those projections early. Caller unload, factory unload, and handle disposal await the same teardown.
 
+Setup commits once before the pending session suffix is stored. Optional `AgentSetupCommit.assertCurrent` runs before registry entry, after Session announcement and after awaited Agent listeners. A throw follows the same rollback path; notifications already delivered remain observable.
+
+When supplied, `observeDisposal` runs once from the same memoized teardown after driver, scope, writer and registry cleanup. Cleanup failures or an abandoned setup still running produce `unknown`; failure before preparation produces no observation. The callback only reports settlement and must not throw; caller unload, factory unload and handle disposal keep the same cleanup owner.
+
 ### Persistence integration
 
 The loop is the production acquisition point for session write handles. When `ctx.sessionPersistence` is mounted, `create`/`createAgent` call `persistence.create(header)` — storing the durable identity and taking write ownership before publication — and append the constructor seed through the handle; `resume` calls `persistence.open(id, 'write')` first (excluding a concurrent resume of the same id), reads the physically valid log through the handle, and appends `interruptedTurnClosers` for a log crashed mid-turn as an ordinary batch — semantic crash repair is the agent layer's job, not a storage entry point. Immediately before publication, `appendUnstoredSuffix` stores any events appended during the setup window (seed markers, delegation policy records), which never re-emit through `session/event`. Once published, the mounted backend routes the session's `session/event` batches, `session/flush` barriers, and `session/disposed` retirement into the active write handle by session id; the loop touches storage only through the handle it owns. With the backend still mounted, teardown closes the handle after the driver commits its closing events; close drains the routed buffer and releases write ownership. Without a backend, sessions are memory-only and nothing else changes.
@@ -132,6 +136,8 @@ Prompt admission uses the actual `prepareCall()` result, not the preceding `requ
 Final adapter selection, dispatch, and iteration failures arrive as terminal finishes and enter `agent/request-error`; a handling listener returns `{ kind: 'retry' }` without calling `next()`, while an unhandled failure is terminal. Middleware, result-processing, tool, and other extension failures remain thrown and close the turn directly — plugin failure ends the turn, not the loop. Undispatched model tool calls after cancellation receive synthetic `tool/call` plus `ABORTED_BEFORE_DISPATCH` result pairs.
 
 Before closing a failed step, the driver records an error result for each unanswered assistant tool call. A recorded `tool/call` without a committed result receives `TOOL_OUTCOME_UNKNOWN`; a request without a call record receives `TOOL_NOT_STARTED`. Committed results remain intact, started dispatches settle before recovery, and the turn retains the original failure. These results let later requests use paired tool history without automatically retrying uncertain operations.
+
+`isQuiescent(maximum)` reads the original bounded driver and startup ownership without stopping or canceling work. It requires each driver’s actual idle phase and empty inbox. Public Agent status alone is insufficient because maintenance reports idle while retaining work; a completed create/resume wrapper remains busy until its actual tracked continuation settles.
 
 </details>
 

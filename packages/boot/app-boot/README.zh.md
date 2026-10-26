@@ -49,6 +49,8 @@ Profile 与组合包的声明类型从 [`@deepseek-ai/dsh-package-manifest`](../
 
 profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`headless`、`acp`、`sdk` 与 `sdk-minimal` 从同一 launcher 启动不同组合。profile 位于 `$DSH_HOME/profiles/<name>`，由可安装组合包和自身 `cordis.patch.yml` 组成。组合包的 `dsh.bundle.patch` 指定一个 patch 文件或一个有序的文件列表；`bundlePatchFiles` 校验该声明，`bundlePatchPaths` 把它解析为绝对路径；该层按此顺序拼接各文件的 patch 列表。YAML 组合决定是否启用 HMR。随产品交付的 `web` 模板实时重载，其他随附模板只在启动时应用 patch。`sdk-minimal` 只列出自身的独立组合包，其他模板保留 base 加模式的组合包栈。`dsh --profile <name> --from-default-profile <template>` 从一个随附模板，在非内置名称处创建或替换自定义 profile；`dsh plugin` 则初始化以 base 为基础的 profile，并管理其中安装的组合包。组合包解析、manifest 读取或 patch 加载失败时会跳过该组合包，不改变其选择状态；加载结果在 `skippedBundles` 中列出每个被跳过的组合包，启动器每次启动时通过 `reportSkippedBundles` 输出一次。其余组合包保持原顺序；profile 和用户 patch 错误仍会导致启动失败。跳过组合包不保证剩余组合能够提供所需服务。由应用持有的 npm 项目（例如 Electron 保留的 Desktop profile）通过 `loadProfileDirectory` 加载已经初始化的目录，而不会将它暴露给 CLI profile 查找。
 
+`PluginPackages.packageOf(specifier, parentURL, { fresh: true })` 重读已安装包元数据，不替换运行模块的缓存元数据，也不改变运行时解析。可信版本检查在原生发布前使用此选项。
+
 profile 导入插件前，DSH 会将其声明的 DSH 版本要求与 `getDshRuntimeVersion()` 返回的唯一运行时版本比较。清单声明了 `engines.dsh` 时，只由该范围决定，忽略 `peerDependencies`。否则 `peerDependencies` 中对 `@deepseek-ai/dsh` 和 `@deepseek-ai/dsh-*` 的每个范围都必须匹配，源码工作区的 `workspace:^`、`workspace:~` 和 `workspace:*` peer 指向同一个运行时。预发布版本参与范围匹配。两者都未声明时不施加版本约束；空范围或无效范围视为不兼容，`engines.dsh` 中的 `workspace:` 值也属于无效范围。`engines` 不是对象或 `engines.dsh` 不是字符串时，清单视为格式错误。拒绝结果会列出未满足的要求，键为 `engines.dsh` 或 peer 包名。这些检查不是防范恶意包代码的沙箱。
 
 检查只发生在 DSH 自己持有的组合入口，改写的是启动器自己的那份组合：profile 的 patch 层、依赖清单与组合包列表都不会改变。`prepareProfilePatches` 在启动器的空 profile 根之上组合，并在挂载根 Include 时以及每次 profile 重新组合时执行，因此被拒绝的插件永远不会导入其模块；`prepareProfileEntries` 对 preset 行做同样的事。被拒绝的普通行会变成游离的 `disabled: true` 行；原生 group 保持挂载，其被拒绝的子行不会加载；若某个原生 Include 会到达被拒绝的插件，则整体省略该 Include，因为它的文件不会被改写。被策略拒绝的行在 profile 中保留其配置的 `disabled` 值，每次拒绝都会报告包名、版本与风险。组合包本身不是行，因此 `loadProfileDirectory` 在启动和每次重新组合加载 profile 的组合包层时，检查每个组合包自己声明的 DSH 版本要求；没有豁免的不兼容组合包会像无法读取的组合包一样被跳过，并列入 `skippedBundles`。这些入口不覆盖其他嵌入方通过自己的 `ctx.plugin` 调用挂载的插件。会话中直接改文件的两类编辑只在下一次重新组合或启动时才被判定：正在运行的插件自己的 `package.json` DSH 版本要求，以及 Loader 自己读取的入口清单文件（如启动器的根配置或嵌套的 `cordis:include` 文件）。`--dump-config` 报告的是配置出的组合，因此被拒绝的插件行仍会出现在其中，而被拒绝的组合包不提供任何行；`--dump-config-schema` 会导入每个组合模块以读取其 schema，请只对已经信任其插件的 profile 运行。
@@ -139,7 +141,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 - **移除链接拦截。** 后继 generation 可以移除 linked root，无需重启。目录不再被任何剩余 root 覆盖时，后续请求使用原生查询，可能找到开发副本，也可能报告缺包。已有模块引用和 Node 缓存保持不变。不属于 profile 映射的链接名称可以指向其他目标，移除之后也可以；其 profile 映射先被移除的链接名称同样可以；Node 缓存的原目标真实路径会被重新定位（[generation 规则](../../../.agents/notes/implemented/architecture/2026-09-09-profile-resolution-generations.zh.md#immutable-generations)）。
 - **应用自有 profile。** 应用自有 profile 使用相同的 runtime resolution。目标位于当前 profile 目录内的链接（包括 pnpm store 链接）不算外部 root，即使 profile 位于共享 profiles 树外。解析过程不修改其 `node_modules`；已安装包由 pnpm 管理。
 - **自有 Worker。** Worker 构建 banner 会在业务 bundle 前导入 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap`。每个 Worker 在自己的 isolate 中安装结构化克隆的 runtime resolution。bootstrap bundle 不静态导入任何包。源码 Worker 入口保留自包含依赖，第三方 Worker 不接受注入。
-- **更新完成。** App boot 通过 `internal/update` waterfall 观察重启失败。实时 patch 重载在检查激活状态前等待配置树中的 fiber；单独调用 `Fiber.update()` 或 `Entry.update()` 不能确定重启成功。
+- **更新完成。** App boot 在恢复失效条目或判定激活前，先等待原 root Include group 的子更新实际结算。旧 fiber 销毁、在途导入／重载和激活诊断仍须分别完成。单独调用 `Fiber.update()` 或 `Entry.update()` 不能证明成功激活。
 - **单一 rejection 检查点。** `inactiveEntries` 把折入启动诊断的确切原因保持到下一个进程级 rejection 检查点可见，使 `installFailLoud` 能合并 Loader 的重复通知，而所有无关的未处理 rejection 仍然致命。
 - **两阶段失败标签。** 除启动审计失败外，`boot()` 区分 `host preparation failed`（`prepare` 在任何配置树条目挂载前抛出）与 `plugin tree failed to load`，并追加最深层插件错误的堆栈。插件诊断保留嵌套原因和聚合错误中的各项失败；原因链出现循环时会停止遍历，但不会替换原始错误。
 
@@ -147,7 +149,9 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 ### Helper 行为
 
-可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为空的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。Host helper 为 `Loader.withUpdateGuard(guard, operation, scope)` 提供新建的 Node `AsyncLocalStorage`，作为类型化的 `LoaderUpdateScope` 能力，并在 operation 实际结算后禁用它。通用 Loader 不导入 Node 异步作用域，普通浏览器更新不创建该能力；guarded 调用缺少显式作用域时拒绝。异步后代跨 await 保留 guard，并发未绑定变更与嵌套预留均被拒绝。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
+可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为不可变原生条目列表并沿用原 Include patch 合成的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。Host helper 为 `Loader.withUpdateGuard(guard, operation, scope)` 提供新建的 Node `AsyncLocalStorage`，作为类型化的 `LoaderUpdateScope` 能力，并在 operation 实际结算后禁用它。通用 Loader 不导入 Node 异步作用域，普通浏览器更新不创建该能力；guarded 调用缺少显式作用域时拒绝。异步后代跨 await 保留 guard，并发未绑定变更与嵌套预留均被拒绝。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
+
+`loadProfileDirectory` 接受显式 bundle 选择预览及禁止旧 bundle 清理写入的 `readOnly` 选项。`readProfilePatches` 使用只读 bundle 检查。`prepareProfileSelectionUpdate` 使用原组合器：默认模式将一个已存在叶子的变化交给有限原生计划器；显式 restart 模式捕获完整有限组合、在持久化前重读拟议层，并拒绝局部应用，由新的正常启动负责激活。
 
 每个导出各负责启动的一个阶段：配置解析与快照回放、分层环境加载、明确报错的保护机制、激活审计、patch 解析、根 include 挂载、配置 dump 渲染与 profile 组合。各导出的约定在代码中，不在本 README——见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
 
@@ -162,6 +166,8 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 | [`src/config-impact.ts`](src/config-impact.ts) | 有限原生配置规划与实际变更检查 |
 | [`src/config-schema/`](src/config-schema/) | Profile schema 生成、发现、原生投影与结果类型 |
 | [`src/profile-resolution/`](src/profile-resolution/) | 运行时 resolver、package metadata 服务与构建后 Worker bootstrap |
+
+Profile 准备在兼容性检查前，将非空原生 Include base 与完整原有有序 patch 合成。它保留这些 patch，仅追加原生兼容性拒绝。原生 Profile 计划对 base-only 与插入条目使用同一合成器，并在后续覆盖可能修改准备 carrier 前分离插入条目，在持久化与应用期间绑定原文件、options、条目和版本。
 
 </details>
 

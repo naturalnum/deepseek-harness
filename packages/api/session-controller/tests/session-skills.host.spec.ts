@@ -1,7 +1,12 @@
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness, provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -152,6 +157,39 @@ describe('SessionSkillCatalog', () => {
     expect(ensureDirectory).toHaveBeenCalledWith(agent, expect.any(AbortSignal))
     expect(session.header.cwd).toBe('/live/project')
     expect(acquireScope).not.toHaveBeenCalled()
+  })
+
+  it('retains the selected live Agent while its directory provider resolves Session-scoped files', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'session-skills-initiator-')))
+    const ctx = new Context(), observed: Agent[] = []
+    class SessionFileSystem extends LocalFileSystem {
+      static inject = ['agents']
+      override resolve(...args: Parameters<LocalFileSystem['resolve']>) {
+        observed.push(this.ctx.agents.requireInitiator())
+        return super.resolve(...args)
+      }
+    }
+    try {
+      await mountAgentLoopTestDependencies(ctx)
+      await ctx.plugin(SessionFileSystem, { cwd: root })
+      await ctx.plugin(WorkingDirectory, { defaultDirectory: root })
+      const harness = await mountAgentLoopTestHarness(ctx)
+      const agent = await harness.create(SessionId('live-catalog-directory'), {}, { cwd: root })
+      ctx.provide('sessionQuery', {
+        observeSession: () => Promise.resolve(observation(agent.id, { cwd: root })),
+      } as never)
+      const list = vi.fn(() => Promise.resolve([]))
+      ctx.provide('skills', { list } as never)
+      expect(ctx.agents.currentInitiator()).toBeUndefined()
+      await expect(new SessionSkillCatalog(ctx).list({ sessionId: agent.id }, new AbortController().signal))
+        .resolves.toEqual({ skills: [] })
+      expect(observed).toEqual([agent])
+      expect(list).toHaveBeenCalledWith({ cwd: root, scope: agent })
+      expect(ctx.agents.currentInitiator()).toBeUndefined()
+    } finally {
+      try { await ctx.fiber.dispose() }
+      finally { rmSync(root, { recursive: true, force: true }) }
+    }
   })
 
   it('uses the recorded preset standing scope for a cold Session', async () => {

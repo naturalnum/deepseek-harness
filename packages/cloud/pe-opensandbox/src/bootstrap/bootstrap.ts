@@ -1,4 +1,5 @@
 /** Root-private fixed SDK bootstrap. A stopped allocation never gains another privileged start. */
+import { parentFacts } from '../skill-wire.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomBytes } from 'node:crypto'
 import { open } from 'node:fs/promises'
@@ -388,17 +389,20 @@ export class TrustedSdkBootstrap {
         device: value.rootDevice, inode: value.rootInode,
         maximumBytes: value.quota.maximumBytes, maximumInodes: value.quota.maximumInodes })
       const token = randomBytes(32).toString('hex'), runtimeIdentity = randomBytes(32).toString('hex')
+      const skillParent = selection.mount.skills === undefined ? undefined
+        : parentFacts(selection.mount.skills.grant, selection.mount.skills.maxCopies)
       const expected: ClientOptions['expected'] = { physicalSandboxId: selection.sandboxId, runtimeIdentity,
+        ...skillParent === undefined ? {} : { skillParent },
         projectRoot: grant.project.rootPath, roots: { project: root(grant.project), environment: root(grant.environment) },
         pins: { bwrapSha256: BWRAP_SHA256, agentSourceSha256: AGENT_SOURCE_SHA256,
-          userWorldArgvSha256: expectedWorldHash(grant.project.rootPath) }, declaredImageId: selection.imageDigest }
+          userWorldArgvSha256: expectedWorldHash(grant.project.rootPath, skillParent) }, declaredImageId: selection.imageDigest }
       // Validate full lossless grant/config input before the first Root command or upload.
       const origin = new URL(this.config.lifecycle.lifecycleBaseUrl)
       record.protected = { token,
         expected: checkOptions({ host: origin.hostname, port: Number(origin.port), token, expected }).expected }
       const config = Buffer.from(JSON.stringify({ runtimeIdentity, token, listenAddress: '0.0.0.0',
         port: this.config.agentPort, declaredImageId: selection.imageDigest, projectRoot: grant.project.rootPath,
-        envRoot: '/opt/session-env', expectedRoots: Object.fromEntries(Object.entries(expected.roots).map(([name, value]) =>
+        envRoot: '/opt/session-env', ...skillParent === undefined ? {} : { skillParent }, expectedRoots: Object.fromEntries(Object.entries(expected.roots).map(([name, value]) =>
           [name, { device: value.device, inode: value.inode,
             grant: { maximumBytes: value.maximumBytes, maximumInodes: value.maximumInodes } }])) }))
       need(config.length <= 4096, 'bounds')

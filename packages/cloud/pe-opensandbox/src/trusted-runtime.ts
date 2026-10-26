@@ -1,4 +1,7 @@
 /** Root owns one authenticated agent client per original allocation, independently of account admission. */
+import { guardianEncodedBudget } from './agent-data/encoded-budget.ts'
+import type { SkillOperationCopies } from './skill-files-types.ts'
+import { copyFacts } from './skill-wire.ts'
 import { randomUUID } from 'node:crypto'
 import type { PreparedSandbox } from './allocation-owner.ts'
 import type { AgentHandshake, AgentSelection, FencedAgentRequests, TrustedAgentLifecycle } from './lifecycle-types.ts'
@@ -10,6 +13,14 @@ import { createForegroundIssuer, createRegisteredServiceIssuer, type RoleIssuer 
 import type { NativeRegisteredService } from './native-command-account.ts'
 import type { HttpTransportLimits, PreviewHttpOwner, RegisteredHttpTarget } from './application-http.ts'
 import type { RegisteredApplicationService, ServicePreviewIdentity } from './types.ts'
+
+/** Exact original files result, held by the original command through actual settlement. */
+export interface SkillCommandBorrow {
+  readonly value: SkillOperationCopies
+  readonly maxCopies: number
+  assertCurrent(): void
+  release(): void
+}
 
 /**
  * Root captures the protected server selection; callers can select neither a server nor credentials.
@@ -174,25 +185,27 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
   /**
    * Reserve one immutable operation reference before the first remote command mutation.
    * @param prepared Original Root allocation result previously bound by the SDK wrapper.
+   * @param copies Optional retained files-issued working copies matching this allocation's skills parent.
    * @returns One command channel; no request is sent until prepare, and mutation failures are never retried.
    * The command owner acknowledges range closure only after its original allocation stop also joins local I/O.
    */
-  command(prepared: PreparedSandbox): CommandChannel {
-    return this.channel(prepared, record => record.foreground ?? unavailable())
+  command(prepared: PreparedSandbox, copies?: SkillCommandBorrow): CommandChannel {
+    return this.channel(prepared, record => record.foreground ?? unavailable(), copies)
   }
 
   /**
    * Bind one service operation to the exact current registration and original physical allocation.
    * @param prepared Original Root preparation result already bound to this registry.
    * @param registration Original account work row's service capability; a projected identity grants no authority.
+   * @param copies Optional retained files-issued working copies for this service allocation.
    * @returns A service-only channel whose original control reference remains usable for cleanup after revocation.
    */
-  service(prepared: PreparedSandbox, registration: NativeRegisteredService): CommandChannel {
+  service(prepared: PreparedSandbox, registration: NativeRegisteredService, copies?: SkillCommandBorrow): CommandChannel {
     return this.channel(prepared, (record) => {
       const issue = record.service?.(registration) ?? unavailable()
       registration.bindAllocation(record.selection.intent.allocationId)
       return issue
-    })
+    }, copies)
   }
 
   /**
@@ -225,10 +238,29 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       deadlineAtMs: record.residentDeadlineAtMs, assertCurrent }), limits, owner)
   }
 
-  private channel(prepared: PreparedSandbox, authorize: (record: RuntimeRecord) => RoleIssuer): CommandChannel {
+  /**
+   * Read the prepared allocation's retained skills parent without creating a grant.
+   * @param prepared Exact original prepared allocation.
+   * @returns Its retained original files parent, or undefined when no skills domain was supplied.
+   */
+  skillProject(prepared: PreparedSandbox): AgentSelection['mount']['skills'] {
+    const record = this.ready.get(prepared)
+    if (record === undefined) unavailable()
+    this.assertUnfenced(record)
+    return record.selection.mount.skills
+  }
+
+  private channel(prepared: PreparedSandbox, authorize: (record: RuntimeRecord) => RoleIssuer,
+    copies?: SkillCommandBorrow): CommandChannel {
     const record = this.ready.get(prepared), client = record?.client
     if (record === undefined || client === undefined || record.fenced || record.physicalStopped) unavailable()
     const issue = authorize(record)
+    if ((record.selection.mount.skills === undefined) !== (copies === undefined)) unavailable()
+    if (copies !== undefined) {
+      copies.assertCurrent()
+      const parent = record.selection.mount.skills
+      if (parent === undefined || copies.value.project !== parent.grant || copies.maxCopies !== parent.maxCopies) unavailable()
+    }
     if (record.commands >= SLICE_LIMITS.lifetimeOperations) {
       throw new ExecutionStateError('cloud/capacity', 'The selected sandbox reached its finite command-record capacity.')
     }
@@ -244,12 +276,16 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       catch (cause) { record.failure ??= { cause }; return unavailable() }
     }
     return Object.freeze<CommandChannel>({
+      ...copies === undefined ? {} : { release: () => { copies.release() } },
       prepare: spec => run(() => {
         if (request !== undefined || record.fenced) unavailable()
-        request = issue(makePrepared(prepared.runtimeIdentity, operationId, spec))
+        copies?.assertCurrent()
+        const fixed = copies === undefined ? undefined : copyFacts(copies.value, copies.maxCopies)
+        guardianEncodedBudget(record.selection.mount.grant.project.rootPath, spec, fixed)
+        request = issue(makePrepared(prepared.runtimeIdentity, operationId, spec, fixed))
         return client.prepare(request)
       }),
-      commit: () => run(() => client.commit(selected().ref)),
+      commit: () => run(() => { copies?.assertCurrent(); return client.commit(selected().ref) }),
       poll: () => run(() => client.poll(selected().ref)),
       stop: () => run(() => client.stop(selected().ref)),
     })

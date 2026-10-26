@@ -30,6 +30,41 @@ export type ModelDiscoveryOutcome =
   /** The interrogation was refused, with the Host's own diagnostic. */
   | { readonly kind: 'refused'; readonly message: string }
 
+/** Per-editor callbacks prepared before the user starts editing; values and opaque versions stay in the caller's closure. */
+export interface PreparedCredentialEdit {
+  /** Exact reference captured by the editor owner. */
+  readonly ref: string
+  /**
+   * Commit using the captured edit version; a conflict never refreshes that version or retries automatically.
+   * @param value Write-only literal supplied by this draft.
+   * @returns Localized refusal, or undefined after confirmed persistence.
+   */
+  readonly store: (value: string) => Promise<string | undefined>
+  /**
+   * Remove using the version captured when its confirmation intent began.
+   * @returns Localized refusal, or undefined after confirmed removal.
+   */
+  readonly remove: () => Promise<string | undefined>
+}
+
+/** Optional public page input for versioned key editing; scope is UI identity, never a new login or configuration revision. */
+export interface ModelsCredentialEditing {
+  /** Original page/graph lifetime identity; null closes protected key UI. */
+  readonly scope: string | null
+  /**
+   * Recheck the original page before calls and after awaited observations.
+   * @returns Whether this original page still admits credential editing; no new scope is resolved.
+   */
+  readonly isCurrent: () => boolean
+  /**
+   * Capture one editing version before exposing a draft or removal confirmation.
+   * @param ref Original named credential reference from the native provider row.
+   * @param signal Preparation observer cancellation; actual submitted work remains with its native owner.
+   * @returns Callbacks bound to that exact version, or null when editing is closed.
+   */
+  readonly prepare: (ref: string, signal: AbortSignal) => Promise<PreparedCredentialEdit | null>
+}
+
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
   /**

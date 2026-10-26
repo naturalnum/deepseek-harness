@@ -3,14 +3,17 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/cloud.md
 /cloud-account-integration:
-  en: 750d4de56c06682a
-  zh: 5271be08a1337394
+  en: 79d00f2330b8296c
+  zh: 3f7019cbcea0ee51
 /cloud-account-integration/account-identities:
   en: 9c4d5fb6efd2f2b1
   zh: 6a66e60fc560cf36
 /cloud-account-integration/actual-work-and-capacity:
-  en: 3b123d16f8470c5d
-  zh: 7eb2070a4587434d
+  en: 83b7ee1462de4efc
+  zh: 2749813e91a69ab5
 /cloud-account-integration/native-adapters:
-  en: 0145a1619e898dff
-  zh: 0e6e5e6964c43f46
+  en: 69b11585f396c03a
+  zh: 8bfa88d44091e364
+/cloud-account-integration/approved-plugin-controls:
+  en: b67d1a382e03f75b
+  zh: 48849e0bf33e16b9

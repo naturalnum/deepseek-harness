@@ -17,3 +17,5 @@ export interface FilesLimits {
 export interface NativeFilesRequirement {
   readonly native: FileSystem
 }
+
+export type { SkillProjectGrant, SkillWorkingCopyGrant, SkillOperationCopies, SkillProjectionLimits } from './skill-projection.ts'

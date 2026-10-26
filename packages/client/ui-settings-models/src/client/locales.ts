@@ -3,6 +3,13 @@
 /** English strings (the key-set source of truth for this pair). */
 export const en = {
   nav: 'Models',
+  editKey: 'Edit API key',
+  removeKey: 'Remove API key',
+  removeKeyTitle: 'Remove this API key?',
+  removeKeyDescription: 'Only the stored API key is removed. Provider and model settings are kept.',
+  removingKey: 'Removing API key…',
+  keyPreparing: 'Preparing API key editor…',
+  keyEditUnavailable: 'This editing page is unavailable. Close it and reopen to check the current state.',
   deepSeekAccount: 'DeepSeek Account',
   title: 'Models',
   intro: 'Enter your API keys to use models from the following providers.',
@@ -144,6 +151,13 @@ export type ModelsKey = keyof typeof en
 /** Chinese strings (same keys as {@link en}). */
 export const zh: { [Key in keyof typeof en]: string } = {
   nav: '模型',
+  editKey: '编辑 API Key',
+  removeKey: '移除 API Key',
+  removeKeyTitle: '移除此 API Key？',
+  removeKeyDescription: '只移除已保存的 API Key，保留提供商与模型配置。',
+  removingKey: '正在移除 API Key…',
+  keyPreparing: '正在准备 API Key 编辑器…',
+  keyEditUnavailable: '此编辑页面已失效。请关闭并重新打开，查看当前状态。',
   deepSeekAccount: 'DeepSeek 账号',
   title: '模型',
   intro: '填入各提供商的 API 密钥即可使用其模型。',

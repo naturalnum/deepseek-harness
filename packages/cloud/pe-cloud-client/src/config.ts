@@ -14,7 +14,12 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
   maxPendingFetches: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxSockets: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   closeTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
+  modelSettingsRequestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS),
   maxDownloadBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
+  skillSettings: z.union([z.object({
+    requestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
+    maxFileBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  })]),
   servicePreview: z.union([z.object({
     managementOrigin: z.string().required(), previewOrigin: z.string().required(), routePath: z.string().required(),
     maxFieldBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
@@ -32,8 +37,26 @@ const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapRespo
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview'])
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings'])
   const preview = Object.hasOwn(value, 'servicePreview') ? parseServicePreviewPolicy(value.servicePreview) : undefined
+  let skills: CloudClientConfig['skillSettings']
+  if (Object.hasOwn(value, 'skillSettings')) {
+    const configured = fields(value.skillSettings, ['requestTimeoutMs', 'maxFileBytes'])
+    const timeout = configured['requestTimeoutMs'], bytes = configured['maxFileBytes']
+    if (typeof timeout !== 'number' || !Number.isSafeInteger(timeout) || timeout < 1 || timeout > MAX_TIMER_MS
+      || typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1) {
+      throw new TypeError('skillSettings requires explicit positive finite request and complete-file bounds')
+    }
+    skills = Object.freeze({ requestTimeoutMs: timeout, maxFileBytes: bytes })
+  }
+  let modelDeadline: number | undefined
+  if (Object.hasOwn(value, 'modelSettingsRequestTimeoutMs')) {
+    const candidate = value['modelSettingsRequestTimeoutMs']
+    if (typeof candidate !== 'number' || !Number.isSafeInteger(candidate) || candidate < 1 || candidate > MAX_TIMER_MS) {
+      throw new TypeError('modelSettingsRequestTimeoutMs must be a finite positive timer delay when present')
+    }
+    modelDeadline = candidate
+  }
   let limit: number | undefined
   if (Object.hasOwn(value, 'maxDownloadBytes')) {
     const candidate = value['maxDownloadBytes']
@@ -43,13 +66,19 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
     limit = candidate
   }
   const config = { ...CloudClientConfigSchema(input as CloudClientConfig) }
+  delete config.modelSettingsRequestTimeoutMs
   delete config.maxDownloadBytes
+  delete config.skillSettings
   delete config.servicePreview
   if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(config.bootstrapPath)) {
     throw new Error('cloud client bootstrapPath must be a document-relative route without query or fragment')
   }
-  return { ...config, ...limit === undefined ? {} : { maxDownloadBytes: limit },
-    ...preview === undefined ? {} : { servicePreview: preview } }
+  return { ...config,
+    ...modelDeadline === undefined ? {} : { modelSettingsRequestTimeoutMs: modelDeadline },
+    ...limit === undefined ? {} : { maxDownloadBytes: limit },
+    ...preview === undefined ? {} : { servicePreview: preview },
+    ...skills === undefined ? {} : { skillSettings: skills },
+  }
 }
 
 const positive = (): z<number> => z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required()

@@ -1,8 +1,12 @@
 /** Browser Loader entry consuming the exact pre-Cordis prepared page owner. */
+import { installCloudApprovedSettings } from './approved-settings.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installCloudProjects } from './projects.ts'
 import { installCloudFileDownloads } from './downloads.ts'
+import { installCloudModelSettings } from './model-settings.ts'
+import { installCloudSkillSettings } from './skill-settings.ts'
+import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
 
 /** Stable browser plugin name. */
@@ -28,6 +32,10 @@ export function apply(ctx: Context, config: Config): void {
   installCloudProjects(ctx)
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)
+  installCloudModelSettings(ctx, owner)
+  installCloudSkillSettings(ctx, owner)
+  installCloudManagement(ctx, owner)
+  installCloudApprovedSettings(ctx, owner)
 }
 
 export { CloudPagePersistence, CloudPersistenceError } from './persistence.ts'

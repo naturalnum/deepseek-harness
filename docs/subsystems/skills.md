@@ -36,18 +36,18 @@ interface SkillProvider {
    * plugins register synchronously during `apply()`; remote initialization,
    * authentication, and discovery are awaited inside this method. Implementations
    * should settle promptly when `options.signal` aborts.
-   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns provider candidates as a complete-array shorthand, or an explicit
    *   observation when usable candidates came from incomplete discovery.
    */
-  readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
+  readonly list: (options: SkillViewOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
   /**
    * Load a complete skill body for a previously listed candidate.
    * @param candidate - the winning candidate originally returned by this provider.
-   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns the full skill body, or `undefined` if it is no longer loadable.
    */
-  readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>
+  readonly get: (candidate: SkillCandidate, options: SkillViewOptions) => Promise<SkillDefinition | undefined>
 }
 ```
 
@@ -79,6 +79,54 @@ The project root is the nearest ancestor containing `.git`; without one, the cur
 `dsh-skill-badge` registers one immutable `bundled` candidate at `BUNDLED_SKILL_RANK` and exposes its packaged asset directory through `resourceBase`. The shipped CLI declares the plugin disabled, so enabling its composition row is an explicit opt-in.
 
 Chokidar watches existing roots for direct bundle/flat-entry additions and removals plus direct skill-entry changes. A missing root is followed one absent path segment at a time from its nearest existing ancestor until Chokidar can attach. Resource files below a bundle are not catalog changes. Model-facing `write` and `edit` observations synchronously invalidate the provider when their target is catalog-relevant, while the host watcher covers IDE, Git, shell, and external-process mutations. Watcher failures make the current observation incomplete without hiding readable candidates from direct loads; project-scoped watchers use a configured bounded LRU.
+
+## Restricted programmatic source
+
+`FileSystemSkillProvider` accepts an optional source supplied in code and reuses native discovery and YAML parsing. This mode requires explicit roots, disabled watching and no bundled host root. Each provider identifies one stable source version and borrows it for discovery or loading. Loading parses the body and awaits resource preparation in the same borrow; failure publishes no usable path. The source owner validates the actual caller, retains versions and actual I/O, and returns only caller-accessible resource guidance. Ordinary plugins omit this argument and retain their existing filesystem behavior.
+
+```ts type-equiv
+/** Read operations borrowed from an explicit filesystem source; no writer or host fallback is granted. */
+type FileSystemSkillReader = Pick<FileSystem, 'resolve' | 'stat' | 'listDir' | 'readText' | 'processPath'>
+```
+
+```ts type-equiv
+/** Resource guidance returned only after the source finishes making the loaded version available to this caller. */
+interface FileSystemSkillResources {
+  /** Caller-usable directory, URL or provider description; never an inaccessible source location. */
+  readonly resourceBase: SkillResourceBase
+  /** Optional caller-usable instruction path; source-private paths remain inside provider locators. */
+  readonly path?: string
+}
+```
+
+```ts type-equiv
+/** One borrowed source scope binds native parsing and caller resource preparation to the same source version. */
+interface FileSystemSkillRead {
+  /** Read-only operations valid for this borrowed source scope. */
+  readonly files: FileSystemSkillReader
+  /**
+   * Finish caller-specific resource preparation for the same source version while its read scope remains borrowed.
+   * @param directory Directory selected by this provider's native discovery, not a caller-chosen path.
+   * @param options Original lookup context; the source derives actual caller/project authority independently of cwd.
+   * @returns Complete usable guidance; failures must reject without publishing a partial location.
+   */
+  materialize(directory: string, options: SkillViewOptions): Promise<FileSystemSkillResources>
+}
+```
+
+```ts type-equiv
+/** Optional programmatic source for explicit roots; ordinary ctx.fs/Node discovery remains unchanged without it. */
+interface FileSystemSkillSource {
+  /**
+   * Borrow the source for one discovery or load, retaining actual work until the callback and I/O settle.
+   * Candidate locators may outlive this call; the source must continue to identify their exact version.
+   * @param read Native discovery/body reader and same-version resource preparation.
+   * @param options Original lookup context; scope identifies a caller only after the source owner's admission checks.
+   * @returns The native result after actual source work has settled; cancellation alone is not settlement.
+   */
+  withFiles<T>(read: (source: FileSystemSkillRead) => Promise<T>, options: SkillViewOptions): Promise<T>
+}
+```
 
 ## Skill identity
 
@@ -139,7 +187,9 @@ interface SkillCatalogSnapshot {
 }
 ```
 
-`SkillCandidate` is the provider-to-registry shape. `locator` is opaque provider state; the registry only stores it and gives it back to the winning provider's `get()`.
+`ctx.skills.inspect(options)` returns a Host-only `SkillCatalogInspection` from the same collection and winner map as `snapshot()` and `get()`. Its name-sorted `candidates` contain each original borrowed `candidate`, a `selected` flag, and `overriddenBy` on covered rows. Source metadata and the opaque locator are retained without loading a body or granting resource authority. `complete` has the snapshot meaning; incomplete relationships describe only observed candidates. Consumers must authorize and bound a public projection instead of serializing private paths or locators.
+
+`SkillCandidate` is the provider-to-registry shape. `locator` is opaque provider-owned state retained for the winning provider's `get()` and Host-only inspection; it is not a resource capability.
 
 ```ts type-equiv
 /** Provider catalog entry used by the registry to merge and later load skills. */
@@ -187,7 +237,7 @@ type SkillRegistration = Omit<SkillDefinition, 'invocation' | 'provider'> & {
 
 ## Lookup and configuration
 
-Skill lookup is cwd-sensitive because providers may expose workspace-local skills, and its optional signal cancels provider work for the caller. Registry reads additionally take the viewing scope — consumers pass the calling agent, which is its own scope key — through `SkillViewOptions`; the registry consumes `scope` for layer selection, and providers read only their `SkillLookupOptions` contract from the same borrowed options object. Cancellation is checked before and after catalog selection, including cache hits, and races both discovery and full-definition loading. If no git root is found, the local provider treats the supplied cwd itself as the project root.
+Skill lookup is cwd-sensitive because providers may expose workspace-local skills, and its optional signal cancels provider work for the caller. Registry reads additionally take the viewing scope — consumers pass the calling agent, which is its own scope key — through `SkillViewOptions`; the registry consumes `scope` for layer selection, and providers receive the same borrowed options object and may read its caller scope. Providers must independently validate the caller and project; neither `scope` nor `cwd` grants authority. Cancellation is checked before and after catalog selection, including cache hits, and races both discovery and full-definition loading. If no git root is found, the local provider treats the supplied cwd itself as the project root.
 
 Full definitions are not cached by the registry. Each `get()` calls the winning provider with the selected candidate, so the local provider rereads the current body. A definition whose name no longer matches that candidate is rejected and invalidates the exact provider for rediscovery.
 
@@ -205,8 +255,8 @@ interface SkillLookupOptions {
 /**
  * Registry read options: provider lookup context plus the viewing scope.
  * The registry consumes `scope` to select layers; providers receive the same
- * borrowed options object and read only their {@link SkillLookupOptions}
- * contract from it.
+ * borrowed options object and may use its caller context. Scope is not
+ * authorization: providers must validate caller identity before preparing resources.
  */
 interface SkillViewOptions extends SkillLookupOptions {
   /** Viewing scope (the calling agent); omitted reads the global layer alone. */
@@ -314,6 +364,16 @@ async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 
 /**
+ * Inspect every contributed candidate and its actual winner in the same observation used by list/get.
+ * Candidate values and locators remain borrowed readonly provider objects; inspection loads no bodies
+ * and grants no resource authority. Incomplete results describe only the observed candidates and are
+ * not cached. Scope, invalidation and cancellation use the original catalog collection.
+ * @param options - original scope/cwd lookup context and optional discovery cancellation signal.
+ * @returns name-sorted candidates with selected/overridden relationships and discovery completeness.
+ */
+async inspect(options: SkillViewOptions = {}): Promise<SkillCatalogInspection>
+
+/**
  * Load and validate the winning candidate, passing its opaque discovery locator back to the
  * provider. Cancellation is rechecked after selection, including cache hits, and raced against
  * loading so an uncooperative provider cannot hang the caller.
@@ -348,5 +408,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
 'skills/change'(): void
 ```
 
-Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
 <!-- END GENERATED cordis-surface -->

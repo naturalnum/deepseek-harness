@@ -60,20 +60,41 @@ interface Config {
   compressionLevel?: number
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
+  /** Limits selected before listen; omission or null keeps defaults. TLS requires the current public default stream watermark. */
+  transportLimits?: {
+    /** Route-enforced pair budget; the parser retains one excess pair so routes can reject silent truncation. Maximum 0x3fff_fffe. */
+    maxHeaderPairs: number
+    /** Positive finite request-header byte limit, enforced by Node's parser. */
+    maxHeaderBytes: number
+    /** Positive finite stream high-water mark in bytes; not a hard process-memory limit. */
+    highWaterMark: number
+    /** Positive finite simultaneous connection limit on this listener. */
+    maxConnections: number
+  }
 }
 ```
 
 ```ts type-equiv
 /**
  * TLS material for the HTTPS listener: one certificate chain file and the
- * private key file it pairs with. Both hold PEM text and both resolve against
- * the process working directory.
+ * private key file it pairs with, plus optional client CA certificates. PEM
+ * file paths resolve against the process working directory.
  */
 interface TlsConfig {
   /** Certificate chain file, leaf certificate first, PEM, no passphrase. */
   certFile: string
   /** Private key file for the chain's leaf certificate; unencrypted PEM. */
   keyFile: string
+  /**
+   * Request client certificates using only this CA bundle, while accepting anonymous or unauthorized TLS peers.
+   * Omission/null keeps ordinary HTTPS.
+   */
+  clientCa?: {
+    /** PEM file containing only CA certificates; paths resolve against the process working directory. */
+    certFile: string
+    /** Positive safe-integer file-byte limit; the reader reserves one extra byte to detect growth. */
+    maxBytes: number
+  }
 }
 ```
 

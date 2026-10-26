@@ -124,7 +124,33 @@ it('shares native intake state across real plugin callers and the constructor-ca
   remove()
 })
 
+it.each([
+  { name: 'omitted', config: undefined, expected: 128 },
+  { name: 'explicit', config: { maxPendingReceipts: 2 }, expected: 2 },
+])('registers the real FileUploads service with $name configuration', async ({ config, expected }) => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-upload-native-default-')), ctx = new Context()
+  const logger = ctx.logger
+  const register = vi.fn(() => () => {})
+  try {
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(CommandRuntime)
+    await mountAgentLoopTestHarness(ctx)
+    new LocalAttachmentStore(ctx, { dshHome: home })
+    ctx.provide('connection', { fetch: { register } } as never)
+    const fiber = config === undefined ? ctx.plugin(FileUploads) : ctx.plugin(FileUploads, config)
+    await fiber
+    expect(fiber.config).toEqual({ maxPendingReceipts: expected })
+    expect(ctx.get('fileUploads')).toBeDefined()
+    expect(register).toHaveBeenCalledOnce()
+    expect(logger.buffer.filter(message => message.type === 'error')).toEqual([])
+  } finally {
+    await ctx.fiber.dispose()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 it('defaults to 128 finite slots and rejects invalid capacities', () => {
+  expect(FileUploads.Config.parse(undefined)).toEqual({ maxPendingReceipts: 128 })
   expect(FileUploads.Config.parse({})).toEqual({ maxPendingReceipts: 128 })
   for (const maxPendingReceipts of [0, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     expect(() => FileUploads.Config.parse({ maxPendingReceipts })).toThrow()

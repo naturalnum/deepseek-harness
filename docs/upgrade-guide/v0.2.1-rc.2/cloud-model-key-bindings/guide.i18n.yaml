@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/cloud-model-key-bindings/guide.md
+/:
+  en: 07b86a8f27f2704e
+  zh: 3befb788da924753
+/declare-cloud-model-key-bindings:
+  en: d2610da681863d2d
+  zh: e62f4bafab091027
+/declare-cloud-model-key-bindings/change:
+  en: bae5bc7d178ec1d8
+  zh: 1c8fbd16f20f6fea
+/declare-cloud-model-key-bindings/migration:
+  en: ec584c41a08493af
+  zh: 1b2460cd7668b330

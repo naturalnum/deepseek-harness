@@ -1980,3 +1980,24 @@ describe('agent loop', () => {
     expect(replayed.snapshotEvents().at(-1)?.type).toBe('session/end-seed')
   })
 })
+
+
+it('observes actual maintenance and queued followup work even while the public Agent status is idle', async () => {
+  const ctx = await harness(new MockAdapter([textResponse('queued work completed')]))
+  const finish = Promise.withResolvers<undefined>()
+  try {
+    expect(ctx.agentLoop.isQuiescent(8)).toBe(true)
+    const agent = await ctx.agentLoop.create(SessionId('configuration-idle-observation'), { provider: 'mock', model: 'mock' })
+    await vi.waitFor(() => { expect(ctx.agentLoop.isQuiescent(8)).toBe(true) })
+    const started = Promise.withResolvers<undefined>()
+    const maintenance = agent.runMaintenance(async () => { started.resolve(undefined); await finish.promise })
+    await started.promise
+    expect(agent.status).toBe('idle')
+    expect(ctx.agentLoop.isQuiescent(8)).toBe(false)
+    send(agent, 'finish the queued followup')
+    expect(ctx.agentLoop.isQuiescent(8)).toBe(false)
+    const idle = waitForIdle(ctx, agent)
+    finish.resolve(undefined); await maintenance; await idle
+    await vi.waitFor(() => { expect(ctx.agentLoop.isQuiescent(8)).toBe(true) })
+  } finally { finish.resolve(undefined); await ctx.fiber.dispose() }
+})

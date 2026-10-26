@@ -71,6 +71,8 @@ kind: "package-reference"
 
 `ctx.settingsSchema` 重建 schema、校验草稿并编辑嵌套值。无效的线路值不会替换已接受值。
 
+可选的 `ConfigForm.mutate` current 检查在原串行队列内、Remote 调用前及其收敛后执行。省略时保持普通原生行为。发送后的拒绝不证明持久化已取消，也不重放写入。
+
 </details>
 
 -----

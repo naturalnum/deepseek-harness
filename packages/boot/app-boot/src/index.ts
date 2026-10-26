@@ -26,7 +26,7 @@ export {
 } from './profile-compatibility.ts'
 import { prepareProfilePatches } from './compatibility-preflight.ts'
 import { profileIncludes as bootstrapIncludes } from './config-impact.ts'
-export { prepareProfileConfigUpdate, assertProfileConfigUpdate, withProfileConfigUpdate, type ProfileConfigUpdatePlan } from './config-impact.ts'
+export { composeProfileEntries, prepareProfileConfigUpdate, prepareProfilePluginUpdate, prepareProfileSelectionUpdate, assertProfileConfigUpdate, withProfileConfigUpdate, type ProfileConfigUpdatePlan } from './config-impact.ts'
 import { ProfileRuntimeResolution, type RuntimeResolution } from './profile.ts'
 import { ResolutionRestartRequired } from './profile-resolution/resolver.ts'
 export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts'
@@ -386,11 +386,15 @@ async function recompose(
     }
     // The recomposition judges the rows the launch judged, resolved from the file this Include read.
     const parentURL = new URL('.', new URL(includeConfig.path, entry.parent.tree.ctx.baseUrl)).href
-    const prepared = prepareProfilePatches(ctx, patches, parentURL, binName)
+    if (!(entry.subtree instanceof Include)) throw new Error(`${binName}: profile reload requires its original Include`)
+    const base = readProfileEntryList(entry.subtree.filename)
+    const prepared = prepareProfilePatches(ctx, patches, parentURL, binName, base)
     applying = true
     const retried = [...new Set([...running, ...withResolution ? [...ctx.loader.entries()].filter(importFailed) : []])]
+    const updateGroup = entry.subtree.root
     try {
       await entry.update({ config: { ...includeConfig, patches: prepared } })
+      await updateGroup.awaitUpdate()
     } finally {
       await resume(ctx, retried)
     }
@@ -729,6 +733,20 @@ function groupedDump(
   return lines.join('\n') + '\n'
 }
 
+/** Read compatibility inputs with the original Include's missing-file and invalid-list diagnostics. */
+function readProfileEntryList(filename: string): EntryOptions[] {
+  let content: string
+  try { content = readFileSync(filename, 'utf8') }
+  catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
+    throw new Error(`config file not found: ${filename}`, { cause: error })
+  }
+  const parsed: unknown = yaml.load(content, { schema: entryListSchema })
+  if (!Array.isArray(parsed)) throw new TypeError(`config file must be a top-level array of entries: ${filename}`)
+  // Include validates individual entries when mounting this same file.
+  return parsed as EntryOptions[]
+}
+
 /**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
@@ -772,7 +790,8 @@ export async function mountRootInclude(
   // diagnostics unstable across runs (and snapshot fixtures).
   // The launcher's own copy is prepared here: compatibility decisions must be made before the root
   // Include imports anything, and they change no profile patch layer, manifest, or bundle list.
-  const prepared = prepareProfilePatches(ctx, [...patches], pathToFileURL(dirname(absoluteConfigPath)).href + '/', binName)
+  const base = readProfileEntryList(absoluteConfigPath)
+  const prepared = prepareProfilePatches(ctx, [...patches], pathToFileURL(dirname(absoluteConfigPath)).href + '/', binName, base)
   const includeConfig: Include.Config = {
     path: pathToFileURL(absoluteConfigPath).href,
     ...prepared.length > 0 ? { patches: prepared } : {},

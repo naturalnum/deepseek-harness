@@ -1,8 +1,9 @@
 /** Root control composition retains original PG/storage/native work through ready and drain settlement. */
+import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { posix } from 'node:path'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { ConfigSaveCoordinator, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { ConfigSaveCoordinator, AccountModelKeyEnvironment, type ModelKeyPeerConsumer, type ConfigurationPeerConsumer, type CloudPluginPreparation, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { RuntimeRootConfig } from './root-config.ts'
@@ -14,21 +15,34 @@ import { PgOwnerExecutor } from './owner-pg-executor.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import { RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
+import { RootOwnerResolver } from './owner-resolver.ts'
 import { RuntimeCapacity } from './capacity.ts'
+import { resolveSubagentCapacity } from './subagent-capacity-schema.ts'
 import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
 import type { OwnerRecoveryExpectation, OwnerRecoveryProof } from './owner-types.ts'
 
+function hasModelKeyPeerConsumer(value: unknown): value is ModelKeyPeerConsumer {
+  return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'withModelKeyPeerUse') === 'function'
+}
+function hasConfigurationPeerConsumer(value: unknown): value is ConfigurationPeerConsumer {
+  return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'withConfigurationPeer') === 'function'
+}
 function hasRootFetch(value: unknown): value is { inspectRootFetch(): readonly ExactFetchExposure[] } {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'inspectRootFetch') === 'function'
 }
 import { createAccountPolicy } from './account-policy.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
-import type { AccountBinding, AccountId, AccountOwner, AccountRecoveryRuntime, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
+import type { AccountBinding, AccountId, AccountOwner, AccountOwnerResolver, AccountRecoveryRuntime, AccountRuntimeService, AccountUse, InstanceId, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootIngressCloseOwner, RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
 
+
+interface RootIngressRegistration {
+  readonly closeActual: () => Promise<void>
+  closing?: Promise<void>
+}
 
 interface RootControl {
   readonly config: RuntimeRootConfig
@@ -40,6 +54,8 @@ interface RootControl {
   readonly saves: ConfigSaveCoordinator
   readonly requests: Map<AccountId, AccountFactoryRequest>
   readonly secrets: Set<Promise<string>>
+  ownerResolver?: RootOwnerResolver
+  ingress?: RootIngressRegistration
   recovery?: AccountRecoveryRuntime
   recoveryVerifier?: { readonly participant: DrainParticipant; readonly verify: RootRecoveryVerifier['verify'] }
   phase: 'starting' | 'active' | 'failed' | 'closing' | 'closed'
@@ -68,6 +84,53 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   /** Root-only maintenance capability; ordinary and component-only runtimes keep recovery closed. */
   get recovery(): AccountRecoveryRuntime | undefined { return this.control?.recovery }
 
+  /** Bounded metadata reads only; absence grants no permission to acquire or recover an account. */
+  get ownerResolver(): AccountOwnerResolver | undefined {
+    return this.closed || this.control?.phase !== 'active' ? undefined : this.control.ownerResolver?.port
+  }
+
+  /** Original startup identity while an ordinary Root is active; metadata only, without account admission. */
+  get activeInstanceId(): InstanceId | undefined {
+    const control = this.control
+    return this.closed || control?.phase !== 'active' || control.config.recovery !== undefined
+      ? undefined : control.instance.identity.instanceId
+  }
+
+  /**
+   * Retain one original Access ingress owner until its actual carrier/auth/pool closure settles.
+   * @param owner Current Root ingress, registered before it starts any authentication or forwarding work.
+   * @returns Caller-effect withdrawal; a failed close retains the original registration and outcome.
+   */
+  registerIngressClose(owner: RootIngressCloseOwner): () => void | Promise<void> {
+    this.assertOpen()
+    const control = this.control
+    if (control === undefined || !['starting', 'active'].includes(control.phase) || control.ingress !== undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'One original active Root ingress owner is required')
+    }
+    const registration: RootIngressRegistration = { closeActual: owner.closeActual.bind(owner) }
+    const dispose = this.ctx.effect(() => {
+      control.ingress = registration
+      return async () => {
+        await this.closeIngress(registration)
+        if (control.ingress === registration) delete control.ingress
+      }
+    }, 'pe-cloud-runtime: retain actual Access ingress closure')
+    return () => {
+      const actual = this.closeIngress(registration)
+      void Promise.resolve(dispose()).catch((cause: unknown) => { this.controlFailure(cause) })
+      return actual
+    }
+  }
+
+  private closeIngress(registration: RootIngressRegistration): Promise<void> {
+    if (registration.closing !== undefined) return registration.closing
+    const result = Promise.withResolvers<void>()
+    registration.closing = result.promise
+    void result.promise.catch((_cause: unknown) => { /* Root and the caller effect retain the same failed close. */ })
+    try { result.resolve(registration.closeActual()) } catch (cause) { result.reject(cause) }
+    return result.promise
+  }
+
   /**
    * Install one root with explicit limits; this does not acquire a PG owner or mark an account ready.
    * @param ctx Root plugin context.
@@ -75,8 +138,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    */
   constructor(ctx: Context, config: RuntimeConfig) {
     const resolved = RuntimeConfigSchema(config)
+    const subagentCapacity = resolveSubagentCapacity(resolved.subagentCapacity)
     super(ctx, 'peAccountRuntime')
-    this.capacity = new RuntimeCapacity(resolved)
+    this.capacity = new RuntimeCapacity(resolved, subagentCapacity)
     this.recipe = new RootRecipeAudit(ctx, () => [...this.participants.values()], () => ({
       phase: this.control?.phase ?? 'component', recipeVersion: this.control?.config.recipeVersion,
       maximum: this.control?.config.native.maxEntries,
@@ -237,7 +301,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * @returns Current PG ownership or confirmed absence.
    */
   locateAccount(accountId: AccountId): Promise<AccountOwner | undefined> {
-    return this.activeControl().owners.locate(accountId)
+    const control = this.activeControl()
+    control.factory.logObservation(accountId)
+    return control.owners.locate(accountId)
   }
 
   /**
@@ -276,6 +342,51 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       }
     }
     return borrowed
+  }
+
+  /**
+   * Borrow an already ready local owner without claiming, mounting or replacing a graph.
+   * @param expected Original owner observation supplied by trusted Host composition.
+   * @returns The original factory AccountUse after a second exact owner read; failures release any acquired borrow.
+   */
+  async borrowOwnedAccount(expected: AccountOwner): Promise<AccountUse> {
+    const control = this.activeControl()
+    const current = (): void => {
+      if (this.activeControl() !== control) {
+        throw new AccountRuntimeError('cloud/stale-generation', 'The original Root control changed during account borrowing')
+      }
+      this.assertBusinessMode(control)
+      this.assertRecipeSealed(control.config.recipeVersion)
+      this.assertRequiredParticipants()
+      if (expected.phase !== 'ready' || expected.ownerInstanceId !== control.instance.identity.instanceId
+        || expected.recipeVersion !== control.config.recipeVersion) {
+        throw new AccountRuntimeError('cloud/stale-generation', 'The expected ready owner does not belong to this Root')
+      }
+    }
+    const ownerMatches = (owner: AccountOwner | undefined): void => {
+      if (owner === undefined || owner.accountId !== expected.accountId || owner.ownerInstanceId !== expected.ownerInstanceId
+        || owner.epoch !== expected.epoch || owner.recipeVersion !== expected.recipeVersion || owner.phase !== 'ready') {
+        throw new AccountRuntimeError('cloud/stale-generation', 'Account ownership changed before the local borrow completed')
+      }
+    }
+    current()
+    const owner = await control.owners.locate(expected.accountId)
+    current()
+    ownerMatches(owner)
+    let use: AccountUse | undefined
+    try {
+      use = await control.factory.borrowOwned(control.owners, expected)
+      current()
+      use.assertCurrent()
+      const confirmed = await control.owners.locate(expected.accountId)
+      current()
+      ownerMatches(confirmed)
+      use.assertCurrent()
+      return use
+    } catch (cause) {
+      use?.release()
+      throw cause
+    }
   }
 
   /**
@@ -334,9 +445,11 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     if (control === undefined) { this.capacity.close(); return Promise.resolve() }
     if (control.closing !== undefined) return control.closing
     control.phase = 'closing'
+    void control.ownerResolver?.close()
     clearTimeout(control.timer)
     const actual = this.finishControl(control)
     control.closing = actual
+    if (control.ingress !== undefined) void this.closeIngress(control.ingress)
     const timer = setTimeout(() => {
       this.ctx.logger.error('Runtime root shutdown observation expired; actual work and owner responsibility remain retained')
     }, control.config.shutdownTimeoutMs)
@@ -358,13 +471,21 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       instanceId: instance.identity.instanceId, verifierId: config.recovery.verifierId, limits: config.recovery.limits,
       verify: expected => this.verifyRecovery(expected),
     })
-    const factory = new AccountFactory(this.capacity, config.factory)
+    const factory = new AccountFactory(this.capacity, config.factory,
+      (row) => { this.logObservation({ instanceId: instance.identity.instanceId, rootRecipeVersion: config.recipeVersion, ...row }) })
     const saves = new ConfigSaveCoordinator(config.saves)
     const control: RootControl = {
       config, executor, database, instance, owners, factory, saves, requests: new Map(), secrets,
       phase: 'starting', starting: Promise.resolve(),
     }
     this.control = control
+    if (config.recovery === undefined) {
+      control.ownerResolver = new RootOwnerResolver(owners, instance, config.pg.maxConnections + config.pg.maxQueued, () => {
+        if (this.activeControl() !== control) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'Owner resolver belongs to another Root control')
+        }
+      })
+    }
     if (config.recovery !== undefined) control.recovery = this.recoveryCapability(control)
     control.starting = (async () => {
       await password()
@@ -375,6 +496,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       this.assertStarting(control)
       await instance.register()
       this.assertStarting(control)
+      this.logObservation({ event: 'instance-registered', pid: process.pid,
+        instanceId: instance.identity.instanceId, recipeVersion: config.recipeVersion })
+      factory.logObservation()
       control.phase = 'active'
       this.scheduleHeartbeat(control)
     })()
@@ -405,16 +529,42 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       const actual = Promise.resolve().then(() => control.instance.heartbeat())
       control.heartbeat = actual
       void observe(actual, control.config.heartbeatTimeoutMs, 'Runtime instance heartbeat observation expired').then(
-        () => { if (control.heartbeat === actual) delete control.heartbeat; this.scheduleHeartbeat(control) },
+        () => {
+          if (control.heartbeat === actual) delete control.heartbeat
+          control.factory.logObservation()
+          this.scheduleHeartbeat(control)
+        },
         (cause: unknown) => { this.controlFailure(cause) },
       )
     }, control.config.heartbeatIntervalMs)
     control.timer.unref()
   }
 
+  private logObservation(row: Readonly<Record<string, string | number | boolean | null>>, level: 'debug' | 'info' = 'debug'): void {
+    try {
+      if (Object.values(row).some(value => typeof value === 'string' && value.length > 256)) {
+        this.ctx.logger.debug('Cloud runtime observation is unknown: identifier exceeds the log bound.')
+        return
+      }
+      if (level === 'info') this.ctx.logger.info('Cloud runtime observation: %o', row)
+      else this.ctx.logger.debug('Cloud runtime observation: %j', row)
+    } catch (_observationError) {
+      try { this.ctx.logger.warn('Cloud runtime observation is unavailable; business state is unchanged.') }
+      catch (_unavailableLogger) { /* The original logger cannot report its own loss. */ }
+    }
+  }
+
   private async finishControl(control: RootControl): Promise<void> {
     const faults: unknown[] = []
     try { await control.starting } catch (cause) { control.failure ??= cause }
+    if (control.ingress !== undefined) {
+      try { await this.closeIngress(control.ingress) } catch (cause) {
+        control.failure ??= cause
+        control.phase = 'failed'
+        throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Root retains unresolved Access ingress closure', { cause })
+      }
+    }
+    await control.ownerResolver?.close()
     try { await control.heartbeat } catch (cause) { faults.push(cause) }
     let native: readonly AccountNativeCloseObservation[] = []
     try { native = await control.factory.close() } catch (cause) { faults.push(cause) }
@@ -463,13 +613,73 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const selectedAuth: unknown = this.ctx.root.get('peAuth')
     const auth = hasRootFetch(selectedAuth) ? selectedAuth : undefined
     if (exposure === undefined || execution === undefined || files === undefined) throw new AccountMountPrerequisiteError()
+    const modelKey = exposure.approvedConfiguration?.modelKey
+    const skills = exposure.approvedConfiguration?.skills
+    if (skills?.mode === 'sample') {
+      throw new AccountRuntimeError('cloud/invalid-config', 'Skill assembly requires managed mode and explicit management limits.')
+    }
+    const bundleLimits = skills?.mode === 'managed' ? files.requireSkillBundleLimits() : undefined
+    const settingsFields = exposure.approvedConfiguration?.fields ?? []
+    const settingsWrites = settingsFields.length !== 0
+    const pluginCatalog = exposure.approvedConfiguration
+    const plugins = pluginCatalog?.pluginControl
+    if ((modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined) && !hasModelKeyPeerConsumer(selectedAuth)) {
+      throw new AccountMountPrerequisiteError()
+    }
+    if (settingsWrites && config.native.firstScreen === undefined) throw new AccountMountPrerequisiteError()
+    const withModelKeyPeerUse: ModelKeyPeerConsumer['withModelKeyPeerUse'] = (peer, consume) => {
+      const current: unknown = this.ctx.root.get('peAuth')
+      if (!hasModelKeyPeerConsumer(current) || !hasModelKeyPeerConsumer(selectedAuth)
+        || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {
+        throw new AccountMountPrerequisiteError()
+      }
+      this.assertRecipeSealed(config.recipeVersion)
+      return selectedAuth.withModelKeyPeerUse(peer, consume)
+    }
+    if (plugins !== undefined && !hasConfigurationPeerConsumer(selectedAuth)) throw new AccountMountPrerequisiteError()
+    const withConfigurationPeer: ConfigurationPeerConsumer['withConfigurationPeer'] = (peer, consume, mode) => {
+      const current: unknown = this.ctx.root.get('peAuth')
+      if (!hasConfigurationPeerConsumer(current) || !hasConfigurationPeerConsumer(selectedAuth)
+        || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {
+        throw new AccountMountPrerequisiteError()
+      }
+      this.assertRecipeSealed(config.recipeVersion)
+      return selectedAuth.withConfigurationPeer(peer, consume, mode)
+    }
+    const selectedPackages = this.ctx.root.get('pluginPackages')
+    const resolvePackages = (): PluginPackages | undefined => {
+      this.assertRecipeSealed(config.recipeVersion)
+      const current = this.ctx.root.get('pluginPackages')
+      if (!(current instanceof PluginPackages) || !(selectedPackages instanceof PluginPackages)
+        || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedPackages, symbols.original) ?? selectedPackages)) {
+        throw new AccountMountPrerequisiteError()
+      }
+      return current
+    }
+    if (plugins !== undefined) resolvePackages()
+    const pluginPreparation: CloudPluginPreparation | undefined = plugins === undefined || pluginCatalog === undefined ? undefined : {
+      limits: plugins, catalog: pluginCatalog, requiredEntryIds: config.native.requiredEntryIds,
+      maxNativeInventoryEntries: config.native.maxEntries, resolvePackages, withModelKeyPeerUse, withConfigurationPeer,
+      withIdleConfiguration: (binding, close, operation) => control.factory.withIdleConfiguration(binding, close, operation),
+      scheduleRebuild: (binding, handoff, prepare) => control.factory.scheduleConfigurationRebuild(binding, {
+        afterRequest: handoff.afterRequest, closePeers: handoff.closeAll, assertPrincipal: handoff.assertPrincipal, prepare,
+        apply: (_owner, api, intent, current) => api.applyApprovedPluginIntent(intent, current),
+        verify: (api, intent, persisted, current) => api.verifyApprovedPluginIntent(intent, persisted, current),
+        failed: (operationId, _cause) => {
+          this.ctx.logger.error('Approved plugin rebuild %s failed; application is unconfirmed. Reconnect and read current state before another edit.', operationId)
+        },
+      }),
+    }
     const storage = files.requireStorageOwner()
     storage.assertRootCurrent()
     const instanceId = control.instance.identity.instanceId
     const layout = deriveAccountLayout(accountId, instanceId, config.paths)
+    const environment = createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }])
     return Object.freeze({
       accountId, instanceId, recipeVersion: config.recipeVersion, deployment: config.paths,
-      environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }]),
+      environment: modelKey === undefined ? environment : new AccountModelKeyEnvironment(
+        environment, modelKey.bindings.map(binding => binding.ref),
+      ),
       recipe: Object.freeze({
         profile: {
           name: 'pe-cloud-account', dir: layout.profileRoot, patchPath: layout.patchPath, installAnchor: config.native.installAnchor,
@@ -481,7 +691,28 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         maxPathBytes: config.paths.maxPathBytes,
         storage: Object.freeze({ owner: storage, files }),
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
+          ...config.subagentCapacity === undefined ? {} : {
+            reserveSubagent: (binding, depth) => control.factory.reserveSubagent(binding, depth),
+          },
           maxNativeInventoryEntries: config.native.maxEntries,
+          ...pluginPreparation === undefined ? {} : { plugins: pluginPreparation },
+          ...settingsWrites ? { settingsWrites: { withModelKeyPeerUse, fields: settingsFields } } : {},
+          ...modelKey === undefined ? {} : { modelKey: {
+            limits: modelKey, maxNativeInventoryEntries: config.native.maxEntries,
+            withModelKeyPeerUse,
+          } },
+          ...skills?.mode !== 'managed' || bundleLimits === undefined ? {} : { skills: {
+            limits: skills.limits, managed: { limits: skills.management, bundleLimits },
+            withModelKeyPeerUse: (peer, consume) => {
+              const current: unknown = this.ctx.root.get('peAuth')
+              if (!hasModelKeyPeerConsumer(current) || !hasModelKeyPeerConsumer(selectedAuth)
+                || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {
+                throw new AccountMountPrerequisiteError()
+              }
+              this.assertRecipeSealed(config.recipeVersion)
+              return selectedAuth.withModelKeyPeerUse(peer, consume)
+            },
+          } },
           ...auth === undefined ? {} : { inspectRootFetch: () => {
             const current: unknown = this.ctx.root.get('peAuth')
             if (!hasRootFetch(current) || (Reflect.get(current, symbols.original) ?? current)
@@ -494,6 +725,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           } },
           guards: (ctx, binding, files) => createAccountPolicy(
             ctx, binding, files, config.accountPolicy, exposure.policy, config.native.maxEntries,
+            modelKey === undefined ? undefined : (provider, model) => {
+              const api = ctx.get('peCloudApi')
+              if (api === undefined) throw new AccountMountPrerequisiteError()
+              api.assertProvisionableModel(provider, model)
+            },
+            (current) => { this.assertRecipeSealed(config.recipeVersion); control.factory.assertBusinessCurrent(current) },
           ),
           assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },
         prepare: (_ctx, binding) => {
@@ -512,7 +749,18 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     this.ctx.effect(() => ready.onReady(() => {
       if (this.closed || this.control?.phase !== 'active') return
       try { this.recipe.sealCurrent(config.recipeVersion, config.native.maxEntries) }
-      catch (_cause) { this.ctx.logger.error('Cloud Root recipe audit did not seal; account admission remains closed. Inspect the retained audit.') }
+      catch (_cause) {
+        this.ctx.logger.error('Cloud Root recipe audit did not seal; account admission remains closed. Inspect the retained audit.')
+        return
+      }
+      // Observe only the original ordinary launcher's actual callback and seal.
+      // This log neither commits AppReady nor creates/admits an account graph.
+      try {
+        this.logObservation({ event: 'ordinary-profile-ready', pid: process.pid,
+          instanceId: this.control.instance.identity.instanceId, recipeVersion: config.recipeVersion,
+          rootFiberUid: this.ctx.root.fiber.uid, monotonicNs: process.hrtime.bigint().toString(),
+          appReadyObserved: true, recipeStatus: 'sealed' }, 'info')
+      } catch (_unavailableObservation) { /* Observation alone never changes the original startup outcome. */ }
     }), 'pe-cloud-runtime: audit Root after native startup commits')
   }
 

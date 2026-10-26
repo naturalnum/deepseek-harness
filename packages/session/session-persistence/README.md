@@ -107,6 +107,8 @@ Each `session/event` for the writer's session copies into that handle's internal
 
 The seam's shared helpers validate current logical records identified by `SESSION_FORMAT_VERSION`, and appends write only the current format ([rationale](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md)). Historical decoding and immutable successor publication belong inside each provider before it returns a handle. Every backend runs `storage-contract` validation on handle reads and write-open priming, refusing an unknown event type as `SessionFormatUnsupportedError` and a malformed current record as `SessionPersistenceCorruptionError`, with the raw-log `SessionLocation` attached when the backend keeps one artifact per session.
 
+`isQuiescent(maximum)` is a read-only producer observation. The base provider returns false, so a provider that has not implemented actual pending-work observation cannot authorize an idle configuration update. This observation neither flushes nor closes persistence.
+
 </details>
 -----
 

@@ -17,6 +17,10 @@ const CLOUD_WEB_CLIENT_PACKAGES = [
   '@deepseek-ai/dsh-typert-registry',
 ] as const
 
+const GENERAL_SETTINGS_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-settings-general'] as const
+const MODEL_SETTINGS_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-settings-models'] as const
+const SERVICE_PREVIEW_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-tool'] as const
+
 /** Stable declaration-half plugin name; this is not an account or root service. */
 export const name = 'pe-cloud-client'
 /** Web rows use the original Loader's explicit clientModules dependency; omission requires no services. */
@@ -49,7 +53,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       ['@deepseek-ai/dsh-client-connection'], baseUrl, { activate: false },
     ), 'pe-cloud-client: module-only native Connection')
     owner.effect(() => owner.clientModules.registerClientPackages(
-      CLOUD_WEB_CLIENT_PACKAGES, baseUrl, { activate: true },
+      [...CLOUD_WEB_CLIENT_PACKAGES,
+        ...GENERAL_SETTINGS_CLIENT_PACKAGES,
+        ...manifest.client.modelSettingsRequestTimeoutMs === undefined ? [] : MODEL_SETTINGS_CLIENT_PACKAGES,
+        ...manifest.client.servicePreview === undefined ? [] : SERVICE_PREVIEW_CLIENT_PACKAGES,
+      ], baseUrl, { activate: true },
     ), 'pe-cloud-client: browser BFF services')
     owner.on('webserver/index-inject', (rows) => {
       rows.push({ kind: 'global', name: '__DSH_CLOUD_WEB__', value: manifest })

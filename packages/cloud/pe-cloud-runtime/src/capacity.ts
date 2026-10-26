@@ -1,19 +1,32 @@
 /** Local reservations retain capacity until their operation owner explicitly settles them. */
 import { AccountRuntimeError } from './errors.ts'
-import type { AccountId, DrainCapacityReservation, MountCapacityReservation, RuntimeConfig } from './types.ts'
+import type { AccountId, DrainCapacityReservation, MountCapacityReservation, RuntimeConfig,
+  SubagentCapacityLimits, SubagentCapacityReservation } from './types.ts'
 
 /** Capacity bookkeeping only; the account factory owns PG acquisition and actual work. */
 export class RuntimeCapacity {
   private readonly accounts = new Set<AccountId>()
   private readonly drains = new Set<AccountId>()
   private mounting = 0
+  private readonly subagentSlots = new Map<symbol, AccountId>()
+  private readonly subagentLimits: SubagentCapacityLimits | undefined
   private closed = false
 
   /**
    * Bind reservations to one root's validated deployment limits.
    * @param config Explicit capacity limits after schema validation.
+   * @param subagents Explicit immutable local hard limits; omission closes child reservations.
    */
-  constructor(private readonly config: RuntimeConfig) {}
+  constructor(private readonly config: RuntimeConfig, subagents?: SubagentCapacityLimits) {
+    if (subagents !== undefined) {
+      if (!Number.isSafeInteger(subagents.maxActivePerAccount) || subagents.maxActivePerAccount < 1
+        || !Number.isSafeInteger(subagents.maxActiveTotal) || subagents.maxActiveTotal < 1
+        || !Number.isSafeInteger(subagents.maxDepth) || subagents.maxDepth < 0) {
+        throw new AccountRuntimeError('cloud/invalid-config', 'Subagent hard limits require explicit finite integer capacities and depth')
+      }
+      this.subagentLimits = Object.freeze({ ...subagents })
+    }
+  }
 
   /** Stop new reservations without claiming that existing work has stopped. */
   close(): void { this.closed = true }
@@ -45,6 +58,7 @@ export class RuntimeCapacity {
       },
       releaseAccount: () => {
         if (released) return
+        this.assertSubagentsStopped(accountId)
         if (mounting || this.drains.has(accountId)) {
           throw new AccountRuntimeError('cloud/account-unavailable', 'Account capacity is still held by actual mount or drain work')
         }
@@ -78,6 +92,56 @@ export class RuntimeCapacity {
         this.drains.delete(accountId)
       },
     })
+  }
+
+  /**
+   * Reserve one child across every root Session owned by an already reserved account.
+   * This is bookkeeping only: the caller must authorize the exact live parent,
+   * graph epoch, project, model, Preset and actual create/resume before calling.
+   * Native subtree capacity remains independently enforced by SubagentRuntime.
+   * @param accountId Account already retained by this exact runtime owner.
+   * @param depth Actual child depth derived from validated parent/history, never the user's cap.
+   * @returns One reservation retained through actual native destruction; unknown cannot release it.
+   * @throws AccountRuntimeError when closed, unconfigured, accountless or over a hard limit.
+   */
+  reserveSubagent(accountId: AccountId, depth: number): SubagentCapacityReservation {
+    this.assertOpen()
+    const limits = this.subagentLimits
+    if (limits === undefined || !this.accounts.has(accountId)) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Subagent capacity requires explicit hard limits and an existing account reservation')
+    }
+    if (!Number.isSafeInteger(depth) || depth < 1 || depth > limits.maxDepth) {
+      throw new AccountRuntimeError('cloud/capacity', 'Subagent platform depth is exhausted')
+    }
+    let active = 0
+    for (const account of this.subagentSlots.values()) if (account === accountId) active += 1
+    if (active >= limits.maxActivePerAccount || this.subagentSlots.size >= limits.maxActiveTotal) {
+      throw new AccountRuntimeError('cloud/capacity', 'Subagent account or platform capacity is exhausted')
+    }
+    const slot = Symbol()
+    this.subagentSlots.set(slot, accountId)
+    let settled = false
+    return Object.freeze({ settle: (status: 'confirmed' | 'unknown') => {
+      if (settled) return
+      settled = true
+      if (status === 'confirmed') this.subagentSlots.delete(slot)
+    } })
+  }
+
+  /**
+   * Require every child reservation to have confirmed cleanup before durable owner release.
+   * @param accountId Account retained by the factory's actual close transaction.
+   * @throws AccountRuntimeError while any active or unknown child reservation remains.
+   */
+  assertSubagentsStopped(accountId: AccountId): void {
+    if (this.hasSubagents(accountId)) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Account subagent capacity is retained by unconfirmed actual cleanup')
+    }
+  }
+
+  private hasSubagents(accountId: AccountId): boolean {
+    for (const account of this.subagentSlots.values()) if (account === accountId) return true
+    return false
   }
 
   private assertOpen(): void {

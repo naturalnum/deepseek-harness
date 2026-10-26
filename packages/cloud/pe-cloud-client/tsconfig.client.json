@@ -10,7 +10,11 @@
     "src/config.ts",
     "src/schema.ts",
     "src/client/index.ts",
+    "src/client/approved-settings.ts",
+    "src/client/ApprovedSettings.tsx",
+    "src/client/approved-settings-locales.ts",
     "src/client/errors.ts",
+    "src/client/observe-disposal.ts",
     "src/client/read-response.ts",
     "src/client/bootstrap.ts",
     "src/client/transport.ts",
@@ -32,7 +36,44 @@
     "src/client/ServicePreviewRow.tsx",
     "src/css-modules.d.ts",
     "src/preview-policy.ts",
-    "src/client/preview-url.ts"
+    "src/client/preview-url.ts",
+    "src/client/model-settings.ts",
+    "src/client/model-settings-locales.ts",
+    "src/client/skill-edit.ts",
+    "src/client/skill-version-editing.ts",
+    "src/client/management/skills/SampleSkillEditor.tsx",
+    "src/client/skill-settings-locales.ts",
+    "src/client/skill-settings.ts",
+    "src/client/SkillSettings.tsx",
+    "src/client/management/skills/SkillDetailDialog.tsx",
+    "src/client/management/skills/SkillImportPanel.tsx",
+    "src/client/management/skills/SkillInstallPanel.tsx",
+    "src/client/management/skills/SkillMarkdown.tsx",
+    "src/client/management/skills/SkillsPage.tsx",
+    "src/client/management/skills/locales.ts",
+    "src/client/management/skills/types.ts",
+    "src/client/management/skills/use-skill-action.ts",
+    "src/client/management/locales.ts",
+    "src/client/management/ManagementActionToast.tsx",
+    "src/client/management/register.tsx",
+    "src/client/management/skills/selected-bundle.ts",
+    "src/client/managed-skill-editing.ts",
+    "src/client/management/skills/ManagedSkillEditor.tsx",
+    "src/client/managed-skill-files.ts",
+    "src/client/managed-skill-remote.ts",
+    "src/client/management/plugins/types.ts",
+    "src/client/management/plugins/catalog.ts",
+    "src/client/management/plugins/locales.ts",
+    "src/client/management/plugins/PluginManagementPage.tsx",
+    "src/client/management/plugins/register.ts",
+    "src/client/management/plugins/account-projection.ts",
+    "src/client/management/plugins/plugin-edit.ts",
+    "src/client/management/plugins/page-plugin-edit.ts",
+    "src/client/management/plugins/current-card.ts",
+    "src/client/management/plugins/catalog-reader.ts",
+    "src/client/management/plugins/install.tsx",
+    "src/client/management/plugins/PluginEditPanel.tsx",
+    "src/client/management/plugins/plugin-schema.ts"
   ],
   "references": [
     {
@@ -82,6 +123,21 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../client/ui-settings-models"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../client/ui-settings/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-layout"
+    },
+    {
+      "path": "../../client/ui-sidebar"
     }
   ]
 }

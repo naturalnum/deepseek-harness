@@ -43,6 +43,8 @@ kind: "package-reference"
 
 -----
 
+可选的纯 Host `SettingsControllerInternals.withWrite` hook 接收原 `RemoteInvocation`、提交的命名空间、操作、脱离调用方的输入及版本。其回调在同一准入内保留原 Settings 持久化及脱敏结果；可提供 `SettingsWriteControl` 供提交时复查。省略时保持既有 Remote 操作及 wire 参数。
+
 <a id="model-experience"></a>
 ## 模型体验
 

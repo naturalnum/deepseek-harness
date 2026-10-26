@@ -45,7 +45,7 @@ kind: "package-reference"
 
 私有 [Root SDK 工厂](src/bootstrap/factory.ts) 加载随包发布于 `runtime/agent` 和 `runtime/bootstrap` 的九份固定 Python 资产，仅从构建后的 `lib` 模块旁定位。文件缺失、为链接或 hash 不符时，在 HTTP 工作之前拒绝；不回退到源码树，也不下载资产。工厂保留原 bootstrap、认证登记器与 SDK 后端的拥有关系，不提供 files 导出授权或账户准入，也不改变关闭的生产配方。
 
-原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。装配收养原继承 FD4 keeper，绑定原 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
+原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。封闭选择固定支持技能资源挂载的服务端镜像，在收养 keeper 或构造 SDK 前拒绝其他镜像摘要。装配收养原继承 FD4 keeper，绑定原 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
 
 runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，可信工厂将安装后的精确对象及图当前性检查传给根协调器的 `bindAccount`，再在账户入口之前调用 `installAccountExecutionPort`。绑定或 port 缺失、复制、跨图或被影子替换都会失败；重复提供方或容量耗尽也会失败。关闭登记不替代其他账户就绪检查。
 
@@ -67,7 +67,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 尚未提交的前台命令可在原有四记录或300秒驻留上限处更换已完全停稳的计算资源。Root 先等待原物理停止、released 元数据及挂载释放完成，再为同一 Session 环境取得新的 files 授权并启动新运行时。活跃服务、运行范围、应用 I/O 及未知引用都会阻止更换。已确认停止的 SDK、bootstrap 和运行时记录可被回收，原 intent 对象保持撤销；未解决记录继续占用容量。
 
-私有的[旧分配恢复 helper](src/allocation-recovery.ts)有界枚举并冻结精确旧账户/epoch 的全部非终态记录。Root 的可信 verifier 必须证明旧进程/writer 已失效且永久失去迟到启动能力。已接受创建须有精确物理销毁证明，sandbox id 为空时还须独立创建绑定，随后调用原有 stopping/released CAS。严格 v2 见证另允许 provider 创建前已完成的固定 TTL 拒绝：精确 intent 及拒绝/请求完成/未创建/迟到启动撤销四项引用，只授权原 `failNotCreated` CAS 写入固定 failed/null-id 终态。HTTP500 或空列表本身不能取得资格。未知写入只读对账原捕获 postimage，不重放；未解决责任仍阻止恢复。helper 只向 runtime 独立恢复 CAS 返回覆盖引用，不授予 provider 权限。实际维护、PostgreSQL 与后端验收仍须分别完成。
+私有的[旧分配恢复 helper](src/allocation-recovery.ts)有界枚举并冻结精确旧账户/epoch 的全部非终态记录。Root 的可信 verifier 必须证明旧进程/writer 已失效且永久失去迟到启动能力。已接受创建须有精确物理销毁证明，sandbox id 为空时还须独立创建绑定，随后调用原有 stopping/released CAS。严格 v2 见证另只允许 provider 创建前已完成的 `fixed-ttl-bounds` 或 `host-bind-bounds` 拒绝：精确 intent 及拒绝/请求完成/未创建/迟到启动撤销四项引用，只授权原 `failNotCreated` CAS 写入固定 failed/null-id 终态。HTTP500 或空列表本身不能取得资格。未知写入只读对账原捕获 postimage，不重放；未解决责任仍阻止恢复。helper 只向 runtime 独立恢复 CAS 返回覆盖引用，不授予 provider 权限。实际维护、PostgreSQL 与后端验收仍须分别完成。
 
 现有 Root 入口还支持显式关闭的维护装配：`mode: closed`、空 required capabilities、有界 `managed` 元数据预算及唯一受保护 `recovery` 发布引用。它不构造 SDK 执行或账户图。原执行 participant 复核进程死亡及完整不可变 intent 覆盖，经原 store 对账 allocation，再调用 runtime 的精确旧 owner 恢复及独立旧实例关闭。实际工作未知时保留清理责任。发布物通过 SHA256 和只读 Root 持有租约绑定，不使用密码学签名。
 
@@ -82,6 +82,12 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 现有 HTTP 定时器扣除原操作、服务角色、原 ingress 请求的剩余时限，以及在首次 bootstrap 前捕获的保守驻留期限。预留和已提交观察均不重新开始计时。物理沙盒到期单独处理：提前到期沿用原请求失败和物理停止确认流程，不能仅因时间到期就释放容量。
 
 私有[受管协调器](src/managed-coordinator.ts) 通过原始延迟原生授权和 files 授权连接这些拥有者，活跃进程槽与保留输出分别释放。Root 启动时先检查持久化的非终态分配，再允许就绪；关闭时等待启动、分配、传输和元数据责任实际结束。[SDK 适配器](src/sdk-lifecycle.ts) 在唯一且受验证的物理 DELETE 前关闭并等待特权启动请求。启动失败本身不表示特权启动仍未结清：有界命令流已初始化、观察到执行完成事件并结束，且原传输实际关闭时，严格输出或错误校验仍可判启动失败，但允许进入原停止链。缺少终结事实、超出观察限额或传输关闭失败时仍保留 unknown 并阻止删除；HTTP 成功本身不证明命令终结或物理停止。[受信运行时登记器](src/trusted-runtime.ts) 保留普通认证请求直到本地实际结束；只有物理删除不能释放命令容量。有界[数据传输器](src/agent-data/index.ts) 保留原始字节坐标与原操作引用。其 Loader 安装仍要求原始受保护部署；组件安装本身不代表原生网页服务执行已通过验收。
+
+可选的可信 `ManagedExecutionDeployment.skillCopies` 策略提供显式 `maxCopiesPerOperation`，不属于公开 Loader JSON 或模型输入。它要求原 files owner 实现 `prepareSkillProject` 和 `borrowAllBundleWorkingCopies`；缺少枚举方法时，在 allocation 前拒绝。每条命令均由原 owner 从受保护的项目关联中推导包含 legacy 与完整树副本的完整有界集合，并核验已签发的 `SkillBundleOperationCopies`；超限、未知或未取得资格的成员使整个操作拒绝；命令文本、路径和 API 发布缓存不能选择成员。allocation 保留原父目录与 export 借用，每个原命令保留真实 copies 借用，直到实际 range 完成且本地结清，或合格且已 joined 的物理停止。输出保留有独立释放点。 受保护的 `rootDeployment` 文件接受可选闭合对象 `skillCopies: { maxCopiesPerOperation }`，数量须显式为正整数且不超过 2147483647；省略时不注入策略。Assembly 将独立冻结的解析结果传给原 deployment。
+
+[固定副本执行世界](runtime/agent/paths.py) 保留项目 RW 与外层 `.pe` RO 挂载，只增加固定 `.pe/skills` 子目录的 RW export。内层准备捕获实际版本目录 FD，建立只读 scaffold，并仅将这些版本目录绑定为 RW。Guardian 在 PREPARED 前核验实际父目录、副本身份及挂载模式，然后执行原有八 FD 边界检查。公开命令仍严格只有 `argv`、`cwd`、`stdin`；规范化私有事实纳入原 spec hash 和 role HMAC，完整 4096 字节 Guardian frame 包含这些事实。原生 admission 在命令保留和 allocation 前，先为整个配置副本数量计算保守 scalar 字节上界，发送前再次检查实际完整 frame；命令超限时拒绝，即便当时较小的集合可能装得下。原 files 源挂载身份仍在已取得资格的 source context 中核验，容器 mount id 则独立观察。启用此策略前，仍须完成跨 namespace 冷恢复及实际 SDK 嵌套 volume 验收。原生 get 还要求 files 驻留容量同时覆盖保留的源快照、物化以及保留的父目录和操作；只有一次 reservation 容量的配置不能接纳这条调用链。
+
+受管 coordinator 通过原开放账户 port、命令记录及 allocation owner 观察本地修改的空闲条件。在途调用、subprocess 获取、未停后代或进程 I/O、开发服务、应用请求、创建/准备/停止/对账及未知结果均拒绝修改。已结清的 ready 沙盒、缓存 Session 选择及完成后保留的输出可以继续保留，身份、mount 和预算不释放。基础 coordinator 拒绝该观察；终态重建仍通过原 stop/dispose 路径等待全部 warm allocation 与保留结果。
 
 </details>
 

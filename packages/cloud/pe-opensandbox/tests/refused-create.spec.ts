@@ -18,68 +18,91 @@ function row(changes: Partial<SandboxAllocation> = {}): SandboxAllocation {
     lastActivityAt: at, lastCheckedAt: at, runtimeIdentity: null, executionProtocolVersion: null,
     executionCapabilities: [], failureCode: null, ...changes } as SandboxAllocation
 }
-function refused() {
-  const { allocationId, accountId, epoch, sessionId, workspaceId, environmentVersion, provider,
-    projectMountVersion, requestedAt, createDeadlineAt } = row()
-  const intent = { allocationId, accountId, epoch, sessionId, workspaceId, environmentVersion, provider,
-    projectMountVersion, requestedAt, createDeadlineAt }
-  return { createOutcome: 'rejected-before-provider-create' as const, sandboxId: null, intent, intentDigest: recoveryIntentDigest(intent),
-    refusalCode: KNOWN_PROVIDER_REFUSAL, knownRefusalEvidenceRef: 'test:qualified-fixed-ttl-refusal',
-    completedRequestEvidenceRef: 'test:original-terminal-request', providerCreateNotStartedEvidenceRef: 'test:before-provider-dispatch',
-    lateStartsRevokedEvidenceRef: 'test:permanent-no-late-start' }
-}
-function publication() {
-  return { schema: 'pe-local-controlled-recovery-v2', verifierId: 'local-original-process-and-provider-v1', auditRef: 'test:audit',
-    verifiedAt: new Date(now).toISOString(), oldInstanceId: 'test-instance', databaseRole: 'test-role',
-    writersVerifiedAt: new Date(now - 1).toISOString(), oldProcess: { pid: 3456, startTicks: '7890',
-      bootId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', pidNamespace: 'pid:[1234]' },
-    processEvidenceRef: 'test:process-absent', writersEvidenceRef: 'test:writer-loss',
-    accounts: [{ accountId: row().accountId, epoch: row().epoch, allocations: [refused()] }] }
-}
-function witness(value: unknown = publication()) {
-  return new RootRecoveryWitness({ value: () => value, assertCurrent() {} }, limits,
-    i => ({ bootId: i.bootId, pidNamespace: i.pidNamespace, original: 'absent' }), () => now)
-}
-function proof(snapshot: AllocationRecoverySnapshot): AllocationRecoveryEvidence {
-  return { scope: snapshot.scope, snapshotDigest: snapshot.digest, oldProcessExitRef: 'test:process',
-    oldWriterWithdrawalRef: 'test:writers', permanentLateCreateSpawnLossRef: 'test:late-loss',
-    allocations: snapshot.allocations.map(x => ({ allocationId: x.row.allocationId, rowDigest: x.digest,
-      intentDigest: x.intentDigest, createOutcome: 'rejected-before-provider-create', sandboxId: null, refusalCode: KNOWN_PROVIDER_REFUSAL,
-      refusalRef: 'test:qualified-fixed-ttl-refusal', completedRequestRef: 'test:original-terminal-request',
-      providerCreateNotStartedRef: 'test:before-provider-dispatch', permanentLateCreateSpawnLossRef: 'test:permanent-no-late-start' })) }
-}
-async function store(initial = row(), fault?: 'committed' | 'uncommitted' | 'read-loss' | 'drift') {
-  let actual = structuredClone(initial), submitted = false
-  const writes: string[] = []
-  const query: AllocationQuery = { async query(sql, values) {
-    if (sql === allocationMigrationSql) return { rows: [] }
-    if (sql.startsWith('UPDATE')) {
-      writes.push(String(values[6])); submitted = true
-      if (actual.state !== values[5]) return { rows: [] }
-      if (fault === 'uncommitted') throw new Error('Synthetic lost reply before commit')
-      actual = { ...actual, state: 'failed', failureCode: values[11]!, lastCheckedAt: '2026-10-22T02:15:01.000Z',
-        ...(fault === 'drift' ? { environmentVersion: 'changed' } : {}) }
-      if (fault === 'committed' || fault === 'read-loss') throw new Error('Synthetic lost reply after commit')
+describe.each([KNOWN_PROVIDER_REFUSAL, 'host-bind-bounds'] as const)('explicit completed provider refusal %s', (refusalCode) => {
+  function refused() {
+    const { allocationId, accountId, epoch, sessionId, workspaceId, environmentVersion, provider,
+      projectMountVersion, requestedAt, createDeadlineAt } = row()
+    const intent = { allocationId, accountId, epoch, sessionId, workspaceId, environmentVersion, provider,
+      projectMountVersion, requestedAt, createDeadlineAt }
+    return { createOutcome: 'rejected-before-provider-create' as const, sandboxId: null, intent, intentDigest: recoveryIntentDigest(intent),
+      refusalCode, knownRefusalEvidenceRef: `test:qualified-${refusalCode}-refusal`,
+      completedRequestEvidenceRef: 'test:original-terminal-request', providerCreateNotStartedEvidenceRef: 'test:before-provider-dispatch',
+      lateStartsRevokedEvidenceRef: 'test:permanent-no-late-start' }
+  }
+  function publication() {
+    return { schema: 'pe-local-controlled-recovery-v2', verifierId: 'local-original-process-and-provider-v1', auditRef: 'test:audit',
+      verifiedAt: new Date(now).toISOString(), oldInstanceId: 'test-instance', databaseRole: 'test-role',
+      writersVerifiedAt: new Date(now - 1).toISOString(), oldProcess: { pid: 3456, startTicks: '7890',
+        bootId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', pidNamespace: 'pid:[1234]' },
+      processEvidenceRef: 'test:process-absent', writersEvidenceRef: 'test:writer-loss',
+      accounts: [{ accountId: row().accountId, epoch: row().epoch, allocations: [refused()] }] }
+  }
+  function witness(value: unknown = publication()) {
+    return new RootRecoveryWitness({ value: () => value, assertCurrent() {} }, limits,
+      i => ({ bootId: i.bootId, pidNamespace: i.pidNamespace, original: 'absent' }), () => now)
+  }
+  function proof(snapshot: AllocationRecoverySnapshot): AllocationRecoveryEvidence {
+    return { scope: snapshot.scope, snapshotDigest: snapshot.digest, oldProcessExitRef: 'test:process',
+      oldWriterWithdrawalRef: 'test:writers', permanentLateCreateSpawnLossRef: 'test:late-loss',
+      allocations: snapshot.allocations.map(x => ({ allocationId: x.row.allocationId, rowDigest: x.digest,
+        intentDigest: x.intentDigest, createOutcome: 'rejected-before-provider-create', sandboxId: null, refusalCode,
+        refusalRef: `test:qualified-${refusalCode}-refusal`, completedRequestRef: 'test:original-terminal-request',
+        providerCreateNotStartedRef: 'test:before-provider-dispatch', permanentLateCreateSpawnLossRef: 'test:permanent-no-late-start' })) }
+  }
+  async function store(initial = row(), fault?: 'committed' | 'uncommitted' | 'read-loss' | 'drift') {
+    let actual = structuredClone(initial), submitted = false
+    const writes: string[] = []
+    const query: AllocationQuery = { async query(sql, values) {
+      if (sql === allocationMigrationSql) return { rows: [] }
+      if (sql.startsWith('UPDATE')) {
+        writes.push(String(values[6])); submitted = true
+        if (actual.state !== values[5]) return { rows: [] }
+        if (fault === 'uncommitted') throw new Error('Synthetic lost reply before commit')
+        actual = { ...actual, state: 'failed', failureCode: values[11]!, lastCheckedAt: '2026-10-22T02:15:01.000Z',
+          ...(fault === 'drift' ? { environmentVersion: 'changed' } : {}) }
+        if (fault === 'committed' || fault === 'read-loss') throw new Error('Synthetic lost reply after commit')
+        return { rows: [{ allocation: actual }] }
+      }
+      if (sql.includes('ORDER BY allocation_id')) return { rows: ['failed', 'released'].includes(actual.state) ? [] : [{ allocation: actual }] }
+      if (fault === 'read-loss' && submitted) throw new Error('Synthetic reconciliation read unavailable')
       return { rows: [{ allocation: actual }] }
-    }
-    if (sql.includes('ORDER BY allocation_id')) return { rows: ['failed', 'released'].includes(actual.state) ? [] : [{ allocation: actual }] }
-    if (fault === 'read-loss' && submitted) throw new Error('Synthetic reconciliation read unavailable')
-    return { rows: [{ allocation: actual }] }
-  } }
-  const owner = new PostgresAllocationStore(query, { maxFieldBytes: 256, maxInputBytes: 65536, maxRowBytes: 8192,
-    maxResultBytes: 32768, maxRows: 4, maxCapabilities: 5, maxPendingQueries: 4, maxMutationResponsibilities: 8, maxRetainedBytes: 262144 })
-  await owner.migrate()
-  const recover = (change = (p: AllocationRecoveryEvidence) => p) => reconcileOldAllocationEpoch(owner, {
-    scope: { accountId: initial.accountId, epoch: initial.epoch }, limits: bounds,
-    verifier: { id: 'test:trusted', verify: async snapshot => change(proof(snapshot)) },
-  })
-  return { owner, writes, get: () => actual, recover }
-}
+    } }
+    const owner = new PostgresAllocationStore(query, { maxFieldBytes: 256, maxInputBytes: 65536, maxRowBytes: 8192,
+      maxResultBytes: 32768, maxRows: 4, maxCapabilities: 5, maxPendingQueries: 4,
+      maxMutationResponsibilities: 8, maxRetainedBytes: 262144 })
+    await owner.migrate()
+    const recover = (change = (p: AllocationRecoveryEvidence) => p) => reconcileOldAllocationEpoch(owner, {
+      scope: { accountId: initial.accountId, epoch: initial.epoch }, limits: bounds,
+      verifier: { id: 'test:trusted', verify: async snapshot => change(proof(snapshot)) },
+    })
+    return { owner, writes, get: () => actual, recover }
+  }
 
-describe('explicit completed provider refusal', () => {
+
+  it('requires the exact old process to be absent even for an otherwise complete qualified refusal', () => {
+    expect(() => new RootRecoveryWitness({ value: publication, assertCurrent() {} }, limits,
+      i => ({ bootId: i.bootId, pidNamespace: i.pidNamespace, original: 'alive' }), () => now))
+      .toThrow(/Trusted recovery evidence/)
+  })
+  it.each(['oldProcessExitRef', 'oldWriterWithdrawalRef', 'permanentLateCreateSpawnLossRef'] as const)
+  ('requires complete old process/writer/late-start %s before CAS', async (key) => {
+    const f = await store()
+    await expect(f.recover(p => ({ ...p, [key]: '' }))).rejects.toMatchObject({ code: 'proof' })
+    expect(f.writes).toEqual([])
+  })
+  it('requires complete allocation coverage and exact immutable intent before a refusal CAS', async () => {
+    const missing = await store()
+    await expect(missing.recover(p => ({ ...p, allocations: [] }))).rejects.toMatchObject({ code: 'proof' })
+    expect(missing.writes).toEqual([])
+    const wrong = await store()
+    await expect(wrong.recover(p => ({ ...p, allocations: p.allocations.map(x => ({ ...x, intentDigest: 'changed' })) })))
+      .rejects.toMatchObject({ code: 'proof' })
+    expect(wrong.writes).toEqual([])
+  })
   it('normalizes strict v2 refused evidence without inventing a sandbox or destruction', () => {
     const selected = witness().verifyAllocation(row())
     expect(selected.createOutcome).toBe('rejected-before-provider-create')
+    expect(selected).toMatchObject({ refusalCode })
     expect(selected.sandboxId).toBeNull(); expect(selected).not.toHaveProperty('physicalStopEvidenceRef')
     expect(Object.isFrozen(selected)).toBe(true)
     expect(witness().verifyAllocation(row({ state: 'failed', failureCode: PROVIDER_CREATE_REFUSAL_CODE }))).toEqual(selected)
@@ -93,7 +116,7 @@ describe('explicit completed provider refusal', () => {
     const p = publication(); Reflect.deleteProperty(p.accounts[0]!.allocations[0]!, key)
     expect(() => witness(p)).toThrow(/Trusted recovery evidence/)
   })
-  it.each(['http-500', 'timeout', 'empty-provider-list', 'unsettled-or-unknown'])('rejects %s as a known no-create outcome', (code) => {
+  it.each(['http-500', 'timeout', 'empty-provider-list', 'unsettled-or-unknown', 'host-bind-bounds-extra', 'Host-Bind-Bounds', 'deletion-completion/host-bind-bounds'])('rejects %s as a known no-create outcome', (code) => {
     const p = publication(); Object.assign(p.accounts[0]!.allocations[0]!, { refusalCode: code })
     expect(() => witness(p)).toThrow(/Trusted recovery evidence/)
   })
@@ -114,7 +137,7 @@ describe('explicit completed provider refusal', () => {
   it('writes only original failNotCreated CAS and retains the exact refusal audit', async () => {
     const f = await store(); const report = await f.recover()
     expect(f.writes).toEqual(['failed']); expect(f.get()).toMatchObject({ state: 'failed', sandboxId: null, failureCode: PROVIDER_CREATE_REFUSAL_CODE })
-    expect(report.coverage[0]).toMatchObject({ createOutcome: 'rejected-before-provider-create', intentDigest: recoveryIntentDigest(row()) })
+    expect(report.coverage[0]).toMatchObject({ createOutcome: 'rejected-before-provider-create', intentDigest: recoveryIntentDigest(row()), refusalCode })
     expect(report.coverage[0]?.sandboxId).toBeNull(); expect(report.evidenceRefs).toContain('test:before-provider-dispatch')
     expect(f.owner.inspect().mutationResponsibilities).toBe(0)
   })
@@ -127,7 +150,7 @@ describe('explicit completed provider refusal', () => {
   })
   it('rejects a nonnull sandbox and HTTP500/empty-list-only proof before CAS', async () => {
     const f = await store(row({ sandboxId: 'non-null' })); await expect(f.recover()).rejects.toMatchObject({ code: 'proof' }); expect(f.writes).toEqual([])
-    for (const value of ['http-500', 'empty-provider-list']) {
+    for (const value of ['http-500', 'timeout', 'empty-provider-list', 'unsettled-or-unknown', 'host-bind-bounds-extra']) {
       const clean = await store(); await expect(clean.recover(p => ({ ...p, allocations: p.allocations.map(x => ({ ...x, refusalCode: value } as AllocationRefusalEvidence)) }))).rejects.toMatchObject({ code: 'proof' });expect(clean.writes).toEqual([])
     }
   })

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { posix } from 'node:path'
 import type { StaticStorageConfig } from './storage-types.ts'
+import type { ProtectedSkillProof } from './storage-types.ts'
 import type { FdStorageRequest, FdStorageView } from './worker-protocol.ts'
 import { parseStorageProbeFrame, staticStorageReservation } from './storage-probe.ts'
 
@@ -61,6 +62,7 @@ function readBounded(path: string, limit: number, protectedAsset: boolean): Uint
 export function createStorageWorker(config: StaticStorageConfig, maxPathBytes: number, fileHelperPath: string): {
   probe(path: string): Uint8Array<ArrayBuffer>
   record(): Uint8Array<ArrayBuffer>
+  skillProof(): ProtectedSkillProof
   view(): FdStorageView
 } {
   staticStorageReservation(config, maxPathBytes)
@@ -83,6 +85,16 @@ export function createStorageWorker(config: StaticStorageConfig, maxPathBytes: n
       if (!exact(value, config.maxPlanBytes) || createHash('sha256').update(value).digest('hex') !== config.planSha256) failed()
       return value
     },
+    skillProof: () => {
+      const selected = config.skillRevalidation
+      if (selected === undefined) failed()
+      const bytes = native.readRecord(selected.proofPath, config.maxPlanBytes, maxPathBytes)
+      if (!exact(bytes, config.maxPlanBytes) || createHash('sha256').update(bytes).digest('hex') !== selected.proofSha256) failed()
+      const stat = new TextDecoder('utf-8', { fatal: true }).decode(readBounded('/proc/self/stat', config.maxMountInfoBytes, false))
+      const end = stat.lastIndexOf(')'), startTicks = stat.slice(end + 1).trim().split(/\s+/)[19]
+      if (end < 1 || !stat.startsWith(String(process.pid) + ' (') || startTicks === undefined || !/^[1-9][0-9]{0,19}$/.test(startTicks)) failed()
+      return { bytes, process: { pid: process.pid, startTicks } }
+    },
     view: () => ({ mountInfo: readBounded('/proc/self/mountinfo', config.maxMountInfoBytes, false),
       status: readBounded('/proc/self/status', config.maxMountInfoBytes, false) }),
   }
@@ -95,11 +107,11 @@ export function createStorageWorker(config: StaticStorageConfig, maxPathBytes: n
  * @returns Only a bounded versioned operation; invalid requests terminate the worker.
  */
 export function storageRequest(raw: unknown, maxPathBytes: number): FdStorageRequest {
-  if (!record(raw) || !['storage-probe', 'storage-record', 'storage-view'].includes(String(raw.kind))
+  if (!record(raw) || !['storage-probe', 'storage-record', 'storage-skill-proof', 'storage-view'].includes(String(raw.kind))
     || typeof raw.id !== 'string' || !/^[a-f0-9-]{36}$/.test(raw.id)
     || !(raw.cancel instanceof SharedArrayBuffer) || raw.cancel.byteLength !== 4) failed()
   const base = { id: raw.id as FdStorageRequest['id'], cancel: raw.cancel }
-  if (raw.kind === 'storage-record' || raw.kind === 'storage-view') return { ...base, kind: raw.kind }
+  if (raw.kind === 'storage-record' || raw.kind === 'storage-skill-proof' || raw.kind === 'storage-view') return { ...base, kind: raw.kind }
   if (typeof raw.path !== 'string' || !raw.path.startsWith('/') || raw.path.includes('\0') || raw.path.includes('\\')
     || raw.path.length > maxPathBytes || Buffer.byteLength(raw.path) > maxPathBytes || posix.normalize(raw.path) !== raw.path) failed()
   return { ...base, kind: 'storage-probe', path: raw.path }

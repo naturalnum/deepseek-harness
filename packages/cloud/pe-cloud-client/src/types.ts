@@ -29,6 +29,14 @@ export interface CloudPersistenceLimits {
   readonly maxNamespaceBytes: number
 }
 
+/** Explicit observer and complete-file memory bounds for the fixed sample editor. */
+export interface CloudSkillSettingsConfig {
+  /** Positive safe-integer RPC observation deadline within the platform timer range. */
+  readonly requestTimeoutMs: number
+  /** Positive safe-integer acceptance cap for each complete file; match the approved account bound. */
+  readonly maxFileBytes: number
+}
+
 /** Finite public configuration for bootstrap and one captured native carrier. */
 export interface CloudClientConfig {
   /** Document-relative route without query or fragment; Web manifests require `cloud/bootstrap`. */
@@ -47,6 +55,10 @@ export interface CloudClientConfig {
   closeTimeoutMs: number
   /** Optional complete-file download acceptance cap; absence keeps download actions unregistered. */
   maxDownloadBytes?: number
+  /** Finite native model-settings RPC observer deadline; omission keeps model editing closed. */
+  modelSettingsRequestTimeoutMs?: number
+  /** Omission leaves the native sample skill section unregistered. */
+  skillSettings?: Readonly<CloudSkillSettingsConfig>
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
 }

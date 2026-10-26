@@ -63,7 +63,7 @@ export function accessConfig(): AccessConfig {
 /** @returns Finite ingress capacities; every production admission prerequisite remains absent. */
 export function ingressConfig(): AuthIngressConfig {
   return {
-    maxOperations: 4, maxOperationsPerAccount: 2, requestTimeoutMs: 500,
+    sessionRecheckLeadMs: 25, maxOperations: 4, maxOperationsPerAccount: 2, requestTimeoutMs: 500,
     maxAuthRequestBodyBytes: 1024, maxRequestBodyBytes: 4096, maxBootstrapResponseBytes: 4096, maxGenerationBindings: 4,
     maxFrameBytes: 1024, maxLogicalStreams: 8, maxLogicalStreamsPerAccount: 4, maxLogicalStreamsPerPeer: 2,
   }

@@ -4,7 +4,9 @@
 
 统一的 activation API 管理本地会话和外部执行。
 
-## 能力与 activation 请求
+## 能力与 activation 请求 <a id="capabilities-and-activation-requests"></a>
+
+`SubagentAdmission` 在派发前检查 `SubagentAdmissionRequest` 携带的原始启动或冷恢复事实（[声明](../../packages/subagent/subagent/src/types.ts)）。检查属于注册它的 fiber，不授予工厂或清理权限；[原生 runtime](../../packages/subagent/subagent/README.zh.md#local-and-external-children)负责注册、撤销与回滚。
 
 所有后端都使用 startActivation。能力标记校验请求选项；prepareContinuable 选择本地 Agent 创建，start 选择一次外部执行。面向模型的工具采用 parent 回传。Workflow 与 code mode 消费者可以等待 caller 结果，不额外向父代理注入消息。历史子会话的 descriptor 不可用时，以 `mode: 'unknown'` 保持可发现性，但不授予继续执行能力；[包 README](../../packages/subagent/subagent/README.zh.md) 定义目录持久化语义。
 
@@ -598,9 +600,18 @@ getProvider(name: string): SubagentProvider | undefined
  * @returns the registered names.
  */
 list(): string[]
+
+/**
+ * Add a check owned by the calling fiber, in registration order.
+ * Withdrawal or replacement invalidates waiting operations before dispatch.
+ * Already dispatched provider work remains owned by the activation manager.
+ * @param check - trusted check of original provider/start or cold-resume facts.
+ * @returns the original effect disposer; a retired invocation may return void.
+ */
+registerAdmission(check: SubagentAdmission): () => void | Promise<void>
 ```
 
-Types: [Agent](core.zh.md) · [ContentBlock](llm-streaming.zh.md) · [MessageId](llm-streaming.zh.md) · [SessionId](core.zh.md)
+Types: [Agent](core.zh.md) · [ContentBlock](llm-streaming.zh.md) · [MessageId](llm-streaming.zh.md) · [SessionId](core.zh.md) · [SubagentAdmission](subagent.zh.md#capabilities-and-activation-requests)
 
 Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
 

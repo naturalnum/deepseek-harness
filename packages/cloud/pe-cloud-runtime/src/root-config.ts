@@ -2,6 +2,7 @@
 import z from '@deepseek-ai/schemastery'
 import type { ConfigSaveLimits } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { RuntimeConfig } from './types.ts'
+import { SubagentCapacityLimitsSchema } from './subagent-capacity-schema.ts'
 import type { AccountFactoryLimits } from './account-factory.ts'
 import type { OwnerPgLimits } from './owner-pg-executor.ts'
 import type { AccountPolicyConfig } from './account-policy.ts'
@@ -98,6 +99,7 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
     }).required(),
   }).required()]),
   maxMountedAccounts: positive(), maxConcurrentMounts: positive(), maxConcurrentDrains: positive(),
+  subagentCapacity: z.union([SubagentCapacityLimitsSchema]),
   recipeVersion: text(), internalAddress: text(),
   heartbeatIntervalMs: timer(), heartbeatTimeoutMs: timer(), startupTimeoutMs: timer(),
   shutdownTimeoutMs: timer(), secretResolveTimeoutMs: timer(),

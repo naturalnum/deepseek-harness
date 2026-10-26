@@ -5,6 +5,7 @@ import { accountOwnerMigrationSql } from './migrations/account-owners.ts'
 import { ownerEpoch, readOwnerRow } from './owner-row.ts'
 import { beginOwnerDrainSql, claimOwnerSql, finishOwnerDrainSql, heartbeatOwnerSql, locateOwnerSql, quarantineOwnerSql, readyOwnerSql } from './owner-sql.ts'
 import { recoveryAuditMigrationSql } from './migrations/recovery-audit.ts'
+import { beginOwnerReconfigurationSql, finishOwnerReconfigurationSql } from './owner-sql.ts'
 import { bindRecoveryAuthority, readRecoveryAudit, readRecoveryProof } from './owner-recovery.ts'
 import { inspectRecoverySql, recoverReleasedSql, closeRecoveredInstanceSql, inspectRecoveredInstanceSql } from './owner-sql.ts'
 import { RuntimeConfigSchema } from './schema.ts'
@@ -125,6 +126,24 @@ export class PostgresOwnerStore {
       throw new AccountRuntimeError('cloud/invalid-config', 'Owner readiness requires an approved recipe version')
     }
     return this.mutate(readyOwnerSql, [...this.expectedValues(expected), recipeVersion], expected)
+  }
+
+  /** Enter a factory-owned local update after its zero-write idle check.
+   * @param expected Original ready account/instance/epoch.
+   * @returns Same owned generation in reconfiguring; unknown writes retain this store's responsibility.
+   */
+  beginReconfiguration(expected: OwnerExpectation): Promise<AccountOwner> {
+    return this.mutate(beginOwnerReconfigurationSql, this.expectedValues(expected), expected)
+  }
+
+  /** Republish the same generation only after the factory's actual native re-audit.
+   * @param expected Original account/instance/epoch in reconfiguring.
+   * @param recipeVersion Unchanged approved recipe.
+   * @returns Same generation in ready; this CAS never performs the native audit.
+   */
+  finishReconfiguration(expected: OwnerExpectation, recipeVersion: string): Promise<AccountOwner> {
+    if (!recipeVersion) throw new AccountRuntimeError('cloud/invalid-config', 'Owner readiness requires an approved recipe version')
+    return this.mutate(finishOwnerReconfigurationSql, [...this.expectedValues(expected), recipeVersion], expected)
   }
 
   /**

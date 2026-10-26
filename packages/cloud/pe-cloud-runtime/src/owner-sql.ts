@@ -42,10 +42,23 @@ WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint
   AND phase = 'mounting' AND recipe_version = $4
 RETURNING ${projection}`
 
+/** Enter only the same ready generation's nonterminal exclusive update window. */
+export const beginOwnerReconfigurationSql = `UPDATE public.pe_account_owners
+SET phase = 'reconfiguring', updated_at = statement_timestamp()
+WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint AND phase = 'ready'
+RETURNING ${projection}`
+
+/** Republish only the same audited generation and immutable recipe after a local update. */
+export const finishOwnerReconfigurationSql = `UPDATE public.pe_account_owners
+SET phase = 'ready', updated_at = statement_timestamp()
+WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint
+  AND phase = 'reconfiguring' AND recipe_version = $4
+RETURNING ${projection}`
+
 /** Known setup cleanup or a ready graph can enter draining; this never publishes ready or unquarantines. */
 export const beginOwnerDrainSql = `UPDATE public.pe_account_owners
 SET phase = 'draining', updated_at = statement_timestamp()
-WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint AND phase IN ('mounting', 'ready')
+WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint AND phase IN ('mounting', 'ready', 'reconfiguring')
 RETURNING ${projection}`
 
 /** Failure retains ownership and epoch; quarantine has no normal claim/release exit. */

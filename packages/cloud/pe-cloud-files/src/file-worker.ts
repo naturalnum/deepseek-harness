@@ -1,10 +1,20 @@
 /** Linux-only private worker: all blocking root/open/stat/read/close calls stay here. */
+import { bundleRequest, runBundleNative } from './bundle-worker.ts'
+import type { BundleNativeOperation } from './bundle-worker.ts'
+import { parseBundleFrame } from './bundle-native.ts'
+import { skillBundleLimits } from './bundle-codec.ts'
+import { skillSourceContext, skillProjectionLimits, parseSkillProjectFrame } from './skill-projection.ts'
+import type { SkillProjectionLimits, FdSkillProjectRequest } from './skill-projection.ts'
+import { parseSkillFrame, parseSkillRetireFrame, skillVersionLimits } from './skill-versions.ts'
+import type { FdSkillPrepareRequest } from './skill-versions.ts'
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { fstatSync, readSync } from 'node:fs'
+import { constants, openSync, closeSync, readlinkSync, fstatSync, readSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
-import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest, FdTextWriteRequest, FdContentLimits, FdContentRequest, FdPathMetadata, FdDirectoryEntry } from './worker-protocol.ts'
+import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest, FdTextWriteRequest,
+  FdContentLimits, FdContentRequest, FdPathMetadata, FdDirectoryEntry } from './worker-protocol.ts'
+import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { directoryWorkBudget } from './directory-budget.ts'
@@ -17,8 +27,32 @@ import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame, validStageName 
 import type { FdStagingWorkerInput, FdStageRequest, FdProjectMetadataRequest, FdEnvironmentLayoutRequest } from './worker-protocol.ts'
 
 interface LinuxFdHelper {
+  readonly skillBundleVersion?: 1
+  readonly skillBundleProjectionVersion?: 1
+  readonly skillBundleReclaimVersion?: 1
+  readonly skillBundleOperation?: BundleNativeOperation
   readonly abiVersion: 6 | 7 | 8
   readonly projectMetadataVersion?: 1
+  readonly skillProjectionVersion?: 1
+  prepareSkillStore?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
+    maxPath: number, retries: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>,
+    maximum: number, maxRecord: number, maxBytes: number, maxInodes: number): unknown
+  verifySkillStore?: LinuxFdHelper['prepareSkillStore']
+  prepareSkillParent?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
+    maxPath: number, retries: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>): unknown
+  verifySkillParent?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
+    maxPath: number, retries: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>): unknown
+  projectSkillVersion?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
+    id: string, body: Uint8Array, resource: Uint8Array, maxVersions: number, maxBytes: number, maxInodes: number,
+    maxFile: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>, maxPath: number,
+    metadataDevice: string, metadataInode: string, metadataMountId: string, expectedCopyInode: string): unknown
+  readonly skillVersionsVersion?: 1
+  retireSkillVersions?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
+    current: string, revision: string, maxVersions: number, maxFile: number, cancel: Int32Array<SharedArrayBuffer>, maxPath: number)
+  : unknown
+  prepareSkillVersion?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
+    id: string, body: Uint8Array, resource: Uint8Array, maxVersions: number, maxBytes: number, maxInodes: number,
+    maxFile: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>, maxPath: number): unknown
   readonly environmentLayoutVersion?: 1
   prepareEnvironmentLayout?(this: void, path: string, device: string, inode: string, mountId: string,
     uid: number, gid: number, limit: number, retries: number, timeoutMs: number, cancel: Int32Array<SharedArrayBuffer>): unknown
@@ -53,17 +87,31 @@ interface LinuxFdHelper {
 
 function isHelper(value: unknown): value is LinuxFdHelper {
   return record(value) && (value.abiVersion === 6 || value.abiVersion === 7 || value.abiVersion === 8)
+    && (value.skillBundleVersion === undefined ? value.skillBundleOperation === undefined
+      && value.skillBundleProjectionVersion === undefined && value.skillBundleReclaimVersion === undefined
+      : value.abiVersion === 8 && value.skillBundleVersion === 1 && value.skillBundleProjectionVersion === 1
+        && value.skillBundleReclaimVersion === 1 && typeof value.skillBundleOperation === 'function')
     && (value.projectMetadataVersion === undefined ? value.prepareProjectMetadata === undefined
       : value.projectMetadataVersion === 1 && value.abiVersion === 8 && typeof value.prepareProjectMetadata === 'function')
     && (value.environmentLayoutVersion === undefined ? value.prepareEnvironmentLayout === undefined
       : value.environmentLayoutVersion === 1 && value.abiVersion === 8 && typeof value.prepareEnvironmentLayout === 'function')
+    && (value.skillProjectionVersion === undefined ? value.projectSkillVersion === undefined && value.prepareSkillStore === undefined
+      && value.verifySkillStore === undefined && value.prepareSkillParent === undefined && value.verifySkillParent === undefined
+      : value.skillProjectionVersion === 1 && value.abiVersion === 8 && value.skillVersionsVersion === 1
+        && typeof value.projectSkillVersion === 'function'
+        && typeof value.prepareSkillStore === 'function' && typeof value.verifySkillStore === 'function'
+          && typeof value.prepareSkillParent === 'function' && typeof value.verifySkillParent === 'function')
+    && (value.skillVersionsVersion === undefined ? value.prepareSkillVersion === undefined
+      : value.skillVersionsVersion === 1 && value.abiVersion === 8 && typeof value.prepareSkillVersion === 'function'
+        && typeof value.retireSkillVersions === 'function')
     && (value.abiVersion === 6 || typeof value.writeText === 'function')
     && (value.abiVersion !== 8 || typeof value.openPathMetadata === 'function'
       && typeof value.verifyContentAnchor === 'function' && typeof value.listDirectory === 'function')
     && typeof value.prepareExt4Leaf === 'function' && typeof value.removeExt4Leaf === 'function'
     && typeof value.prepareLeaf === 'function' && typeof value.removeEmptyLeaf === 'function'
     && typeof value.openAnchor === 'function' && typeof value.openRead === 'function' && typeof value.closeRead === 'function'
-    && typeof value.canonicalPath === 'function' && typeof value.openMetadata === 'function' && typeof value.closeAnchor === 'function' && typeof value.probeKernel === 'function'
+    && typeof value.canonicalPath === 'function' && typeof value.openMetadata === 'function'
+      && typeof value.closeAnchor === 'function' && typeof value.probeKernel === 'function'
 }
 
 class WorkerFailure extends Error {
@@ -87,21 +135,45 @@ function record(value: unknown): value is Record<string, unknown> {
 function input(value: unknown): FdWorkerInput {
   if (!record(value) || process.platform !== 'linux'
     || typeof value.helperPath !== 'string' || !isAbsolute(value.helperPath) || !value.helperPath.endsWith('.node')
-    || typeof value.maxReadBytes !== 'number' || !Number.isSafeInteger(value.maxReadBytes) || value.maxReadBytes < 1 || value.maxReadBytes > 2_147_483_646
-    || typeof value.maxPathBytes !== 'number' || !Number.isSafeInteger(value.maxPathBytes) || value.maxPathBytes < 1 || value.maxPathBytes > 16384
+    || typeof value.maxReadBytes !== 'number' || !Number.isSafeInteger(value.maxReadBytes) || value.maxReadBytes < 1
+      || value.maxReadBytes > 2_147_483_646
+    || typeof value.maxPathBytes !== 'number' || !Number.isSafeInteger(value.maxPathBytes) || value.maxPathBytes < 1
+      || value.maxPathBytes > 16384
     || typeof value.maxResolveRetries !== 'number' || !Number.isSafeInteger(value.maxResolveRetries) || value.maxResolveRetries < 0
-    || typeof value.readChunkBytes !== 'number' || !Number.isSafeInteger(value.readChunkBytes) || value.readChunkBytes < 1 || value.readChunkBytes > value.maxReadBytes + 1
+    || typeof value.readChunkBytes !== 'number' || !Number.isSafeInteger(value.readChunkBytes) || value.readChunkBytes < 1
+      || value.readChunkBytes > value.maxReadBytes + 1
     || Buffer.byteLength(value.helperPath) > value.maxPathBytes) {
     throw new WorkerFailure('FS_IO_ERROR')
   }
   return {
     helperPath: value.helperPath,
+    ...value.skillBundles === undefined ? {} : { skillBundles: checkedBundleLimits(value.skillBundles) },
+    ...value.skillProjection === undefined ? {} : { skillProjection: checkedProjectionLimits(value.skillProjection) },
+    ...value.skillVersions === undefined ? {} : { skillVersions: checkedSkillLimits(value.skillVersions) },
     ...value.content === undefined ? {} : { content: contentLimits(value.content, value.maxPathBytes) },
     maxReadBytes: value.maxReadBytes, maxPathBytes: value.maxPathBytes,
     maxResolveRetries: value.maxResolveRetries, readChunkBytes: value.readChunkBytes,
     ...value.storageProbe === undefined ? {} : { storageProbe: storageConfig(value.storageProbe) },
     ...value.staging === undefined ? {} : { staging: stagingInput(value.staging, value.maxPathBytes, value.readChunkBytes) },
   }
+}
+
+function checkedBundleLimits(value: unknown) {
+  const parsed = skillBundleLimits(value)
+  if (parsed === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return parsed
+}
+
+function checkedProjectionLimits(value: unknown): SkillProjectionLimits {
+  const result = skillProjectionLimits(value)
+  if (result === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return result
+}
+
+function checkedSkillLimits(value: unknown) {
+  const parsed = skillVersionLimits(value)
+  if (parsed === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return parsed
 }
 
 function stagingInput(value: unknown, pathBytes: number, chunkBytes: number): FdStagingWorkerInput {
@@ -121,7 +193,8 @@ function stagingInput(value: unknown, pathBytes: number, chunkBytes: number): Fd
 }
 
 function stageBegin(raw: unknown, limits: FdWorkerInput): Extract<FdStageRequest, { kind: 'stage-begin' }> {
-  if (!record(raw) || raw.kind !== 'stage-begin' || !record(raw.file) || limits.staging === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  if (!record(raw) || raw.kind !== 'stage-begin' || !record(raw.file)
+    || limits.staging === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
   const base = taskRequest({ ...raw, kind: 'read', relativePath: '.', maxBytes: 0 }, limits)
   const file = raw.file
   if (Object.keys(file).length !== 3 || typeof file.digest !== 'string' || !/^[a-f0-9]{64}$/.test(file.digest)
@@ -154,7 +227,8 @@ function contentLimits(value: unknown, maxPathBytes: number): FdContentLimits {
     typeof value[key] !== 'number' || !Number.isSafeInteger(value[key]) || value[key] < 1 || value[key] > 2_147_483_647)
     || typeof value.maxEntries !== 'number' || typeof value.maxNameBytes !== 'number' || value.maxNameBytes > maxPathBytes
     || value.maxNameBytes > 16384
-    || typeof value.maxReplyBytes !== 'number' || typeof value.operationTimeoutMs !== 'number') throw new WorkerFailure('FS_PERMISSION_DENIED')
+    || typeof value.maxReplyBytes !== 'number'
+      || typeof value.operationTimeoutMs !== 'number') throw new WorkerFailure('FS_PERMISSION_DENIED')
   return { maxEntries: value.maxEntries, maxNameBytes: value.maxNameBytes, maxReplyBytes: value.maxReplyBytes,
     operationTimeoutMs: value.operationTimeoutMs }
 }
@@ -166,10 +240,17 @@ function storageConfig(value: unknown): StaticStorageConfig {
     || typeof value.maxPlanBytes !== 'number' || typeof value.maxMountInfoBytes !== 'number' || typeof value.probeTimeoutMs !== 'number') {
     throw new WorkerFailure('FS_IO_ERROR')
   }
-  return { planPath: value.planPath, planSha256: value.planSha256, probeHelperPath: value.probeHelperPath,
+  const config: StaticStorageConfig = { planPath: value.planPath, planSha256: value.planSha256, probeHelperPath: value.probeHelperPath,
     probeHelperSha256: value.probeHelperSha256, maxProbeAssetBytes: value.maxProbeAssetBytes,
     rootProbeReservationBytes: value.rootProbeReservationBytes, maxPlanBytes: value.maxPlanBytes,
     maxMountInfoBytes: value.maxMountInfoBytes, probeTimeoutMs: value.probeTimeoutMs }
+  const proof = value.skillRevalidation
+  if (proof === undefined) return config
+  if (!record(proof) || Array.isArray(proof) || Object.keys(proof).length !== 2
+    || typeof proof.proofPath !== 'string' || typeof proof.proofSha256 !== 'string') {
+    throw new WorkerFailure('FS_IO_ERROR')
+  }
+  return { ...config, skillRevalidation: { proofPath: proof.proofPath, proofSha256: proof.proofSha256 } }
 }
 
 function helper(path: string): LinuxFdHelper {
@@ -190,6 +271,21 @@ function helper(path: string): LinuxFdHelper {
   const removeExt4Leaf = loaded.removeExt4Leaf
   return {
     abiVersion: loaded.abiVersion,
+    ...loaded.skillBundleVersion !== 1 || loaded.skillBundleOperation === undefined ? {} : {
+      skillBundleVersion: 1, skillBundleProjectionVersion: 1, skillBundleReclaimVersion: 1,
+      skillBundleOperation: loaded.skillBundleOperation,
+    },
+    ...loaded.skillProjectionVersion !== 1 || loaded.projectSkillVersion === undefined
+      || loaded.prepareSkillStore === undefined || loaded.verifySkillStore === undefined
+      || loaded.prepareSkillParent === undefined || loaded.verifySkillParent === undefined ? {} : {
+        skillProjectionVersion: 1, projectSkillVersion: loaded.projectSkillVersion,
+        prepareSkillStore: loaded.prepareSkillStore, verifySkillStore: loaded.verifySkillStore, prepareSkillParent
+        : loaded.prepareSkillParent, verifySkillParent: loaded.verifySkillParent,
+      },
+    ...loaded.skillVersionsVersion !== 1 || loaded.prepareSkillVersion === undefined ? {} : {
+      skillVersionsVersion: 1, prepareSkillVersion: loaded.prepareSkillVersion,
+      ...loaded.retireSkillVersions === undefined ? {} : { retireSkillVersions: loaded.retireSkillVersions },
+    },
     ...loaded.projectMetadataVersion !== 1 || loaded.prepareProjectMetadata === undefined ? {} : {
       projectMetadataVersion: 1, prepareProjectMetadata: loaded.prepareProjectMetadata,
     },
@@ -253,10 +349,12 @@ function leafRequest(value: unknown, limits: FdWorkerInput): FdLeafRequest {
     rootInode: value.root.rootInode, ...mountField(value.root) }
   if (value.backend === 'ext4' && root.rootMountId === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
   directoryWorkBudget({ parent: root, leaf: value.leaf }, { maxPathBytes: limits.maxPathBytes, replyOverheadBytes: 1 })
-  if (value.kind === 'leaf-prepare') return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, backend: value.backend, leaf: value.leaf, cancel: value.cancel }
+  if (value.kind === 'leaf-prepare') return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, backend: value.backend,
+    leaf: value.leaf, cancel: value.cancel }
   const identity = value.identity
   if (!record(identity) || typeof identity.device !== 'string' || identity.device.length > 20 || !/^\d{1,20}$/.test(identity.device)
-    || typeof identity.inode !== 'string' || identity.inode.length > 20 || !/^\d{1,20}$/.test(identity.inode)) throw new WorkerFailure('FS_IO_ERROR')
+    || typeof identity.inode !== 'string' || identity.inode.length > 20
+      || !/^\d{1,20}$/.test(identity.inode)) throw new WorkerFailure('FS_IO_ERROR')
   return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, backend: value.backend, leaf: value.leaf, cancel: value.cancel,
     identity: { device: identity.device, inode: identity.inode } }
 }
@@ -348,7 +446,8 @@ function failure(error: unknown): { code: FsErrorCode; syscallCode?: string } {
 }
 
 function taskRequest(value: unknown, limits: FdWorkerInput): FdTaskRequest {
-  if (!record(value) || !['read', 'stat', 'stream'].includes(String(value.kind)) || typeof value.id !== 'string' || !/^[a-f0-9-]{36}$/.test(value.id)
+  if (!record(value) || !['read', 'stat', 'stream'].includes(String(value.kind)) || typeof value.id !== 'string'
+    || !/^[a-f0-9-]{36}$/.test(value.id)
     || !record(value.root) || typeof value.root.rootPath !== 'string' || !isAbsolute(value.root.rootPath)
     || Buffer.byteLength(value.root.rootPath) > limits.maxPathBytes
     || typeof value.root.rootDevice !== 'string' || !/^\d{1,20}$/.test(value.root.rootDevice)
@@ -362,14 +461,16 @@ function taskRequest(value: unknown, limits: FdWorkerInput): FdTaskRequest {
     throw new WorkerFailure('FS_PERMISSION_DENIED')
   }
   return {
-    kind: value.kind as FdTaskRequest['kind'], id: value.id as FdTaskRequest['id'], relativePath: value.relativePath, maxBytes: value.maxBytes, cancel: value.cancel,
+    kind: value.kind as FdTaskRequest['kind'], id: value.id as FdTaskRequest['id'], relativePath: value.relativePath, maxBytes
+    : value.maxBytes, cancel: value.cancel,
     root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode, ...mountField(value.root) },
   }
 }
 
 function textWriteRequest(value: unknown, limits: FdWorkerInput): FdTextWriteRequest {
   if (!record(value) || value.kind !== 'text-write' || typeof value.content !== 'string'
-    || Buffer.byteLength(value.content) > limits.maxReadBytes || value.maxBytes !== limits.maxReadBytes) throw new WorkerFailure('FS_TOO_LARGE')
+    || Buffer.byteLength(value.content) > limits.maxReadBytes
+      || value.maxBytes !== limits.maxReadBytes) throw new WorkerFailure('FS_TOO_LARGE')
   const request = taskRequest({ ...value, kind: 'read' }, limits)
   const expected = value.expected
   const base = { ...request, kind: 'text-write' as const, content: value.content }
@@ -386,7 +487,8 @@ function textWrite(native: LinuxFdHelper, request: FdTextWriteRequest): FdWorker
   let opened = false
   let attempted = false
   try {
-    if ((native.abiVersion !== 7 && native.abiVersion !== 8) || native.writeText === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    if ((native.abiVersion !== 7 && native.abiVersion !== 8)
+      || native.writeText === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
     native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
     opened = true
     const expected = request.expected
@@ -412,7 +514,8 @@ function textWrite(native: LinuxFdHelper, request: FdTextWriteRequest): FdWorker
   } catch (error) {
     if (error instanceof AnchorCloseFailure) throw error
     if (opened) closeAnchor(native)
-    const outcome = !attempted || record(error) && error.outcome === 'not-published' || error instanceof WorkerFailure ? 'not-published' : 'unknown'
+    const outcome = !attempted || record(error) && error.outcome === 'not-published' || error instanceof WorkerFailure
+      ? 'not-published' : 'unknown'
     const observed = failure(error)
     const code = record(error) && error.code === 'DSH_TEXT_STALE' ? 'FS_STALE_VERSION'
       : record(error) && error.code === 'EEXIST' ? 'FS_NOT_OBSERVED'
@@ -477,7 +580,8 @@ function contentOperation(native: LinuxFdHelper, request: FdContentRequest, limi
           || typeof row.size === 'number' && Number(row.version.split(':')[2]) !== row.size
           || !['file', 'directory', 'symlink', 'other'].includes(String(row.type))
           || (row.type === 'file' || row.type === 'symlink'
-            ? typeof row.size !== 'number' || !Number.isSafeInteger(row.size) || row.size < 0 : row.size !== undefined)) throw new AnchorCloseFailure('Invalid native directory metadata')
+            ? typeof row.size !== 'number' || !Number.isSafeInteger(row.size) || row.size < 0
+            : row.size !== undefined)) throw new AnchorCloseFailure('Invalid native directory metadata')
         let name: string
         try { name = new TextDecoder('utf-8', { fatal: true }).decode(row.nameBytes) }
         catch (_error) { throw new WorkerFailure('FS_IO_ERROR') }
@@ -492,7 +596,8 @@ function contentOperation(native: LinuxFdHelper, request: FdContentRequest, limi
       try {
         while (true) {
           running()
-          try { fd = request.kind === 'lstat' ? native.openPathMetadata(request.relativePath) : native.openRead(request.relativePath); break }
+          try { fd = request.kind === 'lstat' ? native.openPathMetadata(request.relativePath)
+            : native.openRead(request.relativePath); break }
           catch (error) {
             if (request.kind === 'lstat' && record(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) break
             if (!record(error) || error.code !== 'EAGAIN' || attempts++ >= limits.maxResolveRetries) throw error
@@ -503,9 +608,10 @@ function contentOperation(native: LinuxFdHelper, request: FdContentRequest, limi
           if (fd !== undefined) {
             const info = fstatSync(fd, { bigint: true })
             if (info.size < 0n || info.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new WorkerFailure('FS_TOO_LARGE')
-            metadata = { identity: `${info.dev}:${info.ino}`, version: `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`,
-              type: info.isFile() ? 'file' : info.isDirectory() ? 'directory' : info.isSymbolicLink() ? 'symlink' : 'other',
-              ...info.isFile() || info.isSymbolicLink() ? { size: Number(info.size) } : {} }
+            metadata = { identity: `${info.dev}:${info.ino}`, version
+            : `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`,
+            type: info.isFile() ? 'file' : info.isDirectory() ? 'directory' : info.isSymbolicLink() ? 'symlink' : 'other',
+            ...info.isFile() || info.isSymbolicLink() ? { size: Number(info.size) } : {} }
           }
           reply = { kind: 'lstat-reply', id: request.id, metadata }
         } else {
@@ -574,7 +680,8 @@ function readBytes(native: LinuxFdHelper, request: FdTaskRequest, limits: FdWork
   } finally { native.closeRead() }
 }
 
-function openWithRetry(native: LinuxFdHelper, request: Pick<FdTaskRequest, 'relativePath' | 'cancel'>, limits: FdWorkerInput, metadata: boolean): number {
+function openWithRetry(native: LinuxFdHelper, request: Pick<FdTaskRequest, 'relativePath' | 'cancel'>, limits: FdWorkerInput,
+  metadata: boolean): number {
   let attempts = 0
   while (true) {
     if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) throw new WorkerFailure('FS_ABORTED')
@@ -760,7 +867,8 @@ function start(): void {
       if (active !== undefined || activeStage !== undefined) { port.close(); return }
       let request: Extract<FdStageRequest, { kind: 'stage-begin' }>
       try { request = stageBegin(raw, limits) } catch (error) {
-        port.postMessage({ kind: 'stage-rejected', id: raw.id, code: error instanceof WorkerFailure ? error.code : 'FS_PERMISSION_DENIED' }); return
+        port.postMessage({ kind: 'stage-rejected', id: raw.id, code: error instanceof WorkerFailure ? error.code
+          : 'FS_PERMISSION_DENIED' }); return
       }
       const companion = staging, config = limits.staging
       if (companion === undefined || config === undefined) {
@@ -832,7 +940,8 @@ function start(): void {
         if (active.total > active.request.maxBytes) throw new WorkerFailure('FS_TOO_LARGE')
         if (count === 0) { endStream(); return }
         if (Atomics.load(new Int32Array(active.request.cancel), 0) !== 0) throw new WorkerFailure('FS_ABORTED')
-        port.postMessage({ kind: 'stream-chunk', id: active.request.id, bytes: bytes.subarray(0, count) } satisfies FdWorkerReply, [bytes.buffer])
+        port.postMessage({ kind: 'stream-chunk', id: active.request.id, bytes: bytes.subarray(0, count) } satisfies FdWorkerReply,
+          [bytes.buffer])
       } catch (error) {
         if (error instanceof AnchorCloseFailure) throw error
         endStream(error)
@@ -851,6 +960,158 @@ function start(): void {
       const reply = contentOperation(native, request, limits)
       if (reply.kind === 'range-reply') port.postMessage(reply, [reply.bytes.buffer])
       else port.postMessage(reply)
+      return
+    }
+    if (record(raw) && ['bundle-prepare', 'bundle-project', 'bundle-reclaim'].includes(String(raw.kind))) {
+      if (native.skillBundleVersion !== 1 || native.skillBundleOperation === undefined) { port.close(); return }
+      const base = projectMetadataRequest({ kind: 'project-metadata-prepare', id: raw.id, root: raw.root,
+        uid: raw.uid, gid: raw.gid, cancel: raw.cancel }, limits)
+      const request = bundleRequest(raw, base, limits)
+      if (request === undefined) { port.close(); return }
+      const frame = runBundleNative(native.skillBundleOperation, request, limits)
+      if (!(frame instanceof Uint8Array) || !(frame.buffer instanceof ArrayBuffer) || parseBundleFrame(frame, request) === undefined) {
+        throw new AnchorCloseFailure('Full-tree publication, inventory or closure is unconfirmed')
+      }
+      const reply = new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength)
+      port.postMessage({ kind: 'bundle-reply', id: request.id, frame: reply } satisfies FdWorkerReply, [reply.buffer])
+      return
+    }
+    if (record(raw) && raw.kind === 'skill-retire') {
+      const config = limits.skillVersions
+      if (native.skillVersionsVersion !== 1 || native.retireSkillVersions === undefined || config === undefined) { port.close(); return }
+      const base = projectMetadataRequest({ kind: 'project-metadata-prepare', id: raw.id, root: raw.root,
+        uid: raw.uid, gid: raw.gid, cancel: raw.cancel }, limits)
+      if (base.root.rootMountId === undefined || raw.current !== undefined && (!record(raw.current) || Object.keys(raw.current).length !== 2
+        || typeof raw.current.id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(raw.current.id)
+        || typeof raw.current.revision !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(raw.current.revision))) { port.close()
+        return }
+      const frame = native.retireSkillVersions(base.root.rootPath, base.root.rootDevice, base.root.rootInode, base.root.rootMountId,
+        base.uid, base.gid, record(raw.current) && typeof raw.current.id === 'string' ? raw.current.id : '',
+        record(raw.current) && typeof raw.current.revision === 'string' ? raw.current.revision : '', config.maxVersions,
+        config.maxFileBytes,
+        new Int32Array(base.cancel), limits.maxPathBytes)
+      if (!(frame instanceof Uint8Array) || !(frame.buffer instanceof ArrayBuffer)
+        || parseSkillRetireFrame(frame, base.root,
+          config.maxVersions) === undefined) throw new AnchorCloseFailure('Skill retirement completion is unconfirmed')
+      const reply = new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength)
+      port.postMessage({ kind: 'skill-retire-reply', id: base.id, frame: reply } satisfies FdWorkerReply, [reply.buffer])
+      return
+    }
+    if (record(raw) && raw.kind === 'skill-source-context') {
+      if (Object.keys(raw).length !== 3 || native.skillProjectionVersion !== 1 || limits.skillProjection === undefined
+        || typeof raw.id !== 'string' || !/^[a-f0-9-]{36}$/.test(raw.id)
+        || !(raw.cancel instanceof SharedArrayBuffer) || raw.cancel.byteLength !== 4) { port.close(); return }
+      if (Atomics.load(new Int32Array(raw.cancel), 0) !== 0) throw new WorkerFailure('FS_ABORTED')
+      const fd = openSync('/proc/sys/kernel/random/boot_id', constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+      const bytes = new Uint8Array(65); let total = 0
+      try {
+        for (;;) {
+          const count = readSync(fd, bytes, total, bytes.byteLength - total, null)
+          if (count === 0) break
+          total += count
+          if (total > 64) throw new WorkerFailure('FS_IO_ERROR')
+        }
+      } finally { try { closeSync(fd) } catch (_error) { throw new AnchorCloseFailure('Source scope descriptor close is unconfirmed') } }
+      const context = skillSourceContext({ bootId: new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, total)).trim(),
+        mountNamespace: readlinkSync('/proc/self/ns/mnt') })
+      if (context === undefined) throw new WorkerFailure('FS_IO_ERROR')
+      port.postMessage({ kind: 'skill-source-context-reply', id: raw.id as OperationId, context } satisfies FdWorkerReply)
+      return
+    }
+    if (record(raw) && raw.kind === 'skill-directory') {
+      const config = limits.skillProjection, supplied = skillProjectionLimits(raw.limits)
+      if (native.skillProjectionVersion !== 1 || config === undefined || supplied === undefined || limits.content === undefined
+        || Object.keys(raw).length !== 8 || !['store', 'store-verify', 'parent-create', 'parent-verify'].includes(String(raw.purpose))
+        || Object.entries(config).some(([key, value]) => Object.entries(supplied).find(([k]) => k === key)?.[1] !== value)) {
+        port.close(); return }
+      const base = projectMetadataRequest({ kind: 'project-metadata-prepare', id: raw.id, root: raw.root, uid: raw.uid, gid: raw.gid,
+        cancel: raw.cancel }, limits)
+      const root = base.root
+      if (root.rootMountId === undefined) { port.close(); return }
+      const args: [string, string, string, string, number, number, number, number, number,
+        Int32Array<SharedArrayBuffer>] = [root.rootPath, root.rootDevice, root.rootInode,
+        root.rootMountId, base.uid, base.gid, limits.maxPathBytes, limits.maxResolveRetries, limits.content.operationTimeoutMs,
+        new Int32Array(base.cancel)]
+      const frame = raw.purpose === 'store' ? native.prepareSkillStore?.(...args, config.maxProjects, config.maxRecordBytes,
+        config.maxMetadataBytes, config.maxMetadataInodes)
+        : raw.purpose === 'store-verify' ? native.verifySkillStore?.(...args, config.maxProjects, config.maxRecordBytes,
+          config.maxMetadataBytes, config.maxMetadataInodes)
+          : raw.purpose === 'parent-create' ? native.prepareSkillParent?.(...args) : native.verifySkillParent?.(...args)
+      if (!(frame instanceof Uint8Array) || !(frame.buffer instanceof ArrayBuffer) || parseProjectMetadataFrame(frame, root,
+        base.uid, base.gid) === undefined) {
+        throw new AnchorCloseFailure('Skill directory completion is unconfirmed')
+      }
+      const reply = new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength)
+      port.postMessage({ kind: 'project-metadata-reply', id: base.id, frame: reply } satisfies FdWorkerReply, [reply.buffer])
+      return
+    }
+    if (record(raw) && raw.kind === 'skill-project') {
+      const config = limits.skillVersions, projection = limits.skillProjection
+      if (native.skillProjectionVersion !== 1 || native.projectSkillVersion === undefined || config === undefined
+        || limits.content === undefined || limits.content.maxReplyBytes < 192 || projection === undefined) { port.close(); return }
+      const base = projectMetadataRequest({ kind: 'project-metadata-prepare', id: raw.id, root: raw.root,
+        uid: raw.uid, gid: raw.gid, cancel: raw.cancel }, limits)
+      const supplied = skillVersionLimits(raw.limits), metadata = raw.metadata
+      if (Object.keys(raw).length !== 13 || raw.maximumCopies !== projection.maxCopiesPerProject
+        || typeof raw.expectedCopyInode !== 'string' || !/^(0|[1-9][0-9]{0,19})$/.test(raw.expectedCopyInode)
+        || supplied === undefined || Object.entries(config).some(([name, value]) => Object.entries(supplied).find(([key]) =>
+        key === name)?.[1] !== value)
+        || typeof raw.version !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(raw.version)
+        || !(raw.skill instanceof Uint8Array) || !(raw.skill.buffer instanceof ArrayBuffer)
+        || !(raw.resource instanceof Uint8Array) || !(raw.resource.buffer instanceof ArrayBuffer)
+        || raw.skill.byteOffset !== 0 || raw.skill.byteLength !== raw.skill.buffer.byteLength
+        || raw.resource.byteOffset !== 0 || raw.resource.byteLength !== raw.resource.buffer.byteLength
+        || raw.skill.byteLength > config.maxFileBytes || raw.resource.byteLength > config.maxFileBytes
+        || !record(metadata) || Object.keys(metadata).length !== 6 || metadata.device !== base.root.rootDevice
+        || typeof metadata.inode !== 'string' || !/^[1-9][0-9]{0,19}$/.test(metadata.inode)
+        || metadata.mountId !== base.root.rootMountId || metadata.uid !== base.uid || metadata.gid !== base.gid || metadata.mode !== 0o40700
+        || Buffer.byteLength(base.root.rootPath) + 96 > limits.maxPathBytes || base.root.rootMountId === undefined) { port.close(); return }
+      const request: FdSkillProjectRequest = { ...base, kind: 'skill-project', version: raw.version as FdSkillProjectRequest['version'],
+        skill: new Uint8Array(raw.skill.buffer), resource: new Uint8Array(raw.resource.buffer), limits: config,
+        maximumCopies: projection.maxCopiesPerProject, expectedCopyInode: raw.expectedCopyInode,
+        metadata: { device: metadata.device, inode: metadata.inode, mountId: base.root.rootMountId,
+          uid: base.uid, gid: base.gid, mode: 0o40700 } }
+      const root = request.root
+      const frame = native.projectSkillVersion(root.rootPath, root.rootDevice, root.rootInode, base.root.rootMountId,
+        base.uid, base.gid, request.version, request.skill, request.resource, projection.maxCopiesPerProject, config.maxTotalBytes,
+        config.maxTotalInodes, config.maxFileBytes, limits.content.operationTimeoutMs, new Int32Array(request.cancel), limits.maxPathBytes,
+        request.metadata.device, request.metadata.inode, request.metadata.mountId, request.expectedCopyInode)
+      if (!(frame instanceof Uint8Array) || !(frame.buffer instanceof ArrayBuffer) || parseSkillProjectFrame(frame,
+        request) === undefined) {
+        throw new AnchorCloseFailure('Skill projection publication or closure is unconfirmed')
+      }
+      const reply = new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength)
+      port.postMessage({ kind: 'skill-project-reply', id: request.id, frame: reply } satisfies FdWorkerReply, [reply.buffer])
+      return
+    }
+    if (record(raw) && raw.kind === 'skill-prepare') {
+      const config = limits.skillVersions
+      if (native.skillVersionsVersion !== 1 || native.prepareSkillVersion === undefined || config === undefined
+        || limits.content === undefined) { port.close(); return }
+      const base = projectMetadataRequest({ kind: 'project-metadata-prepare', id: raw.id, root: raw.root,
+        uid: raw.uid, gid: raw.gid, cancel: raw.cancel }, limits)
+      const supplied = skillVersionLimits(raw.limits)
+      if (supplied === undefined || Object.entries(config).some(([name, value]) => Object.entries(supplied).find(([key]) =>
+        key === name)?.[1] !== value)
+        || typeof raw.version !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(raw.version)
+        || !(raw.skill instanceof Uint8Array) || !(raw.skill.buffer instanceof ArrayBuffer)
+        || !(raw.resource instanceof Uint8Array) || !(raw.resource.buffer instanceof ArrayBuffer)
+        || raw.skill.byteOffset !== 0 || raw.skill.byteLength !== raw.skill.buffer.byteLength
+        || raw.resource.byteOffset !== 0 || raw.resource.byteLength !== raw.resource.buffer.byteLength
+        || raw.skill.byteLength > config.maxFileBytes || raw.resource.byteLength > config.maxFileBytes
+        || Buffer.byteLength(base.root.rootPath) + 90 > limits.maxPathBytes || base.root.rootMountId === undefined) { port.close(); return }
+      const request: FdSkillPrepareRequest = { ...base, kind: 'skill-prepare', version: raw.version as FdSkillPrepareRequest['version'],
+        skill: new Uint8Array(raw.skill.buffer, raw.skill.byteOffset, raw.skill.byteLength),
+        resource: new Uint8Array(raw.resource.buffer, raw.resource.byteOffset, raw.resource.byteLength), limits: config }
+      const root = request.root
+      const frame = native.prepareSkillVersion(root.rootPath, root.rootDevice, root.rootInode, base.root.rootMountId,
+        base.uid, base.gid, request.version, request.skill, request.resource, config.maxVersions, config.maxTotalBytes,
+        config.maxTotalInodes, config.maxFileBytes, limits.content.operationTimeoutMs, new Int32Array(request.cancel), limits.maxPathBytes)
+      if (!(frame instanceof Uint8Array) || !(frame.buffer instanceof ArrayBuffer) || parseSkillFrame(frame, request) === undefined) {
+        throw new AnchorCloseFailure('Skill version publication or closure is unconfirmed')
+      }
+      const reply = new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength)
+      port.postMessage({ kind: 'skill-prepare-reply', id: request.id, frame: reply } satisfies FdWorkerReply, [reply.buffer])
       return
     }
     if (record(raw) && raw.kind === 'environment-layout-prepare') {
@@ -873,7 +1134,7 @@ function start(): void {
       port.postMessage(textWrite(native, request))
       return
     }
-    if (record(raw) && ['storage-probe', 'storage-record', 'storage-view'].includes(String(raw.kind))) {
+    if (record(raw) && ['storage-probe', 'storage-record', 'storage-skill-proof', 'storage-view'].includes(String(raw.kind))) {
       if (storage === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
       const request = storageRequest(raw, limits.maxPathBytes)
       if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) {
@@ -884,9 +1145,13 @@ function start(): void {
       } else if (request.kind === 'storage-record') {
         const bytes = storage.record()
         port.postMessage({ kind: 'storage-record-reply', id: request.id, bytes } satisfies FdWorkerReply, [bytes.buffer])
+      } else if (request.kind === 'storage-skill-proof') {
+        const proof = storage.skillProof()
+        port.postMessage({ kind: 'storage-skill-proof-reply', id: request.id, proof } satisfies FdWorkerReply, [proof.bytes.buffer])
       } else {
         const view = storage.view()
-        port.postMessage({ kind: 'storage-view-reply', id: request.id, view } satisfies FdWorkerReply, [view.mountInfo.buffer, view.status.buffer])
+        port.postMessage({ kind: 'storage-view-reply', id: request.id, view } satisfies FdWorkerReply, [view.mountInfo.buffer,
+          view.status.buffer])
       }
       return
     }
@@ -944,6 +1209,10 @@ function start(): void {
   port.postMessage({ kind: 'ready', abiVersion: native.abiVersion, ...storage === undefined ? {} : { storageProbeVersion: 1 as const },
     ...native.projectMetadataVersion === undefined ? {} : { projectMetadataVersion: native.projectMetadataVersion },
     ...native.environmentLayoutVersion === undefined ? {} : { environmentLayoutVersion: native.environmentLayoutVersion },
+    ...native.skillProjectionVersion === undefined ? {} : { skillProjectionVersion: native.skillProjectionVersion },
+    ...native.skillBundleVersion === undefined ? {} : { skillBundleVersion: native.skillBundleVersion,
+      skillBundleProjectionVersion: native.skillBundleProjectionVersion, skillBundleReclaimVersion: native.skillBundleReclaimVersion },
+    ...native.skillVersionsVersion === undefined ? {} : { skillVersionsVersion: native.skillVersionsVersion },
     ...staging === undefined ? {} : { stagingAbiVersion: 1 as const } } satisfies FdWorkerReply)
 }
 

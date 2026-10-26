@@ -372,7 +372,7 @@ it.each([
     return cancelled
   })
   const transportCreation = vi.spyOn(Gateway.prototype, 'createNodeStreamTransport')
-  const registry = new LoginPeerRegistry(settings, auth, {
+  const registry = new LoginPeerRegistry({ ...settings, sessionRecheckLeadMs: 0 }, auth, {
     borrow: async (binding) => { expect(binding).toBe(f.binding); return use },
     beforeHttp: () => {}, beforeStream: () => {}, cleanupFailed: (failure) => { failures.push(failure) },
     streams: { maxFrameBytes: 65536, maxLogicalStreams: 1, maxLogicalStreamsPerAccount: 1, maxLogicalStreamsPerPeer: 1 },

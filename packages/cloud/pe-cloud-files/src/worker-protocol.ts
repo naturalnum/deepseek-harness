@@ -1,4 +1,7 @@
 /** Internal worker messages, not account authorization or a public filesystem protocol. */
+import type { SkillSourceContext, SkillProjectionLimits } from './skill-projection.ts'
+import type { SkillBundleLimits } from './skill-bundles.ts'
+import type { SkillVersionLimits } from './skill-versions.ts'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import type { FsWriteIntent } from '@deepseek-ai/dsh-fs'
@@ -171,6 +174,9 @@ export interface FdWorkerInput {
   readonly maxResolveRetries: number
   readonly readChunkBytes: number
   /** Explicit ABI8 content capacities; absent on ABI6/7 workers. */
+  readonly skillBundles?: SkillBundleLimits
+  readonly skillVersions?: SkillVersionLimits
+  readonly skillProjection?: SkillProjectionLimits
   readonly content?: FdContentLimits
   readonly storageProbe?: StaticStorageConfig
   /** Omission disables the separate companion; no capability is inferred from ABI8. */
@@ -242,6 +248,7 @@ export type FdStorageRequest = {
   readonly cancel: SharedArrayBuffer
 } & ({ readonly kind: 'storage-probe'; readonly path: string }
   | { readonly kind: 'storage-record' }
+  | { readonly kind: 'storage-skill-proof' }
   | { readonly kind: 'storage-view' })
 
 /** Bounded process view; every buffer is exact and closed before transfer. */
@@ -365,8 +372,18 @@ export type FdWorkerReply =
     readonly stagingAbiVersion?: 1
     readonly projectMetadataVersion?: 1
     readonly environmentLayoutVersion?: 1
+    readonly skillBundleVersion?: 1
+    readonly skillBundleProjectionVersion?: 1
+    readonly skillBundleReclaimVersion?: 1
+    readonly skillVersionsVersion?: 1
+    readonly skillProjectionVersion?: 1
   }
   | { readonly kind: 'project-metadata-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'bundle-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'skill-retire-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'skill-source-context-reply'; readonly id: OperationId; readonly context: SkillSourceContext }
+  | { readonly kind: 'skill-project-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'skill-prepare-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'environment-layout-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'lstat-reply'; readonly id: OperationId; readonly metadata: FdPathMetadata | undefined }
   | { readonly kind: 'list-reply'; readonly id: OperationId; readonly entries: readonly FdDirectoryEntry[] }
@@ -381,6 +398,11 @@ export type FdWorkerReply =
   }
   | { readonly kind: 'storage-probe-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'storage-record-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }
+  | {
+    readonly kind: 'storage-skill-proof-reply'
+    readonly id: OperationId
+    readonly proof: import('./storage-types.ts').ProtectedSkillProof
+  }
   | { readonly kind: 'storage-view-reply'; readonly id: OperationId; readonly view: FdStorageView }
   | { readonly kind: 'leaf-prepare-reply' | 'leaf-cleanup-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'startup-failed'; readonly code: FsErrorCode; readonly syscallCode?: string }

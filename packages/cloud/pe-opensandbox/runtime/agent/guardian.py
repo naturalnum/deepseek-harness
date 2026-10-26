@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from paths import enter_cwd
+from paths import enter_cwd, verify_skill_world
 from wire import LIMITS
 
 RECORD = struct.Struct('!4sB3xii')
@@ -62,6 +62,8 @@ def main(config, status, gate, stdin, stdout, stderr):
             st = os.stat(path)
             assert [st.st_dev, st.st_ino] == expected
         enter_cwd(spec['projectRoot'], spec['cwd'], spec['roots'][spec['projectRoot']])
+        if 'skillWorld' in spec:
+            verify_skill_world(spec['projectRoot'], spec['roots'][spec['projectRoot']], spec['skillWorld'])
         stage = 4
         live = set()
         for name in os.listdir('/proc/self/fd'):

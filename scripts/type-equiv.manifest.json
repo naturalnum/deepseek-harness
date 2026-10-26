@@ -2486,6 +2486,36 @@
       "doc": "docs/subsystems/boot.md",
       "symbol": "PendingModule",
       "source": "packages/boot/hmr/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/skills.md",
+      "symbol": "FileSystemSkillReader",
+      "source": "packages/skill/skill-filesystem/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/skills.md",
+      "symbol": "FileSystemSkillResources",
+      "source": "packages/skill/skill-filesystem/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/skills.md",
+      "symbol": "FileSystemSkillRead",
+      "source": "packages/skill/skill-filesystem/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/skills.md",
+      "symbol": "FileSystemSkillSource",
+      "source": "packages/skill/skill-filesystem/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/cloud.md",
+      "symbol": "ApprovedModelKeyBinding",
+      "source": "packages/cloud/pe-cloud-api/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/cloud.md",
+      "symbol": "ApprovedModelKeyConfiguration",
+      "source": "packages/cloud/pe-cloud-api/src/types.ts"
     }
   ]
 }

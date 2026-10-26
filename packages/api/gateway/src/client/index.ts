@@ -47,6 +47,8 @@ export type { RemoteStreamItem, RemoteStreamOptions } from './remote-stream.ts'
 export { RemoteSnapshotStream } from './snapshot-stream.ts'
 export type { RemoteSnapshotStreamOptions } from './snapshot-stream.ts'
 
+const installRemoteMethod = Symbol('api-gateway.installRemoteMethod')
+
 interface MountToken {
   active: boolean
   readonly abort: AbortController
@@ -670,16 +672,16 @@ class RemoteNamespaceService extends Service {
   }
 
   installDirect(descriptor: InvocationDescriptor, token: MountToken): void {
-    this.install(descriptor.method, 'direct', { descriptor, token })
+    this[installRemoteMethod](descriptor.method, 'direct', { descriptor, token })
   }
 
   installScoped(descriptor: InvocationDescriptor, projection: ScopedProjection, token: MountToken): void {
-    this.install(descriptor.method, 'scoped', { descriptor, projection, token })
+    this[installRemoteMethod](descriptor.method, 'scoped', { descriptor, projection, token })
   }
 
-  private install(method: string, kind: 'direct', value: DirectMethod): void
-  private install(method: string, kind: 'scoped', value: ScopedMethod): void
-  private install(method: string, kind: 'direct' | 'scoped', value: DirectMethod | ScopedMethod): void {
+  private [installRemoteMethod](method: string, kind: 'direct', value: DirectMethod): void
+  private [installRemoteMethod](method: string, kind: 'scoped', value: ScopedMethod): void
+  private [installRemoteMethod](method: string, kind: 'direct' | 'scoped', value: DirectMethod | ScopedMethod): void {
     this.assertMethodAvailable(method)
     let record = this.methods.get(method)
     const fresh = record === undefined

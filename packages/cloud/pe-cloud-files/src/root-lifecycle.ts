@@ -1,5 +1,5 @@
 /** Root contributions remain registered until actual pool, storage probe and result ownership ends. */
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { AccountRuntimeService } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Worker } from 'node:worker_threads'
 import type { FdWorkerInput } from './worker-protocol.ts'
@@ -35,9 +35,14 @@ export async function mountRootPool(
       yield unprovide
       yield unregisterParticipant
       yield async () => {
-        const receipt = await pool.stop(Date.now() + config.drainTimeoutMs)
-        if (receipt.status === 'unknown') ctx.logger.error('files root shutdown is unconfirmed; retaining participant and actual worker ownership')
-        await pool.whenClosed()
+        // Parent Root disposal must retain the pool through account storage retirement.
+        try {
+          if (ctx.root.fiber.state === FiberState.UNLOADING) await runtime.close()
+        } finally {
+          const receipt = await pool.stop(Date.now() + config.drainTimeoutMs)
+          if (receipt.status === 'unknown') ctx.logger.error('files root shutdown is unconfirmed; retaining participant and actual worker ownership')
+          await pool.whenClosed()
+        }
       }
     }, 'pe-cloud-files: actual pool lifetime before unregister')
   } catch (error) {

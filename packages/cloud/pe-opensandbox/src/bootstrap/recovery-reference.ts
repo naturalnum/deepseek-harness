@@ -42,7 +42,7 @@ export interface RootRecoverySelection {
 }
 
 /**
- * Open the actual protected Root receipt and independently check the old local process domain.
+ * Open the protected Root receipt and independently check its selected process or local terminated-kernel proof.
  * @param reference Explicit Root-selected file and byte/age limits.
  * @param capacities Existing finite account, allocation and field capacities.
  * @returns The original verifier and retained readonly selection.

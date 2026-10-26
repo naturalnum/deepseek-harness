@@ -141,6 +141,9 @@ export class ReactLoopAgent implements Agent {
     return this.phase.kind === 'idle' || this.phase.kind === 'maintenance' ? 'idle' : 'running'
   }
 
+  /** True only in the driver-owned idle phase with neither durable inbox holding work. */
+  get isQuiescent(): boolean { return this.phase.kind === 'idle' && !this.inbox.hasPending }
+
   /** Commit a phase and publish its externally visible status transition. */
   private setPhase(next: Phase): void {
     const previousStatus = this.status

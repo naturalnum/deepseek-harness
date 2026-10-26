@@ -60,7 +60,7 @@ factory 返回类实例，并保留 spec，直到 `descriptors` 或 `methods` ge
 
 ### 静态分析工作区
 
-静态消费方直接针对工作区的 `tsconfig.host.json` 与 `tsconfig.client.json` 聚合配置调用 `WorkspaceAnalyzer`，选择 face 与包子集，并在不生成或加载运行时产物的前提下读取生成的 `FaceModel` 与类型图。`analyzeInBatches()` 通过有界的编译器程序处理大批量包选择，模型形态保持一致；`discoverPackages()` 无需构建类型检查程序即可找出参与贡献的包，其可选的 `package.json` 谓词会在读取某个包的源码或项目配置之前就跳过该包。Typert 只解析它所分析的包的 tsconfig；校验每个被引用的 tsconfig 由之前运行的 `tsc -b` 负责。
+静态消费方直接针对工作区的 `tsconfig.host.json` 与 `tsconfig.client.json` 聚合配置调用 `WorkspaceAnalyzer`，选择 face 与包子集，并在不生成或加载运行时产物的前提下读取生成的 `FaceModel` 与类型图。`analyzeInBatches()` 通过有界的编译器程序处理大批量包选择，模型形态保持一致；`discoverPackages()` 无需构建类型检查程序即可找出参与贡献的包，其可选的 `package.json` 谓词会在读取某个包的源码或项目配置之前就跳过该包。Typert 只解析它所分析的包的 tsconfig；校验每个被引用的 tsconfig 由之前运行的 `tsc -b` 负责。 项目诊断覆盖每个选中包的文件；检查这些文件时仍使用导入的类型，依赖实现本身的诊断则由其所属项目负责。
 
 JSON、YAML、SVG、PNG、JPEG 和 WebP 资源导出不提供 TypeScript 声明，因此不进入 API 模型。JavaScript 或 TypeScript 导出源文件缺失时仍报错。
 

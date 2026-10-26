@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Client } from 'pg'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, type Message } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as Root from '../src/root.ts'
+import { RootRecipeAudit } from '../src/recipe-audit.ts'
 import type { AccountId, DrainParticipant } from '../src/types.ts'
 import { instanceTestConnection } from './instance-test-connection.ts'
 import { RootCredentials, rootConfig } from './root-control-fixture.ts'
@@ -38,7 +39,7 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
   })
   afterAll(async () => { await database?.end() })
 
-  async function root(patch: Partial<ReturnType<typeof rootConfig>> = {}) {
+  async function root(patch: Partial<ReturnType<typeof rootConfig>> = {}, setupRoot?: (ctx: Context) => void) {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'm8e-actual-root-')))
     directories.push(dir)
     const recipeVersion = 'm8e-root-' + randomUUID()
@@ -53,6 +54,7 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
     ]))
     let resolves = 0
     const ctx = await boot('m8e-runtime-root', configPath, [], (setup) => {
+      setupRoot?.(setup)
       Object.assign(setup.loader.builtins, {
         'actual-root': Root,
         'root-test-credentials': { apply(owner: Context) {
@@ -78,6 +80,92 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
     }
     return { ctx, runtime, config, record, resolves: () => resolves }
   }
+
+  // The formal AppReady test supplier controls callback timing only; it is not a production ready producer.
+  function readyObservation(brokenLogger = false) {
+    const listeners = new Set<() => void>(), messages: Message[] = []
+    return {
+      messages, listeners,
+      setup: (ctx: Context) => {
+        ctx.provide('appReady', { onReady(listener: () => void) {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        } })
+        ctx.logger.exporter({ levels: { default: 3 }, export(message) {
+          if (!(message.type === 'info' && message.args[0] === 'Cloud runtime observation: %o')
+            && !(message.type === 'warn' && message.args[0] === 'Cloud runtime observation is unavailable; business state is unchanged.')) return
+          messages.push(message)
+          if (brokenLogger) throw new Error('Test observation sink failed')
+        } })
+      },
+      commit() { for (const listener of [...listeners]) { listeners.delete(listener); listener() } },
+    }
+  }
+
+  it('emits the bounded ordinary Root observation only after AppReady and a successful seal return', async () => {
+    const observation = readyObservation()
+    let observationsBeforeSealReturn = -1
+    // Isolate only this notification boundary; the original audit remains unsealed and grants no account authority.
+    const seal = vi.spyOn(RootRecipeAudit.prototype, 'sealCurrent').mockImplementation(() => {
+      observationsBeforeSealReturn = observation.messages.length
+    })
+    try {
+      const fixture = await root({}, observation.setup)
+      const original = await fixture.record()
+      expect(observation.listeners.size).toBe(1)
+      expect(seal).not.toHaveBeenCalled()
+      expect(observation.messages).toHaveLength(0)
+      expect(() => { observation.commit() }).not.toThrow()
+      expect(seal).toHaveBeenCalledTimes(1)
+      expect(seal).toHaveBeenCalledWith(fixture.config.recipeVersion, fixture.config.native.maxEntries)
+      expect(observationsBeforeSealReturn).toBe(0)
+      expect(observation.messages).toHaveLength(1)
+      const fields: unknown = observation.messages[0]?.args[1]
+      if (typeof fields !== 'object' || fields === null) throw new Error('The ready logger must receive its structured record')
+      const monotonicNs: unknown = Reflect.get(fields, 'monotonicNs')
+      expect(monotonicNs).toMatch(/^[0-9]{1,24}$/)
+      expect(observation.messages[0]?.args[1]).toEqual({ event: 'ordinary-profile-ready', pid: process.pid,
+        instanceId: original.instance_id, recipeVersion: fixture.config.recipeVersion,
+        rootFiberUid: fixture.ctx.root.fiber.uid, monotonicNs,
+        appReadyObserved: true, recipeStatus: 'sealed' })
+      expect(() => { fixture.runtime.assertRecipeSealed(fixture.config.recipeVersion) }).toThrow('not sealed')
+    } finally { seal.mockRestore() }
+  })
+
+  it('emits no successful Root observation when the original native recipe seal rejects', async () => {
+    const observation = readyObservation()
+    const seal = vi.spyOn(RootRecipeAudit.prototype, 'sealCurrent')
+    try {
+      const fixture = await root({}, observation.setup)
+      expect(() => { observation.commit() }).not.toThrow()
+      expect(seal).toHaveBeenCalledTimes(1)
+      expect(seal).toHaveBeenCalledWith(fixture.config.recipeVersion, fixture.config.native.maxEntries)
+      expect(seal.mock.results[0]?.type).toBe('throw')
+      expect(observation.messages).toHaveLength(0)
+      expect(fixture.runtime.inspectRecipe()).toMatchObject({ status: 'blocked' })
+      expect(() => { fixture.runtime.assertRecipeSealed(fixture.config.recipeVersion) }).toThrow('not sealed')
+      expect(fixture.runtime.inspectControl()).toMatchObject({ phase: 'active', accounts: 0, hasFailure: false })
+    } finally { seal.mockRestore() }
+  })
+
+  it('contains failures of both the ready info sink and its warning without changing original Root lifecycle', async () => {
+    const observation = readyObservation(true)
+    const seal = vi.spyOn(RootRecipeAudit.prototype, 'sealCurrent').mockImplementation(() => {})
+    try {
+      const fixture = await root({}, observation.setup)
+      const original = await fixture.record()
+      expect(() => { observation.commit() }).not.toThrow()
+      expect(seal).toHaveBeenCalledTimes(1)
+      expect(seal).toHaveBeenCalledWith(fixture.config.recipeVersion, fixture.config.native.maxEntries)
+      expect(observation.messages.map(message => message.type)).toEqual(['info', 'warn'])
+      expect(fixture.runtime.inspectControl()).toMatchObject({ phase: 'active', accounts: 0, hasFailure: false })
+      expect(await fixture.record()).toMatchObject({ instance_id: original.instance_id, phase: 'registered' })
+      expect(() => { fixture.runtime.assertRecipeSealed(fixture.config.recipeVersion) }).toThrow('not sealed')
+      await fixture.ctx.fiber.dispose()
+      expect(fixture.runtime.inspectControl()).toMatchObject({ phase: 'closed', accounts: 0, hasFailure: false })
+      expect((await fixture.record()).phase).toBe('closed')
+    } finally { seal.mockRestore() }
+  })
 
   it('migrates/registers through the actual Loader, heartbeats with newly resolved credentials, then closes its row and connections', async () => {
     const fixture = await root()

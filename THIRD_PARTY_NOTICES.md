@@ -32,6 +32,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | Package | License |
 | --- | --- |
 | [`@agentclientprotocol/sdk`](https://github.com/agentclientprotocol/typescript-sdk) | Apache-2.0 |
+| [`@alibaba-group/opensandbox`](https://github.com/opensandbox-group/OpenSandbox) | Apache-2.0 |
 | [`@anthropic-ai/claude-agent-sdk`](https://github.com/anthropics/claude-agent-sdk-typescript) | SEE LICENSE IN README.md |
 | [`@anthropic-ai/sdk`](https://github.com/anthropics/anthropic-sdk-typescript) | MIT |
 | [`@babel/code-frame`](https://github.com/babel/babel) | MIT |
@@ -75,6 +76,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`acorn`](https://github.com/acornjs/acorn) | MIT |
 | [`ajv`](https://github.com/ajv-validator/ajv) | MIT |
 | [`anser`](https://github.com/IonicaBizau/anser) | MIT |
+| [`better-auth`](https://github.com/better-auth/better-auth) | MIT |
 | [`big.js`](https://github.com/MikeMcl/big.js) | MIT |
 | [`buffer`](https://github.com/feross/buffer) | MIT |
 | [`chokidar`](https://github.com/paulmillr/chokidar) | MIT |
@@ -119,6 +121,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`p-limit`](https://github.com/sindresorhus/p-limit) | MIT |
 | [`papaparse`](https://github.com/mholt/PapaParse) | MIT |
 | [`pdfjs-dist`](https://github.com/mozilla/pdf.js) | Apache-2.0 |
+| [`pg`](https://github.com/brianc/node-postgres) | MIT |
 | [`picomatch`](https://github.com/micromatch/picomatch) | MIT |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
@@ -140,6 +143,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`ws`](https://github.com/websockets/ws) | MIT |
 | [`xlsx`](https://git.sheetjs.com/SheetJS/sheetjs) | Apache-2.0 |
 | [`yaml`](https://github.com/eemeli/yaml) | ISC |
+| [`yauzl`](https://github.com/thejoshwolfe/yauzl) | MIT |
 | [`zod`](https://github.com/colinhacks/zod) | MIT |
 | [`zustand`](https://github.com/pmndrs/zustand) | MIT |
 
@@ -213,6 +217,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`@types/negotiator`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/node`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/papaparse`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
+| [`@types/pg`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/picomatch`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/react`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/react-dom`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
@@ -223,6 +228,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`@types/turndown`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/use-sync-external-store`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/ws`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
+| [`@types/yauzl`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@vitejs/plugin-react`](https://github.com/vitejs/vite-plugin-react) | MIT |
 | [`@vitest/coverage-v8`](https://github.com/vitest-dev/vitest) | MIT |
 | [`@vitest/spy`](https://github.com/vitest-dev/vitest) | MIT |

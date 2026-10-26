@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute, resolve } from 'node:path'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, AgentSetupCommit, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ReasoningEffortId, contentHasImage, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -33,7 +33,7 @@ import { SubagentError } from './error.ts'
 import { isAdjacentAgentSendMessageTool } from './internal.ts'
 import type { ActivationObserver } from './lifecycle.ts'
 import type {
-  ContinuableCreateRequest, ContinuableCreateSpec, SubagentInterruptAuthority,
+  ContinuableCreateRequest, ContinuableCreateSpec, SubagentAdmissionRequest, SubagentInterruptAuthority,
   SubagentActivationSpec, SubagentActivation, SubagentStartRequest, SubagentRun,
   SubagentSendMessageOptions, SubagentResult, ResolvedSubagentStartRequest,
 } from './types.ts'
@@ -58,9 +58,15 @@ type ChildDeliveryOptions =
 
 /** Package-private hooks supplied by the owning service. */
 interface SubagentHost {
-  startExternal(name: string, request: ResolvedSubagentStartRequest): Promise<SubagentRun>
-  /** Resolve one provider's detached continuable-creation contribution. */
-  prepareContinuable(name: string, request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
+  start(spec: SubagentActivationSpec, owner: Context, current: () => void): {
+    assertCurrent(this: void): void
+    prepare(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
+    start(request: ResolvedSubagentStartRequest): Promise<SubagentRun>
+  }
+  resume(request: Omit<Extract<SubagentAdmissionRequest, { kind: 'resume' }>, 'kind' | 'provider'>, current: () => void): {
+    check(): void | Promise<void>
+    assertCurrent(this: void): void
+  }
   /** Build the lifecycle observer for one Activation residency epoch. */
   observeActivation(provider: string, childId: SessionId, parent: Agent): ActivationObserver
 }
@@ -71,6 +77,7 @@ interface MaterializeBase {
   provider: string
   parent: Agent
   signal: AbortSignal
+  assertAdmission: () => void
   delivery?: 'parent' | 'caller' | undefined
 }
 
@@ -379,6 +386,7 @@ export class SubagentManager {
   async startLocal(spec: SubagentActivationSpec): Promise<SubagentActivation & { messageId: MessageId }> {
     const request = spec.request
     const parent = request.parent
+    const dispatch = this.host.start(spec, this.ownerCtx, () => { this.assertAdmitting(parent) })
     this.assertAdmitting(parent)
     const persistence = spec.delivery === 'caller' ? this.ctx.get('sessionPersistence') : this.requirePersistence()
     assertSubagentMaxDepth(request.maxDepth)
@@ -409,7 +417,7 @@ export class SubagentManager {
     const releaseHold = this.holdOwnership(parent, childId)
     try {
       const cwd = await this.resolveDirectory(request, spec.signal)
-      const prepared = await this.host.prepareContinuable(spec.provider, {
+      const prepared = await dispatch.prepare({
         sessionId: childId,
         cwd,
         parent,
@@ -436,6 +444,7 @@ export class SubagentManager {
         }
         const activation = await this.materialize({
           kind: 'local',
+          assertAdmission: dispatch.assertCurrent,
           childId,
           provider: spec.provider,
           parent,
@@ -482,6 +491,7 @@ export class SubagentManager {
    */
   async startExternal(spec: SubagentActivationSpec): Promise<SubagentActivation> {
     const parent = spec.request.parent
+    const dispatch = this.host.start(spec, this.ownerCtx, () => { this.assertAdmitting(parent) })
     this.assertAdmitting(parent)
     const pendingId = brandString<SessionId>(randomUUID())
     const releaseHold = this.holdOwnership(parent, pendingId)
@@ -490,12 +500,13 @@ export class SubagentManager {
       const cwd = await this.resolveDirectory(spec.request, spec.signal)
       activation = await this.materialize({
         kind: 'external',
+        assertAdmission: dispatch.assertCurrent,
         childId: pendingId,
         provider: spec.provider,
         parent,
         signal: spec.signal,
         delivery: spec.delivery,
-        start: signal => this.host.startExternal(spec.provider, {
+        start: signal => dispatch.start({
           ...spec.request, cwd, label: spec.label, signal,
         }),
       })
@@ -737,6 +748,7 @@ export class SubagentManager {
    * @returns the published process-local Activation.
    */
   private materialize(inputs: MaterializeInputs): Promise<Activation> {
+    inputs.assertAdmission()
     this.assertAdmitting(inputs.parent)
     inputs.signal.throwIfAborted()
     const lineage = this.liveLineage(inputs.parent)
@@ -877,7 +889,7 @@ export class SubagentManager {
     } else {
       const { create } = inputs
       let structured: StructuredAttachment | undefined
-      const setup = async (childCtx: Context, child: Agent): Promise<void> => {
+      const setup = async (childCtx: Context, child: Agent): Promise<AgentSetupCommit> => {
         // Only fresh creation appends the descriptor and delegated policy after
         // the inherited marker; a cold resume replays those persisted events.
         if (inputs.composition.agentPreset !== undefined) {
@@ -901,7 +913,9 @@ export class SubagentManager {
             && child.inbox.nextTurn.length === 0,
           )
         }
+        return { commit: inputs.assertAdmission, assertCurrent: inputs.assertAdmission }
       }
+      inputs.assertAdmission()
       const handle = create === undefined
         ? await this.ownerCtx.agents.resume({
           resumeSessionId: childId,
@@ -942,6 +956,7 @@ export class SubagentManager {
     void activation.result.promise.catch(() => undefined)
     this.resident.set(childId, activation)
     try {
+      inputs.assertAdmission()
       this.assertAdmitting(parent)
       inputs.signal.throwIfAborted()
       if (this.ctx.agents.get(parent.id) !== parent) throw new SubagentError('subagent parent is no longer live', 'UNAUTHORIZED')
@@ -1360,18 +1375,26 @@ export class SubagentManager {
       if (independentlySelected && typeof agentPreset !== 'string') {
         throw new SubagentError(`subagent "${childId}" has no agent preset projection for restoration`, 'NOT_RESUMABLE')
       }
+      const agentOptions: AgentOptions = {
+        ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
+        ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
+        ...descriptor.agentReasoningEffort !== undefined
+          ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
+          : {},
+      }
+      const admission = this.host.resume({
+        owner: this.ownerCtx, parent, childId, providerName: descriptor.provider,
+        header: source.header, agentOptions, agentPreset: agentPreset ?? undefined, signal: options.signal,
+      }, () => { this.assertAdmitting(parent) })
+      const checking = admission.check()
+      if (checking !== undefined) await checking
       activation = await this.materialize({
         kind: 'local',
+        assertAdmission: admission.assertCurrent,
         childId,
         provider: descriptor.provider,
         parent,
-        agentOptions: {
-          ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
-          ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
-          ...descriptor.agentReasoningEffort !== undefined
-            ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
-            : {},
-        },
+        agentOptions,
         composition: { agentPreset: agentPreset ?? undefined, persona: descriptor.persona, toolFilter: descriptor.toolFilter },
         signal: options.signal,
       })

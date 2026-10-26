@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import { snapshotSessionFormatJson } from '@deepseek-ai/dsh-session-format'
 import { normalizeSessionLog, redactSessionSnapshotIds } from '@deepseek-ai/dsh-session-snapshot'
+import { canonicalSessionFixture } from '../../../../scripts/session-fixture-layout.ts'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -112,7 +113,9 @@ it('keeps the captured nested snapshot through a cwd/tool change and reads the c
     const raw = rows.map(row => JSON.stringify(row)).join('\n') + '\n'
     const redacted = redactSessionSnapshotIds([raw])[0]
     if (redacted === undefined) throw new Error('Missing native nested Session log')
-    const recorded = normalizeSessionLog(redacted, { sessionIds: [], cwd: root }, { identityMode: 'preserve' })
+    const physical = normalizeSessionLog(redacted, { sessionIds: [], cwd: root }, { identityMode: 'preserve' })
+    const recorded = canonicalSessionFixture(physical)
+    if (recorded === undefined) throw new Error('Missing projected Session fixture')
     const golden = new URL('./fixtures/recorded/nested-session.v4.jsonl', import.meta.url)
     if (process.env['DSH_SNAPSHOT'] === 'record') writeFileSync(golden, recorded)
     expect(recorded).toBe(readFileSync(golden, 'utf8'))

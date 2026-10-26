@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import { AllocationStoreError, type PostgresAllocationStore } from './allocation-store.ts'
-import { recoveryIntentDigest, isProviderCreateRefusalRow, PROVIDER_CREATE_REFUSAL_CODE, KNOWN_PROVIDER_REFUSAL } from './bootstrap/recovery-witness.ts'
+import { recoveryIntentDigest, isProviderCreateRefusalRow, PROVIDER_CREATE_REFUSAL_CODE, isKnownProviderRefusal, type KnownProviderRefusal } from './bootstrap/recovery-witness.ts'
 import type { AllocationEpochScope, AllocationId, AllocationState, SandboxAllocation } from './allocation-types.ts'
 
 /** Original store authority; inspect preserves pending/unknown responsibilities outside the listing. */
@@ -54,14 +54,14 @@ export interface AllocationRefusalEvidence {
   readonly intentDigest: string
   readonly createOutcome: 'rejected-before-provider-create'
   readonly sandboxId: string | null
-  readonly refusalCode: typeof KNOWN_PROVIDER_REFUSAL | 'unsettled-or-unknown'
+  readonly refusalCode: KnownProviderRefusal | 'unsettled-or-unknown'
   readonly refusalRef: string
   readonly completedRequestRef: string
   readonly providerCreateNotStartedRef: string
   readonly permanentLateCreateSpawnLossRef: string
 }
 type AllocationEvidence = AllocationDestructionEvidence | AllocationRefusalEvidence
-type AllocationCoverage = (AllocationDestructionEvidence & { readonly createOutcome: 'accepted-created-and-settled' }) | (AllocationRefusalEvidence & { readonly refusalCode: typeof KNOWN_PROVIDER_REFUSAL; readonly sandboxId: null })
+type AllocationCoverage = (AllocationDestructionEvidence & { readonly createOutcome: 'accepted-created-and-settled' }) | (AllocationRefusalEvidence & { readonly refusalCode: KnownProviderRefusal; readonly sandboxId: null })
 
 /** Trusted attestations for this whole snapshot, never a browser-supplied stopped boolean. */
 export interface AllocationRecoveryEvidence {
@@ -188,11 +188,11 @@ function validateEvidence(snapshot: AllocationRecoverySnapshot, evidence: Alloca
         'completedRequestRef', 'providerCreateNotStartedRef', 'permanentLateCreateSpawnLossRef'])
       const entry = snapshot.allocations.find(value => value.row.allocationId === item.allocationId)
       if (entry === undefined || seen.has(item.allocationId) || item.rowDigest !== entry.digest || item.intentDigest !== entry.intentDigest
-        || item.sandboxId !== null || item.refusalCode !== KNOWN_PROVIDER_REFUSAL || !isProviderCreateRefusalRow(entry.row)) throw new AllocationRecoveryError('proof')
+        || item.sandboxId !== null || !isKnownProviderRefusal(item.refusalCode) || !isProviderCreateRefusalRow(entry.row)) throw new AllocationRecoveryError('proof')
       for (const ref of [item.refusalRef, item.completedRequestRef,
         item.providerCreateNotStartedRef, item.permanentLateCreateSpawnLossRef]) reference(ref, limits)
       seen.add(item.allocationId)
-      return Object.freeze({ ...item, sandboxId: null, refusalCode: KNOWN_PROVIDER_REFUSAL })
+      return Object.freeze({ ...item, sandboxId: null, refusalCode: item.refusalCode })
     }
     exactFields(item, ['allocationId', 'rowDigest', 'intentDigest', 'sandboxId', 'createOutcome', 'acceptedCreateRef',
       'physicalDestructionRef', 'permanentLateCreateSpawnLossRef'], ['independentCreateBindingRef'])

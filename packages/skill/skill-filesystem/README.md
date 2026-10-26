@@ -37,9 +37,9 @@ A skill is either a directory bundle `<name>/SKILL.md` or a flat file `<name>.md
 
 `disable-model-invocation: true` keeps the skill out of model-facing catalogs and loaders; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
 
-Catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
+For ordinary filesystem roots, catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
 
-The catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
+For ordinary filesystem roots, the catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
 
 ### Roots and priority
 
@@ -75,6 +75,14 @@ Load the plugin alongside the skill registry; it requires `ctx.skills`.
 | `bundledSkillDir` | — | Bundled skill root scanned at rank 600 when configured |
 
 The remaining `watch*` fields tune Chokidar behavior — polling, stability window, interval, project cap, and symlink following. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-skill-filesystem) is the exhaustive source for every field.
+
+### Programmatic source
+
+An owner with a restricted read source can construct `FileSystemSkillProvider(ctx, control, config, source)`. This optional fourth argument is a `FileSystemSkillSource`, supplied in code rather than Loader configuration; it requires `includeDefaultRoots: false`, `watch: false`, and no `bundledSkillDir`. The ordinary plugin continues to use `ctx.fs` and its existing host fallback.
+
+`source.withFiles(read, options)` lends a `FileSystemSkillRead` containing only the five native read methods and a `materialize(directory, options)` operation. Discovery and loading reuse this package's existing parser. Each provider instance must identify one stable source version even when its candidates outlive discovery. During a load, body parsing and resource preparation use the same borrowed source. The owner retains the actual source work until both finish, including after caller cancellation, and owns version retention and disposal.
+
+Source-backed catalog entries expose neither an instruction path nor a resource base. Loading returns guidance only after `materialize` resolves with a caller-usable resource base and, optionally, an instruction path. A failed or incomplete preparation must reject; the provider supplies no source-path fallback. `SkillViewOptions.scope` passes the original caller context to both source operations, but the owner must validate that caller and select its actual project independently of `cwd` or the discovered directory. This generic interface grants no storage, project projection, or account authority.
 
 ### Change detection
 

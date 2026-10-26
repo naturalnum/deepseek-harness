@@ -1,6 +1,7 @@
+import { modelKeyBinding } from '../../pe-cloud-api/tests/model-key-policy-data.ts'
 /** Producer contract tests on a native policy graph; execution/inventory/content stubs prove no product readiness or ABI8. */
 import { Context } from '@deepseek-ai/cordis'
-import { CloudApiError, ExposureService, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, APPROVED_PLUGIN_CONTROL, type ApprovedConfigurationCatalog, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
 import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -23,17 +24,23 @@ const fileRpc = ['read', 'stat', 'list', 'readBytes'].map(method => ({ endpoint:
 const changes = { endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
 
 async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly EndpointExposure[] = [],
-  fetch: readonly ExactFetchExposure[] = []) {
+  fetch: readonly ExactFetchExposure[] = [], modelKey = false, pluginControl = false,
+  skills: ApprovedConfigurationCatalog['skills'] = { mode: 'closed' }) {
   const native = policyFixture([], bounds), graph = await native.start(), root = new Context()
   onTestFinished(async () => { vi.restoreAllMocks(); await root.fiber.dispose() })
   const manifest = native.exposureOwner.policy.manifest
   const exposure = new ExposureService(root, { ...manifest, rpcEndpoints: [...manifest.rpcEndpoints, ...rpc],
     streamEndpoints: [...manifest.streamEndpoints, ...streams], exactFetchRoutes: fetch, approvedConfiguration: {
       recipeVersion: manifest.recipeVersion, catalogVersion: 'producer-contract', maxEntries: 128,
-      maxStringBytes: 128, maxCatalogBytes: 8192, plugins: [{ id: 'unit-catalog', entryId: 'unit-catalog',
-        moduleName: '@deepseek-ai/dsh-pe-cloud-api', packageName: '@deepseek-ai/dsh-pe-cloud-api',
-        packageVersion: '1.0.0', installable: false, toggleable: false }], skills: { mode: 'closed' },
+      maxStringBytes: 128, maxCatalogBytes: 8192, plugins: pluginControl
+        ? [{ ...APPROVED_PLUGIN_CONTROL, installable: false, toggleable: true }] : [{ id: 'unit-catalog', entryId: 'unit-catalog',
+          moduleName: '@deepseek-ai/dsh-pe-cloud-api', packageName: '@deepseek-ai/dsh-pe-cloud-api',
+          packageVersion: '1.0.0', installable: false, toggleable: false }], skills,
       credentials: { mode: 'read-only' }, fields: [],
+      ...pluginControl ? { pluginControl: { maxProfileBytes: 65536, maxRequestBytes: 8192,
+        maxReplyBytes: 65536, maxVersionBytes: 256 } } : {},
+      ...modelKey ? { modelKey: { bindings: [modelKeyBinding('provider')], maxKeyBytes: 128, maxVersionBytes: 128,
+        maxReplyBytes: 4096, maxMetadataBytes: 65536 } } : {},
     } })
   // Only the added owner audits are stubbed; the first-screen methods keep their real native API checks.
   const requireRpc = graph.api.requireRpc.bind(graph.api), requireStream = graph.api.requireStream.bind(graph.api)
@@ -169,4 +176,62 @@ it('keeps preview disabled for missing route or original provider despite declar
   let f=await fixture(),r=await f.produce();expect(JSON.parse(r.body)).toMatchObject({ capabilities: { servicePreview: { state: 'disabled' } } })
   vi.mocked(accountServiceAvailability).mockReturnValue({ developmentServices:false,servicePreview:false })
   f=await fixture([],[],[preview]);r=await f.produce();expect(JSON.parse(r.body)).toMatchObject({ capabilities: { servicePreview: { state: 'disabled' } } })
+})
+
+
+it('admits only the explicit complete model-key RPC group while the original native credential catalog stays readonly', async () => {
+  const rows = MODEL_KEY_RPC_ENDPOINTS.map(endpoint => ({ endpoint, handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const }))
+  await expect(fixture(rows)).rejects.toMatchObject({ code: 'cloud/invalid-config' })
+  const f = await fixture(rows, [], [], true), result = await f.produce()
+  for (const row of rows) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  expect(JSON.parse(result.body)).toMatchObject({ capabilities: { configuration: { credentials: { write: false }, fields: [] } } })
+  f.auditedRpc.mockImplementation((endpoint) => { throw new CloudApiError('cloud/account-unavailable', 'Original key registration ended: ' + endpoint) })
+  expect(result.assertCurrent).toThrow()
+})
+
+const pluginRows = PLUGIN_RPC_ENDPOINTS.map(endpoint => ({ endpoint, handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const }))
+it('approved plugin bootstrap admits the exact complete group and rechecks its original audit before sending', async () => {
+  const f = await fixture(pluginRows, [], [], false, true), result = await f.produce()
+  for (const row of pluginRows) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  expect(JSON.parse(result.body)).toMatchObject({ capabilities: { arbitraryBackendPlugins: false } })
+  const original = f.auditedRpc.getMockImplementation()
+  if (original === undefined) throw new Error('Missing original audit')
+  f.auditedRpc.mockImplementation((endpoint) => {
+    if (endpoint === 'cloudPlugins/change') throw new CloudApiError('cloud/account-unavailable', 'Original plugin registration ended')
+    return original(endpoint)
+  })
+  expect(result.assertCurrent).toThrow('Original plugin registration ended')
+})
+it.each(PLUGIN_RPC_ENDPOINTS)('approved plugin bootstrap refuses a missing original %s', async (endpoint) => {
+  await expect(fixture(pluginRows.filter(row => row.endpoint !== endpoint), [], [], false, true))
+    .rejects.toMatchObject({ code: 'cloud/invalid-config' })
+})
+it.each([{ handlerId: 'native:pluginManager' }, { guard: 'account-session' as const }])(
+  'approved plugin bootstrap refuses a different handler or guard: %j', async (change) => {
+    await expect(fixture(pluginRows.map(row => row.endpoint === 'cloudPlugins/change' ? { ...row, ...change } : row), [], [], false, true))
+      .rejects.toMatchObject({ code: 'cloud/invalid-config' })
+  },
+)
+it('approved plugin bootstrap keeps closed, raw-manager and stream policies closed', async () => {
+  await expect(fixture(pluginRows)).rejects.toMatchObject({ code: 'cloud/invalid-config' })
+  await expect(fixture([...pluginRows, { endpoint: 'pluginManager/setEnabled', handlerId: 'native:pluginManager', guard: 'authenticated-account' }], [], [], false, true))
+    .rejects.toMatchObject({ code: 'cloud/invalid-config' })
+  await expect(fixture(pluginRows, [pluginRows[0]!], [], false, true)).rejects.toMatchObject({ code: 'cloud/invalid-config' })
+})
+it('approved plugin bootstrap preserves the complete managed eight and model-key four in the same original policy', async () => {
+  const skills = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download']
+    .map(method => ({ endpoint: 'cloudSkills/' + method, handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const }))
+  const keys = MODEL_KEY_RPC_ENDPOINTS.map(endpoint => ({ endpoint, handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const }))
+  const f = await fixture([...pluginRows, ...skills, ...keys], [], [], true, true, { mode: 'managed',
+    limits: { maxFileBytes: 4096, maxRequestBytes: 16384, maxReplyBytes: 4096, maxRetainedVersions: 4 },
+    management: { maxRequestBytes: 65536, maxReplyBytes: 65536, maxMetadataBytes: 65536, maxRetainedProviders: 4 } })
+  const result = await f.produce(); result.assertCurrent()
+  for (const row of [...pluginRows, ...skills, ...keys]) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  expect(JSON.parse(result.body)).toMatchObject({ capabilities: { arbitraryBackendPlugins: false,
+    configuration: { credentials: { write: false }, fields: [] } } })
+})
+
+it.each(['settings/mutate', 'settings/update'])('Root refuses %s before bootstrap when no native field is approved', async (endpoint) => {
+  await expect(fixture([{ endpoint, handlerId: 'native:settingsController', guard: 'authenticated-account' }]))
+    .rejects.toMatchObject({ code: 'cloud/invalid-config' })
 })

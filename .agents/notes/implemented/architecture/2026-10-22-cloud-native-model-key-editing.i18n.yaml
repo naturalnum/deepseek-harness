@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-22-cloud-native-model-key-editing.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-22-cloud-native-model-key-editing.md
+/agent-note-cloud-model-keys-retain-native-save-and-page-ownership:
+  en: bbaf78ae4e38230f
+  zh: 1d80da08bffef4df
+/agent-note-cloud-model-keys-retain-native-save-and-page-ownership/problem:
+  en: 29c19f18cf49857c
+  zh: 77be34a998c2398b
+/agent-note-cloud-model-keys-retain-native-save-and-page-ownership/decision:
+  en: 5bf937a87eb03857
+  zh: 264c0153714ab45f
+/agent-note-cloud-model-keys-retain-native-save-and-page-ownership/alternatives-considered:
+  en: 60895ac1373b11c0
+  zh: cf53703efe3af474
+/agent-note-cloud-model-keys-retain-native-save-and-page-ownership/consequences:
+  en: f1f9e92c4d2095ba
+  zh: 47cdfec2c5fa8d1f

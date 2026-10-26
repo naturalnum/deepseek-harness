@@ -71,6 +71,8 @@ The provider owns one controller per Host entry, including its subscription and 
 
 `ctx.settingsSchema` rehydrates schemas, validates drafts, and edits nested values. Invalid wire values do not replace accepted values.
 
+An optional `ConfigForm.mutate` current check runs inside the original serial queue immediately before the Remote call and after its settlement. Omission preserves ordinary native behavior. A post-dispatch rejection does not prove that persistence was cancelled and never replays the write.
+
 </details>
 
 -----

@@ -7,6 +7,7 @@ export class EntryGroup {
   static readonly key = Symbol.for('cordis.group')
 
   public data: EntryOptions[] = []
+  private updateTask: { readonly promise: Promise<void>; pending: boolean } | undefined
 
   constructor(public ctx: Context, public tree: EntryTree) {
     const entry = ctx.fiber.entry
@@ -47,7 +48,39 @@ export class EntryGroup {
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
-  async update(config: EntryOptions[]) {
+  /** Join actual updates enrolled on this group before its observed work settles.
+   * Call from an external observer; child setup and cleanup must not await their own group update.
+   * @returns Joined settlement, including updates enrolled while waiting; preserves the first observed failure.
+   */
+  async awaitUpdate(): Promise<void> {
+    let observed = this.updateTask
+    let failure: { readonly error: unknown } | undefined
+    while (observed !== undefined) {
+      try { await observed.promise } catch (error) { failure ??= { error } }
+      if (observed === this.updateTask) break
+      observed = this.updateTask
+    }
+    if (failure !== undefined) throw failure.error
+  }
+
+  /** Update this group's children without serializing independent native updates.
+   * @param config Replacement child entry list.
+   * @returns This update's original async caller promise, retaining its rejection responsibility;
+   * awaitUpdate separately observes enrolled internal work.
+   */
+  async update(config: EntryOptions[]): Promise<void> {
+    const previous = this.updateTask, actual = Promise.withResolvers<undefined>()
+    const joined = previous?.pending ? Promise.allSettled([previous.promise, actual.promise]).then((results) => {
+      for (const result of results) if (result.status === 'rejected') throw result.reason
+    }) : actual.promise
+    const current = { promise: joined, pending: true }
+    this.updateTask = current
+    void joined.then(() => { current.pending = false }, () => { current.pending = false })
+    void this.updateChildren(config).then(() => { actual.resolve(undefined) }, actual.reject)
+    return actual.promise
+  }
+
+  private async updateChildren(config: EntryOptions[]) {
     this.ctx.loader.updateGuard?.group(this, config)
     const oldConfig = this.data as EntryOptions[]
     this.data = config

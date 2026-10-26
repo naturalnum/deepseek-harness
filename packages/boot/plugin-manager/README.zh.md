@@ -105,6 +105,10 @@ service 运行若在 `idleTimeoutMs` 内没有任何捕获输出即被终止，�
 
 结果包含最后尝试的阶段、目标、磁盘变化、应用状态和错误码。Web 词典呈现管理文案；pnpm 与 Loader 的诊断保持原样。无关的已有故障作为警告返回；新出现、配置变化后的故障，以及显式启用目标未激活，都会使操作失败。包管理运行失败或被取消，或组合包校验失败时，会恢复 pnpm 运行前快照的 manifest 与 lockfile（[理由](../../../.agents/notes/implemented/architecture/2026-09-15-guided-plugin-installation.zh.md)）；后续失败按[失败行为](#failure-behavior)所述保留已保存的改动。安装按 request id 跟踪到调用结束，因此取消只针对一次运行，并且不取 profile 锁就能等待它结束。CLI 继承认证环境和终端描述符；service 使用清理后的环境并捕获输出。管理器直接读取文件和 Loader 状态，不维护第二份目标状态注册表，因此不发布单独的运行时不变式伴生入口。
 
+唯一的 `registerSelectionGuard` 在原 profile 锁内覆盖 entry 启停和 bundle 选择。两者均通过原 profile composer 准备、检查实际原生计划、使用原 writer 持久化，并在该计划约束下 reconcile。选择计划仅接受一个既有平面叶子；插入、移除 entry 及多 entry 闭包在任何 profile 文件变化前拒绝。原生 no-HMR 结果保持原意，嵌入运行时必须另行确认实际应用。
+
+可信 `PluginSelectionGuard.application` 可为完整 bundle 选择请求 `restart`。`previewBundleSelection` 在同一原生文件锁内只读组合，不保存或挂载条目。受控写入者在唯一 manifest 写入前拒绝拟议层漂移，并返回原生 `restart-required: no-hmr`，不协调旧图；调用方负责完整关闭、替换装配及应用核验。
+
 </details>
 
 -----

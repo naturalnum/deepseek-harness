@@ -1,4 +1,5 @@
 /** Private Root AllocationBackend; server observations never grant mounts, replay create or replace actual joins. */
+import { parentFacts } from './skill-wire.ts'
 import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createDefaultAdapterFactory, type AdapterFactory, type CreateSandboxRequest, type SandboxInfo } from '@alibaba-group/opensandbox'
@@ -289,6 +290,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       metadata: { ...record.labels }, extensions: { 'bootstrap.execd.isolation': 'enable' }, volumes: [
         { name: 'project', host: { path: exports.project }, mountPath: grant.project.rootPath, readOnly: false },
         { name: 'protected-project-pe', host: { path: exports.protectedProject }, mountPath: `${grant.project.rootPath}/.pe`, readOnly: true },
+        ...(exports.skills === undefined ? [] : [{ name: 'project-skill-copies', host: { path: exports.skills }, mountPath: `${grant.project.rootPath}/.pe/skills`, readOnly: false }]),
         { name: 'session-environment', host: { path: exports.environment }, mountPath: grant.environment.targetPath, readOnly: false },
       ] }
     check(Buffer.byteLength(JSON.stringify(request)) <= this.config.maxRequestBytes, 'sdk/bounds')
@@ -302,6 +304,16 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       && intent.sessionId === grant.sessionId && intent.workspaceId === grant.workspaceId
       && intent.projectMountVersion === grant.project.mountVersion && intent.environmentVersion === grant.environment.environmentVersion
       && intent.environmentVersion === this.config.environmentVersion && intent.provider === this.config.provider, 'sdk/selection')
+    check((mount.skills === undefined) === (mount.exports.skills === undefined), 'sdk/selection')
+    if (mount.skills !== undefined) {
+      const parent = mount.skills.grant
+      parentFacts(parent, mount.skills.maxCopies)
+      check(parent.binding === grant.binding && parent.workspaceId === grant.workspaceId
+        && parent.project.rootPath === grant.project.rootPath && parent.project.rootDevice === grant.project.rootDevice
+        && parent.project.rootInode === grant.project.rootInode && parent.project.rootMountId === grant.project.rootMountId
+        && mount.exports.skills === `${mount.exports.protectedProject}/skills`, 'sdk/selection')
+    }
+    if (mount.exports.skills !== undefined) this.checkFields([mount.exports.skills])
     this.checkFields([grant.project.rootPath, mount.exports.project, mount.exports.protectedProject, mount.exports.environment])
   }
 

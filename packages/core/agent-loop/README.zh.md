@@ -115,6 +115,10 @@ const handle = await ctx.agents.create({
 
 工厂卸载时在整个作用域清理期间保留 inbox 投影与轮次边界投影，包括作用域内 abort 监听器发起取消的时刻，直到所有 Agent teardown 和启动任务结束。清理失败不会使这些投影提前释放。调用方卸载、工厂卸载和句柄释放等待同一次 teardown。
 
+setup 在存储待写入的 Session 后缀前只 commit 一次。可选 `AgentSetupCommit.assertCurrent` 在进入 registry 前、Session 通知后及等待 Agent 监听器后运行。抛错沿用同一回滚路径；已经发出的通知仍可被观察。
+
+提供 `observeDisposal` 时，同一个复用的 teardown 在驱动器、作用域、writer 和注册表清理后调用它一次。清理失败或被放弃的 setup 仍在运行时，结果为 `unknown`；准备前失败不产生观察回执。回调只报告结算且不得抛错，调用方卸载、工厂卸载与句柄释放仍由同一个清理 owner 负责。
+
 ### 持久化集成
 
 循环是会话写句柄在生产环境中的获取点。挂载 `ctx.sessionPersistence` 后，`create`/`createAgent` 调用 `persistence.create(header)`——在发布之前存储持久身份并取得写所有权——并通过句柄追加构造 seed；`resume` 先调用 `persistence.open(id, 'write')`（排除同 id 的并发恢复），通过句柄读取物理上有效的日志，并为在轮次中途崩溃的日志把 `interruptedTurnClosers` 作为普通批次追加——语义崩溃修复是 agent 层的职责，而非存储入口。发布前的最后一刻，`appendUnstoredSuffix` 存储 setup 窗口期间追加的事件（seed 标记、委派策略记录），它们绝不会经由 `session/event` 重新发出。发布之后，挂载的后端按会话 id 把该会话的 `session/event` 批次、`session/flush` 屏障与 `session/disposed` 退役路由进活跃写句柄；循环只通过它拥有的句柄触碰存储。在后端仍保持挂载时，teardown 会在驱动器提交收尾事件后关闭句柄；close 排空已路由的缓冲并释放写所有权。没有后端时，会话只存在于内存中，其余一切不变。
@@ -132,6 +136,8 @@ const handle = await ctx.agents.create({
 最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；处理该失败的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。
 
 关闭失败步骤之前，驱动器为每个尚无结果的 assistant 工具调用记录错误结果。已有 `tool/call` 记录但尚无已提交结果的调用获得 `TOOL_OUTCOME_UNKNOWN`；没有调用记录的请求获得 `TOOL_NOT_STARTED`。已提交的结果保持完整，已启动的派发先结算再恢复，轮次保留原始失败。这些结果让后续请求使用配对完整的工具历史，而不自动重试结果不明的操作。
+
+`isQuiescent(maximum)` 在不停止或取消工作的情况下读取原有受限 driver 及启动责任。它要求每个 driver 处于实际 idle phase 且 inbox 为空。仅公开 Agent status 不足以判断，因为 maintenance 持有工作时仍报告 idle；create/resume wrapper 即使已返回，也要等实际追踪的 continuation 结算后才静止。
 
 </details>
 

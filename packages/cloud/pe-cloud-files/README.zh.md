@@ -36,6 +36,8 @@ kind: "package-reference"
 
 `project()` 保持 bootstrap-default 含义。`projectFor(actualWorkspace, signal)` 仅为原 Registry 仍持有的精确对象派生目录能力，不替换文件系统，也不按路径选择项目。`createProject(use, title, signal)` 要求原始 ready borrow；存储 lease 在原 projects 父目录下固定一次 server UUID。显示标题受 `maxPathBytes` 限制，并与目录责任共用预留，持续到实际原生登记结果结算。准入后的取消不会放弃该修改。原生 ID、规范路径唯一性、成员关系及持久顺序仍归 Registry 持有。登记结果 unknown 时保留责任，不能报告干净排空。原未发布准备和 default 初始化检查保持独立。
 
+`AccountFileSelection.directoryPreparation` 是仅供内部使用、带类型的同进程准备身份。Runtime 提供一个稳定对象，其 `assertCaller(actualContext)` 核对原 binding、精确 child scope 和仍有效的准备记录；Files 传入真实的上下文化调用方。Files 以弱引用维护独立顺序：仅一次 `resolve(root, { cwd: root })`，两个字符串都必须字面等于获批 Workspace 根；随后仅一次对该 issued target 的原生 `stat`，且目录结果之后仅一次 `processPath`。别名、额外或并发尝试、取消和失败都不能重启该身份。文件和缺失的 stat 结果保留原生含义，不能取得进程路径。准备身份不授予内容、流、列举、写入、编辑、文件 URL 或包含关系能力。异步工作沿用原 lane 和 reader，并在等待前后保留原选择、target、backend 和生命周期检查。宿主路径映射仍把真实调用方原样传给具有独立校验的原附件投影。该协议的组件检查不代表完整 Runtime／factory 集成或部署就绪。
+
 `CloudAccountFiles.assertContentAvailable()` 要求原安装已经成功结算、唯一原 Registry/FS provider 仍有效，且通过可信准备回调。存储 lease 将回调交给原绑定池，核验当前代际、池健康、显式 content 限额和真实 ABI8 worker 握手。S2 遗漏、ABI 混用、worker 不可用或半安装状态都会拒绝。Runtime 须在安装结算后、接纳依赖内容能力的配方之前调用该断言；方法存在本身不授予就绪。
 
 生产工厂首先通过原池的 `requireStorageOwner()` 取得实际存储 owner。可选的根配置 `staticStorage` 见 [StaticStorageConfig](src/storage-types.ts)；省略仅支持组件调用者，不授予 owner。准备核验恰好两份预置账户分配之一。工厂须在原生 Profile 读取前保留实际 lease，核验其 Profile/base 地址，再把规范的 installed runtime 代际仅绑定一次到原 projects lane。另一个仍活动的 epoch 会被拒绝。runtime 等待 native/save/execution writer 后，lease 关闭继续等待该 lane 的实际工作与持有结果；它从不归还持久容量或重新挂载存储。本地索引写入不获得授权。
@@ -52,6 +54,22 @@ Root 必须先核验精确原生 Agent/Session 与 Workspace 关系，再调用 
 
 `assertExecutionMountGrant()` 只接受本 owner 原签发且未释放的对象，并复查图、provider 和原生项目成员关系。release 或图 lifetime 结束会撤销 grant 并归还其常驻内存；不会停止计算、删除数据或释放持久槽。普通计算回收保留 Session 归属。项目改变、环境版本不兼容及删除需要明确的停止/清理证据；本包不提供环境擦除或自动槽复用。
 
+可选根配置 `skillVersions` 要求已核验的 static private 域、显式版本数/内容字节/inode/驻留限额，以及使用 `DSH_FD_SKILL_ABI` 编译的 ABI8 资产。`CloudAccountFiles.skillVersions()` 返回原绑定的 [port](src/skill-versions.ts)，不返回私有文件系统路径。它只准备 `SKILL.md` 和 `resource.bin`，将版本目录封存为 `0500`、文件封存为 `0400`。原池按每个可能保留的版本句柄预留 2 KiB 全局驻留量，并从各 lane 容量扣除；准备操作在调用者归还驻留结果前先归还修改串行槽。原生清单计入每个保留版本；逻辑总量另预留 1,024 字节指针容量和三个控制 inode。独立 private 文件系统继续约束所有写入者的物理总限额。不完整或无法识别的入口会阻止新增准备，不从计费中消失。
+
+未配置 `skillBundles` 时，准备不会选择活动版本。`commit` 在调用者原有的 API 保存 turn 内，使用原生文本 CAS 写入 `skills/current.json`；迟到的确认结果仍可观察，修改或清理 unknown 时保留原操作、预留及 lease。[只读消费](src/skill-version-work.ts) 固定到一个精确版本 inode 并校验两份哈希。消费结束后来源方法失效，重复副本共用有限输出额度。消费前归还 worker 运行槽，原驻留结果则持续计费至 release。活动图期间原件全部保留计费；只有原存储 lease 的排空后路径，在 runtime 确认 native/source/save/execution 停止和 files 结算后，才清理非 current 版本。current 数据跨重启保留。投影已配置或受保护工作副本元数据仍存在时，排空后的清理会保守保留全部原件，并继续计入原有限来源上限，避免破坏持久副本引用。该存储 port 不发布原生目录、不投影项目资源，也不开放模型/UI 管理。
+
+可选 `skillProjection` 沿用原已核验的 private/projects 硬域和修改 lane，并要求 helper 独立声明 `skillProjectionVersion: 1`。`prepareSkillProject` 固定 `.pe/skills`，不创建沙盒；返回结果属于 allocation/export 存续期。`materializeSkillVersion` 只发布 `SKILL.md` 和 `resource.bin`，工作目录为可写 `0700`、文件为 `0600`，再用原生 FsVersion CAS 确认 private `skill-working-copies/` 中的受保护关联。完整发布、sync、描述符关闭和关联确认后，才返回项目相对 `.pe/skills/<server-version>/` 路径。记录正文遵守 `maxRecordBytes`；CAS 请求沿用原 worker 统一的 `maxReadBytes` 传输容量。已确认副本保留用户编辑及替换后的文件 inode；不可变原件哈希继续核验。
+
+闭合的[限额及预算模型](src/skill-projection.ts) 分别计入有界项目、保留副本、父目录／操作借用、扫描和旧新记录缓冲。private 元数据计入实际已分配块、按块取整的原子写记录临时文件和有界目录增长；副本和暂存仍受原项目硬配额约束。`borrowAllSkillWorkingCopies` 从受保护记录推导项目完整关联集合；超过操作上限或缺少任一原签发来源资格时整组拒绝，并在 Root 签发执行事实前核验每个实际目录。显式副本方法对选定集合保留相同检查。驻留结果在观察者／lifetime 取消后，仍持续到原操作真实远端／本地／物理结算。释放 materialize 只结束该次 I/O 预留，files 的有界副本句柄继续持有；不会删除数据或停止脚本。发布部分完成或 unknown 时仍由原修改操作持有，不自动回滚、重放或 GC。
+
+[关联格式](src/skill-project-work.ts) 独立于不可变版本清单和原生 Session／PG 格式。记录绑定实测来源 boot／namespace 和目录身份。普通冷读拒绝变化的范围或挂载。可选 Root 专属 `staticStorage.skillRevalidation` 提供固定受保护 `proofPath` 和 `proofSha256`，由 `maxPlanBytes` 限定大小，仅授权一条精确的 complete／pending-null 记录 SHA／原生 revision 及账号／Workspace。Root 必须绑定此前进程／写入者实际终结、owner 恢复回执和原卷／后端身份连续性。worker 在解码 workerData 时校验并保留可选 proof 选择器；省略时不提供 proof，字段错误或哈希不符时拒绝。原 owner 捕获实际核验的 plan／进程，随后已安装 lease 捕获原 factory 真实 instance／epoch／lifetime；proof 不预选未来身份，也不限制后续普通挂载。原修改 lane 在关联 CAS 和新能力签发前，核验当前已注册 Workspace、每个目录／副本 inode 和不可变来源，并保留已编辑副本。只有明确成功的重验 CAS 才在原 Root 资格对象中消费例外，该状态由其各 lease 共享；JSON 字节相同而原生 revision 已变时不会再次强制重验。unknown 或拒绝的 CAS 不消费资格。proof 缺失、pending／unknown 工作、后端变化或原生核验失败时拒绝。仅启用双文件模式时，完整集合冷借用仍会在任一历史版本缺少当前来源 issuer 精确对象时拒绝。原生 provider、签名操作、SDK 嵌套挂载和可写执行世界仍是独立前置；这些方法本身不开放模型／UI 能力。
+
+可选 `skillBundles` 扩展同一账户 files port、原修改 lane 和 private/projects 硬域。所有[包限额](src/skill-bundles.ts) 都须显式配置；Config 校验完整归档、输入、清单、目录、请求、回包、暂存和驻留上限，并计入保留的清单句柄。helper 必须独立声明 `skillBundleVersion: 1`、`skillBundleProjectionVersion: 1` 和 `skillBundleReclaimVersion: 1`；ABI8 和原固定帧保持不变。完整文件或 ZIP／`.skill` 字节使用锁定的 yauzl 库解码，核验规范相对路径、重复项、类型、链接、实际展开大小和 CRC。脚本仅作数据。完整 ZIP 导出保留嵌套资源和空目录；不提供 URL 安装或资源执行。
+
+`observeCatalog` 和来源选择与原修改操作串行。唯一的原 `skills/current.json` 为 schema2 目录，以原生 FsVersion CAS 覆盖全部安装项；只读 schema1 观察映射为 `sample`，不迁移数据。首次实际 schema2 提交保留该项。旧方法继续只向该槽发布 `SKILL.md` 和 `resource.bin`。托管版本保存完整哈希清单和封存文件树。`withBundleSource` 签发操作范围内的 `source.version`；回调中的物化必须消费该精确 lease，回调结束后资格失效。卸载拒绝新加载；已选定来源的操作可完成，并持续计费至 release。原件哈希覆盖每个成员。首次副本校验全部字节；已有副本保留用户内容和文件 inode 变化，原生 helper 扫描有界实际树并核验原副本根身份。完整树消费者使用 `borrowBundleWorkingCopies`、`borrowAllBundleWorkingCopies` 和 `assertBundleOperationCopies`，将实际操作借用持有至远端／本地／物理结算，独立于被动父目录 grant。
+
+完整树的受保护副本记录使用 schema2，新实现继续读取旧 schema1。冷重验证沿用原 Root 例外，并在原生记录 CAS 前核验完整不可变来源及文件树；历史双文件来源句柄仅可根据已解析的受保护关联重签，并核验实际内容。来源准备和原 post-drain 驱动在完整扫描目录、在途来源及持久副本／冷读引用后，执行有界原生回收。仅确认删除后才释放来源句柄；pending、unknown 或无法识别的数据持续计费并阻止不安全准入。私有回收不删除、覆盖或停止用户工作副本及脚本。启用新写入方前请阅读[目录升级指南](../../../docs/upgrade-guide/v0.2.1-rc.2/managed-skill-catalog/guide.zh.md)。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -61,6 +79,8 @@ Root 必须先核验精确原生 Agent/Session 与 Workspace 关系，再调用 
 <summary>实现细节——点击展开</summary>
 
 [工作队列](src/work-queue.ts) 在准入前预留全局及每个 lane 的字节，限制并发与排队工作，取消排队任务时不启动它，并在调用者取消或超时后继续追踪运行中的工作。每次操作都要求包含自身开销的正安全整数预留。零预留在后端调用前被拒绝，因此保留的记录不能绕过驻留预算。成功结算的结果会保留其预留，直至消费者释放结果。关闭 lane 会停止新业务工作并保留未结算记录；关闭队列则封闭全部 lane 的业务准入，同时允许已有责任的清理。
+
+配置空闲判定读取同一 lane 记录。只有已完成的 execution mount 与技能父目录 grant 使用被动 lease 保留，后续 I/O 仍须重新进入本 lane。正数驻留预算和终态排空 operation id 一直保留到原 owner 释放。普通保留结果、流、排队/运行 I/O、目录责任及未知修改结算仍为 busy；期限、观察取消或本地配置检查都不释放这些资源。
 
 各个结算观察者独立运行：某个观察者失败会被报告，但不阻止预算释放、后续观察者或排队工作。错误报告器失败时，默认启用的诊断日志提供兜底，不暴露原始异常文本。在延迟调用后端之前，最后一次取消检查会阻止已取消工作启动。
 
@@ -117,6 +137,8 @@ ABI8 `lstat` 移除尾分隔符后以 `O_PATH | O_NOFOLLOW` 打开最终目录�
 
 root probe 配置在账户准入前，从全局预留有界记录、proc、资产副本、native 临时空间及持有事实。同一时间仅运行一个账户核验。两组固定分配最多保留两条准备／lease 记录，并串行等待核验；重复的同代输入共享原 Promise。核验失败会关闭准入，root 关闭或排队代际被取消时，会在后续 I/O 前拒绝。等待中的核验责任一直保留到实际结算。观察超时后，busy slot、root operation id 及预留持续保留，直至实际回复或退出。组件传输及 macOS 均不能签发真实存储 owner。ABI6 及其 S2 行为保持独立；Linux helper 编译、实际权限限制、字节与 inode 耗尽后 control/其他账户持续写入，均须由部署验证。
 
+files 静止查询观察原有精确 epoch lane、待处理工作及 root probe 责任。驻留结果仍计为工作。查询不释放结果、不 retire lane，也不提供排空回执。
+
 </details>
 
 -----
@@ -155,7 +177,7 @@ root probe 配置在账户准入前，从全局预留有界记录、proc、资�
 
 - 共享根池在可信隔离图内提供完整 Workspace 元数据适配。注册移交要求原未发布窗口或实际 ready borrow；发布后的图仍为当前图时，元数据读取可以继续。这项生命周期区分不提供生产存储授权。静态准入覆盖恰好两组由 Root 预置、独立的 private/projects 域及有界辅助挂载。动态分配、通用递归准备及 live 并发注册与删除仍不可用。显式的文本与指令 reader 路径不代表完整 S3、完整 target／写入覆盖、链接竞态或完整分配计量已经验收。后端字符串或 statfs 结果不能提供实际部署归属、权限隔离或全部 writer 的字节及 inode reserve。
 - 账户绑定与收据类型来自 runtime 包。根入口在 worker 启动后注册 files 参与者，但投入生产前，可信工厂仍须在 Profile I/O 前持有实际存储 owner/lease，并接通完整获准配方。
-- 默认 S2 FileSystem 仅授予元数据方法；可信准备可以选择上述有界文本 provider 及固定来源的 `withInstructionReaders`。ABI8 内容准备还授予上述有界只读方法。附件接收／暂存、技能投影、editText 和 watch 仍不可用；完整链接竞态与分配验收仍要求独立证据。这些显式增量不证明完整 S3 或真实 Web 流程已经验收。选用的每份 helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
+- 默认 S2 FileSystem 仅授予元数据方法；可信准备可以选择上述有界文本 provider 及固定来源的 `withInstructionReaders`。ABI8 内容准备还授予上述有界只读方法。附件接收／暂存、原生技能 provider／可写执行世界集成、editText 和 watch 仍不可用；完整链接竞态与分配验收仍要求独立证据。这些显式增量不证明完整 S3 或真实 Web 流程已经验收。选用的每份 helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
 - Workspace 源码测试使用真实原生 Loader、JSONL 与 JSON StorageDomain，配合仅供测试的 Node-backed worker 传输；它们不建立内核或配额事实。独立的发布版 ABI 6 Linux 检查验证精确 ext4 mount 身份，拒绝错误 mount id 及同设备的嵌套 bind，并在干净卸载及新容器/Node 进程中恢复同一原生 Workspace 与 Session JSONL event hash。这些组件检查不验收账户入口的完整产品配方。目录同步故障注入、原生 WorkingDirectory/SessionController 装配、生产全部 writer 的隔离与硬配额、总物理 reserve、崩溃/断电恢复及 Web 流程仍是独立要求。
 - 文本源码测试也使用该测试专用 Node 传输。按需运行的 [ABI7 Linux 检查](tests/linux-text-interop.mjs)要求独立构建的 helper、发布 worker 入口及获准测试父目录。它检查原生创建／更新／版本结果、有界上下文、链接拒绝、发布前取消、临时清理及描述符关闭。它不建立部署隔离、运行中取消的故障覆盖、同步失败恢复或崩溃／断电耐久性。使用新候选之前仍须验证发布 ABI7；此处不提供已验证二进制。
 

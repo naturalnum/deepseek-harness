@@ -1,12 +1,13 @@
 /** Private account-graph admission and native Session Controller assembly. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import SessionController, { type SessionControlBufferLimits } from '@deepseek-ai/dsh-api-session-controller'
+import SessionController, { SessionSkillCatalog, type SessionControlBufferLimits } from '@deepseek-ai/dsh-api-session-controller'
 import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
   SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
   SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary,
+  SkillListRequest, SkillListValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -15,6 +16,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
+import { firstScreenNativeOwner } from './native-first-screen.ts'
 import type { ExposurePolicy } from './exposure.ts'
 import type { ExposureInventory } from './types.ts'
 
@@ -161,7 +163,52 @@ class NativeSessionAdmission {
     this.admit(endpoint, 'account-session', endpoint === 'session/follow' ? 'stream' : 'rpc')
   }
 
+  logOpening(frame: Extract<SessionFollowFrame, { type: 'snapshot' }>): void {
+    try {
+      const binding = this.binding
+      if ([binding.accountId, binding.epoch, binding.recipeVersion, frame.header.id].some(value => value.length > 256)) {
+        this.ctx.logger.debug('Cloud native history observation is unknown: identifier exceeds the log bound.')
+        return
+      }
+      this.ctx.logger.debug('Cloud native history observation: %j', {
+        event: 'session-follow-snapshot', pid: process.pid, accountId: binding.accountId, epoch: binding.epoch,
+        recipeVersion: binding.recipeVersion, rootFiberUid: this.ctx.root.fiber.uid,
+        sessionId: frame.header.id, cursor: frame.cursor,
+      })
+    } catch (_observationError) {
+      try { this.ctx.logger.warn('Cloud native history observation is unavailable; stream state is unchanged.') }
+      catch (_unavailableLogger) { /* The same native iterator still owns delivery and cleanup. */ }
+    }
+  }
+
   hasReader(): boolean { return this.reader !== undefined }
+
+  skillCatalogSelected(): boolean { return this.policy.manifest.rpcEndpoints.some(row => row.endpoint === 'skills/list') }
+
+  async skillCatalog(sessionId: SessionId): Promise<void> {
+    this.admitSkillCatalog()
+    await this.guards.assertSessionProject(sessionId)
+    this.admitSkillCatalog()
+  }
+
+  admitSkillCatalog(): void {
+    this.assertBinding()
+    this.ctx.fiber.assertActive()
+    this.assertCurrent(this.binding)
+    const row = this.policy.requireRpc('skills/list')
+    if (row.guard !== 'account-session' || row.handlerId !== 'native:sessionSkillCatalog' || this.reader === undefined) {
+      throw new CloudApiError('cloud/forbidden', 'The native skill catalog is not selected for this account.')
+    }
+  }
+
+  skillCatalogResult(value: SkillListValue): void {
+    this.admitSkillCatalog()
+    const reader = this.reader
+    if (reader === undefined || value.skills.length > reader.maxCollectionItems) {
+      throw new CloudApiError('cloud/capacity', 'The native skill catalog exceeds its selected collection limit.')
+    }
+    firstScreenJsonBytes(value, reader.maxFrameBytes)
+  }
 
   controlBufferLimits(): SessionControlBufferLimits | undefined { return this.reader }
 
@@ -227,11 +274,45 @@ class NativeSessionAdmission {
 }
 
 class AccountSessionController extends SessionController {
+  private readonly catalogConstructor: typeof SessionSkillCatalog
+
   constructor(
     ctx: Context,
     config: ConstructorParameters<typeof SessionController>[1],
     private readonly admission: NativeSessionAdmission,
-  ) { super(ctx, config) }
+  ) {
+    class AccountSkillCatalog extends SessionSkillCatalog {
+      override async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue> {
+        const control = admission.historySignal(signal)
+        control.throwIfAborted()
+        await admission.skillCatalog(request.sessionId)
+        const value = await super.list(request, control)
+        control.throwIfAborted()
+        await admission.skillCatalog(request.sessionId)
+        admission.skillCatalogResult(value)
+        return value
+      }
+    }
+    super(ctx, config, { skillCatalog: AccountSkillCatalog })
+    this.catalogConstructor = AccountSkillCatalog
+  }
+
+  inspectSkillCatalog(maximum: number): ExposureInventory['rpcEndpoints'] {
+    if (!this.admission.skillCatalogSelected()) return []
+    const scoped = this.ctx.get('sessionSkillCatalog')
+    const target: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped
+    if (!(target instanceof this.catalogConstructor) || target.list !== this.catalogConstructor.prototype.list) {
+      throw new CloudApiError('cloud/account-unavailable', 'The original guarded skill catalog changed.')
+    }
+    firstScreenNativeOwner(this.ctx, 'sessionSkillCatalog', target, maximum)
+    const binding = target.typertRemote, markers = remoteMethods(target)
+    if (binding.service !== target || binding.serviceKey !== 'sessionSkillCatalog' || binding.namespace !== 'skills'
+      || markers.length !== 1 || markers[0]?.method !== 'list' || (markers[0].exportName ?? 'list') !== 'list'
+      || (markers[0].mode ?? 'rpc') !== 'rpc') {
+      throw new CloudApiError('cloud/account-unavailable', 'The guarded skill catalog registration changed.')
+    }
+    return [{ endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' }]
+  }
 
   protected override ensureProjectDirectory(cwd: string): Promise<void> {
     return this.admission.ensureProjectDirectory(cwd)
@@ -335,6 +416,7 @@ class AccountSessionController extends SessionController {
         this.admission.admitHistory('session/follow')
         nativeSignal.throwIfAborted()
         if (next.done) return
+        if (next.value.type === 'snapshot') this.admission.logOpening(next.value)
         yield next.value
       }
     } finally {
@@ -399,7 +481,8 @@ export function inspectNativeController(
   if (!Number.isSafeInteger(maximum) || maximum < 1 || methods.length > maximum) {
     throw new CloudApiError('cloud/account-unavailable', 'Native method inventory exceeds its explicit limit.')
   }
-  const rpc: ExposureInventory['rpcEndpoints'][number][] = [], stream: ExposureInventory['streamEndpoints'][number][] = []
+  const rpc: ExposureInventory['rpcEndpoints'][number][] = [...actual.inspectSkillCatalog(maximum)]
+  const stream: ExposureInventory['streamEndpoints'][number][] = []
   for (const marker of methods) {
     const method = marker.method
     if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow'].includes(method)

@@ -7,13 +7,15 @@
  * Route handlers retain direct response ownership.
  */
 
-import { readFile } from 'node:fs/promises'
+import { X509Certificate } from 'node:crypto'
+import { constants } from 'node:fs'
+import { open, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse, Server } from 'node:http'
 import { createServer as createSecureServer } from 'node:https'
 import { isIP, type AddressInfo } from 'node:net'
 import { resolve } from 'node:path'
-import type { Duplex } from 'node:stream'
+import { getDefaultHighWaterMark, type Duplex } from 'node:stream'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import compressionMiddleware from 'compression'
@@ -62,14 +64,24 @@ export interface WebUpgradeRoute {
 
 /**
  * TLS material for the HTTPS listener: one certificate chain file and the
- * private key file it pairs with. Both hold PEM text and both resolve against
- * the process working directory.
+ * private key file it pairs with, plus optional client CA certificates. PEM
+ * file paths resolve against the process working directory.
  */
 export interface TlsConfig {
   /** Certificate chain file, leaf certificate first, PEM, no passphrase. */
   certFile: string
   /** Private key file for the chain's leaf certificate; unencrypted PEM. */
   keyFile: string
+  /**
+   * Request client certificates using only this CA bundle, while accepting anonymous or unauthorized TLS peers.
+   * Omission/null keeps ordinary HTTPS.
+   */
+  clientCa?: {
+    /** PEM file containing only CA certificates; paths resolve against the process working directory. */
+    certFile: string
+    /** Positive safe-integer file-byte limit; the reader reserves one extra byte to detect growth. */
+    maxBytes: number
+  }
 }
 
 /** Web server listen, TLS, and response-compression config. */
@@ -101,6 +113,23 @@ export interface Config {
   compressionLevel?: number
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
+  /** Limits selected before listen; omission or null keeps defaults. TLS requires the current public default stream watermark. */
+  transportLimits?: {
+    /** Route-enforced pair budget; the parser retains one excess pair so routes can reject silent truncation. Maximum 0x3fff_fffe. */
+    maxHeaderPairs: number
+    /** Positive finite request-header byte limit, enforced by Node's parser. */
+    maxHeaderBytes: number
+    /** Positive finite stream high-water mark in bytes; not a hard process-memory limit. */
+    highWaterMark: number
+    /** Positive finite simultaneous connection limit on this listener. */
+    maxConnections: number
+  }
+}
+
+function assertTlsWatermark(limits: Config['transportLimits'], tls: boolean): void {
+  if (tls && limits != null && limits.highWaterMark !== getDefaultHighWaterMark(false)) {
+    throw new Error('webserver: TLS transportLimits.highWaterMark must equal getDefaultHighWaterMark(false); this HTTPS listener does not apply a custom stream watermark.')
+  }
 }
 
 const DEFAULT_COMPRESSION = 'none' as const
@@ -252,17 +281,55 @@ function createGzipMiddleware(config: ResolvedConfig): NodeMiddleware {
  * handshake.
  * @param field - the config field being read, for the diagnostic.
  * @param path - absolute path to read.
+ * @param maxBytes - Optional file-byte limit plus a growth sentinel; omission preserves the original certificate/key read.
  * @returns the file's text.
  */
-async function readTlsFile(field: 'certFile' | 'keyFile', path: string): Promise<string> {
+async function readTlsFile(field: 'certFile' | 'keyFile' | 'clientCa.certFile', path: string, maxBytes?: number): Promise<string> {
   let content: string
   try {
-    content = await readFile(path, 'utf8')
+    if (maxBytes === undefined) content = await readFile(path, 'utf8')
+    else {
+      const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK)
+      try {
+        const before = await handle.stat()
+        if (!before.isFile() || !Number.isSafeInteger(before.size) || before.size > maxBytes) {
+          throw new Error('A regular PEM file within the configured byte limit is required')
+        }
+        const bytes = Buffer.alloc(before.size + 1)
+        let length = 0
+        while (length < bytes.length) {
+          const { bytesRead } = await handle.read(bytes, length, bytes.length - length, length)
+          if (bytesRead === 0) break
+          length += bytesRead
+        }
+        const after = await handle.stat()
+        if (length !== before.size || before.size !== after.size
+          || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+          throw new Error('The PEM file changed during its bounded read')
+        }
+        content = bytes.subarray(0, length).toString('utf8')
+      } finally { await handle.close() }
+    }
   } catch (error) {
     throw new Error(`webserver: cannot read tls.${field} ${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (content.trim().length === 0) {
     throw new Error(`webserver: tls.${field} ${path} is empty`)
+  }
+  return content
+}
+
+function validateClientCa(content: string, path: string): string {
+  // Node's CA loader can ignore malformed input instead of rejecting initialization.
+  const pem = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu
+  const certificates = content.match(pem)
+  try {
+    if (certificates === null || content.replace(pem, '').trim() !== ''
+      || certificates.some(certificate => !new X509Certificate(certificate).ca)) {
+      throw new Error('Only CA certificate PEM blocks are allowed')
+    }
+  } catch (error) {
+    throw new Error(`webserver: tls.clientCa.certFile ${path} is not a usable CA certificate bundle`, { cause: error })
   }
   return content
 }
@@ -290,10 +357,20 @@ export class WebServer extends Service {
     tls: z.object({
       certFile: z.string().required(),
       keyFile: z.string().required(),
+      clientCa: z.union([z.object({
+        certFile: z.string().required(),
+        maxBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER - 1).required(),
+      }).required()]),
     }).default(undefined as never),
     compression: z.union([z.const('none'), z.const('gzip')]).default(DEFAULT_COMPRESSION),
     compressionLevel: z.number().step(1).min(0).max(9).default(DEFAULT_COMPRESSION_LEVEL),
     compressionThresholdBytes: z.natural().default(DEFAULT_COMPRESSION_THRESHOLD_BYTES),
+    transportLimits: z.union([z.object({
+      maxHeaderPairs: z.natural().min(1).max(0x3fff_fffe).required(),
+      maxHeaderBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+      highWaterMark: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+      maxConnections: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+    }).required()]),
   })
 
   private readonly exact = new Map<string, WebRoute>()
@@ -316,8 +393,9 @@ export class WebServer extends Service {
   private readonly tlsConfig: TlsConfig | undefined
 
   constructor(ctx: Context, private config: Config) {
-    super(ctx, 'webServer')
     const resolved = config as ResolvedConfig
+    assertTlsWatermark(resolved.transportLimits, resolved.tls != null)
+    super(ctx, 'webServer')
     // Schemastery passes an explicit `tls: null` through; only a real object serves TLS.
     this.tlsConfig = resolved.tls ?? undefined
     this.gzip = resolved.compression === 'gzip' ? createGzipMiddleware(resolved) : undefined
@@ -419,6 +497,13 @@ export class WebServer extends Service {
 
   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
   async [Service.init](): Promise<void> {
+    const tls = this.tlsConfig
+    const limits = this.config.transportLimits == null ? undefined : { ...this.config.transportLimits }
+    const socketWatermarksMatch = (socket: Duplex): boolean => limits === undefined
+      || socket.readableHighWaterMark === limits.highWaterMark && socket.writableHighWaterMark === limits.highWaterMark
+    const watermarksMatch = (req: IncomingMessage, res?: ServerResponse): boolean => limits === undefined
+      || socketWatermarksMatch(req.socket) && req.readableHighWaterMark === limits.highWaterMark
+      && (res === undefined || res.writableHighWaterMark === limits.highWaterMark)
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
@@ -441,6 +526,7 @@ export class WebServer extends Service {
     // client dropping mid-body). Per-request failures log and answer 400 —
     // never a process exit.
     const listener = (req: IncomingMessage, res: ServerResponse): void => {
+      if (!watermarksMatch(req, res)) { req.socket.destroy(); return }
       const next = (): void => {
         void handle(req, res).catch((err: unknown) => {
           this.ctx.logger.warn(err instanceof Error ? err : new Error(String(err)))
@@ -455,11 +541,13 @@ export class WebServer extends Service {
       if (this.gzip === undefined) next()
       else this.gzip(req, res, next)
     }
-    const tls = this.tlsConfig
+    const options = limits === undefined ? {} : {
+      maxHeaderSize: limits.maxHeaderBytes, highWaterMark: limits.highWaterMark,
+    }
     // Disposal waits for in-flight acquisition and closes any listener it produces.
     await this.ctx.effect(async () => {
       if (tls === undefined) {
-        this.server = createServer(listener)
+        this.server = createServer(options, listener)
       } else {
         const certFile = resolve(tls.certFile)
         const keyFile = resolve(tls.keyFile)
@@ -467,8 +555,14 @@ export class WebServer extends Service {
           readTlsFile('certFile', certFile),
           readTlsFile('keyFile', keyFile),
         ])
+        const clientCaPath = tls.clientCa == null ? undefined : resolve(tls.clientCa.certFile)
+        const clientCa = clientCaPath === undefined || tls.clientCa == null ? undefined
+          : validateClientCa(await readTlsFile('clientCa.certFile', clientCaPath, tls.clientCa.maxBytes), clientCaPath)
+        assertTlsWatermark(limits, true)
         try {
-          this.server = createSecureServer({ cert, key }, listener)
+          this.server = createSecureServer({ cert, key,
+            ...(clientCa === undefined ? {} : { ca: clientCa, requestCert: true, rejectUnauthorized: false }),
+            ...(limits === undefined ? {} : { maxHeaderSize: limits.maxHeaderBytes }) }, listener)
         } catch (error) {
           throw new Error(`webserver: tls.certFile ${certFile} and tls.keyFile ${keyFile} are not a usable certificate and key pair: ${error instanceof Error ? error.message : String(error)}`)
         }
@@ -476,6 +570,21 @@ export class WebServer extends Service {
           this.tlsConnections.add(socket)
           socket.once('close', () => { this.tlsConnections.delete(socket) })
         })
+        if (limits !== undefined) this.server.prependListener('secureConnection', (socket: Duplex) => {
+          if (!socketWatermarksMatch(socket)) socket.destroy()
+        })
+      }
+      if (limits !== undefined) {
+        // Capture a sentinel pair: routes must reject excess before interpreting or forwarding any headers.
+        this.server.maxHeadersCount = limits.maxHeaderPairs + 1
+        this.server.maxConnections = limits.maxConnections
+        const rejectExpectation = (req: IncomingMessage, res: ServerResponse): void => {
+          if (!watermarksMatch(req, res)) { req.socket.destroy(); return }
+          res.writeHead(417, { connection: 'close', 'content-length': '0' })
+          res.end()
+        }
+        this.server.on('checkContinue', rejectExpectation)
+        this.server.on('checkExpectation', rejectExpectation)
       }
       this.server.on('upgrade', (req, socket, head) => {
         const onError = (error: Error): void => {
@@ -487,6 +596,10 @@ export class WebServer extends Service {
           socket.off('error', onError)
           this.upgradedSockets.delete(socket)
         })
+        if (!watermarksMatch(req) || limits !== undefined && req.headers.expect !== undefined) {
+          socket.destroy()
+          return
+        }
         let route: WebUpgradeRoute | undefined
         try {
           /* v8 ignore next -- node:http always sets url on server requests. */

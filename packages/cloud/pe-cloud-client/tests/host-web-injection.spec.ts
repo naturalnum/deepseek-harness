@@ -142,11 +142,11 @@ describe('existing Cloud declaration public Web injection', () => {
     await ctx.loader.await()
     expect(ctx.loader.resolve('cloud').fiber?.state).toBe(FiberState.ACTIVE)
     const graph = ctx.clientModules.graph()
-    expect(graph.entries).toHaveLength(BROWSER_CLIENT_PACKAGES.length + 1)
+    expect(graph.entries).toHaveLength(BROWSER_CLIENT_PACKAGES.length + 2)
     expect(graph.entries.find(row => row.id === '@deepseek-ai/dsh-client-connection')).toMatchObject({ activate: false })
-    expect(parseBootManifest(graph).plugins.map(row => row.id).sort()).toEqual([...BROWSER_CLIENT_PACKAGES].sort())
+    expect(parseBootManifest(graph).plugins.map(row => row.id).sort()).toEqual([...BROWSER_CLIENT_PACKAGES, '@deepseek-ai/dsh-client-ui-settings-general'].sort())
     expect(parseBootManifest(graph).modules.map(row => row.id).sort())
-      .toEqual(['@deepseek-ai/dsh-client-connection', ...BROWSER_CLIENT_PACKAGES].sort())
+      .toEqual(['@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-ui-settings-general', ...BROWSER_CLIENT_PACKAGES].sort())
     expect(rows(ctx)).toHaveLength(1)
     expect(ctx.get('connection')).toBeUndefined()
     expect([...ctx.loader.entries()].map(entry => entry.options.name)).not.toContain('@deepseek-ai/dsh-client-connection')
@@ -160,8 +160,48 @@ describe('existing Cloud declaration public Web injection', () => {
     expect(rows(ctx)).toEqual([])
   })
 
-  it('closes the whole browser manifest through the actual Registry and fourteen published UI declarations', async () => {
+  it.each([
+    { models: false, skills: false, preview: false },
+    { models: true, skills: false, preview: false }, { models: false, skills: true, preview: false },
+    { models: false, skills: false, preview: true }, { models: true, skills: true, preview: false },
+    { models: true, skills: false, preview: true }, { models: false, skills: true, preview: true },
+    { models: true, skills: true, preview: true },
+  ])(
+    'publishes and withdraws configured original settings/tool browser modules %j', async ({ models, skills, preview }) => {
+      const ctx = await composition(), base = manifest()
+      const web = { ...base, client: { ...base.client,
+        ...models ? { modelSettingsRequestTimeoutMs: 500 } : {},
+        ...skills ? { skillSettings: { requestTimeoutMs: 500, maxFileBytes: 1024 } } : {},
+        ...preview ? { servicePreview: { managementOrigin: 'http://console.dsh.localhost:32848',
+          previewOrigin: 'http://preview.dsh.localhost:32848', routePath: '/cloud/service-preview', maxFieldBytes: 128, maxUrlBytes: 2048 } } : {},
+      } }
+      await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+      await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web } })
+      await ctx.loader.await()
+      const fiber = ctx.loader.resolve('cloud').fiber
+      await fiber?.await()
+      expect(fiber?.state).toBe(FiberState.ACTIVE)
+      const boot = parseBootManifest(ctx.clientModules.graph())
+      const optional = [
+        '@deepseek-ai/dsh-client-ui-settings-general',
+        ...models ? ['@deepseek-ai/dsh-client-ui-settings-models'] : [],
+        ...preview ? ['@deepseek-ai/dsh-client-ui-tool'] : [],
+      ]
+      expect(boot.plugins.map(row => row.id).sort()).toEqual([...BROWSER_CLIENT_PACKAGES, ...optional].sort())
+      for (const service of ['connection', 'modelsSettingsIntegration', 'remote', 'slots']) expect(ctx.get(service)).toBeUndefined()
+      expect(rows(ctx)).toHaveLength(1)
+      await fiber?.dispose()
+      expect(ctx.clientModules.graph().entries).toEqual([])
+      expect(rows(ctx)).toEqual([])
+    },
+  )
+
+  it('closes the configured native Models/tool graph through actual Registry bundles and public factories', async () => {
     const ctx = await composition(), resolveHost = createRequire(HOST_BASE_URL)
+    const optional = ['@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models', '@deepseek-ai/dsh-client-ui-tool']
+    const base = manifest(), web = { ...base, client: { ...base.client, modelSettingsRequestTimeoutMs: 500,
+      servicePreview: { managementOrigin: 'http://console.dsh.localhost:32848', previewOrigin: 'http://preview.dsh.localhost:32848',
+        routePath: '/cloud/service-preview', maxFieldBytes: 128, maxUrlBytes: 2048 } } }
     await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
     // Builtin source-test rows have no package metadata; supply their real browser exports through the original registry.
     ctx.effect(() => ctx.clientModules.registerClientPackages([
@@ -170,20 +210,21 @@ describe('existing Cloud declaration public Web injection', () => {
     for (const row of FIRST_SCREEN_UI_ROWS) {
       await appendEntry(ctx, { ...row, name: pathToFileURL(resolveHost.resolve(row.name)).href })
     }
-    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web } })
     await ctx.loader.await()
     for (const id of ['modules', 'cloud', ...FIRST_SCREEN_UI_ROWS.map(row => row.id)]) {
+      await ctx.loader.resolve(id).fiber?.await()
       expect(ctx.loader.resolve(id).fiber?.state, id).toBe(FiberState.ACTIVE)
     }
     const graph = ctx.clientModules.graph(), boot = parseBootManifest(graph)
     const ids = new Set(boot.modules.map(row => row.id)), platform = getStaticModules()
     expect([...ids].sort()).toEqual([
       '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-pe-cloud-client', '@deepseek-ai/dsh-client-connection',
-      ...BROWSER_CLIENT_PACKAGES, ...FIRST_SCREEN_UI_ROWS.map(row => row.name),
+      ...BROWSER_CLIENT_PACKAGES, ...FIRST_SCREEN_UI_ROWS.map(row => row.name), ...optional,
     ].sort())
     expect(boot.plugins.map(row => row.id).sort()).toEqual([
       '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-pe-cloud-client',
-      ...BROWSER_CLIENT_PACKAGES, ...FIRST_SCREEN_UI_ROWS.map(row => row.name),
+      ...BROWSER_CLIENT_PACKAGES, ...FIRST_SCREEN_UI_ROWS.map(row => row.name), ...optional,
     ].sort())
     expect(graph.entries.filter(row => row.activate === false).map(row => row.id)).toEqual(['@deepseek-ai/dsh-client-connection'])
     for (const row of boot.modules) {

@@ -1,4 +1,5 @@
 /** Factory-owned native API/execution installation; files and storage authorization precede production boot. */
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -9,7 +10,8 @@ import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
-  type ExposureService, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+  type ExposureService, type ExactFetchExposure, type CloudModelKeyPreparation,
+  type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -22,13 +24,19 @@ import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { AccountBinding, AccountUse } from './types.ts'
+import type { AccountBinding, AccountUse, SubagentCapacityReservation } from './types.ts'
 import { AccountAttachments, type AccountAttachmentLimits } from './account-attachments.ts'
 import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
+import { observeStartup, type StartupObserver } from './startup-observation.ts'
 import { FileUploads } from '@deepseek-ai/dsh-client-file-upload'
+import { prepareAccountSkillResources } from './account-skills.ts'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
+  /** Same native provider/parent/project/model/Preset checks used by the sole factory; absence closes child wiring. */
+  readonly admitSubagent?: import('@deepseek-ai/dsh-subagent').SubagentAdmission
+  /** Require the original native runtime and approved provider before selecting child wiring. */
+  readonly assertSubagentsInstalled?: () => void
   /** Require an original currently registered Workspace in this exact graph, without I/O. */
   readonly assertWorkspace: (workspace: Workspace) => void
   /** Select from the exact published Agent/Session and committed project facts. */
@@ -52,6 +60,15 @@ export interface AccountNativeGuards {
 
 /** Actual Root resources, retained by the factory; none is installed as an account Root service. */
 export interface AccountNativePreparation {
+  /** Original Root capacity closure; unknown must retain its slot and synchronously close original business admission.
+   * Omission keeps child factory and native admission wiring closed. It is never provided by a Peer or Settings. */
+  readonly reserveSubagent?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation
+  readonly modelKey?: CloudModelKeyPreparation
+  readonly skills?: Omit<CloudSkillPreparation, 'files' | 'resources' | 'managed'> & {
+    readonly managed: Omit<ManagedSkillPreparation, 'assertWorkspace' | 'resources'>
+  }
+  readonly plugins?: CloudPluginPreparation
+  readonly settingsWrites?: import('@deepseek-ai/dsh-pe-cloud-api').NativeSettingsWritePolicy
   readonly saves: ConfigSaveCoordinator
   readonly exposure: ExposureService['policy']
   readonly execution: SandboxCoordinator
@@ -87,7 +104,7 @@ export interface AccountNativePreparation {
 /** Fixed private builtin names for the native account recipe, not additional package Loader exports. */
 export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account', execution: 'pe-cloud-execution-account',
-  instructions: 'pe-account-instructions-session',
+  instructions: 'pe-account-instructions-session', modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
   workspaceFiles: 'pe-cloud-workspace-files',
@@ -114,11 +131,13 @@ export class AccountNativeIntegration {
   private agents: Context['agents'] | undefined
   private persistence: Context['sessionPersistence'] | undefined
   private nativeDrain: Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined
+  private skills: CloudSkillService | undefined
 
   /**
    * @param input Actual Root resources; storage approval is independently required before production boot.
+   * @param startupObserver Private original startup owner; phase notifications cannot affect admission.
    */
-  constructor(private readonly input: AccountNativePreparation) {
+  constructor(private readonly input: AccountNativePreparation, private readonly startupObserver?: StartupObserver) {
     if (!Number.isSafeInteger(input.maxNativeInventoryEntries) || input.maxNativeInventoryEntries < 1) {
       throw new AccountRuntimeError('cloud/invalid-config', 'Native preparation requires its existing finite inventory limit')
     }
@@ -131,19 +150,31 @@ export class AccountNativeIntegration {
    * @param mountCurrent Factory's preparation/current check.
    * @param businessCurrent Factory's separate ready-publication check.
    * @param unpublished Factory's actual mounting-only registration window.
+   * @param containSaveFailure Original synchronous factory closure; required for selected mutable capabilities and never throws.
+   * @param assertReconfiguring Original factory check for its same-generation exclusive configuration window.
    */
   prepare(
     ctx: Context, binding: AccountBinding,
     mountCurrent: (binding: AccountBinding) => void, businessCurrent: (binding: AccountBinding) => void,
-    unpublished: () => void,
+    unpublished: () => void, containSaveFailure?: () => void, assertReconfiguring?: () => void,
   ): void {
     if (this.prepared || this.stopping !== undefined) {
       throw new AccountRuntimeError('cloud/account-unavailable', 'Native account preparation is already owned or closing')
     }
     this.prepared = true
     mountCurrent(binding)
-    this.saves = this.input.saves.createAccount(binding)
+    const modelKey = this.input.modelKey
+    const mutable = modelKey !== undefined || this.input.skills !== undefined
+      || this.input.settingsWrites !== undefined || this.input.plugins !== undefined
+    if (mutable && containSaveFailure === undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Mutable account preparation requires original factory containment')
+    }
+    this.saves = this.input.saves.createAccount(binding, modelKey === undefined ? undefined : {
+      references: [...new Set(modelKey.limits.bindings.map(binding => binding.ref))], maxReferences: modelKey.limits.bindings.length,
+      maxReferenceBytes: Math.max(...modelKey.limits.bindings.map(binding => Buffer.byteLength(binding.ref))),
+    }, mutable ? () => { containSaveFailure?.() } : undefined)
     const api = new CloudAccountApi(ctx, {
+      ...this.input.plugins === undefined ? {} : { plugins: this.input.plugins },
       binding, saves: this.saves, rootExposure: this.input.exposure, selected: this.input.exposure.manifest,
       assertMountCurrent: mountCurrent,
       assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
@@ -151,6 +182,8 @@ export class AccountNativeIntegration {
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
       ...this.input.inspectRootFetch === undefined ? {} : { inspectRootFetch: this.input.inspectRootFetch },
       assertUnpublished: unpublished,
+      ...assertReconfiguring === undefined ? {} : { assertReconfiguring },
+      observeStartupPhase: (phase) => { observeStartup(this.startupObserver, { phase }) },
     })
     this.api = api
     this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) }, {
@@ -192,7 +225,8 @@ export class AccountNativeIntegration {
           requireGuards(ctx).assertWorkspace(selected.workspace)
         }
         assertCurrent()
-        return { workspace: selected.workspace, assertCurrent }
+        return { workspace: selected.workspace, assertCurrent,
+          ...selected.directoryPreparation === undefined ? {} : { directoryPreparation: selected.directoryPreparation } }
       })
       if (files.binding !== binding) {
         throw new AccountRuntimeError('cloud/stale-generation', 'Files preparation requires the exact installed graph binding')
@@ -350,6 +384,7 @@ export class AccountNativeIntegration {
     }
     const firstScreenInput = input.firstScreen
     const firstScreen = firstScreenInput === undefined ? undefined : api.prepareFirstScreen(ctx, {
+      ...input.settingsWrites === undefined ? {} : { settingsWrites: input.settingsWrites },
       project: () => project(ctx),
       assertWorkspace: (workspace) => { requireGuards(ctx).assertWorkspace(workspace) }, assertSessionRead: readSession,
       maxInventoryEntries: input.maxNativeInventoryEntries,
@@ -371,7 +406,9 @@ export class AccountNativeIntegration {
     const agentLoop = {
       inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
       apply: (owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) => {
-        this.loop = api.createAgentLoop(owner, requireGuards(owner).agents, config)
+        const reserveSubagent = input.reserveSubagent
+        this.loop = api.createAgentLoop(owner, requireGuards(owner).agents, config,
+          reserveSubagent === undefined ? undefined : depth => reserveSubagent(binding, depth))
         this.loopFiber = owner.fiber
         const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')
         const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents
@@ -389,9 +426,38 @@ export class AccountNativeIntegration {
       },
     }
     const builtins = ctx.loader.builtins
+    const pluginManager = api.providers.pluginManager
     const entries = {
       [ACCOUNT_NATIVE_ENTRIES.runtime]: RuntimeAccount,
       [ACCOUNT_NATIVE_ENTRIES.api]: ApiAccount,
+      ...modelKey === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.modelKey]: {
+        inject: ['peCloudApi', 'typert', 'credentials', 'settings', 'llm'],
+        apply(owner: Context) { api.prepareCloudModelKey(owner, modelKey) },
+      } },
+      ...input.skills === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.skills]: {
+        inject: ['peCloudApi', 'skills', 'typert', 'agents', 'workingDirectory'],
+        apply: (owner: Context) => {
+          if (filesOwner === undefined || input.skills === undefined || this.skills !== undefined) {
+            throw new AccountRuntimeError('cloud/account-unavailable', 'The selected account skill preparation is unavailable')
+          }
+          const resources = prepareAccountSkillResources(ctx, binding, requireFiles, requireGuards, (caller) => {
+            this.input.assertRootCurrent(); businessCurrent(binding); api.assertInstalled(caller)
+          })
+          this.skills = api.prepareCloudSkills(owner, { ...input.skills, files: filesOwner, resources,
+            managed: { ...input.skills.managed, resources, assertWorkspace: (workspace) => {
+              api.assertInstalled(owner); this.input.assertRootCurrent(); businessCurrent(binding)
+              requireGuards(owner).assertWorkspace(workspace)
+            } },
+          })
+        },
+      } },
+      ...pluginManager === undefined ? {} : {
+        [ACCOUNT_NATIVE_ENTRIES.manager]: pluginManager,
+        [ACCOUNT_NATIVE_ENTRIES.plugins]: {
+          inject: ['peCloudApi', 'typert', 'pluginManager', 'configEditor'],
+          apply(owner: Context) { api.prepareCloudPlugins(owner) },
+        },
+      },
       [ACCOUNT_NATIVE_ENTRIES.files]: FilesAccount,
       [ACCOUNT_NATIVE_ENTRIES.instructions]: InstructionsSession,
       [ACCOUNT_NATIVE_ENTRIES.execution]: ExecutionAccount,
@@ -454,6 +520,13 @@ export class AccountNativeIntegration {
         throw new AccountRuntimeError('cloud/account-unavailable', 'Native Agent lifecycle and persistence owners are missing')
       }
       assertAccountExecutionProviders(ctx)
+      if (input.skills !== undefined) {
+        if (this.skills === undefined) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'The selected native skill entry is missing')
+        }
+        await this.skills.restore()
+      }
+      if (input.plugins !== undefined) await api.restoreApprovedPlugins()
       const saves = await api.pauseAccountChanges(Date.now() + input.stopTimeoutMs, binding.lifetime)
       if (saves.status !== 'confirmed') {
         throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native startup configuration saves have not settled')
@@ -461,7 +534,8 @@ export class AccountNativeIntegration {
       this.input.assertRootCurrent()
       mountCurrent(binding)
       unpublished()
-      for (const provider of [api.providers.configEditor, api.providers.credentials]) {
+      for (const provider of [api.providers.configEditor, api.providers.credentials,
+        ...api.providers.pluginManager === undefined ? [] : [api.providers.pluginManager]]) {
         let count = 0, visited = 0
         for (const entry of ctx.loader.entries()) {
           if (++visited > input.maxNativeInventoryEntries) {
@@ -483,6 +557,14 @@ export class AccountNativeIntegration {
         }
         api.installFirstScreenEvents(eventOwner, { ...firstScreenInput, maxInventoryEntries: input.maxNativeInventoryEntries })
       }
+      if (input.reserveSubagent !== undefined) {
+        const subagents = ctx.get('subagents'), check = requireGuards(ctx).admitSubagent, installed = requireGuards(ctx).assertSubagentsInstalled
+        if (!(subagents instanceof SubagentRuntime) || check === undefined || installed === undefined) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'Original subagents and shared child policy are required')
+        }
+        installed()
+        subagents.registerAdmission(check)
+      }
       await api.auditPrepared(ctx)
       this.input.assertRootCurrent()
       mountCurrent(binding)
@@ -497,13 +579,25 @@ export class AccountNativeIntegration {
 
   /**
    * Verify actual original native owners and handlers before the factory's ready CAS.
-   * @returns The retained unpublished audit; failure grants no business admission.
+   * @param verify Optional replacement-intent check, supplied before the first audit starts.
+   * @returns The retained unpublished audit including verification; failure grants no business admission.
    */
-  finishBootstrap(): Promise<void> {
+  finishBootstrap(verify?: (api: CloudAccountApi) => Promise<void>): Promise<void> {
     if (this.stopping !== undefined || this.bootstrap === undefined) {
       return Promise.reject(new AccountRuntimeError('cloud/account-unavailable', 'Native bootstrap audit is absent or closing'))
     }
-    this.bootstrapping ??= this.bootstrap()
+    if (verify !== undefined && this.bootstrapping !== undefined) {
+      return Promise.reject(new AccountRuntimeError('cloud/account-unavailable', 'Replacement verification arrived after bootstrap started'))
+    }
+    const bootstrap = this.bootstrap
+    this.bootstrapping ??= (async () => {
+      await bootstrap()
+      if (verify !== undefined) {
+        if (this.api === undefined || this.stopping !== undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Replacement API is unavailable')
+        this.api.assertInstalled()
+        await verify(this.api)
+      }
+    })()
     return this.bootstrapping
   }
 
@@ -512,6 +606,48 @@ export class AccountNativeIntegration {
    * @returns Actual joined observations, absent until both original native owners have settled.
    */
   observeNativeDrain(): Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined { return this.nativeDrain }
+
+  /** Observe original native phase/inbox/startup work, persistence I/O and configuration responsibility.
+   * @returns True only for the live original owners with no actual work or unknown save outcome.
+   */
+  isQuiescent(): boolean {
+    if (this.stopping !== undefined || this.api === undefined || this.loop === undefined || this.persistence === undefined
+      || this.loopFiber?.state !== FiberState.ACTIVE || this.bootstrapping === undefined) return false
+    const saves = this.api.inspectConfigurationSaves()
+    return saves.admission !== 'stopped' && saves.pending.length === 0 && saves.failures.length === 0
+      && this.loop.isQuiescent(this.input.maxNativeInventoryEntries)
+      && this.persistence.isQuiescent(this.input.maxNativeInventoryEntries)
+  }
+
+  /** Pause only the original save owner; this is not an idle certificate.
+   * @returns Actual save-settlement evidence under the existing runtime deadline.
+   */
+  pauseConfiguration(): Promise<ConfigSaveReceipt> {
+    if (this.api === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Original native API owner is absent')
+    return this.api.pauseAccountChanges(Date.now() + this.input.stopTimeoutMs)
+  }
+
+  /** Execute the original native plugin writer through its existing paused save owner.
+   * @param submit Original native plugin persistence/application.
+ * @returns Actual same-barrier settlement. */
+  withPausedPluginChange<T>(submit: () => Promise<T>): Promise<T> {
+    if (this.api === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Original native API owner is absent')
+    return this.api.withPausedPluginChange(submit)
+  }
+
+  /** Re-audit the original native inventory inside the actual exclusive window.
+   * @param ctx Original independent account root.
+ * @returns Original inventory audit in the factory's exclusive window. */
+  auditReconfigured(ctx: Context): Promise<void> {
+    if (this.api === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Original native API owner is absent')
+    return this.api.auditReconfigured(ctx)
+  }
+
+  /** Resume only after factory/native audit; the underlying barrier refuses unknown or terminal work. */
+  resumeConfiguration(): void {
+    if (this.api === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Original native API owner is absent')
+    this.api.resumeAccountChanges()
+  }
 
   /** Release the original save slot only after factory-owned complete drain and owner commit. */
   releaseAfterActualDrain(): void {
@@ -523,13 +659,19 @@ export class AccountNativeIntegration {
 
   /**
    * Close new API/execution work before native disposal; unknown saves retain their hooks and graph.
-   * @returns Actual existing save evidence; undefined means preparation never issued a barrier.
+   * @param beforeWithdraw Optional factory drain hook; omission performs ordinary shutdown. The hook first
+   * confirms original file/execution drain, then consumes its local commit capability once on this stopped owner.
+   * @returns Actual existing save evidence, including terminal commit; undefined means no barrier was issued.
    */
-  stop(): Promise<ConfigSaveReceipt | undefined> {
+  stop(beforeWithdraw?: (commit: (submit: (api: CloudAccountApi) => Promise<void>) => Promise<void>) => Promise<void>):
+  Promise<ConfigSaveReceipt | undefined> {
+    if (this.stopping !== undefined && beforeWithdraw !== undefined) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native shutdown already owns its terminal hook')
+    }
     this.api?.invalidate()
     this.execution?.close()
     this.stopping ??= (async () => {
-      const receipt = await this.saves?.stopConfigSaves(Date.now() + this.input.stopTimeoutMs)
+      let receipt = await this.saves?.stopConfigSaves(Date.now() + this.input.stopTimeoutMs)
       if (receipt?.status === 'confirmed') {
         // The original audit may still own a native metadata read; joining is not a successful audit.
         try { await this.bootstrapping } catch (_cause) { /* factory retains the original assembly failure */ }
@@ -541,6 +683,32 @@ export class AccountNativeIntegration {
         await this.persistence?.flush()
         if (this.loopFiber !== undefined && this.agents !== undefined && this.persistence !== undefined) {
           this.nativeDrain = Object.freeze({ nativeIdle: true, persistenceFlushed: true })
+        }
+        if (beforeWithdraw !== undefined) {
+          const api = this.api, saves = this.saves, agents = this.agents, persistence = this.persistence
+          if (api === undefined || saves === undefined || agents === undefined
+            || persistence === undefined || this.nativeDrain === undefined) {
+            throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native terminal commit lacks drain ownership')
+          }
+          let active = true
+          const assertTerminalCurrent = (): void => {
+            if (!active) throw new AccountRuntimeError('cloud/stale-generation', 'The original terminal hook has settled')
+          }
+          try {
+            await beforeWithdraw(async (submit) => {
+              assertTerminalCurrent()
+              await persistence.flush()
+              assertTerminalCurrent()
+              api.assertInstalled()
+              return this.input.saves.commitStoppedConfiguration(saves, () => submit(api))
+            })
+          } finally { active = false }
+          receipt = await saves.stopConfigSaves(Date.now() + this.input.stopTimeoutMs)
+          if (receipt.status !== 'confirmed') return receipt
+          if (agents.list().length !== 0) {
+            throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Native work changed during terminal configuration')
+          }
+          await persistence.flush()
         }
         await this.api?.withdraw()
       }

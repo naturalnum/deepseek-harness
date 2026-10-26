@@ -21,11 +21,14 @@
   en: d7ecacdf6770f489
   zh: 522df1115a532ed6
 /deepseek-ai-dsh-pe-cloud-api/use-this-package/minimal-configuration:
-  en: bbe59b26eaf17a76
-  zh: ba891303af49511c
+  en: da4a655ce6db5733
+  zh: 73b4dbe4d91da84f
 /deepseek-ai-dsh-pe-cloud-api/understand-the-implementation:
-  en: 8fa6ab3bfeba8ef3
-  zh: 142f2763ea0a916d
+  en: b18d7d9dfab47b5f
+  zh: c6120a272359599f
+/deepseek-ai-dsh-pe-cloud-api/understand-the-implementation/controlled-sample-publication:
+  en: 24e0ac6165961676
+  zh: a05bd5516ec1e93d
 /deepseek-ai-dsh-pe-cloud-api/further-exploration:
   en: 218ef19235375d61
   zh: a64aceef580e9fc0
@@ -45,8 +48,8 @@
   en: c955e994cc2a86a4
   zh: c7bd5b655e47a2e4
 /deepseek-ai-dsh-pe-cloud-api/known-limitations-and-deferred-work:
-  en: 41cd47688e18d467
-  zh: a54f9a24119865e3
+  en: e7b4bf1670ede579
+  zh: 53ee68892dc2bdd4
 /deepseek-ai-dsh-pe-cloud-api/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

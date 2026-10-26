@@ -4,6 +4,17 @@
 
 [boot 包组](../../packages/boot/README.zh.md)负责 launcher 提供的 profile 访问与插件管理器。[插件管理器](../../packages/boot/plugin-manager/README.zh.md)文档说明持久化、重载与包操作行为。
 
+<a id="native-edit-controls"></a>
+## 原生编辑控制
+
+`ConfigEditControl` 是传入原生 ConfigEditor 与 Settings 写操作的可选可信 Host 参数（[声明](../../packages/boot/config-editor/src/index.ts)）。其 `assertCurrent()` 在持久化前及等待 policy 工作后复查原调用方。在 guarded 路径中，可选 `maxRemountRegistryEntries` 显式选择有界原生 leaf planner；省略时保留 live-only 计划。Settings 以 `SettingsWriteControl` 导出同一类型，并把控制对象转交给 editor；浏览器请求不能提供其中的回调或选择该 Host planner。
+
+`ConfigEditor.editFailureOutcome` 读取 editor 发出的失败结果分类，不替换原错误。原生 Profile 计划使用原 Include patch 合成不可变非空 base 条目；未改动条目保留原生 `none` 决定。见 [ConfigEditor](../../packages/boot/config-editor/README.zh.md)。
+
+`PluginSelectionGuard` 是注册到原 Plugin Manager 的唯一可选可信 Host 守卫（[声明](../../packages/boot/plugin-manager/src/index.ts)）。它提供 `maxRegistryEntries`、`assertCurrent()` 复查，以及针对原生预备计划、原条目 id 或插件包名称和请求选择的 `check(plan, target, enabled)`。Idle owner 在实际应用结束前保留此守卫；policy 检查完成本身不证明应用完成。这些函数与限额是 Host 输入，不是管理器 Remote 请求中的字段。
+
+`ProfileConfigUpdatePlan` 使用原生逐条目决策表示局部协调，或使用 `impact: graph` 及完整 `restart` 组合表示重建。后者绑定 before/after/active 原生行及 Include 标识，不能通过 `withProfileConfigUpdate` 应用。可信选择 guard 请求 restart 持久化，新的正常启动负责实际应用；持久化前会重读拟议层。
+
 ## 管理记录
 
 `PluginEntryId` 标识一个 Loader 条目；调用方从 `listPlugins` 获取，不自行拼接 patch id。
@@ -103,6 +114,12 @@ registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>
  */
 submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>
 
+/** Read this editor's actual guarded replacement disposition without changing the original rejection.
+ * @param error Exact object rejected by a guarded edit; copied or unrelated errors have no receipt.
+ * @returns Not-published before atomic replacement, unknown after it was entered, or undefined for unobserved errors.
+ */
+editFailureOutcome(error: unknown): 'not-published' | 'unknown' | undefined
+
 /** Addressable profile rows; nested Includes have independent configuration ownership.
  * @returns Active entries with unique profile patch ids.
  */
@@ -114,17 +131,19 @@ entries(): Entry[]
 configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }>
 
 /** Validate, persist, and reconcile a plugin's next config; ordinary fields keep normal lifecycle rules.
- * An impact guard selects the restricted live path; unsupported plans reject before writing.
+ * An impact guard selects the live path; an explicit trusted Host control may select the bounded optional-leaf planner.
+ * Unsupported native plans reject before writing.
  * A required post-replacement failure remains failed with its committed state for caller diagnosis;
  * that path never falls back to an unguarded rollback or remount.
  * @param entry Current Loader entry, also used to detect replacement during the write.
  * @param change Derive a raw config from the current entry and its inherited layer.
+ * @param control Optional original caller recheck; omission preserves ordinary native edits.
  * @returns Fulfillment after Loader reconciliation completes.
  */
-async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
+async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, control?: ConfigEditControl, ): Promise<void>
 ```
 
-Types: [ConfigImpactGuard](../../packages/boot/config-editor/README.zh.md) · [ConfigSaveSubmissionHook](../../packages/boot/config-editor/README.zh.md)
+Types: [ConfigEditControl](boot.zh.md#native-edit-controls) · [ConfigImpactGuard](../../packages/boot/config-editor/README.zh.md) · [ConfigSaveSubmissionHook](../../packages/boot/config-editor/README.zh.md)
 
 Source: [`packages/boot/config-editor/src/index.ts`](../../packages/boot/config-editor/src/index.ts)
 
@@ -187,6 +206,18 @@ Manage profile files and apply their declared reload lifecycle.
  * @throws If a hook is already installed.
  */
 registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>
+
+/** Bind the sole native selection guard; entry and bundle writes share preparation, persistence and reconcile.
+ * @param guard Original owner policy, not a replacement patch composer or supplied stop list.
+ * @returns Disposer; the caller retains this fiber until actual updates settle.
+ */
+registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>
+
+/** Read the original guarded writer's actual replacement disposition without changing its ChangeResult.
+ * @param result Exact native result object; copies and unrelated failures have no receipt.
+ * @returns Owner-observed zero-publication refusal or unknown after replacement was entered.
+ */
+changeFailureOutcome(result: ChangeResult): 'not-published' | 'unknown' | undefined
 
 /** Read exact plugin-version exemptions saved in this profile.
  * @returns Accepted package-name@version keys with the runtime versions they may run on, and any
@@ -275,9 +306,18 @@ registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>
  * @returns Removal diagnostics and the remaining profile state.
  */
 @Remote removeBundle(name: string): Promise<ChangeResult>
+
+/** Inspect the complete original bundle composition without writing or activating entries.
+ * @param name Preinstalled native bundle name.
+ * @param enabled Desired selection.
+ * @param maximum Bound on composed rows.
+ * @param application Whether the original caller will reconcile or restart the graph.
+ * @returns Opaque original profile plan; the writer prepares and checks it again under this same lock.
+ */
+previewBundleSelection(name: string, enabled: boolean, maximum: number, application: 'reconcile' | 'restart' = 'reconcile'): Promise<ProfileConfigUpdatePlan>
 ```
 
-Types: [PluginSaveSubmissionHook](../../packages/boot/plugin-manager/README.zh.md)
+Types: [PluginSaveSubmissionHook](../../packages/boot/plugin-manager/README.zh.md) · [PluginSelectionGuard](boot.zh.md#native-edit-controls) · [ProfileConfigUpdatePlan](boot.zh.md#native-edit-controls)
 
 Source: [`packages/boot/plugin-manager/src/index.ts`](../../packages/boot/plugin-manager/src/index.ts)
 

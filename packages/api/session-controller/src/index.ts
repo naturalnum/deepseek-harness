@@ -106,6 +106,8 @@ type ResolvedConfig = Config & { readonly listWorkSliceMs: number }
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {
+  /** Trusted Host catalog constructor; omission preserves the native non-activating catalog. */
+  readonly skillCatalog?: typeof SessionSkillCatalog
   /** Native default-application handoff. */
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native file-association query. */
@@ -185,7 +187,7 @@ export class SessionController extends TypertRemoteService {
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionMediaReferences)
-    ctx.plugin(SessionSkillCatalog)
+    ctx.plugin(internals.skillCatalog ?? SessionSkillCatalog)
     // An archived Session, or a subagent descendant of one, runs no model step
     // until it is restored; what it still runs is stopped by the owners that
     // answer the Workspace registry's archive-admission events.

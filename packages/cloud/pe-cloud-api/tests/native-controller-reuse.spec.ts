@@ -9,7 +9,8 @@ import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-fs'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
-import SessionController from '@deepseek-ai/dsh-api-session-controller'
+import SessionController, { SessionSkillCatalog } from '@deepseek-ai/dsh-api-session-controller'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
 import type {
   SessionCancelRequest, SessionCreateRequest, SessionCreateValue, SessionForkValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -44,7 +45,7 @@ class CountingAdapter extends LlmAdapter {
 
 afterEach(() => { vi.restoreAllMocks() })
 
-async function fixture(accountId = 'reuse', firstScreen = false) {
+async function fixture(accountId = 'reuse', firstScreen = false, skills = false) {
   const directory = realpathSync(mkdtempSync(join(fileURLToPath(new URL('.', import.meta.url)), 'controller-reuse-')))
   const project = join(directory, 'approved-project')
   const outside = join(directory, 'outside-project')
@@ -57,6 +58,7 @@ async function fixture(accountId = 'reuse', firstScreen = false) {
   await ctx.plugin(Gateway)
   await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await mountAgentLoopTestHarness(ctx)
+  if (skills) await ctx.plugin(SkillRegistry)
   await ctx.plugin(DefaultModel, { provider: 'reuse', model: 'native-default' })
   new ExactQuery(ctx)
   // Other-domain fixture providers: no Workspace/Session authorization table.
@@ -119,7 +121,8 @@ async function fixture(accountId = 'reuse', firstScreen = false) {
     rpcEndpoints: ['create', 'prompt', 'fork', 'cancel', ...firstScreen ? ['list'] : []].map(method => ({
       endpoint: 'session/' + method, handlerId: 'native-session',
       guard: method === 'create' ? 'account-project' as const : 'account-session' as const,
-    })), streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [],
+    })).concat(skills ? [{ endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' as const }] : []),
+    streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [],
   }
   const policy = new ExposurePolicy(manifest)
   policy.audit(manifest)
@@ -146,6 +149,37 @@ async function fixture(accountId = 'reuse', firstScreen = false) {
     ctx, controller, project, outside, binding, lifetime, denied, guards, instances, adapter, invoke, create, assertCurrent, policy, peer,
   }
 }
+
+it('reads the original cold native skill catalog after shared project admission without activating an Agent', async () => {
+  const f = await fixture('skill-cold', true, true)
+  const session = f.ctx.sessions.create(SessionId('cold-skill-catalog'), { meta: { cwd: f.project } })
+  const native = vi.spyOn(SessionSkillCatalog.prototype, 'list'), resume = vi.spyOn(f.ctx.agents, 'resume')
+  const read = () => f.ctx.typertGateway.invoke({ namespace: 'skills', method: 'list',
+    args: { request: { sessionId: session.id } }, peer: f.peer })
+  f.guards.assertSessionProject.mockRejectedValueOnce(f.denied)
+  await expect(read()).rejects.toBe(f.denied)
+  expect(native).not.toHaveBeenCalled()
+  await expect(read()).resolves.toEqual({ skills: [] })
+  expect(native).toHaveBeenCalledOnce()
+  expect(resume).not.toHaveBeenCalled()
+  expect(f.ctx.agents.get(session.id)).toBeUndefined()
+})
+
+it('rejects a skill catalog read whose original generation ends while shared project admission waits', async () => {
+  const f = await fixture('skill-stale', true, true)
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const native = vi.spyOn(SessionSkillCatalog.prototype, 'list')
+  f.guards.assertSessionProject.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+  const work = f.ctx.typertGateway.invoke({ namespace: 'skills', method: 'list',
+    args: { request: { sessionId: SessionId('stale-catalog') } }, peer: f.peer })
+  const rejected = expect(work).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([work]) })
+  await entered.promise
+  f.lifetime.abort()
+  release.resolve(undefined)
+  await rejected
+  expect(native).not.toHaveBeenCalled()
+})
 
 it('accepts native list wire arguments using the original Session parameter name and rejects extra fields', async () => {
   const f = await fixture('list-wire', true)

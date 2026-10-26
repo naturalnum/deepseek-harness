@@ -62,6 +62,7 @@ kind: "package-library"
 | `HoverCard`、`HoverCardGroup` | 可阅读、可选带复制按钮的悬停预览；物理列表可选择让卡片共享首次显示等待，并互斥显示。 |
 | `ImageLightbox` | 共享图片浮层，支持焦点恢复与 Esc 关闭。 |
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
+| `ConfigField` | 受控文本、秘密值或有限选项配置输入。拥有者提供 schema 投影、草稿校验与持久化。操作不支持 unset 时省略 `onReset`，控件便不提供重置或继承值操作。 |
 | `SettingsForm`、`SettingsValueField`、`SettingsSecretField` | 插件设置页的框架与控件：框架以 `labels` 接收文案，只在按钮点击时保存，卸载即丢弃；值字段显示暂存文本以及已覆盖标签和重置；密文字段每次为空，请求浏览器不要自动填入已保存的密码，只报告是否已配置。 |
 | `SettingsFormModel`、`settingsNumberField`、`settingsTextField` | 这类页面背后基于设置 scope 的暂存编辑模型：草稿先暂存、保存时写入，字段是否被覆盖看用户层是否含有它，未落地的保存保留草稿。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |

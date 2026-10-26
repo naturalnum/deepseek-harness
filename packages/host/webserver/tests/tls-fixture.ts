@@ -1,7 +1,7 @@
 /** Disposable localhost TLS material; clients must explicitly trust the generated certificate. */
 
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { generate } from 'selfsigned'
 
 /** Materialized TLS fixture: the served certificate and key, plus the client's trust anchor. */
@@ -67,4 +67,47 @@ export async function materializeTlsFixture(directory: string): Promise<TlsFixtu
     writeFile(fixture.keyFile, pems.key, { mode: 0o600 }),
   ])
   return fixture
+}
+
+/** Test-only CA and separate client keys; the foreign client belongs to another CA. */
+export interface ClientTlsFixture {
+  caFile: string
+  ca: string
+  client: { cert: string; key: string }
+  foreign: { cert: string; key: string }
+}
+
+let clientMaterial: Omit<ClientTlsFixture, 'caFile'> | undefined
+
+function clientPair(name: string): { ca: string; cert: string; key: string } {
+  const result = generate([{ name: 'commonName', value: name + ' CA' }], {
+    keySize: 2048, days: 30, algorithm: 'sha256',
+    clientCertificate: true, clientCertificateCN: name, clientCertificateKeySize: 2048,
+    extensions: [
+      { name: 'basicConstraints', cA: true },
+      { name: 'keyUsage', keyCertSign: true, cRLSign: true },
+    ],
+  })
+  // selfsigned 4 emits these client fields, although its published return type omits them.
+  if (!('clientcert' in result) || typeof result.clientcert !== 'string'
+    || !('clientprivate' in result) || typeof result.clientprivate !== 'string') {
+    throw new Error('TLS fixture client certificate generation returned no client credentials')
+  }
+  return { ca: result.cert, cert: result.clientcert, key: result.clientprivate }
+}
+
+/**
+ * Write a trusted client CA and retain generated client keys only in memory.
+ * @param directory Test-owned directory, cleaned by the composition's fixture owner.
+ * @returns CA file and credentials for a trusted and a foreign TLS client.
+ */
+export async function materializeClientTlsFixture(directory: string): Promise<ClientTlsFixture> {
+  clientMaterial ??= (() => {
+    const trusted = clientPair('trusted-client'), foreign = clientPair('foreign-client')
+    return { ca: trusted.ca, client: { cert: trusted.cert, key: trusted.key }, foreign: { cert: foreign.cert, key: foreign.key } }
+  })()
+  const caFile = join(resolve(directory), 'client-ca.pem')
+  await mkdir(dirname(caFile), { recursive: true })
+  await writeFile(caFile, clientMaterial.ca)
+  return { caFile, ...clientMaterial }
 }

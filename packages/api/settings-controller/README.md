@@ -43,6 +43,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 -----
 
+An optional Host-only `SettingsControllerInternals.withWrite` hook receives the original `RemoteInvocation`, submitted namespace, operation, detached input and revision. Its callback retains native Settings persistence and the redacted result under the same admission; it may supply `SettingsWriteControl` for commit-time checks. Omission preserves existing Remote operations and wire parameters.
+
 <a id="model-experience"></a>
 ## Model Experience
 

@@ -14,7 +14,7 @@ it('rejects an unissued carrier before invoking auth/body/cancellation or taking
   const actual = Promise.withResolvers<undefined>(), input = carrier('/cloud/service-preview')
   const auth = await BetterAuthAccess.create(accessConfig(), pool, 'dummy-carrier-secret-with-at-least-thirty-two-characters', async () => {})
   const borrow = vi.fn(async (): Promise<never> => { throw new Error('No account borrow is admitted') })
-  const registry = new LoginPeerRegistry(accessConfig(), auth, {
+  const registry = new LoginPeerRegistry({ ...accessConfig(), sessionRecheckLeadMs: 0 }, auth, {
     borrow, beforeHttp: () => {}, beforeStream: () => {}, cleanupFailed: () => {},
   })
   const authenticate = vi.fn(async (): Promise<never> => { throw new Error('Unissued handle cannot authenticate') })

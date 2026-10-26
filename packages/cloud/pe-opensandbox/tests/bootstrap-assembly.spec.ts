@@ -54,7 +54,7 @@ const limits: ManagedCoordinatorConfig = {
 }
 function input() {
   return { schema: 'pe-opensandbox-root-deployment-v1', selection: {
-    serverImageDigest: 'sha256:4900c9b13a02e0cdbec19733b9cc140d7af6d3fa06a06c752d19a3d2e5ee7ca7',
+    serverImageDigest: 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17',
     execdImageDigest: 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf', apiKeyDeploymentIdentity: 'selected-deployment' },
   lifecycle: { lifecycleBaseUrl: 'http://127.0.0.1:24444/v1', apiKey: 'synthetic-management-only', deploymentIdentity: 'selected-deployment',
     environmentVersion: 'env-v1', provider: 'selected-docker', imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
@@ -90,6 +90,7 @@ it('awaits original keeper readiness, preserves epoch-release function and close
   expect(state.sdkCreated).not.toHaveBeenCalled()
   state.ready.resolve(undefined)
   const assembly = await pending
+  expect(Object.hasOwn(assembly.deployment, 'skillCopies')).toBe(false)
   const epochFunction: unknown = Object.getOwnPropertyDescriptor(assembly.deployment, 'assertEpochReleased')?.value
   expect(epochFunction).toBe(state.epoch)
   expect(state.sandboxCreate).not.toHaveBeenCalled()
@@ -127,9 +128,54 @@ it.each([59, 601])('refuses TTL %s outside the selected backend policy before al
   expect(state.sandboxCreate).not.toHaveBeenCalled()
 })
 
-it('refuses the predecessor server image instead of claiming its TTL policy changed', () => {
+it.each([
+  'sha256:4900c9b13a02e0cdbec19733b9cc140d7af6d3fa06a06c752d19a3d2e5ee7ca7',
+  'sha256:e2bd5a5691bb6b29dbae54ce4b74fe7357a7e0ccd163cb3d3d7484677db68087',
+])('refuses predecessor server %s before keeper adoption or SDK construction', async (serverImageDigest) => {
   const value = input()
-  value.selection.serverImageDigest = 'sha256:231802e5e5fba30fb95955869a017ae3b56d074d9c72e1c6f2cf1bf60c2856f2'
+  value.selection.serverImageDigest = serverImageDigest
   expect(() => parseRootDeploymentInput(value)).toThrow()
+  state.input = value
+  await expect(assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)).rejects.toThrow()
+  expect(state.events).not.toContain('manifest-current')
+  expect(state.sdkCreated).not.toHaveBeenCalled()
   expect(state.sandboxCreate).not.toHaveBeenCalled()
+})
+
+
+it('keeps absent copy policy absent and freezes an independent closed explicit count', () => {
+  const omitted = parseRootDeploymentInput(input())
+  expect(Object.hasOwn(omitted, 'skillCopies')).toBe(false)
+  const policy = { maxCopiesPerOperation: 4 }
+  const parsed = parseRootDeploymentInput({ ...input(), skillCopies: policy })
+  expect(parsed.skillCopies).toEqual(policy)
+  expect(parsed.skillCopies).not.toBe(policy)
+  expect(Object.isFrozen(parsed.skillCopies)).toBe(true)
+  policy.maxCopiesPerOperation = 5
+  expect(parsed.skillCopies?.maxCopiesPerOperation).toBe(4)
+})
+
+it('rejects malformed or extra copy fields before entering SDK construction', async () => {
+  for (const skillCopies of [undefined, null, {}, { maxCopiesPerOperation: 0 }, { maxCopiesPerOperation: -1 },
+    { maxCopiesPerOperation: 1.5 }, { maxCopiesPerOperation: '4' }, { maxCopiesPerOperation: 2147483648 },
+    { maxCopiesPerOperation: 4, path: '/caller-chosen' }]) {
+    state.input = { ...input(), skillCopies }
+    expect(() => parseRootDeploymentInput(state.input)).toThrow()
+    await expect(assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)).rejects.toThrow()
+  }
+  expect(state.sdkCreated).not.toHaveBeenCalled()
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
+})
+
+it('passes the protected explicit policy to the original deployment without creating a sandbox', async () => {
+  const policy = { maxCopiesPerOperation: 4 }
+  state.input = { ...input(), skillCopies: policy }
+  state.ready.resolve(undefined); state.sdkClose.resolve(undefined)
+  const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
+  expect(assembly.deployment.skillCopies).toEqual({ maxCopiesPerOperation: 4 })
+  expect(Object.isFrozen(assembly.deployment.skillCopies)).toBe(true)
+  policy.maxCopiesPerOperation = 5
+  expect(assembly.deployment.skillCopies?.maxCopiesPerOperation).toBe(4)
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
+  await assembly.closeActual()
 })

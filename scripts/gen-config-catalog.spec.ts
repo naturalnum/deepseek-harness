@@ -156,6 +156,67 @@ export const Shared = Schema.union([MissingSchema])
   })
 })
 
+describe('config catalog generic parameter scopes', () => {
+  it.each([
+    ['function type', '/** Original operation. */\nrun: <Result>(value: Result) => Promise<Result>'],
+    ['nested function types', '/** Original operation. */\nrun: <Outer>(apply: <Inner extends Outer>(value: Inner) => Outer) => Outer'],
+    ['shadowed function parameters', '/** Original operation. */\nrun: <Value>(apply: <Value>(value: Value) => Value) => Value'],
+    ['method signature', 'run<Result>(value: Result): Result'],
+    ['call signature', '<Result>(value: Result): Result'],
+    ['construct signature', 'new <Instance>(value: Instance): Instance'],
+    ['constructor type', '/** Original constructor. */\ncreate: new <Instance>(value: Instance) => Instance'],
+  ])('retains valid %s parameters inside the verbatim declaration', (_name, member) => {
+    const { root, write } = fixture()
+    const declaration = `export interface Config {\n${member}\n}`
+    write('packages/test/provider/src/index.ts', `${declaration}
+export function apply(ctx: unknown, config: Config): void {}
+`)
+    const provider = collectConfigCatalog(root).find(entry => entry.pkg === '@test/provider')
+    expect(provider?.pastes?.map(paste => paste.text)).toEqual([declaration])
+    expect(provider?.refs).toEqual([])
+  })
+
+  it.each(['interface', 'type alias'])('resolves external constraints, defaults, and heritage around a generic %s', (kind) => {
+    const { root, write } = fixture()
+    write('packages/test/provider/src/index.ts', `
+export interface Constraint {
+  /** Required label. */
+  label: string
+}
+export type Default = Constraint
+export interface Base<Item> {
+  /** Retained value. */
+  value: Item
+}
+${kind === 'interface'
+  ? 'export interface Config<Value extends Constraint = Default> extends Base<Value> {}'
+  : 'export type Config<Value extends Constraint = Default> = Base<Value>'}
+export function apply(ctx: unknown, config: Config): void {}
+`)
+    const provider = collectConfigCatalog(root).find(entry => entry.pkg === '@test/provider')
+    expect(provider?.pastes).toHaveLength(4)
+    const pasted = provider?.pastes?.map(paste => paste.text).join('\n')
+    expect(pasted).toContain('Value extends Constraint = Default')
+    expect(pasted).toContain('export interface Base<Item>')
+    expect(pasted).toContain('export interface Constraint')
+    expect(pasted).toContain('export type Default = Constraint')
+  })
+
+  it.each([
+    ['unbound type', '/** Unbound reference. */\nvalue: T', 'T'],
+    ['constraint', '/** Original operation. */\nrun: <Result extends Missing>(value: Result) => Result', 'Missing'],
+    ['default', '/** Original operation. */\nrun: <Result = Missing>(value: Result) => Result', 'Missing'],
+    ['sibling scope', '/** Original operation. */\nrun: <T>(value: T) => T\n/** Unbound sibling. */\nvalue: T', 'T'],
+    ['nested scope', '/** Original operation. */\nrun: <Outer>(apply: <Inner>(value: Inner) => Outer) => Inner', 'Inner'],
+  ])('still rejects a real unresolved reference in %s', (_name, member, missing) => {
+    const { root, write } = fixture()
+    write('packages/test/provider/src/index.ts', `export interface Config {\n${member}\n}
+export function apply(ctx: unknown, config: Config): void {}
+`)
+    expect(() => collectConfigCatalog(root)).toThrow(`gen-config-catalog: 1 violation(s):\n  @test/provider: config declaration references '${missing}'`)
+  })
+})
+
 describe('config catalog rendering', () => {
   const entries = (inject: string[]): CatalogEntry[] => [
     {

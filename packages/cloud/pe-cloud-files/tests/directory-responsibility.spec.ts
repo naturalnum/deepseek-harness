@@ -221,9 +221,11 @@ describe('bounded independent directory responsibility', () => {
   it('retains unknown preparation after actual failure and never offers release or transfer by assertion', async () => {
     const queue = new FilesWorkQueue(limits)
     const lane = queue.openLane()
+    expect(lane.isIdle()).toBe(true)
     const reason = new Error('actual outcome unknown')
     const prepared = lane.prepareDirectory(intent, bounds, () => { throw reason })
     await expect(prepared.observation.waitPrepared()).rejects.toBe(reason)
+    expect(lane.isIdle()).toBe(false)
     const remove = vi.fn(async (): Promise<'cleaned'> => 'cleaned')
     await expect(prepared.control.cleanup(remove)).rejects.toThrow()
     expect(remove).not.toHaveBeenCalled()
@@ -448,4 +450,20 @@ describe('directory responsibility account lifetime', () => {
     owner.close()
     await owner.whenClosed()
   })
+})
+
+it('keeps retained directory responsibility and cleanup busy after preparation I/O has ended', async () => {
+  const queue = new FilesWorkQueue(limits), lane = queue.openLane()
+  const owned = lane.prepareDirectory(intent, bounds, async () => created)
+  expect(lane.isIdle()).toBe(false)
+  await owned.observation.waitPrepared()
+  expect(queue.inspect().running).toBe(0)
+  expect(lane.isIdle()).toBe(false)
+  const pending = Promise.withResolvers<'cleaned'>(), entered = Promise.withResolvers<undefined>()
+  const cleanup = owned.control.cleanup(async () => { entered.resolve(undefined); return pending.promise })
+  await entered.promise
+  expect(lane.isIdle()).toBe(false)
+  pending.resolve('cleaned'); await cleanup
+  expect(lane.isIdle()).toBe(true)
+  queue.close(); await queue.whenClosed()
 })

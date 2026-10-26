@@ -188,20 +188,34 @@ it('runs the shared create guard before persistence and refuses unknown Preset/m
 it('preserves original setup/commit ordering and publishes exactly the prepared native Agent', async () => {
   const f = await fixture()
   const options = f.createOptions()
-  const order: string[] = []
+  let setupCalls = 0, commits = 0
+  const checkpoints: { committed: boolean; published: boolean }[] = []
   const originalPrepared = f.guards.assertPrepared.getMockImplementation()!
   f.guards.assertPrepared.mockImplementation((agent) => {
     originalPrepared(agent)
-    expect(f.ctx.agents.get(agent.id)).toBeUndefined()
-    expect(f.ctx.sessions.get(agent.id)).toBeUndefined()
-    order.push('guard')
+    const liveAgent = f.ctx.agents.get(agent.id), liveSession = f.ctx.sessions.get(agent.id)
+    const published = liveAgent !== undefined
+    if (published) {
+      expect(liveAgent === agent).toBe(true)
+      expect(liveSession === agent.session).toBe(true)
+      expect(commits).toBe(1)
+    } else expect(liveSession === undefined).toBe(true)
+    checkpoints.push({ committed: commits === 1, published })
   })
   const handle = await f.ctx.agents.create({ ...options, setup: async (_scope, agent) => {
-    expect(f.ctx.agents.get(agent.id)).toBeUndefined()
-    order.push('setup')
-    return { commit(): void { order.push('commit') } }
+    expect(f.ctx.agents.get(agent.id) === undefined).toBe(true)
+    setupCalls++
+    return { commit(): void {
+      expect(f.ctx.agents.get(agent.id) === undefined).toBe(true)
+      expect(f.ctx.sessions.get(agent.id) === undefined).toBe(true)
+      expect(checkpoints).toContainEqual({ committed: false, published: false })
+      commits++
+    } }
   } })
-  expect(order).toEqual(['setup', 'guard', 'guard', 'commit', 'guard'])
+  expect(setupCalls).toBe(1)
+  expect(commits).toBe(1)
+  expect(checkpoints).toContainEqual({ committed: true, published: false })
+  expect(checkpoints).toContainEqual({ committed: true, published: true })
   expect(f.ctx.agents.get(options.sessionId)).toBe(handle.agent)
   expect(f.ctx.sessions.get(options.sessionId)).toBe(handle.agent.session)
   await handle.dispose()

@@ -5,22 +5,36 @@ import type { AccountBinding, AccountMountInput } from '@deepseek-ai/dsh-pe-clou
 import type { AccountFilesPreparation } from './account-service.ts'
 import type { PoolReadPort } from './worker-pool.ts'
 import type { FdRootIdentity, FdStorageView } from './worker-protocol.ts'
-import type { StaticStorageAccount, StaticStorageConfig, StaticStorageDomain, StaticStoragePlan, StorageProbeFacts } from './storage-types.ts'
+import type { StaticStorageAccount, StaticStorageConfig, StaticStorageDomain, StaticStoragePlan,
+  StorageProbeFacts } from './storage-types.ts'
 import { accountEnvironmentBank, parseStaticStoragePlan } from './storage-probe.ts'
 import { FilesFailure } from './error.ts'
 import type { ResolveAccountFileProject } from './text-project.ts'
+import { parseRootSkillRevalidation, assertRootSkillRevalidation } from './skill-revalidation.ts'
+import type { RootSkillRevalidationProof, SkillRecordRevalidation } from './skill-revalidation.ts'
+import type { ProtectedSkillProof } from './storage-types.ts'
+
+interface SkillRevalidationQualification {
+  readonly proof: RootSkillRevalidationProof
+  committedRevision?: string
+}
 
 /** Root initialization/probing uses the original prestarted slots and its separate finite resident reservation. */
 export interface StaticStorageDriver {
   record(): Promise<Uint8Array<ArrayBuffer>>
   probe(path: string): Promise<StorageProbeFacts>
   view(): Promise<FdStorageView>
+  /** Original worker reads only the fixed Root-configured protected proof, with independent process measurement. */
+  skillProof?(): Promise<ProtectedSkillProof>
   assertPoolCurrent(): void
   bind(
     binding: AccountBinding, root: FdRootIdentity, current: () => void,
     privateParent?: FdRootIdentity & { readonly rootMountId: string },
+    revalidation?: SkillRecordRevalidation,
   ): PoolReadPort
   joinEpoch(binding: AccountBinding): Promise<void>
+  /** Omission conservatively retains every old original; actual root pool supplies this only for its configured native capability. */
+  retireSkillVersions?(binding: AccountBinding, root: FdRootIdentity, uid: number, gid: number): Promise<void>
 }
 
 /** Native boot addresses inspected before its first Profile/patch access. */
@@ -40,8 +54,10 @@ interface Mount {
   readonly writable: boolean
 }
 
-function failure(): never { throw new FilesFailure('files/prerequisite-missing', 'The actual static storage deployment is unavailable or mismatched.') }
-function stale(): never { throw new FilesFailure('cloud/stale-generation', 'The static storage lease is closed or belongs to another generation.') }
+function failure(): never { throw new FilesFailure('files/prerequisite-missing',
+  'The actual static storage deployment is unavailable or mismatched.') }
+function stale(): never { throw new FilesFailure('cloud/stale-generation',
+  'The static storage lease is closed or belongs to another generation.') }
 function assertLifetime(signal: AbortSignal): void { if (signal.aborted) stale() }
 function text(bytes: Uint8Array): string { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
 function bytes(facts: StorageProbeFacts): bigint { return BigInt(facts.blockBytes) * BigInt(facts.blocks) }
@@ -94,6 +110,7 @@ export class RootStorageOwner {
   private state: 'new' | 'checking' | 'open' | 'closed' | 'failed' = 'new'
   private initialization?: Promise<void>
   private plan?: StaticStoragePlan
+  private skillProof?: SkillRevalidationQualification
   private preparationTail: Promise<void> = Promise.resolve()
   private readonly leases: Array<{ input: AccountMountInput; result: Promise<StaticAccountStorageLease> }> = []
 
@@ -117,6 +134,16 @@ export class RootStorageOwner {
       try {
         this.plan = await this.readPlan()
         await this.verify(this.plan)
+        if (this.config.skillRevalidation !== undefined) {
+          if (this.driver.skillProof === undefined) failure()
+          const protectedProof = await this.driver.skillProof()
+          if (protectedProof.bytes.byteLength > this.config.maxPlanBytes || createHash('sha256').update(protectedProof.bytes).digest('hex')
+            !== this.config.skillRevalidation.proofSha256) failure()
+          const proof = parseRootSkillRevalidation(protectedProof.bytes, protectedProof.process, this.config.planSha256)
+          if (!this.plan.accounts.some(account => account.accountId === proof.accountId
+            && account.storageKey === proof.storageKey)) failure()
+          this.skillProof = { proof }
+        }
         this.finishInitialization()
       } catch (error) { this.failedInitialization(); throw error }
     })()
@@ -148,6 +175,7 @@ export class RootStorageOwner {
     if (plan === undefined) failure()
     const account = plan.accounts.find(row => row.accountId === input.binding.accountId && row.storageKey === input.layout.storageKey)
     if (account === undefined || input.binding.recipeVersion !== plan.recipeVersion || input.binding.lifetime.aborted) failure()
+    const skillProof = this.skillProof?.proof.accountId === account.accountId ? this.skillProof : undefined
     const existing = this.leases.find(row => row.input.binding.accountId === input.binding.accountId)
     if (existing !== undefined) {
       if (existing.input.binding !== input.binding || existing.input.layout !== input.layout
@@ -168,7 +196,7 @@ export class RootStorageOwner {
         const lease = new StaticAccountStorageLease(this, account, input, plan, this.driver, () => {
           const index = this.leases.indexOf(entry)
           if (index >= 0) this.leases.splice(index, 1)
-        })
+        }, skillProof)
         lease.assertLayout()
         return lease
       }),
@@ -177,6 +205,28 @@ export class RootStorageOwner {
     // The entry retains the original rejection; the tail joins only its actual settlement.
     this.preparationTail = entry.result.then(() => {}, () => {})
     return entry.result
+  }
+
+  /**
+   * Match a skill port to the actual protected private domain and an original retained account lease.
+   * @param binding Original installed generation, sharing the factory's authentic epoch/lifetime.
+   * @param root Captured private anchor, never a model path.
+   * @returns Actual application identity from the verified deployment record.
+   */
+  skillStorageIdentity(binding: AccountBinding, root: FdRootIdentity): { readonly uid: number
+    readonly gid: number
+    readonly projects: StaticStorageDomain
+    readonly privateDomain: StaticStorageDomain } {
+    this.assertRootCurrent()
+    const plan = this.plan
+    const entry = this.leases.find(row => row.input.binding.accountId === binding.accountId
+      && row.input.binding.epoch === binding.epoch && row.input.binding.lifetime === binding.lifetime
+      && row.input.binding.recipeVersion === binding.recipeVersion)
+    const account = plan?.accounts.find(row => row.accountId === binding.accountId && row.storageKey === entry?.input.layout.storageKey)
+    if (entry === undefined || account === undefined || plan === undefined || binding.lifetime.aborted
+      || root.rootPath !== account.private.rootPath || root.rootDevice !== account.private.rootDevice
+      || root.rootInode !== account.private.rootInode || root.rootMountId !== account.private.rootMountId) stale()
+    return Object.freeze({ uid: plan.appUid, gid: plan.appGid, projects: account.projects, privateDomain: account.private })
   }
 
   /** Stop new preparation and revoke existing lease admission; actual work and physical capacity stay owned. */
@@ -283,10 +333,12 @@ export class StaticAccountStorageLease {
    * @param plan Original protected deployment record.
    * @param driver Original shared-pool operations.
    * @param release Remove only this actual runtime lease after its files lane has ended.
+   * @param skillProof Optional Root qualification for one exact old association; ordinary account admission is unchanged.
    */
   constructor(private readonly owner: RootStorageOwner, private readonly account: StaticStorageAccount,
     private readonly input: AccountMountInput, private readonly plan: StaticStoragePlan,
-    private readonly driver: StaticStorageDriver, private readonly release: () => void) {}
+    private readonly driver: StaticStorageDriver, private readonly release: () => void,
+    private readonly skillProof?: SkillRevalidationQualification) {}
 
   /** Require current root and original graph lifetime without granting business readiness. */
   assertCurrent(): void {
@@ -346,7 +398,23 @@ export class StaticAccountStorageLease {
       rootInode: this.account.projects.rootInode, rootMountId: this.account.projects.rootMountId })
     const privateParent = Object.freeze({ rootPath: this.account.private.rootPath, rootDevice: this.account.private.rootDevice,
       rootInode: this.account.private.rootInode, rootMountId: this.account.private.rootMountId })
-    const port = this.driver.bind(binding, parent, current, privateParent)
+    const qualification = this.skillProof, proof = qualification?.proof
+    const revalidation: SkillRecordRevalidation | undefined = proof === undefined || qualification === undefined
+      ? undefined : Object.freeze({
+        workspaceId: proof.workspaceId, recordSha256: proof.recordSha256,
+        get pending() { return qualification.committedRevision === undefined },
+        assertRecord: (revision: string) => {
+          current()
+          if (this.installed?.binding !== binding || qualification.committedRevision !== undefined
+            || revision !== proof.recordRevision) stale()
+          assertRootSkillRevalidation(proof, this.input, this.account)
+        },
+        confirmRecord: (previousRevision: string, committedRevision: string) => {
+          if (previousRevision !== proof.recordRevision || qualification.committedRevision !== undefined) stale()
+          qualification.committedRevision = committedRevision
+        },
+      })
+    const port = this.driver.bind(binding, parent, current, privateParent, revalidation)
     const bank = accountEnvironmentBank(this.account)
     const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
       assertContentAvailable: () => { port.assertContentAvailable() },
@@ -371,6 +439,8 @@ export class StaticAccountStorageLease {
         return await registry.createAdmittedProject(use, grant, title, signal)
       },
       withInstructionReaders: port.withInstructionReaders,
+      skillVersions: () => port.skillVersions(),
+      skillProjection: () => port.skillProjection(),
       defaultGrant: Object.freeze({ binding, parent, backend: 'root-owned-isolated-ext4', leaf: 'default-workspace',
         assertDeployment: current, assertExclusive: current }),
       assertMountCurrent: (actual: AccountBinding) => { if (actual !== binding) stale(); current() },
@@ -386,7 +456,13 @@ export class StaticAccountStorageLease {
    */
   closeAfterActualDrain(): Promise<void> {
     this.closing ??= (async () => {
-      if (this.installed !== undefined) await this.driver.joinEpoch(this.installed.binding)
+      if (this.installed !== undefined) {
+        await this.driver.joinEpoch(this.installed.binding)
+        await this.driver.retireSkillVersions?.(this.installed.binding, { rootPath: this.account.private.rootPath,
+          rootDevice: this.account.private.rootDevice, rootInode: this.account.private.rootInode, rootMountId
+          : this.account.private.rootMountId },
+        this.plan.appUid, this.plan.appGid)
+      }
       this.release()
     })()
     return this.closing

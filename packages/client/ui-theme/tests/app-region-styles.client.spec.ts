@@ -44,6 +44,7 @@ const SIDEBAR = 'client/ui-sidebar/src/client/SidebarRoot.module.css'
 const CONVERSATION = 'client/ui-conversation/src/client/skeleton/ConversationRoot.module.css'
 const DOCKKIT = 'client/ui-dockkit/src/components/dockkit.module.css'
 const PLUGIN_MANAGER = 'client/ui-plugin-manager/src/client/PluginManagerPage.module.css'
+const CLOUD_PLUGIN_MANAGER = 'cloud/pe-cloud-client/src/client/management/plugins/PluginManagementPage.module.css'
 const PLATFORM_OVERLAY = 'client/ui-settings-account/src/client/PlatformOverlay.module.css'
 
 /**
@@ -111,6 +112,16 @@ const CHROME_ROWS: readonly ChromeRow[] = [
     file: PLUGIN_MANAGER,
     selector: '.moreHead',
     markup: 'client/ui-plugin-manager/src/client/PluginManagerPage.tsx',
+  },
+  {
+    file: CLOUD_PLUGIN_MANAGER,
+    selector: '.pageHead',
+    markup: 'cloud/pe-cloud-client/src/client/management/plugins/PluginManagementPage.tsx',
+  },
+  {
+    file: CLOUD_PLUGIN_MANAGER,
+    selector: '.detailTop',
+    markup: 'cloud/pe-cloud-client/src/client/management/plugins/PluginManagementPage.tsx',
   },
   {
     file: PLATFORM_OVERLAY,

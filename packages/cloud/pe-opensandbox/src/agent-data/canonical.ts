@@ -1,4 +1,5 @@
 /** Canonical ASCII encoding and finite request validation shared by the private data carrier. */
+import { skillWorld as normalizeSkillWorld, type SkillWorld } from './skill-world.ts'
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { LocalRefusal } from './errors.ts'
@@ -153,10 +154,24 @@ export function base64(value: unknown, maximum: number): Uint8Array {
  * @param runtimeIdentity - Protected original runtime identity.
  * @param operationId - Root-selected operation ID retained through uncertainty.
  * @param value - Literal operation specification to normalize and hash.
+ * @param workingCopies - Optional original-files facts, kept outside the public command specification.
  * @returns The original reference and normalized spec; does not register or execute a remote operation.
  */
-export function makePrepared(runtimeIdentity: string, operationId: string, value: OperationSpec): UnsignedPreparedRequest {
+export function makePrepared(runtimeIdentity: string, operationId: string, value: OperationSpec,
+  workingCopies?: SkillWorld): UnsignedPreparedRequest {
   hex(runtimeIdentity); need(typeof operationId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(operationId), 'invalid_operation_id')
   const normalized = spec(value)
-  return { ref: { runtimeIdentity, operationId, specHash: digest(normalized) }, spec: normalized }
+  const fixed = workingCopies === undefined ? undefined : normalizeSkillWorld(workingCopies)
+  return { ref: { runtimeIdentity, operationId, specHash: preparedDigest(normalized, fixed) }, spec: normalized,
+    ...fixed === undefined ? {} : { skillWorld: fixed } }
+}
+
+/**
+ * Hash the normalized command and optional fixed skill-copy facts as one operation input.
+ * @param value Original normalized three-field command.
+ * @param workingCopies Optional Root-private fixed facts.
+ * @returns Hash binding both inputs to the original operation.
+ */
+export function preparedDigest(value: OperationSpec, workingCopies?: SkillWorld): string {
+  return digest(workingCopies === undefined ? value : { spec: value, skillWorld: workingCopies })
 }

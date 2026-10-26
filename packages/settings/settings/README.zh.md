@@ -38,6 +38,8 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 
 每个表单报告 `autoGenerate`（默认开启），供按 schema 生成页面的客户端使用；目前没有已发布的客户端这样做。自带页面的插件在 `apply` 中于可选的 `ctx.inject(['settings'], ...)` 子级内以 effect 注册 `configure({ auto: false }, ctx.fiber)`：子级指明策略所属的插件 fiber，迟加载或被替换的 Settings 服务也会采用该策略，业务插件无需 Settings 即可运行。策略不移除配置读写。
 
+可信 Host 调用方可向 `update`、`replace` 或 `mutate` 传入 `SettingsWriteControl`。Settings 将原复查传递到 ConfigEditor 的实际编辑及替换点；版本比较仍在原生串行写入内进行。省略时保持普通原生写入行为。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
@@ -48,7 +50,9 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 
 `update`、`replace` 与 `mutate` 在验证及写入前通过 config-editor 的可选保存 hook 提交。被观察的 Promise 包含 editor 操作及其后必需的描述符发布。嵌套 editor 调用共享该次准入。旧版导入分别提交 rename 与每个 section：保留原有部分导入行为，即使导入器记录失败后继续，被拒绝的 section 仍可被观察。要观察这些启动写入，必须在导入开始前安装 hook。
 
-秘密角色从实际值、继承值、profile 覆盖值和 schema 默认值中隐藏；客户端接收存在性标记。路径编辑保留客户端未收到的字段。
+秘密角色会从值、继承值、配置覆盖和 schema 默认值中脱敏；客户端收到存在标记。元组位置与数组使用相同的标记；字典键为秘密时，整个字典保持不透明，避免键通过标记路径泄露。路径编辑会保留客户端未收到的字段。
+
+Host 配置适配器可复用 `ordinaryConfigPolicy`，在不运行校验器或构造函数的情况下判断整字段替换。秘密或 volatile 祖先与子项使该操作只读；普通子路径和纯普通容器仍可编辑。lazy、自定义及递归图仍未获证明。此 helper 不扩大 Settings 服务仅限实时字段的职责。 共用的 `applyConfigPathOp` 路径编辑函数在父项缺失或为 null 时保留未改动的兄弟项及对象默认值；验证与持久化仍由 ConfigEditor 负责。
 
 </details>
 

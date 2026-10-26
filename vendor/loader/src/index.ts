@@ -242,6 +242,7 @@ export class Loader extends EntryTree {
 
       // case 6: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
+      if (fiber.entry.ownsPreparedDisposal(fiber)) return
       if (fiber.entry.disabled) return
 
       fiber.entry.options.disabled = true

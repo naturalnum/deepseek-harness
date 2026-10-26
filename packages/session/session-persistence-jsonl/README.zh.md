@@ -122,6 +122,8 @@ kind: "package-reference"
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard 帧压缩、解码与帧扫描 |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through 发布与目录创建 |
 
+JSONL 的静止观察包含实际 mutation/read continuation、实时事件 buffer 与 timer、活动 drain、未物化 Session、迁移准备及列表工作。显式访问上限也限制检查的 open handle 数量。任一原工作尚存时返回 false，不 flush 或取消工作。
+
 </details>
 
 -----

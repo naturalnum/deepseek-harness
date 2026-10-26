@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
@@ -14,6 +15,7 @@ import Settings from '../src/index.ts'
 
 export async function configurationFixture(options: {
   schema?: z
+  rootEntries?: EntryOptions[]
   apply?: (ctx: Context, config: unknown) => void
   hmr?: boolean
   onBoot?: (ctx: Context) => void
@@ -33,7 +35,7 @@ export async function configurationFixture(options: {
     { id: 'first', name: 'cordis:probe', config: { ordinary: 'fixed', token: 'private' } },
     { id: 'second', name: 'cordis:probe', config: { ordinary: 'second' } },
   ] }]))
-  writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+  writeFileSync(join(dir, 'cordis.yml'), JSON.stringify(options.rootEntries ?? []) + '\n')
   const profile: ProfileContext = {
     name: 'test', startedBundles: ['test-bundle'], dir, patchPath: join(dir, 'cordis.patch.yml'),
     installAnchor: join(home, 'package.json'), cwd: home, home, overlays: [], telemetryDisabledEnv: undefined,

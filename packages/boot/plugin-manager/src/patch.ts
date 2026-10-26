@@ -20,9 +20,12 @@ export function flatten(rows: EntryOptions[]): EntryOptions[] {
  * @param id Unique composition entry id.
  * @param name Module name used to match name-qualified overrides.
  * @param enabled Desired entry enablement.
+ * @param prepared Original native preflight/reservation around this exact prepared AST replacement.
  * @returns Whether the file changed.
  */
-export async function writePluginEnabled(profile: ProfileContext, id: string, name: string, enabled: boolean): Promise<boolean> {
+export async function writePluginEnabled(profile: ProfileContext, id: string, name: string, enabled: boolean,
+  prepared?: (before: string, after: string, persist: () => Promise<void>) => Promise<void>,
+): Promise<boolean> {
   const filename = profile.patchPath
   let text: string
   try {
@@ -73,6 +76,9 @@ export async function writePluginEnabled(profile: ProfileContext, id: string, na
     if (implied(items.length)) return false
     document.add({ id, disabled: !enabled })
   }
-  await writeFileAtomic(filename, String(document), { mode: 0o600 })
+  const after = String(document)
+  const persist = () => writeFileAtomic(filename, after, { mode: 0o600 })
+  if (prepared === undefined) await persist()
+  else await prepared(text, after, persist)
   return true
 }

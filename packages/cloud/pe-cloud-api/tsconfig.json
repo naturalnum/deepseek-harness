@@ -94,6 +94,30 @@
     },
     {
       "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../util/launch-environment"
+    },
+    {
+      "path": "../pe-cloud-files"
+    },
+    {
+      "path": "../../skill/skill"
+    },
+    {
+      "path": "../../skill/skill-filesystem"
+    },
+    {
+      "path": "../../fs/fs"
+    },
+    {
+      "path": "../../boot/plugin-manager"
+    },
+    {
+      "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../subagent/subagent"
     }
   ]
 }

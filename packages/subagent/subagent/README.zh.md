@@ -56,9 +56,11 @@ kind: "package-reference"
 
 容量耗尽时，新建或冷恢复以 `ACTIVATION_LIMIT_REACHED` 拒绝（浏览器消息返回 `subagent/delivery-unavailable`）：等待子代理完成，或继续使用现有代理。接纳不会排队，避免等待后代的父代理又等待自己占用的名额。名额仅存在于当前进程，不限制累计 Session 历史或 token 用量。
 
-### 本地与外部子级
+### 本地与外部子级 <a id="local-and-external-children"></a>
 
 `startActivation({ provider, label, request, signal, delivery })` 返回 `{ childId, messageId?, result, dispose }`。提供 `childId` 会选择本地后端，并保证返回 `messageId`。本地子级接受后续消息并支持冷恢复；外部子级只暴露一次执行，拒绝继续输入。`request.agentOptions` 覆盖后端支持的子级模型设置。`delivery: 'parent'` 提供面向模型的完成通知；`delivery: 'caller'` 让工作流等待结果，不发送父级通知，也不附加初始返回指导。本地父级投递需要持久化，调用方投递可以使用临时本地会话；冷恢复需要持久化与 Session 查询服务。
+
+`registerAdmission(check)` 注册调用 fiber 拥有的检查，用于 provider 准备／启动及持久化子级的冷重建。检查按注册顺序读取已捕获的 provider、确切父 Agent 和原请求事实；拒绝会阻止派发。贡献变化、provider 替换、owner 销毁或确切父 Agent 不再存活，会在下一检查点使等待中的操作失效；manager 还会在 await 后及原生 create/resume 前复检排空准入。撤销不会取消或等待正在执行的回调。准备或启动期间批准失效时，manager 通过既有清理回滚未发布句柄；已接受的 activation 保留原生命周期 owner。没有检查时原生行为不变，包括 provider 卸载后的冷续行。注册不授予工厂、配额或 teardown 权限。
 
 ### 子级 preset
 

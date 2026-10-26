@@ -28,6 +28,9 @@ import * as accountEntry from '../src/account.ts'
 import * as rootEntry from '../src/root.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
+import { copyFacts } from '../src/skill-wire.ts'
+import type { SkillProjectGrant, SkillOperationCopies } from '../src/skill-files-types.ts'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness,
   provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -72,6 +75,7 @@ function fixture(input: {
   retained?: SandboxAllocation
   managed?: ManagedCoordinatorConfig
   applicationFactory?: boolean
+  skillCopies?: number
 } = {}) {
   const ctx = new Context(), accountContexts: Context[] = []
   const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
@@ -107,7 +111,9 @@ function fixture(input: {
   const backend = new SdkAllocationBackend(sdkConfig, runtimes, { fetch, close })
   const create = vi.spyOn(backend, 'create'), actualClose = vi.spyOn(backend, 'closeRootActual')
   const observeClose = vi.spyOn(backend, 'closeRoot')
-  const deployment = { backend, runtimes, assertCurrent: vi.fn(), assertEpochReleased: vi.fn(),
+  const deployment = { backend, runtimes,
+    ...input.skillCopies === undefined ? {} : { skillCopies: { maxCopiesPerOperation: input.skillCopies } },
+    assertCurrent: vi.fn(), assertEpochReleased: vi.fn(),
     share: vi.fn<ManagedExecutionDeployment['share']>(async () => { throw new Error('No file export is expected') }),
   } satisfies ManagedExecutionDeployment
   const owner = new ManagedCoordinator(ctx, runtimePort, input.managed ?? config, deployment)
@@ -367,13 +373,15 @@ async function applicationFixture(options: {
   globalBytes?: number
   application?: boolean
   services?: boolean
+  skillCopies?: number
 } = {}) {
   const managed: ManagedCoordinatorConfig = { ...config, maxActiveCommands: 8, maxActiveCommandsPerAccount: 4,
     maxResidentCommands: 16, maxResidentCommandsPerAccount: 8,
     maxResidentBytes: options.globalBytes ?? options.bytes ?? 1048576, maxResidentBytesPerAccount: options.bytes ?? 1048576,
     allocations: { ...config.allocations, maxAllocations: 4, maxAllocationsPerAccount: 2 },
     commands: { ...config.commands, allowedTools: ['bash', 'dev_service'], maxScopes: 8,
-      commandLimits: { ...config.commands.commandLimits, pollIntervalMs: 1000, maxLifetimeMs: 190000, maxWaiters: 4 },
+      commandLimits: { ...config.commands.commandLimits, pollIntervalMs: 1000, maxLifetimeMs: 190000, maxWaiters: 4,
+        ...options.skillCopies === undefined ? {} : { maxArgvBytes: 256, maxArgvEntries: 8, maxPathBytes: 128, maxStdinBytes: 256 } },
       ...(options.services === false ? {} : { services: { maxOutputBytes: 32, graceMs: 1000,
         profile: { kind: 'python-http-v1', port: 8000, startWaitMs: 5000, runMs: 120000, stopWaitMs: 5000,
           maxLogReadBytes: 96, maxReplyBytes: 4096, maxScriptBytes: 256, maxArgs: 8, maxArgBytes: 256, maxArgsBytes: 2048 },
@@ -381,7 +389,7 @@ async function applicationFixture(options: {
           maxRequestsPerAccount: options.perAccount ?? 1, maxRequestsPerService: 1,
           transport: { readBufferBytes: 32, prefetchBytes: 64, maxWireBytes: 1048576, maxRequestHeaderBytes: 4096,
             maxPathBytes: 2048, timeoutMs: 5000, maxBufferPoolBytes: 8192 } } }) } }) } }
-  const f = fixture({ managed }); await f.owner.start()
+  const f = fixture({ managed, ...options.skillCopies === undefined ? {} : { skillCopies: options.skillCopies } }); await f.owner.start()
   const channels: { sessionId: SessionId; empty(): void }[] = []
   const attempts: { readonly terminal: ReturnType<typeof Promise.withResolvers<undefined>>; readonly controller: AbortController }[] = []
   const attach = vi.spyOn(NativeCommandAccount.prototype, 'attachOriginal')
@@ -391,6 +399,8 @@ async function applicationFixture(options: {
   vi.spyOn(SessionAllocationOwner.prototype, 'stop').mockImplementation(async (request) => {
     for (const channel of channels) if (channel.sessionId === request.sessionId) channel.empty()
   })
+  // Scripted preparation does not register a real runtime or project-copy capability.
+  vi.spyOn(f.deployment.runtimes, 'skillProject').mockReturnValue(undefined)
   const service = vi.spyOn(f.deployment.runtimes, 'service').mockImplementation((prepared, registration) => {
     registration.bindAllocation(brandString<Parameters<typeof registration.bindAllocation>[0]>(prepared.sandboxId))
     const initial: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false, ioClosed: false,
@@ -460,7 +470,8 @@ async function applicationFixture(options: {
           new AbortController().signal, async () => {})))
     return { ...a, agents, start, borrow }
   }
-  return { ...f, prepare, service, application, attempts, account }
+  return { ...f, prepare, service, application, attempts, account,
+    emptyChannels: () => { for (const channel of channels) channel.empty() } }
 }
 
 function trackApplication(actual: Promise<void>) {
@@ -721,4 +732,106 @@ it('does not prepare new compute or submit the new operation after its original 
   cancel.abort(new Error('original caller cancellation')); stopped.resolve(undefined)
   expect((await actual).isError).toBe(true)
   expect(f.prepare).toHaveBeenCalledTimes(1); expect(f.command).not.toHaveBeenCalled()
+})
+
+
+it('[managed-skills] sends the complete mixed copy set on each native Shell operation and retains it past direct exit until actual range settlement', async () => {
+  const f = await applicationFixture({ skillCopies: 2 }), a = await f.account('mixed-copies')
+  const metadata = { relativePath: '.pe', device: '7', inode: '11', mountId: '8', uid: 2000, gid: 2000, mode: 0o40700 }
+  const parent: SkillProjectGrant = { binding: a.binding, workspaceId: brandString<SkillProjectGrant['workspaceId']>('mixed-project'),
+    project: { rootPath: '/project', rootDevice: '7', rootInode: '9', rootMountId: '8',
+      quota: { device: '7', mountId: '8', maximumBytes: '65536', maximumInodes: '128' } },
+    metadataDirectory: metadata, skillsDirectory: { ...metadata, inode: '12' } }
+  const base = { binding: a.binding, workspaceId: parent.workspaceId,
+    metadataDirectory: parent.metadataDirectory, skillsDirectory: parent.skillsDirectory }
+  const legacy: SkillOperationCopies['copies'][number] = { ...base,
+    version: { binding: a.binding, id: brandString<SkillOperationCopies['copies'][number]['version']['id']>('00000000-0000-4000-8000-000000000001'),
+      skillSha256: '1'.repeat(64), resourceSha256: '2'.repeat(64), skillBytes: 12, resourceBytes: 4 },
+    resourceBase: '.pe/skills/00000000-0000-4000-8000-000000000001/', copyDirectory: { ...metadata, inode: '13' } }
+  const bundle: SkillOperationCopies['copies'][number] = { ...base,
+    version: { binding: a.binding, id: brandString<SkillOperationCopies['copies'][number]['version']['id']>('00000000-0000-4000-8000-000000000002'),
+      format: 'bundle-tree-v1', files: [{ relativePath: 'SKILL.md', bytes: 12, sha256: '1'.repeat(64) },
+        { relativePath: 'nested/resource.bin', bytes: 4, sha256: '2'.repeat(64) }], directories: ['nested'], treeSha256: '3'.repeat(64),
+      contentBytes: 16, directoryCount: 1, chargedBytes: 128, chargedInodes: 5 },
+    resourceBase: '.pe/skills/00000000-0000-4000-8000-000000000002/', copyDirectory: { ...metadata, inode: '14' } }
+  const copies: SkillOperationCopies = Object.freeze({ project: parent, copies: [legacy, bundle] })
+  const release = vi.fn(), borrow = vi.fn(async () => ({ value: copies, release }))
+  // Only the external Linux files preparation is scripted; the native tool/Agent/coordinator/command owner remain real.
+  const scripted = { assertSkillProjectGrant: (grant: SkillProjectGrant) => { expect(grant).toBe(parent) },
+    borrowAllBundleWorkingCopies: borrow,
+    assertBundleOperationCopies: (value: SkillOperationCopies) => { expect(value).toBe(copies) },
+    borrowAllSkillWorkingCopies: () => { throw new Error('Legacy-only enumeration must not run for a mixed project') },
+  }
+  const files = new Proxy(CloudAccountFiles.prototype, { get(_target, key): unknown {
+    const value: unknown = Reflect.get(scripted, key)
+    if (value === undefined) throw new Error('Unexpected files call in the scripted native I/O frontier')
+    return value
+  } })
+  a.authority.files.mockReturnValue(files)
+  vi.spyOn(f.deployment.runtimes, 'skillProject').mockReturnValue({ grant: parent, maxCopies: 2 })
+  vi.spyOn(f.deployment.runtimes, 'needsContinuation').mockReturnValue(false)
+  const poll = Promise.withResolvers<CommandSnapshot>(), submitted = Promise.withResolvers<undefined>()
+  const empty = { bytes: Buffer.alloc(0), observedBytes: 0, eof: false }
+  const prepared: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false, ioClosed: false,
+    physicalStopRequired: false, providerFailure: false, direct: undefined, stdout: empty, stderr: empty }
+  const direct = { ...prepared, submitted: true, direct: { exitCode: 0, signal: null },
+    stdout: { ...empty, eof: true }, stderr: { ...empty, eof: true } }
+  const complete: CommandSnapshot = { ...direct, rangeEmpty: true, ioClosed: true }
+  applicationCleanups.push(() => { poll.resolve(complete) })
+  const command = vi.spyOn(f.deployment.runtimes, 'command').mockImplementation((_sandbox, operation) => {
+    if (operation === undefined) throw new Error('Missing actual complete copies borrow')
+    operation.assertCurrent()
+    expect(copyFacts(operation.value, operation.maxCopies).copies.map(copy => copy.version)).toEqual([legacy.version.id, bundle.version.id])
+    return { release: () => { operation.release() }, prepare: async () => prepared,
+      commit: async () => { submitted.resolve(undefined); return direct },
+      poll: async () => poll.promise, stop: async () => complete }
+  })
+  const dispose = a.ctx.tools.register(defineTool({ name: 'bash', description: 'Native Shell component consumer.', parameters: {},
+    output: { schema: { type: 'json' }, render: () => [] }, execute: async () => {
+      const handle = await a.ctx.shell.execute(a.ctx.shell.resolve({ command: 'printf complete-tree', onExpiry: 'none' }))
+      await handle.done
+      return { completed: true }
+    } }))
+  applicationCleanups.push(dispose)
+  const run = () => a.ctx.tools.execute({ callId: ToolCallId('managed-copy-command'), name: 'bash', arguments: {},
+    agent: a.agents[0]!, signal: new AbortController().signal })
+  const running = run()
+  const outcome: { result?: Awaited<ReturnType<typeof run>> } = {}
+  void running.then((result) => { outcome.result = result })
+  await vi.waitFor(() => {
+    if (outcome.result?.isError) throw new Error(outcome.result.error.message)
+    expect(command).toHaveBeenCalledTimes(1)
+  })
+  await submitted.promise
+  expect(command).toHaveBeenCalledTimes(1); expect(borrow).toHaveBeenCalledTimes(1)
+  expect(release).not.toHaveBeenCalled()
+  poll.resolve(complete)
+  expect((await running).isError).toBe(false)
+  await vi.waitFor(() => { expect(release).toHaveBeenCalledTimes(1) })
+  expect((await run()).isError).toBe(false)
+  await vi.waitFor(() => { expect(release).toHaveBeenCalledTimes(2) })
+  expect(borrow).toHaveBeenCalledTimes(2)
+  expect(new Set(f.prepare.mock.calls.map(([request]) => request.sessionId)).size).toBe(1)
+  expect(f.prepare.mock.calls.every(([request]) => request.binding === a.binding)).toBe(true)
+  expect(a.binding.lifetime.aborted).toBe(false)
+})
+
+
+it('observes a cached Session after service settlement while application I/O still blocks quiet', async () => {
+  const f = await applicationFixture(), a = await f.account('idle-observer')
+  expect(f.owner.isEpochIdle(a.binding)).toBe(true)
+  expect(f.owner.isEpochIdle({ ...a.binding })).toBe(false)
+  const work = await a.start()
+  expect(f.owner.isEpochIdle(a.binding)).toBe(false)
+  const pending = trackApplication(a.borrow(work))
+  await vi.waitFor(() => { expect(f.attempts).toHaveLength(1) })
+  // The scripted process range can empty; the actual original HTTP request row must still join.
+  f.emptyChannels()
+  expect(f.owner.isEpochIdle(a.binding)).toBe(false)
+  expect(f.attempts[0]!.controller.signal.aborted).toBe(false)
+  f.attempts[0]!.terminal.resolve(undefined); await pending.joined
+  await vi.waitFor(() => { expect(f.owner.isEpochIdle(a.binding)).toBe(true) }, { timeout: 3000 })
+  expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+  // This fixture scripts allocation transport; it establishes the original command/request observation only.
+  expect(work.lease.scope.binding).toBe(a.binding)
 })

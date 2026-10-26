@@ -71,7 +71,7 @@ export class FileUploads extends TypertRemoteService {
   static Config = z.object({
     maxPendingReceipts: z.number().int().positive().default(128)
       .describe('Maximum staged receipts and in-flight native intakes combined.'),
-  })
+  }).prefault({})
 
   private readonly stagedFiles = new Map<Session, Map<FileUploadReceiptId, StagedFileUpload>>()
   private readonly disposedSessions = new WeakSet<Session>()

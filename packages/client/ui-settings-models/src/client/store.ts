@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ModelsSettingsReads, ModelsSettingsMetadata } from './integration.ts'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 
@@ -197,12 +198,14 @@ export class ModelsSettingsStore {
    * @param ctx - the page plugin's context, whose `remote.llm` and
    * `remote.credentials` namespaces carry the directory and credential reads.
    * @param schema - settings-owned schema and immutable path operations.
-   * @param describeFace - the shared mirror's describe face (namespace views and writability).
+   * @param describeFace - the shared mirror's native describe face (namespace views and writability).
+   * @param integratedRead - optional page-owned readonly callbacks and localized refusal; absence preserves native reads.
    */
   constructor(
     private readonly ctx: ClientContext,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
+    private readonly integratedRead?: { readonly reads: ModelsSettingsReads; readonly unavailable: () => string },
   ) {}
 
   /**
@@ -229,24 +232,12 @@ export class ModelsSettingsStore {
   /** Publish one joined answer; stale answers leave the current refresh in charge. */
   private async read(generation: number): Promise<void> {
     this.store.update((s) => { s.status = 'loading'; s.error = null })
-    const [registered, declared] = await Promise.all([
-      this.ctx.remote.llm.listProviders(),
-      this.ctx.remote.llm.listConfigurableProviders(),
-      this.describeFace.ensure(),
-    ])
-    if (generation !== this.generation) return
-    if (!registered.ok) { this.failLoad(registered.error.message); return }
-    if (!declared.ok) { this.failLoad(declared.error.message); return }
-    const mirrored = this.describeFace.getSnapshot()
-    if (mirrored.view === undefined) {
-      /* v8 ignore next -- SettingsDescribeFace.ensure settles with a view or the read's error */
-      if (mirrored.error === null) throw new Error('settings describe settled with neither a view nor an error')
-      this.failLoad(mirrored.error)
-      return
-    }
-    const providers = joinProviderDirectory(registered.value, declared.value)
-    const writable = mirrored.view.writable
-    const views: readonly SettingsNamespaceView[] = mirrored.view.namespaces
+    const metadata = await this.metadata(generation)
+    if (generation !== this.generation || metadata === undefined
+      || this.integratedRead !== undefined && !this.integratedRead.reads.isCurrent()) return
+    const providers = joinProviderDirectory(metadata.providers, metadata.configurableProviders)
+    const writable = metadata.settings.writable
+    const views: readonly SettingsNamespaceView[] = metadata.settings.namespaces
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
@@ -277,14 +268,20 @@ export class ModelsSettingsStore {
     let credentialError: string | null = null
     // credentials.describe accepts at most 64 references per request.
     for (let index = 0; index < refs.length; index += 64) {
-      const response = await this.ctx.remote.credentials.describe(refs.slice(index, index + 64))
+      const selected = refs.slice(index, index + 64)
+      if (this.integratedRead !== undefined) {
+        try { Object.assign(credentials, await this.integratedRead.reads.credentials(selected)) }
+        catch { credentialError = this.integratedRead.unavailable(); break }
+        continue
+      }
+      const response = await this.ctx.remote.credentials.describe(selected)
       // Credential state is an enrichment for the Models page: a failure
       // degrades the badge instead of failing the load. The onboarding
       // projection below retains the failure distinction.
       if (response.ok) Object.assign(credentials, response.value)
       else { credentialError = response.error.message; break }
     }
-    if (generation !== this.generation) return
+    if (generation !== this.generation || this.integratedRead !== undefined && !this.integratedRead.reads.isCurrent()) return
     this.store.update((s) => {
       s.status = 'ready'
       s.error = null
@@ -309,6 +306,38 @@ export class ModelsSettingsStore {
       })
       s.namespaces = namespaces
     })
+  }
+
+  /** Read through the selected public face; Cloud failures never select native metadata or credential reads. */
+  private async metadata(generation: number): Promise<ModelsSettingsMetadata | undefined> {
+    if (this.integratedRead !== undefined) {
+      try {
+        if (!this.integratedRead.reads.isCurrent()) {
+          if (generation === this.generation) this.failLoad(this.integratedRead.unavailable())
+          return undefined
+        }
+        return await this.integratedRead.reads.metadata()
+      } catch {
+        if (generation === this.generation) this.failLoad(this.integratedRead.unavailable())
+        return undefined
+      }
+    }
+    const [registered, declared] = await Promise.all([
+      this.ctx.remote.llm.listProviders(),
+      this.ctx.remote.llm.listConfigurableProviders(),
+      this.describeFace.ensure(),
+    ])
+    if (generation !== this.generation) return undefined
+    if (!registered.ok) { this.failLoad(registered.error.message); return undefined }
+    if (!declared.ok) { this.failLoad(declared.error.message); return undefined }
+    const mirrored = this.describeFace.getSnapshot()
+    if (mirrored.view === undefined) {
+      /* v8 ignore next -- SettingsDescribeFace.ensure settles with a view or its original read error. */
+      if (mirrored.error === null) throw new Error('settings describe settled with neither a view nor an error')
+      this.failLoad(mirrored.error)
+      return undefined
+    }
+    return { providers: registered.value, configurableProviders: declared.value, settings: mirrored.view }
   }
 
   /** Settle callers only while this read still owns the current refresh. */

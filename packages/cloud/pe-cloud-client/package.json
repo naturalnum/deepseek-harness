@@ -100,6 +100,11 @@
     "@deepseek-ai/dsh-client-ui-chat": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
     "@deepseek-ai/dsh-client-ui-tool": "workspace:*",
-    "@deepseek-ai/dsh-util-values": "workspace:*"
+    "@deepseek-ai/dsh-util-values": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings-models": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings-general": "workspace:*",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "clsx": "^2.1.1"
   }
 }

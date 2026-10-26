@@ -9,6 +9,7 @@ import type { SessionEvent, SessionHeader, UserMessage } from '@deepseek-ai/dsh-
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import { snapshotSessionFormatJson } from '@deepseek-ai/dsh-session-format'
 import { normalizeSessionLog, redactSessionSnapshotIds } from '@deepseek-ai/dsh-session-snapshot'
+import { canonicalSessionFixture } from '../../../../scripts/session-fixture-layout.ts'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { prepareInstructionSnapshot } from '../src/snapshot.ts'
 import { Reader, limits, directory, identity, signal } from './harness.ts'
@@ -104,7 +105,9 @@ it('keeps one native context across tool steps and reloads for the next turn', a
     const rawLog = rows.map(row => JSON.stringify(row)).join('\n') + '\n'
     const redacted = redactSessionSnapshotIds([rawLog])[0]
     if (redacted === undefined) throw new Error('Missing native log fixture')
-    const recorded = normalizeSessionLog(redacted, { sessionIds: [], cwd: '' }, { identityMode: 'preserve' })
+    const physical = normalizeSessionLog(redacted, { sessionIds: [], cwd: '' }, { identityMode: 'preserve' })
+    const recorded = canonicalSessionFixture(physical)
+    if (recorded === undefined) throw new Error('Missing projected Session fixture')
     const fixture = new URL('./fixtures/recorded/session.v4.jsonl', import.meta.url)
     if (process.env['DSH_SNAPSHOT'] === 'record') {
       mkdirSync(new URL('./fixtures/recorded/', import.meta.url), { recursive: true })
@@ -112,13 +115,19 @@ it('keeps one native context across tool steps and reloads for the next turn', a
     }
     const committed = readFileSync(fixture, 'utf8')
     expect(recorded).toBe(committed)
-    const lines: unknown[] = committed.trimEnd().split('\n').map((line) => {
+    // Replay the physical stream whose complete logical rows match the committed fixture.
+    const lines: unknown[] = physical.trimEnd().split('\n').map((line) => {
       const row: unknown = JSON.parse(line)
       return row
     })
     const restore = sessionFormatCatalog.createRestore(lines[0], { recovery: 'strict', validation: 'current' })
     for (const line of lines.slice(1)) restore.decodeRow(line)
     const restored = restore.finish()
+    const replayed = [
+      sessionFormatCatalog.encodeCurrentHeader(restored.header, restored.inheritedEventCount),
+      ...restored.events.map(event => sessionFormatCatalog.encodeCurrentEvent(event)),
+    ].map(row => JSON.stringify(row)).join('\n') + '\n'
+    expect(canonicalSessionFixture(replayed)).toBe(committed)
     expect(restored.header.version).toBe(SESSION_FORMAT_VERSION)
     const { parentSession, ...metadata } = restored.header
     const header: SessionHeader = {

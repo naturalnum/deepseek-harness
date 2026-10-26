@@ -37,9 +37,9 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 `disable-model-invocation: true` 会把 skill 从面向模型的目录和 loader 中排除；`user-invocable: false` 会把它从面向用户的命令中排除，省略的字段默认允许对应接口调用。这两个键接受 YAML 布尔值，以及不区分大小写的 `true`/`false`、`yes`/`no`、`on`/`off` 和 `1`/`0` 形式；被拒绝的拼写或非布尔值会让整个 skill 随警告一起被丢弃，而不会静默允许某个接口。
 
-目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
+对于普通文件系统根，目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
 
-目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
+对于普通文件系统根，目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
 
 ### 根目录与优先级
 
@@ -75,6 +75,14 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 | `bundledSkillDir` | — | 配置后按 rank 600 扫描的随包提供的 skill 根目录 |
 
 其余 `watch*` 字段用于调节 Chokidar 行为——轮询、稳定窗口、间隔、项目上限与符号链接跟随。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill-filesystem)完整列出了所有字段，是这些字段的真源。
+
+### 程序化 source
+
+持有受限读取 source 的 owner 可构造 `FileSystemSkillProvider(ctx, control, config, source)`。可选的第四个参数为 `FileSystemSkillSource`，由代码传入，不属于 Loader 配置；必须设置 `includeDefaultRoots: false`、`watch: false`，并省略 `bundledSkillDir`。普通插件继续使用 `ctx.fs` 及既有的宿主机回退行为。
+
+`source.withFiles(read, options)` 借出 `FileSystemSkillRead`，其中只包含五个原生读取方法以及 `materialize(directory, options)` 操作。发现与加载复用本包现有解析器。每个 provider 实例必须标识一个稳定的 source 版本，即使候选在发现结束后仍被保留。加载时，正文解析与资源准备使用同一次借用的 source。owner 必须保留实际 source 工作，直到两者全部结束，包括调用者取消之后；版本保留和释放也由 owner 负责。
+
+使用 source 的目录条目不暴露指令路径或资源基址。只有 `materialize` 完成并返回调用者可用的资源基址及可选指令路径，加载才返回资源指引。准备失败或尚未完成时必须拒绝；provider 不会回退到 source 路径。`SkillViewOptions.scope` 将原调用者上下文传给两个 source 操作，但 owner 必须验证调用者，并独立于 `cwd` 或发现目录选择其实际项目。此通用接口不授予存储、项目投影或账户权限。
 
 ### 变更检测
 

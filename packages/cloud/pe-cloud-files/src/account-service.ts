@@ -1,4 +1,10 @@
 /** Graph-owned preparation installs the native Registry and its selected restricted filesystem in one account fiber. */
+import type { SkillProjectPort } from './skill-project-work.ts'
+import type { SkillProjectGrant, SkillWorkingCopyGrant, SkillOperationCopies } from './skill-projection.ts'
+import type { SkillVersion } from './skill-versions.ts'
+import type { SkillVersionPort } from './skill-versions.ts'
+import type { SkillBundleInput, SkillBundleVersion, SkillBundleSource, SkillCatalog, SkillCatalogChange,
+  SkillCatalogCommit, SkillBundleWorkingCopy, SkillBundlePort, SkillBundleOperationCopies } from './skill-bundles.ts'
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -16,6 +22,10 @@ import type { EnvironmentSessionId, ExecutionMountGrant } from './environment-ba
 
 /** Trusted runtime preparation only; Loader JSON cannot select an account, path, backend or plugin. */
 export interface AccountFilesPreparation {
+  /** Root storage lease supplies this private fixed-purpose port; omission grants no skill storage. */
+  readonly skillVersions?: () => SkillVersionPort
+  /** Fixed original-lease projection issuer; no client-selected backend or path. */
+  readonly skillProjection?: () => SkillProjectPort
   readonly binding: AccountBinding
   readonly port: Pick<PoolReadPort, 'createWorkspaceRegistry'>
   readonly defaultGrant: IsolatedLeafGrant
@@ -96,6 +106,8 @@ export class CloudAccountFiles extends Service {
   readonly binding: AccountBinding
   // Keep native constructor identity stable through Cordis caller-scoped method tracing.
   private readonly providers: {
+    readonly skillVersions: AccountFilesPreparation['skillVersions']
+    readonly skillProjection: AccountFilesPreparation['skillProjection']
     readonly Registry: ControlledWorkspaceRegistryConstructor
     readonly createFileSystem: AccountFilesPreparation['createFileSystem']
     readonly withInstructionReaders: AccountFilesPreparation['withInstructionReaders']
@@ -149,10 +161,11 @@ export class CloudAccountFiles extends Service {
     checkGraph(ctx)
     super(ctx, 'peCloudFiles')
     this.binding = input.binding
-    this.providers = { Registry, createFileSystem: input.createFileSystem, withInstructionReaders: input.withInstructionReaders,
-      projectFor: input.projectFor, prepareExecutionMounts: input.prepareExecutionMounts,
-      createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
-      attachments: input.attachments, attachmentProjection: input.attachmentProjection }
+    this.providers = { Registry, skillVersions: input.skillVersions, skillProjection: input.skillProjection, createFileSystem
+    : input.createFileSystem, withInstructionReaders: input.withInstructionReaders,
+    projectFor: input.projectFor, prepareExecutionMounts: input.prepareExecutionMounts,
+    createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
+    attachments: input.attachments, attachmentProjection: input.attachmentProjection }
     this.checkGraph = checkGraph
     this.unpublished = input.assertUnpublished
     this.assertInstalled()
@@ -164,6 +177,190 @@ export class CloudAccountFiles extends Service {
       })
     }
   }
+
+  /**
+   * Return this installed graph's original fixed private skill port; no model or raw-file entry is exposed.
+   * @returns The original bound port, rejecting when static storage or the native capability is absent.
+   */
+  skillVersions(): SkillVersionPort {
+    this.assertInstalled()
+    const prepare = this.providers.skillVersions
+    if (prepare === undefined) throw new FilesFailure('files/prerequisite-missing', 'Private skill storage is unavailable')
+    return prepare()
+  }
+
+  private skillBundlePort(): SkillBundlePort {
+    const port = this.skillVersions().bundles
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Managed skill bundles are unavailable.')
+    return port
+  }
+
+  /**
+   * Prepare a complete immutable tree through the original lane and reviewed helper.
+   * @param input Complete package files or archive bytes.
+   * @param signal Caller observation cancellation; actual work remains owned to settlement.
+   * @returns A files-issued version whose result remains retained through release.
+   */
+  prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>> {
+    return this.skillBundlePort().prepareBundle(input, signal)
+  }
+
+  /**
+   * Observe the complete single catalog; schema1 is projected without migration writes.
+   * @param signal Caller observation cancellation.
+   * @returns A complete issued observation retained through release.
+   */
+  observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>> {
+    return this.skillBundlePort().observeCatalog(signal)
+  }
+
+  /**
+   * CAS one installation in the original current.json, inside the caller's existing save observation.
+   * @param expected Exact catalog observation issued by this files generation.
+   * @param change One installation change using issued bundle authority.
+   * @param signal Caller observation cancellation; confirmed durable outcomes remain observable.
+   * @returns The confirmed catalog and affected entry, retained through release; unknown publication rejects without rollback.
+   */
+  commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>> {
+    return this.skillBundlePort().commitCatalog(expected, change, signal)
+  }
+
+  /**
+   * Borrow one issued complete source; the callback and its resident result retain the original borrow.
+   * @param version Exact issued source selected under the original save ordering.
+   * @param consume Consumes source methods while their operation lease remains active.
+   * @param signal Caller observation cancellation.
+   * @returns The consumed value with actual reservation and source retention held until release.
+   */
+  withBundleSource<T>(version: SkillBundleVersion,
+    consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>> {
+    return this.skillBundlePort().withBundleSource(version, consume, signal)
+  }
+
+  /**
+   * Export every member of the exact authorized version as a bounded ZIP.
+   * @param version Exact issued authorized source version.
+   * @param signal Actual export observation cancellation.
+   * @returns The complete owned archive, retained through release.
+   */
+  exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>> {
+    return this.skillBundlePort().exportBundle(version, signal)
+  }
+
+  /**
+   * Materialize the complete tree under the original issued project, preserving existing writable copies.
+   * @param project Original issued active project grant.
+   * @param version The exact operation-scoped source.version lease when called inside source consumption.
+   * @param signal Observation cancellation; actual copy work retains its original owner.
+   * @returns An issued complete working copy after confirmed publication and protected association CAS.
+   */
+  materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion,
+    signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>> {
+    return this.skillBundlePort().materializeBundleVersion(project, version, signal)
+  }
+
+  private skillProjectPort(): SkillProjectPort {
+    this.assertInstalled()
+    const port = this.providers.skillProjection
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Fixed skill projection is unavailable.')
+    return port()
+  }
+
+  /**
+   * Fix the actual skills parent before allocation, without creating any sandbox or binding an environment slot.
+   * @param project Exact installed/projectFor object after Root's actual native caller selection.
+   * @param signal Cancellation leaves all actual I/O with the original files lane.
+   * @returns Parent facts retained until the original allocation/export actual joins release the result.
+   */
+  async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>> {
+    const current = (): void => {
+      this.assertWorkspace(project.workspace)
+      if (!this.executionStorage.projects.has(project) || project.binding !== this.binding) {
+        throw new FilesFailure('cloud/stale-generation', 'Skill projection requires the original issued project.')
+      }
+    }
+    current()
+    return await this.skillProjectPort().prepareProject(project.workspace, current, signal)
+  }
+
+  /**
+   * Fully publish a fixed two-file version or reuse its protected association while preserving user edits.
+   * @param project Exact actively borrowed parent grant from this owner.
+   * @param version Exact original immutable version capability.
+   * @param signal Observer cancellation cannot settle running native work or ambiguous publication.
+   * @returns A complete current-project resource base and persistent issued copy handle; release ends this I/O result, not the copy.
+   */
+  materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal)
+    : Promise<ResidentResult<SkillWorkingCopyGrant>> {
+    return this.skillProjectPort().materialize(project, version, signal)
+  }
+
+  /**
+   * Borrow complete issued full-tree copies through actual operation settlement, independently of the parent lease.
+   * @param project Original active project grant.
+   * @param copies Exact issued same-project copies.
+   * @param signal Preparation observation cancellation.
+   * @returns The complete operation borrow retained through actual remote, local and physical settlement.
+   */
+  borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[],
+    signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>> {
+    return this.skillProjectPort().borrowBundles(project, copies, signal)
+  }
+
+  /**
+   * Derive the complete bounded persisted copy set, including legacy copies, and retain it for one operation.
+   * @param project Original active project grant.
+   * @param signal Preparation observation cancellation.
+   * @returns The complete confirmed operation set retained through release.
+   */
+  borrowAllBundleWorkingCopies(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>> {
+    return this.skillProjectPort().borrowBundles(project, undefined, signal)
+  }
+
+  /**
+   * Require the original unreleased full-tree operation result before granting execution access.
+   * @param value Exact original operation borrow.
+   */
+  assertBundleOperationCopies(value: SkillBundleOperationCopies): void { this.skillProjectPort().assertBundleBorrow(value) }
+
+  /**
+   * Revalidate protected associations and actual directories for each original operation before role issuance.
+   * @param project Original allocation parent grant still retained by its export/allocation.
+   * @param copies Exact issued same-project handles selected by the original trusted caller.
+   * @param signal Actual preparation cancellation; the result must survive any subsequent observer cancellation.
+   * @returns Bounded facts held through original whenEmpty+localSettled or joined physical-stop completion.
+   */
+  borrowSkillWorkingCopies(project: SkillProjectGrant, copies: readonly SkillWorkingCopyGrant[], signal: AbortSignal)
+    : Promise<ResidentResult<SkillOperationCopies>> {
+    return this.skillProjectPort().borrow(project, copies, signal)
+  }
+
+  /**
+   * Derive and borrow every confirmed copy for this project without an API/execution-owned membership cache.
+   * @param project Original active allocation parent capability.
+   * @param signal Preparation cancellation; actual work and the returned result retain original ownership.
+   * @returns The complete bounded set after actual association/source/directory checks; any unqualified version or excess rejects
+   * the whole set.
+   */
+  borrowAllSkillWorkingCopies(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillOperationCopies>> {
+    return this.skillProjectPort().borrowAll(project, signal)
+  }
+
+  /**
+   * Require an exact active parent result before Root captures export/allocation facts.
+   * @param grant Original issued capability from this owner.
+   */
+  assertSkillProjectGrant(grant: SkillProjectGrant): void { this.skillProjectPort().assertProject(grant) }
+  /**
+   * Require an exact current persistent copy handle; execution additionally needs a live operation borrow.
+   * @param grant Original issued capability from this owner.
+   */
+  assertSkillWorkingCopy(grant: SkillWorkingCopyGrant): void { this.skillProjectPort().assertCopy(grant) }
+  /**
+   * Require the original unreleased operation result before signing/using its fixed facts.
+   * @param grant Original issued capability from this owner.
+   */
+  assertSkillOperationCopies(grant: SkillOperationCopies): void { this.skillProjectPort().assertBorrow(grant) }
 
   /**
    * Select the single native provider constructor prepared for this graph.
@@ -191,9 +388,11 @@ export class CloudAccountFiles extends Service {
     workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal,
   ): Promise<ResidentResult<readonly StageFileResult[]>> {
     const port = this.providers.attachments, Store = this.attachmentProvider.Store
-    if (port === undefined || Store === undefined) throw new FilesFailure('files/prerequisite-missing', 'Account attachment staging is unavailable.')
+    if (port === undefined || Store === undefined) throw new FilesFailure('files/prerequisite-missing',
+      'Account attachment staging is unavailable.')
     const original = this.ctx.get('attachments')
-    if (!(original instanceof Store)) throw new FilesFailure('files/prerequisite-missing', 'The original native attachment store is unavailable.')
+    if (!(original instanceof Store)) throw new FilesFailure('files/prerequisite-missing',
+      'The original native attachment store is unavailable.')
     const current = (): void => {
       this.assertWorkspace(workspace)
       assertAuthorized()
@@ -251,7 +450,8 @@ export class CloudAccountFiles extends Service {
    */
   install(owner: Context): Promise<AccountFilesProject> {
     this.assertInstalled(owner)
-    if (owner.fiber.uid === 0) throw new FilesFailure('files/prerequisite-missing', 'Native files installation requires its account entry fiber.')
+    if (owner.fiber.uid === 0) throw new FilesFailure('files/prerequisite-missing',
+      'Native files installation requires its account entry fiber.')
     if (this.installation.work !== undefined) {
       if (this.installation.work.entry !== owner.fiber) {
         throw new FilesFailure('files/prerequisite-missing', 'The account files owner already has its installation fiber.')
@@ -275,7 +475,8 @@ export class CloudAccountFiles extends Service {
   project(): AccountFilesProject {
     this.assertInstalled()
     const work = this.installation.work
-    if (work?.project === undefined) throw new FilesFailure('files/prerequisite-missing', 'Native account files installation has not completed.')
+    if (work?.project === undefined) throw new FilesFailure('files/prerequisite-missing',
+      'Native account files installation has not completed.')
     this.assertProviders(work)
     this.assertWorkspace(work.project.workspace)
     return work.project
@@ -392,10 +593,12 @@ export class CloudAccountFiles extends Service {
     use.assertCurrent()
     if (use.binding !== this.binding) throw new FilesFailure('cloud/stale-generation', 'Project creation needs the original ready borrow.')
     const work = this.installation.work, create = this.providers.createProject
-    if (work === undefined || create === undefined) throw new FilesFailure('files/prerequisite-missing', 'Ready project creation is unavailable.')
+    if (work === undefined || create === undefined) throw new FilesFailure('files/prerequisite-missing',
+      'Ready project creation is unavailable.')
     this.assertProviders(work)
     const registry = work.entry.ctx.get('workspaceRegistry')
-    if (!(registry instanceof this.providers.Registry)) throw new FilesFailure('files/prerequisite-missing', 'The original Registry is unavailable.')
+    if (!(registry instanceof this.providers.Registry)) throw new FilesFailure('files/prerequisite-missing',
+      'The original Registry is unavailable.')
     const result = await create(registry, use, title, signal)
     use.assertCurrent()
     this.assertWorkspace(result)
@@ -442,7 +645,8 @@ export class CloudAccountFiles extends Service {
     this.unpublished()
     this.assertRegistry(work)
     const registry = owner.get('workspaceRegistry')
-    if (!(registry instanceof this.providers.Registry)) throw new FilesFailure('files/prerequisite-missing', 'The native files Registry is absent.')
+    if (!(registry instanceof this.providers.Registry)) throw new FilesFailure('files/prerequisite-missing',
+      'The native files Registry is absent.')
     const scope = await registry.createS2Project()
     this.assertInstalled(owner)
     this.unpublished()

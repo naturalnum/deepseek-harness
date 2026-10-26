@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
-import { FsVersion } from '@deepseek-ai/dsh-fs'
+import { FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import SessionStore from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
@@ -16,6 +16,7 @@ import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { createTextProjectFileSystem } from '../src/text-project.ts'
 import { LinuxFilesPool } from '../src/worker-pool.ts'
 import type { AccountFileSelection } from '../src/text-project.ts'
 import type { FdContentLimits, FdWorkerInput } from '../src/worker-protocol.ts'
@@ -506,4 +507,221 @@ it('retains a cancelled listing reservation until its actual worker reply and cl
   expect(test.pool.inspect().work).toMatchObject({ running: 1, pending: 1, residentBytes: retained })
   test.release()
   await vi.waitFor(() => { expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 }) })
+})
+
+
+/** TEST ONLY trusted selection; production Runtime owns the identity and caller assertion. */
+function directoryPreparation(test: Awaited<ReturnType<typeof fixture>>, caller = test.graph) {
+  let active = true
+  const directoryPreparation = Object.freeze({ assertCaller(actual: Context): void {
+    if (actual.fiber !== caller.fiber) throw new Error('preparation caller differs')
+  } })
+  const scope: AccountFileSelection = { workspace: test.workspace, directoryPreparation,
+    assertCurrent: () => { if (!active) throw new Error('preparation revoked') } }
+  return { scope, revoke: () => { active = false } }
+}
+
+/** Observe original fixture transport submissions; no replacement backend or private filesystem reader. */
+function submissions(test: Awaited<ReturnType<typeof fixture>>) {
+  const spies = test.workers.map(worker => vi.spyOn(worker, 'postMessage'))
+  return () => spies.reduce((sum, spy) => sum + spy.mock.calls.length, 0)
+}
+
+/** Hold one original transport message so authority can end before its genuine reply arrives. */
+function holdSubmission(test: Awaited<ReturnType<typeof fixture>>) {
+  const entered = Promise.withResolvers<undefined>()
+  let held: (() => void) | undefined, armed = true
+  for (const worker of test.workers) {
+    const send = worker.postMessage.bind(worker)
+    vi.spyOn(worker, 'postMessage').mockImplementation((...args: Parameters<Worker['postMessage']>) => {
+      if (armed) {
+        armed = false
+        held = () => { send(...args) }
+        entered.resolve(undefined)
+      } else send(...args)
+    })
+  }
+  const release = (): void => { const send = held; held = undefined; send?.() }
+  onTestFinished(release)
+  return { entered: entered.promise, release }
+}
+
+it('permits one exact preparation root resolve, directory stat and processPath, then retires every old target', async () => {
+  const test = await fixture(), { scope } = directoryPreparation(test)
+  const target = await test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project }))
+  const count = submissions(test)
+  expect(await test.selected(scope, () => test.fs.stat(target))).toMatchObject({ type: 'directory' })
+  expect(count()).toBe(1)
+  expect(test.fs.processPath(target)).toBe(test.project)
+  expect(() => test.fs.processPath(target)).toThrow()
+  await expect(test.selected(scope, () => test.fs.stat(target))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project })))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(count()).toBe(1)
+})
+
+it.each(['relative', 'subpath', 'alias', 'trailing', 'outside', 'wrong-cwd', 'missing-cwd'])
+('rejects preparation %s before any worker submission and does not allow retry', async (kind) => {
+  const test = await fixture(), { scope } = directoryPreparation(test), count = submissions(test)
+  const path = kind === 'relative' ? '.' : kind === 'subpath' ? join(test.project, 'child')
+    : kind === 'alias' ? test.project + '/.' : kind === 'trailing' ? test.project + '/'
+      : kind === 'outside' ? test.project + '-other' : test.project
+  const opts = kind === 'missing-cwd' ? undefined : { cwd: kind === 'wrong-cwd' ? '/' : test.project }
+  await expect(test.selected(scope, () => test.fs.resolve(path, opts))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project })))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(count()).toBe(0)
+})
+
+it.each(['resolve', 'stat'])('rejects an extra concurrent preparation %s and its already pending operation', async (kind) => {
+  const test = await fixture(), { scope } = directoryPreparation(test)
+  const target = kind === 'stat' ? await test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project })) : undefined
+  const held = holdSubmission(test)
+  const run = () => test.selected(scope, () => target === undefined
+    ? test.fs.resolve(test.project, { cwd: test.project }) : test.fs.stat(target))
+  const first = run(), rejected = expect(first).rejects.toMatchObject(kind === 'resolve'
+    ? { cause: { code: 'FS_PERMISSION_DENIED' } } : { code: 'FS_PERMISSION_DENIED' })
+  await held.entered
+  await expect(run()).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  held.release()
+  await rejected
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+})
+
+it.each(['resolve', 'stat'])('rejects cancelled preparation %s even when its original I/O replies late', async (kind) => {
+  const test = await fixture(), { scope } = directoryPreparation(test), cancel = new AbortController()
+  const target = kind === 'stat' ? await test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project })) : undefined
+  const held = holdSubmission(test)
+  const pending = test.selected(scope, () => target === undefined
+    ? test.fs.resolve(test.project, { cwd: test.project, signal: cancel.signal }) : test.fs.stat(target, cancel.signal))
+  const rejected = expect(pending).rejects.toBeDefined()
+  await held.entered
+  cancel.abort(new Error('preparation cancelled'))
+  held.release()
+  await rejected
+  await expect.poll(() => test.pool.inspect().work.pending).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: 0 })
+  await expect(test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project })))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  if (target !== undefined) expect(() => test.fs.processPath(target)).toThrow()
+})
+
+it.each(['resolve', 'stat'])('rejects revoked preparation %s after late original I/O without retaining its result', async (kind) => {
+  const test = await fixture(), grant = directoryPreparation(test)
+  const target = kind === 'stat' ? await test.selected(grant.scope, () => test.fs.resolve(test.project, { cwd: test.project })) : undefined
+  const held = holdSubmission(test)
+  const pending = test.selected(grant.scope, () => target === undefined
+    ? test.fs.resolve(test.project, { cwd: test.project }) : test.fs.stat(target))
+  const rejected = kind === 'resolve'
+    ? expect(pending).rejects.toMatchObject({ cause: { message: 'preparation revoked' } })
+    : expect(pending).rejects.toThrow('preparation revoked')
+  await held.entered
+  grant.revoke()
+  held.release()
+  await rejected
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+  if (target !== undefined) expect(() => test.fs.processPath(target)).toThrow('preparation revoked')
+})
+
+it('requires the original target and same preparation identity from a fresh selector', async () => {
+  const test = await fixture(), a = directoryPreparation(test), b = directoryPreparation(test)
+  const ordinary = await test.fs.resolve('.')
+  const target = await test.selected(a.scope, () => test.fs.resolve(test.project, { cwd: test.project }))
+  const count = submissions(test)
+  await expect(test.selected(a.scope, () => test.fs.stat({ ...target }))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.selected(a.scope, () => test.fs.stat(ordinary))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.selected(b.scope, () => test.fs.stat(target))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.stat(target)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(count()).toBe(0)
+})
+
+it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'listDir', 'lstat', 'editText', 'watch', 'fileUrl', 'contains', 'early-processPath'])
+('denies preparation %s without worker I/O', async (method) => {
+  const test = await fixture('normal', 8, 3000, contentLimits), { scope } = directoryPreparation(test)
+  const target = await test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project }))
+  const count = submissions(test)
+  const action = async (): Promise<unknown> => {
+    if (method === 'readText') return test.fs.readText(target)
+    if (method === 'streamText') return test.fs.streamText(target)
+    if (method === 'writeText') return test.fs.writeText(target, 'forbidden')
+    if (method === 'readBytes') return test.fs.readBytes(target, undefined, 1)
+    if (method === 'readByteRange') return test.fs.readByteRange(target, { offset: 0, length: 1 })
+    if (method === 'listDir') return test.fs.listDir(target)
+    if (method === 'lstat') return test.fs.lstat(test.project, { cwd: test.project })
+    if (method === 'editText') return test.fs.editText(target, { oldString: 'old', newString: 'new', replaceAll: false })
+    if (method === 'watch') return test.fs.watch(target, () => {}, new AbortController().signal)
+    if (method === 'fileUrl') return test.fs.fileUrl(target)
+    if (method === 'contains') return test.fs.contains(target, target)
+    return test.fs.processPath(target)
+  }
+  await expect(test.selected(scope, action)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(count()).toBe(0)
+})
+
+it('checks the real contextualized caller on async selection and every synchronous preparation target use', async () => {
+  const test = await fixture()
+  let child: Context | undefined
+  await test.graph.plugin({ inject: ['fs'], apply: (ctx: Context) => { child = ctx } })
+  if (child === undefined) throw new Error('child caller did not mount')
+  const actor = child, { scope } = directoryPreparation(test, actor)
+  await expect(test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project })))
+    .rejects.toThrow('preparation caller differs')
+  const fresh = directoryPreparation(test, actor)
+  const target: FsTarget = await test.selected(fresh.scope, () => actor.fs.resolve(test.project, { cwd: test.project }))
+  await test.selected(fresh.scope, () => actor.fs.stat(target))
+  expect(() => test.fs.processPath(target)).toThrow('preparation caller differs')
+  expect(actor.fs.processPath(target)).toBe(test.project)
+})
+
+
+it.each(['directory', 'file', 'missing'] as const)
+('preserves the original reader %s result during preparation stat without mapping it to other', async (kind) => {
+  const test = await fixture(), { scope } = directoryPreparation(test)
+  await test.fiber.dispose()
+  const readerTarget = Object.freeze({ targetKey: FsTargetKey('test-only-reader'), displayPath: '.' })
+  const info = kind === 'missing' ? undefined : { type: kind, version: FsVersion('test-only-version') }
+  const stat = vi.fn(async () => info)
+  const denied = async (): Promise<never> => { throw new Error('unexpected content backend access') }
+  const Constructor = createTextProjectFileSystem({
+    binding: test.binding, bootstrapWorkspace: test.workspace, assertCurrent: () => {}, assertInstalled: () => {},
+    resolveProject: async () => scope,
+    project: async (_workspace, check) => {
+      check()
+      return { binding: test.binding, workspace: test.workspace, maxPathBytes: 1024,
+        assertCurrent: check, assertInstalled: () => {}, canonicalPath: async () => test.project,
+        reader: { resolve: async () => readerTarget, stat, processPath: () => test.project, streamText: denied },
+        readText: denied, lstat: denied, listDir: denied, readBytes: denied, readByteRange: denied, writeText: denied }
+    },
+  })
+  await test.graph.plugin(Constructor)
+  const target = await test.graph.fs.resolve(test.project, { cwd: test.project })
+  expect(await test.graph.fs.stat(target)).toBe(info)
+  expect(stat).toHaveBeenCalledExactlyOnceWith(readerTarget, undefined)
+  if (kind === 'directory') expect(test.graph.fs.processPath(target)).toBe(test.project)
+  else expect(() => test.graph.fs.processPath(target)).toThrow()
+})
+
+
+it.each(['resolve', 'stat'])('retires preparation after a repeated completed %s before processPath', async (kind) => {
+  const test = await fixture(), { scope } = directoryPreparation(test)
+  const target = await test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project }))
+  if (kind === 'stat') await test.selected(scope, () => test.fs.stat(target))
+  const count = submissions(test)
+  await expect(test.selected(scope, () => kind === 'resolve'
+    ? test.fs.resolve(test.project, { cwd: test.project }) : test.fs.stat(target)))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(() => test.fs.processPath(target)).toThrow()
+  expect(count()).toBe(0)
+})
+
+it.each(['resolve', 'stat'])('retains the completed preparation %s signal through synchronous target use', async (kind) => {
+  const test = await fixture(), { scope } = directoryPreparation(test), cancel = new AbortController()
+  const target = await test.selected(scope, () => test.fs.resolve(test.project,
+    { cwd: test.project, ...kind === 'resolve' ? { signal: cancel.signal } : {} }))
+  await test.selected(scope, () => test.fs.stat(target, kind === 'stat' ? cancel.signal : undefined))
+  const count = submissions(test)
+  cancel.abort(new Error('completed preparation cancelled'))
+  expect(() => test.fs.processPath(target)).toThrow()
+  await expect(test.selected(scope, () => test.fs.stat(target))).rejects.toBeDefined()
+  expect(count()).toBe(0)
 })

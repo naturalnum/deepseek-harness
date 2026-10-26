@@ -84,7 +84,7 @@ describe('operator connect through Loader composition', () => {
     await vi.waitFor(() => { expect(call(host, 'follow').finished).toBe(true) })
   })
 
-  it('reports failed Operator release without retaining its credential or blocking shutdown', async () => {
+  it('reports retained Operator release failure at shutdown after revoking its credential', async () => {
     const host = await boot()
     const cookie = await exchange(host, 'none')
     await success(host, cookie, 'fixture/identity', { label: 'release-failure' })
@@ -95,20 +95,27 @@ describe('operator connect through Loader composition', () => {
       await dispose()
       throw failure
     })
-    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const observer = new Context()
+    observer.logger = host.ctx.logger
+    const errors: unknown[] = []
+    observer.logger.exporter({ levels: { default: 0 }, export(message) {
+      if (message.type === 'error') {
+        const args: readonly unknown[] = message.args
+        errors.push(...args.slice(0, 8 - errors.length))
+      }
+    } })
     try {
       await close(await mux(host, cookie))
-      await vi.waitFor(() => {
-        expect(report).toHaveBeenCalledWith('[api-gateway] Peer release failed:', failure)
-      })
+      await vi.waitFor(() => { expect(disposing).toHaveBeenCalledOnce() })
       expect((await rpc(host, cookie, 'fixture/identity', { label: 'refused' })).status).toBe(401)
       expect(host.fixture.calls.has('refused')).toBe(false)
       expect(host.fixture.effects.size).toBe(0)
       await host.ctx.fiber.dispose()
+      expect(errors).toContain(failure)
       expect(disposing).toHaveBeenCalledOnce()
     } finally {
       disposing.mockRestore()
-      report.mockRestore()
+      await observer.fiber.dispose()
     }
   })
 

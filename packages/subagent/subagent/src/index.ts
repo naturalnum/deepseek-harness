@@ -54,6 +54,8 @@ import type {
 import type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
+  SubagentAdmission,
+  SubagentAdmissionRequest,
   SubagentCapabilities,
   SubagentActivation,
   SubagentActivationSpec,
@@ -63,6 +65,8 @@ import type {
   SubagentRunInfo,
   SubagentSendMessageOptions,
   SubagentStartRequest,
+  ResolvedSubagentStartRequest,
+  SubagentRun,
 } from './types.ts'
 import { SubagentError } from './error.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
@@ -84,6 +88,8 @@ export { SubagentRunId } from './types.ts'
 export type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
+  SubagentAdmission,
+  SubagentAdmissionRequest,
   SubagentCapabilities,
   SubagentActivation,
   SubagentActivationSpec,
@@ -197,7 +203,8 @@ export class SubagentRuntime extends TypertRemoteService {
     maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8).volatile(),
   })
   static inject = ['workingDirectory']
-  private providers = new Map<string, SubagentProvider>()
+  private providers = new Map<string, { readonly provider: SubagentProvider }>()
+  private readonly admissions = new Set<{ readonly check: SubagentAdmission; readonly owner: Context }>()
   private manager: SubagentManager | undefined
   /**
    * The contained lifecycle-edge publisher. Built here because scoped dispatch
@@ -211,11 +218,8 @@ export class SubagentRuntime extends TypertRemoteService {
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentManager(childCtx, {
-        startExternal: (name, request) => {
-          const provider = this.expectProvider(name) as SubagentProvider & Required<Pick<SubagentProvider, 'start'>>
-          return provider.start(request)
-        },
-        prepareContinuable: (name, request) => this.prepareContinuable(name, request),
+        start: (spec, owner, current) => this.startDispatch(spec, owner, current),
+        resume: (request, current) => this.resumeAdmission(request, current),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
       }, () => this.config.maxActiveSubagents.get())
       this.manager = manager
@@ -554,7 +558,7 @@ export class SubagentRuntime extends TypertRemoteService {
       if (this.providers.has(name)) {
         throw new SubagentError(`a subagent provider named "${name}" is already registered`, 'DUPLICATE_PROVIDER')
       }
-      this.providers.set(name, provider)
+      this.providers.set(name, { provider })
       yield () => {
         this.providers.delete(name)
         this.emitLifecycle('subagent/provider-removed', name)
@@ -571,7 +575,7 @@ export class SubagentRuntime extends TypertRemoteService {
    * @returns the provider, or undefined when absent.
    */
   getProvider(name: string): SubagentProvider | undefined {
-    return this.providers.get(name)
+    return this.providers.get(name)?.provider
   }
 
   /**
@@ -583,25 +587,98 @@ export class SubagentRuntime extends TypertRemoteService {
   }
 
   /**
-   * Resolve one provider's detached continuable-creation contribution. Method
-   * presence on the provider IS the capability, so a provider without it is
-   * rejected before the manager reserves any child resources.
+   * Add a check owned by the calling fiber, in registration order.
+   * Withdrawal or replacement invalidates waiting operations before dispatch.
+   * Already dispatched provider work remains owned by the activation manager.
+   * @param check - trusted check of original provider/start or cold-resume facts.
+   * @returns the original effect disposer; a retired invocation may return void.
    */
-  private async prepareContinuable(
-    name: string,
-    request: ContinuableCreateRequest,
-  ): Promise<ContinuableCreateSpec> {
-    const provider = this.expectProvider(name) as SubagentProvider & Required<Pick<SubagentProvider, 'prepareContinuable'>>
-    return provider.prepareContinuable(request)
+  registerAdmission(check: SubagentAdmission): () => void | Promise<void> {
+    const record = { check, owner: this.ctx }
+    return this.ctx.effect(() => {
+      this.admissions.add(record)
+      return () => { this.admissions.delete(record) }
+    }, 'subagents.registerAdmission()')
+  }
+
+  private captureAdmission(owner: Context, parent: Agent, signal: AbortSignal, name: string, assertAdmitting: () => void): {
+    assertCurrent(this: void): void
+    check(this: void, request: SubagentAdmissionRequest): void | Promise<void>
+  } {
+    const registration = this.providers.get(name)
+    const checks = [...this.admissions]
+    const assertCurrent = (): void => {
+      if (checks.length !== this.admissions.size || checks.some(row => !this.admissions.has(row))) {
+        throw new SubagentError('subagent admission registration changed before dispatch', 'ADMISSION_REVOKED')
+      }
+      if (checks.length === 0) return
+      assertAdmitting()
+      signal.throwIfAborted()
+      owner.fiber.assertActive()
+      for (const row of checks) row.owner.fiber.assertActive()
+      if (this.providers.get(name) !== registration) {
+        throw new SubagentError('subagent provider registration changed before dispatch', 'ADMISSION_REVOKED')
+      }
+      if (this.ctx.get('agents')?.get(parent.id) !== parent) {
+        throw new SubagentError('subagent admission requires the exact live parent agent', 'UNAUTHORIZED')
+      }
+    }
+    return {
+      assertCurrent,
+      check: checks.length === 0
+        ? (_request: SubagentAdmissionRequest): void => { assertCurrent() }
+        : async (request: SubagentAdmissionRequest): Promise<void> => {
+          assertCurrent()
+          for (const row of checks) {
+            await row.check(request)
+            assertCurrent()
+          }
+        },
+    }
+  }
+
+  private startDispatch(spec: SubagentActivationSpec, owner: Context, assertAdmitting: () => void) {
+    const registration = this.providers.get(spec.provider)
+    const provider = this.expectProvider(spec.provider)
+    const admission = this.captureAdmission(owner, spec.request.parent, spec.signal, spec.provider, assertAdmitting)
+    const selected = (): SubagentProvider => {
+      admission.assertCurrent()
+      // With no contributions the original late provider lookup is unchanged.
+      return registration === this.providers.get(spec.provider) ? provider : this.expectProvider(spec.provider)
+    }
+    return {
+      assertCurrent: admission.assertCurrent,
+      prepare: async (request: ContinuableCreateRequest): Promise<ContinuableCreateSpec> => {
+        const pending = admission.check({ kind: 'start', owner, provider, spec, cwd: request.cwd })
+        if (pending !== undefined) { await pending; request.signal.throwIfAborted() }
+        const actual = selected() as SubagentProvider & Required<Pick<SubagentProvider, 'prepareContinuable'>>
+        return actual.prepareContinuable(request)
+      },
+      start: async (request: ResolvedSubagentStartRequest): Promise<SubagentRun> => {
+        const pending = admission.check({ kind: 'start', owner, provider, spec, cwd: request.cwd })
+        if (pending !== undefined) { await pending; request.signal.throwIfAborted() }
+        const actual = selected() as SubagentProvider & Required<Pick<SubagentProvider, 'start'>>
+        return actual.start(request)
+      },
+    }
+  }
+
+  private resumeAdmission(request: Omit<Extract<SubagentAdmissionRequest, { kind: 'resume' }>, 'kind' | 'provider'>, assertAdmitting: () => void) {
+    const facts: SubagentAdmissionRequest = { ...request, kind: 'resume', provider: this.providers.get(request.providerName)?.provider }
+    const admission = this.captureAdmission(request.owner, request.parent, request.signal, request.providerName, assertAdmitting)
+    return { assertCurrent: admission.assertCurrent, check: () => {
+      const pending = admission.check(facts)
+      if (pending !== undefined) return pending
+    } }
   }
 
   /** Look up a provider for dispatch or fail loud. */
   private expectProvider(name: string): SubagentProvider {
-    const provider = this.providers.get(name)
-    if (provider === undefined) {
+    const registration = this.providers.get(name)
+    if (registration === undefined) {
       throw new SubagentError(`no subagent provider registered for "${name}"`, 'NO_PROVIDER')
     }
-    return provider
+    return registration.provider
   }
 
   /** Resolve the subagent manager or fail loud. */

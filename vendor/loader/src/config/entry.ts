@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Inject, resolveConfig } from '@deepseek-ai/cordis'
+import { Context, Fiber, FiberState, Inject, resolveConfig, type Plugin } from '@deepseek-ai/cordis'
 import { deepEqual, isNullable, isVolatile, updateVolatile, volatileEntries, type Volatile } from '@deepseek-ai/cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
@@ -21,6 +21,11 @@ export interface EntryConfigUpdatePlan {
 }
 
 interface ConfigPlanState {
+  coldNamespace?: unknown
+  kind?: 'options' | 'passive'
+  nextOptions?: EntryOptions
+  maximum?: number
+  topology?: ReturnType<Entry['_optionsTopology']>
   version: number
   options: EntryOptions
   next: unknown
@@ -29,7 +34,7 @@ interface ConfigPlanState {
   effective: unknown
   parent: object | null
   schema: unknown
-  runtime: Fiber['runtime']
+  runtime: Fiber['runtime'] | undefined
   moduleNamespace: unknown
 }
 
@@ -100,6 +105,15 @@ export class Entry {
   _initTask?: Promise<void>
   private configVersion = 0
   private readonly configPlans = new WeakMap<EntryConfigUpdatePlan, ConfigPlanState>()
+  private optionsDisposal: Fiber | undefined
+
+  /** Identify the exact disposal already owned by a prepared native update.
+   * @param fiber Actual disposing fiber from the registry event.
+   * @returns Whether its options/persistence are already controlled by this guarded update.
+   */
+  ownsPreparedDisposal(fiber: Fiber): boolean {
+    return this.optionsDisposal === fiber && this.loader.updateGuard !== undefined
+  }
 
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
@@ -173,11 +187,29 @@ export class Entry {
       this.assertConfigUpdatePlan(planned)
       const state = this.configPlans.get(planned)!
       const proposed = create ? options : { ...this.options, ...options }
-      if (!deepEqual(proposed, { ...state.options, config: state.next }, true)) {
+      if (!deepEqual(proposed, state.nextOptions ?? { ...state.options, config: state.next }, true)) {
         throw new Error('Loader config commit differs from its prepared options')
       }
       this.configPlans.delete(planned)
-      this.configVersion++
+      if (state.kind === 'options' && planned.impact === 'remount') {
+        this.configVersion++
+        this.optionsDisposal = this.fiber
+        try { await this.fiber?.dispose() } finally { this.optionsDisposal = undefined }
+        this.options = proposed as EntryOptions
+        sortKeys(this.options)
+        if (this.disabled) return
+        this.fiber = undefined
+        await this.init()
+        const active = (this as Entry).fiber
+        await active?.await()
+        if (active?.state !== FiberState.ACTIVE || this.moduleNamespace !== (state.coldNamespace ?? state.moduleNamespace)
+          || !deepEqual(configSnapshot(active.config), state.effective, true)) {
+          throw new Error('Loader plugin update did not activate its prepared module and config')
+        }
+        return
+      }
+      // A checked no-op consumes only this plan; unchanged rows retain other native audit plans.
+      if (planned.impact === 'live') this.configVersion++
       if (create) this.options = options as EntryOptions
       else this.options.config = options.config
       sortKeys(this.options)
@@ -253,6 +285,14 @@ export class Entry {
       const proposed = { ...this.options, config: next }
       const changes = optionChanges(this.options, proposed)
       const detachedNext = configSnapshot(next)
+      if (changes.length === 0 && this.options.disabled === true && !this.subgroup && !this.subtree) {
+        const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber, version: this.configVersion,
+          impact: 'none', stopped: Object.freeze([]) })
+        this.configPlans.set(plan, { kind: 'passive', version: this.configVersion, options, next: detachedNext,
+          before: undefined, candidate: undefined, effective: undefined, parent: Object.getPrototypeOf(this.ctx),
+          schema: undefined, runtime: fiber?.runtime, moduleNamespace: this.moduleNamespace })
+        return plan
+      }
       if (!fiber?.uid || fiber.state !== FiberState.ACTIVE || this.disabled
         || Object.getPrototypeOf(this.ctx) !== this.parent.ctx || this.subgroup || this.subtree) throw new Error('Unproven entry state')
       const before = configSnapshot(fiber.config)
@@ -292,18 +332,141 @@ export class Entry {
    */
   assertConfigUpdatePlan(plan: EntryConfigUpdatePlan): void {
     const state = this.configPlans.get(plan)
-    if (state === undefined || (plan.impact !== 'live' && plan.impact !== 'none')) throw new Error('Loader config impact is unproven')
+    if (state === undefined || (plan.impact !== 'live' && plan.impact !== 'none'
+      && !(state.kind === 'options' && plan.impact === 'remount'))) throw new Error('Loader config impact is unproven')
     if (state.version !== this.configVersion || plan.fiber !== this.fiber || state.parent !== Object.getPrototypeOf(this.ctx)
       || state.runtime !== this.fiber?.runtime || state.moduleNamespace !== this.moduleNamespace
-      || !deepEqual(state.options, this.options, true) || !deepEqual(state.before, configSnapshot(this.fiber!.config), true)) {
+      || !deepEqual(state.options, this.options, true)
+      || (state.kind !== 'passive' && !deepEqual(state.before, configSnapshot(this.fiber?.config), true))) {
       throw new Error('Loader config plan is stale')
     }
-    const fresh = this.prepareConfigUpdate(state.next)
+    const fresh = state.kind === 'options' ? state.coldNamespace === undefined
+      ? this.prepareOptionsUpdate(state.nextOptions!, state.maximum!)
+      : this.prepareColdOptionsUpdate(state.nextOptions!, state.maximum!, state.coldNamespace)
+      : this.prepareConfigUpdate(state.next)
     const checked = this.configPlans.get(fresh)
     if (fresh.impact !== plan.impact || checked === undefined || !deepEqual(state.effective, checked.effective, true)
       || !deepEqual(state.schema, checked.schema, true) || !deepEqual(plan.stopped, fresh.stopped, true)) {
       throw new Error('Loader config plan effective values drifted')
     }
+    if (state.topology !== undefined) {
+      const current = this._optionsTopology(state.maximum!)
+      if (current.length !== state.topology.length || current.some((row, index) => {
+        const prior = state.topology![index]!
+        return row.fiber !== prior.fiber || row.parent !== prior.parent || row.runtime !== prior.runtime
+          || row.state !== prior.state || row.uid !== prior.uid || row.dependencies.length !== prior.dependencies.length
+          || row.dependencies.some((impl, i) => impl !== prior.dependencies[i])
+      })) throw new Error('Loader plugin dependency graph is stale')
+    }
+  }
+
+  /** Snapshot the actual registry and reject a leaf whose stop could affect another fiber.
+   * @param maximum Explicit registry visit bound.
+   * @returns Original fiber/dependency identities; no caller-supplied stop list is trusted.
+   */
+  _optionsTopology(maximum: number) {
+    if (!Number.isSafeInteger(maximum) || maximum < 1) throw new Error('Loader plugin plan requires a finite registry bound')
+    const rows: { fiber: Fiber; parent: Fiber; runtime: Fiber['runtime']; state: FiberState;
+      uid: Fiber['uid']; dependencies: unknown[] }[] = []
+    let visited = 0
+    for (const runtime of this.ctx.registry.values()) {
+      if (++visited > maximum) throw new Error('Loader plugin registry exceeds its plan bound')
+      for (const fiber of runtime.fibers) {
+        if (++visited > maximum) throw new Error('Loader plugin registry exceeds its plan bound')
+        const dependencies = Object.values(fiber.store ?? {})
+        if (fiber !== this.fiber) {
+          if (dependencies.some(impl => impl.fiber === this.fiber)) throw new Error('Loader plugin has a dependent service consumer')
+          let parent = fiber.parent.fiber
+          for (let i = 0; parent !== parent.parent.fiber; i++) {
+            if (i >= maximum || parent === this.fiber) throw new Error('Loader plugin has an unproven child stop closure')
+            parent = parent.parent.fiber
+          }
+        }
+        rows.push({ fiber, parent: fiber.parent.fiber, runtime: fiber.runtime, state: fiber.state, uid: fiber.uid, dependencies })
+      }
+    }
+    return rows
+  }
+
+  /** Prepare a config/enablement change for one already-loaded native leaf module.
+   * Other options, descendants, service dependents, unresolved schemas and never-loaded disabled modules reject.
+   * @param next Complete proposed row from the native Include composer.
+   * @param maximum Explicit bound for the complete original registry snapshot.
+   * @returns An opaque native plan with an exact stop list, or an unknown decision.
+   */
+  prepareOptionsUpdate(next: EntryOptions, maximum: number): EntryConfigUpdatePlan {
+    const fiber = this.fiber
+    let state: ConfigPlanState | undefined
+    let impact: EntryConfigUpdatePlan['impact'] = 'unknown'
+    let stopped: readonly Fiber[] | undefined
+    try {
+      if (!fiber || !this.moduleNamespace || this.subgroup || this.subtree
+        || Object.getPrototypeOf(this.ctx) !== this.parent.ctx
+        || ![FiberState.ACTIVE, FiberState.DISPOSED].includes(fiber.state)
+        || (this.options.disabled !== undefined && typeof this.options.disabled !== 'boolean')
+        || (next.disabled !== undefined && typeof next.disabled !== 'boolean')
+        || !deepEqual({ ...this.options, config: undefined, disabled: undefined },
+          { ...next, config: undefined, disabled: undefined }, true)) throw new Error('Unproven plugin options')
+      this.assertConfigUpdateSupported()
+      const topology = this._optionsTopology(maximum)
+      const candidate = this._resolveVolatile(fiber, next.config)
+      const unchanged = optionChanges(this.options, next).length === 0
+      impact = unchanged ? 'none' : 'remount'
+      stopped = Object.freeze(!unchanged && fiber.state === FiberState.ACTIVE ? [fiber] : [])
+      state = { kind: 'options', version: this.configVersion, options: structuredClone(this.options),
+        next: configSnapshot(next.config), nextOptions: structuredClone(next), before: configSnapshot(fiber.config),
+        candidate, effective: configSnapshot(candidate), parent: Object.getPrototypeOf(this.ctx),
+        schema: configSchemaSnapshot(fiber.runtime?.Config), runtime: fiber.runtime, moduleNamespace: this.moduleNamespace,
+        maximum, topology }
+    } catch (error) { void error }
+    const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber, version: this.configVersion, impact, stopped })
+    if (state !== undefined) this.configPlans.set(plan, state)
+    return plan
+  }
+
+  /** Load only the original entry's preinstalled code for a never-active disabled leaf, without creating a fiber.
+   * @param next Native composed row; package names and all structural options remain unchanged.
+   * @param maximum Explicit original registry visit bound.
+   * @returns Native plan after the original importer settles; caller rechecks its request/window before persistence.
+   */
+  async prepareModuleOptionsUpdate(next: EntryOptions, maximum: number): Promise<EntryConfigUpdatePlan> {
+    if (this.fiber !== undefined || this.moduleNamespace !== undefined) return this.prepareOptionsUpdate(next, maximum)
+    const namespace: unknown = await this.parent.tree.import(this.options.name)
+    return this.prepareColdOptionsUpdate(next, maximum, namespace)
+  }
+
+  private prepareColdOptionsUpdate(next: EntryOptions, maximum: number, namespace: unknown): EntryConfigUpdatePlan {
+    let impact: EntryConfigUpdatePlan['impact'] = 'unknown'
+    let state: ConfigPlanState | undefined
+    let stopped: readonly Fiber[] | undefined
+    const numericRaw = (value: unknown): boolean => value === undefined || value === null || typeof value === 'boolean'
+      || typeof value === 'number' && Number.isFinite(value) || Array.isArray(value) && value.every(numericRaw)
+      || typeof value === 'object' && !Array.isArray(value) && value !== null
+        && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+        && Object.values(value).every(numericRaw)
+    try {
+      if (this.fiber !== undefined || this.moduleNamespace !== undefined || this.options.disabled !== true
+        || this.options.inject != null || this.subgroup || this.subtree || Object.getPrototypeOf(this.ctx) !== this.parent.ctx
+        || (next.disabled !== undefined && typeof next.disabled !== 'boolean')
+        || !deepEqual({ ...this.options, config: undefined, disabled: undefined }, { ...next, config: undefined, disabled: undefined }, true)
+        || !numericRaw(next.config)) throw new Error('Unproven cold plugin options')
+      const plugin: Plugin = this.loader.unwrapExports(namespace)
+      if (this.ctx.registry.resolve(plugin) === undefined || plugin.provide != null
+        || Object.keys(Inject.resolve(plugin.inject)).length !== 0 || !deterministicConfigSchema(plugin.Config)
+        || this.ctx.events.dispatch('waterfall', [this.ctx.fiber, 'internal/config', undefined, () => undefined]).length !== 1) {
+        throw new Error('Unproven cold plugin dependencies or config resolver')
+      }
+      const topology = this._optionsTopology(maximum), candidate = resolveConfig(plugin, next.config)
+      impact = optionChanges(this.options, next).length === 0 ? 'none' : 'remount'
+      stopped = Object.freeze([])
+      state = { kind: 'options', coldNamespace: namespace, version: this.configVersion, options: structuredClone(this.options),
+        next: configSnapshot(next.config), nextOptions: structuredClone(next), before: undefined, candidate,
+        effective: configSnapshot(candidate), parent: Object.getPrototypeOf(this.ctx), schema: configSchemaSnapshot(plugin.Config),
+        runtime: undefined, moduleNamespace: undefined, maximum, topology }
+    } catch (error) { void error }
+    const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber: undefined, version: this.configVersion, impact, stopped })
+    if (state !== undefined) this.configPlans.set(plan, state)
+    return plan
   }
 
   private _volatileOnly(changes: string[], previous: EntryOptions, next: EntryOptions): boolean {

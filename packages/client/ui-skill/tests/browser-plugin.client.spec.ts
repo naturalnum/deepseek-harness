@@ -377,6 +377,45 @@ describe('catalog cache', () => {
     expect(payloads).toHaveLength(4)
   })
 
+  it('skills/change drops every native catalog and lexicon until the next single-flight read', async () => {
+    let rows = CATALOG
+    const list = vi.fn<ListFn>(payload => listOk(rows)(payload))
+    const { source, remote } = await bench(list)
+    const first = vi.fn(), second = vi.fn()
+    source.subscribeLexicon!(proj('s1'), first)
+    source.subscribeLexicon!(proj('s2'), second)
+    await source.candidates(proj('s1'), req(''))
+    await source.candidates(proj('s2'), req(''))
+    first.mockClear(); second.mockClear()
+    rows = [{ name: 'installed-skill', description: 'updated catalog', modelInvocable: true }]
+    remote.emit('skills/change', [])
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+    expect(source.lexicon!(proj('s1'))).toBeUndefined()
+    expect(source.lexicon!(proj('s2'))).toBeUndefined()
+    expect(list).toHaveBeenCalledTimes(2)
+    const [a, b] = await Promise.all([
+      source.candidates(proj('s1'), req('')), source.candidates(proj('s1'), req('installed')),
+    ])
+    expect(a).toEqual([{ name: 'installed-skill', description: 'updated catalog' }])
+    expect(b).toEqual(a)
+    expect(source.lexicon!(proj('s1'))).toEqual(['installed-skill'])
+    await expect(source.candidates(proj('s2'), req(''))).resolves.toEqual(a)
+    expect(list).toHaveBeenCalledTimes(4)
+  })
+
+  it('withdraws the native skill notification with the original plugin fiber', async () => {
+    const { list } = countingList()
+    const { source, remote, fiber } = await bench(list)
+    await source.candidates(proj('s1'), req(''))
+    const listener = vi.fn()
+    source.subscribeLexicon!(proj('s1'), listener)
+    await fiber.dispose()
+    listener.mockClear()
+    remote.emit('skills/change', [])
+    expect(listener).not.toHaveBeenCalled()
+  })
+
   it('plugin-manager/changed clears every cached session', async () => {
     const { list, payloads } = countingList()
     const { source, remote } = await bench(list)
@@ -550,7 +589,7 @@ describe('reference preview', () => {
     expect(list.mock.calls.map(([payload]) => payload)).toEqual([{ sessionId: 'first' }, { sessionId: 'second' }])
   })
 
-  it.each(['reset', 'preset', 'plugin', 'dispose'] as const)('cancels a pending preview on %s even if the RPC completes late', async (reason) => {
+  it.each(['reset', 'preset', 'plugin', 'skill', 'dispose'] as const)('cancels a pending preview on %s even if the RPC completes late', async (reason) => {
     const gate = Promise.withResolvers<ListResult>()
     const { ctx, source, remote, fiber, openResource } = await bench(() => gate.promise)
     const session = proj('preview')
@@ -561,6 +600,7 @@ describe('reference preview', () => {
     if (reason === 'reset') ctx.emit('connection/reset')
     else if (reason === 'preset') remote.emit('agent-preset/selected', [session.sessionId, 'minimal'])
     else if (reason === 'plugin') remote.emit('plugin-manager/changed', [{ reason: 'plugin' }])
+    else if (reason === 'skill') remote.emit('skills/change', [])
     else await fiber.dispose()
     expect(listener).toHaveBeenCalledTimes(1)
     gate.resolve({ ok: true, value: { skills: rows } })

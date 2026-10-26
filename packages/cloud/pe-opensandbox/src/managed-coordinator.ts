@@ -16,7 +16,7 @@ import type { AllocationStoreLimits } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
 import type { VerifiedExecutionMount } from './lifecycle-types.ts'
 import type { SdkAllocationBackend } from './sdk-lifecycle.ts'
-import type { TrustedRuntimeRegistry } from './trusted-runtime.ts'
+import type { SkillCommandBorrow, TrustedRuntimeRegistry } from './trusted-runtime.ts'
 import { NativeCommandAccount, type NativeCommandAccountLimits, type NativeCommandReservation } from './native-command-account.ts'
 import { CloudShellExecutor, CloudSubprocessRuntime, type NativeExecutionConfig } from './native-providers.ts'
 import { CloudShellEnvRegistry } from './native-shell-env.ts'
@@ -56,11 +56,13 @@ export interface ExecutionExportShare {
 export interface ManagedExecutionDeployment {
   readonly backend: SdkAllocationBackend
   readonly runtimes: TrustedRuntimeRegistry
+  /** Root-selected explicit bound; actual membership must come from the original files owner. */
+  readonly skillCopies?: { readonly maxCopiesPerOperation: number }
   assertCurrent(): void
   /** @param grant Files owner's original mount grant. @param assertCurrent Original native/files admission recheck.
    * @returns Retained, exact daemon exports of the same project/protected .pe/environment devices and quotas.
    */
-  share(grant: ExecutionMountGrant, assertCurrent: () => void): Promise<ExecutionExportShare>
+  share(grant: ExecutionMountGrant, assertCurrent: () => void, skills?: VerifiedExecutionMount['skills']): Promise<ExecutionExportShare>
   /** Assert that this exact epoch retains no export descriptors, including failed unpublished preparation. */
   assertEpochReleased(binding: AccountBinding): void
 }
@@ -148,6 +150,11 @@ export class ManagedCoordinator extends SandboxCoordinator {
       || config.maxResidentBytesPerAccount > config.maxResidentBytes || config.recoveryPageSize > config.store.maxRows) {
       throw new RangeError('Managed execution account or recovery limits exceed Root capacity.')
     }
+    const copies = deployment.skillCopies?.maxCopiesPerOperation
+    if (copies !== undefined && (!Number.isSafeInteger(copies) || copies < 1 || copies > 2147483647
+      || !Number.isSafeInteger(copies * 2048 + 4096) || copies * 2048 + 4096 > config.maxResidentBytesPerAccount)) {
+      throw new RangeError('Working-copy metadata cannot fit the explicit original execution reservation.')
+    }
     super(ctx)
     runtime.registerDrainParticipant(this)
     this.resources.store = new PostgresAllocationStore(allocationDatabase(runtime.controlDatabase(this)), config.store)
@@ -179,6 +186,20 @@ export class ManagedCoordinator extends SandboxCoordinator {
   override assertReady(): void {
     if (!this.state.open || !this.state.ready) this.unavailable()
     this.deployment.assertCurrent()
+  }
+
+  /** Observe original command/request and allocation settlement while retaining healthy warm Sessions.
+   * @param binding Original installed epoch, never a copied account/epoch value.
+   * @returns True only when the original owners prove quiet; retained selections and completed output are not activity.
+   */
+  override isEpochIdle(binding: AccountBinding): boolean {
+    this.assertReady()
+    const work = this.bindings.get(binding)
+    if (work === undefined || this.accounts.get(binding.accountId) !== work || !work.open || binding.lifetime.aborted) return false
+    work.assertMountCurrent()
+    return work.stopping === undefined && work.allocationsStopping === undefined && work.privateFailure === undefined
+      && work.capacity.active === 0 && work.capacity.requests === 0
+      && work.providers !== undefined && work.providers.commands.isIdle() && this.allocations.isEpochIdle(binding)
   }
 
   override bindAccount(ctx: Context, binding: AccountBinding, assertCurrent: () => void,
@@ -247,6 +268,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const configured = this.config.commands
     const commandConfig: NativeCommandAccountLimits = {
       allowedTools: configured.allowedTools, maxScopes: configured.maxScopes, commandLimits: configured.commandLimits,
+      ...(this.deployment.skillCopies === undefined ? {}
+        : { maxSkillCopiesPerOperation: this.deployment.skillCopies.maxCopiesPerOperation }),
       ...(service === undefined ? {} : { services: {
         profile: service.profile, operationLimits: configured.commandLimits,
         ...(service.application === undefined ? {} : { application: {
@@ -288,10 +311,19 @@ export class ManagedCoordinator extends SandboxCoordinator {
             prepared = await this.allocations.prepare(request, signal)
             signal.throwIfAborted(); request.assertCurrent()
           }
-          if (registered === undefined) return this.deployment.runtimes.command(prepared)
-          registered.assertCurrent()
-          if (registered.scope !== scope) this.stale()
-          return this.deployment.runtimes.service(prepared, registered)
+          const policy = this.deployment.skillCopies, parent = this.deployment.runtimes.skillProject(prepared)
+          if ((policy === undefined) !== (parent === undefined)) this.stale()
+          let copies: Parameters<TrustedRuntimeRegistry['command']>[1]
+          try {
+            if (policy !== undefined && parent !== undefined) {
+              copies = await this.borrowProjectCopies(work, parent, signal)
+              request.assertCurrent(); registered?.assertCurrent()
+            }
+            if (registered === undefined) return this.deployment.runtimes.command(prepared, copies)
+            registered.assertCurrent()
+            if (registered.scope !== scope) this.stale()
+            return this.deployment.runtimes.service(prepared, registered, copies)
+          } catch (cause) { copies?.release(); throw cause }
         }
         catch (cause) {
           work.privateFailure ??= { cause }
@@ -436,6 +468,24 @@ export class ManagedCoordinator extends SandboxCoordinator {
     return this.state.closing
   }
 
+  /** Derive the complete bounded set only from the original files owner; no API publication mirror grants membership. */
+  private async borrowProjectCopies(work: AccountWork, parent: NonNullable<VerifiedExecutionMount['skills']>,
+    signal: AbortSignal): Promise<SkillCommandBorrow> {
+    signal.throwIfAborted(); work.authority.assertBusinessCurrent()
+    const files = work.authority.files()
+    files.assertSkillProjectGrant(parent.grant)
+    const held = await files.borrowAllBundleWorkingCopies(parent.grant, signal)
+    try {
+      files.assertBundleOperationCopies(held.value)
+      if (held.value.project !== parent.grant) this.stale()
+      if (held.value.copies.length > parent.maxCopies) this.capacity()
+      work.authority.assertBusinessCurrent(); signal.throwIfAborted()
+      return { value: held.value, maxCopies: parent.maxCopies,
+        assertCurrent: () => { work.authority.assertBusinessCurrent(); files.assertBundleOperationCopies(held.value) },
+        release: () => { held.release() } }
+    } catch (cause) { held.release(); throw cause }
+  }
+
   private request(work: AccountWork, scope: ExecutionScope<Workspace>): NativeAllocationRequest<VerifiedExecutionMount> {
     work.authority.assertBusinessCurrent()
     if (!work.open || scope.binding !== work.binding) this.stale()
@@ -460,15 +510,26 @@ export class ManagedCoordinator extends SandboxCoordinator {
         current()
         const held = await files.prepareExecutionMounts(project, session.id, this.config.allocations.environmentVersion)
         let share: ExecutionExportShare | undefined
-        const granted = (): void => { current(); files.assertExecutionMountGrant(held.value) }
+        let parent: Awaited<ReturnType<typeof files.prepareSkillProject>> | undefined
+        const granted = (): void => {
+          current(); files.assertExecutionMountGrant(held.value)
+          if (parent !== undefined) files.assertSkillProjectGrant(parent.value)
+        }
         try {
-          granted(); share = await this.deployment.share(held.value, granted); granted()
+          const policy = this.deployment.skillCopies
+          if (policy !== undefined) {
+            if (!Number.isSafeInteger(policy.maxCopiesPerOperation)
+              || policy.maxCopiesPerOperation < 1 || policy.maxCopiesPerOperation > 2147483647) this.capacity()
+            parent = await files.prepareSkillProject(project, work.binding.lifetime)
+          }
+          granted(); share = await this.deployment.share(held.value, granted, parent === undefined || policy === undefined ? undefined
+            : { grant: parent.value, maxCopies: policy.maxCopiesPerOperation }); granted()
           if (share.value.grant !== held.value) this.stale()
           const originalShare = share
           return { value: originalShare.value, projectMountVersion: held.value.project.mountVersion,
             assertCurrent: () => { granted(); originalShare.value.assertCurrent() },
-            release: () => { originalShare.release(); held.release() } }
-        } catch (cause) { share?.release(); held.release(); throw cause }
+            release: () => { originalShare.release(); parent?.release(); held.release() } }
+        } catch (cause) { share?.release(); parent?.release(); held.release(); throw cause }
       } }
     work.sessions.set(scope.sessionId, request)
     return request
@@ -482,6 +543,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const bytes = 8 * (spec.stdio.stdout.maxBytes + spec.stdio.stderr.maxBytes + stdinBytes + Buffer.byteLength(spec.cwd)
       + spec.argv.reduce((total, part) => total + Buffer.byteLength(part) + 1, 0)) + 8192
       + this.config.commands.commandLimits.maxWaiters * 256
+      + (this.deployment.skillCopies === undefined ? 0 : this.deployment.skillCopies.maxCopiesPerOperation * 2048 + 4096)
     if (!Number.isSafeInteger(bytes) || bytes < 1 || this.state.active >= this.config.maxActiveCommands
       || work.capacity.active >= this.config.maxActiveCommandsPerAccount || this.state.resident >= this.config.maxResidentCommands
       || work.capacity.resident >= this.config.maxResidentCommandsPerAccount || this.state.bytes + bytes > this.config.maxResidentBytes

@@ -9,7 +9,7 @@ from types import MappingProxyType
 
 from paths import absolute
 
-VERSION = 's4-collect/9-install-service-v1'
+VERSION = 's5-collect/10-skill-working-copies-v1'
 ROLE_DOMAIN = b'dsh:s4:range-role:v1'
 ROLES = ['foreground', 'service']
 AUTH_HEADER = 'x-pe-execution-token'
@@ -132,7 +132,7 @@ def request(path, body, runtime):
     elif path in ['/prepare', '/commit', '/cancel', '/poll', '/stop']:
         fields = common + ['operationId', 'specHash', 'authorization']
         if path == '/prepare':
-            fields += ['spec']
+            fields += ['spec'] + (['skillWorld'] if 'skillWorld' in body else [])
         if path == '/poll':
             fields += ['stdoutOffset', 'stderrOffset']
         keys(body, fields)
@@ -140,8 +140,9 @@ def request(path, body, runtime):
         hex64(body['specHash'])
         authorization(body['authorization'])
         if path == '/prepare':
-            _, _, digest = canonical(body['spec'])
-            require(digest == body['specHash'], 'spec_hash_mismatch')
+            normalized, _, _ = canonical(body['spec'])
+            fixed = skill_world(body['skillWorld']) if 'skillWorld' in body else None
+            require(prepared_digest(normalized, fixed) == body['specHash'], 'spec_hash_mismatch')
         if path == '/poll':
             offset(body['stdoutOffset']); offset(body['stderrOffset'])
     else:
@@ -157,3 +158,40 @@ def collect(observed, tail, requested, eof):
     data = bytes(tail[start - (observed - len(tail)):])
     return {'requestedOffset': requested, 'startOffset': start, 'endOffset': observed, 'observedBytes': observed,
             'base64': base64.b64encode(data).decode('ascii'), 'lossy': requested < observed - len(tail), 'eof': eof}
+
+
+def skill_parent(value):
+    keys(value, ['metadata', 'skills', 'maxCopies'])
+    def identity(item):
+        keys(item, ['device', 'inode'])
+        for name in ['device', 'inode']:
+            text = item[name]
+            require(type(text) is str and 1 <= len(text) <= 20 and text.isascii() and text.isdecimal()
+                    and (text == '0' or text[0] != '0') and int(text) <= 2**64 - 1
+                    and (name == 'device' or text != '0'), 'skill_identity')
+        return dict(item)
+    metadata, skills = identity(value['metadata']), identity(value['skills'])
+    require(metadata['device'] == skills['device'] and metadata['inode'] != skills['inode']
+            and type(value['maxCopies']) is int and 1 <= value['maxCopies'] <= 2147483647, 'skill_parent')
+    return {'metadata': metadata, 'skills': skills, 'maxCopies': value['maxCopies']}
+
+
+def skill_world(value):
+    keys(value, ['metadata', 'skills', 'maxCopies', 'copies'])
+    parent = skill_parent({k: value[k] for k in ['metadata', 'skills', 'maxCopies']})
+    require(type(value['copies']) is list and len(value['copies']) <= parent['maxCopies'], 'skill_copies')
+    copies, names = [], set()
+    for entry in value['copies']:
+        keys(entry, ['version', 'identity'])
+        version = entry['version']
+        require(type(version) is str and re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}', version) is not None
+                and version not in names, 'skill_version')
+        names.add(version)
+        identity = skill_parent({'metadata': parent['metadata'], 'skills': entry['identity'], 'maxCopies': parent['maxCopies']})['skills']
+        require(identity['device'] == parent['skills']['device'] and identity['inode'] != parent['skills']['inode'], 'skill_copy_domain')
+        copies.append({'version': version, 'identity': identity})
+    return {**parent, 'copies': copies}
+
+
+def prepared_digest(spec, working_copies=None):
+    return hashlib.sha256(dumps(spec if working_copies is None else {'spec': spec, 'skillWorld': working_copies})).hexdigest()

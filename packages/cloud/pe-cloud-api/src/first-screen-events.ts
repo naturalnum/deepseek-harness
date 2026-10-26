@@ -1,12 +1,13 @@
 /** Bounded readonly native events registered on the original account Gateway; no ready frame or waterfall implementation. */
 import { isAbsolute } from 'node:path'
-import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import Gateway, { type TypertRemoteEventFrame } from '@deepseek-ai/dsh-api-gateway'
 import { isRemoteJsonValue } from '@deepseek-ai/dsh-typert-protocol'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-skill/types'
 import type { CloudAccountApi } from './account-service.ts'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
@@ -16,6 +17,8 @@ import { firstScreenNativeOwner, type NativeFirstScreen } from './native-first-s
 export interface FirstScreenEventInput {
   readonly api: CloudAccountApi
   readonly native: NativeFirstScreen
+  /** Exact readable form namespaces captured by the account API. */
+  readonly settingsNamespaces: readonly string[]
   /** The actual graph profile home, supplied and verified by runtime; never process homedir. */
   readonly home: string
   readonly maxHomeBytes: number
@@ -62,6 +65,8 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     if (!Number.isSafeInteger(value) || value < 1) unavailable()
   }
   const profile = ctx.get('profileContext'), gateway = ctx.get('typertGateway')
+  const skills = ctx.get('cloudSkills')
+  const skillIdentity: unknown = skills === undefined ? undefined : Reflect.get(skills, symbols.original) ?? skills
   if (profile === undefined || profile.home !== input.home || !isAbsolute(input.home)
     || Buffer.byteLength(input.home, 'utf8') > input.maxHomeBytes || !(gateway instanceof Gateway)) unavailable()
   const original = firstScreenNativeOwner(ctx, 'typertGateway', gateway, input.maxInventoryEntries)
@@ -74,6 +79,11 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
   let wake: (() => void) | undefined, closing: Promise<void> | undefined
   const graph = (): void => {
     input.api.assertInstalled(ctx)
+    if (skills !== undefined) {
+      const current = ctx.get('cloudSkills')
+      if (current === undefined || (Reflect.get(current, symbols.original) ?? current) !== skillIdentity) unavailable()
+      skills.assertCurrent()
+    }
     input.native.assertCurrent()
     const actualProfile = ctx.get('profileContext'), rootProfile = ctx.root.get('profileContext')
     const actual = firstScreenNativeOwner(ctx, 'typertGateway', canonical, input.maxInventoryEntries)
@@ -119,9 +129,10 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       ctx.on('api-session/status', (id, running) => { session({ event: 'api-session/status', args: [id, running] }, id) }),
       ctx.on('api-session/error', (id, message) => { session({ event: 'api-session/error', args: [id, message] }, id) }),
       ctx.on('settings/document-updated', (ns, revision) => {
-        if (ns === 'locale') push({ event: 'settings/document-updated', args: [ns, revision] })
+        if (input.settingsNamespaces.includes(ns)) push({ event: 'settings/document-updated', args: [ns, revision] })
       }),
     )
+    if (skills !== undefined) removers.push(ctx.on('skills/change', () => { push({ event: 'skills/change', args: [] }) }))
     const abort = (): void => { stop() }
     signal.addEventListener('abort', abort, { once: true })
     removers.push(() => { signal.removeEventListener('abort', abort) })

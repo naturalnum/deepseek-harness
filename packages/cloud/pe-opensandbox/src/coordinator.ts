@@ -34,6 +34,11 @@ declare module '@deepseek-ai/cordis' {
  * supplies neither an implementation nor an empty-work stopping receipt.
  */
 export abstract class SandboxCoordinator extends Service implements DrainParticipant {
+  /** Closed/unqualified coordinators cannot certify account idleness.
+   * @param _binding Original account generation.
+   * @returns False until an actual coordinator implements its own work observation.
+   */
+  isEpochIdle(_binding: AccountBinding): boolean { return false }
   // oxlint-disable-next-line typescript/prefer-as-const -- Typert requires explicit public property types.
   readonly id: 'execution' = 'execution'
 

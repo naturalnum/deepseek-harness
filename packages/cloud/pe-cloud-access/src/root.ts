@@ -21,9 +21,12 @@ export const Config = AuthRootConfigSchema
  * Initialize authentication resources and optional shared-Web route ownership; the actual root seal gates admission.
  * @param ctx - Root Context with official credentials.
  * @param config - Explicit authentication/database budgets and optional finite ingress configuration.
- * @returns After library schema inspection; the resource provider is available through ctx.get('peAuth').
+ * @returns After library schema inspection; configured ingress waits for the original Web/runtime/exposure providers.
  * @throws AuthAccessError on failed or timed-out initialization; actual cleanup remains retained.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
-  await PeAuthService.mountRoot(ctx, config)
+  if (config.ingress === undefined) await PeAuthService.mountRoot(ctx, config)
+  else await ctx.inject(['credentials', 'peAccountRuntime', 'webServer', 'peExposure'], async (scope) => {
+    await PeAuthService.mountRoot(scope, config)
+  })
 }

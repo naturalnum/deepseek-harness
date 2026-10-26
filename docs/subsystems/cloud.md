@@ -4,6 +4,8 @@ English | [中文](cloud.zh.md)
 
 The [cloud package map](../../packages/cloud/README.md) locates the optional deployment components. This reference describes their shared runtime inputs; package READMEs own activation requirements. These components do not add a Session implementation.
 
+`ApprovedConfigurationField` selects finite native namespace/field pairs and optional scalar choices. Approved leaves must exist in the original active Settings schema; native revisions and none/live update plans still govern saves. `locale.preference` retains its exact `zh`/`en` policy. The original login Use and account-save owner perform writes; bootstrap metadata grants no write capability. See the [cloud API](../../packages/cloud/pe-cloud-api/README.md).
+
 <a id="account-identities"></a>
 ## Account identities
 
@@ -18,15 +20,25 @@ The private native boot adapter installs an independent `ProfileContext`, launch
 <a id="actual-work-and-capacity"></a>
 ## Actual work and capacity
 
+`SubagentCapacityReservation` retains one actual child residency from the same Root capacity owner ([declaration](../../packages/cloud/pe-cloud-runtime/src/types.ts)). Its first `settle('confirmed' | 'unknown')` is final: confirmed cleanup releases that child slot; unknown permanently retains it and prevents account release.
+
 The runtime root registers exactly two required participant categories: `files` and `execution`. Contributions belong to their caller's Cordis effect and disappear when that effect is disposed. Duplicate registration and missing participants reject mount-capacity reservation.
 
 `RootMetadataDatabase` is a runtime-issued parameterized-query capability for an original Root participant with `closeRoot()`. It shares the runtime executor without exposing credentials, database selection or driver closure. Withdrawal and Root shutdown join that participant's actual cleanup before revoking its borrowed capability; unresolved cleanup retains ownership. Its `wasNotSubmitted()` predicate recognizes only the original adapter's settled failures before SQL submission.
+
+`AccountOwnerResolver` is an ordinary active Root’s read-only facade. `AccountOwnerResolution` contains a rechecked ready owner and registered instance; absent, stopped, inconsistent or changed metadata rejects, and original query failures propagate. It grants no `AccountUse` or network admission. The [runtime package](../../packages/cloud/pe-cloud-runtime/README.md#process-instance-metadata) owns read and shutdown bounds.
+
+`AccountRuntimeService.borrowOwnedAccount` uses an exact local owner observation to borrow an existing ready factory graph, with owner and Root rechecks and release on failure. It never enters account acquisition; [runtime](../../packages/cloud/pe-cloud-runtime/README.md#process-instance-metadata) owns this behavior.
+
+`RootIngressCloseOwner` retains the one original Access close operation in the caller effect through actual closure. Runtime joins it before metadata and account teardown; registration grants only this shutdown ordering. The optional `activeInstanceId` is original Host-only metadata and grants no business admission.
 
 `ParticipantReceipt` identifies its account, epoch, participant and evidence. A confirmed receipt has no pending operation ids. An unknown receipt retains pending work and a reason; a request deadline or rejected wait does not establish that actual work stopped.
 
 Local mount and drain reservations bound concurrent work. Settling mount work releases its operation slot; the mounted-account slot remains reserved until its owner releases it after actual cleanup. These reservations do not acquire a database owner or establish account readiness.
 
 The files root prestarts a fixed worker pool. Account drain retains the shared pool; root shutdown retains the service and participant until workers exit and held results are released. API configuration-save receipts separately track admitted native writes and required application through their actual Promises. Configuration saving is not a third drain participant, and failed or unresolved saves cannot establish a clean graph.
+
+`ConfigSaveBarrier` is the runtime-owned, in-process controller for one graph's save admission, pending work, retained failures and pause/resume/stop settlement ([declaration](../../packages/cloud/pe-cloud-api/src/save-hooks.ts)). It carries the exact `AccountBinding` and joins native persistence with required application. `CloudAccountApi.inspectConfigurationSaves()` returns its sanitized `ConfigSaveSnapshot`; it does not return or serialize this control object.
 
 <a id="native-adapters"></a>
 ## Native adapters
@@ -45,6 +57,46 @@ The native Session adapter preserves original dispatch, DTOs and Session state w
 
 Files-owned `ResidentResult<T>` pairs a value with its reservation release ([declaration](../../packages/cloud/pe-cloud-files/src/work-queue.ts)). `StageFileResult` pairs native staging facts with the attachment ref and project-relative copy path ([declaration](../../packages/cloud/pe-cloud-files/src/stage-bridge.ts)); `InstructionReadReaders` supplies a restricted project reader and optional account reader ([declaration](../../packages/cloud/pe-cloud-files/src/instruction-read-work.ts)). `EnvironmentSessionId` is the native Workspace membership's Session id type; `ExecutionMountGrant` describes the original binding, Session/project selection, measured project/environment identities and quotas, and read-only `.pe` policy ([declarations](../../packages/cloud/pe-cloud-files/src/environment-bank.ts)).
 
+```ts type-equiv
+/** Root-approved native provider identity and its declared credential reference. */
+interface ApprovedModelKeyBinding {
+  readonly provider: string
+  readonly providerEntryId: string
+  readonly moduleName: string
+  readonly ref: CredentialRef
+}
+```
+
+```ts type-equiv
+/** Explicit finite native provider/reference selection for the existing key Remote. */
+interface ApprovedModelKeyConfiguration {
+  readonly bindings: readonly ApprovedModelKeyBinding[]
+  readonly maxKeyBytes: number
+  readonly maxVersionBytes: number
+  readonly maxReplyBytes: number
+  readonly maxMetadataBytes: number
+}
+```
+
+<a id="approved-plugin-controls"></a>
+## Approved plugin controls
+
+`CloudPluginService` is the account-native Remote for approved preinstalled plugins and bundles. Its `current` and `change` methods use the original Peer, save owner and native profile writers; the service object is a Host installation, not a browser payload. The [cloud API package](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) owns activation, admission and application requirements.
+
+[`PluginCurrentRequest`](../../packages/cloud/pe-cloud-api/src/plugin-types.ts) carries an approved catalog `id`. `PluginCurrentState` contains that `id`, the original native `PluginInfo` as `plugin` or `BundleInfo` as `bundle`, the entry or bundle `selectionTarget`, permitted `operations`, `maxImpact`, ordinary `configuration.fields`, and a `version` with the account `epoch` and opaque `editToken`. Each field carries its approved `path`, native JSON `schema`, omission semantics, limitations, `writable` permission, optional `readOnlyReason`, relative secret-presence markers and a disclosable raw value when present. The version exposes neither profile bytes nor their digest; the [boot subsystem](boot.md) owns native inventory fields.
+
+Approved entries without mutation controls retain native inventory reads with empty `operations` and `configuration.fields`; `maxImpact` is absent. Reading them grants no mutation authority, and each change still requires explicit catalog control.
+
+`PluginChangeRequest` adds the original `version`, explicit `mode` (`if-idle` or `stop-and-apply`) and one `operation` to the approved id. The operation is `{ kind: 'enabled', enabled: boolean }`, `{ kind: 'selected', selected: boolean }` or `{ kind: 'configure', path: string[], value: JsonValue }`, subject to the catalog and original native plan. Configuration accepts literal JSON at one approved ordinary path, without an unset operation. These requests accept no module specifier, profile path, Peer or account authority.
+
+`PluginChangeResult` distinguishes `{ kind: 'applied', value: PluginCurrentState, native?: ChangeResult }` from `{ kind: 'accepted-rebuild', operationId: OperationId }`. Applied follows native application and the original account re-audit. Rebuild acceptance requires reconnecting and reading actual state; it does not certify application. The optional native `ChangeResult` retains its [boot-owned semantics](boot.md).
+
+`ConfigurationPeerOperation<T>` is a trusted Host callback owned by the [access Peer registry](../../packages/cloud/pe-cloud-access/src/peers.ts), with a [structural API declaration](../../packages/cloud/pe-cloud-api/src/plugin-types.ts). It receives the original binding and Context, login recheck, observer-closure callback and handoff callbacks `afterRequest`, `closeAll(deadlineAtMs)` and `assertPrincipal`. These in-process values are not JSON request fields and do not issue replacement authority.
+
+`PluginRebuildIntent` contains the approved `id`, server-owned patch/manifest `revision` and checked `operation`. The old save owner checks that revision and its opaque edit before the original factory commits it through the original stopped graph's writer, then disposes the old graph and assembles a new epoch. A browser submits `PluginChangeRequest`, not this internal intent.
+
+`ApprovedConfigurationBundle` pins the preinstalled package/version and complete member entry/module/package/version identities, with only graph-level selection control. `PluginCurrentState.selectionTarget.kind` distinguishes native entry `plugin` from native `bundle`; readonly entry inventory omits `maxImpact`. `PluginRebuildPersistence` retains the old epoch, native save result and private disk revision. `PluginRebuildVerification` pairs that result with the audited new state. Runtime-owned `ConfigurationRebuildReceipt<T, V>` resolves only after the different epoch passes intent verification and original ready CAS; these Host values are not Remote result fields.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -52,6 +104,105 @@ Files-owned `ResidentResult<T>` pairs a value with its reservation release ([dec
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxcloudmodelkey--cloudmodelkeyservice"></a>
+
+### `ctx.cloudModelKey` — `CloudModelKeyService`
+
+One independent capability; original native persistence, ordering and failure retention stay with AccountSaves.
+
+```ts cordis-catalog
+/**
+ * Read actual metadata through the original Peer/Use.
+ * @param signal Original observer signal.
+ * @returns Bounded readonly native metadata.
+ */
+@Remote('metadata') metadata(signal: AbortSignal): Promise<ModelKeyMetadata>
+
+/**
+ * Audit before bootstrap policy checks.
+ * @returns Actual native module import settlement.
+ */
+auditProvider(): Promise<void>
+
+/**
+ * Require the audited configured bootstrap route.
+ * @param provider Root provider.
+ * @param model Root model.
+ */
+assertProvisionableModel(provider: string, model: string): void
+
+/**
+ * Read redacted state for an explicit edit.
+ * @param request Root-approved native reference.
+ * @param signal Original observer signal.
+ * @returns Redacted state and version.
+ */
+@Remote('describe') describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>
+
+/**
+ * Persist the approved Key in the original save turn.
+ * @param request Approved reference, secret and captured version.
+ * @param signal Original observer signal.
+ * @returns Confirmed persistence.
+ */
+@Remote('set') set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>
+
+/**
+ * Remove the approved Key in the original save turn.
+ * @param request Approved reference and captured version.
+ * @param signal Original observer signal.
+ * @returns Confirmed removal.
+ */
+@Remote('unset') unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>
+
+/** Require this same installed service, independently of public readiness. */
+assertCurrent(): void
+
+/**
+ * Inspect actual installed unary registrations.
+ * @returns Actual fixed Remote markers and strict descriptors; never a configured availability claim.
+ */
+inspect(): ExposureInventory
+```
+
+Types: [ModelKeyMetadata](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyReference](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeySaved](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeySet](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyState](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyUnset](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-model-key.ts`](../../packages/cloud/pe-cloud-api/src/cloud-model-key.ts)
+
+<a id="ctxcloudplugins--cloudpluginservice"></a>
+
+### `ctx.cloudPlugins` — `CloudPluginService`
+
+Unary controls for finite approved preinstalled plugins; no installer or raw manager endpoint is granted.
+
+```ts cordis-catalog
+/** Read actual approved native inventory and an epoch-bound original save-owner version.
+ * @param request Approved catalog id.
+ * @param signal Original observer cancellation.
+ * @returns Original native PluginInfo, approved native Config fields and opaque version; no profile bytes or digest.
+ */
+@Remote('current') current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>
+
+/** Edit through the original actual idle window, or explicitly schedule its complete terminal drain and new claim.
+ * @param request Approved id, exact operation, original edit and explicit application mode.
+ * @param signal Observer cancellation before admission; admitted native work retains its actual settlement.
+ * @returns Applied only after original native apply/re-audit, or acceptance requiring reconnect and read.
+ */
+@Remote('change') change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>
+
+/** Require this same installed Remote and native writer owners, without granting public readiness. */
+assertCurrent(): void
+
+/** Inspect exact generated strict Remote descriptors and original method registrations.
+ * @returns Only the two actual authenticated unary endpoints.
+ */
+inspect(): ExposureInventory
+```
+
+Types: [PluginChangeRequest](cloud.md#approved-plugin-controls) · [PluginChangeResult](cloud.md#approved-plugin-controls) · [PluginCurrentRequest](cloud.md#approved-plugin-controls) · [PluginCurrentState](cloud.md#approved-plugin-controls)
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-plugins.ts`](../../packages/cloud/pe-cloud-api/src/cloud-plugins.ts)
 
 <a id="ctxcloudprojects--cloudprojectsservice"></a>
 
@@ -83,6 +234,95 @@ inspect(): ExposureInventory
 Types: [WorkspaceValue](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-projects.ts`](../../packages/cloud/pe-cloud-api/src/cloud-projects.ts)
+
+<a id="ctxcloudskills--cloudskillservice"></a>
+
+### `ctx.cloudSkills` — `CloudSkillService`
+
+One concrete business capability; it registers no additional persistence or lifecycle owner.
+
+```ts cordis-catalog
+/** Reconstruct the current catalog during trusted assembly.
+ * @returns Actual cold-pointer restore; Root calls before opening business admission.
+ */
+restore(): Promise<void>
+
+/**
+ * Read this account's actual fixed pointer, without activating an Agent or creating a sandbox.
+ * @param request Fixed sample slot only.
+ * @param signal Original observer cancellation.
+ * @returns Actual durable metadata and opaque edit token; no resource path.
+ */
+@Remote('current') current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>
+
+/**
+ * Publish exactly two complete files through actual native pointer CAS in the original save turn.
+ * @param request Fixed slot, opaque edit and bounded complete file fields.
+ * @param signal Cancellation cannot discard a confirmed native pointer handoff.
+ * @returns Separate persistence/catalog application and optional per-load resource preparation capability.
+ */
+@Remote('publish') publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>
+
+/**
+ * List installed skills with their native selection and precedence metadata.
+ * @param request Optional original workspace selector.
+ * @param signal Observer cancellation.
+ * @returns Complete installed catalog and one catalog edit token.
+ */
+@Remote('installed') installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>
+
+/**
+ * Read one installed skill's native metadata and complete file inventory.
+ * @param request Original installation id.
+ * @param signal Observer cancellation.
+ * @returns Complete native and file metadata.
+ */
+@Remote('details') details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>
+
+/**
+ * Install a complete skill package through the original save turn and catalog CAS.
+ * @param request Complete package and catalog edit token.
+ * @param signal Cancellation cannot discard a confirmed catalog handoff.
+ * @returns Persistence and native application facts.
+ */
+@Remote('install') install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>
+
+/**
+ * Replace one installation's complete package through the original catalog CAS.
+ * @param request Complete replacement and catalog edit token.
+ * @param signal Cancellation cannot discard a confirmed catalog handoff.
+ * @returns Persistence and native application facts.
+ */
+@Remote('update') update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>
+
+/**
+ * Remove one installation from future native discovery and loading.
+ * @param request Original installation and catalog edit token.
+ * @param signal Cancellation cannot discard a confirmed catalog handoff.
+ * @returns Durable removal and native application facts.
+ */
+@Remote('uninstall') uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>
+
+/**
+ * Export the complete authorized files of one installed skill as a ZIP archive.
+ * @param request Exact installed content selectors.
+ * @param signal Observer cancellation.
+ * @returns Complete authorized ZIP.
+ */
+@Remote('download') download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>
+
+/** Inspect actual native registration rather than a configured availability flag.
+ * @returns Exact unary inventory.
+ */
+inspect(): ExposureInventory
+
+/** Require this exact installed account service and files binding; does not grant public readiness. */
+assertCurrent(): void
+```
+
+Types: [ManagedSkillDetails](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDetailsRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDownload](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDownloadRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillInstallRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillMutationResult](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillUninstallRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillUpdateRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillsInstalled](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillsInstalledRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillCurrentRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillCurrentState](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillPublishRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillPublishResult](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication)
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-skills.ts`](../../packages/cloud/pe-cloud-api/src/cloud-skills.ts)
 
 <a id="ctxpeaccount--accountbinding"></a>
 
@@ -152,6 +392,22 @@ Source: [`packages/cloud/pe-account-instructions/src/session.ts`](../../packages
 Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission.
 
 ```ts cordis-catalog
+/**
+ * Register the single original Access ingress shutdown owner in the actual caller effect.
+ * @param owner Original close owner, registered before it admits authentication or forwarding work.
+ * @returns Withdrawal that starts and joins original closure; failed closure retains the registration.
+ * Registration grants no seal, database, account, recovery or participant authority.
+ */
+registerIngressClose(owner: RootIngressCloseOwner): () => void | Promise<void>
+
+/**
+ * Borrow only an existing ready graph owned by this process and the exact observed owner tuple.
+ * @param expected Original AccountOwner metadata supplied by trusted Host composition, never an AccountBinding.
+ * @returns The original AccountUse after owner and Root rechecks; no claim, mount or recreation is attempted.
+ * A failed recheck releases any acquired borrow. The consumer releases a successful borrow after its work settles.
+ */
+borrowOwnedAccount(expected: AccountOwner): Promise<AccountUse>
+
 /**
  * Borrow the active Root's bounded database for an exactly registered Root shutdown owner.
  * Account graphs receive no such capability; borrowing grants no account or execution authority.
@@ -251,6 +507,8 @@ inspectControl(): RuntimeControlObservation
 close(): Promise<void>
 ```
 
+Types: [RootIngressCloseOwner](cloud.md#actual-work-and-capacity)
+
 Source: [`packages/cloud/pe-cloud-runtime/src/types.ts`](../../packages/cloud/pe-cloud-runtime/src/types.ts)
 
 <a id="ctxpeauth--peauthservice"></a>
@@ -273,12 +531,30 @@ observe(): AuthRootObservation
 inspectRootFetch(): readonly ExactFetchExposure[]
 
 /**
+ * Delegate one native model-key invocation through the original login registry.
+ * @param peer Exact Gateway invocation Peer, never a client identity.
+ * @param consume Actual native work using the original retained Use and current checks.
+ * @returns Actual operation settlement; this service issues no additional borrow.
+ */
+withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>
+
+/** Delegate a guarded configuration handoff to the same original login/Peer owner.
+ * @param peer Exact native invocation Peer.
+ * @param consume Factory-owned exclusive update, without another login or state authority.
+ * @param mode Explicit local idle operation or terminal acceptance followed by original full closure.
+ * @returns Actual update settlement and fresh same-generation borrow restoration.
+ */
+withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: 'if-idle' | 'stop-and-apply' = 'if-idle'): Promise<T>
+
+/**
  * Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end.
  * Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.
  * @returns Actual resource settlement, without a timer that could certify an early release.
  */
 close(): Promise<void>
 ```
+
+Types: [ConfigurationPeerOperation](cloud.md#approved-plugin-controls)
 
 Source: [`packages/cloud/pe-cloud-access/src/auth-root.ts`](../../packages/cloud/pe-cloud-access/src/auth-root.ts)
 
@@ -301,11 +577,11 @@ assertInstalled(owner: Context = this.ctx): void
  * Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.
  * @param owner Actual consumer scope in this account graph.
  * @param signal Optional observer cancellation, combined with the original graph lifetime.
- * @returns Settlement of the current checks; no readiness token, catalog or account authority is issued.
+ * @returns Original synchronous native/admission recheck for final transfer; no readiness token, catalog or account authority is issued.
  * @throws CloudApiError for absent policy, removed/replaced native installations or closed admission;
  * policy failures and cancellation retain their original identity.
  */
-async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>
+async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>
 
 /**
  * Audit actual native handlers while the original factory still owns unpublished assembly.
@@ -317,6 +593,12 @@ async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void
  * original policy/cancellation failures retain identity.
  */
 async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>
+
+/** Re-audit the original inventory under the factory's same-generation exclusive update window.
+ * @param owner Same native account root; no replacement graph is accepted.
+ * @returns Actual original policy/provider/handler audit; grants no business admission.
+ */
+auditReconfigured(owner: Context): Promise<void>
 
 /**
  * Audit this view against actual native inventory supplied by trusted assembly.
@@ -355,7 +637,56 @@ requireFetch(method: string, pathname: string): ExactFetchExposure
  * @param input Actual files-owned project, shared Session metadata check and explicit native limits.
  * @returns Original constructor installation, with no readiness publication or directory creation.
  */
-prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding'>): NativeFirstScreen
+prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding' | 'assertSettingsFields'>): NativeFirstScreen
+
+/**
+ * Register one key service in its Loader fiber.
+ * @param owner Original Loader.
+ * @param input Root policy and original login callback.
+ * @returns Installed service.
+ */
+prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService
+
+/**
+ * Prepare one fixed skill capability; Root still supplies and audits explicit exposure separately.
+ * @param owner Original account Loader scope after native skills and verified files activate.
+ * @param input Same files owner, original Peer consumer and explicit finite bounds.
+ * @returns Concrete native Remote. Restore before business opening; resource loads require original caller/project preparation.
+ */
+prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService
+
+/** Prepare the fixed plugin Remote after its original guarded manager and editor activate.
+ * @param owner Actual original account Loader entry.
+ * @returns Exact original two-method Remote.
+ */
+prepareCloudPlugins(owner: Context): CloudPluginService
+
+/** Audit the actual preinstalled fixed module and original native writer before publication.
+ * @returns Original importer/package/native inventory settlement.
+ */
+restoreApprovedPlugins(): Promise<void>
+
+/** Apply a checked intent in the original stopped graph before its native hooks are withdrawn.
+ * @param intent Original save-owner CAS result.
+ * @param current Actual factory terminal window check.
+ * @returns Actual native writer and application; neither business nor save admission reopens.
+ */
+applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>
+
+/** Verify the checked old intent on this unpublished replacement graph.
+ * @param intent Original terminal operation.
+ * @param persisted Original native persistence result.
+ * @param current Original replacement-graph check before ready CAS.
+ * @returns Verified new state, with a new save owner version.
+ */
+verifyApprovedPluginIntent( intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, current: () => void, ): Promise<PluginRebuildVerification>
+
+/**
+ * Require the audited configured bootstrap route.
+ * @param provider Root provider.
+ * @param model Root model.
+ */
+assertProvisionableModel(provider: string, model: string): void
 
 /**
  * Install the account's sole project allocator before native auditing and business publication.
@@ -379,7 +710,7 @@ createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof 
  * @param input Exact graph profile home and all required event bounds.
  * @returns Actual registration/disposer; native Gateway owns ready and wire framing.
  */
-installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native'>): FirstScreenEvents
+installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native' | 'settingsNamespaces'>): FirstScreenEvents
 
 /**
  * Join the original cached event-source withdrawal before native teardown.
@@ -409,9 +740,10 @@ createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads
  * @param owner Owning native entry inside this independent graph.
  * @param guards Shared pre-write and prepared-Agent checks.
  * @param config Original native configuration, with no startup agents.
+ * @param reserveSubagent Original Root capacity/settlement callback; omission keeps child entry closed.
  * @returns The real native AgentLoop provider; every operation still checks business admission.
  */
-createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop
+createAgentLoop( owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1], reserveSubagent?: (depth: number) => SubagentCapacityReservation, ): AgentLoop
 
 /**
  * Install actual model dispatch admission in the native LLM scope.
@@ -429,6 +761,16 @@ installLlmGuard(owner: Context, allowed: (provider: string, model: string) => bo
  */
 pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>
 
+/** Observe actual original configuration work without granting an update window.
+ * @returns The original save owner's bounded actual work, without native values. */
+inspectConfigurationSaves(): ReturnType<ConfigSaveBarrier['snapshot']>
+
+/** Run the factory's exclusive native plugin writer in the original paused save turn.
+ * @param submit Original writer and required application, with no observer-cancellation race.
+ * @returns Actual settlement under this same barrier; missing exclusive authority rejects before submit.
+ */
+withPausedPluginChange<T>(submit: () => Promise<T>): Promise<T>
+
 /** Reopen only after runtime's actual re-audit and the barrier's quiescence check. */
 resumeAccountChanges(): void
 
@@ -442,9 +784,18 @@ stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveR
 
 /** Withdraw only after confirmed terminal save settlement, before disposing native providers. */
 async withdraw(): Promise<void>
+
+/** Bind a trusted request borrow to the existing native credential installation; registers no endpoint.
+ * @param use Original runtime-issued AccountUse; its caller retains release ownership through settlement.
+ * @param limits Explicit deployment byte bounds, never client input.
+ * @param assertRequestCurrent Original request/Peer check; production ingress must supply it.
+ * Omission preserves trusted in-process calls without adding login admission.
+ * @returns A request-local adapter; every call still requires actual business and exposure admission.
+ */
+modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.md) · [FileUploads](attachment.md) · [SessionController](session.md) · [WorkspaceFiles](workspace.md)
+Types: [AgentLoop](core.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 
@@ -455,6 +806,138 @@ Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cl
 One graph's real Registry/FS installation; shared pool drain and directory responsibility stay with their original owners.
 
 ```ts cordis-catalog
+/**
+ * Return this installed graph's original fixed private skill port; no model or raw-file entry is exposed.
+ * @returns The original bound port, rejecting when static storage or the native capability is absent.
+ */
+skillVersions(): SkillVersionPort
+
+/**
+ * Prepare a complete immutable tree through the original lane and reviewed helper.
+ * @param input Complete package files or archive bytes.
+ * @param signal Caller observation cancellation; actual work remains owned to settlement.
+ * @returns A files-issued version whose result remains retained through release.
+ */
+prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>
+
+/**
+ * Observe the complete single catalog; schema1 is projected without migration writes.
+ * @param signal Caller observation cancellation.
+ * @returns A complete issued observation retained through release.
+ */
+observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>
+
+/**
+ * CAS one installation in the original current.json, inside the caller's existing save observation.
+ * @param expected Exact catalog observation issued by this files generation.
+ * @param change One installation change using issued bundle authority.
+ * @param signal Caller observation cancellation; confirmed durable outcomes remain observable.
+ * @returns The confirmed catalog and affected entry, retained through release; unknown publication rejects without rollback.
+ */
+commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>
+
+/**
+ * Borrow one issued complete source; the callback and its resident result retain the original borrow.
+ * @param version Exact issued source selected under the original save ordering.
+ * @param consume Consumes source methods while their operation lease remains active.
+ * @param signal Caller observation cancellation.
+ * @returns The consumed value with actual reservation and source retention held until release.
+ */
+withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>
+
+/**
+ * Export every member of the exact authorized version as a bounded ZIP.
+ * @param version Exact issued authorized source version.
+ * @param signal Actual export observation cancellation.
+ * @returns The complete owned archive, retained through release.
+ */
+exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>
+
+/**
+ * Materialize the complete tree under the original issued project, preserving existing writable copies.
+ * @param project Original issued active project grant.
+ * @param version The exact operation-scoped source.version lease when called inside source consumption.
+ * @param signal Observation cancellation; actual copy work retains its original owner.
+ * @returns An issued complete working copy after confirmed publication and protected association CAS.
+ */
+materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>
+
+/**
+ * Fix the actual skills parent before allocation, without creating any sandbox or binding an environment slot.
+ * @param project Exact installed/projectFor object after Root's actual native caller selection.
+ * @param signal Cancellation leaves all actual I/O with the original files lane.
+ * @returns Parent facts retained until the original allocation/export actual joins release the result.
+ */
+async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>
+
+/**
+ * Fully publish a fixed two-file version or reuse its protected association while preserving user edits.
+ * @param project Exact actively borrowed parent grant from this owner.
+ * @param version Exact original immutable version capability.
+ * @param signal Observer cancellation cannot settle running native work or ambiguous publication.
+ * @returns A complete current-project resource base and persistent issued copy handle; release ends this I/O result, not the copy.
+ */
+materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal) : Promise<ResidentResult<SkillWorkingCopyGrant>>
+
+/**
+ * Borrow complete issued full-tree copies through actual operation settlement, independently of the parent lease.
+ * @param project Original active project grant.
+ * @param copies Exact issued same-project copies.
+ * @param signal Preparation observation cancellation.
+ * @returns The complete operation borrow retained through actual remote, local and physical settlement.
+ */
+borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[], signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>
+
+/**
+ * Derive the complete bounded persisted copy set, including legacy copies, and retain it for one operation.
+ * @param project Original active project grant.
+ * @param signal Preparation observation cancellation.
+ * @returns The complete confirmed operation set retained through release.
+ */
+borrowAllBundleWorkingCopies(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>
+
+/**
+ * Require the original unreleased full-tree operation result before granting execution access.
+ * @param value Exact original operation borrow.
+ */
+assertBundleOperationCopies(value: SkillBundleOperationCopies): void
+
+/**
+ * Revalidate protected associations and actual directories for each original operation before role issuance.
+ * @param project Original allocation parent grant still retained by its export/allocation.
+ * @param copies Exact issued same-project handles selected by the original trusted caller.
+ * @param signal Actual preparation cancellation; the result must survive any subsequent observer cancellation.
+ * @returns Bounded facts held through original whenEmpty+localSettled or joined physical-stop completion.
+ */
+borrowSkillWorkingCopies(project: SkillProjectGrant, copies: readonly SkillWorkingCopyGrant[], signal: AbortSignal) : Promise<ResidentResult<SkillOperationCopies>>
+
+/**
+ * Derive and borrow every confirmed copy for this project without an API/execution-owned membership cache.
+ * @param project Original active allocation parent capability.
+ * @param signal Preparation cancellation; actual work and the returned result retain original ownership.
+ * @returns The complete bounded set after actual association/source/directory checks; any unqualified version or excess rejects
+ * the whole set.
+ */
+borrowAllSkillWorkingCopies(project: SkillProjectGrant, signal: AbortSignal): Promise<ResidentResult<SkillOperationCopies>>
+
+/**
+ * Require an exact active parent result before Root captures export/allocation facts.
+ * @param grant Original issued capability from this owner.
+ */
+assertSkillProjectGrant(grant: SkillProjectGrant): void
+
+/**
+ * Require an exact current persistent copy handle; execution additionally needs a live operation borrow.
+ * @param grant Original issued capability from this owner.
+ */
+assertSkillWorkingCopy(grant: SkillWorkingCopyGrant): void
+
+/**
+ * Require the original unreleased operation result before signing/using its fixed facts.
+ * @param grant Original issued capability from this owner.
+ */
+assertSkillOperationCopies(grant: SkillOperationCopies): void
+
 /**
  * Select the single native provider constructor prepared for this graph.
  * @returns Native class with unchanged Config and persistence, after the staging capability check.
@@ -556,7 +1039,7 @@ async createProject(use: AccountUse, title: string | undefined, signal: AbortSig
 async withInstructionReaders<T>( workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, ): Promise<ResidentResult<T>>
 ```
 
-Types: [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [Workspace](workspace.md)
+Types: [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [SkillBundleInput](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleSource](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleWorkingCopy](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalog](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogChange](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogCommit](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillProjectGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersionPort](../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation) · [SkillWorkingCopyGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [Workspace](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-files/src/account-service.ts`](../../packages/cloud/pe-cloud-files/src/account-service.ts)
 
@@ -575,6 +1058,12 @@ Source: [`packages/cloud/pe-cloud-api/src/root.ts`](../../packages/cloud/pe-clou
 A concrete implementation must register as runtime's mandatory execution participant and verify its own required execution capabilities or explicit closed mode before readiness. This definition supplies neither an implementation nor an empty-work stopping receipt.
 
 ```ts cordis-catalog
+/** Closed/unqualified coordinators cannot certify account idleness.
+ * @param _binding Original account generation.
+ * @returns False until an actual coordinator implements its own work observation.
+ */
+isEpochIdle(_binding: AccountBinding): boolean
+
 /** Check actual registration and declared requirements; closed mode authorizes no execution. */
 abstract assertReady(): void
 

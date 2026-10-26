@@ -19,7 +19,7 @@ const Adapter: z<object> = z.object({
 
 describe('redactSecrets', () => {
   it('strips secrets from object, dict, and array containers and records each position', () => {
-    const { value, secrets } = redactSecrets(Adapter as z<never>, {
+    const { value, secrets } = redactSecrets(Adapter, {
       apiKey: 'top-secret',
       providers: {
         openai: { apiKey: 'sk-live', apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://x' },
@@ -46,7 +46,7 @@ describe('redactSecrets', () => {
   })
 
   it('enumerates unset object-property slots without inventing containers', () => {
-    const { value, secrets } = redactSecrets(Adapter as z<never>, undefined)
+    const { value, secrets } = redactSecrets(Adapter, undefined)
     expect(value).toBeUndefined()
     expect(secrets).toEqual([
       { path: ['apiKey'], set: false },
@@ -59,14 +59,14 @@ describe('redactSecrets', () => {
       apiKey: 'frozen',
       extra: Object.freeze({ keep: true }),
     })
-    const { value } = redactSecrets(Adapter as z<never>, input)
+    const { value } = redactSecrets(Adapter, input)
     expect(input.apiKey).toBe('frozen')
     expect(value).toEqual({ extra: { keep: true }, nested: undefined } as never)
     expect((value as { extra: unknown }).extra).toEqual({ keep: true })
   })
 
   it('passes malformed container values through untouched', () => {
-    const { value, secrets } = redactSecrets(Adapter as z<never>, {
+    const { value, secrets } = redactSecrets(Adapter, {
       providers: 'not-a-dict',
       fallbacks: 'not-an-array',
     })
@@ -79,14 +79,14 @@ describe('redactSecrets', () => {
 
   it('treats a secret-role container as one opaque secret leaf', () => {
     const Weird = z.object({ blob: z.object({ inner: z.string() }).role('secret') })
-    const { value, secrets } = redactSecrets(Weird as z<never>, { blob: { inner: 'x' } })
+    const { value, secrets } = redactSecrets(Weird, { blob: { inner: 'x' } })
     expect(value).toEqual({})
     expect(secrets).toEqual([{ path: ['blob'], set: true }])
   })
 
   it('drops a dict entry whose entire value is the secret', () => {
     const Tokens = z.object({ tokens: z.dict(z.string().role('secret')) })
-    const { value, secrets } = redactSecrets(Tokens as z<never>, { tokens: { a: 'x', b: 'y' } })
+    const { value, secrets } = redactSecrets(Tokens, { tokens: { a: 'x', b: 'y' } })
     expect(value).toEqual({ tokens: {} })
     expect(secrets).toEqual([
       { path: ['tokens', 'a'], set: true },
@@ -95,9 +95,9 @@ describe('redactSecrets', () => {
   })
 
   it('tolerates structural nodes missing their relation maps', () => {
-    expect(redactSecrets({ type: 'dict' } as never, { k: 'v' })).toEqual({ value: { k: 'v' }, secrets: [] })
-    expect(redactSecrets({ type: 'object' } as never, { k: 'v' })).toEqual({ value: { k: 'v' }, secrets: [] })
-    expect(redactSecrets({ type: 'array' } as never, ['v'])).toEqual({ value: ['v'], secrets: [] })
+    expect(redactSecrets({ type: 'dict' }, { k: 'v' })).toEqual({ value: { k: 'v' }, secrets: [] })
+    expect(redactSecrets({ type: 'object' }, { k: 'v' })).toEqual({ value: { k: 'v' }, secrets: [] })
+    expect(redactSecrets({ type: 'array' }, ['v'])).toEqual({ value: ['v'], secrets: [] })
   })
   it('removes secrets declared by any union branch, intersection, or transform', () => {
     const schema = z.object({
@@ -105,7 +105,7 @@ describe('redactSecrets', () => {
       intersection: z.intersect([z.object({ token: z.string().role('secret') }), z.object({ name: z.string() })]),
       transformed: z.transform(z.object({ token: z.string().role('secret') }), value => value),
     })
-    const { value, secrets } = redactSecrets(schema as z<never>, {
+    const { value, secrets } = redactSecrets(schema, {
       union: { token: 'union-secret' }, intersection: { token: 'intersection-secret', name: 'visible' },
       transformed: { token: 'transformed-secret' },
     })
@@ -116,5 +116,19 @@ describe('redactSecrets', () => {
 })
 
 it('preserves values when an unspecified union declares no secret alternatives', () => {
-  expect(redactSecrets(new z({ type: 'union' }) as z<never>, 'visible')).toEqual({ value: 'visible', secrets: [] })
+  expect(redactSecrets(new z({ type: 'union' }), 'visible')).toEqual({ value: 'visible', secrets: [] })
+})
+
+it('redacts tuple positions using the same native secret sidecar as array items', () => {
+  const schema = z.tuple([z.string(), z.string().role('secret')])
+  const value = ['public', 'private']
+  expect(redactSecrets(schema, value)).toEqual({ value: ['public', undefined], secrets: [{ path: ['1'], set: true }] })
+  expect(value).toEqual(['public', 'private'])
+})
+
+it('keeps secret dictionary keys out of values and presence-marker paths', () => {
+  const schema = z.dict(z.string(), z.union([z.string().role('secret'), z.string()]))
+  const redacted = redactSecrets(schema, { privateKey: 'public' })
+  expect(redacted).toEqual({ value: undefined, secrets: [{ path: [], set: true }] })
+  expect(JSON.stringify(redacted)).not.toContain('privateKey')
 })

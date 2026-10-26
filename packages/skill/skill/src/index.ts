@@ -5,10 +5,12 @@
  * Concrete
  * providers such as `@deepseek-ai/dsh-skill-filesystem` decide where skills come
  * from; this service only merges provider catalogs, resolves the winning skill
- * for a name, and exposes the winning summaries and definitions to consumers.
+ * for a name, and exposes summaries, definitions, and readonly candidate inspection.
  *
  * @module @deepseek-ai/dsh-skill
  */
+
+export type {} from './types.ts'
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-llm'
@@ -110,8 +112,8 @@ export interface SkillLookupOptions {
 /**
  * Registry read options: provider lookup context plus the viewing scope.
  * The registry consumes `scope` to select layers; providers receive the same
- * borrowed options object and read only their {@link SkillLookupOptions}
- * contract from it.
+ * borrowed options object and may use its caller context. Scope is not
+ * authorization: providers must validate caller identity before preparing resources.
  */
 export interface SkillViewOptions extends SkillLookupOptions {
   /** Viewing scope (the calling agent); omitted reads the global layer alone. */
@@ -227,6 +229,24 @@ export function escapeText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
+/** One borrowed provider candidate and its selection in the same catalog observation. */
+export interface SkillCandidateInspection {
+  /** Original readonly provider metadata and opaque locator; not a loading or resource capability. */
+  readonly candidate: SkillCandidate
+  /** Whether the original registry merge selected this candidate for its name. */
+  readonly selected: boolean
+  /** Winning candidate for the same name; absent on the selected row. */
+  readonly overriddenBy?: SkillCandidate
+}
+
+/** Host-only complete-candidate observation; private provider metadata must not be serialized to clients. */
+export interface SkillCatalogInspection {
+  /** All contributed candidates sorted by name; equal-name rows retain native collection order. */
+  readonly candidates: readonly SkillCandidateInspection[]
+  /** Whether every registered provider completed without a concurrent catalog revision. */
+  readonly complete: boolean
+}
+
 /** One catalog observation plus whether discovery completed within a stable catalog revision. */
 export interface SkillCatalogSnapshot {
   /** Sorted invocation-neutral summaries collected in this observation. */
@@ -252,18 +272,18 @@ export interface SkillProvider {
    * plugins register synchronously during `apply()`; remote initialization,
    * authentication, and discovery are awaited inside this method. Implementations
    * should settle promptly when `options.signal` aborts.
-   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns provider candidates as a complete-array shorthand, or an explicit
    *   observation when usable candidates came from incomplete discovery.
    */
-  readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
+  readonly list: (options: SkillViewOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
   /**
    * Load a complete skill body for a previously listed candidate.
    * @param candidate - the winning candidate originally returned by this provider.
-   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns the full skill body, or `undefined` if it is no longer loadable.
    */
-  readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>
+  readonly get: (candidate: SkillCandidate, options: SkillViewOptions) => Promise<SkillDefinition | undefined>
 }
 
 /** Registration-scoped lifecycle and invalidation capability borrowed by one provider. */
@@ -283,17 +303,6 @@ export interface Config {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     skills: SkillRegistry
-  }
-
-  interface Events {
-    /**
-     * A skill provider, runtime contribution, or provider-backed catalog may
-     * have changed. This is an unfiltered invalidation notification; consumers
-     * refetch the catalog for their own lookup options. Listener failures are
-     * contained and cannot veto the registry mutation.
-     * @mode emit
-     */
-    'skills/change'(): void
   }
 }
 
@@ -318,8 +327,13 @@ interface LayerCollectResult {
   cacheable: boolean
 }
 
+interface SelectedLayerCollectResult extends LayerCollectResult {
+  candidates: IndexedCandidate[]
+}
+
 interface CollectResult {
   entries: Map<string, IndexedCandidate>
+  candidates: IndexedCandidate[]
   cacheable: boolean
 }
 
@@ -363,7 +377,7 @@ export class SkillRegistry extends Service {
     scope => new SkillLayer(scope),
     () => { this.invalidateCache() },
   )
-  private readonly collectCache = new Map<string, Map<string, IndexedCandidate>>()
+  private readonly collectCache = new Map<string, CollectResult>()
   private revision = 0
   private nextProviderOrder = 0
   /** Stable identities for cache keys; scope keys are opaque identity-compared objects. */
@@ -489,6 +503,32 @@ export class SkillRegistry extends Service {
   }
 
   /**
+   * Inspect every contributed candidate and its actual winner in the same observation used by list/get.
+   * Candidate values and locators remain borrowed readonly provider objects; inspection loads no bodies
+   * and grants no resource authority. Incomplete results describe only the observed candidates and are
+   * not cached. Scope, invalidation and cancellation use the original catalog collection.
+   * @param options - original scope/cwd lookup context and optional discovery cancellation signal.
+   * @returns name-sorted candidates with selected/overridden relationships and discovery completeness.
+   */
+  async inspect(options: SkillViewOptions = {}): Promise<SkillCatalogInspection> {
+    const collected = await this.collect(options)
+    throwIfAborted(options.signal)
+    return {
+      candidates: collected.candidates.map((entry): SkillCandidateInspection => {
+        // Every contributed name has one winner in this same collected map.
+        const winner = collected.entries.get(entry.candidate.name)
+        if (winner === undefined) throw new Error('Skill catalog candidate has no selected winner')
+        return {
+          candidate: entry.candidate,
+          selected: winner === entry,
+          ...winner === entry ? {} : { overriddenBy: winner.candidate },
+        }
+      }).sort((a, b) => compareSkillSummary(a.candidate, b.candidate)),
+      complete: collected.cacheable,
+    }
+  }
+
+  /**
    * Load and validate the winning candidate, passing its opaque discovery locator back to the
    * provider. Cancellation is rechecked after selection, including cache hits, and raced against
    * loading so an uncooperative provider cannot hang the caller.
@@ -526,7 +566,7 @@ export class SkillRegistry extends Service {
       // and only a chain-bearing key makes the next read see the new preset.
       const key = this.collectCacheKey(options.cwd, scopeChainOf(options.scope), revision)
       const cached = this.collectCache.get(key)
-      if (cached !== undefined) return { entries: cached, cacheable: true }
+      if (cached !== undefined) return cached
 
       const result = await this.collectFresh(options)
       throwIfAborted(options.signal)
@@ -535,10 +575,10 @@ export class SkillRegistry extends Service {
           attempt += 1
           continue
         }
-        return { entries: result.entries, cacheable: false }
+        return { ...result, cacheable: false }
       }
       if (result.cacheable) {
-        this.collectCache.set(key, result.entries)
+        this.collectCache.set(key, result)
         if (this.collectCache.size > this.collectCacheMaxEntries) {
           const oldest = this.collectCache.keys().next() as IteratorYieldResult<string>
           this.collectCache.delete(oldest.value)
@@ -555,16 +595,18 @@ export class SkillRegistry extends Service {
     // duplicates only within one layer.
     const layers = [this.layers.global, ...this.layers.chainLayers(options.scope)]
     const merged = new Map<string, IndexedCandidate>()
+    const candidates: IndexedCandidate[] = []
     let cacheable = true
     for (const layer of layers) {
       const collected = await this.collectLayer(layer, options)
       if (!collected.cacheable) cacheable = false
+      for (const candidate of collected.candidates) candidates.push(candidate)
       for (const entry of collected.entries) merged.set(entry.candidate.name, entry)
     }
-    return { entries: merged, cacheable }
+    return { entries: merged, candidates, cacheable }
   }
 
-  private async collectLayer(layer: SkillLayer, options: SkillLookupOptions): Promise<LayerCollectResult> {
+  private async collectLayer(layer: SkillLayer, options: SkillViewOptions): Promise<SelectedLayerCollectResult> {
     const collected = await this.listLayerCandidates(layer, options)
     collected.entries.sort(compareIndexedCandidates)
     const seen = new Set<string>()
@@ -578,10 +620,10 @@ export class SkillRegistry extends Service {
       seen.add(skill.name)
       result.push(entry)
     }
-    return { entries: result, cacheable: collected.cacheable }
+    return { entries: result, candidates: collected.entries, cacheable: collected.cacheable }
   }
 
-  private async listLayerCandidates(layer: SkillLayer, options: SkillLookupOptions): Promise<LayerCollectResult> {
+  private async listLayerCandidates(layer: SkillLayer, options: SkillViewOptions): Promise<LayerCollectResult> {
     throwIfAborted(options.signal)
     const candidates: IndexedCandidate[] = []
     let cacheable = true

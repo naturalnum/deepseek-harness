@@ -17,13 +17,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // (settings/credentials invalidations ride the allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
-import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
-import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
+import { IntegratedModels, IntegratedModelsOnboarding, type IntegratedModelsInjected, type IntegratedOnboardingInjected } from './IntegratedModels.tsx'
+import type {} from './integration.ts'
+import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { WelcomeNotice } from './WelcomeNotice.tsx'
 import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { WelcomeNoticeStore } from './welcome-store.ts'
 import { ModelsSettingsStore } from './store.ts'
+export type { ModelsSettingsIntegration, ModelsSettingsReads, ModelsSettingsMetadata } from './integration.ts'
 import { createModelsOperations } from './operations.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
@@ -47,7 +49,7 @@ const NS = 'settings.models'
 export type {
   ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
-export type { ModelDiscoveryOutcome, ModelsOperations, SettingsWriteOutcome } from './operations.ts'
+export type { ModelDiscoveryOutcome, ModelsOperations, ModelsCredentialEditing, PreparedCredentialEdit, SettingsWriteOutcome } from './operations.ts'
 
 /**
  * Refetch the page snapshot only after its first load: an unopened Models
@@ -82,32 +84,39 @@ export function apply(ctx: ClientContext): void {
   const credentialOnboarding = configured.credentialOnboarding && !('dshDesktop' in globalThis)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-models: copy dictionaries')
 
+  const integration = ctx.get('modelsSettingsIntegration')
+  const onboarding = integration?.onboarding !== false
+  const credentialEditing = integration?.editing ?? Object.freeze({
+    getSnapshot: () => undefined, subscribe: (_listener: () => void) => () => {},
+  })
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
   // Bound once here, where the Remote namespaces are declared in this plugin's
   // own `inject`; the cards receive callbacks and never a context.
   const operations = createModelsOperations(ctx)
-  const controller = new ModelsSettingsStore(ctx, schema, ctx.configForms.describe())
+  const controller = new ModelsSettingsStore(ctx, schema, ctx.configForms.describe(),
+    integration === undefined ? undefined : { reads: integration.reads, unavailable: () => ctx.locale.bind(NS)('keyEditUnavailable') })
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
-  const injected = (): ModelsSectionInjected => ({
+  const injected = (): IntegratedModelsInjected => ({
     controller,
-    hooks: { snapshot: controller.store },
+    hooks: { snapshot: controller.store, credentialEditing },
     operations,
     schema,
     t,
   })
-  const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
+  const deepSeekOnboardingInjected = (): IntegratedOnboardingInjected => ({
     automatic: credentialOnboarding,
     track: (name, attributes) => ctx.get('productAnalytics')?.track(name, attributes),
     controller,
-    hooks: { models: controller.store },
+    hooks: { models: controller.store, credentialEditing },
     operations,
     schema,
     t,
   })
-  const welcomeController = new WelcomeNoticeStore(ctx.configForms.get<Record<string, unknown>>(WELCOME_NOTICE_SETTINGS_NAMESPACE))
-  const welcomeInjected = (): WelcomeNoticeInjected => ({
+  const welcomeController = onboarding
+    ? new WelcomeNoticeStore(ctx.configForms.get<Record<string, unknown>>(WELCOME_NOTICE_SETTINGS_NAMESPACE)) : undefined
+  const welcomeInjected = welcomeController === undefined ? undefined : (): WelcomeNoticeInjected => ({
     controller: welcomeController,
     hooks: { welcome: welcomeController.store },
     t,
@@ -126,9 +135,12 @@ export function apply(ctx: ClientContext): void {
       ctx.remote.$on('credentials/reference-updated', refreshModels),
       ctx.remote.$on('llm/adapters-updated', refreshModels),
       ctx.on('connection/reset', refreshModels),
+      ...integration === undefined ? [] : [integration.editing.subscribe(() => {
+        if (integration.editing.getSnapshot() !== null) refreshModels()
+      })],
     ]
     return () => {
-      welcomeController.dispose()
+      welcomeController?.dispose()
       for (const dispose of disposers) dispose()
     }
   }, 'ui-settings-models: pushed invalidations')
@@ -143,18 +155,18 @@ export function apply(ctx: ClientContext): void {
       'settings.models.provider-card': { kind: 'keyed', scope: 'root' },
       'settings.models.footer': { kind: 'list', scope: 'root' },
     },
-  }, ModelsSection))
-  if (!('dshDesktop' in globalThis)) ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+  }, integration === undefined ? ModelsSection : IntegratedModels))
+  if (welcomeInjected !== undefined && !('dshDesktop' in globalThis)) ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'welcome-notice',
     order: -100,
     inject: welcomeInjected,
   }, WelcomeNotice))
-  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+  if (onboarding) ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'deepseek-official',
     children: { 'settings.models.sign-in': { kind: 'single', scope: 'root' } },
     order: 0,
     inject: deepSeekOnboardingInjected,
-  }, DeepSeekOnboardingDialog))
+  }, integration === undefined ? DeepSeekOnboardingDialog : IntegratedModelsOnboarding))
 }

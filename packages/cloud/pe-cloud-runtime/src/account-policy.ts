@@ -12,11 +12,13 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudApiError, type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFileSelection } from '@deepseek-ai/dsh-pe-cloud-files'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
-import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
+import { scopeChainOf, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 import { SessionId, type Session, type SessionHeader } from '@deepseek-ai/dsh-session'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-working-directory'
+import SubagentRuntime, { delegationDepthOf, resolveChildAgentOptions, resolveChildDepth, type SubagentAdmissionRequest } from '@deepseek-ai/dsh-subagent'
+import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type { AccountBinding } from './types.ts'
 import { ACCOUNT_NATIVE_ENTRIES, type AccountNativeGuards } from './account-native-integration.ts'
 
@@ -33,10 +35,21 @@ export interface AccountPolicyConfig {
 }
 
 type Entry = NonNullable<Fiber['entry']>
-type EntryFact = { readonly entry: Entry; readonly fiber: Fiber; readonly plan: ReturnType<Entry['prepareConfigUpdate']> }
+type EntryFact = { readonly entry: Entry; readonly fiber: Fiber; readonly plan: ReturnType<Entry['prepareConfigUpdate']>; readonly module: unknown }
 type Agent = Parameters<AccountNativeGuards['agents']['assertPrepared']>[0]
 type Selection = { readonly provider?: string; readonly model?: string }
 type Header = Pick<SessionHeader, 'cwd' | 'origin' | 'parentSession' | 'delegationDepth'> & { readonly isSeeded?: boolean }
+type ChildPreparation = {
+  readonly child: Agent
+  readonly session: Session
+  readonly fiber: Fiber
+  readonly parent: Agent
+  readonly generation: object
+  readonly workspace: Workspace
+  readonly signal: AbortSignal
+  readonly directoryPreparation: Readonly<{ assertCaller(caller: Context): void }>
+  active: boolean
+}
 
 function refuse(): never { throw new CloudApiError('cloud/forbidden', 'The account project or fixed Preset is not approved.') }
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The account policy requires its original native providers.') }
@@ -113,10 +126,13 @@ class AccountPolicy {
   private facts: readonly EntryFact[] | undefined
   private modules: readonly string[] | undefined
   private readonly providers = new Map<string, object>()
+  private readonly childPreparations = new Map<object, ChildPreparation>()
 
   constructor(
     private readonly ctx: Context, private readonly binding: AccountBinding, private readonly files: CloudAccountFiles,
     private readonly config: AccountPolicyConfig, private readonly exposure: ExposureService['policy'], private readonly maxEntries: number,
+    private readonly provisionableModel?: (provider: string, model: string) => void,
+    private readonly assertBusinessCurrent?: (binding: AccountBinding) => void,
   ) {}
 
   current(): void {
@@ -132,7 +148,8 @@ class AccountPolicy {
       if (key === 'agentLoop' && actual instanceof AgentLoop && actual.config.agents.length !== 0) refuse()
     }
     for (const fact of this.facts ?? []) {
-      if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE) unavailable()
+      if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
+        || fact.entry.moduleNamespace !== fact.module) unavailable()
       try { fact.entry.assertConfigUpdatePlan(fact.plan) }
       catch (_cause) { unavailable() }
     }
@@ -184,7 +201,8 @@ class AccountPolicy {
     this.current()
     const workspace = this.member(id)
     if (workspace === undefined || header.id !== id || header.agentPreset !== this.config.presetId) refuse()
-    this.header(header, workspace.path)
+    this.sessionHeader(header, workspace.path)
+    if (header.origin === 'subagent') { this.spawn(); if (header.parentSession === id) refuse() }
     this.pin()
     this.assertWorkspace(workspace)
     return workspace
@@ -194,7 +212,7 @@ class AccountPolicy {
     this.current()
     const workspace = this.workspaceAt(session.header.cwd)
     if (session.id !== session.header.id || session.header.agentPreset !== this.config.presetId) refuse()
-    this.header(session.header, workspace.path)
+    this.sessionHeader(session.header, workspace.path)
     if (this.provider('workingDirectory').get(session) !== workspace.path
       || this.provider('sessionProjections').stateOf(session, 'agentPreset') !== this.config.presetId) refuse()
     if (attached && (this.provider('sessions').get(session.id) !== session || this.member(session.id) !== workspace)) refuse()
@@ -233,7 +251,7 @@ class AccountPolicy {
       if (matches.length !== 1 || entry === undefined || fiber?.state !== FiberState.ACTIVE) unavailable()
       const plan = entry.prepareConfigUpdate(entry.options.config)
       if (plan.impact !== 'none') unavailable()
-      return { entry, fiber, plan }
+      return { entry, fiber, plan, module: entry.moduleNamespace }
     }
     const preset = fact(this.config.presetEntryId), loop = fact(this.config.agentLoopEntryId)
     if (preset.fiber.runtime?.callback !== AgentPreset || !object(preset.fiber.config)
@@ -307,13 +325,24 @@ class AccountPolicy {
     if (filesSelected) this.files.assertContentAvailable()
     this.handlers('native:sessionController')
     await this.preset(this.config.presetId, control)
-    await this.model(selection, control)
+    if (this.provisionableModel === undefined) await this.model(selection, control)
+    else {
+      if (!this.allowedModel(provider, model)) modelDenied()
+      this.provisionableModel(provider, model)
+    }
     control.throwIfAborted()
     this.current()
     const current = this.defaultModel()
     if (this.project() !== project || current.provider !== selection.provider || current.model !== selection.model) unavailable()
     if (filesSelected) this.files.assertContentAvailable()
     this.handlers('native:sessionController')
+  }
+
+  private sessionHeader(header: Header, path: string): void {
+    if (header.origin === 'subagent') {
+      if (header.cwd !== path || header.isSeeded || header.parentSession === undefined
+        || !Number.isSafeInteger(header.delegationDepth) || (header.delegationDepth ?? 0) < 1) refuse()
+    } else this.header(header, path)
   }
 
   header(header: Header, path: string): void {
@@ -334,6 +363,7 @@ class AccountPolicy {
     using observed = await query.observeSession(id, { projectionMode: 'all', signal: control })
     control.throwIfAborted()
     this.current()
+    this.header(observed.header, workspace.path)
     if (this.observedProject(id, observed.header) !== workspace
       || observed.projections?.values.workingDirectory !== workspace.path
       || observed.projections.values.agentPreset !== this.config.presetId) refuse()
@@ -361,7 +391,11 @@ class AccountPolicy {
     if (workspace === undefined) refuse()
     if (summary !== undefined) {
       if (summary.sessionId !== id || summary.cwd !== workspace.path
-        || summary.origin !== undefined || summary.parentSessionId !== undefined) refuse()
+        || (session !== undefined
+          ? summary.origin !== session.header.origin || summary.parentSessionId !== session.header.parentSession
+          : summary.origin === 'subagent'
+            ? summary.parentSessionId === undefined || summary.parentSessionId === id
+            : summary.parentSessionId !== undefined)) refuse()
       const values = summary.projections?.values
       if ((values?.workingDirectory !== undefined && values.workingDirectory !== workspace.path)
         || (values?.agentPreset !== undefined && values.agentPreset !== this.config.presetId)) refuse()
@@ -369,7 +403,7 @@ class AccountPolicy {
     this.assertWorkspace(workspace)
   }
 
-  prepared(agent: Agent, attached: boolean): Workspace {
+  prepared(agent: Agent, attached: boolean, parent?: Agent): Workspace {
     this.current()
     const workspace = this.sessionProject(agent.session, false)
     if (this.facts === undefined || this.modules === undefined || agent.ctx.root !== this.ctx.root
@@ -381,10 +415,265 @@ class AccountPolicy {
     if (presets.composedPreset(agent.ctx) !== this.config.presetId || composition.length !== 1 || row === undefined
       || row.id !== this.config.presetId || row.leakedServices.length !== 0 || row.modules.length !== this.modules.length
       || row.modules.some((module, index) => module.moduleName !== this.modules?.[index])) refuse()
+    if (agent.session.header.origin === 'subagent') {
+      this.spawn()
+      const parentId = agent.session.header.parentSession
+      if (parentId === undefined) refuse()
+      const actualParent = parent ?? this.provider('agents').get(parentId)
+      if (actualParent === undefined || agent.id === actualParent.id) refuse()
+      this.parentCurrentForChild(agent.ctx, actualParent, workspace)
+      const childScope = scopeOf(agent.ctx), parentScope = scopeOf(actualParent.ctx)
+      if (childScope === undefined || parentScope === undefined || agent.session.header.parentSession !== actualParent.id
+        || (agent.session.header.delegationDepth ?? 0) < delegationDepthOf(actualParent) + 1
+        || scopeParentOf(childScope) !== scopeParentOf(parentScope)) refuse()
+      if (attached && !this.provider('agents').isOwnedBy(agent.id, actualParent)) refuse()
+    } else if (parent !== undefined) refuse()
+    for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'llm', 'subagents', 'workingDirectory'] as const) {
+      const root: unknown = this.ctx.root.get(key), child: unknown = agent.ctx.get(key)
+      if (root === undefined ? child !== undefined : !object(root) || !object(child) || original(root) !== original(child)) refuse()
+    }
     if (attached && (this.provider('agents').get(agent.id) !== agent || this.provider('sessions').get(agent.id) !== agent.session
       || this.member(agent.id) !== workspace)) refuse()
     this.assertWorkspace(workspace)
     return workspace
+  }
+
+  parentCurrentForChild(owner: Context, parent: Agent, expected?: Workspace): Workspace {
+    if (this.assertBusinessCurrent === undefined) unavailable()
+    this.assertBusinessCurrent(this.binding)
+    this.current()
+    owner.fiber.assertActive()
+    parent.ctx.fiber.assertActive()
+    const agents = this.provider('agents'), sessions = this.provider('sessions')
+    if (owner.root !== this.ctx.root || owner.get('peAccount') !== this.binding
+      || parent.ctx.root !== this.ctx.root || parent.ctx.get('peAccount') !== this.binding
+      || parent.ctx.root.get('peAccount') !== this.binding || parent.id !== parent.session.id
+      || parent.session.header.id !== parent.id || agents.get(parent.id) !== parent
+      || sessions.get(parent.id) !== parent.session) refuse()
+    for (const [key, installed] of [['agents', agents], ['sessions', sessions]] as const) {
+      for (const context of [owner, parent.ctx, this.ctx.root]) {
+        const actual: unknown = context.get(key)
+        if (!object(actual) || original(actual) !== original(installed)) refuse()
+      }
+    }
+    const workspace = this.sessionProject(parent.session, true)
+    if (expected !== undefined && workspace !== expected) refuse()
+    if (this.provider('workingDirectory').get(parent.session) !== workspace.path) refuse()
+    return workspace
+  }
+
+  spawn(provider?: import('@deepseek-ai/dsh-subagent').SubagentProvider): void {
+    this.current()
+    const runtime = this.provider('subagents')
+    if (!(runtime instanceof SubagentRuntime)) unavailable()
+    let native = 0
+    for (const fiber of this.ctx.registry.get(SubagentRuntime)?.fibers ?? []) {
+      const installed: unknown = fiber.store?.subagents?.value
+      if (++native > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== SubagentRuntime
+        || !object(installed) || original(installed) !== original(runtime)
+        || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
+    }
+    if (native !== 1) unavailable()
+    let found = 0
+    for (const fiber of this.ctx.registry.get(Spawn)?.fibers ?? []) {
+      if (++found > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== Spawn.apply
+        || fiber.entry?.moduleNamespace !== Spawn || !object(fiber.config)
+        || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
+      const name: unknown = Reflect.get(fiber.config, 'providerName')
+      if (typeof name !== 'string' || runtime.getProvider(name) === undefined
+        || provider !== undefined && runtime.getProvider(name) !== provider) refuse()
+    }
+    if (found !== 1) unavailable()
+  }
+
+  private async auditGeneration(parent: Agent, signal: AbortSignal): Promise<void> {
+    const scope = scopeOf(parent.ctx)
+    if (scope === undefined) refuse()
+    const generation = scopeParentOf(scope)
+    if (generation === undefined) refuse()
+    const inspection = this.provider('agentPresets').inspectCompositions(parent.ctx)
+    if (inspection.length !== 1 || inspection[0]?.id !== this.config.presetId) refuse()
+    const entries: Entry[] = []
+    for (const runtime of this.ctx.registry.values()) for (const fiber of runtime.fibers) {
+      if (scopeOf(fiber.ctx) !== generation || fiber.entry === undefined || fiber.entry.options.group) continue
+      // The Loader assigns the same Entry to its owned plugin/inject fibers.
+      if (fiber.parent.fiber.entry === fiber.entry) continue
+      if (entries.length >= this.maxEntries || fiber.state !== FiberState.ACTIVE || fiber.entry.fiber !== fiber) refuse()
+      entries.push(fiber.entry)
+    }
+    const modules = inspection[0].modules
+    if (entries.length !== modules.length) refuse()
+    const facts: EntryFact[] = []
+    for (const entry of entries) {
+      signal.throwIfAborted()
+      const namespace: unknown = await entry.parent.tree.import(entry.options.name)
+      signal.throwIfAborted()
+      this.current()
+      const fiber = entry.fiber
+      let plugin: unknown = namespace
+      if (object(plugin) && Reflect.get(plugin, 'default') !== undefined) plugin = Reflect.get(plugin, 'default')
+      const callback: unknown = typeof plugin === 'function' ? plugin : object(plugin) ? Reflect.get(plugin, 'apply') : undefined
+      if (fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace !== namespace || fiber.runtime?.callback !== callback
+        || scopeOf(fiber.ctx) !== generation
+        || !modules.some(row => row.moduleName === entry.options.name && row.baseUrl === entry.parent.tree.ctx.baseUrl)) refuse()
+      const plan = entry.prepareConfigUpdate(entry.options.config)
+      if (plan.impact !== 'none') refuse()
+      facts.push({ entry, fiber, plan, module: namespace })
+    }
+    const prior = this.facts ?? []
+    this.facts = [...prior, ...facts.filter(fact => !prior.some(existing => existing.entry === fact.entry))]
+    if (this.facts.length > this.maxEntries) refuse()
+    this.current()
+  }
+
+  async admitSubagent(request: SubagentAdmissionRequest): Promise<void> {
+    const parent = request.kind === 'start' ? request.spec.request.parent : request.parent
+    const signal = request.kind === 'start' ? request.spec.signal : request.signal
+    const workspace = this.parentCurrentForChild(request.owner, parent)
+    this.prepared(parent, true)
+    this.spawn(request.provider)
+    if (request.provider === undefined) refuse()
+    if (request.kind === 'start' && (request.provider.prepareContinuable === undefined || request.provider.inheritsParentContext
+      || request.cwd !== workspace.path
+      || request.spec.request.agentPreset !== undefined && request.spec.request.agentPreset !== this.config.presetId)) refuse()
+    await this.directory(workspace, signal)
+    this.parentCurrentForChild(request.owner, parent, workspace)
+    await this.preset(request.kind === 'start' ? request.spec.request.agentPreset : request.agentPreset, signal)
+    this.parentCurrentForChild(request.owner, parent, workspace)
+    await this.auditGeneration(parent, signal)
+    this.parentCurrentForChild(request.owner, parent, workspace)
+    if (request.kind === 'start') {
+      const route = resolveChildAgentOptions(
+        parent, request.spec.request.agentOptions, resolveChildDepth(parent, request.spec.request.maxDepth),
+      )
+      await this.model(route, signal)
+    } else {
+      await this.childHistory(request.owner, parent, request.childId, signal)
+      await this.model(request.agentOptions, signal)
+    }
+    this.parentCurrentForChild(request.owner, parent, workspace)
+    this.prepared(parent, true)
+    this.spawn(request.provider)
+  }
+
+  private async childHistory(owner: Context, parent: Agent, id: SessionId, signal: AbortSignal): Promise<number> {
+    const workspace = this.parentCurrentForChild(owner, parent)
+    if (id === parent.id || this.member(id) !== workspace) refuse()
+    using history = await this.provider('sessionQuery').observeSession(id, { projectionMode: 'all', signal })
+    this.parentCurrentForChild(owner, parent, workspace)
+    const header = history.header
+    this.sessionHeader(header, workspace.path)
+    if (header.id !== id || header.origin !== 'subagent' || header.parentSession !== parent.id
+      || (header.delegationDepth ?? 0) < delegationDepthOf(parent) + 1
+      || header.agentPreset !== this.config.presetId || history.projections?.values.workingDirectory !== workspace.path
+      || history.projections.values.agentPreset !== this.config.presetId) refuse()
+    return Math.max(header.delegationDepth ?? 0, delegationDepthOf(parent) + 1)
+  }
+
+  async childCreate(options: Parameters<AccountNativeGuards['agents']['assertCreate']>[0], signal: AbortSignal): Promise<number> {
+    const parent = options.parentAgent
+    if (parent === undefined) refuse()
+    const workspace = this.parentCurrentForChild(this.ctx, parent)
+    this.prepared(parent, true)
+    this.spawn()
+    if (options.meta?.cwd !== workspace.path || options.meta.agentPreset !== this.config.presetId
+      || options.meta.origin !== 'subagent' || options.meta.parentSession !== parent.id || options.meta.isSeeded
+      || options.meta.delegationDepth !== delegationDepthOf(parent) + 1 || options.seed !== undefined) refuse()
+    const runtimeDepth = options.agentOptions?.subagentDepth
+    if (runtimeDepth !== undefined && (!Number.isSafeInteger(runtimeDepth)
+      || runtimeDepth < 0 || runtimeDepth > options.meta.delegationDepth)) refuse()
+    await this.directory(workspace, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.preset(options.meta.agentPreset, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.auditGeneration(parent, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.model(options.agentOptions, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    this.prepared(parent, true)
+    this.spawn()
+    return delegationDepthOf(parent) + 1
+  }
+
+  async childResume(options: Parameters<AccountNativeGuards['agents']['assertResume']>[0], signal: AbortSignal): Promise<number> {
+    const parent = options.parentAgent
+    if (parent === undefined) refuse()
+    const workspace = this.parentCurrentForChild(this.ctx, parent)
+    this.prepared(parent, true)
+    this.spawn()
+    const depth = await this.childHistory(this.ctx, parent, options.resumeSessionId, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.directory(workspace, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.preset(this.config.presetId, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.auditGeneration(parent, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    await this.model(options.agentOptions, signal)
+    this.parentCurrentForChild(this.ctx, parent, workspace)
+    this.prepared(parent, true)
+    this.spawn()
+    const runtimeDepth = options.agentOptions?.subagentDepth
+    if (runtimeDepth !== undefined && (!Number.isSafeInteger(runtimeDepth) || runtimeDepth < 0)) refuse()
+    return Math.max(depth, runtimeDepth ?? 0)
+  }
+
+  private preparationCurrent(record: ChildPreparation): void {
+    const { child, parent, session, fiber, workspace, signal, generation } = record
+    signal.throwIfAborted()
+    fiber.assertActive()
+    if (!record.active || this.childPreparations.get(child) !== record
+      || scopeOf(child.ctx) !== child || child.ctx.fiber !== fiber
+      || fiber.state !== FiberState.LOADING && fiber.state !== FiberState.ACTIVE
+      || child.session !== session || child.id !== session.id || session.header.id !== child.id) refuse()
+    const parentScope = scopeOf(parent.ctx)
+    if (parentScope === undefined || this.parentCurrentForChild(child.ctx, parent, workspace) !== workspace
+      || this.prepared(parent, true) !== workspace || scopeParentOf(parentScope) !== generation) refuse()
+    const childGeneration = scopeParentOf(child)
+    if (childGeneration !== undefined && childGeneration !== generation) refuse()
+    const header = session.header
+    this.sessionHeader(header, workspace.path)
+    if (header.origin !== 'subagent' || header.parentSession !== parent.id || header.agentPreset !== this.config.presetId
+      || (header.delegationDepth ?? 0) < delegationDepthOf(parent) + 1 || child.id === parent.id
+      || this.provider('agents').get(child.id) !== undefined || this.provider('sessions').get(child.id) !== undefined
+      || !this.allowedModel(child.options.provider ?? '', child.options.model ?? '')) refuse()
+    for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'llm', 'subagents', 'workingDirectory'] as const) {
+      const root: unknown = this.ctx.root.get(key), selected: unknown = child.ctx.get(key)
+      if (root === undefined ? selected !== undefined
+        : !object(root) || !object(selected) || original(root) !== original(selected)) refuse()
+    }
+  }
+
+  async withChildPreparation<T>(child: Agent, parent: Agent, signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    const workspace = this.parentCurrentForChild(child.ctx, parent)
+    this.prepared(parent, true)
+    const parentScope = scopeOf(parent.ctx), scope = scopeOf(child.ctx)
+    const generation = parentScope === undefined ? undefined : scopeParentOf(parentScope)
+    // The original native factory mints the Agent itself as its opaque scope key. A copied Agent cannot enter.
+    if (scope !== child || generation === undefined || this.childPreparations.has(scope)) refuse()
+    const directoryPreparation = Object.freeze({ assertCaller: (caller: Context): void => {
+      caller.fiber.assertActive()
+      if (caller.root !== this.ctx.root || caller.get('peAccount') !== this.binding || scopeOf(caller) !== scope) refuse()
+      this.preparationCurrent(record)
+    } })
+    const record: ChildPreparation = { child, session: child.session, fiber: child.ctx.fiber, parent, generation,
+      workspace, signal, directoryPreparation, active: true }
+    this.childPreparations.set(scope, record)
+    const revoke = (): void => { record.active = false }
+    let remove: (() => void | Promise<void>) | undefined
+    try {
+      signal.addEventListener('abort', revoke, { once: true })
+      remove = child.ctx.effect(() => revoke, 'account-policy.child-directory-preparation')
+      this.preparationCurrent(record)
+      const result = await operation()
+      this.preparationCurrent(record)
+      return result
+    } finally {
+      revoke()
+      signal.removeEventListener('abort', revoke)
+      if (this.childPreparations.get(scope) === record) this.childPreparations.delete(scope)
+      await remove?.()
+    }
   }
 
   async fileProject(caller: Context, signal?: AbortSignal): Promise<AccountFileSelection> {
@@ -395,9 +684,15 @@ class AccountPolicy {
     if (caller.root !== this.ctx.root || caller.get('peAccount') !== this.binding) {
       throw new CloudApiError('cloud/stale-generation', 'The file caller belongs to another account graph.')
     }
+    const callerScope = scopeOf(caller)
+    const preparing = callerScope === undefined ? undefined : this.childPreparations.get(callerScope)
+    if (preparing !== undefined) {
+      const assertCurrent = (): void => { this.preparationCurrent(preparing) }
+      preparing.directoryPreparation.assertCaller(caller)
+      return { workspace: preparing.workspace, assertCurrent, directoryPreparation: preparing.directoryPreparation }
+    }
     const agent = this.provider('agents').currentInitiator()
     if (agent !== undefined) {
-      const callerScope = scopeOf(caller)
       // Shared account services may be untagged; a tagged child cannot borrow its causal parent's file authority.
       const assertCaller = (): void => {
         if (callerScope !== undefined && !scopeChainOf(scopeOf(agent.ctx)).includes(callerScope)) refuse()
@@ -468,13 +763,17 @@ class AccountPolicy {
  * @param config Explicit immutable deployment policy for exact models and one fixed native preset.
  * @param exposure Actual Root exposure policy, whose declarations must match enabled native handlers.
  * @param maxEntries Existing deployment bound on native Loader and preset inventory rows.
+ * @param provisionableModel Optional original audited provider check for first-key bootstrap; actual model dispatch is unchanged.
+ * @param assertBusinessCurrent Original business admission check; required for children and rechecked after awaits.
  * @returns Shared concrete Controller/factory/LLM guards; no account, Session or ready identity is created here.
  */
 export function createAccountPolicy(
   ctx: Context, binding: AccountBinding, files: CloudAccountFiles, config: AccountPolicyConfig,
   exposure: ExposureService['policy'], maxEntries: number,
+  provisionableModel?: (provider: string, model: string) => void,
+  assertBusinessCurrent?: (binding: AccountBinding) => void,
 ): AccountNativeGuards {
-  const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries)
+  const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries, provisionableModel, assertBusinessCurrent)
   return {
     assertWorkspace: (workspace) => { policy.assertWorkspace(workspace) },
     projectForAgent: agent => policy.prepared(agent, true),
@@ -512,8 +811,12 @@ export function createAccountPolicy(
       assertSessionProject: async (id) => { await policy.history(id) },
       assertActiveScope: (agent) => { policy.prepared(agent, true) },
     },
+    admitSubagent: request => policy.admitSubagent(request),
+    assertSubagentsInstalled: () => { policy.spawn() },
     agents: {
+      withChildPreparation: (child, parent, signal, operation) => policy.withChildPreparation(child, parent, signal, operation),
       assertCreate: async (options, signal) => {
+        if (options.parentAgent !== undefined) return policy.childCreate(options, signal)
         const workspace = policy.workspaceAt(options.meta?.cwd)
         await policy.directory(workspace, signal)
         policy.header(options.meta ?? {}, workspace.path)
@@ -524,13 +827,25 @@ export function createAccountPolicy(
         policy.assertWorkspace(workspace)
       },
       assertResume: async (options, signal) => {
+        if (options.parentAgent !== undefined) return policy.childResume(options, signal)
         const workspace = await policy.history(options.resumeSessionId, signal)
         await policy.model(options.agentOptions, signal)
         policy.current()
         policy.assertWorkspace(workspace)
         if (!workspace.sessionIds.includes(options.resumeSessionId)) refuse()
       },
-      assertPrepared: (agent) => { policy.prepared(agent, false) },
+      prepareChild: async (agent, parent, signal) => {
+        const workspace = policy.prepared(agent, false, parent)
+        policy.parentCurrentForChild(agent.ctx, parent, workspace)
+        await workspace.attachSession(agent.id)
+        signal.throwIfAborted()
+        policy.parentCurrentForChild(agent.ctx, parent, workspace)
+        if (policy.prepared(agent, false, parent) !== workspace || !workspace.sessionIds.includes(agent.id)) refuse()
+      },
+      assertPrepared: (agent, parent) => {
+        const workspace = policy.prepared(agent, false, parent)
+        if (parent !== undefined && !workspace.sessionIds.includes(agent.id)) refuse()
+      },
     },
     allowedModel: (provider, model) => policy.allowedModel(provider, model),
   }

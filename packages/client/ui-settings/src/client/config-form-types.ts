@@ -49,10 +49,12 @@ export interface ConfigForm<T> {
    * the latest queued or mirrored revision.
    * @param ops - ordered field operations copied when queued.
    * @param expectedRevision - optional fixed revision read by the domain editor.
+   * @param assertCurrent Optional synchronous read-only editor check at actual queued dispatch and after settlement.
+   * Rejection never replays a write.
    * @returns true for Host acceptance, false for refusal or skipped writes, after any latest-write recovery.
    * Transport failures reject.
    */
-  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number): Promise<boolean>
+  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number, assertCurrent?: () => void): Promise<boolean>
   /**
    * Queue one field write. Rapid writes preserve mutation order, each carries
    * the latest known namespace revision, and only the latest settlement may

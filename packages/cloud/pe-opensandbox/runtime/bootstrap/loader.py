@@ -11,6 +11,6 @@ s=os.fstat(f)
 if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_gid!=0 or stat.S_IMODE(s.st_mode)!=0o600 or s.st_nlink!=1 or s.st_size!=6697: raise RuntimeError('publisher refused')
 b=os.read(f,6697+1)
 os.close(f);os.close(a);os.close(d)
-if len(b)!=6697 or hashlib.sha256(b).hexdigest()!='2e4efc22a3be2dcb4096efa6a3a29cc0db879f8b5ef7e6ca24e77b5942479381': raise RuntimeError('publisher hash refused')
+if len(b)!=6697 or hashlib.sha256(b).hexdigest()!='0af22d7c81eb4d876cf0b3aaaa2798135315dd317b4b142890c6bb6de68d6ac6': raise RuntimeError('publisher hash refused')
 sys.argv=['/root-secret/.bootstrap/publisher.py']
 exec(compile(b,'/root-secret/.bootstrap/publisher.py','exec'),{'__name__':'__main__','__file__':'/root-secret/.bootstrap/publisher.py'})
