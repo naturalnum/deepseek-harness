@@ -1,0 +1,38 @@
+.root { flex: 1; min-width: 0; }
+.anchor { width: 100%; }
+.trigger {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.trigger:hover,
+.trigger[aria-expanded='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+.trigger:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.trigger:disabled { cursor: wait; opacity: .5; }
+.trigger[data-collapsed='true'] { width: 36px; height: 36px; justify-content: center; gap: 0; padding: 0; }
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-bg-skeleton);
+  color: var(--dsw-alias-label-secondary);
+}
+.label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu[role='menu'] { min-width: 180px; }

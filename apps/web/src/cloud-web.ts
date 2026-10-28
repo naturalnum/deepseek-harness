@@ -186,6 +186,7 @@ export class CloudWebEntry {
         baseUrl: this.baseUrl(), config: manifest.client, decodeLimits: manifest.decodeLimits,
         persistenceLimits: manifest.persistenceLimits, fields: manifest.fields,
         storage: globalThis.localStorage, fetch: this.fetch, createWebSocket: url => new WebSocket(url),
+        signOut: this.onExit,
         ...open === undefined ? {} : { previewNavigation: {
           open: (url: string) => {
             if (this.stopping || this.disposed || this.phase !== 'running') throw new cloud.ClientFailure('closed')
@@ -428,7 +429,9 @@ export class CloudWebEntry {
     this.password.disabled = this.phase !== 'login'
     this.submit.disabled = this.phase !== 'login' || this.authPending
     this.exit.disabled = pending || this.authPending || this.logoutWork !== undefined || this.phase === 'unconfirmed'
-    this.chrome.hidden = login || this.phase === 'checking'
+    this.exit.hidden = this.phase === 'running' || this.phase === 'starting'
+    this.chrome.hidden = login || this.phase === 'checking' || this.phase === 'starting'
+      || this.phase === 'running' && previewIssue === undefined
     this.brand.hidden = !login
     this.description.hidden = !login
     this.check.hidden = login || pending || this.phase === 'running'

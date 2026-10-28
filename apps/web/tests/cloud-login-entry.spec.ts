@@ -199,7 +199,7 @@ describe('real source Cloud Web component', () => {
     expect(f.native()?.get('loader')?.internal).toBe(f.create.mock.results[0]?.value)
   })
 
-  it('revokes before native child cleanup and sends sign-out only after the original join', async () => {
+  it('routes the sidebar sign-out through the original native join before Cookie logout without replay', async () => {
     const held = Promise.withResolvers<undefined>(), requests: string[] = []
     const signout = Promise.withResolvers<Response>()
     const f = fixture({ nativeStop: () => held.promise, fetch: async (input) => {
@@ -210,8 +210,11 @@ describe('real source Cloud Web component', () => {
     await f.entry.run()
     const page = f.native()!.get('peCloudPage')!
     page.nativeOptions.persistence.setItem('component', 'value')
-    exit()
-    exit()
+    expect(document.querySelector<HTMLElement>('header')!.hidden).toBe(true)
+    const signOut = page.accountSignOut
+    expect(signOut).toBeDefined()
+    signOut!(f.native()!)
+    expect(() => { signOut!(f.native()!) }).toThrow()
     expect(() => { page.nativeOptions.persistence.setItem('late', 'write') }).toThrow()
     await expect.poll(() => f.events.includes('native-stop')).toBe(true)
     expect(requests).toEqual(['/cloud/bootstrap'])
@@ -369,8 +372,10 @@ describe('real source Cloud Web component', () => {
     const f = fixture({ fetch: async () => Response.json(metadata()),
       nativeStop: async () => { throw new Error('component child stop failure') } })
     await f.entry.run()
-    exit()
+    f.native()!.get('peCloudPage')!.accountSignOut!(f.native()!)
     await expect.poll(f.state).toBe('unconfirmed')
+    expect(document.querySelector<HTMLButtonElement>('header button')!.hidden).toBe(false)
+    expect(document.querySelector<HTMLButtonElement>('header button')!.disabled).toBe(true)
     expect(f.fetcher).toHaveBeenCalledTimes(1)
     await expect(f.entry.dispose()).rejects.toThrow('cleanup was not confirmed')
   })
