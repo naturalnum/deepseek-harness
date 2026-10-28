@@ -5,7 +5,8 @@ import { CloudProjectFlow } from '../src/client/project-flow.tsx'
 import type { CloudProjectFlowInjected } from '../src/client/project-flow.tsx'
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
-const labels: Record<string, string> = { title: 'Create project', name: 'Project name', create: 'Create', cancel: 'Cancel',
+const labels: Record<string, string> = { title: 'Create project', name: 'Project name', placeholder: 'Name your project',
+  create: 'Create', cancel: 'Cancel', close: 'Close',
   pending: 'Creating project', unknown: 'Refresh and check your projects before trying again' }
 const t: CloudProjectFlowInjected['t'] = (key) => {
   if (typeof key !== 'string') throw new TypeError('The translation fixture requires a string key')
@@ -15,6 +16,18 @@ function owner(): DirectoryFlowOwnerProps {
   return { open: true, busy: false, onPicked: vi.fn(), onCancel: vi.fn(), onError: vi.fn() }
 }
 afterEach(cleanup)
+
+it('keeps the named project field and both dismiss actions inside the shared modal', () => {
+  const props = owner(), createProject = vi.fn(async () => '/unused')
+  render(<CloudProjectFlow {...props} createProject={createProject} t={t} />)
+  expect(screen.getByRole('dialog', { name: 'Create project' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Create project' })).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Project name' }).getAttribute('placeholder')).toBe('Name your project')
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  expect(props.onCancel).toHaveBeenCalledOnce()
+  expect(createProject).not.toHaveBeenCalled()
+})
 
 it('collects only a title and returns the server allocated native path to the original owner', async () => {
   const props = owner(), createProject = vi.fn(async () => '/trusted/native-path')

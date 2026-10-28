@@ -1,6 +1,8 @@
 /** Typed copy for the pre-Cordis Cloud login and page-owned exit controls. */
 interface CloudWebCopy {
+  product: string
   title: string
+  description: string
   email: string
   password: string
   signIn: string
@@ -19,7 +21,9 @@ interface CloudWebCopy {
 }
 
 const en: CloudWebCopy = {
-  title: 'Sign in to DSH', email: 'Email', password: 'Password', signIn: 'Sign in', signOut: 'Sign out',
+  product: 'PowerEvolve', title: 'Enter your cloud workspace',
+  description: 'Sign in to PowerEvolve to continue your projects, files, and AI conversations.',
+  email: 'Email', password: 'Password', signIn: 'Sign in', signOut: 'Sign out',
   check: 'Check sign-in status', pending: 'Please wait',
   invalidCredentials: 'Sign-in was refused. Check your email and password.',
   requestTooLarge: 'The sign-in details are too long. Shorten them and try again.',
@@ -33,7 +37,9 @@ const en: CloudWebCopy = {
 }
 
 const zh: CloudWebCopy = {
-  title: '登录 DSH', email: '邮箱', password: '密码', signIn: '登录', signOut: '退出登录',
+  product: 'PowerEvolve', title: '进入你的云端工作空间',
+  description: '登录 PowerEvolve，继续你的项目、文件与 AI 对话。',
+  email: '邮箱', password: '密码', signIn: '登录', signOut: '退出登录',
   check: '检查登录状态', pending: '请稍候',
   invalidCredentials: '登录被拒绝，请检查邮箱和密码',
   requestTooLarge: '登录信息过长，请缩短后重试',

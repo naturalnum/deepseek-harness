@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在启动原生 `AppWebEntry` 前，通过有界、正式解码的 bootstrap 响应准备一个 Cloud 页面。`/client` Loader entry 消费这一精确 owner，并用捕获的账户／代际 carrier 安装既有原生 Connection。缺失或退役的准备状态会拒绝。本包不实现登录表单，也不证明后端账户已就绪。
+在启动原生 `AppWebEntry` 前，通过有界、正式解码的 bootstrap 响应准备一个 Cloud 页面。`/client` Loader entry 消费这一精确 owner，并用捕获的账户／代际 carrier 安装既有原生 Connection。缺失或退役的准备状态会拒绝。[Web 入口](../../../apps/web/src/cloud-web.ts)在现有邮箱／密码 Cookie 认证上提供 PowerEvolve 登录界面。本包不实现登录表单，也不证明后端账户已就绪。
 
 ## 目录
 
@@ -20,7 +20,7 @@ kind: "package-reference"
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
-Cloud Loader 另挂载生成的 API 项目创建贡献，并向两个原生 Workspace 目录流程 slot 注册本地化标题表单。返回的原生 Workspace 路径交原 `onPicked` 回调采用，保留原生幂等登记。空白或超长标题不提交；每次打开最多上报一次成功分配。取消会中止请求 signal 并忽略迟到的采用结果，实际工作仍由原 transport 与服务端拥有者追踪。已提交创建失败或取消后，该流程实例禁止重提并提示刷新检查项目，不重放未知分配。
+Cloud Loader 另挂载生成的 API 项目创建贡献，并向两个原生 Workspace 目录流程 slot 注册本地化标题表单。共享弹窗呈现居中文件夹图标、项目名称输入框和并排的取消／创建操作。返回的原生 Workspace 路径交原 `onPicked` 回调采用，保留原生幂等登记。空白或超长标题不提交；每次打开最多上报一次成功分配。取消会中止请求 signal 并忽略迟到的采用结果，实际工作仍由原 transport 与服务端拥有者追踪。已提交创建失败或取消后，该流程实例禁止重提并提示刷新检查项目，不重放未知分配。
 
 -----
 

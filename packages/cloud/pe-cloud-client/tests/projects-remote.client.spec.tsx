@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Real generated Remote and registered project form; only the Connection carrier is replaced. */
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import * as NativeClientGateway from '@deepseek-ai/dsh-api-gateway/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -23,6 +23,12 @@ afterEach(cleanup)
 it.each(holes)('creates through the generated Remote from %s and withdraws its old action', async (hole) => {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
+  const activationFailures: unknown[] = []
+  ctx.on('internal/status', (fiber) => {
+    if (fiber.state === FiberState.FAILED) {
+      void fiber.await().catch((error: unknown) => { activationFailures.push(error) })
+    }
+  })
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(SlotRegistry)
   ctx.provide('locale', new LocaleRuntime(ctx, undefined, { preference: 'en', languages: ['en-US'] }))
@@ -47,7 +53,10 @@ it.each(holes)('creates through the generated Remote from %s and withdraws its o
   } }, ProjectHost)
   const fiber = ctx.plugin({ apply(owner: Context) { installCloudProjects(owner) } })
   await fiber.await()
-  await vi.waitFor(() => { expect(holes.map(name => ctx.slots.entries(name).length)).toEqual([1, 1]) })
+  await vi.waitFor(() => {
+    for (const error of activationFailures) throw error
+    expect(holes.map(name => ctx.slots.entries(name).length)).toEqual([1, 1])
+  })
   const entry = ctx.slots.entries(hole)[0]
   const face = entry?.inject?.()
   const createProject = face?.['createProject'], t = face?.['t']

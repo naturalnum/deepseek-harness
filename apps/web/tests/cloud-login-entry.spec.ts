@@ -168,7 +168,9 @@ describe('real source Cloud Web component', () => {
     expect(storage).not.toHaveBeenCalled()
     expect(f.create).toHaveBeenCalledTimes(1)
     document.documentElement.lang = 'zh-CN'
-    await expect.poll(() => document.querySelector('h1')?.textContent).toBe('登录 DSH')
+    await expect.poll(() => document.querySelector('h1')?.textContent).toBe('进入你的云端工作空间')
+    expect(document.querySelector('header')?.textContent).toBe('PowerEvolve')
+    expect(document.querySelector('main > p')?.textContent).toBe('登录 PowerEvolve，继续你的项目、文件与 AI 对话。')
     expect(document.querySelector('input[type=email]')?.parentElement?.textContent).toContain('邮箱')
   })
 
