@@ -113,6 +113,12 @@ def authorization(value):
     return value
 
 
+def file_policy(value):
+    keys(value, ['mode'])
+    require(value['mode'] in ['read-only', 'workspace-write'], 'invalid_file_policy')
+    return dict(value)
+
+
 def verify_role(body, token):
     """Root's existing protected token signs the role; argv/spec never select it."""
     grant = authorization(body['authorization'])
@@ -132,7 +138,7 @@ def request(path, body, runtime):
     elif path in ['/prepare', '/commit', '/cancel', '/poll', '/stop']:
         fields = common + ['operationId', 'specHash', 'authorization']
         if path == '/prepare':
-            fields += ['spec'] + (['skillWorld'] if 'skillWorld' in body else [])
+            fields += ['spec'] + (['skillWorld'] if 'skillWorld' in body else []) + (['filePolicy'] if 'filePolicy' in body else [])
         if path == '/poll':
             fields += ['stdoutOffset', 'stderrOffset']
         keys(body, fields)
@@ -142,7 +148,8 @@ def request(path, body, runtime):
         if path == '/prepare':
             normalized, _, _ = canonical(body['spec'])
             fixed = skill_world(body['skillWorld']) if 'skillWorld' in body else None
-            require(prepared_digest(normalized, fixed) == body['specHash'], 'spec_hash_mismatch')
+            policy = file_policy(body['filePolicy']) if 'filePolicy' in body else None
+            require(prepared_digest(normalized, fixed, policy) == body['specHash'], 'spec_hash_mismatch')
         if path == '/poll':
             offset(body['stdoutOffset']); offset(body['stderrOffset'])
     else:
@@ -193,5 +200,9 @@ def skill_world(value):
     return {**parent, 'copies': copies}
 
 
-def prepared_digest(spec, working_copies=None):
-    return hashlib.sha256(dumps(spec if working_copies is None else {'spec': spec, 'skillWorld': working_copies})).hexdigest()
+def prepared_digest(spec, working_copies=None, policy=None):
+    value = spec if working_copies is None and policy is None else {
+        'spec': spec,
+        **({} if working_copies is None else {'skillWorld': working_copies}),
+        **({} if policy is None else {'filePolicy': file_policy(policy)})}
+    return hashlib.sha256(dumps(value)).hexdigest()

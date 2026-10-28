@@ -130,6 +130,12 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 凭据引用、技能目录和批准插件 Profile 在同一个 `AccountSaves` 中保留各自的编辑 token。技能工作及必需应用/provider 释放继续占用该 turn，阻止独占 paused 插件修改。插件嵌套 writer 加入原 paused turn；顶层技能仍使用普通 live 准入。失败或未知保存阻止重新开放，终态 stop 不能恢复。paused 插件权限不授予原始 Settings、凭据或 manager/package writer 权限。
 
+显式账户配方入口可通过 runtime 私有 builtin 选择原生 Commands、Goals、权限预设、UserQuestions、反馈及 Session 日志导出。这些服务保留原生注册表、投影、修订号、队列与持久化。每个实际 RPC、流或 Fetch 注册都须匹配已审核开放清单及原 provider 身份；浏览器选择控件本身不授权操作。模型目录使用与 prompt 调度相同的批准 provider/model 路由过滤，保留原生 effort 元数据，并在原生选择提交点复核准入。
+
+Commands 在附件准入之后、原生 handler 执行之前复核原账户及 Agent。原生问答 waterfall 复用 Remote 投影器及结果协议；已交付但未回答的问答仍占用同一事件条数与完整帧字节预算，直到结算。销毁及请求取消会拒绝未决问答。反馈沿用原生排队 JSONL 写入和账户范围的匿名展示身份；已经开始的写入在准入关闭后仍保留原有 flush/close 责任。
+
+权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。仅支持 read-only、workspace-write，两者 approval 都为 never；保留的命令/服务或实时子 Agent 会阻止切换，子级不能扩大只读祖先的权限。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
+
 </details>
 
 -----

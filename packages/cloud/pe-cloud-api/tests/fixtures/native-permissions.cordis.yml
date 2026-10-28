@@ -1,0 +1,15 @@
+- id: permissions
+  name: cordis:account-permissions
+  config:
+    defaultPreset: workspace-write
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: never
+        name: 只读
+      workspace-write:
+        sandbox: workspace-write
+        approval: never
+        name: 工作区内修改
+- id: commands
+  name: cordis:permission-command-registry

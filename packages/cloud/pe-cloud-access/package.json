@@ -55,7 +55,8 @@
     "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
     "@deepseek-ai/dsh-pe-opensandbox": "workspace:*",
     "@deepseek-ai/dsh-app-boot": "workspace:*",
-    "@deepseek-ai/dsh-client-file-upload": "workspace:*"
+    "@deepseek-ai/dsh-client-file-upload": "workspace:*",
+    "@deepseek-ai/dsh-session-log-export": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -82,6 +83,7 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
     "@types/pg": "8.15.5",
     "@types/ws": "^8.18.1",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "@deepseek-ai/dsh-session-log-export": "workspace:*"
   }
 }

@@ -61,6 +61,13 @@ The native browser Loader creates entries with `{ name }` and no per-entry confi
 | `maxDownloadBytes` | no default | Optional positive safe-integer download acceptance cap; omitted keeps both download actions unregistered. |
 | `modelSettingsRequestTimeoutMs` | no default | Optional finite positive native model-settings RPC observer deadline; omitted keeps this integration closed. |
 | `skillSettings` | no default | Optional `{ requestTimeoutMs, maxFileBytes }`; both fields are positive safe integers, with the deadline within the platform timer range. Omission keeps skill management closed. |
+| `nativeSessionControls` | no default | Optional unique selection of `commands`, `models`, `permissions`, `goals`, `plan`, `feedback`, `export`, and `attachments`; omission supplies no additional controls. |
+
+### Native Session controls
+
+`client.nativeSessionControls` supplies the selected original browser plugins without replacing their controllers or projections. Models, permissions, plan, feedback and export also require `commands`. The parser rejects unknown groups, duplicates and incomplete command dependencies; package names are fixed by the application. Host services, Agent-preset plugins and exact account admission must be composed separately. Selecting a browser group grants no method or filesystem authority.
+
+Selecting `export` provides the original download plugin's HTTP and navigation integration before native activation. Its HEAD preflight uses the page's captured authenticated fetch, and its GET download uses the captured account/generation navigation binding. The original download controller still owns state, cancellation and disposal; an ended page rejects both integration operations. See [Session log export](../../session-query/session-log-export/README.md) for the native download contract.
 
 ### Native Models key editing
 

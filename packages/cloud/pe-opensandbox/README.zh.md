@@ -95,6 +95,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 受管 coordinator 通过原开放账户 port、命令记录及 allocation owner 观察本地修改的空闲条件。在途调用、subprocess 获取、未停后代或进程 I/O、开发服务、应用请求、创建/准备/停止/对账及未知结果均拒绝修改。已结清的 ready 沙盒、缓存 Session 选择及完成后保留的输出可以继续保留，身份、mount 和预算不释放。基础 coordinator 拒绝该观察；终态重建仍通过原 stop/dispose 路径等待全部 warm allocation 与保留结果。
 
+显式 `shell.enforceSessionFilePolicy: true` 为 Shell 与 Subprocess 同时启用原 Session 策略；省略时保留 legacy 路径，且不能宣告权限控件可用。原命令 owner 捕获 read-only 或 workspace-write 策略，并将其纳入既有 spec hash 与 Root role HMAC。只读 Session 不能通过每次调用 override 扩权。原生执行世界按该模式绑定项目、环境 home/venv/tmp、`/tmp` 别名及选中 skill 副本。Guardian 在 PREPARED 前检查这些路径的实际挂载标记，原完整 4096 字节 frame 预算也包含私有策略。权限切换要求保留命令、unknown 结果与服务正常结算。函数、argv 测试和 payload pins 本身不证明 Linux 内核或已部署浏览器验收通过。
+
 </details>
 
 -----

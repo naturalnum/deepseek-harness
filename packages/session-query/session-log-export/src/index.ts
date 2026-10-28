@@ -54,6 +54,9 @@ export const Config: Schema<Config> = Schema.object({
     .default(DEFAULT_SESSION_LOG_COMPRESSION_LEVEL) as Schema<SessionLogCompressionLevel>,
 })
 
+/** Deployment admission runs before Session reads and again after root preparation, before ZIP creation. */
+export type SessionLogExportAdmission = (sessionId: SessionId, request: Request) => Promise<AbortSignal>
+
 interface SessionLogConnection {
   readonly fetch: {
     register(route: {
@@ -76,6 +79,20 @@ const REQUESTED: CommandResult = {
  * @param config - resolved compression policy.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  registerSessionLogExport(ctx, config)
+}
+
+/**
+ * Register the native command and download route with optional deployment admission.
+ * The returned check expires with the same Loader fiber as the original registration.
+ * @param ctx Native plugin's actual Loader context.
+ * @param config Original archive compression policy.
+ * @param admit Optional account/project check before reads and ZIP creation; its signal owns streamed archive cancellation.
+ * @returns Synchronous check of this registration's original lifetime.
+ */
+export function registerSessionLogExport(
+  ctx: Context, config: Config, admit?: SessionLogExportAdmission,
+): () => void {
   ctx.effect(() => ctx.commands.register({
     definitionId: brandString<CommandDefinitionId>('@deepseek-ai/dsh-session-log-export'),
     name: 'export',
@@ -93,12 +110,19 @@ export function apply(ctx: Context, config: Config = {}): void {
         ctx,
         request,
         config.compressionLevel ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
+        admit,
       )
       if (request.method === 'GET') return response
       await response.body?.cancel()
       return new Response(null, { status: response.status, headers: response.headers })
     },
   })
+  let active = true
+  ctx.effect(() => () => { active = false }, 'session-log-download: registration lifetime')
+  return () => {
+    ctx.fiber.assertActive()
+    if (!active) throw new Error('The Session-log download registration has ended.')
+  }
 }
 
 function connectionOf(ctx: Context): SessionLogConnection {
@@ -109,6 +133,7 @@ async function sessionLogExportResponse(
   ctx: Context,
   request: Request,
   compressionLevel: SessionLogCompressionLevel,
+  admit?: SessionLogExportAdmission,
 ): Promise<Response> {
   const url = new URL(request.url)
   const query = Object.fromEntries(url.searchParams)
@@ -119,6 +144,8 @@ async function sessionLogExportResponse(
     return new Response('missing or invalid sessionId query parameter', { status: 400 })
   }
   const sessionId = brandString<SessionId>(sessionIdValue)
+  const signal = admit === undefined ? request.signal : await admit(sessionId, request)
+  signal.throwIfAborted()
   const deps = sessionLogExportDeps(ctx)
   if (deps.sessionQuery === undefined
     || deps.sessionPersistence === undefined
@@ -136,11 +163,13 @@ async function sessionLogExportResponse(
   }
   let rootContent: string | undefined
   try {
-    await flushLiveSessionLog(deps, sessionId, request.signal)
-    rootContent = await readSessionLogText(deps.sessionPersistence, sessionId, request.signal)
-    request.signal.throwIfAborted()
+    await flushLiveSessionLog(deps, sessionId, signal)
+    rootContent = await readSessionLogText(deps.sessionPersistence, sessionId, signal)
+    signal.throwIfAborted()
+    if (admit !== undefined) await admit(sessionId, request)
+    signal.throwIfAborted()
   } catch {
-    request.signal.throwIfAborted()
+    signal.throwIfAborted()
     // Root preparation failure (flush, open, or read): answer 500 without
     // echoing the error, which may carry absolute host paths into the
     // browser error bar.
@@ -156,7 +185,7 @@ async function sessionLogExportResponse(
       sessionId,
       descendantsValue === 'true',
       compressionLevel,
-      request.signal,
+      signal,
     ),
     {
       headers: {

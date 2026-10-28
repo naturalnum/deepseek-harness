@@ -3,6 +3,7 @@
  * runtime pins and errors live in dedicated modules.
  */
 import type { SkillParent, SkillWorld } from './skill-world.ts'
+import type { NativeFilePolicy } from './file-policy.ts'
 import type { ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS } from './role-protocol.ts'
 
 /**
@@ -92,12 +93,14 @@ export interface OperationRef extends UnsignedOperationRef {
 }
 /** Canonical spec awaiting the original Root fixed-role authorizer. */
 export interface UnsignedPreparedRequest {
+  readonly filePolicy?: NativeFilePolicy
   readonly skillWorld?: SkillWorld
   readonly ref: UnsignedOperationRef
   readonly spec: OperationSpec
 }
 /** Root-registered canonical spec and its original reference, supplied before any HTTP mutation. */
 export interface PreparedRequest {
+  readonly filePolicy?: NativeFilePolicy
   readonly skillWorld?: SkillWorld
   readonly ref: OperationRef
   readonly spec: OperationSpec

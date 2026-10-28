@@ -50,6 +50,8 @@ The Host entry registers an independent allowlist listener set and queue for eac
 
 The payload-free `skills/change` event invalidates native skill-directory queries without carrying paths or catalog contents. Its sole event declaration lives in the skill owner's client-safe type module. The payload-free `schedule/changed` event invalidates Schedule task queries; Clients re-read after a notification and reconnect. The payload-free `permission-presets/catalog-changed` event invalidates the process catalog. A Client subscribes before its first `permissionPresets.catalog()` read and re-reads the complete snapshot after a notification; the event carries no catalog state and changes no Session sequence.
 
+An application with its own bounded source can reuse `createRemoteWaterfallListener(event, sink)` for the allowlisted waterfall keys. The original listener checks the scoped Agent and preserves result, rejection and `next()` delegation. The application sink owns admission, retention limits and withdrawal: accepting an invocation retains its original continuation until settlement; returning `false` delegates to the remaining Host chain. A rejected accepted invocation must be rejected through its callback, and queued or delivered pending invocations must be settled when the source ends. The stock source uses this same listener factory.
+
 <a id="build-boundary"></a>
 ## Build boundary
 

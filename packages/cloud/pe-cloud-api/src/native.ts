@@ -7,7 +7,7 @@ import type {
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
   SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
   SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary,
-  SkillListRequest, SkillListValue,
+  SkillListRequest, SkillListValue, ModelCatalog, ModelSelection, SessionSelectModelRequest, SessionSelectModelValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -18,7 +18,8 @@ import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
 import { firstScreenNativeOwner } from './native-first-screen.ts'
 import type { ExposurePolicy } from './exposure.ts'
-import type { ExposureInventory } from './types.ts'
+import type { ExposureGuard, ExposureInventory } from './types.ts'
+import { assertNativeModelRoute, projectNativeModelCatalog, type NativeModelSelectionPolicy } from './native-model-selection.ts'
 
 /** Fixed files-owned directory capability for one installed account graph; not a path-derived grant. */
 export interface NativeSessionDirectory {
@@ -58,6 +59,8 @@ export interface NativeSessionGuards {
   readonly projectDirectory: NativeSessionDirectory
   /** Optional actual first-screen reader; its omission keeps inherited list/control unavailable. */
   readonly firstScreen?: NativeSessionReadGuards
+  /** Same Root route policy as actual LLM execution; omission keeps native model selection closed. */
+  readonly modelSelection?: NativeModelSelectionPolicy
   /** Require a handler in this account's actual enabled native composition. */
   assertHandlerEnabled(handlerId: string): void
   /** Resolve and verify the project's location and approved Preset without creating a Session. */
@@ -183,6 +186,53 @@ class NativeSessionAdmission {
 
   hasReader(): boolean { return this.reader !== undefined }
 
+  modelSelected(endpoint: 'session/modelCatalog' | 'session/selectModel'): boolean {
+    return this.guards.modelSelection !== undefined && this.reader !== undefined
+      && this.policy.manifest.rpcEndpoints.some(row => row.endpoint === endpoint)
+  }
+
+  admitModelCatalog(): void {
+    this.admit('session/modelCatalog', 'authenticated-account')
+    if (!this.modelSelected('session/modelCatalog')) {
+      throw new CloudApiError('cloud/forbidden', 'Native model selection is not selected for this account.')
+    }
+  }
+
+  modelCatalog(value: ModelCatalog): ModelCatalog {
+    this.admitModelCatalog()
+    const policy = this.guards.modelSelection, reader = this.reader
+    if (policy === undefined || reader === undefined) {
+      throw new CloudApiError('cloud/forbidden', 'The original native model selection policy is absent.')
+    }
+    const result = projectNativeModelCatalog(value, policy, reader.maxCollectionItems, reader.maxFrameBytes)
+    this.admitModelCatalog()
+    return result
+  }
+
+  async selectModel(request: SessionSelectModelRequest): Promise<void> {
+    this.admit('session/selectModel', 'account-session')
+    const policy = this.guards.modelSelection
+    if (!this.modelSelected('session/selectModel') || policy === undefined) {
+      throw new CloudApiError('cloud/forbidden', 'Native model selection is not selected for this account.')
+    }
+    assertNativeModelRoute(request, policy)
+    await this.guards.assertSessionProject(request.sessionId)
+    this.admit('session/selectModel', 'account-session')
+    assertNativeModelRoute(request, policy)
+  }
+
+  commitModelSelection(agent: Agent, selection: ModelSelection): void {
+    this.admit('session/selectModel', 'account-session')
+    const policy = this.guards.modelSelection
+    if (!this.modelSelected('session/selectModel') || policy === undefined
+      || this.ctx.agents.get(agent.id) !== agent || agent.ctx.get('peAccount') !== this.binding) {
+      throw new CloudApiError('cloud/stale-generation', 'The native selection no longer owns its original Agent and policy.')
+    }
+    this.guards.assertActiveScope(agent)
+    assertNativeModelRoute(selection, policy)
+    this.admit('session/selectModel', 'account-session')
+  }
+
   skillCatalogSelected(): boolean { return this.policy.manifest.rpcEndpoints.some(row => row.endpoint === 'skills/list') }
 
   async skillCatalog(sessionId: SessionId): Promise<void> {
@@ -260,7 +310,7 @@ class NativeSessionAdmission {
     this.admit('session/prompt', 'account-session')
   }
 
-  admit(endpoint: string, guard: 'account-project' | 'account-session', mode: 'rpc' | 'stream' = 'rpc'): void {
+  admit(endpoint: string, guard: ExposureGuard, mode: 'rpc' | 'stream' = 'rpc'): void {
     this.assertBinding()
     this.ctx.fiber.assertActive()
     this.assertCurrent(this.binding)
@@ -324,6 +374,27 @@ class AccountSessionController extends SessionController {
 
   protected override controlBufferLimits(): SessionControlBufferLimits | undefined {
     return this.admission.controlBufferLimits()
+  }
+
+  protected override assertModelSelection(agent: Agent, selection: ModelSelection): void {
+    this.admission.commitModelSelection(agent, selection)
+  }
+
+  override async modelCatalog(): Promise<ModelCatalog> {
+    this.admission.admitModelCatalog()
+    return this.admission.modelCatalog(await super.modelCatalog())
+  }
+
+  override async selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
+    await this.admission.selectModel(request)
+    const value = await super.selectModel(request)
+    this.admission.admit('session/selectModel', 'account-session')
+    return value
+  }
+
+  /** Actual optional model installation, used only by native inventory inspection. */
+  hasModelSelection(endpoint: 'session/modelCatalog' | 'session/selectModel'): boolean {
+    return this.admission.modelSelected(endpoint)
   }
 
   override async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
@@ -486,14 +557,17 @@ export function inspectNativeController(
   for (const marker of methods) {
     const method = marker.method
     if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow'].includes(method)
-      && !(actual.hasFirstScreenReader() && ['list', 'control'].includes(method))) continue
+      && !(actual.hasFirstScreenReader() && ['list', 'control'].includes(method))
+      && !(method === 'modelCatalog' && actual.hasModelSelection('session/modelCatalog'))
+      && !(method === 'selectModel' && actual.hasModelSelection('session/selectModel'))) continue
     const streaming = method === 'follow' || method === 'control'
     if ((marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== (streaming ? 'stream' : 'rpc')
       || Reflect.get(actual, method) !== Reflect.get(AccountSessionController.prototype, method)) {
       throw new CloudApiError('cloud/account-unavailable', 'The original native guarded method changed.')
     }
     const row = Object.freeze({ endpoint: `${binding.namespace}/${method}`, handlerId: `native:${binding.serviceKey}`,
-      guard: method === 'create' ? 'account-project' as const : 'account-session' as const })
+      guard: method === 'create' ? 'account-project' as const
+        : method === 'modelCatalog' ? 'authenticated-account' as const : 'account-session' as const })
     if (streaming) stream.push(row)
     else rpc.push(row)
   }

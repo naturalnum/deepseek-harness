@@ -95,6 +95,8 @@ The [fixed copy world](runtime/agent/paths.py) preserves project RW and the oute
 
 The managed coordinator observes local-update idleness on its original open account port, command records and allocation owner. Pending invocations, subprocess acquisition, incomplete descendant ranges or process I/O, development services, application requests, create/prepare/stop/reconcile work and unknown outcomes deny the update. Settled ready sandboxes, cached Session selections and completed retained output may remain without releasing their identity, mount or budget. The base coordinator denies this observation; terminal replacement still joins every warm allocation and retained result through the original stop/disposal path.
 
+Explicit `shell.enforceSessionFilePolicy: true` enables the original Session policy for both Shell and Subprocess; omission retains the legacy path and cannot advertise permission controls. The original command owner captures a read-only or workspace-write policy and includes it in the existing spec hash and Root role HMAC. A read-only Session cannot widen through a per-call override. The native workload binds the project, environment home/venv/tmp, `/tmp` alias and selected skill copies according to that mode. Guardian checks their actual mount flags before PREPARED, and the original complete 4096-byte frame budget includes the private policy. Permission changes require normal settlement of retained commands, unknown results and services. Function/argv tests and payload pins alone do not establish Linux kernel or deployed browser acceptance.
+
 </details>
 
 -----

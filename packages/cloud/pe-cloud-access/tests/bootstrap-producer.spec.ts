@@ -29,8 +29,10 @@ async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly 
   const native = policyFixture([], bounds), graph = await native.start(), root = new Context()
   onTestFinished(async () => { vi.restoreAllMocks(); await root.fiber.dispose() })
   const manifest = native.exposureOwner.policy.manifest
-  const exposure = new ExposureService(root, { ...manifest, rpcEndpoints: [...manifest.rpcEndpoints, ...rpc],
-    streamEndpoints: [...manifest.streamEndpoints, ...streams], exactFetchRoutes: fetch, approvedConfiguration: {
+  const exposure = new ExposureService(root, { ...manifest,
+    rpcEndpoints: [...manifest.rpcEndpoints.filter(row => !rpc.some(extra => extra.endpoint === row.endpoint)), ...rpc],
+    streamEndpoints: [...manifest.streamEndpoints.filter(row => !streams.some(extra => extra.endpoint === row.endpoint)), ...streams],
+    exactFetchRoutes: fetch, approvedConfiguration: {
       recipeVersion: manifest.recipeVersion, catalogVersion: 'producer-contract', maxEntries: 128,
       maxStringBytes: 128, maxCatalogBytes: 8192, plugins: pluginControl
         ? [{ ...APPROVED_PLUGIN_CONTROL, installable: false, toggleable: true }] : [{ id: 'unit-catalog', entryId: 'unit-catalog',
@@ -234,4 +236,108 @@ it('approved plugin bootstrap preserves the complete managed eight and model-key
 it.each(['settings/mutate', 'settings/update'])('Root refuses %s before bootstrap when no native field is approved', async (endpoint) => {
   await expect(fixture([{ endpoint, handlerId: 'native:settingsController', guard: 'authenticated-account' }]))
     .rejects.toMatchObject({ code: 'cloud/invalid-config' })
+})
+
+const nativeControlRpc: readonly EndpointExposure[] = [
+  { endpoint: 'session/modelCatalog', handlerId: 'native:sessionController', guard: 'authenticated-account' },
+  { endpoint: 'session/selectModel', handlerId: 'native:sessionController', guard: 'account-session' },
+  ...['list', 'execute'].map(method => ({ endpoint: 'commands/' + method, handlerId: 'native:commands', guard: 'account-session' as const })),
+  ...['get', 'edit', 'pause', 'resume', 'clear', 'create', 'complete'].map(method => ({
+    endpoint: 'goals/' + method, handlerId: 'native:goals', guard: 'account-session' as const,
+  })),
+  { endpoint: 'permissionPresets/catalog', handlerId: 'native:permissionPresets', guard: 'authenticated-account' },
+  ...['list', 'put', 'delete'].map(method => ({ endpoint: 'messageFeedback/' + method,
+    handlerId: 'native:messageFeedback', guard: 'account-session' as const })),
+  { endpoint: 'sessionFeedback/record', handlerId: 'native:sessionFeedback', guard: 'account-session' },
+  { endpoint: 'userQuestions/answer', handlerId: 'native:userQuestions', guard: 'account-session' },
+  { endpoint: '$events/result', handlerId: 'native:typertGateway', guard: 'authenticated-account' },
+]
+
+it('admits only selected original native Session controls and rechecks every original owner', async () => {
+  const f = await fixture(nativeControlRpc), result = await f.produce()
+  for (const row of nativeControlRpc) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  const read = f.auditedRpc.getMockImplementation()
+  if (read === undefined) throw new Error('Original audit missing')
+  f.auditedRpc.mockImplementation((endpoint) => {
+    if (endpoint === 'commands/execute') throw new CloudApiError('cloud/account-unavailable', 'Original Commands withdrew')
+    return read(endpoint)
+  })
+  expect(result.assertCurrent).toThrow('Original Commands withdrew')
+})
+
+it('keeps unselected native Session controls absent from bootstrap owner reads', async () => {
+  const f = await fixture()
+  await f.produce()
+  for (const row of nativeControlRpc) expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it.each([
+  { endpoint: 'session/modelCatalog', handlerId: 'native:sessionController', guard: 'account-session' },
+  { endpoint: 'session/selectModel', handlerId: 'foreign:sessionController', guard: 'account-session' },
+  { endpoint: 'commands/execute', handlerId: 'native:commands', guard: 'authenticated-account' },
+  { endpoint: 'goals/get', handlerId: 'foreign:goals', guard: 'account-session' },
+  { endpoint: 'permissionPresets/catalog', handlerId: 'native:permissionPresets', guard: 'account-session' },
+  { endpoint: 'messageFeedback/put', handlerId: 'native:messageFeedback', guard: 'authenticated-account' },
+  { endpoint: 'sessionFeedback/record', handlerId: 'foreign:sessionFeedback', guard: 'account-session' },
+  { endpoint: 'userQuestions/answer', handlerId: 'native:userQuestions', guard: 'authenticated-account' },
+  { endpoint: '$events/result', handlerId: 'foreign:typertGateway', guard: 'authenticated-account' },
+  { endpoint: 'session/deleteEverything', handlerId: 'native:sessionController', guard: 'account-session' },
+  { endpoint: 'workspace/readAnything', handlerId: 'native:workspaceController', guard: 'account-project' },
+  { endpoint: 'remoteAccess/allow', handlerId: 'native:remoteAccess', guard: 'authenticated-account' },
+] as const)('rejects an unreviewed native control or foreign declaration before owner admission: %j', async (row) => {
+  const f = await fixture([row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it.each([
+  { endpoint: 'session/anything', handlerId: 'native:sessionController', guard: 'account-session' },
+  { endpoint: '$events', handlerId: 'foreign:typertGateway', guard: 'authenticated-account' },
+  { endpoint: 'userQuestions/attachWait', handlerId: 'native:userQuestions', guard: 'authenticated-account' },
+] as const)('refuses an unreviewed or foreign native stream declaration: %j', async (row) => {
+  const f = await fixture([], [row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedStream).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it('requires the exact original Session-bound userQuestions wait stream owner', async () => {
+  const row: EndpointExposure = { endpoint: 'userQuestions/attachWait', handlerId: 'native:userQuestions', guard: 'account-session' }
+  const f = await fixture([], [row]), result = await f.produce()
+  expect(f.auditedStream).toHaveBeenCalledWith(row.endpoint)
+  f.auditedStream.mockImplementation(() => { throw new CloudApiError('cloud/account-unavailable', 'Original userQuestions withdrew') })
+  expect(result.assertCurrent).toThrow('Original userQuestions withdrew')
+})
+
+it.each(['rpc', 'stream'] as const)('refuses an owner result whose actual %s handler or guard differs from its approved declaration', async (kind) => {
+  const row: EndpointExposure = kind === 'rpc'
+    ? { endpoint: 'userQuestions/answer', handlerId: 'native:userQuestions', guard: 'account-session' }
+    : { endpoint: 'userQuestions/attachWait', handlerId: 'native:userQuestions', guard: 'account-session' }
+  const f = await fixture(kind === 'rpc' ? [row] : [], kind === 'stream' ? [row] : [])
+  const audit = kind === 'rpc' ? f.auditedRpc : f.auditedStream
+  const read = audit.getMockImplementation()
+  if (read === undefined) throw new Error('Original audit missing')
+  audit.mockImplementation(endpoint => endpoint === row.endpoint ? { ...row, handlerId: 'foreign:userQuestions' } : read(endpoint))
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+const sessionExport: readonly ExactFetchExposure[] = ['GET', 'HEAD'].map(method => ({ method,
+  path: '/api/session.export', handlerId: 'native:sessionLogDownload', guard: 'account-session' as const }))
+
+it('admits the native export HEAD and GET beside the existing upload and preview routes', async () => {
+  const preview: ExactFetchExposure = { method: 'GET', path: '/cloud/service-preview', handlerId: 'cloud:servicePreview', guard: 'account-session' }
+  const f = await fixture([], [], [upload, preview, ...sessionExport]), result = await f.produce()
+  for (const row of [upload, preview, ...sessionExport]) expect(f.auditedFetch).toHaveBeenCalledWith(row.method, row.path)
+  f.auditedFetch.mockImplementation(() => { throw new CloudApiError('cloud/account-unavailable', 'Original export route ended') })
+  expect(result.assertCurrent).toThrow('Original export route ended')
+})
+
+it.each([
+  { ...sessionExport[0]!, method: 'POST' },
+  { ...sessionExport[0]!, path: '/api/session.export/other' },
+  { ...sessionExport[0]!, handlerId: 'foreign:sessionLogDownload' },
+  { ...sessionExport[0]!, guard: 'authenticated-account' as const },
+])('rejects a changed native export declaration before trusting its owner: %j', async (row) => {
+  const f = await fixture([], [], [row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedFetch).not.toHaveBeenCalled()
 })

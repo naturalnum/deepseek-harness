@@ -1,5 +1,6 @@
 /** Public input injection only; this composition supplies no authentication or business readiness. */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { createContext, runInContext } from 'node:vm'
 import { Context, FiberState } from '@deepseek-ai/cordis'
@@ -370,4 +371,56 @@ describe('existing Cloud declaration public Web injection', () => {
     expect(ctx.clientModules.graph().entries.map(row => row.id)).toEqual(['@deepseek-ai/dsh-api-remotes'])
     await remove()
   })
+})
+
+it.each([
+  { nativeSessionControls: [], selected: [] },
+  { nativeSessionControls: ['commands', 'models'], selected: ['@deepseek-ai/dsh-client-ui-commands',
+    '@deepseek-ai/dsh-client-ui-model-selection', '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017'] },
+  { nativeSessionControls: ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'], selected: [
+    '@deepseek-ai/dsh-client-ui-commands', '@deepseek-ai/dsh-client-ui-model-selection', '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017',
+    '@deepseek-ai/dsh-client-ui-permission-presets', '@deepseek-ai/dsh-client-ui-goal', '@deepseek-ai/dsh-client-ui-plan',
+    '@deepseek-ai/dsh-client-ui-user-questions', '@deepseek-ai/dsh-client-ui-message-feedback', '@deepseek-ai/dsh-session-log-export',
+    '@deepseek-ai/dsh-client-ui-attachment', '@deepseek-ai/dsh-client-ui-trajectory', '@deepseek-ai/dsh-client-ui-tool',
+  ] },
+])('declares only selected native Session control modules and withdraws the complete contribution: $nativeSessionControls', async ({ nativeSessionControls, selected }) => {
+  const ctx = await composition(), base = manifest()
+  await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+  const supplied: string[][] = [], withdrawn: string[][] = []
+  vi.spyOn(ctx.clientModules, 'registerClientPackages').mockImplementation((packages) => {
+    const owned = [...packages]
+    supplied.push(owned)
+    return async () => { withdrawn.push(owned) }
+  })
+  const web = { ...base, client: { ...base.client, nativeSessionControls,
+    servicePreview: { managementOrigin: 'http://console.dsh.localhost:32848', previewOrigin: 'http://preview.dsh.localhost:32848',
+      routePath: '/cloud/service-preview', maxFieldBytes: 128, maxUrlBytes: 2048 } } }
+  await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web } })
+  await ctx.loader.await()
+  const fiber = ctx.loader.resolve('cloud').fiber
+  await fiber?.await()
+  expect(fiber?.state).toBe(FiberState.ACTIVE)
+  const actual = supplied.flat()
+  expect(actual).toEqual(expect.arrayContaining(selected))
+  expect(actual.filter(name => name === '@deepseek-ai/dsh-client-ui-tool')).toHaveLength(1)
+  const controls = actual.filter(name => !BROWSER_CLIENT_PACKAGES.includes(name)
+    && !['@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-tool'].includes(name))
+  expect(controls.sort()).toEqual(selected.filter(name => name !== '@deepseek-ai/dsh-client-ui-tool').sort())
+  expect(new Set(actual).size).toBe(actual.length)
+  const ids = new Set([...actual, '@deepseek-ai/dsh-client-modules', ...FIRST_SCREEN_UI_ROWS.map(row => row.name)])
+  for (const name of selected) {
+    const resource = name === '@deepseek-ai/dsh-session-log-export'
+      ? '../../../session-query/session-log-export/package.json'
+      : '../../../client/' + name.slice('@deepseek-ai/dsh-client-'.length) + '/package.json'
+    const metadata: unknown = JSON.parse(readFileSync(new URL(resource, import.meta.url), 'utf8'))
+    const dependencies: unknown = metadata !== null && typeof metadata === 'object' && 'dsh' in metadata
+      && metadata.dsh !== null && typeof metadata.dsh === 'object' && 'client' in metadata.dsh
+      && metadata.dsh.client !== null && typeof metadata.dsh.client === 'object' && 'inject' in metadata.dsh.client
+      ? metadata.dsh.client.inject : []
+    if (!Array.isArray(dependencies)) throw new Error('Invalid native Client dependency metadata')
+    for (const dependency of dependencies) expect(ids.has(String(dependency)), `${name} inject ${String(dependency)}`).toBe(true)
+  }
+  expect(ctx.get('connection')).toBeUndefined()
+  await fiber?.dispose()
+  expect(withdrawn).toHaveLength(supplied.length)
 })

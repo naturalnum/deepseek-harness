@@ -4,6 +4,7 @@ import { posix } from 'node:path'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { CollectedOutputMirror } from './collected-output.ts'
 import { PrivateSemanticAudit, type SemanticFacts } from './semantic-audit.ts'
+import type { NativeFilePolicy } from './agent-data/file-policy.ts'
 
 /** Authenticated raw stream facts, decoded and validated by the private channel client. */
 export interface CommandStreamSnapshot {
@@ -28,7 +29,8 @@ export interface CommandSnapshot {
 
 /** One immutable operation selection. Mutation methods each submit at most once, including lost replies. */
 export interface CommandChannel {
-  prepare(spec: Readonly<{ argv: readonly string[]; cwd: string; stdin: { readonly mode: 'ignore' } | { readonly mode: 'batch'; readonly base64: string } }>): Promise<CommandSnapshot>
+  prepare(spec: Readonly<{ argv: readonly string[]; cwd: string; stdin: { readonly mode: 'ignore' } | { readonly mode: 'batch'; readonly base64: string } }>,
+    filePolicy?: NativeFilePolicy): Promise<CommandSnapshot>
   /** End the original retained files borrow only after actual range and local request settlement. */
   release?(): void
   commit(): Promise<CommandSnapshot>

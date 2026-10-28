@@ -1,0 +1,9 @@
+[
+  { "id": "credentials", "name": "cordis:export-credentials", "config": { "dshHome": "__HOME__", "watch": false } },
+  { "id": "jsonl", "name": "cordis:export-jsonl", "config": { "root": "__HOME__/sessions", "compression": "none" } },
+  { "id": "attachments", "name": "cordis:export-attachments", "config": { "dshHome": "__HOME__" } },
+  { "id": "query", "name": "cordis:export-query" },
+  { "id": "connection", "name": "cordis:export-connection" },
+  { "id": "commands", "name": "cordis:export-commands" },
+  { "id": "download", "name": "cordis:export-download", "config": { "compressionLevel": 0 } }
+]

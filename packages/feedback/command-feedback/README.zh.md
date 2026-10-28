@@ -70,6 +70,10 @@ kind: "package-reference"
 
 Web 客户端随附该命令。无头模式、ACP 自动化和 JSON-RPC 不提供斜杠命令，因此 `/feedback` 在那里不可用。
 
+集成方可以在此命令插件激活前提供原生 `SessionFeedbackService` 子类。插件只复用仍保有原始 `sessionFeedback` Typert 绑定的原生实例；无效替代会拒绝激活。未提供服务时，插件挂载原生服务。依赖所提供实例的组合，应在所属命令入口上显式声明 `sessionFeedback` 依赖。
+
+账号部署可以在激活前提供同步的 `sessionFeedbackIdentity(): string`。命令捕获此回调，并在记录前解析标识；拒绝时不记录评价。所提供的标识只是确认文本，不具备认证权限；它替代 harness home 身份查找，不改变 Session 反馈载荷。省略时保留原生 harness home 行为。所属命令入口显式声明回调依赖，提供方负责核对当前账号。
+
 -----
 
 <a id="understand-the-implementation"></a>

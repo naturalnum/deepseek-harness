@@ -13,6 +13,8 @@ import { DirectoryMetadataFailure } from './directory-error.ts'
 import { FdTextWriteFailure } from './worker-client.ts'
 import type { ResidentResult } from './work-queue.ts'
 import type { FdDirectoryEntry, FdPathMetadata } from './worker-protocol.ts'
+import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 /** Native constructor only; creating it neither installs a provider nor enables tools or an RPC. */
 export interface NativeTextFileSystemConstructor {
@@ -53,6 +55,8 @@ export function decodeBoundedText(bytes: Uint8Array): string {
 /** A trusted runtime selection; its current check stays bound to the original operation. */
 export interface AccountFileSelection {
   readonly workspace: Workspace
+  /** Original native Session policy, checked by the provider immediately before a mutation. */
+  readonly assertMutationPolicy?: (policy?: SandboxExecutionPolicy) => void
   /** Omission retains ordinary selection; trusted factory preparation permits only its one root-directory sequence. */
   readonly directoryPreparation?: { assertCaller(caller: Context): void }
   assertCurrent(): void
@@ -66,6 +70,8 @@ export interface AccountTextBackend {
   readonly binding: AccountBinding
   readonly bootstrapWorkspace: Workspace
   readonly resolveProject: ResolveAccountFileProject
+  /** Exact issued execution capability selects mandatory per-Session file-policy enforcement. */
+  readonly enforceSessionFilePolicy?: boolean
   /** Exact active-request verified-copy lookup; omission exposes no host path mapping. */
   readonly mapProcessPath?: (caller: Context, hostPath: string) => string | undefined
   assertCurrent(): void
@@ -101,7 +107,7 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
   account.assertCurrent()
   const prefix = randomUUID()
   return class AccountTextFileSystem extends FileSystem {
-    static inject = ['peAccount', 'workspaceRegistry']
+    static inject = ['peAccount', 'workspaceRegistry', ...(account.enforceSessionFilePolicy === true ? ['sandboxPolicy'] : [])]
     private readonly identity = Symbol()
     private readonly targets = new WeakMap<FsTarget, IssuedTarget>()
     private readonly preparations = new WeakMap<object, DirectoryPreparationState>()
@@ -111,6 +117,15 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       if (ctx.get('fs') !== undefined || ctx.get('workspaceRegistry')?.get(account.bootstrapWorkspace.id) !== account.bootstrapWorkspace
         || ctx.get('peAccount') !== account.binding) throw new FsError('Registered account project required.', 'FS_PERMISSION_DENIED')
       super(ctx)
+    }
+
+    override get sandboxMode(): SandboxMode | undefined {
+      if (account.enforceSessionFilePolicy !== true) return undefined
+      const policy = this.ctx.get('sandboxPolicy')
+      if (policy === undefined || policy.defaultMode === 'danger-full-access') {
+        throw new FsError('The original Session file-policy provider is unavailable.', 'FS_SANDBOX_DENIED')
+      }
+      return policy.defaultMode
     }
 
     private current(signal?: AbortSignal): void {
@@ -225,7 +240,7 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
 
     private async selectedTarget(
       target: FsTarget, signal?: AbortSignal, directoryStat = false,
-    ): Promise<{ record: IssuedTarget; check: () => void }> {
+    ): Promise<{ record: IssuedTarget; scope: AccountFileSelection; check: () => void }> {
       const record = this.target(target, signal)
       const state = record.preparation
       if (state !== undefined) {
@@ -246,7 +261,7 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         }
       }
       check()
-      return { record, check }
+      return { record, scope: selected, check }
     }
 
     private denied(target?: FsTarget): Promise<never> {
@@ -390,13 +405,22 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         check()
       })()
     }
-    override async writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal): Promise<FsWriteOutcome> {
+    override async writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal,
+      sandboxPolicy?: SandboxExecutionPolicy): Promise<FsWriteOutcome> {
       try {
-        const { record, check } = await this.selectedTarget(target, signal)
+        const { record, scope, check } = await this.selectedTarget(target, signal)
         this.content(record)
         if (record.relative === '.') throw new FsError('A regular file target is required.', 'FS_NOT_REGULAR_FILE')
         if (record.relative === '.pe/attachments' || record.relative.startsWith('.pe/attachments/')) {
           throw new FsError('Stored attachment copies are read-only.', 'FS_PERMISSION_DENIED')
+        }
+        if (account.enforceSessionFilePolicy === true) {
+          if (scope.assertMutationPolicy === undefined) {
+            throw new FsError('The original Session mutation policy is unavailable.', 'FS_SANDBOX_DENIED')
+          }
+          scope.assertMutationPolicy(sandboxPolicy)
+        } else if (sandboxPolicy !== undefined) {
+          throw new FsError('Per-Session file policy is not enabled by this provider.', 'FS_SANDBOX_DENIED')
         }
         const result = await record.backend.writeText(record.relative, content, expected, signal)
         try { check(); return result.value } finally { result.release() }

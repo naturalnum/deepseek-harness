@@ -55,6 +55,8 @@ Live operations append through `Session.append` and await `sessions.flush`, then
 
 A per-Session queue serializes operations within one service instance; the persistence write handle excludes competing cold writers. Disposal stops admission and drains admitted operations before releasing the service. Persistence failures reject instead of becoming business failures. A failed flush does not roll back an accepted event; callers can list and retry with its version. Successful no-op mutations also flush the current prefix.
 
+Trusted Host subclasses may override synchronous `assertSessionAccess(sessionId, method)` to recheck access inside that same queue, after asynchronous existence/open/read operations, and immediately before an append starts. Rejection before append leaves feedback unchanged and closes any acquired handle. Once an append starts, the original flush and handle closure still finish; the hook does not cancel or roll back accepted writes. The default performs no work.
+
 Cold material mutations emit `feedback/committed` after flush with a borrowed read-only canonical prefix; observers must deep-clone it before transferring ownership. Observers finish before write ownership is released, must not await another feedback operation for that Session, and cannot reject an already committed mutation. Live consumers observe `session/event`.
 
 ### Source map

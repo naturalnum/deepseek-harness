@@ -145,7 +145,7 @@ export interface PoolReadPort {
    */
   createTextFileSystem(
     workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject,
-    mapProcessPath?: (caller: Context, hostPath: string) => string | undefined,
+    mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean,
   ): Promise<NativeTextFileSystemConstructor>
   /** Derive a directory capability only after the owning Registry selected its exact object. */
   projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>
@@ -1111,11 +1111,12 @@ export class LinuxFilesPool implements DrainParticipant {
       },
       createTextFileSystem: async (
         workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject,
-        mapProcessPath?: (caller: Context, hostPath: string) => string | undefined,
+        mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean,
       ): Promise<NativeTextFileSystemConstructor> => {
         checkCurrent()
         await projectRoot(workspace)
         return createTextProjectFileSystem({ binding, bootstrapWorkspace: workspace, resolveProject, assertInstalled,
+          enforceSessionFilePolicy: enforceSessionFilePolicy === true,
           ...mapProcessPath === undefined ? {} : { mapProcessPath },
           assertCurrent: checkCurrent,
           project: (selected, assertSelection, signal) => projectBackend(selected, assertSelection, assertInstalled, signal) })

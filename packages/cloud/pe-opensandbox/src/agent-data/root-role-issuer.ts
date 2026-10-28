@@ -1,5 +1,6 @@
 /** Root-private role issuance; neither the carrier nor command JSON chooses a service role. */
 import { skillWorld } from './skill-world.ts'
+import { filePolicy } from './file-policy.ts'
 import { createHmac } from 'node:crypto'
 import { asciiJSON, preparedDigest, hex, need, spec } from './canonical.ts'
 import { ROLE_DOMAIN, ROLE_PROTOCOL } from './role-protocol.ts'
@@ -19,11 +20,12 @@ function issuer(token: string, runtimeIdentity: string, role: RangeAuthorization
     hex(ref.specHash)
     const normalized = spec(request.spec)
     const fixed = request.skillWorld === undefined ? undefined : skillWorld(request.skillWorld)
-    need(preparedDigest(normalized, fixed) === ref.specHash, 'spec_hash_mismatch')
+    const policy = request.filePolicy === undefined ? undefined : filePolicy(request.filePolicy)
+    need(preparedDigest(normalized, fixed, policy) === ref.specHash, 'spec_hash_mismatch')
     const signature = createHmac('sha256', key).update(asciiJSON({ protocolVersion: ROLE_PROTOCOL, runtimeIdentity,
       operationId: ref.operationId, specHash: ref.specHash, role, registrationId }), 'ascii').digest('hex')
     return Object.freeze({ ref: Object.freeze({ ...ref, authorization: Object.freeze({ role, registrationId, signature }) }),
-      spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed } })
+      spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed }, ...policy === undefined ? {} : { filePolicy: policy } })
   }
 }
 

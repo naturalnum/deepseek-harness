@@ -399,9 +399,18 @@ export class PermissionPresetService extends TypertRemoteService {
     this.apply(session, name, (policy) => { setApprovalPolicy(session, policy) })
   }
 
+  /**
+   * Recheck deployment-owned running work before any permission event is appended.
+   * This synchronous check also covers native command handlers and initial permission seeding.
+   * @param _session Original Session whose effective permission may change.
+   * @param _name Requested preset or derived existing selection being initialized.
+   */
+  protected assertCanSwitch(_session: Session, _name: string): void {}
+
   /** Apply one preset through its durable identity and canonical knob setters. */
   private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
     const spec = this.resolve(name)
+    this.assertCanSwitch(session, name)
     if (name === AUTO_PRESET) this.autoAdmit?.()
     const current = this.current(session)
     const knobs = this.permissionState(session)
@@ -437,6 +446,7 @@ export class PermissionPresetService extends TypertRemoteService {
     if (preset === null && sandbox === null && approval === null && !seeded) {
       const name = this.defaultPreset
       const spec = this.resolve(name)
+      this.assertCanSwitch(session, name)
       session.append('permission/preset', { preset: name })
       setSandboxMode(session, spec.sandbox)
       setApprovalPolicy(session, spec.approval)
@@ -444,6 +454,9 @@ export class PermissionPresetService extends TypertRemoteService {
     }
 
     const effective = this.derive(state)
+    if (preset === null && effective !== CUSTOM_PRESET || sandbox === null || approval === null) {
+      this.assertCanSwitch(session, effective)
+    }
     if (preset === null && effective !== CUSTOM_PRESET) {
       session.append('permission/preset', { preset: effective })
     }

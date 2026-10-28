@@ -183,6 +183,8 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  sessionFeedbackIdentity: 'optional application-owned anonymous display identity callback, not a Service — packages/feedback/command-feedback/README.md owns its admission and no-fallback behavior',
+  sessionLogDownloadIntegration: 'client-side captured authenticated download carrier, not a Service — packages/session-query/session-log-export/README.md owns its fetch and navigation API',
   modelsSettingsIntegration: 'client-side page-owned Models input value — packages/client/ui-settings-models/README.md owns the API',
   clientPersistence: 'client-side captured logical-key storage port — packages/client/store/README.md owns the API',
   peCloudPage: 'client-side pre-Cordis prepared page owner — packages/cloud/pe-cloud-client/README.md owns the lifecycle',
@@ -394,6 +396,15 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ApprovedModelKeyBinding: 'cloud.md',
   ApprovedModelKeyConfiguration: 'cloud.md',
   NativeFirstScreen: 'cloud.md',
+  NativeCommands: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeGoals: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativePermissions: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeUserQuestions: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeGoals: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeSessionExport: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativePermissions: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeSessionFeedback: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeMessageFeedback: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
   NativeSessionGuards: 'cloud.md',
   NativeUploadPreparation: 'cloud.md',
   NodeStreamTransport: '../../packages/api/gateway/README.md',
@@ -996,6 +1007,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'IncomingMessage',
   'ServerResponse',
   'ReturnType',
+  'Parameters',
   'Uint8Array',
 ])
 

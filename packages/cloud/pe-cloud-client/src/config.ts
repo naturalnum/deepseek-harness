@@ -1,9 +1,11 @@
 /** Browser-safe validation of public limits and the relative bootstrap entry. */
 import z from '@deepseek-ai/schemastery'
-import type { CloudClientConfig, CloudWebManifest } from './types.ts'
+import type { CloudClientConfig, CloudNativeSessionControl, CloudWebManifest } from './types.ts'
 import { parseServicePreviewPolicy } from './preview-policy.ts'
 
 const MAX_TIMER_MS = 2_147_483_647
+const NATIVE_CONTROLS = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'] as const
+const COMMAND_CONTROLS: readonly CloudNativeSessionControl[] = ['models', 'permissions', 'plan', 'feedback', 'export']
 
 /** Limits have no production defaults; the reviewed browser manifest supplies them. */
 export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
@@ -16,6 +18,7 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
   closeTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
   modelSettingsRequestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS),
   maxDownloadBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
+  nativeSessionControls: z.array(z.union([...NATIVE_CONTROLS])) as z<readonly CloudNativeSessionControl[]>,
   skillSettings: z.union([z.object({
     requestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
     maxFileBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
@@ -37,7 +40,21 @@ const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapRespo
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings'])
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls'])
+  let controls: CloudClientConfig['nativeSessionControls']
+  if (Object.hasOwn(value, 'nativeSessionControls')) {
+    const selected = value['nativeSessionControls']
+    if (!Array.isArray(selected) || selected.length > NATIVE_CONTROLS.length
+      || selected.some(item => typeof item !== 'string' || !NATIVE_CONTROLS.some(name => name === item))
+      || new Set(selected).size !== selected.length) {
+      throw new TypeError('nativeSessionControls requires distinct reviewed native control groups')
+    }
+    const checked = selected as CloudNativeSessionControl[]
+    if (COMMAND_CONTROLS.some(name => checked.includes(name)) && !checked.includes('commands')) {
+      throw new TypeError('nativeSessionControls requires commands with model, permission, plan, feedback or export controls')
+    }
+    controls = Object.freeze([...checked])
+  }
   const preview = Object.hasOwn(value, 'servicePreview') ? parseServicePreviewPolicy(value.servicePreview) : undefined
   let skills: CloudClientConfig['skillSettings']
   if (Object.hasOwn(value, 'skillSettings')) {
@@ -70,10 +87,12 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
   delete config.maxDownloadBytes
   delete config.skillSettings
   delete config.servicePreview
+  delete config.nativeSessionControls
   if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(config.bootstrapPath)) {
     throw new Error('cloud client bootstrapPath must be a document-relative route without query or fragment')
   }
   return { ...config,
+    ...controls === undefined ? {} : { nativeSessionControls: controls },
     ...modelDeadline === undefined ? {} : { modelSettingsRequestTimeoutMs: modelDeadline },
     ...limit === undefined ? {} : { maxDownloadBytes: limit },
     ...preview === undefined ? {} : { servicePreview: preview },

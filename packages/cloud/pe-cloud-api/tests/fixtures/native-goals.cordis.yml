@@ -1,0 +1,8 @@
+- id: goals
+  name: cordis:account-goals
+  config:
+    defaultMaxGoalRounds: 4
+- id: commands
+  name: cordis:goal-command-registry
+- id: command-goal
+  name: cordis:original-goal-command

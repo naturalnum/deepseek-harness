@@ -1,13 +1,19 @@
-/** Bounded readonly native events registered on the original account Gateway; no ready frame or waterfall implementation. */
+/** Bounded native notifications and selected question forwarding on the original account Gateway. */
 import { isAbsolute } from 'node:path'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
-import Gateway, { type TypertRemoteEventFrame } from '@deepseek-ai/dsh-api-gateway'
+import Gateway, { projectRemoteEventRequest, type TypertRemoteEventFrame,
+  type TypertRemoteEventDispatch, type TypertRemoteEventInvocation } from '@deepseek-ai/dsh-api-gateway'
+import { createRemoteWaterfallListener } from '@deepseek-ai/dsh-api-remotes'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { isRemoteJsonValue } from '@deepseek-ai/dsh-typert-protocol'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-skill/types'
+import type {} from '@deepseek-ai/dsh-goal/types'
+import type {} from '@deepseek-ai/dsh-commands/types'
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import type { CloudAccountApi } from './account-service.ts'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
@@ -27,6 +33,8 @@ export interface FirstScreenEventInput {
   readonly maxQueuedBytes: number
   /** Complete encoded emit-frame bound, including event name and envelope. */
   readonly maxFrameBytes: number
+  /** Selected native controls; every notification still requires its audited endpoint. */
+  readonly controls?: Readonly<{ commands: boolean; goals: boolean; permissions: boolean; questions?: boolean }>
 }
 
 /** Real registration facts; Root must still connect and audit the original external C04/Peer guard. */
@@ -34,6 +42,7 @@ export interface FirstScreenEvents {
   /** Check the original active registration, graph, Gateway and native owners without granting business admission. */
   inspect(): {
     readonly endpoint: '$events'
+    readonly resultEndpoint?: '$events/result'
     readonly gateway: Gateway
     readonly fiber: Fiber
     readonly owner: Fiber
@@ -52,10 +61,10 @@ function unavailable(): never {
 }
 
 /**
- * Register the first trial's actual readonly native notification subset.
+ * Register the selected native notifications and optional account question forwarding.
  * Listeners attach synchronously before the public Gateway registration returns;
- * the Gateway owns ready, client ids and all wire framing. No model/credential
- * catalog events, waterfall or $events/result operation is opened here.
+ * the Gateway owns ready, client ids, outcomes and wire framing. Questions use
+ * the original Remote waterfall listener; unacknowledged questions retain their queue budget.
  * @param ctx - original event registration Loader fiber inside the independent account graph.
  * @param input - original owners, exact profile home and required finite budgets.
  * @returns the retained registration and actual withdrawal handle, not a ready certificate.
@@ -73,9 +82,10 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
   const canonical = original.value
   if (!(canonical instanceof Gateway)) unavailable()
   const register: unknown = Reflect.get(canonical, 'registerRemoteEvents')
-  const queue = new Deque<{ readonly frame: TypertRemoteEventFrame; readonly bytes: number }>()
+  const queue = new Deque<{ readonly frame: TypertRemoteEventDispatch; readonly bytes: number }>()
+  const pendingQuestions = new Map<TypertRemoteEventInvocation, (reason: unknown) => void>()
   const removers: Array<() => void> = []
-  let bytes = 0, closed = false, failure: { readonly error: unknown } | undefined
+  let bytes = 0, retained = 0, closed = false, failure: { readonly error: unknown } | undefined
   let wake: (() => void) | undefined, closing: Promise<void> | undefined
   const graph = (): void => {
     input.api.assertInstalled(ctx)
@@ -98,8 +108,13 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     if (closed) return
     closed = true
     input.api.invalidate()
+    const reason = error?.error ?? new CloudApiError('cloud/account-unavailable', 'The account question source ended.')
+    for (const reject of pendingQuestions.values()) {
+      try { reject(reason) } catch (cause) { failure ??= { error: cause } }
+    }
     queue.clear()
     bytes = 0
+    retained = 0
     for (const remove of removers.splice(0)) {
       try { remove() } catch (cause) { failure ??= { error: cause } }
     }
@@ -111,15 +126,60 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       graph()
       const size = firstScreenJsonBytes({ type: 'emit', event: frame.event, args: frame.args }, input.maxFrameBytes)
       if (!frame.args.every(value => isRemoteJsonValue(value))) unavailable()
-      if (size > input.maxFrameBytes || queue.size >= input.maxQueuedEvents || size > input.maxQueuedBytes - bytes) unavailable()
+      if (size > input.maxFrameBytes || retained >= input.maxQueuedEvents || size > input.maxQueuedBytes - bytes) unavailable()
       queue.pushBack({ frame, bytes: size })
       bytes += size
+      retained++
       notify()
     } catch (error) { stop({ error }) }
   }
   const session = (frame: TypertRemoteEventFrame, id: Parameters<NativeFirstScreen['assertSessionRead']>[0]): void => {
     if (closed) return
     try { input.native.assertSessionRead(id); push(frame) } catch (error) { stop({ error }) }
+  }
+  const question = (source: TypertRemoteEventInvocation): boolean => {
+    let held: TypertRemoteEventInvocation | undefined
+    try {
+      if (closed) unavailable()
+      graph()
+      input.api.requireRpc('$events/result')
+      input.api.requireRpc('userQuestions/answer')
+      const subject = source.context.subject, agent = ctx.get('agents')?.get(SessionId(source.context.agentId))
+      if (agent === undefined || agent !== subject || agent.ctx.root !== ctx.root
+        || agent.ctx.get('peAccount') !== input.api.binding) unavailable()
+      input.native.assertSessionRead(agent.id)
+      const projected = projectRemoteEventRequest(source.request, subject)
+      projected.signal?.throwIfAborted()
+      const size = firstScreenJsonBytes({ type: 'waterfall', event: source.event,
+        eventId: '00000000-0000-0000-0000-000000000000', agentId: source.context.agentId,
+        request: projected.request }, input.maxFrameBytes)
+      if (retained >= input.maxQueuedEvents || size > input.maxQueuedBytes - bytes) unavailable()
+      const release = (): boolean => {
+        if (held === undefined || !pendingQuestions.delete(held)) return false
+        bytes -= size
+        retained--
+        projected.signal?.removeEventListener('abort', abort)
+        return true
+      }
+      const reject = (reason: unknown): void => { if (release()) source.reject(reason) }
+      const abort = (): void => { reject(projected.signal?.reason) }
+      held = { ...source,
+        resolve: (outcome) => { if (release()) source.resolve(outcome) },
+        reject,
+      }
+      pendingQuestions.set(held, reject)
+      bytes += size
+      retained++
+      projected.signal?.addEventListener('abort', abort, { once: true })
+      queue.pushBack({ frame: held, bytes: size })
+      if (projected.signal?.aborted === true) abort()
+      notify()
+    } catch (error) {
+      if (held === undefined) source.reject(error)
+      else pendingQuestions.get(held)?.(error)
+      stop({ error })
+    }
+    return true
   }
   const unregister = gateway.registerRemoteEvents((signal) => {
     removers.push(
@@ -133,15 +193,37 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       }),
     )
     if (skills !== undefined) removers.push(ctx.on('skills/change', () => { push({ event: 'skills/change', args: [] }) }))
+    if (input.controls?.commands === true) removers.push(ctx.on('commands/change', () => {
+      try { input.api.requireRpc('commands/list'); push({ event: 'commands/change', args: [] }) }
+      catch (error) { stop({ error }) }
+    }))
+    if (input.controls?.goals === true) removers.push(ctx.on('goal/activation-changed', (event) => {
+      try {
+        input.api.requireRpc('goals/get')
+        session({ event: 'goal/activation-changed', args: [event] }, event.sessionId)
+      } catch (error) { stop({ error }) }
+    }))
+    if (input.controls?.permissions === true) removers.push(ctx.on('permission-presets/catalog-changed', () => {
+      try { input.api.requireRpc('permissionPresets/catalog'); push({ event: 'permission-presets/catalog-changed', args: [] }) }
+      catch (error) { stop({ error }) }
+    }))
+    if (input.controls?.questions === true) {
+      removers.push(ctx.on('user-questions/request', createRemoteWaterfallListener('user-questions/request', { push: question }) as never))
+    }
     const abort = (): void => { stop() }
     signal.addEventListener('abort', abort, { once: true })
     removers.push(() => { signal.removeEventListener('abort', abort) })
-    return (async function *(): AsyncIterable<TypertRemoteEventFrame> {
+    return (async function *(): AsyncIterable<TypertRemoteEventDispatch> {
       try {
         while (!closed) {
           const next = queue.popFront()
           if (next !== undefined) {
-            bytes -= next.bytes
+            if ('context' in next.frame) {
+              if (!pendingQuestions.has(next.frame)) continue
+            } else {
+              bytes -= next.bytes
+              retained--
+            }
             graph()
             yield next.frame
           } else await new Promise<void>((resolve) => { wake = resolve })
@@ -167,7 +249,8 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       graph()
       if (closed || closing !== undefined || failure !== undefined || ctx.fiber.state !== FiberState.ACTIVE) unavailable()
       return Object.freeze({ endpoint: '$events' as const, gateway: canonical, fiber: original.fiber, owner: ctx.fiber,
-        home: input.home, queuedEvents: queue.size, queuedBytes: bytes })
+        ...input.controls?.questions === true ? { resultEndpoint: '$events/result' as const } : {},
+        home: input.home, queuedEvents: retained, queuedBytes: bytes })
     },
     assertAdmitted(): void {
       graph()

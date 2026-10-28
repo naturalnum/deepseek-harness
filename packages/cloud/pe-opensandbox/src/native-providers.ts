@@ -8,9 +8,13 @@ import { clampTimeout, deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ManagedCommandOperation } from './command-operation.ts'
 import { ManagedShellExecution, type ShellInterruption } from './shell-execution.ts'
 import { ExecutionStateError } from './errors.ts'
+import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 /** Root-resolved command defaults and actual image executable; no ambient cwd or environment fallback. */
 export interface NativeExecutionConfig {
+  /** Enable mandatory original-Session policy in Shell, Subprocess and signed native range preparation. */
+  readonly enforceSessionFilePolicy?: boolean
   readonly bashPath: string
   readonly timeoutMs: number
   readonly maxTimeoutMs: number
@@ -20,6 +24,8 @@ export interface NativeExecutionConfig {
 
 /** Account-restricted capability created by Root from the exact native binding, call and project. */
 export interface NativeExecutionProviderPort {
+  /** Present only on the original command owner that signs and enforces per-Session policy for all execution paths. */
+  readonly enforcesSessionFilePolicy?: true | undefined
   /** @param caller Actual account service caller. */
   assertCurrent(caller: Context): void
   /** @param caller Actual native tool caller. @returns Its original registered project root. */
@@ -28,7 +34,7 @@ export interface NativeExecutionProviderPort {
    * @param caller Actual native caller. @param spec Complete native input.
    * @returns Reserved original operation before begin/publication.
    */
-  create(caller: Context, spec: SubprocessSpawnSpec): ManagedCommandOperation
+  create(caller: Context, spec: SubprocessSpawnSpec, policy?: SandboxExecutionPolicy): ManagedCommandOperation
   /** @param caller Actual native caller. @param operation Exact Root-owned original operation. */
   assertOperationCurrent(caller: Context, operation: ManagedCommandOperation): void
   /** @param operation Original operation to fence. @param cause Original failure to retain. Must not throw. */
@@ -53,7 +59,8 @@ function validateShell(spec: ShellExecSpec, config: NativeExecutionConfig): void
     || !Number.isSafeInteger(spec.stdoutMaxBytes) || spec.stdoutMaxBytes < 1 || spec.stdoutMaxBytes > config.maxOutputBytes) {
     throw new RangeError('Cloud Shell timeout or collection exceeds its resolved limit.')
   }
-  if (spec.sandboxPolicy !== undefined || spec.env !== undefined && Object.keys(spec.env).length > 0
+  if (spec.sandboxPolicy !== undefined && config.enforceSessionFilePolicy !== true
+    || spec.env !== undefined && Object.keys(spec.env).length > 0
     || spec.dshEnv !== undefined && Object.keys(spec.dshEnv).length > 0) {
     throw new ExecutionStateError('cloud/execution-unavailable', 'Cloud Shell requires the selected fixed environment and execution-world policy.')
   }
@@ -123,7 +130,19 @@ export class CloudShellExecutor extends ShellExecutor {
       if (!Number.isSafeInteger(value) || value < 1 || value > 2147483647) throw new RangeError('Cloud Shell configuration requires finite positive bounds.')
     }
     if (!config.bashPath.startsWith('/') || config.bashPath.includes('\0')) throw new RangeError('Cloud Shell requires its verified image executable.')
+    if (config.enforceSessionFilePolicy === true && port.enforcesSessionFilePolicy !== true) {
+      throw new ExecutionStateError('cloud/invalid-config', 'Session file policy requires its original enforcing command owner.')
+    }
     this.config = Object.freeze({ ...config })
+  }
+
+  override get sandboxMode(): SandboxMode | undefined {
+    if (this.config.enforceSessionFilePolicy !== true) return undefined
+    const policy = this.ctx.get('sandboxPolicy')
+    if (policy === undefined || policy.defaultMode === 'danger-full-access') {
+      throw new ExecutionStateError('cloud/execution-unavailable', 'The original Session file-policy provider is unavailable.')
+    }
+    return policy.defaultMode
   }
 
   override resolve(request: ShellExecRequest): ShellExecSpec {
@@ -148,7 +167,7 @@ export class CloudShellExecutor extends ShellExecutor {
       operation = this.port.create(caller, { argv: [this.config.bashPath, '--noprofile', '--norc', '-c', spec.command],
         cwd: spec.workdir, graceMs: this.config.graceMs, signal: timer.signal,
         stdio: { stdin: spec.stdin === undefined ? 'ignore' : { data: spec.stdin },
-          stdout: { maxBytes: spec.stdoutMaxBytes }, stderr: { maxBytes: this.config.maxOutputBytes } } })
+          stdout: { maxBytes: spec.stdoutMaxBytes }, stderr: { maxBytes: this.config.maxOutputBytes } } }, spec.sandboxPolicy)
       operation.begin()
     } catch (cause) { timer[Symbol.dispose](); throw cause }
     const cancelled = Promise.withResolvers<never>()

@@ -9,13 +9,23 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-message-feedback/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { SessionLogDownloadController } from './controller.ts'
+import { downloadUrl, SessionLogDownloadController } from './controller.ts'
 import { SessionLogDownloadHeaderAction, type SessionLogDownloadHeaderInjected } from './HeaderAction.tsx'
 import { en, NS, zh, type SessionLogDownloadKey } from './locales.ts'
+
+/** Host application carriers captured before the native download plugin activates. */
+export interface SessionLogDownloadIntegration {
+  /** Fetch the native HEAD preflight through the application's existing authenticated carrier. */
+  readonly fetch: (input: string | URL, init?: RequestInit) => Promise<Response>
+  /** Bind the same native GET route for the browser download manager. */
+  readonly navigationUrl: (input: string | URL) => string
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionLogDownload: SessionLogDownloadController
+    /** Optional application-owned HTTP and navigation binding; omission retains ordinary browser carriers. */
+    sessionLogDownloadIntegration: SessionLogDownloadIntegration
   }
 }
 
@@ -34,7 +44,9 @@ export const inject = ['slots', 'locale']
  * @param ctx - browser context carrying slots and locale services.
  */
 export function apply(ctx: ClientContext): void {
-  const controller = new SessionLogDownloadController()
+  const integration = ctx.get('sessionLogDownloadIntegration')
+  const controller = new SessionLogDownloadController(integration?.fetch, integration === undefined ? undefined
+    : (url, filename) => { downloadUrl(integration.navigationUrl(url), filename) })
   ctx.provide('sessionLogDownload', controller)
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-log-download: browser dictionaries')

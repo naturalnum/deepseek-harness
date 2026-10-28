@@ -1,0 +1,8 @@
+- id: sessions
+  name: cordis:statistics-sessions
+- id: projections
+  name: cordis:statistics-projections
+- id: token-meter
+  name: cordis:statistics-token-meter
+- id: session-stats
+  name: cordis:statistics-session-stats

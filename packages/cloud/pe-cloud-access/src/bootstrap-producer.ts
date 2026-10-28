@@ -6,6 +6,8 @@ import { accountExecutionMode, accountServiceAvailability, assertAccountExecutio
 import type { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
+import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
+import type { EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { SERVICE_PREVIEW_ROUTE } from './preview-route.ts'
 import { decodeCloudBootstrap } from './bootstrap.ts'
 import { inspectBootstrapConfiguration } from './bootstrap-inventory.ts'
@@ -21,6 +23,46 @@ const fileRpcEndpoints: readonly string[] = [
   'workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/list', 'workspaceFiles/readBytes',
 ]
 const fileStreamEndpoint = 'workspaceFiles/changes'
+
+const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>> = {
+  'session/create': { handlerId: 'native:sessionController', guard: 'account-project' },
+  ...Object.fromEntries(['prompt', 'fork', 'cancel', 'page', 'list', 'selectModel'].map(method => [
+    'session/' + method, { handlerId: 'native:sessionController', guard: 'account-session' as const },
+  ])),
+  'session/modelCatalog': { handlerId: 'native:sessionController', guard: 'authenticated-account' },
+  'workspace/initializeDefault': { handlerId: 'native:workspaceController', guard: 'account-project' },
+  'workspace/create': { handlerId: 'native:workspaceController', guard: 'account-project' },
+  'settings/describe': { handlerId: 'native:settingsController', guard: 'authenticated-account' },
+  'cloudProjects/create': { handlerId: 'native:cloudProjects', guard: 'authenticated-account' },
+  ...Object.fromEntries(fileRpcEndpoints.map(endpoint => [endpoint, { handlerId: 'native:workspaceFiles', guard: 'account-session' as const }])),
+  ...Object.fromEntries(['list', 'execute'].map(method => [
+    'commands/' + method, { handlerId: 'native:commands', guard: 'account-session' as const },
+  ])),
+  ...Object.fromEntries(['get', 'edit', 'pause', 'resume', 'clear', 'create', 'complete'].map(method => [
+    'goals/' + method, { handlerId: 'native:goals', guard: 'account-session' as const },
+  ])),
+  'permissionPresets/catalog': { handlerId: 'native:permissionPresets', guard: 'authenticated-account' },
+  ...Object.fromEntries(['list', 'put', 'delete'].map(method => [
+    'messageFeedback/' + method, { handlerId: 'native:messageFeedback', guard: 'account-session' as const },
+  ])),
+  'sessionFeedback/record': { handlerId: 'native:sessionFeedback', guard: 'account-session' },
+  'userQuestions/answer': { handlerId: 'native:userQuestions', guard: 'account-session' },
+  '$events/result': { handlerId: 'native:typertGateway', guard: 'authenticated-account' },
+}
+const nativeStreams: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>> = {
+  'session/follow': { handlerId: 'native:sessionController', guard: 'account-session' },
+  'session/control': { handlerId: 'native:sessionController', guard: 'account-session' },
+  'workspace/follow': { handlerId: 'native:workspaceController', guard: 'account-project' },
+  'remoteAccess/follow': { handlerId: 'native:remoteAccess', guard: 'authenticated-account' },
+  '$events': { handlerId: 'native:typertGateway', guard: 'authenticated-account' },
+  'userQuestions/attachWait': { handlerId: 'native:userQuestions', guard: 'account-session' },
+  [fileStreamEndpoint]: { handlerId: 'native:workspaceFiles', guard: 'account-session' },
+}
+
+function selectedNative(row: EndpointExposure, expected: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>>): boolean {
+  const native = Object.hasOwn(expected, row.endpoint) ? expected[row.endpoint] : undefined
+  return native !== undefined && row.handlerId === native.handlerId && row.guard === native.guard
+}
 
 /**
  * Read original account providers and emit only the existing bounded C11 wire fields.
@@ -86,23 +128,26 @@ export async function produceCloudBootstrap(
   }
   const factsCurrent = (): void => {
     identitiesCurrent()
-    // Only the original native upload and Root's protocol-fixed preview route may coexist.
+    // Only reviewed original upload, Session export and Root preview routes may coexist.
     const settings = manifest.allowedSettings
     // Every approved native leaf agrees with the original C04 field declarations.
     if (!approvedSettingsMatch(catalog.fields, settings)
       || settingsWrites && (settingsWriter === undefined
         || settingsWriter.handlerId !== 'native:settingsController' || settingsWriter.guard !== 'authenticated-account')
-      || manifest.exactFetchRoutes.length > 2) unavailable()
+      || manifest.exactFetchRoutes.length > 4) unavailable()
     const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
       const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
       const preview = row.method === SERVICE_PREVIEW_ROUTE.method && row.path === SERVICE_PREVIEW_ROUTE.path
         && row.handlerId === SERVICE_PREVIEW_ROUTE.handlerId
+      const sessionExport = (row.method === 'GET' || row.method === 'HEAD') && row.path === SESSION_LOG_EXPORT_PATH
+        && row.handlerId === 'native:sessionLogDownload'
       const key = `${row.method} ${row.path}`
-      if ((!upload && !preview) || row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
+      if ((!upload && !preview && !sessionExport) || row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
       selectedFetch.add(key)
       // Original API checks its audited manifest and freshly inspects actual native + Root inventory.
-      api.requireFetch(row.method, row.path)
+      const actual = api.requireFetch(row.method, row.path)
+      if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }
     const budget = catalog.maxEntries
     if (manifest.rpcEndpoints.length + manifest.streamEndpoints.length > budget) unavailable()
@@ -118,15 +163,14 @@ export async function produceCloudBootstrap(
         skillRpcEndpoints.includes(row.endpoint)
           && row.handlerId === 'native:cloudSkills' && row.guard === 'authenticated-account'
         || row.endpoint === 'skills/list' && row.handlerId === 'native:sessionSkillCatalog' && row.guard === 'account-session')
-      if (!/^(?:session|workspace|remoteAccess)\//.test(row.endpoint) && row.endpoint !== 'settings/describe'
-        && row.endpoint !== '$events/result' && row.endpoint !== 'cloudProjects/create'
-        && !fileRpcEndpoints.includes(row.endpoint) && !modelKey && !skills && !plugins && !settingsMutation) unavailable()
-      api.requireRpc(row.endpoint)
+      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !settingsMutation) unavailable()
+      const actual = api.requireRpc(row.endpoint)
+      if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }
     for (const row of manifest.streamEndpoints) {
-      if (!/^(?:session|workspace|remoteAccess)\//.test(row.endpoint) && row.endpoint !== '$events'
-        && row.endpoint !== fileStreamEndpoint) unavailable()
-      api.requireStream(row.endpoint)
+      if (!selectedNative(row, nativeStreams)) unavailable()
+      const actual = api.requireStream(row.endpoint)
+      if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }
     if (api.requireStream('workspace/follow').guard !== 'account-project') unavailable()
     if (selectedFiles) files.assertContentAvailable()

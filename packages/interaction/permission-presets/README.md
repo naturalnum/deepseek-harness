@@ -84,6 +84,8 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 `set()` resolves the preset and synchronously runs Auto admission when applicable. Transitions append `permission/preset` only when the effective preset changes, then write each changed knob through its canonical setter — `setSandboxMode` from `dsh-sandbox-policy` and `setApprovalPolicy` from `dsh-user-approval`. The selection event therefore preserves user intent when two presets share a bundle. Switching between Auto and Full access records the new identity and the changed approval policy. A net-zero selection appends nothing.
 
+Deployments may override protected `assertCanSwitch(session, name)` to synchronously check original running work before permission events commit. The canonical private apply method calls it for both direct `set()` and the native `/permission` handler; initial Session pinning also calls it before adding fresh or missing facts. A rejection leaves permission events unchanged. This hook neither stops processes nor replaces provider enforcement.
+
 ### Read side and `custom`
 
 `current(session)` reads the required `permissions` projection, whose unit folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). The host state also retains whether `session/end-seed` has occurred, so session pinning distinguishes an explicitly empty restored seed from a genuinely fresh session without rescanning the log. A still-matching last selection wins shared-bundle ties, and a recorded Auto selection also matches the `never` approval policy; otherwise the first configured match wins; otherwise the derived `CUSTOM_PRESET` is returned. A missing projection key fails explicitly.

@@ -15,8 +15,11 @@ from wire import LIMITS, skill_parent, skill_world
 BWRAP_HASH = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 
 
-def world_argv(project):
+def world_argv(project, mode='workspace-write'):
     project_path(project)  # Root startup only, never an operation-selected mount.
+    if mode not in ['read-only', 'workspace-write']:
+        raise ValueError('unsupported file policy')
+    writable_bind = '--ro-bind' if mode == 'read-only' else '--bind'
     return ['/trusted/bwrap', '--unshare-user', '--uid', '0', '--gid', '0',
         '--disable-userns', '--assert-userns-disabled', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
         '--die-with-parent', '--new-session', '--cap-drop', 'ALL', '--clearenv',
@@ -24,11 +27,11 @@ def world_argv(project):
         '--setenv', 'TMPDIR', ENV['TMPDIR'], '--setenv', 'LANG', ENV['LANG'],
         '--ro-bind', '/', '/', '--proc', '/proc', '--ro-bind', '/dev', '/dev',
         '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',
-        '--bind', project, project, '--ro-bind', ENV_ROOT, ENV_ROOT,
-        '--bind', ENV_ROOT + '/home', ENV_ROOT + '/home',
-        '--bind', ENV_ROOT + '/venv', ENV_ROOT + '/venv',
-        '--bind', ENV_ROOT + '/tmp', ENV_ROOT + '/tmp',
-        '--bind', ENV['TMPDIR'], '/tmp', '--ro-bind', project + '/.pe', project + '/.pe', '--chdir', project]
+        writable_bind, project, project, '--ro-bind', ENV_ROOT, ENV_ROOT,
+        writable_bind, ENV_ROOT + '/home', ENV_ROOT + '/home',
+        writable_bind, ENV_ROOT + '/venv', ENV_ROOT + '/venv',
+        writable_bind, ENV_ROOT + '/tmp', ENV_ROOT + '/tmp',
+        writable_bind, ENV['TMPDIR'], '/tmp', '--ro-bind', project + '/.pe', project + '/.pe', '--chdir', project]
 RECORD = struct.Struct('!4sB3xii')
 PREPARED, SPAWNED, DIRECT, EMPTY, ERROR = range(1, 6)
 
@@ -57,7 +60,7 @@ class Owner:
         self.skill_parent = None if skill_policy is None else skill_parent(skill_policy)
         self.slots, self.closed = {}, False
 
-    def register(self, identity, argv, cwd, stdin_mode, batch=b'', *, role, working_copies=None):
+    def register(self, identity, argv, cwd, stdin_mode, batch=b'', *, role, working_copies=None, file_policy=None):
         assert type(identity) is str and 1 <= len(identity) <= 64
         assert not self.closed and identity not in self.slots and len(self.slots) < 4
         assert type(argv) is list and 1 <= len(argv) <= 16 and os.path.isabs(argv[0])
@@ -69,19 +72,22 @@ class Owner:
         assert (self.skill_parent is None) == (working_copies is None)
         fixed = None if working_copies is None else skill_world(working_copies)
         assert fixed is None or {k: fixed[k] for k in ['metadata', 'skills', 'maxCopies']} == self.skill_parent
-        op = Operation(self, identity, argv, cwd, stdin_mode, batch, role, fixed)
+        assert file_policy is None or type(file_policy) is dict and set(file_policy) == {'mode'} and file_policy['mode'] in ['read-only', 'workspace-write']
+        op = Operation(self, identity, argv, cwd, stdin_mode, batch, role, fixed, file_policy)
         self.slots[identity] = op  # Slot/intent retained before any FD or process; never reused.
         return op
 
 
 class Operation:
-    def __init__(self, owner, identity, argv, cwd, stdin_mode, batch, role, working_copies=None):
+    def __init__(self, owner, identity, argv, cwd, stdin_mode, batch, role, working_copies=None, file_policy=None):
         self.owner, self.identity, self.batch = owner, identity, batch
         self.role = role
         self.working_copies = working_copies
+        self.file_policy = None if file_policy is None else dict(file_policy)
         self.spec = json.dumps({'argv': argv, 'env': ENV, 'roots': owner.roots,
                                 'projectRoot': owner.project, 'cwd': cwd, 'stdinMode': stdin_mode,
-                                **({} if working_copies is None else {'skillWorld': working_copies})}, separators=(',', ':')).encode()
+                                **({} if working_copies is None else {'skillWorld': working_copies}),
+                                **({} if self.file_policy is None else {'filePolicy': self.file_policy})}, separators=(',', ':')).encode()
         assert len(self.spec) <= 4096
         self.fds, self.eof, self.selector = set(), set(), None
         self.process = self.pidfd = self.gate = None
@@ -177,7 +183,9 @@ class Operation:
         opened = None if self.working_copies is None else open_skill_world(self.owner.project, self.owner.roots[self.owner.project], self.working_copies, self.fds)
         source_fds = [] if opened is None else [opened['metadataFd']] + [copy['fd'] for copy in opened['copies']]
         anchors = set(self.fds) - set(source_fds)
-        base = self.owner.base if opened is None else skill_world_argv(self.owner.base, self.owner.project, opened)
+        world = self.owner.base if self.file_policy is None else world_argv(self.owner.project, self.file_policy['mode'])
+        mode = 'workspace-write' if self.file_policy is None else self.file_policy['mode']
+        base = world if opened is None else skill_world_argv(world, self.owner.project, opened, mode)
         cfg_r, cfg_w = self.pipe(); status_r, status_w = self.pipe(); gate_r, self.gate = self.pipe()
         in_r, in_w = self.pipe(); out_r, out_w = self.pipe(); err_r, err_w = self.pipe()
         meta_r, meta_w = self.pipe(); block_r, block_w = self.pipe(); diag_r, diag_w = self.pipe()

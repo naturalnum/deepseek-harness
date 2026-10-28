@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-command-feedback
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { symbols, type Context } from '@deepseek-ai/cordis'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -45,6 +45,8 @@ const USAGE = 'Usage: /feedback <text>'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionFeedback: SessionFeedbackService
+    /** Optional account-owned acknowledgement identity; omission uses the native harness-home identity. */
+    sessionFeedbackIdentity?: () => string
   }
 }
 
@@ -70,14 +72,16 @@ export function recordFeedback(session: Session, entry: FeedbackRecord): void {
  * @returns an acknowledgement containing the receiving session and anonymous
  * user ids, or a usage error when no feedback text was supplied.
  */
-function executeFeedbackCommand(invocation: CommandInvocation): CommandResult {
+function executeFeedbackCommand(invocation: CommandInvocation, getIdentity: (() => string) | undefined): CommandResult {
   if (invocation.rawInput.trim().length === 0) {
     return { kind: 'error', text: `Feedback text is required. ${USAGE}` }
   }
+  const accountIdentity = getIdentity?.()
   recordFeedback(invocation.agent.session, { text: invocation.rawInput })
   return {
     kind: 'success',
-    text: `Feedback recorded for session ${invocation.agent.session.id}\nAnonymous user: ${getOrCreateAnonymousUserId()}.`,
+    text: `Feedback recorded for session ${invocation.agent.session.id}\nAnonymous user: ${getIdentity === undefined
+      ? getOrCreateAnonymousUserId() : accountIdentity}.`,
   }
 }
 
@@ -115,13 +119,22 @@ export class SessionFeedbackService extends TypertRemoteService {
  * @param ctx - Host context.
  */
 export function apply(ctx: Context): void {
-  ctx.plugin(SessionFeedbackService)
+  const identity = ctx.get('sessionFeedbackIdentity')
+  const existing = ctx.get('sessionFeedback')
+  if (existing === undefined) ctx.plugin(SessionFeedbackService)
+  else {
+    const original: unknown = Reflect.get(existing, symbols.original) ?? existing
+    if (!(original instanceof SessionFeedbackService) || original.typertRemote.service !== original
+      || original.typertRemote.serviceKey !== 'sessionFeedback' || original.typertRemote.namespace !== 'sessionFeedback') {
+      throw new TypeError('command-feedback: the existing sessionFeedback must be the original native service')
+    }
+  }
   ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-feedback'),
     name: 'feedback',
     description: 'Record feedback about this session',
     input: { hint: '<text>' },
     recordInput: false,
-    handler: executeFeedbackCommand,
+    handler: invocation => executeFeedbackCommand(invocation, identity),
   })
 }

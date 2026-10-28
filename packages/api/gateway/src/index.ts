@@ -88,6 +88,7 @@ export type {
   TypertRemoteEventSource,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
+export { projectRemoteEventRequest } from './stream-protocol.ts'
 export type { NodeStreamTransport, NodeStreamTransportOptions } from './stream-server.ts'
 
 interface GatewayErrorOptions {

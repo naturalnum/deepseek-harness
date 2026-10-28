@@ -55,6 +55,9 @@
     },
     {
       "path": "../../client/file-upload/tsconfig.host.json"
+    },
+    {
+      "path": "../../session-query/session-log-export/tsconfig.host.json"
     }
   ]
 }

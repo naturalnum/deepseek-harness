@@ -141,6 +141,9 @@
     },
     {
       "path": "../../client/ui-sidebar"
+    },
+    {
+      "path": "../../session-query/session-log-export/tsconfig.client.json"
     }
   ]
 }

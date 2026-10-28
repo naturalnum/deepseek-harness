@@ -22,6 +22,12 @@ import type { ExposurePolicy } from './exposure.ts'
 import { installActualLlmGuard } from './llm-guard.ts'
 import { createNativeAgentLoop, type NativeAgentFactoryGuards } from './native-agent-factory.ts'
 import { createNativeController, inspectNativeController, type NativeSessionGuards } from './native.ts'
+import { createNativeCommands, type NativeCommands } from './native-commands.ts'
+import { createNativeGoals, type NativeGoals } from './native-goals.ts'
+import { createNativeSessionExport, type NativeSessionExport } from './native-session-export.ts'
+import { createNativePermissions, type NativePermissions } from './native-permissions.ts'
+import { createNativeUserQuestions, type NativeUserQuestions } from './native-user-questions.ts'
+import { createNativeSessionFeedback, createNativeMessageFeedback, createNativeFeedbackIdentity } from './native-feedback.ts'
 import { AccountPluginControl, type CloudPluginPreparation } from './plugin-control.ts'
 import { CloudPluginService } from './cloud-plugins.ts'
 import type { PluginRebuildIntent, PluginRebuildPersistence, PluginRebuildVerification } from './plugin-types.ts'
@@ -99,6 +105,13 @@ export class CloudAccountApi extends Service {
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
   private readonly uploads: { native?: NativeUploads } = {}
+  private readonly commands: { native?: NativeCommands } = {}
+  private readonly goals: { native?: NativeGoals } = {}
+  private readonly sessionExport: { native?: NativeSessionExport } = {}
+  private readonly permissions: { native?: NativePermissions } = {}
+  private readonly questions: { native?: NativeUserQuestions } = {}
+  private readonly sessionFeedback: { native?: ReturnType<typeof createNativeSessionFeedback> } = {}
+  private readonly messageFeedback: { native?: ReturnType<typeof createNativeMessageFeedback> } = {}
   // Cordis traces services through caller-scoped proxies; their object identities differ.
   private readonly identity = Symbol('account-api-owner')
 
@@ -231,12 +244,20 @@ export class CloudAccountApi extends Service {
     const plugins = this.plugins.native?.inspect()
     const projects = this.projects.native?.inspect()
     const files = this.files.native?.inspect()
+    const commands = this.commands.native?.inspect()
+    const goals = this.goals.native?.inspect()
+    const permissions = this.permissions.native?.inspect(), questions = this.questions.native?.inspect()
+    const sessionFeedback = this.sessionFeedback.native?.inspect(), messageFeedback = this.messageFeedback.native?.inspect()
     const fetch = this.inspectFetchRoutes()
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
       rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
-        ...files?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [], ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? []],
-      streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [],
+        ...files?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [], ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
+        ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
+        ...questions?.rpcEndpoints ?? [], ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
+        ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
+          guard: 'authenticated-account' as const }]],
+      streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [], ...questions?.streamEndpoints ?? [],
         ...files?.streamEndpoints ?? [], ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       exactFetchRoutes: [...fetch.native, ...fetch.root],
@@ -288,6 +309,31 @@ export class CloudAccountApi extends Service {
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireRpc(endpoint)
+    if (endpoint === '$events/result' && this.firstScreen.events?.inspect().resultEndpoint !== endpoint) this.nativeUnavailable()
+    if (endpoint.startsWith('commands/')) {
+      if (this.commands.native === undefined) this.nativeUnavailable()
+      this.commands.native.inspect()
+    }
+    if (endpoint.startsWith('goals/')) {
+      if (this.goals.native === undefined) this.nativeUnavailable()
+      this.goals.native.inspect()
+    }
+    if (endpoint === 'permissionPresets/catalog') {
+      if (this.permissions.native === undefined) this.nativeUnavailable()
+      this.permissions.native.inspect()
+    }
+    if (endpoint === 'userQuestions/answer') {
+      if (this.questions.native === undefined) this.nativeUnavailable()
+      this.questions.native.inspect()
+    }
+    if (endpoint.startsWith('sessionFeedback/')) {
+      if (this.sessionFeedback.native === undefined) this.nativeUnavailable()
+      this.sessionFeedback.native.inspect()
+    }
+    if (endpoint.startsWith('messageFeedback/')) {
+      if (this.messageFeedback.native === undefined) this.nativeUnavailable()
+      this.messageFeedback.native.inspect()
+    }
     if (endpoint.startsWith('workspaceFiles/')) this.assertWorkspaceFilesCurrent()
     if (endpoint === 'cloudProjects/create') {
       if (this.projects.native === undefined) this.nativeUnavailable()
@@ -317,6 +363,10 @@ export class CloudAccountApi extends Service {
   requireStream(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireStream(endpoint)
+    if (endpoint === 'userQuestions/attachWait') {
+      if (this.questions.native === undefined) this.nativeUnavailable()
+      this.questions.native.inspect()
+    }
     if (endpoint.startsWith('workspaceFiles/')) this.assertWorkspaceFilesCurrent()
     if (endpoint === 'workspace/follow' || endpoint === 'remoteAccess/follow') {
       if (this.firstScreen.native === undefined) this.nativeUnavailable()
@@ -494,14 +544,19 @@ export class CloudAccountApi extends Service {
    * @param input Exact graph profile home and all required event bounds.
    * @returns Actual registration/disposer; native Gateway owns ready and wire framing.
    */
-  installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native' | 'settingsNamespaces'>): FirstScreenEvents {
+  installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native' | 'settingsNamespaces' | 'controls'>): FirstScreenEvents {
     this.assertInstalled(owner)
     if (this.firstScreen.events !== undefined) this.duplicateNative()
     const native = this.firstScreen.native
     if (native === undefined) this.nativeUnavailable()
     const settings = this.installation.exposure.manifest.allowedSettings
     const settingsNamespaces = Object.freeze(settings.length === 0 ? ['locale'] : settings.map(row => row.namespace))
-    const events = registerFirstScreenEvents(owner, { ...input, api: this, native, settingsNamespaces })
+    const endpoints = this.installation.exposure.manifest.rpcEndpoints
+    const selected = (endpoint: string): boolean => endpoints.some(row => row.endpoint === endpoint)
+    const events = registerFirstScreenEvents(owner, { ...input, api: this, native, settingsNamespaces,
+      controls: { commands: selected('commands/list'), goals: selected('goals/get'), permissions: selected('permissionPresets/catalog'),
+        questions: selected('userQuestions/answer') },
+    })
     this.firstScreen.events = events
     return events
   }
@@ -542,6 +597,133 @@ export class CloudAccountApi extends Service {
       () => { this.requireFetch('POST', FILE_UPLOAD_PATH) }, this.maxNativeInventoryEntries, input)
     this.uploads.native = native
     return native.value
+  }
+
+  /**
+   * Install the original human-command registry in its account Loader fiber.
+   * @param owner Actual native Loader entry with its original dependencies.
+   * @param guards Shared active-Agent/project admission and bounded native read policy.
+   * @returns The native registry; every Remote call retains account admission.
+   */
+  createCommands(owner: Context, guards: NativeSessionGuards): NativeCommands['value'] {
+    this.assertInstalled(owner)
+    if (this.commands.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeCommands(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries)
+    this.commands.native = native
+    return native.value
+  }
+
+  /**
+   * Install the native goal domain shared by the command and its UI controls.
+   * @param owner Actual account Loader entry.
+   * @param guards Original active-Agent/project checks and native result limits.
+   * @param config Native goal round policy.
+   * @returns Original goal service with generation-bound Remote admission.
+   */
+  createGoals(
+    owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeGoals>[6],
+  ): NativeGoals['value'] {
+    this.assertInstalled(owner)
+    if (this.goals.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeGoals(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries, config)
+    this.goals.native = native
+    return native.value
+  }
+
+  /**
+   * Register native command and streaming archive delivery in the account graph.
+   * @param owner Actual native Loader entry with archive dependencies ready.
+   * @param guards Same Session/project admission used by native history reads.
+   * @param config Original archive compression configuration.
+   */
+  createSessionExport(
+    owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSessionExport>[6],
+  ): void {
+    this.assertInstalled(owner)
+    if (this.sessionExport.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    this.sessionExport.native = createNativeSessionExport(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries, config)
+  }
+
+  /**
+   * Install native permission controls over the actual enforcing providers.
+   * @param owner Actual account Loader entry.
+   * @param config Native two-mode preset table.
+   * @param maxFrameBytes Existing complete native result limit.
+   * @param assertEnforcement Recheck the original issued execution and Files policy enforcement.
+   * @param assertCanSwitch Refuse a policy change while original execution work remains.
+   * @returns The original native preset service.
+   */
+  createPermissions(
+    owner: Context, config: Parameters<typeof createNativePermissions>[5], maxFrameBytes: number,
+    assertEnforcement: () => void, assertCanSwitch: Parameters<typeof createNativePermissions>[8],
+  ): NativePermissions['value'] {
+    this.assertInstalled(owner)
+    if (this.permissions.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativePermissions(owner, this.binding, this.businessCurrent, this.installation.exposure,
+      this.maxNativeInventoryEntries, config, maxFrameBytes, assertEnforcement, assertCanSwitch)
+    this.permissions.native = native
+    return native.value
+  }
+
+  /**
+   * Install original question replies and timed-wait claims.
+   * @param owner Actual account Loader entry.
+   * @param guards Shared native active-Agent/project admission.
+   * @returns The native question service.
+   */
+  createUserQuestions(owner: Context, guards: NativeSessionGuards): NativeUserQuestions['value'] {
+    this.assertInstalled(owner)
+    if (this.questions.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeUserQuestions(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries)
+    this.questions.native = native
+    return native.value
+  }
+
+  /**
+   * Install the original per-Session feedback recorder.
+   * @param owner Actual account Loader entry.
+   * @param guards Shared native Session/project admission and read limits.
+   * @returns The native feedback service.
+   */
+  createSessionFeedback(owner: Context, guards: NativeSessionGuards): ReturnType<typeof createNativeSessionFeedback>['value'] {
+    this.assertInstalled(owner)
+    if (this.sessionFeedback.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeSessionFeedback(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries)
+    this.sessionFeedback.native = native
+    return native.value
+  }
+
+  /**
+   * Install the native versioned per-message feedback store.
+   * @param owner Actual account Loader entry.
+   * @param guards Shared native Session/project admission and read limits.
+   * @param config Original note-size policy.
+   * @returns The native feedback service with its original mutation queue and persistence handles.
+   */
+  createMessageFeedback(
+    owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeMessageFeedback>[6],
+  ): ReturnType<typeof createNativeMessageFeedback>['value'] {
+    this.assertInstalled(owner)
+    if (this.messageFeedback.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeMessageFeedback(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries, config)
+    this.messageFeedback.native = native
+    return native.value
+  }
+
+  /**
+   * Supply native command acknowledgements without ambient Host-home I/O.
+   * @param owner Actual account command Loader entry.
+   * @returns Original-generation checked, account-scoped display identity callback.
+   */
+  createFeedbackIdentity(owner: Context): () => string {
+    this.assertInstalled(owner)
+    return createNativeFeedbackIdentity(owner, this.binding, this.businessCurrent)
   }
 
   /**
@@ -676,7 +858,8 @@ export class CloudAccountApi extends Service {
     if (maximum === undefined || !Number.isSafeInteger(maximum) || maximum < 1) this.nativeUnavailable()
     const root = this.rootFetch?.() ?? []
     if (root.length > maximum) this.nativeUnavailable()
-    const native = this.uploads.native?.inspect().exactFetchRoutes ?? []
+    const native = [...this.uploads.native?.inspect().exactFetchRoutes ?? [],
+      ...this.sessionExport.native?.inspect().exactFetchRoutes ?? []]
     if (native.length > maximum - root.length) this.nativeUnavailable()
     return { native, root }
   }
@@ -747,6 +930,12 @@ export class CloudAccountApi extends Service {
     this.projects.native?.assertCurrent()
     this.files.native?.assertCurrent()
     this.uploads.native?.assertCurrent()
+    this.commands.native?.inspect()
+    this.goals.native?.inspect()
+    this.permissions.native?.inspect()
+    this.questions.native?.inspect()
+    this.sessionFeedback.native?.inspect()
+    this.messageFeedback.native?.inspect()
     if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)

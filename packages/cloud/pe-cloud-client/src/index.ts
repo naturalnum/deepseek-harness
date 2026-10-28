@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-modules'
 import { CloudWebManifestSchema, parseCloudWebManifest } from './config.ts'
-import type { CloudWebManifest } from './types.ts'
+import type { CloudNativeSessionControl, CloudWebManifest } from './types.ts'
 
 const CLOUD_WEB_CLIENT_PACKAGES = [
   '@deepseek-ai/dsh-api-gateway',
@@ -20,6 +20,16 @@ const CLOUD_WEB_CLIENT_PACKAGES = [
 const GENERAL_SETTINGS_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-settings-general'] as const
 const MODEL_SETTINGS_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-settings-models'] as const
 const SERVICE_PREVIEW_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-tool'] as const
+const NATIVE_SESSION_CLIENT_PACKAGES: Readonly<Record<CloudNativeSessionControl, readonly string[]>> = {
+  commands: ['@deepseek-ai/dsh-client-ui-commands'],
+  models: ['@deepseek-ai/dsh-client-ui-model-selection', '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017'],
+  permissions: ['@deepseek-ai/dsh-client-ui-permission-presets'],
+  goals: ['@deepseek-ai/dsh-client-ui-goal'],
+  plan: ['@deepseek-ai/dsh-client-ui-plan', '@deepseek-ai/dsh-client-ui-user-questions'],
+  feedback: ['@deepseek-ai/dsh-client-ui-message-feedback'],
+  export: ['@deepseek-ai/dsh-session-log-export'],
+  attachments: ['@deepseek-ai/dsh-client-ui-attachment', '@deepseek-ai/dsh-client-ui-trajectory', '@deepseek-ai/dsh-client-ui-tool'],
+}
 
 /** Stable declaration-half plugin name; this is not an account or root service. */
 export const name = 'pe-cloud-client'
@@ -53,11 +63,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       ['@deepseek-ai/dsh-client-connection'], baseUrl, { activate: false },
     ), 'pe-cloud-client: module-only native Connection')
     owner.effect(() => owner.clientModules.registerClientPackages(
-      [...CLOUD_WEB_CLIENT_PACKAGES,
+      [...new Set([...CLOUD_WEB_CLIENT_PACKAGES,
         ...GENERAL_SETTINGS_CLIENT_PACKAGES,
         ...manifest.client.modelSettingsRequestTimeoutMs === undefined ? [] : MODEL_SETTINGS_CLIENT_PACKAGES,
         ...manifest.client.servicePreview === undefined ? [] : SERVICE_PREVIEW_CLIENT_PACKAGES,
-      ], baseUrl, { activate: true },
+        ...(manifest.client.nativeSessionControls ?? []).flatMap(group => NATIVE_SESSION_CLIENT_PACKAGES[group]),
+      ])], baseUrl, { activate: true },
     ), 'pe-cloud-client: browser BFF services')
     owner.on('webserver/index-inject', (rows) => {
       rows.push({ kind: 'global', name: '__DSH_CLOUD_WEB__', value: manifest })

@@ -8,14 +8,16 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocket } from '@deepseek-ai/dsh-client-connection/client'
 import * as FileUploadClient from '@deepseek-ai/dsh-client-file-upload/client'
+import * as NativeSessionExport from '@deepseek-ai/dsh-session-log-export/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import * as cloud from '../src/client/index.ts'
 import { PreparedCloudPage, type CloudPagePreparationInput } from '../src/client/prepared-page.ts'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { CloudAccountMenuInjected } from '../src/client/CloudAccountMenu.tsx'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -367,7 +369,7 @@ function actualNative(
         expect(() => { page.nativeOptions.persistence.removeItem('native.view') }).toThrow()
         expect(() => captured.createWebSocket!('wss://example.test/app/api/remote.mux')).toThrow()
         expect(() => navigate('api/download')).toThrow()
-        return expect((async () => captured.fetch!('api/rpc', { method: 'POST', body: '{}' }))()).rejects.toMatchObject({ code: 'closed' })
+        return expect((async () => captured.fetch('api/rpc', { method: 'POST', body: '{}' }))()).rejects.toMatchObject({ code: 'closed' })
       }, 'test: earliest native cache and captured carrier consumer cleanup')
       ctx.provide('uiRenderer', { mount: () => {
         mounted = true
@@ -653,4 +655,74 @@ it.each([undefined, 128])('reads only the captured optional download limit %s', 
   expect(page.maxDownloadBytes).toBe(maxDownloadBytes)
   Object.assign(input.config, { maxDownloadBytes: 256 })
   expect(page.maxDownloadBytes).toBe(maxDownloadBytes)
+})
+
+
+async function mountNativeSessionExport(ctx: Context): Promise<void> {
+  await ctx.plugin(SlotRegistry).await()
+  ctx.provide('locale', new LocaleRuntime(ctx))
+  const host = ({ renderSlot }: PropsRenderSlots<'conversation.session.header.utilities'>) =>
+    renderSlot('conversation.session.header.utilities', {})
+  ctx.slots.register({ name: 'root', children: {
+    'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+  } }, host)
+  ctx.loader.builtins.sessionExport = NativeSessionExport
+  const id = await ctx.loader.create({ name: 'cordis:sessionExport' })
+  await ctx.loader.await()
+  expect(ctx.loader.resolve(id).fiber?.state).toBe(FiberState.ACTIVE)
+}
+
+it('uses the captured account carrier for native export HEAD and the same binding for the original browser download', async () => {
+  const a = fixture(bootstrap('A', 'G1')), b = fixture(bootstrap('B', 'G2'))
+  const pa = PreparedCloudPage.prepare({ ...a.input, config: { ...config, nativeSessionControls: ['commands', 'export'] } }, new AbortController().signal)
+  const pb = PreparedCloudPage.prepare({ ...b.input, config: { ...config, nativeSessionControls: ['commands', 'export'] } }, new AbortController().signal)
+  onTestFinished(async () => { await Promise.all([pa.dispose(), pb.dispose()]) })
+  const pageA = await pa.ready, pageB = await pb.ready, graphA = native(pageA), graphB = native(pageB)
+  await pageA.start(graphA.entry); await pageB.start(graphB.entry)
+  await mountNativeSessionExport(graphA.ctx); await mountNativeSessionExport(graphB.ctx)
+  const downloads: Array<{ url: string; filename: string }> = []
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function(this: HTMLAnchorElement) {
+    downloads.push({ url: this.href, filename: this.download })
+  })
+  onTestFinished(() => { click.mockRestore() })
+  a.fetcher.mockResolvedValueOnce(new Response(null, { status: 200 }))
+  b.fetcher.mockResolvedValueOnce(new Response(null, { status: 200 }))
+  const id = 'same-export-session' as SessionId
+  await Promise.all([graphA.ctx.sessionLogDownload.download(id), graphB.ctx.sessionLogDownload.download(id)])
+  for (const [f, account, generation] of [[a, 'A', 'G1'], [b, 'B', 'G2']] as const) {
+    const [url, init] = f.fetcher.mock.lastCall!
+    expect(new URL(url).pathname).toBe('/app/api/session.export')
+    expect(new Headers(init.headers).get('x-account')).toBe(account)
+    expect(new Headers(init.headers).get('x-generation')).toBe(generation)
+    expect(init).toMatchObject({ method: 'HEAD', credentials: 'same-origin', redirect: 'error' })
+    expect(downloads.some((item) => { const target = new URL(item.url); return target.searchParams.get('account') === account
+      && target.searchParams.get('generation') === generation && target.searchParams.get('sessionId') === id })).toBe(true)
+  }
+  expect(downloads.every(item => item.filename === 'dsh-session-same-export-session.zip')).toBe(true)
+  expect(graphA.ctx.sessionLogDownload.store.getSnapshot().bySession[id]?.status).toBe('success')
+  expect(graphB.ctx.sessionLogDownload.store.getSnapshot().bySession[id]?.status).toBe('success')
+  const captured = graphA.ctx.sessionLogDownloadIntegration
+  await pa.dispose()
+  expect(() => captured.navigationUrl('api/session.export?sessionId=late')).toThrow()
+  expect(() => captured.fetch('api/session.export', { method: 'HEAD' })).toThrow()
+})
+
+it('does not provide a native export integration when export was not explicitly selected', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page)
+  await page.start(graph.entry)
+  expect(graph.ctx.get('sessionLogDownloadIntegration')).toBeUndefined()
+})
+
+it('rejects a preinstalled foreign export integration before native page activation', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare({ ...f.input, config: { ...config, nativeSessionControls: ['commands', 'export'] } }, new AbortController().signal)
+  const page = await preparation.ready
+  const app = actualNative(page, undefined, (ctx) => {
+    ctx.provide('sessionLogDownloadIntegration', { fetch: async () => new Response(), navigationUrl: input => String(input) })
+  })
+  const reports = vi.spyOn(console, 'error').mockImplementation(() => {})
+  onTestFinished(async () => { await Promise.allSettled([preparation.dispose(), app.entry.dispose()]); reports.mockRestore() })
+  await expect(page.start(app.entry)).rejects.toThrow('export carrier is already bound')
+  expect(app.mounted()).toBe(false)
 })

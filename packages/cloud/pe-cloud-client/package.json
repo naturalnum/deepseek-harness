@@ -105,6 +105,17 @@
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-general": "workspace:*",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "@deepseek-ai/dsh-client-ui-commands": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-model-selection": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-deepseek-model-label-1017": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-permission-presets": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-goal": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-plan": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-user-questions": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-message-feedback": "workspace:*",
+    "@deepseek-ai/dsh-session-log-export": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-attachment": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-trajectory": "workspace:*"
   }
 }

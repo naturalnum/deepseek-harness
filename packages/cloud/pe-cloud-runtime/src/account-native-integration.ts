@@ -23,6 +23,7 @@ import { assertAccountExecutionProviders, installAccountExecutionPort, type Acco
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
+import { assertAccountPermissionAncestry } from './account-permissions.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from './types.ts'
 import { AccountAttachments, type AccountAttachmentLimits } from './account-attachments.ts'
@@ -30,6 +31,12 @@ import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
 import { observeStartup, type StartupObserver } from './startup-observation.ts'
 import { FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 import { prepareAccountSkillResources } from './account-skills.ts'
+import GoalService from '@deepseek-ai/dsh-goal'
+import * as SessionLogExport from '@deepseek-ai/dsh-session-log-export'
+import PermissionPresetService from '@deepseek-ai/dsh-permission-presets'
+import UserQuestions from '@deepseek-ai/dsh-user-questions'
+import MessageFeedbackService from '@deepseek-ai/dsh-message-feedback'
+import * as CommandFeedback from '@deepseek-ai/dsh-command-feedback'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
@@ -107,6 +114,12 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   instructions: 'pe-account-instructions-session', modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
+  commands: 'pe-cloud-commands',
+  goals: 'pe-cloud-goals',
+  sessionExport: 'pe-cloud-session-export',
+  permissions: 'pe-cloud-permissions', userQuestions: 'pe-cloud-user-questions',
+  sessionFeedback: 'pe-cloud-session-feedback', messageFeedback: 'pe-cloud-message-feedback',
+  commandFeedback: 'pe-cloud-command-feedback',
   workspaceFiles: 'pe-cloud-workspace-files',
   attachments: 'pe-cloud-attachment-store', uploads: 'pe-cloud-file-uploads',
 })
@@ -225,13 +238,19 @@ export class AccountNativeIntegration {
           requireGuards(ctx).assertWorkspace(selected.workspace)
         }
         assertCurrent()
+        const mutation = selected.assertMutationPolicy
         return { workspace: selected.workspace, assertCurrent,
+          ...mutation === undefined ? {} : { assertMutationPolicy: (policy: Parameters<typeof mutation>[0]) => {
+            assertCurrent()
+            mutation(policy)
+          } },
           ...selected.directoryPreparation === undefined ? {} : { directoryPreparation: selected.directoryPreparation } }
       })
       if (files.binding !== binding) {
         throw new AccountRuntimeError('cloud/stale-generation', 'Files preparation requires the exact installed graph binding')
       }
       filesOwner = new CloudAccountFiles(ctx, { ...files,
+        enforceSessionFilePolicy: this.execution.enforcesSessionFilePolicy === true,
         ...attachments === undefined ? {} : { attachmentProjection: attachments },
         assertMountCurrent: (current) => { mountCurrent(current); files.assertMountCurrent(current) },
         assertUnpublished: () => { unpublished(); files.assertUnpublished() },
@@ -390,17 +409,92 @@ export class AccountNativeIntegration {
       maxInventoryEntries: input.maxNativeInventoryEntries,
       maxCollectionItems: firstScreenInput.maxCollectionItems, maxFrameBytes: firstScreenInput.maxFrameBytes,
     })
+    const sessionGuards = (owner: Context): Parameters<CloudAccountApi['createController']>[1] => ({
+      ...requireGuards(owner).sessions, projectDirectory,
+      ...attachments === undefined ? {} : { preparePromptFiles: attachments.preparePromptFiles.bind(attachments) },
+      ...firstScreenInput === undefined ? {} : { firstScreen: {
+        assertSessionRead: readSession, maxCollectionItems: firstScreenInput.maxCollectionItems,
+        maxFrameBytes: firstScreenInput.maxFrameBytes,
+        maxQueuedEvents: firstScreenInput.maxQueuedEvents, maxQueuedBytes: firstScreenInput.maxQueuedBytes,
+      } },
+    })
     const controller = {
       inject: [...SessionController.inject, 'peCloudApi'], Config: SessionController.Config,
       apply(owner: Context, config: ConstructorParameters<typeof SessionController>[1]) {
-        api.createController(owner, { ...requireGuards(owner).sessions, projectDirectory,
-          ...attachments === undefined ? {} : { preparePromptFiles: attachments.preparePromptFiles.bind(attachments) },
-          ...firstScreenInput === undefined ? {} : { firstScreen: {
-            assertSessionRead: readSession, maxCollectionItems: firstScreenInput.maxCollectionItems,
-            maxFrameBytes: firstScreenInput.maxFrameBytes,
-            maxQueuedEvents: firstScreenInput.maxQueuedEvents, maxQueuedBytes: firstScreenInput.maxQueuedBytes,
-          } },
-        }, config)
+        api.createController(owner, sessionGuards(owner), config)
+      },
+    }
+    const commands = {
+      inject: ['peCloudApi', 'agents'],
+      apply(owner: Context) { api.createCommands(owner, sessionGuards(owner)) },
+    }
+    const goals = {
+      inject: [...GoalService.inject, 'peCloudApi'], Config: GoalService.Config,
+      apply(owner: Context, config: ConstructorParameters<typeof GoalService>[1]) {
+        api.createGoals(owner, sessionGuards(owner), config)
+      },
+    }
+    const sessionExport = {
+      inject: [...SessionLogExport.inject, 'peCloudApi', 'sessionQuery', 'sessionPersistence', 'attachments', 'sessions'],
+      Config: SessionLogExport.Config,
+      apply(owner: Context, config: SessionLogExport.Config) {
+        api.createSessionExport(owner, sessionGuards(owner), config)
+      },
+    }
+    const permissions = {
+      inject: [...PermissionPresetService.inject, 'peCloudApi', 'peAccountExecution', 'fs'], Config: PermissionPresetService.Config,
+      apply: (owner: Context, config: ConstructorParameters<typeof PermissionPresetService>[1]) => {
+        if (firstScreenInput === undefined) throw new CloudApiError('cloud/invalid-config', 'Permissions require the native read limits.')
+        const enforcement = (): void => {
+          api.assertInstalled(owner)
+          const port = this.execution
+          if (port === undefined || owner.get('peAccountExecution') !== port || port.enforcesSessionFilePolicy !== true
+            || typeof port.assertSessionFilePolicyChange !== 'function') {
+            throw new CloudApiError('cloud/account-unavailable', 'The original Session policy enforcement is unavailable.')
+          }
+          port.assertCurrent(owner)
+          assertAccountExecutionProviders(owner)
+          if (owner.get('fs')?.sandboxMode === undefined || owner.get('shell')?.sandboxMode === undefined) {
+            throw new CloudApiError('cloud/account-unavailable', 'Permissions require both native enforcing providers.')
+          }
+        }
+        api.createPermissions(owner, config, firstScreenInput.maxFrameBytes, enforcement, (session, mode) => {
+          enforcement()
+          if (owner.get('sessions')?.get(session.id) !== session) {
+            throw new CloudApiError('cloud/forbidden', 'Permissions require the original Session in this account.')
+          }
+          const port = this.execution
+          if (port === undefined || typeof port.assertSessionFilePolicyChange !== 'function') {
+            throw new CloudApiError('cloud/account-unavailable', 'The original execution owner is unavailable.')
+          }
+          port.assertSessionFilePolicyChange(owner, session)
+          assertAccountPermissionAncestry(owner, session, mode)
+          const agents = owner.get('agents'), parent = agents?.get(session.id)
+          if (parent !== undefined && agents?.list().some(agent => agents.isOwnedBy(agent.id, parent))) {
+            throw new CloudApiError('cloud/config-busy', 'Stop this Session\'s live child agents before changing permissions.')
+          }
+        })
+      },
+    }
+    const userQuestions = {
+      inject: ['peCloudApi', 'agents', 'sessionProjections'], Config: UserQuestions.Config,
+      apply(owner: Context) { api.createUserQuestions(owner, sessionGuards(owner)) },
+    }
+    const sessionFeedback = {
+      inject: [...CommandFeedback.SessionFeedbackService.inject, 'peCloudApi'],
+      apply(owner: Context) { api.createSessionFeedback(owner, sessionGuards(owner)) },
+    }
+    const messageFeedback = {
+      inject: [...MessageFeedbackService.inject, 'peCloudApi'], Config: MessageFeedbackService.Config,
+      apply(owner: Context, config: ConstructorParameters<typeof MessageFeedbackService>[1]) {
+        api.createMessageFeedback(owner, sessionGuards(owner), config)
+      },
+    }
+    const commandFeedback = {
+      inject: ['commands', 'sessionFeedback', 'peCloudApi'],
+      apply(owner: Context) {
+        owner.provide('sessionFeedbackIdentity', api.createFeedbackIdentity(owner))
+        CommandFeedback.apply(owner)
       },
     }
     const agentLoop = {
@@ -464,6 +558,14 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.editor]: api.providers.configEditor,
       [ACCOUNT_NATIVE_ENTRIES.credentials]: api.providers.credentials,
       [ACCOUNT_NATIVE_ENTRIES.controller]: controller,
+      [ACCOUNT_NATIVE_ENTRIES.commands]: commands,
+      [ACCOUNT_NATIVE_ENTRIES.goals]: goals,
+      [ACCOUNT_NATIVE_ENTRIES.sessionExport]: sessionExport,
+      [ACCOUNT_NATIVE_ENTRIES.permissions]: permissions,
+      [ACCOUNT_NATIVE_ENTRIES.userQuestions]: userQuestions,
+      [ACCOUNT_NATIVE_ENTRIES.sessionFeedback]: sessionFeedback,
+      [ACCOUNT_NATIVE_ENTRIES.messageFeedback]: messageFeedback,
+      [ACCOUNT_NATIVE_ENTRIES.commandFeedback]: commandFeedback,
       [ACCOUNT_NATIVE_ENTRIES.agentLoop]: agentLoop,
       [ACCOUNT_NATIVE_ENTRIES.llm]: llm,
       [ACCOUNT_NATIVE_ENTRIES.workspaceFiles]: {
