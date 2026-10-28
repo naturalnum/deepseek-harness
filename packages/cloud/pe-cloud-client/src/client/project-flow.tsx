@@ -1,10 +1,11 @@
 /** Title-only project creation in the native Workspace directory-flow slots. */
-import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
+import { Button, IconCloseOutlineRegular, IconFolderOpenRegular, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 
 import type {} from './locales.ts'
+import css from './project-flow.module.css'
 
 /** Slot injection contains only the allocation action and localized copy. */
 export interface CloudProjectFlowInjected {
@@ -19,6 +20,7 @@ export interface CloudProjectFlowInjected {
  * @returns Shared modal primitives; late outcomes after cancellation/unmount never adopt a directory.
  */
 export function CloudProjectFlow(props: DirectoryFlowOwnerProps & CloudProjectFlowInjected): ReactElement {
+  const inputId = useId()
   const [title, setTitle] = useState('')
   const [pending, setPending] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -68,19 +70,32 @@ export function CloudProjectFlow(props: DirectoryFlowOwnerProps & CloudProjectFl
     void complete()
   }
   const { t } = props
-  return <Modal open={props.open} onClose={cancel} title={t('title')} closeLabel={t('cancel')}
-    footer={<>
-      <Button onClick={cancel}>{t('cancel')}</Button>
-      <Button variant="primary" onClick={submit} disabled={pending || props.busy || failed || reported || tooLong || title.trim().length === 0}>
-        {t('create')}
-      </Button>
-    </>}>
-    <form onSubmit={(event) => { event.preventDefault(); submit() }}>
-      <label>{t('name')}<Input aria-label={t('name')} aria-invalid={tooLong} data-modal-autofocus value={title}
-        disabled={pending || props.busy || failed} onChange={(event) => { setTitle(event.target.value) }} /></label>
-      {tooLong && <p role="alert">{t('invalid')}</p>}
-      {failed && <p role="alert">{t('unknown')}</p>}
-      {pending && <p role="status">{t('pending')}</p>}
+  return <Modal open={props.open} onClose={cancel} title={t('title')} headless className={css.dialog as string}>
+    <Button variant="ghost" className={css.close} aria-label={t('close')} onClick={cancel}>
+      <IconCloseOutlineRegular size={16} />
+    </Button>
+    <form className={css.form} aria-busy={pending || props.busy} onSubmit={(event) => { event.preventDefault(); submit() }}>
+      <header className={css.header}>
+        <span className={css.icon} aria-hidden="true"><IconFolderOpenRegular size={28} /></span>
+        <h2>{t('title')}</h2>
+      </header>
+      <div className={css.field}>
+        <label htmlFor={inputId}>{t('name')}</label>
+        <Input id={inputId} className={css.input as string} aria-invalid={tooLong} data-modal-autofocus value={title}
+          aria-describedby={tooLong || failed ? `${inputId}-error` : undefined} placeholder={t('placeholder')}
+          disabled={pending || props.busy || failed} onChange={(event) => { setTitle(event.target.value) }} />
+        <div className={css.feedback} id={`${inputId}-error`}>
+          {tooLong && <p role="alert">{t('invalid')}</p>}
+          {failed && <p role="alert">{t('unknown')}</p>}
+          {pending && <p role="status">{t('pending')}</p>}
+        </div>
+      </div>
+      <footer className={css.actions}>
+        <Button variant="outline" onClick={cancel}>{t('cancel')}</Button>
+        <Button type="submit" variant="primary" disabled={pending || props.busy || failed || reported || tooLong || title.trim().length === 0}>
+          {t('create')}
+        </Button>
+      </footer>
     </form>
   </Modal>
 }

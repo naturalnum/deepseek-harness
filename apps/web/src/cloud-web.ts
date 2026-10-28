@@ -28,10 +28,12 @@ export class CloudWebEntry {
   private readonly input: unknown
   private readonly doc: Document
   private readonly shell: HTMLDivElement
+  private readonly brand: HTMLElement
   private readonly chrome: HTMLElement
   private readonly content: HTMLElement
   private readonly form: HTMLFormElement
   private readonly title: HTMLHeadingElement
+  private readonly description: HTMLParagraphElement
   private readonly emailLabel: HTMLSpanElement
   private readonly passwordLabel: HTMLSpanElement
   private readonly emailField: HTMLLabelElement
@@ -79,20 +81,24 @@ export class CloudWebEntry {
       return node
     }
     this.shell = element('div', styles.shell)
+    this.brand = element('header', styles.brand)
     this.chrome = element('header', styles.chrome)
     this.content = element('main', styles.content)
     this.form = element('form', styles.card)
     this.title = element('h1', styles.title)
+    this.description = element('p', styles.description)
     this.emailField = element('label', styles.field)
     this.passwordField = element('label', styles.field)
     this.emailLabel = element('span')
     this.passwordLabel = element('span')
     this.email = element('input', styles.input)
     this.email.type = 'email'
+    this.email.placeholder = ' '
     this.email.autocomplete = 'username'
     this.email.required = true
     this.password = element('input', styles.input)
     this.password.type = 'password'
+    this.password.placeholder = ' '
     this.password.autocomplete = 'current-password'
     this.password.required = true
     this.submit = element('button', styles.button)
@@ -107,14 +113,14 @@ export class CloudWebEntry {
     this.previewNotice = element('p', styles.notice)
     this.previewNotice.setAttribute('role', 'status')
     this.previewNotice.setAttribute('aria-live', 'polite')
-    this.emailField.append(this.emailLabel, this.email)
-    this.passwordField.append(this.passwordLabel, this.password)
-    this.form.append(this.title, this.emailField, this.passwordField, this.submit, this.notice, this.check)
+    this.emailField.append(this.email, this.emailLabel)
+    this.passwordField.append(this.password, this.passwordLabel)
+    this.form.append(this.emailField, this.passwordField, this.submit, this.notice, this.check)
     this.chrome.append(this.previewNotice, this.exit)
-    this.content.append(this.form)
+    this.content.append(this.title, this.description, this.form)
     root.before(this.shell)
     root.classList.add(styles.native as string)
-    this.shell.append(this.chrome, this.content, root)
+    this.shell.append(this.brand, this.chrome, this.content, root)
     this.form.addEventListener('submit', this.onSubmit)
     this.exit.addEventListener('click', this.onExit)
     this.check.addEventListener('click', this.onCheck)
@@ -404,7 +410,9 @@ export class CloudWebEntry {
     const login = this.phase === 'login' || this.phase === 'signing-in'
     const pending = ['checking', 'signing-in', 'starting', 'stopping'].includes(this.phase)
     this.shell.dataset['state'] = this.phase
+    this.brand.textContent = copy.product
     this.title.textContent = copy.title
+    this.description.textContent = copy.description
     this.emailLabel.textContent = copy.email
     this.passwordLabel.textContent = copy.password
     this.submit.textContent = copy.signIn
@@ -421,6 +429,8 @@ export class CloudWebEntry {
     this.submit.disabled = this.phase !== 'login' || this.authPending
     this.exit.disabled = pending || this.authPending || this.logoutWork !== undefined || this.phase === 'unconfirmed'
     this.chrome.hidden = login || this.phase === 'checking'
+    this.brand.hidden = !login
+    this.description.hidden = !login
     this.check.hidden = login || pending || this.phase === 'running'
     this.check.disabled = this.authPending || this.phase === 'unconfirmed'
     this.content.hidden = this.phase === 'running' || this.phase === 'starting'

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Prepare one Cloud page from a bounded canonical bootstrap response before starting the native `AppWebEntry`. The `/client` Loader entry consumes that exact prepared owner and installs the existing native Connection with captured account/generation carriers. Missing or stale preparation fails closed. This package does not implement a login form or prove backend account readiness.
+Prepare one Cloud page from a bounded canonical bootstrap response before starting the native `AppWebEntry`. The `/client` Loader entry consumes that exact prepared owner and installs the existing native Connection with captured account/generation carriers. Missing or stale preparation fails closed. The [Web entry](../../../apps/web/src/cloud-web.ts) owns the PowerEvolve login presentation over the existing email/password Cookie authentication. This package does not implement a login form or prove backend account readiness.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ Prepare one Cloud page from a bounded canonical bootstrap response before starti
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
-The Cloud Loader also mounts the generated API project-creation contribution and fills both native Workspace directory-flow slots with a localized title form. It adopts the returned native Workspace path through the original `onPicked` callback, preserving native idempotent registration. Blank and overlong titles do not submit; each open reports at most one successful allocation. Cancelling aborts the request signal and ignores late adoption while the original transport and server owner retain actual work. A failed or cancelled submitted creation disables resubmission in that flow instance and directs the user to refresh and inspect projects; no unknown allocation is replayed.
+The Cloud Loader also mounts the generated API project-creation contribution and fills both native Workspace directory-flow slots with a localized title form. The shared modal presents a centered folder icon, project-name field and paired Cancel/Create actions. It adopts the returned native Workspace path through the original `onPicked` callback, preserving native idempotent registration. Blank and overlong titles do not submit; each open reports at most one successful allocation. Cancelling aborts the request signal and ignores late adoption while the original transport and server owner retain actual work. A failed or cancelled submitted creation disables resubmission in that flow instance and directs the user to refresh and inspect projects; no unknown allocation is replayed.
 
 -----
 
