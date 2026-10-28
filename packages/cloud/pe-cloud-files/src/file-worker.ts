@@ -25,6 +25,7 @@ import { loadStagingNative, StagingFailure } from './staging-native.ts'
 import type { StagingFacts, StagingTransaction } from './staging-native.ts'
 import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame, validStageName } from './worker-protocol.ts'
 import type { FdStagingWorkerInput, FdStageRequest, FdProjectMetadataRequest, FdEnvironmentLayoutRequest } from './worker-protocol.ts'
+import { observeFileWorkerFailure, type FileWorkerStartupStage } from './worker-startup-observation.ts'
 
 interface LinuxFdHelper {
   readonly skillBundleVersion?: 1
@@ -788,15 +789,21 @@ function start(): void {
   let native: LinuxFdHelper
   let storage: ReturnType<typeof createStorageWorker> | undefined
   let staging: ReturnType<typeof loadStagingNative> | undefined
+  let stage: FileWorkerStartupStage = 'input'
   try {
     const raw: unknown = workerData
     limits = input(raw)
+    stage = 'storage-initialize'
     if (limits.storageProbe !== undefined) storage = createStorageWorker(limits.storageProbe, limits.maxPathBytes, limits.helperPath)
+    stage = 'fd-helper-load'
     native = helper(limits.helperPath)
     if (native.abiVersion === 8 && limits.content === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    stage = 'kernel-probe'
     native.probeKernel()
+    stage = 'staging-helper-load'
     if (limits.staging !== undefined) staging = loadStagingNative(limits.staging.helperPath)
   } catch (error) {
+    observeFileWorkerFailure(stage, error)
     port.postMessage({ kind: 'startup-failed', ...failure(error) } satisfies FdWorkerReply)
     port.close()
     return

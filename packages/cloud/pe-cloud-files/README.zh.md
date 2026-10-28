@@ -27,6 +27,8 @@ kind: "package-reference"
 
 `/root` 与 `/account` 是 Loader 插件入口。在 Linux 上，`/root` 要求 runtime 注册服务、经过审核的 helper 二进制（现有 S2 使用 ABI6，文本写入使用独立构建的 ABI7）及显式池限额。它在全部配置 worker 启动之后注册唯一 files 参与者。`/account` 要求 runtime 预备的 `CloudAccountFiles` owner 及空配置。它保留原生 Registry 依赖，在自己的原生子 fiber 中安装该 Registry 与选定的 FileSystem，并等待实际 default 项目。根池启动和 files 安装成功都不证明账户就绪。
 
+Worker 启动失败仅向 stderr 写入固定初始化阶段及白名单中的错误自有数据码：输入、存储初始化、FD helper 加载、内核探测或 staging helper 加载。原客户端还记录 Worker 线程错误码，包括入口导入前的失败。不读取消息、堆栈、路径、配置或错误 getter。观察失败不改变原 startup-failed 回复、port 关闭、ABI 握手、终止及真实退出责任；这些记录不授予就绪。
+
 如果提供可信的 `AccountFilesPreparation.createFileSystem`，它仅在原 Registry 与实际 default Workspace 存在后、安装唯一文件系统之前选择原生构造器。省略时保留仅元数据的 S2 构造器；准备失败既不回退，也不报告就绪。真实 `StaticStorageLease` 为新文本候选显式交付其绑定的 `port.createTextFileSystem` 闭包，写入要求独立 ABI7 helper。账户入口保持空配置，现有运行 R8 产物不会被本次源码修改替换。
 
 [FilesLimits](src/types.ts) 的所有字段都必须显式提供有限的正安全整数。每个 lane 的并发数、队列容量与驻留字节不得超过对应全局限额；等待时间必须在 Node 定时器的范围内。[根配置 schema](src/root.ts) 还要求 worker 数量、最低健康数、worker 及回复预留、握手及排空期限、helper 位置和读取、路径、分块及重试限额。全局驻留限额包含固定 worker 预留及启用静态存储时的 root 预留；剩余容量限制账户工作。配置的预留必须保守覆盖缓冲区、克隆、解码及被持有的结果。

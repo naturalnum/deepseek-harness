@@ -22,6 +22,7 @@ import type { StorageProbeFacts } from './storage-types.ts'
 import type { StagingFacts } from './staging-native.ts'
 import type { FdStageFile, FdStageResult } from './worker-protocol.ts'
 import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame } from './worker-protocol.ts'
+import { observeFileWorkerFailure } from './worker-startup-observation.ts'
 import type { FdProjectMetadataFacts, FdProjectMetadataRequest, FdProjectMetadataResult } from './worker-protocol.ts'
 import type { FdEnvironmentLayout, FdEnvironmentLayoutFacts, FdEnvironmentLayoutRequest } from './worker-protocol.ts'
 
@@ -310,7 +311,10 @@ export class FdWorkerClient {
     // Keep initialization failures observed even before the pool installs its waiter.
     void this.ready.catch(() => {})
     worker.on('message', (value: unknown) => { this.message(value) })
-    worker.on('error', (_error: Error) => { this.failure = new FdWorkerFailure('FS_IO_ERROR'); void this.close() })
+    worker.on('error', (error: Error) => {
+      observeFileWorkerFailure('worker-thread-error', error)
+      this.failure = new FdWorkerFailure('FS_IO_ERROR'); void this.close()
+    })
     worker.once('exit', (code: number) => {
       this.closed = true
       const error = this.failure ?? new FdWorkerFailure('FS_IO_ERROR')

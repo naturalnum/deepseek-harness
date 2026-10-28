@@ -27,12 +27,14 @@ beforeAll(async () => {
     },
   })
   if (config === undefined) throw new Error('Original files compiler face required')
-  const emitted = ts.transpileModule(await readFile(resolve(here, '../src/file-worker.ts'), 'utf8'), {
-    fileName: resolve(here, '../src/file-worker.ts'), compilerOptions: { ...config.options, composite: false, incremental: false,
-      declaration: false, declarationMap: false, sourceMap: false }, reportDiagnostics: true,
-  })
-  expect(emitted.diagnostics ?? []).toHaveLength(0)
-  await writeFile(resolve(directory, 'file-worker.js'), emitted.outputText)
+  for (const name of ['file-worker', 'worker-startup-observation']) {
+    const emitted = ts.transpileModule(await readFile(resolve(here, `../src/${name}.ts`), 'utf8'), {
+      fileName: resolve(here, `../src/${name}.ts`), compilerOptions: { ...config.options, composite: false, incremental: false,
+        declaration: false, declarationMap: false, sourceMap: false }, reportDiagnostics: true,
+    })
+    expect(emitted.diagnostics ?? []).toHaveLength(0)
+    await writeFile(resolve(directory, `${name}.js`), emitted.outputText)
+  }
   const helperPath = resolve(directory, 'file-helper.node'), probeHelperPath = resolve(directory, 'probe.cjs')
   await copyFile(resolve(here, 'fixtures/proof-config-file-helper.cjs'), helperPath)
   await copyFile(resolve(here, 'fixtures/proof-config-native.cjs'), probeHelperPath)
