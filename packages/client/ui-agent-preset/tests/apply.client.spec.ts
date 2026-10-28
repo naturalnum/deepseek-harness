@@ -340,9 +340,7 @@ describe('ui-agent-preset apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual([
-      'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'configForms',
-    ])
+    expect(inject).toEqual(['slots', 'locale'])
   })
 
   it('registers the settings section and no General row', async () => {

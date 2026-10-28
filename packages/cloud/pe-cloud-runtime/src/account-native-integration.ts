@@ -11,7 +11,7 @@ import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/typ
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
   type ExposureService, type ExactFetchExposure, type CloudModelKeyPreparation,
-  type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation } from '@deepseek-ai/dsh-pe-cloud-api'
+  type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation, type CloudNativeSettingsPreparation } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -71,6 +71,8 @@ export interface AccountNativePreparation {
    * Omission keeps child factory and native admission wiring closed. It is never provided by a Peer or Settings. */
   readonly reserveSubagent?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation
   readonly modelKey?: CloudModelKeyPreparation
+  /** Optional readonly native inventory and preset views; absent keeps the additive namespace closed. */
+  readonly nativeSettings?: CloudNativeSettingsPreparation
   readonly skills?: Omit<CloudSkillPreparation, 'files' | 'resources' | 'managed'> & {
     readonly managed: Omit<ManagedSkillPreparation, 'assertWorkspace' | 'resources'>
   }
@@ -112,7 +114,7 @@ export interface AccountNativePreparation {
 export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account', execution: 'pe-cloud-execution-account',
   instructions: 'pe-account-instructions-session', modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
-  editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
+  editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials', nativeSettings: 'pe-cloud-native-settings',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
   commands: 'pe-cloud-commands',
   goals: 'pe-cloud-goals',
@@ -527,6 +529,13 @@ export class AccountNativeIntegration {
       ...modelKey === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.modelKey]: {
         inject: ['peCloudApi', 'typert', 'credentials', 'settings', 'llm'],
         apply(owner: Context) { api.prepareCloudModelKey(owner, modelKey) },
+      } },
+      ...input.nativeSettings === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.nativeSettings]: {
+        inject: ['peCloudApi', 'typert', 'loader', 'agentPresets'],
+        apply(owner: Context) {
+          if (input.nativeSettings === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Native settings preparation is unavailable')
+          api.prepareCloudNativeSettings(owner, input.nativeSettings)
+        },
       } },
       ...input.skills === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.skills]: {
         inject: ['peCloudApi', 'skills', 'typert', 'agents', 'workingDirectory'],

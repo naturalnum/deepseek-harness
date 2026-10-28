@@ -17,6 +17,7 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
   maxSockets: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   closeTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
   modelSettingsRequestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS),
+  nativeSettingsRequestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS),
   maxDownloadBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
   nativeSessionControls: z.array(z.union([...NATIVE_CONTROLS])) as z<readonly CloudNativeSessionControl[]>,
   skillSettings: z.union([z.object({
@@ -40,7 +41,8 @@ const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapRespo
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls'])
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs',
+    'nativeSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls'])
   let controls: CloudClientConfig['nativeSessionControls']
   if (Object.hasOwn(value, 'nativeSessionControls')) {
     const selected = value['nativeSessionControls']
@@ -74,6 +76,15 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
     }
     modelDeadline = candidate
   }
+  let nativeSettingsDeadline: number | undefined
+  if (Object.hasOwn(value, 'nativeSettingsRequestTimeoutMs')) {
+    const candidate = value['nativeSettingsRequestTimeoutMs']
+    if (typeof candidate !== 'number' || !Number.isSafeInteger(candidate) || candidate < 1 || candidate > MAX_TIMER_MS) {
+      throw new TypeError('nativeSettingsRequestTimeoutMs must be a finite positive timer delay when present')
+    }
+    if (modelDeadline === undefined) throw new TypeError('Native Settings requires the existing Models integration')
+    nativeSettingsDeadline = candidate
+  }
   let limit: number | undefined
   if (Object.hasOwn(value, 'maxDownloadBytes')) {
     const candidate = value['maxDownloadBytes']
@@ -84,6 +95,7 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
   }
   const config = { ...CloudClientConfigSchema(input as CloudClientConfig) }
   delete config.modelSettingsRequestTimeoutMs
+  delete config.nativeSettingsRequestTimeoutMs
   delete config.maxDownloadBytes
   delete config.skillSettings
   delete config.servicePreview
@@ -94,6 +106,7 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
   return { ...config,
     ...controls === undefined ? {} : { nativeSessionControls: controls },
     ...modelDeadline === undefined ? {} : { modelSettingsRequestTimeoutMs: modelDeadline },
+    ...nativeSettingsDeadline === undefined ? {} : { nativeSettingsRequestTimeoutMs: nativeSettingsDeadline },
     ...limit === undefined ? {} : { maxDownloadBytes: limit },
     ...preview === undefined ? {} : { servicePreview: preview },
     ...skills === undefined ? {} : { skillSettings: skills },

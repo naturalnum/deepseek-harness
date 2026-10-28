@@ -125,3 +125,13 @@ it.each([undefined, null, true, 'commands', ['models'], ['permissions'], ['plan'
     expect(() => parseCloudWebManifest({ ...web, client: { ...valid, nativeSessionControls } })).toThrow()
   },
 )
+
+it('enables the readonly native Settings pages only with an explicit deadline and the existing Models integration', () => {
+  expect(parseCloudClientConfig({ ...valid, modelSettingsRequestTimeoutMs: 1000, nativeSettingsRequestTimeoutMs: 2000 }))
+    .toMatchObject({ modelSettingsRequestTimeoutMs: 1000, nativeSettingsRequestTimeoutMs: 2000 })
+  expect(parseCloudClientConfig(valid)).not.toHaveProperty('nativeSettingsRequestTimeoutMs')
+  expect(() => parseCloudClientConfig({ ...valid, nativeSettingsRequestTimeoutMs: 1000 })).toThrow('Models integration')
+})
+it.each([undefined, null, 0, -1, 1.5, Infinity, '1000', 2_147_483_648])('rejects invalid readonly Settings deadline %j', (nativeSettingsRequestTimeoutMs) => {
+  expect(() => parseCloudClientConfig({ ...valid, modelSettingsRequestTimeoutMs: 1000, nativeSettingsRequestTimeoutMs })).toThrow()
+})

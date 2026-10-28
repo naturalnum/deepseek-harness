@@ -113,6 +113,11 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner.',
   },
   {
+    key: 'cloudNativeSettings', pkg: 'pe-cloud-api', title: 'Account native settings reads', mode: 'service',
+    consumers: ['pe-cloud-client'],
+    note: 'Projects the original account Loader and preset registry into bounded public inventory and composition summaries without configuration or write authority.',
+  },
+  {
     key: 'cloudPlugins', pkg: 'pe-cloud-api', title: 'Approved account plugin controls', mode: 'service',
     consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
     note: 'Adapts fixed plugin edits to original Peer admission, account saves and native profile application.',

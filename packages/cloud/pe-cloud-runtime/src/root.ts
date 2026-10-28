@@ -622,9 +622,11 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const bundleLimits = skills?.mode === 'managed' ? files.requireSkillBundleLimits() : undefined
     const settingsFields = exposure.approvedConfiguration?.fields ?? []
     const settingsWrites = settingsFields.length !== 0
+    const nativeSettings = exposure.policy.manifest.rpcEndpoints.some(row => row.endpoint.startsWith('cloudNativeSettings/'))
+    if (nativeSettings && config.native.firstScreen === undefined) throw new AccountMountPrerequisiteError()
     const pluginCatalog = exposure.approvedConfiguration
     const plugins = pluginCatalog?.pluginControl
-    if ((modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined) && !hasModelKeyPeerConsumer(selectedAuth)) {
+    if ((modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined || nativeSettings) && !hasModelKeyPeerConsumer(selectedAuth)) {
       throw new AccountMountPrerequisiteError()
     }
     if (settingsWrites && config.native.firstScreen === undefined) throw new AccountMountPrerequisiteError()
@@ -698,6 +700,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           maxNativeInventoryEntries: config.native.maxEntries,
           ...pluginPreparation === undefined ? {} : { plugins: pluginPreparation },
           ...settingsWrites ? { settingsWrites: { withModelKeyPeerUse, fields: settingsFields } } : {},
+          ...!nativeSettings || config.native.firstScreen === undefined ? {} : { nativeSettings: {
+            withModelKeyPeerUse, maxNativeInventoryEntries: config.native.maxEntries,
+            maxCollectionItems: config.native.firstScreen.maxCollectionItems, maxFrameBytes: config.native.firstScreen.maxFrameBytes,
+          } },
           ...modelKey === undefined ? {} : { modelKey: {
             limits: modelKey, maxNativeInventoryEntries: config.native.maxEntries,
             withModelKeyPeerUse,

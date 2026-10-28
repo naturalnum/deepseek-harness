@@ -19,6 +19,10 @@ const CLOUD_WEB_CLIENT_PACKAGES = [
 
 const GENERAL_SETTINGS_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-settings-general'] as const
 const MODEL_SETTINGS_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-settings-models'] as const
+const NATIVE_SETTINGS_CLIENT_PACKAGES = [
+  '@deepseek-ai/dsh-client-ui-settings-plugins', '@deepseek-ai/dsh-client-ui-settings-plugin-inventory',
+  '@deepseek-ai/dsh-client-ui-agent-preset',
+] as const
 const SERVICE_PREVIEW_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-tool'] as const
 const NATIVE_SESSION_CLIENT_PACKAGES: Readonly<Record<CloudNativeSessionControl, readonly string[]>> = {
   commands: ['@deepseek-ai/dsh-client-ui-commands'],
@@ -66,6 +70,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       [...new Set([...CLOUD_WEB_CLIENT_PACKAGES,
         ...GENERAL_SETTINGS_CLIENT_PACKAGES,
         ...manifest.client.modelSettingsRequestTimeoutMs === undefined ? [] : MODEL_SETTINGS_CLIENT_PACKAGES,
+        ...manifest.client.nativeSettingsRequestTimeoutMs === undefined ? [] : NATIVE_SETTINGS_CLIENT_PACKAGES,
         ...manifest.client.servicePreview === undefined ? [] : SERVICE_PREVIEW_CLIENT_PACKAGES,
         ...(manifest.client.nativeSessionControls ?? []).flatMap(group => NATIVE_SESSION_CLIENT_PACKAGES[group]),
       ])], baseUrl, { activate: true },

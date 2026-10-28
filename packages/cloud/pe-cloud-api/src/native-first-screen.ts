@@ -90,7 +90,7 @@ export function firstScreenNativeOwner(
   ctx: Context,
   key: 'workspaceRegistry' | 'settings' | 'remoteAccess' | 'typertGateway' | 'workspaceController' | 'settingsController'
     | 'sessionSkillCatalog' | 'commands' | 'goals' | 'connection' | 'sessionFeedback' | 'messageFeedback'
-    | 'permissionPresets' | 'userQuestions',
+    | 'permissionPresets' | 'userQuestions' | 'loader' | 'agentPresets',
   value: object, maximum: number,
 ): FirstScreenNativeOwner {
   if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()

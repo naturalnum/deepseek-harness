@@ -29,8 +29,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'settings.approved.namespace': { kind: 'list'; scope: 'root'; owner: Record<never, never> }
   }
 }
-type SectionProps = PropsRuntime<'settings.section'> & PropsRenderSlots<'settings.approved.namespace'>
-  & PropsLocale<'cloud-approved-settings'>
+type SectionProps = PropsRenderSlots<'settings.approved.namespace'> & PropsLocale<'cloud-approved-settings'> & { readonly general?: boolean }
 type FormProps = PropsRuntime<'settings.approved.namespace'> & PropsLocale<'cloud-approved-settings'> & InjectFace<ApprovedSettingsFace>
 
 /** Render the one shared settings entry; the original renderer owns the namespace contributions.
@@ -38,7 +37,8 @@ type FormProps = PropsRuntime<'settings.approved.namespace'> & PropsLocale<'clou
  * @returns The approved fields section.
  */
 export function ApprovedSettingsSection(props: SectionProps) {
-  return <section><h1>{props.t('title')}</h1><p>{props.t('introduction')}</p>{props.renderSlot('settings.approved.namespace', {})}</section>
+  return <section><h2>{props.t(props.general ? 'generalTitle' : 'title')}</h2>
+    <p>{props.t('introduction')}</p>{props.renderSlot('settings.approved.namespace', {})}</section>
 }
 /** Render one data-derived scalar form without accessing Cordis or starting requests.
  * @param props Original model state and actions bound by the slot renderer.

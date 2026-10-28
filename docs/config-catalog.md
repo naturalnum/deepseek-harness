@@ -2393,7 +2393,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-pe-cloud-client`
 
 - `refs`: `BindingFieldNames` (`@deepseek-ai/dsh-pe-cloud-access/types`) · `BootstrapDecodeLimits` (`@deepseek-ai/dsh-pe-cloud-access/types`)
-- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:39`](../packages/cloud/pe-cloud-client/src/index.ts)
+- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:43`](../packages/cloud/pe-cloud-client/src/index.ts)
 
 ```ts config-catalog
 /** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
@@ -2443,6 +2443,8 @@ export interface CloudClientConfig {
   maxDownloadBytes?: number
   /** Finite native model-settings RPC observer deadline; omission keeps model editing closed. */
   modelSettingsRequestTimeoutMs?: number
+  /** Finite observer deadline for account-native readonly Settings; omission leaves these pages unregistered. */
+  nativeSettingsRequestTimeoutMs?: number
   /** Omission leaves the native sample skill section unregistered. */
   skillSettings?: Readonly<CloudSkillSettingsConfig>
   /** Original browser control groups; omission preserves the existing first-screen roster. */

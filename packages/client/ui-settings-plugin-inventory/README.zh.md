@@ -25,6 +25,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+应用可在激活前提供 `pluginInventorySettingsIntegration`，将现有标签页绑定到原页面的 `isCurrent` 和 `list` 回调。此模式不需要全局清单 Remote 命名空间，也不注册插件管理操作。读取失败不会回退到不受限的 profile；页面失效后的迟到结果会被忽略，页面同步重试也要求原页面仍有效。未提供集成时，继续使用原生 Remote 读取。
+
 打开设置中的「插件」分区并选择**插件列表**标签页，即可查看宿主的插件清单。插件激活期间不会读取 Remote——首次选择该标签页时才挂载组件，并通过 `api-remotes` 懒调用 `ctx.remote.pluginInventory.list()`。
 
 安装失败且存在待审批的 pnpm 构建权限时，页面提供“允许这些脚本并重试”。该操作展示准确包名和持久授权范围，再使用原来的包规格及启用选项重试。一次点击批准整个列表，其中可能包括此前安装留下的待审批包。关闭页面不会授予权限。

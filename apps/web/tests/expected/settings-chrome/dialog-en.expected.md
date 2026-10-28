@@ -24,7 +24,7 @@
   - button "Detailed"
   - text: When to Collapse Work Details Choose when to automatically collapse work details
   - button "On completion"
-  - text: Show coding view Shows trajectory, code diffs, and all Agent presets
+  - text: Show coding view Shows trajectory and code diffs for the current turn
   - switch "Show coding view"
   - text: Keyboard shortcuts
   - paragraph: View and edit available shortcuts and input actions

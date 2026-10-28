@@ -32,3 +32,6 @@ export { APPROVED_PLUGIN_CONTROL, PLUGIN_RPC_ENDPOINTS, pluginRequests, pluginCo
 
 export { approvedSettingsMatch, projectApprovedSettings } from './approved-settings.ts'
 export type { NativeSettingsWritePolicy } from './native-first-screen.ts'
+
+export { CloudNativeSettingsService } from './cloud-native-settings.ts'
+export type { CloudNativeSettingsPreparation, CloudPresetReference, CloudPresetComposition } from './cloud-native-settings.ts'

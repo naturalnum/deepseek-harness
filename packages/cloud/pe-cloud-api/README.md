@@ -136,6 +136,13 @@ Commands recheck the original account and Agent after attachment admission, imme
 
 Permission controls require the enforcing Files/Shell pair and original issued execution port. Only read-only and workspace-write with approval never are supported; retained command/service work or a live descendant blocks switching, and readonly ancestors cannot be broadened by a child. Initial permission seeding requires installed enforcement; public catalog and mutation still require business admission. Native export checks account/project admission before reads and again before sending the ZIP; request, generation and registration cancellation own the stream. ZIP layout and cleanup remain native responsibilities.
 
+<a id="readonly-native-settings"></a>
+### Readonly native settings
+
+`CloudNativeSettingsService` reads this account’s original Loader and AgentPresetRegistry under the retained login Peer Use. `CloudNativeSettingsPreparation` supplies that consumer and the existing native inventory, collection and complete-frame budgets. Exact generated descriptors join the account’s ordinary exposure audit; no preset selection, YAML read, plugin installation or configuration mutation is exposed.
+
+`inventory` returns the native [PluginInventorySnapshot](../../host/plugin-inventory/README.md#use-this-package) DTO with management disabled. `CloudPresetReference` carries only an account-local preset `id`; `readPreset` returns `CloudPresetComposition`, the native group’s published display metadata and actual module/state rows. These projections exclude configuration values, disabled expressions, private module paths and raw diagnostics. The [source](src/cloud-native-settings.ts) owns admission, field projection and failure behavior.
+
 </details>
 
 -----

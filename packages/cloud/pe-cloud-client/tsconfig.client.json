@@ -76,7 +76,8 @@
     "src/client/management/plugins/catalog-reader.ts",
     "src/client/management/plugins/install.tsx",
     "src/client/management/plugins/PluginEditPanel.tsx",
-    "src/client/management/plugins/plugin-schema.ts"
+    "src/client/management/plugins/plugin-schema.ts",
+    "src/client/native-settings.ts"
   ],
   "references": [
     {
@@ -144,6 +145,12 @@
     },
     {
       "path": "../../session-query/session-log-export/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-agent-preset"
+    },
+    {
+      "path": "../../client/ui-settings-plugin-inventory"
     }
   ]
 }

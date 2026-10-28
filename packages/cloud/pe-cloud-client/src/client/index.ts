@@ -5,6 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import { installCloudProjects } from './projects.ts'
 import { installCloudFileDownloads } from './downloads.ts'
 import { installCloudModelSettings } from './model-settings.ts'
+import { installCloudNativeSettings } from './native-settings.ts'
 import { installCloudSkillSettings } from './skill-settings.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
@@ -34,6 +35,7 @@ export function apply(ctx: Context, config: Config): void {
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)
   installCloudModelSettings(ctx, owner)
+  installCloudNativeSettings(ctx, owner)
   installCloudSkillSettings(ctx, owner)
   installCloudManagement(ctx, owner)
   installCloudApprovedSettings(ctx, owner)

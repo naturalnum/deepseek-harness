@@ -424,3 +424,24 @@ it.each([
   await fiber?.dispose()
   expect(withdrawn).toHaveLength(supplied.length)
 })
+
+it('supplies all four original Settings sections only when the reviewed readonly option is configured', async () => {
+  const ctx = await composition(), base = manifest()
+  await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+  await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: {
+    ...base, client: { ...base.client, modelSettingsRequestTimeoutMs: 500, nativeSettingsRequestTimeoutMs: 500 },
+  } } })
+  await ctx.loader.await()
+  const fiber = ctx.loader.resolve('cloud').fiber; await fiber?.await()
+  expect(fiber?.state).toBe(FiberState.ACTIVE)
+  const boot = parseBootManifest(ctx.clientModules.graph())
+  expect(boot.plugins.map(row => row.id)).toEqual(expect.arrayContaining([
+    '@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models',
+    '@deepseek-ai/dsh-client-ui-settings-plugins', '@deepseek-ai/dsh-client-ui-settings-plugin-inventory',
+    '@deepseek-ai/dsh-client-ui-agent-preset',
+  ]))
+  expect(ctx.get('agentPresetSettingsIntegration')).toBeUndefined()
+  expect(ctx.get('pluginInventorySettingsIntegration')).toBeUndefined()
+  await fiber?.dispose()
+  expect(ctx.clientModules.graph().entries).toEqual([])
+})

@@ -139,6 +139,12 @@
     },
     {
       "path": "../../api/remotes/tsconfig.host.json"
+    },
+    {
+      "path": "../../host/plugin-inventory"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
     }
   ]
 }

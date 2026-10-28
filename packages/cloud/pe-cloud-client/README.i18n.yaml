@@ -21,14 +21,17 @@
   en: 56274c851ce011a7
   zh: b2a05ebf50ad3430
 /deepseek-ai-dsh-pe-cloud-client/use-this-package/minimal-configuration:
-  en: 56ee0e521d8e74f4
-  zh: e0bcceb5acd3975b
+  en: 2556e54fd0c79a55
+  zh: b2e6e74219c30abd
 /deepseek-ai-dsh-pe-cloud-client/use-this-package/native-session-controls:
   en: 424a34d259b90eb1
   zh: bbe1636d3119588c
 /deepseek-ai-dsh-pe-cloud-client/use-this-package/native-models-key-editing:
   en: 3abf41ff5cb2de5f
   zh: 19280706400faafa
+/deepseek-ai-dsh-pe-cloud-client/use-this-package/native-settings:
+  en: 4247ce68fd6a1c4a
+  zh: f8007c6959f7360c
 /deepseek-ai-dsh-pe-cloud-client/use-this-package/native-skill-management:
   en: 97cb24873d2e2e9c
   zh: b4ed928ab4018285

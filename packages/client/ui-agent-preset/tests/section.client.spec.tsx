@@ -12,7 +12,8 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 function unusedHook(): never {
   throw new Error('This section does not read global slot sources')
 }
-function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
+function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void,
+  outerClose?: () => void, enabled = true, readOnly = false) {
   const developerTools = createSnapshotStore(enabled)
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
     saving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
@@ -20,6 +21,7 @@ function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?
   const actions = { load: vi.fn(async () => {}), view: vi.fn(async () => {}), closeView: vi.fn(), makeDefault: vi.fn(async () => {}),
     close: vi.fn() }
   const props: AgentPresetSectionProps = { ...actions,
+    ...readOnly ? { readOnly: true } : {},
     ...(startCreatorDraft === undefined ? {} : { startCreatorDraft }),
     usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook, useSessionRetainInfo: unusedHook,
     useWorkspaces: unusedHook, useResource: unusedHook,
@@ -31,6 +33,40 @@ function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?
     : <Modal open onClose={outerClose} title="Settings" closeLabel="Close"><AgentPresetSection {...props} /></Modal>)
   return { ...actions, store, developerTools }
 }
+it('uses the original cards and viewer for a public read-only composition without selecting defaults or rendering raw configuration', async () => {
+  const create = vi.fn()
+  const actions = view({ rows: [{ id: 'ptc', name: 'Approved account preset', isDefault: true }, { id: 'cordis', isDefault: false }],
+    view: { id: 'ptc', title: 'Approved account preset', content: 'PRIVATE-RAW-CONFIGURATION', composition: [
+      { entryId: 'bash', moduleName: 'cordis:tool-bash', enabled: true, fiberPhase: 'active' },
+      { entryId: null, moduleName: 'cordis:tool-reader', enabled: 'conditional', fiberPhase: null },
+    ] } }, create, undefined, false, true)
+  const dialog = screen.getByRole('dialog', { name: `${en.viewComposition} · Approved account preset` })
+  expect(within(dialog).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual([
+    en.compositionModule, en.compositionEntry, en.compositionEnabled, en.compositionRuntime,
+  ])
+  expect(within(dialog).getByText('cordis:tool-bash')).toBeTruthy()
+  expect(within(dialog).getByText(en.compositionUnobserved)).toBeTruthy()
+  expect({ title: within(dialog).getByRole('heading').textContent,
+    rows: within(dialog).getAllByRole('row').map(row => row.textContent) }).toMatchInlineSnapshot(`
+      {
+        "rows": [
+          "ModuleEntryEnablementObserved status",
+          "cordis:tool-bashbashEnabledActive",
+          "cordis:tool-readerNo entry idConditionalNot observed",
+        ],
+        "title": "Public composition · Approved account preset",
+      }
+    `)
+  expect(screen.queryByText('PRIVATE-RAW-CONFIGURATION')).toBeNull()
+  expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^Set as new task default/u })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^View configuration/u })).toBeNull()
+  const card = rowFor('ptc')
+  fireEvent.click(within(card).getAllByRole('button', { name: `${en.viewComposition}: Approved account preset` })[0]!)
+  expect(actions.view).toHaveBeenCalledExactlyOnceWith('ptc')
+  expect(actions.makeDefault).not.toHaveBeenCalled()
+  expect(create).not.toHaveBeenCalled()
+})
 function rowFor(id: string): HTMLElement {
   const row = document.querySelector<HTMLElement>(`[data-agent-preset-id="${id}"]`)
   if (row === null) throw new Error(`no card for ${id}`)

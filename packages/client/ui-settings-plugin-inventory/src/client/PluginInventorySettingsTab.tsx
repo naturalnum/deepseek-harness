@@ -29,6 +29,8 @@ export interface PluginInventorySettingsTabInjected {
   retryClient: () => void
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
+  /** Omission preserves native reads; false suppresses late results from an admitted page. */
+  isCurrent?: () => boolean
   /**
    * Display name for one preset: shipped presets resolve through the
    * agent-preset dictionaries, user-authored ones keep their own metadata.
@@ -250,7 +252,7 @@ function StateTag({ kind, label }: { readonly kind: EnablementKind; readonly lab
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
 export function PluginInventorySettingsTab(
-  { list, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
+  { list, isCurrent, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
 ): ReactNode {
   const clientSync = useClientSync(snapshot => snapshot)
   const sectionId = useId()
@@ -265,12 +267,14 @@ export function PluginInventorySettingsTab(
 
   useEffect(() => {
     let current = true
+    const accepts = (): boolean => current && isCurrent?.() !== false
+    if (!accepts()) { setState({ status: 'error' }); return }
     void Promise.resolve().then(() => list()).then(
-      (snapshot) => { if (current) setState({ status: 'ready', snapshot }) },
-      () => { if (current) setState({ status: 'error' }) },
+      (snapshot) => { if (accepts()) setState({ status: 'ready', snapshot }) },
+      () => { if (accepts()) setState({ status: 'error' }) },
     )
     return () => { current = false }
-  }, [list, request])
+  }, [list, isCurrent, request])
 
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const searching = normalizedQuery.length > 0

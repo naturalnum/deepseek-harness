@@ -9,8 +9,9 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 flowchart LR
   pkg_pe_cloud_api["pe-cloud-api"]
   svc_cloudModelKey["ctx.cloudModelKey<br/>Account model-key editing"]
-  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
+  svc_cloudNativeSettings["ctx.cloudNativeSettings<br/>Account native settings reads"]
   pkg_pe_cloud_client["pe-cloud-client"]
+  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
   pkg_pe_cloud_runtime["pe-cloud-runtime"]
   svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
   svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
@@ -400,6 +401,7 @@ flowchart LR
   pkg_pe_account_instructions --> svc_peAccountInstructions
   pkg_pe_cloud_access --> svc_peAuth
   pkg_pe_cloud_api --> svc_cloudModelKey
+  pkg_pe_cloud_api --> svc_cloudNativeSettings
   pkg_pe_cloud_api --> svc_cloudPlugins
   pkg_pe_cloud_api --> svc_cloudProjects
   pkg_pe_cloud_api --> svc_cloudSkills
@@ -505,6 +507,7 @@ flowchart LR
   svc_browserUse --> pkg_experimental_browser_use_stagehand_native
   svc_clientModules --> pkg_client_hmr
   svc_cloudModelKey --> pkg_pe_cloud_api
+  svc_cloudNativeSettings --> pkg_pe_cloud_client
   svc_cloudPlugins --> pkg_pe_cloud_client
   svc_cloudPlugins --> pkg_pe_cloud_runtime
   svc_cloudProjects --> pkg_pe_cloud_api
@@ -674,6 +677,7 @@ flowchart LR
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner. |
+| `ctx.cloudNativeSettings` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client) | - | Projects the original account Loader and preset registry into bounded public inventory and composition summaries without configuration or write authority. |
 | `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts fixed plugin edits to original Peer admission, account saves and native profile application. |
 | `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts native Workspace operations to the installed account files owner and approved project roots. |
 | `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Manages account skill installations and complete packages through original Peer admission, account saves and files-owned catalog/version CAS. |

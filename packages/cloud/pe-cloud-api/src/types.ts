@@ -170,3 +170,8 @@ export interface ModelKeyMetadata {
   readonly configurableProviders: LlmConfigurableProvider[]
   readonly settings: SettingsDescribeValue
 }
+
+/** Exact account-local preset identity; raw YAML/configuration reads are not exposed. */
+export interface CloudPresetReference { readonly id: string }
+/** Native public composition summary; config values, expressions and raw diagnostics are excluded. */
+export type CloudPresetComposition = import('@deepseek-ai/dsh-host-plugin-inventory/types').AgentPresetPluginGroup

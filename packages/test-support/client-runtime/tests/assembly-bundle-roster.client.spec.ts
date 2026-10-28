@@ -74,6 +74,22 @@ describe('bundleRoster on a scratch installation', () => {
   const scratch = new Scratch()
   afterAll(() => { rmSync(scratch.root, { recursive: true, force: true }) })
 
+  it('reads an enabled own-bundle browser entry from its already located manifest without a self-dependency', () => {
+    const own = new Scratch()
+    onTestFinished(() => { rmSync(own.root, { recursive: true, force: true }) })
+    const directory = join(own.root, 'workspace', 'self'), manifest = join(directory, 'package.json')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(manifest, JSON.stringify({ name: '@t/self', dsh: {
+      bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web', immediately: true },
+    } }))
+    writeFileSync(join(directory, 'cordis.patch.yml'), "- insert:\n    - id: self\n      name: '@t/self'\n")
+    expect(bundleRoster(['@t/self'], manifest).rows).toEqual([
+      { name: '@t/self', inject: [], immediately: true },
+    ])
+    writeFileSync(join(directory, 'cordis.patch.yml'), "- insert:\n    - id: missing\n      name: '@t/absent'\n")
+    expect(() => bundleRoster(['@t/self'], manifest)).toThrow('cannot resolve plugin package @t/absent from @t/self')
+  })
+
   it('resolves a linked bundle dependency before an unrelated ancestor package', () => {
     const linked = new Scratch()
     onTestFinished(() => { rmSync(linked.root, { recursive: true, force: true }) })

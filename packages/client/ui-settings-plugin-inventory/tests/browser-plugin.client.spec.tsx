@@ -21,7 +21,7 @@ type ListResult =
   | { readonly ok: true; readonly value: typeof EMPTY }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
-async function bench() {
+async function bench(withInventory = true) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   const retryClient = vi.fn(async () => {})
@@ -37,7 +37,7 @@ async function bench() {
   new RemoteService(ctx)
   const list = vi.fn<() => Promise<ListResult>>()
     .mockResolvedValue({ ok: true, value: EMPTY })
-  ctx.provide('remote.pluginInventory', { list })
+  if (withInventory) ctx.provide('remote.pluginInventory', { list })
   return { ctx, retryClient, slots: ctx.get('slots') as SlotRegistry, locale, list }
 }
 
@@ -54,7 +54,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
   })
 
   it('declares only the services used by the Settings Remote contribution', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginInventory', 'modules'])
+    expect(inject).toEqual(['slots', 'locale', 'modules'])
   })
 
   it('registers a localized tab without reading the Remote eagerly', async () => {
@@ -116,5 +116,25 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.slots.entries('settings.plugins.tab')).toHaveLength(0)
     expect(() => b.locale.register(NS, 'zh', {})).not.toThrow()
     await b.ctx.fiber.dispose()
+  })
+
+  it('registers admitted reads without the global Remote and does not fall back after failure or retirement', async () => {
+    const b = await bench(false)
+    let current = true
+    const list = vi.fn(async () => ({ entries: [], managementAvailable: false }))
+    b.ctx.provide('pluginInventorySettingsIntegration', { isCurrent: () => current, list })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
+    await expect(injected.list()).resolves.toEqual({ entries: [], managementAvailable: false })
+    list.mockRejectedValueOnce(new Error('page read failed'))
+    await expect(injected.list()).rejects.toThrow('page read failed')
+    expect(b.list).not.toHaveBeenCalled()
+    current = false
+    await expect(injected.list()).rejects.toThrow('页面已失效')
+    injected.retryClient()
+    expect(b.retryClient).not.toHaveBeenCalled()
+    expect(list).toHaveBeenCalledTimes(2)
   })
 })

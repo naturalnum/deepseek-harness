@@ -51,6 +51,7 @@ export { REGION_BEGIN, REGION_END }
  */
 export const SERVICE_PAGE: Record<string, string> = {
   cloudModelKey: 'cloud.md',
+  cloudNativeSettings: 'cloud.md',
   cloudPlugins: 'cloud.md',
   cloudProjects: 'cloud.md',
   cloudSkills: 'cloud.md',
@@ -186,6 +187,8 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   sessionFeedbackIdentity: 'optional application-owned anonymous display identity callback, not a Service — packages/feedback/command-feedback/README.md owns its admission and no-fallback behavior',
   sessionLogDownloadIntegration: 'client-side captured authenticated download carrier, not a Service — packages/session-query/session-log-export/README.md owns its fetch and navigation API',
   modelsSettingsIntegration: 'client-side page-owned Models input value — packages/client/ui-settings-models/README.md owns the API',
+  pluginInventorySettingsIntegration: 'client-side page-owned readonly inventory callbacks — packages/client/ui-settings-plugin-inventory/README.md owns the API',
+  agentPresetSettingsIntegration: 'client-side page-owned readonly preset composition callbacks — packages/client/ui-agent-preset/README.md owns the API',
   clientPersistence: 'client-side captured logical-key storage port — packages/client/store/README.md owns the API',
   peCloudPage: 'client-side pre-Cordis prepared page owner — packages/cloud/pe-cloud-client/README.md owns the lifecycle',
   peFilesPool: 'root-only LinuxFilesPool instance value, not a Cordis Service subclass — packages/cloud/pe-cloud-files/README.md owns pool startup, static storage and actual shutdown',
@@ -332,6 +335,11 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AuthRootObservation: 'cloud.md',
   CloudModelKeyPreparation: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
   CloudModelKeyService: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  CloudNativeSettingsPreparation: '../../packages/cloud/pe-cloud-api/README.md#readonly-native-settings',
+  CloudNativeSettingsService: '../../packages/cloud/pe-cloud-api/README.md#readonly-native-settings',
+  CloudPresetReference: '../../packages/cloud/pe-cloud-api/README.md#readonly-native-settings',
+  CloudPresetComposition: '../../packages/cloud/pe-cloud-api/README.md#readonly-native-settings',
+  PluginInventorySnapshot: '../../packages/host/plugin-inventory/README.md#use-this-package',
   CloudProjectCreateRequest: 'cloud.md',
   CloudProjectsPreparation: 'cloud.md',
   CloudProjectsService: 'cloud.md',

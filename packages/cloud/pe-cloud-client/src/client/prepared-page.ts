@@ -3,6 +3,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
+import type { AgentPresetSettingsIntegration } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
+import type { PluginInventorySettingsIntegration } from '@deepseek-ai/dsh-client-ui-settings-plugin-inventory/client'
 import type { ModelsCredentialEditing, ModelsSettingsIntegration, ModelsSettingsReads } from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
@@ -40,6 +42,12 @@ export interface CloudPagePreparationInput {
 /** Apply-owned actual Remote callbacks; the original page supplies their currentness and observable admission. */
 export interface CloudModelSettingsCallbacks extends Omit<ModelsSettingsReads, 'isCurrent'> {
   readonly prepare: ModelsCredentialEditing['prepare']
+}
+
+/** Captured account-native readonly Settings operations; no global manager or preset writer. */
+export interface CloudNativeSettingsCallbacks {
+  readonly inventory: PluginInventorySettingsIntegration['list']
+  readonly presets: AgentPresetSettingsIntegration['list']
 }
 
 /** Native application owner supplies ordinary navigation and localized refusal feedback. */
@@ -105,12 +113,17 @@ export class PreparedCloudPage {
   readonly servicePreviewNavigation?: CloudServicePreviewNavigation
   /** Original page's optional Models integration; its source starts closed and is revoked before cleanup waits. */
   readonly modelsSettingsIntegration: ModelsSettingsIntegration
+  /** Prepared before native Settings packages activate; absent unless the explicit option is configured. */
+  readonly pluginInventorySettingsIntegration?: PluginInventorySettingsIntegration
+  /** This original page exposes only current-account public preset composition. */
+  readonly agentPresetSettingsIntegration?: AgentPresetSettingsIntegration
   /** Request the captured Web sign-out once from this page's active native scope. */
   readonly accountSignOut?: (owner: Context) => void
   private readonly modelsEditing = createSnapshotStore<ModelsCredentialEditing | null>(null)
   private readonly skillEditing = createSnapshotStore<SkillManagementView>(Object.freeze({ phase: 'unavailable', items: Object.freeze([]) }))
   private skillVersionBinding: { readonly owner: Context; withdraw?: () => void } | undefined
   private modelSettingsBinding: { readonly owner: Context; readonly callbacks: CloudModelSettingsCallbacks } | undefined
+  private nativeSettingsBinding: { readonly owner: Context; readonly callbacks: CloudNativeSettingsCallbacks } | undefined
   private root: Context | undefined
   private activation: Context | undefined
   private connection: ConnectionHandle | undefined
@@ -174,10 +187,20 @@ export class PreparedCloudPage {
         credentials: (refs: readonly string[]) => read(callbacks => callbacks.credentials(refs)),
       }),
     })
-    this.lifetime.transport.signal.addEventListener('abort', () => { this.revokeModels(); this.revokeSkillVersions() }, { once: true })
+    if (this.config.nativeSettingsRequestTimeoutMs !== undefined) {
+      const isCurrent = (): boolean => this.nativeSettingsBinding !== undefined && this.nativeSettingsCurrent(this.nativeSettingsBinding)
+      this.pluginInventorySettingsIntegration = Object.freeze({ isCurrent,
+        list: () => this.readNativeSettings(callbacks => callbacks.inventory()) })
+      this.agentPresetSettingsIntegration = Object.freeze({ isCurrent,
+        list: () => this.readNativeSettings(callbacks => callbacks.presets()) })
+    }
+    this.lifetime.transport.signal.addEventListener('abort', () => {
+      this.revokeModels(); this.revokeSkillVersions(); this.nativeSettingsBinding = undefined
+    }, { once: true })
     this.nativeOptions = Object.freeze({
       ...this.lifetime.nativeOptions, prepareContext: (ctx: Context) => { this.bind(ctx) },
       beforeDispose: () => {
+        this.nativeSettingsBinding = undefined
         this.revokeModels()
         this.revokeSkillVersions()
         this.lifetime.persistence.revoke()
@@ -361,6 +384,24 @@ export class PreparedCloudPage {
     return () => { if (this.modelSettingsBinding === binding) this.revokeModels() }
   }
 
+  /** Attach actual readonly Settings callbacks to this same original page.
+   * @param owner Cloud dependency fiber with the generated namespace.
+   * @param callbacks Current-account reads captured by that owner.
+   * @returns Synchronous withdrawal; late reads reject instead of targeting another page.
+   */
+  attachNativeSettings(owner: Context, callbacks: CloudNativeSettingsCallbacks): () => void {
+    this.assertAccountManagementCurrent(owner)
+    if (this.config.nativeSettingsRequestTimeoutMs === undefined || this.nativeSettingsBinding !== undefined) throw new ClientFailure('closed')
+    const binding = Object.freeze({ owner, callbacks: Object.freeze({ inventory: callbacks.inventory, presets: callbacks.presets }) })
+    this.nativeSettingsBinding = binding
+    return () => { if (this.nativeSettingsBinding === binding) this.nativeSettingsBinding = undefined }
+  }
+
+  /** Read the explicit observation deadline for the original page's readonly Settings requests.
+   * @returns Configured finite deadline, or undefined while this integration is disabled.
+   */
+  get nativeSettingsRequestTimeoutMs(): number | undefined { return this.config.nativeSettingsRequestTimeoutMs }
+
   /**
    * Read the configured model-settings observer deadline.
    * @returns Explicit per-RPC deadline, or undefined while model settings remain unconfigured.
@@ -465,6 +506,19 @@ export class PreparedCloudPage {
     try { this.assertCurrent(binding.owner); return true } catch { return false }
   }
 
+  private nativeSettingsCurrent(binding: NonNullable<PreparedCloudPage['nativeSettingsBinding']>): boolean {
+    if (this.nativeSettingsBinding !== binding) return false
+    try { this.assertAccountManagementCurrent(binding.owner); return true } catch { return false }
+  }
+
+  private async readNativeSettings<T>(consume: (callbacks: CloudNativeSettingsCallbacks) => Promise<T>): Promise<T> {
+    const binding = this.nativeSettingsBinding
+    if (binding === undefined || !this.nativeSettingsCurrent(binding)) throw new ClientFailure('closed')
+    const value = await consume(binding.callbacks)
+    if (!this.nativeSettingsCurrent(binding)) throw new ClientFailure('closed')
+    return value
+  }
+
   private revokeModels(): void {
     this.modelSettingsBinding = undefined
     if (this.modelsEditing.getSnapshot() !== null) this.modelsEditing.set(null)
@@ -475,6 +529,10 @@ export class PreparedCloudPage {
     if (this.root !== undefined || ctx.get('peCloudPage', false) !== undefined) throw new Error('Cloud page owner is already bound')
     if (ctx.get('connection', false) !== undefined) throw new Error('Cloud page requires the sole native Connection installer')
     if (ctx.get('modelsSettingsIntegration', false) !== undefined) throw new Error('Cloud page Models integration is already bound')
+    if (this.config.nativeSettingsRequestTimeoutMs !== undefined
+      && (ctx.get('pluginInventorySettingsIntegration', false) !== undefined || ctx.get('agentPresetSettingsIntegration', false) !== undefined)) {
+      throw new Error('Cloud page native Settings integration is already bound')
+    }
     if (ctx.get('sessionLogDownloadIntegration', false) !== undefined) throw new Error('Cloud page export carrier is already bound')
     if (ctx.get('fileUpload', false) !== undefined) throw new Error('Cloud page requires upload preparation before the native upload service')
     if (this.lifetime.getSnapshot().phase !== 'running'
@@ -493,6 +551,10 @@ export class PreparedCloudPage {
     this.root = ctx.root
     ctx.provide('peCloudPage', this)
     ctx.provide('modelsSettingsIntegration', this.modelsSettingsIntegration)
+    if (this.pluginInventorySettingsIntegration !== undefined && this.agentPresetSettingsIntegration !== undefined) {
+      ctx.provide('pluginInventorySettingsIntegration', this.pluginInventorySettingsIntegration)
+      ctx.provide('agentPresetSettingsIntegration', this.agentPresetSettingsIntegration)
+    }
     if (this.config.nativeSessionControls?.includes('export')) {
       this.exportIntegration = Object.freeze({
         fetch: (input: string | URL, init?: RequestInit) => {
@@ -508,6 +570,10 @@ export class PreparedCloudPage {
   private assertCurrent(ctx: Context): void {
     if (this.root === undefined || ctx.root !== this.root || ctx.get('peCloudPage') !== this
       || ctx.get('modelsSettingsIntegration') !== this.modelsSettingsIntegration
+      || this.pluginInventorySettingsIntegration !== undefined
+        && ctx.get('pluginInventorySettingsIntegration') !== this.pluginInventorySettingsIntegration
+      || this.agentPresetSettingsIntegration !== undefined
+        && ctx.get('agentPresetSettingsIntegration') !== this.agentPresetSettingsIntegration
       || this.uploadHooks === undefined || ctx.get('fileUploadHooks') !== this.uploadHooks
       || this.exportIntegration !== undefined && ctx.get('sessionLogDownloadIntegration') !== this.exportIntegration
       || ctx.get('clientPersistence') !== this.nativeOptions.persistence

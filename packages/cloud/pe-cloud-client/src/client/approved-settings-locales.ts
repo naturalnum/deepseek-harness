@@ -1,6 +1,6 @@
 /** Copy for the one account-approved native live configuration form. */
 const en = {
-  title: 'Approved configuration', introduction: 'Only approved live fields are editable here.',
+  generalTitle: 'Additional preferences', title: 'Approved configuration', introduction: 'Only approved live fields are editable here.',
   unavailable: 'This configuration is unavailable.', readOnly: 'This configuration is read-only.',
   failed: 'The result is unconfirmed or was refused. Check current state before trying again.',
   save: 'Save', saving: 'Saving…', overridden: 'Overridden', reset: 'Use inherited value', invalid: 'Invalid value',
@@ -8,7 +8,7 @@ const en = {
   choices: 'Allowed values: {values}', unsupported: 'This field cannot be edited with this form: {field}',
 }
 const zh: typeof en = {
-  title: '已批准配置', introduction: '此处仅可编辑已批准的实时字段。',
+  generalTitle: '其他设置', title: '已批准配置', introduction: '此处仅可编辑已批准的实时字段。',
   unavailable: '此配置当前不可用。', readOnly: '此配置为只读。',
   failed: '结果尚未确认或操作已被拒绝，请先核对当前状态再尝试。',
   save: '保存', saving: '正在保存…', overridden: '已覆盖', reset: '使用继承值', invalid: '值无效',

@@ -708,6 +708,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'cloudNativeSettings',
+    summary: 'Original registry readers behind exact account/Peer use and bounded public projections.',
+    description: 'Original registry readers behind exact account/Peer use and bounded public projections.',
+    methods: [
+      {
+        signature: '@Remote(\'inventory\') inventory(signal: AbortSignal): Promise<PluginInventorySnapshot>',
+        description: 'Read the original account Loader and declared preset rows without manager authority.',
+        parameters: [{ name: 'signal', description: 'Caller cancellation.' }],
+        returns: 'Native DTO with public metadata and account management disabled.',
+      },
+      {
+        signature: '@Remote(\'presets\') presets(signal: AbortSignal): Promise<AgentPresetRoster>',
+        description: 'Read actual declared preset display metadata, without selecting or composing a Session.',
+        parameters: [{ name: 'signal', description: 'Caller cancellation.' }],
+        returns: 'Original roster with private failure diagnostics removed.',
+      },
+      {
+        signature: '@Remote(\'readPreset\') readPreset(request: CloudPresetReference, signal: AbortSignal): Promise<CloudPresetComposition>',
+        description: 'Read one actual composition as public module/state rows, excluding raw YAML and config values.',
+        parameters: [{ name: 'request', description: 'Exact preset identity from this account\'s roster.' }, { name: 'signal', description: 'Caller cancellation.' }],
+        returns: 'Original preset summary; a missing identity rejects without revealing other resources.',
+      },
+      {
+        signature: 'assertCurrent(): void',
+        description: 'Require this service and both original provider registrations in the same account root.',
+        parameters: [],
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Inspect exact concrete unary markers and generated strict cancellation descriptors.',
+        parameters: [],
+        returns: 'Only the three authenticated read endpoints.',
+      },
+    ],
+  },
+  {
     key: 'cloudPlugins',
     summary: 'Unary controls for finite approved preinstalled plugins; no installer or raw manager endpoint is granted.',
     description: 'Unary controls for finite approved preinstalled plugins; no installer or raw manager endpoint is granted.',
@@ -2164,6 +2200,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Register one key service in its Loader fiber.',
         parameters: [{ name: 'owner', description: 'Original Loader.' }, { name: 'input', description: 'Root policy and original login callback.' }],
         returns: 'Installed service.',
+      },
+      {
+        signature: 'prepareCloudNativeSettings(owner: Context, input: CloudNativeSettingsPreparation): CloudNativeSettingsService',
+        description: 'Register the account\'s readonly native inventory and preset summaries.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry after original providers activate.' }, { name: 'input', description: 'Captured login Peer consumer and existing native read budgets.' }],
+        returns: 'The sole concrete readonly Remote service.',
       },
       {
         signature: 'prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService',
@@ -5771,6 +5813,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPresetInspection {\n    readonly id: string;\n    readonly modules: readonly {\n        readonly moduleName: string;\n        readonly baseUrl?: string;\n        readonly useHostBase: boolean;\n    }[];\n    readonly leakedServices: readonly string[];\n}',
   },
   {
+    name: 'AgentPresetPluginGroup',
+    declaration: 'export interface AgentPresetPluginGroup {\n    readonly id: string;\n    readonly name?: string;\n    readonly isDefault: boolean;\n    readonly broken?: string;\n    readonly rows: readonly AgentPresetPluginRow[];\n}',
+  },
+  {
+    name: 'AgentPresetPluginRow',
+    declaration: 'export interface AgentPresetPluginRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly meta?: PluginLocalizedMeta;\n    readonly enabled: PresetPluginEnablement;\n    readonly condition?: string;\n    readonly fiberPhase: PluginFiberPhase;\n}',
+  },
+  {
     name: 'AgentPresetRoster',
     declaration: 'export interface AgentPresetRoster {\n    readonly presets: readonly AgentPresetRow[];\n}',
   },
@@ -6060,7 +6110,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>;\n    verifyApprovedPluginIntent(intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, current: () => void): Pr /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudNativeSettings(owner: Context, input: CloudNativeSettingsPreparation): CloudNativeSettingsService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>;\n    ve /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
@@ -6083,12 +6133,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class CloudModelKeyService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation);\n    @Remote(\'metadata\')\n    metadata(signal: AbortSignal): Promise<ModelKeyMetadata>;\n    auditProvider(): Promise<void>;\n    assertProvisionableModel(provider: string, model: string): void;\n    @Remote(\'describe\')\n    describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>;\n    @Remote(\'set\')\n    set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>;\n    @Remote(\'unset\')\n    unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
   },
   {
+    name: 'CloudNativeSettingsPreparation',
+    declaration: 'export interface CloudNativeSettingsPreparation extends ModelKeyPeerConsumer {\n    readonly maxNativeInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n}',
+  },
+  {
+    name: 'CloudNativeSettingsService',
+    declaration: 'export class CloudNativeSettingsService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudNativeSettingsPreparation);\n    @Remote(\'inventory\')\n    inventory(signal: AbortSignal): Promise<PluginInventorySnapshot>;\n    @Remote(\'presets\')\n    presets(signal: AbortSignal): Promise<AgentPresetRoster>;\n    @Remote(\'readPreset\')\n    readPreset(request: CloudPresetReference, signal: AbortSignal): Promise<CloudPresetComposition>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
     name: 'CloudPluginPreparation',
     declaration: 'export interface CloudPluginPreparation extends ModelKeyPeerConsumer, ConfigurationPeerConsumer, PluginFactoryControl {\n    readonly limits: PluginControlLimits;\n    readonly catalog: Readonly<ApprovedConfigurationCatalog>;\n    readonly maxNativeInventoryEntries: number;\n    readonly requiredEntryIds: readonly string[];\n    readonly resolvePackages: () => PluginPackages | undefined;\n    scheduleRebuild(binding: AccountBinding, handoff: PluginPeerHandoff, prepare: (ctx: Context, assertCurrent: () => void) => Promise<Readonly<{\n        accepted: true;\n        intent: PluginRebuildIntent;\n    }> | Readonly<{\n        accepted: false;\n        error: Error;\n    }>>): Readonly<{\n        operationId: OperationId;\n        completion: Promise<ConfigurationRebuildReceipt<PluginRebuildPersistence, PluginRebuildVerification>>;\n    }>;\n}',
   },
   {
     name: 'CloudPluginService',
     declaration: 'export class CloudPluginService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly control: AccountPluginControl);\n    @Remote(\'current\')\n    current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>;\n    @Remote(\'change\')\n    change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'CloudPresetComposition',
+    declaration: 'export type CloudPresetComposition = import(\'@deepseek-ai/dsh-host-plugin-inventory/types\').AgentPresetPluginGroup;',
+  },
+  {
+    name: 'CloudPresetReference',
+    declaration: 'export interface CloudPresetReference {\n    readonly id: string;\n}',
   },
   {
     name: 'CloudProjectCreateRequest',
@@ -7967,6 +8033,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly meta?: PluginLocalizedMeta;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
+    name: 'PluginInventorySnapshot',
+    declaration: 'export interface PluginInventorySnapshot {\n    readonly managementAvailable?: boolean;\n    readonly entries: readonly PluginInventoryEntry[];\n    readonly agentPresets?: readonly AgentPresetPluginGroup[];\n}',
+  },
+  {
     name: 'PluginLocalizedMeta',
     declaration: 'export interface PluginLocalizedMeta {\n    readonly title?: LocalizedText;\n    readonly description?: LocalizedText;\n    readonly icon?: string;\n    readonly error?: string;\n}',
   },
@@ -8073,6 +8143,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PresetOption',
     declaration: 'export interface PresetOption {\n    value: string;\n    name: string;\n    description?: string;\n}',
+  },
+  {
+    name: 'PresetPluginEnablement',
+    declaration: 'export type PresetPluginEnablement = boolean | \'conditional\';',
   },
   {
     name: 'PresetSpec',

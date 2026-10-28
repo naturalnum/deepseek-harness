@@ -4,6 +4,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { AGENT_PRESET_SETTINGS_NS, requiresCodingTools, writeDefaultPreset } from './settings-store.ts'
+import type { AgentPresetCompositionEntry } from './integration.ts'
 
 /** The read-only composition viewer over one preset. */
 export interface PresetView {
@@ -13,6 +14,8 @@ export interface PresetView {
   title: string
   /** The declared child plugin list as YAML. */
   content: string
+  /** Public module/state summary instead of configuration text on admitted read-only pages. */
+  composition?: readonly AgentPresetCompositionEntry[]
 }
 /** Settings page state. */
 export interface AgentPresetSectionState {

@@ -178,3 +178,27 @@ it('renders held values read-only after a describe failure and keeps the origina
   f.record.face.save(); await vi.waitFor(() => { expect(f.mutate).toHaveBeenCalledOnce() })
   expect(f.mutate.mock.calls[0]?.[2]).toBe(3)
 })
+
+function GeneralSettingsHost({ renderSlot }: PropsRenderSlots<'settings.general.item'>) {
+  return renderSlot('settings.general.item', {})
+}
+it('keeps remaining approved fields inside General and withdraws them on original page retirement', async () => {
+  const f = await fixture(), control = new AbortController()
+  await f.ctx.plugin(SlotRegistry).await()
+  const locale = new LocaleRuntime(f.ctx); locale.setLocale('en'); f.ctx.provide('locale', locale)
+  f.ctx.slots.register({ name: 'root', children: { 'settings.general.item': { kind: 'list', scope: 'root' } } }, GeneralSettingsHost)
+  const owner = f.ctx.plugin({ inject: ['slots', 'locale', 'configForms', 'settingsSchema'], apply(ctx: Context) {
+    installApprovedSettingsFields(ctx, [{ namespace: 'data', path: 'count', application: 'live' },
+      { namespace: 'locale', path: 'preference', application: 'live' }], control.signal,
+    (scope) => { scope.fiber.assertActive() }, true)
+  } })
+  await owner.await()
+  await vi.waitFor(() => { expect(f.ctx.slots.entries('settings.general.item')).toHaveLength(1) })
+  expect(f.ctx.slots.entries('settings.section')).toHaveLength(0)
+  expect(f.ctx.slots.entries('settings.approved.namespace')).toHaveLength(1)
+  const entry = f.ctx.slots.entries('settings.general.item')[0]!
+  expect(entry.options.id).toBe('cloud-approved-configuration')
+  control.abort()
+  expect(f.ctx.slots.entries('settings.general.item')).toHaveLength(0)
+  expect(f.ctx.slots.entries('settings.approved.namespace')).toHaveLength(0)
+})

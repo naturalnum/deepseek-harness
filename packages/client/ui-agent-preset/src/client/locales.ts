@@ -33,12 +33,23 @@ export type AgentPresetSettingsKey =
   | 'createPluginChecking'
   | 'createPluginUnavailable'
   | 'createPluginMissing'
+  | 'summaryIntro' | 'summaryUnavailable' | 'summaryLoading' | 'summaryCurrent' | 'summaryReadOnly' | 'viewComposition'
+  | 'compositionModule' | 'compositionEntry' | 'compositionEnabled' | 'compositionRuntime'
+  | 'compositionUnnamed' | 'compositionConditional' | 'compositionOn' | 'compositionOff' | 'compositionUnobserved'
+  | 'pending' | 'loading' | 'active' | 'failed' | 'unloading'
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
   ...guideEn,
   builtInGroup: 'Built-in', customGroup: 'Custom',
   sectionIntro: 'Choose the agent’s tools and how it works. Use Standard mode for everyday tasks, or Creator mode to add capabilities to DSH.',
+  summaryIntro: 'Read-only public composition: module names, enablement, and observed status. This summary does not include complete configuration.',
+  summaryUnavailable: 'The composition is temporarily unavailable. Reopen Settings to try again.',
+  summaryLoading: 'Reading the public composition…', summaryCurrent: 'Account default', viewComposition: 'Public composition',
+  summaryReadOnly: 'This page only reads public compositions.',
+  compositionModule: 'Module', compositionEntry: 'Entry', compositionEnabled: 'Enablement', compositionRuntime: 'Observed status',
+  compositionUnnamed: 'No entry id', compositionConditional: 'Conditional', compositionOn: 'Enabled', compositionOff: 'Disabled', compositionUnobserved: 'Not observed',
+  pending: 'Waiting for dependencies', loading: 'Loading', active: 'Active', failed: 'Failed', unloading: 'Unloading',
 
   seatHint: 'Choose the agent preset for your new task',
   headerHint: 'The agent preset chosen when this task started',
@@ -84,6 +95,13 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   ...guideZh,
   builtInGroup: '内置', customGroup: '自定义',
   sectionIntro: '选择 Agent 的工具和工作方式。日常任务用「标准模式」，扩展 DSH 的能力用「创造模式」。',
+  summaryIntro: '只读公共组成：模块名称、启用情况与已观察到的状态。此摘要不包含完整配置。',
+  summaryUnavailable: '暂时无法读取组成，请重新打开设置后重试。',
+  summaryLoading: '正在读取公共组成…', summaryCurrent: '账户默认', viewComposition: '公共组成',
+  summaryReadOnly: '此页面仅支持读取公共组成。',
+  compositionModule: '模块', compositionEntry: '条目', compositionEnabled: '启用状态', compositionRuntime: '观察状态',
+  compositionUnnamed: '无条目 ID', compositionConditional: '条件启用', compositionOn: '已启用', compositionOff: '已停用', compositionUnobserved: '尚未观察',
+  pending: '等待依赖', loading: '加载中', active: '运行中', failed: '失败', unloading: '卸载中',
 
   seatHint: '选择新任务使用的 Agent 预设',
   headerHint: '本任务的 Agent 预设，在任务开始时确定',

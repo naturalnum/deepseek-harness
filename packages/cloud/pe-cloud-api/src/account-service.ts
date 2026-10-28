@@ -12,6 +12,7 @@ import { CloudApiError } from './errors.ts'
 import { bindModelKeyAccess, type ModelKeyAccess } from './model-key.ts'
 import { CloudSkillService, type CloudSkillPreparation } from './cloud-skills.ts'
 import { CloudModelKeyService, type CloudModelKeyPreparation } from './cloud-model-key.ts'
+import { CloudNativeSettingsService, type CloudNativeSettingsPreparation } from './cloud-native-settings.ts'
 import { CloudProjectsService, type CloudProjectsPreparation } from './cloud-projects.ts'
 import { createNativeWorkspaceFiles, type NativeWorkspaceFiles } from './native-files.ts'
 import { createNativeUploads, type NativeUploads, type NativeUploadPreparation } from './native-uploads.ts'
@@ -102,6 +103,7 @@ export class CloudAccountApi extends Service {
   private readonly modelKey: { native?: CloudModelKeyService } = {}
   private readonly skills: { native?: CloudSkillService } = {}
   private readonly plugins: { control?: AccountPluginControl; native?: CloudPluginService } = {}
+  private readonly nativeSettings: { native?: CloudNativeSettingsService } = {}
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
   private readonly uploads: { native?: NativeUploads } = {}
@@ -243,6 +245,7 @@ export class CloudAccountApi extends Service {
     const skills = this.skills.native?.inspect()
     const plugins = this.plugins.native?.inspect()
     const projects = this.projects.native?.inspect()
+    const nativeSettings = this.nativeSettings.native?.inspect()
     const files = this.files.native?.inspect()
     const commands = this.commands.native?.inspect()
     const goals = this.goals.native?.inspect()
@@ -252,7 +255,8 @@ export class CloudAccountApi extends Service {
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
       rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
-        ...files?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [], ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
+        ...nativeSettings?.rpcEndpoints ?? [], ...files?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [],
+        ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
@@ -343,6 +347,10 @@ export class CloudAccountApi extends Service {
       if (this.firstScreen.native === undefined) this.nativeUnavailable()
       this.firstScreen.native.assertCurrent()
     }
+    if (endpoint.startsWith('cloudNativeSettings/')) {
+      if (this.nativeSettings.native === undefined) this.nativeUnavailable()
+      this.nativeSettings.native.inspect()
+    }
     if (endpoint.startsWith('cloudModelKey/')) this.modelKey.native?.inspect()
     if (endpoint.startsWith('cloudSkills/')) {
       if (this.skills.native === undefined) this.nativeUnavailable()
@@ -428,6 +436,19 @@ export class CloudAccountApi extends Service {
     this.modelKey.native = native
     return native
   }
+  /** Register the account's readonly native inventory and preset summaries.
+   * @param owner Actual account Loader entry after original providers activate.
+   * @param input Captured login Peer consumer and existing native read budgets.
+   * @returns The sole concrete readonly Remote service.
+   */
+  prepareCloudNativeSettings(owner: Context, input: CloudNativeSettingsPreparation): CloudNativeSettingsService {
+    this.assertInstalled(owner)
+    if (this.nativeSettings.native !== undefined) this.duplicateNative()
+    const native = new CloudNativeSettingsService(owner, this, input)
+    this.nativeSettings.native = native
+    return native
+  }
+
   /**
    * Prepare one fixed skill capability; Root still supplies and audits explicit exposure separately.
    * @param owner Original account Loader scope after native skills and verified files activate.
@@ -927,6 +948,7 @@ export class CloudAccountApi extends Service {
       this.firstScreen.events.inspect()
     }
     this.modelKey.native?.inspect()
+    this.nativeSettings.native?.inspect()
     this.projects.native?.assertCurrent()
     this.files.native?.assertCurrent()
     this.uploads.native?.assertCurrent()

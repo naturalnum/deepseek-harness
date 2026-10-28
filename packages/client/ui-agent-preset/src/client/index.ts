@@ -44,6 +44,8 @@ import { AgentPresetSeatController, type AgentPresetStage } from './seat-store.t
 import { AgentPresetSectionController } from './section-store.ts'
 import { en, zh, type AgentPresetSettingsKey } from './locales.ts'
 import { AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController } from './settings-store.ts'
+import { ReadonlyAgentPresetSectionController } from './readonly-section-store.ts'
+import type {} from './integration.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -58,18 +60,38 @@ export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './Agen
 export type { AgentPresetSeatState } from './seat-store.ts'
 export type { AgentPresetSectionState, PresetView } from './section-store.ts'
 export type { AgentPresetOption, AgentPresetSettingsState } from './settings-store.ts'
+export type { AgentPresetSettingsIntegration, AgentPresetCompositionSummary, AgentPresetCompositionEntry } from './integration.ts'
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = [
-  'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'configForms',
-]
+export const inject = ['slots', 'locale']
 
 /**
  * Mount the roster surfaces: hero chip, session-header label, settings section.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
+  const integration = ctx.get('agentPresetSettingsIntegration')
+  if (integration !== undefined) {
+    const section = new ReadonlyAgentPresetSectionController(integration, () => ctx.locale.bind('settings.agentPreset')('summaryUnavailable'))
+    const developerTools = { getSnapshot: () => true, subscribe: () => () => {} }
+    ctx.effect(() => () => { section.dispose() }, 'ui-agent-preset: admitted readonly page')
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section', id: 'agent-presets', order: 20,
+      label: () => ctx.locale.bind('settings.agentPreset')('nav'), locale: 'settings.agentPreset',
+      inject: (): AgentPresetSectionInjected => ({
+        readOnly: true, hooks: { agentPresetSection: section.store, developerTools },
+        load: () => section.load(), view: id => section.view(id), closeView: () => { section.closeView() },
+        makeDefault: () => Promise.reject(new Error(ctx.locale.bind('settings.agentPreset')('summaryReadOnly'))),
+      }),
+    }, AgentPresetSection))
+    return
+  }
+  ctx.inject(['sessions', 'remote', 'remote.agentPresets', 'remote.settings', 'configForms'], mountNative)
+}
+
+function mountNative(ctx: ClientContext): void {
   const toolsSettings = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
   const presetSettings = ctx.configForms.get(AGENT_PRESET_SETTINGS_NS)
   let active = true
@@ -125,8 +147,6 @@ export function apply(ctx: ClientContext): void {
     const binding = summary === undefined ? undefined : ctx.sessions.binding(summary.id)
     return binding === undefined ? undefined : seatFor(binding)
   }
-
-  ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
 
   ctx.effect(() => {
     let requested = 0

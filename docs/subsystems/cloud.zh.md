@@ -170,6 +170,45 @@ Types: [ModelKeyMetadata](../../packages/cloud/pe-cloud-api/README.zh.md#underst
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-model-key.ts`](../../packages/cloud/pe-cloud-api/src/cloud-model-key.ts)
 
+<a id="ctxcloudnativesettings--cloudnativesettingsservice"></a>
+
+### `ctx.cloudNativeSettings` — `CloudNativeSettingsService`
+
+Original registry readers behind exact account/Peer use and bounded public projections.
+
+```ts cordis-catalog
+/** Read the original account Loader and declared preset rows without manager authority.
+ * @param signal Caller cancellation.
+ * @returns Native DTO with public metadata and account management disabled.
+ */
+@Remote('inventory') inventory(signal: AbortSignal): Promise<PluginInventorySnapshot>
+
+/** Read actual declared preset display metadata, without selecting or composing a Session.
+ * @param signal Caller cancellation.
+ * @returns Original roster with private failure diagnostics removed.
+ */
+@Remote('presets') presets(signal: AbortSignal): Promise<AgentPresetRoster>
+
+/** Read one actual composition as public module/state rows, excluding raw YAML and config values.
+ * @param request Exact preset identity from this account's roster.
+ * @param signal Caller cancellation.
+ * @returns Original preset summary; a missing identity rejects without revealing other resources.
+ */
+@Remote('readPreset') readPreset(request: CloudPresetReference, signal: AbortSignal): Promise<CloudPresetComposition>
+
+/** Require this service and both original provider registrations in the same account root. */
+assertCurrent(): void
+
+/** Inspect exact concrete unary markers and generated strict cancellation descriptors.
+ * @returns Only the three authenticated read endpoints.
+ */
+inspect(): ExposureInventory
+```
+
+Types: [CloudPresetComposition](../../packages/cloud/pe-cloud-api/README.zh.md#readonly-native-settings) · [CloudPresetReference](../../packages/cloud/pe-cloud-api/README.zh.md#readonly-native-settings) · [PluginInventorySnapshot](../../packages/host/plugin-inventory/README.zh.md#use-this-package)
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-native-settings.ts`](../../packages/cloud/pe-cloud-api/src/cloud-native-settings.ts)
+
 <a id="ctxcloudplugins--cloudpluginservice"></a>
 
 ### `ctx.cloudPlugins` — `CloudPluginService`
@@ -656,6 +695,13 @@ prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | '
  */
 prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService
 
+/** Register the account's readonly native inventory and preset summaries.
+ * @param owner Actual account Loader entry after original providers activate.
+ * @param input Captured login Peer consumer and existing native read budgets.
+ * @returns The sole concrete readonly Remote service.
+ */
+prepareCloudNativeSettings(owner: Context, input: CloudNativeSettingsPreparation): CloudNativeSettingsService
+
 /**
  * Prepare one fixed skill capability; Root still supplies and audits explicit exposure separately.
  * @param owner Original account Loader scope after native skills and verified files activate.
@@ -872,7 +918,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
+Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudNativeSettingsPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#readonly-native-settings) · [CloudNativeSettingsService](../../packages/cloud/pe-cloud-api/README.zh.md#readonly-native-settings) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 

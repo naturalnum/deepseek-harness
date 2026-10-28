@@ -136,6 +136,13 @@ Commands 在附件准入之后、原生 handler 执行之前复核原账户及 A
 
 权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。仅支持 read-only、workspace-write，两者 approval 都为 never；保留的命令/服务或实时子 Agent 会阻止切换，子级不能扩大只读祖先的权限。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
 
+<a id="readonly-native-settings"></a>
+### Readonly native settings
+
+`CloudNativeSettingsService` 在保留的登录 Peer Use 下读取此账户原有 Loader 和 AgentPresetRegistry。`CloudNativeSettingsPreparation` 提供该 consumer 及已有的原生 inventory、集合和完整帧预算。实际生成的精确 descriptor 加入账户既有开放清单审核；不开放预设切换、YAML 原文读取、插件安装或配置变更。
+
+`inventory` 返回关闭管理能力的原生 [PluginInventorySnapshot](../../host/plugin-inventory/README.zh.md#use-this-package) DTO。`CloudPresetReference` 仅携带账户本地预设 `id`；`readPreset` 返回 `CloudPresetComposition`，即原生 group 的公开展示信息和实际模块/状态行。这些投影不包含配置值、disabled 表达式、私有模块路径或原始诊断。[源码](src/cloud-native-settings.ts) 拥有准入、字段投影和失败行为。
+
 </details>
 
 -----

@@ -60,6 +60,7 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 | `closeTimeoutMs` | 必填 | 关闭观察截止时间；到期不代表清理已确认。 |
 | `maxDownloadBytes` | 无默认值 | 可选的正安全整数下载接收上限；省略时不注册两个下载动作。 |
 | `modelSettingsRequestTimeoutMs` | 无默认值 | 可选的有限正数原生模型设置 RPC 观察期限；省略时关闭此集成。 |
+| `nativeSettingsRequestTimeoutMs` | 无默认值 | 账号原生只读设置的可选有限正数观察超时；要求同时配置 `modelSettingsRequestTimeoutMs`，未配置时保留旧模块集合。 |
 | `skillSettings` | 无默认值 | 可选 `{ requestTimeoutMs, maxFileBytes }`；两项均须为正安全整数，截止时间在平台定时器范围内。省略时不启用技能管理。 |
 | `nativeSessionControls` | 无默认值 | 可选且不重复的 `commands`、`models`、`permissions`、`goals`、`plan`、`feedback`、`export` 和 `attachments` 分组；省略时不增加控件。 |
 
@@ -76,6 +77,16 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 显式配置 `client.modelSettingsRequestTimeoutMs` 后，原始 prepared page 才启用 Models 集成。现有生成 API contribution 只挂载一次；适配器使用其中实际的 `cloudModelKey.metadata/describe/set/unset` 命名空间。只读元数据输入原始 Models store。每次打开编辑意图只 describe 一次，set 或仅删除 key 的 unset 始终使用当时捕获的版本；后台读取不替换版本。只有原生校验通过的 `persisted: true` 回执确认保存。失败显示固定本地化文案。页面或依赖撤销时，先发布 null 并使旧回调失效，再等待异步清理。 Cloud 在 UI 激活前于此不可变页面输入中固定 `onboarding: false`，因此不注册 Welcome 或凭据 onboarding，编辑源为 null 或已撤销时亦然。密钥通过原生 Settings/Models 面板手动配置。
 
 配置该期限时另声明原生 `ui-settings-models` 浏览器入口，并依赖部署已有的 `ui-settings` 基座。显式服务预览策略另声明 `ui-tool`，由它提供 tool-call 卡片及 keyed tool view。实际发布范围必须包含这些包并重建浏览器产物；仅声明不能证明浏览器已激活或面板已渲染。每个声明包仅保留一个供应方。general 包负责 Settings 面板；`ui-settings-shell` 是独立的 shell 偏好功能。
+
+### 原生设置
+
+`client.nativeSettingsRequestTimeoutMs` 加载原生“通用设置”“模型”“内置插件”和“Agent 预设”页面。页面在原生插件启动前准备 `pluginInventorySettingsIntegration` 和 `agentPresetSettingsIntegration`，生成的 `cloudNativeSettings` 读取回调仅绑定同一个活动页面。每次异步读取前后都核对原账号、页面和 provider，采用显式观察超时，撤销或 provider 替换后的迟到响应会被拒绝。读取失败不会改走无限制的 Host 命名空间。
+
+“内置插件”沿用原生清单卡片。“Agent 预设”复用原生列表和查看器的只读模式，不注册默认选择、Creator 操作或会话预设切换。查看器明确展示公共组成条目，不接收原始 YAML、配置值或 disabled 表达式。数据仍由当前账号的原生 Loader 和预设注册表持有。
+
+通用设置保留原生语言、外观、字体、开发者工具和对话偏好控件，继续使用原有 ConfigForms。部署必须注册对应 Host namespace 并批准精确的实时字段；此选项不会增加可写字段。其他获批标量字段收纳到通用设置中，不新增第五个菜单；已有原生偏好控件的字段不再显示重复表单。未配置此选项时，原有“已批准配置”页面保持不变。
+
+Root 必须选中 `cloudNativeSettings/inventory`、`cloudNativeSettings/presets` 和 `cloudNativeSettings/readPreset` 三个经认证端点，handler 为 `native:cloudNativeSettings`，保留显式 `native.firstScreen` 预算和原登录 Peer consumer，并在账户图中挂载 `cordis:pe-cloud-native-settings`。模型页面继续使用已有获批集成，不开放全局 Profile manager、安装操作或原始预设配置读取。
 
 ### 原生技能管理
 

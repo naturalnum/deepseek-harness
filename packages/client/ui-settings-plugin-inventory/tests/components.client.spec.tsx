@@ -16,6 +16,23 @@ import { en, zh, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+it.each(['resolve', 'reject'] as const)('ignores a late admitted inventory %s after its page is retired', async (outcome) => {
+  let current = true
+  const held = Promise.withResolvers<Snapshot>()
+  const list = vi.fn(() => held.promise)
+  render(<PluginInventorySettingsTab {...props(list)} isCurrent={() => current}/>)
+  await waitFor(() => { expect(list).toHaveBeenCalledTimes(1) })
+  current = false
+  await act(async () => {
+    if (outcome === 'resolve') held.resolve({ entries: [] })
+    else held.reject(new Error('retired result'))
+    await held.promise.catch(() => {})
+  })
+  expect(screen.queryByText(en.empty)).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(list).toHaveBeenCalledTimes(1)
+})
+
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
 const t = ((key: PluginInventoryLocaleKey, params?: Record<string, string>): string =>
   Object.entries(params ?? {}).reduce(

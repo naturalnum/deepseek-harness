@@ -87,6 +87,8 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 可选 `native.firstScreen` 选择固定只读首屏切片。提供时，`maxHomeBytes`、`maxCollectionItems`、`maxFrameBytes`、`maxQueuedEvents`、`maxQueuedBytes` 均须显式为正数、有限安全整数；省略时保持关闭，不补默认值。Root 通过配方传递原始预算，并从同一账户的规范 Profile 得到预期 home，在原生 boot 前核对一致。既有 `native.maxEntries` 继续限制原生 owner/marker 清单。元数据或配置条目名称不能满足实际 prepared 审核。
 
+当 exposure manifest 选择 `cloudNativeSettings` 读取端点时，Root 要求同一 first-screen preparation 和原经认证 Peer-use 回调。账户 recipe 增加 `cordis:pe-cloud-native-settings`，三个只读操作复用现有 native inventory、集合和完整帧限额。此可选服务只发布当前账户的公共 Loader／预设观察，不提供预设选择或配置写入器。
+
 私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再调用原 `AgentLoop.stop()`、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。Integration 将既有 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes` 同时交给受守卫 reader 与原 Gateway 注册。Reader 捕获这些值，供原 protected control-buffer hook 使用；每个原生 control 代际和事件 client 都沿用原有界队列。下游慢读超限只终止对应流，实际 source 失败仍保留既有审核撤销与未确认清理语义。不增加配置字段、预算默认值或队列。
 
 原生权限控件要求实际签发的 execution port 强制 Session 文件策略，并从同一 port 派生 Files 的强制选择。原权限服务、目录、`/permission` 命令与默认设置继续作为权威；云端配置表只包含 read-only 和 workspace-write，两者审批均为 `never`。切换前，原 owner 检查保留命令、unknown 结果及 service 工作，Runtime 核验实际存活的 child 所有权。只读委派不能在 child 准备或后续权限切换时扩大。选中模式沿用原 Session 事件，不新增权限数据库、进程服务或更大的账户配额。

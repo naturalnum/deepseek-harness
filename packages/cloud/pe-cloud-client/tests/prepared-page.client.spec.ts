@@ -728,3 +728,45 @@ it('rejects a preinstalled foreign export integration before native page activat
   await expect(page.start(app.entry)).rejects.toThrow('export carrier is already bound')
   expect(app.mounted()).toBe(false)
 })
+
+it('prepares readonly native Settings bindings before activation and rejects retained reads after withdrawal', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare({ ...f.input,
+    config: { ...config, modelSettingsRequestTimeoutMs: 1000, nativeSettingsRequestTimeoutMs: 1000 },
+  }, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page)
+  await page.start(graph.entry)
+  expect(graph.ctx.get('pluginInventorySettingsIntegration')).toBe(page.pluginInventorySettingsIntegration)
+  expect(graph.ctx.get('agentPresetSettingsIntegration')).toBe(page.agentPresetSettingsIntegration)
+  expect(page.pluginInventorySettingsIntegration?.isCurrent()).toBe(false)
+  const owner = graph.ctx.plugin({ name: 'native-settings-callback-owner', apply() {} }); await owner.await()
+  const late = Promise.withResolvers<{ entries: [] }>(), inventory = vi.fn(() => late.promise)
+  const withdraw = page.attachNativeSettings(owner.ctx, { inventory, presets: async () => [] })
+  expect(page.pluginInventorySettingsIntegration?.isCurrent()).toBe(true)
+  const reading = page.pluginInventorySettingsIntegration!.list()
+  withdraw(); late.resolve({ entries: [] })
+  await expect(reading).rejects.toMatchObject({ code: 'closed' })
+  await expect(page.pluginInventorySettingsIntegration!.list()).rejects.toMatchObject({ code: 'closed' })
+  expect(inventory).toHaveBeenCalledOnce()
+  expect(page.agentPresetSettingsIntegration?.isCurrent()).toBe(false)
+})
+
+it.each(['pluginInventorySettingsIntegration', 'agentPresetSettingsIntegration'] as const)(
+  'rejects a replaced readonly provider before another read: %s', async (key) => {
+    const f = fixture(), preparation = PreparedCloudPage.prepare({ ...f.input,
+      config: { ...config, modelSettingsRequestTimeoutMs: 1000, nativeSettingsRequestTimeoutMs: 1000 },
+    }, new AbortController().signal)
+    onTestFinished(() => preparation.dispose())
+    const page = await preparation.ready, graph = native(page)
+    await page.start(graph.entry)
+    const owner = graph.ctx.plugin({ name: 'native-settings-provider-owner', apply() {} }); await owner.await()
+    const inventory = vi.fn(async () => ({ entries: [] })), presets = vi.fn(async () => [])
+    page.attachNativeSettings(owner.ctx, { inventory, presets })
+    if (key === 'pluginInventorySettingsIntegration') graph.ctx.set(key, { isCurrent: () => true, list: inventory })
+    else graph.ctx.set(key, { isCurrent: () => true, list: presets })
+    expect(page.pluginInventorySettingsIntegration?.isCurrent()).toBe(false)
+    await expect(page.pluginInventorySettingsIntegration!.list()).rejects.toMatchObject({ code: 'closed' })
+    await expect(page.agentPresetSettingsIntegration!.list()).rejects.toMatchObject({ code: 'closed' })
+    expect(inventory).not.toHaveBeenCalled(); expect(presets).not.toHaveBeenCalled()
+  },
+)

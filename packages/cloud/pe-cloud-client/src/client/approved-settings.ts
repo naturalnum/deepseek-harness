@@ -113,7 +113,7 @@ export function createApprovedSettingsForm(
  */
 export function installCloudApprovedSettings(ctx: Context, page: PreparedCloudPage): void {
   installApprovedSettingsFields(ctx, page.bootstrap.capabilities.configuration.fields, page.lifetime.transport.signal,
-    (owner) => { page.assertAccountManagementCurrent(owner) })
+    (owner) => { page.assertAccountManagementCurrent(owner) }, page.nativeSettingsRequestTimeoutMs !== undefined)
 }
 
 /** Bind the original page's fields, cancellation and current check to native Settings contributions.
@@ -121,10 +121,17 @@ export function installCloudApprovedSettings(ctx: Context, page: PreparedCloudPa
  * @param approved Original immutable bootstrap descriptors.
  * @param signal Original page transport lifetime.
  * @param assertCurrent Original page and dependency check; supplies no replacement carrier.
+ * @param inGeneral Whether native preferences own their original controls and remaining fields sit under General.
  */
 export function installApprovedSettingsFields(ctx: Context, approved: readonly BootstrapConfigurationField[],
-  signal: AbortSignal, assertCurrent: (owner: Context) => void): void {
-  const fields = approved.filter(field => field.application === 'live')
+  signal: AbortSignal, assertCurrent: (owner: Context) => void, inGeneral = false): void {
+  const nativePreferences: Readonly<Record<string, readonly string[]>> = {
+    locale: ['preference'], 'ui-settings': ['enabled'],
+    'ui-theme': ['preference', 'fontSize', 'codeFontSize', 'terminalFontSize', 'textFontFamily', 'codeFontFamily', 'terminalFontFamily'],
+    'ui-chat': ['transcriptView', 'collapseTiming', 'performanceUsage', 'linkOpening'],
+  }
+  const fields = approved.filter(field => field.application === 'live'
+    && (!inGeneral || nativePreferences[field.namespace]?.includes(field.path) !== true))
   const isAborted = (): boolean => signal.aborted
   if (fields.length === 0 || isAborted()) return
   let stopped = false, withdraw: (() => void) | undefined
@@ -155,11 +162,18 @@ export function installApprovedSettingsFields(ctx: Context, approved: readonly B
         records.set(name, { fingerprint: record.fingerprint, dispose: () => { record.dispose(); remove() } })
       }
     }
-    const removeSection = forms.whileServed([...new Set(fields.map(field => field.namespace))], () => owner.slots.inject('settings.section',
-      () => owner.slots.register({ name: 'settings.section', id: 'cloud-approved-configuration', locale: APPROVED_SETTINGS_NS,
+    const removeSection = forms.whileServed([...new Set(fields.map(field => field.namespace))], () => {
+      if (inGeneral) return owner.slots.inject('settings.general.item', () => owner.slots.register({
+        name: 'settings.general.item', id: 'cloud-approved-configuration', order: 80, locale: APPROVED_SETTINGS_NS,
+        inject: () => ({ general: true }),
+        children: { 'settings.approved.namespace': { kind: 'list', scope: 'root' } },
+      }, ApprovedSettingsSection))
+      return owner.slots.inject('settings.section', () => owner.slots.register({
+        name: 'settings.section', id: 'cloud-approved-configuration', locale: APPROVED_SETTINGS_NS,
         label: () => owner.locale.bind(APPROVED_SETTINGS_NS)('title'),
         children: { 'settings.approved.namespace': { kind: 'list', scope: 'root' } },
-      }, ApprovedSettingsSection)))
+      }, ApprovedSettingsSection))
+    })
     const unsubscribe = forms.describe().subscribe(sync)
     const retire = (): void => {
       unsubscribe(); for (const record of records.values()) record.dispose()

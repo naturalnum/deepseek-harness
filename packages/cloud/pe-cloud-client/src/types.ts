@@ -60,6 +60,8 @@ export interface CloudClientConfig {
   maxDownloadBytes?: number
   /** Finite native model-settings RPC observer deadline; omission keeps model editing closed. */
   modelSettingsRequestTimeoutMs?: number
+  /** Finite observer deadline for account-native readonly Settings; omission leaves these pages unregistered. */
+  nativeSettingsRequestTimeoutMs?: number
   /** Omission leaves the native sample skill section unregistered. */
   skillSettings?: Readonly<CloudSkillSettingsConfig>
   /** Original browser control groups; omission preserves the existing first-screen roster. */

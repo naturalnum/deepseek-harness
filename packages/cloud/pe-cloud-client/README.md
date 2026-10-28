@@ -60,6 +60,7 @@ The native browser Loader creates entries with `{ name }` and no per-entry confi
 | `closeTimeoutMs` | required | Close-observation deadline; expiry does not confirm cleanup. |
 | `maxDownloadBytes` | no default | Optional positive safe-integer download acceptance cap; omitted keeps both download actions unregistered. |
 | `modelSettingsRequestTimeoutMs` | no default | Optional finite positive native model-settings RPC observer deadline; omitted keeps this integration closed. |
+| `nativeSettingsRequestTimeoutMs` | no default | Optional finite positive observer deadline for account-native readonly Settings. Requires `modelSettingsRequestTimeoutMs`; omission preserves the previous module set. |
 | `skillSettings` | no default | Optional `{ requestTimeoutMs, maxFileBytes }`; both fields are positive safe integers, with the deadline within the platform timer range. Omission keeps skill management closed. |
 | `nativeSessionControls` | no default | Optional unique selection of `commands`, `models`, `permissions`, `goals`, `plan`, `feedback`, `export`, and `attachments`; omission supplies no additional controls. |
 
@@ -76,6 +77,16 @@ Selecting `export` provides the original download plugin's HTTP and navigation i
 The explicit `client.modelSettingsRequestTimeoutMs` enables the original prepared page's Models integration. The existing generated API contribution is mounted once; the adapter consumes its actual `cloudModelKey.metadata/describe/set/unset` namespace. Readonly metadata feeds the original Models store. Opening an edit describes once and captures that version for set or key-only unset; background reads never replace it. Only the native validated `persisted: true` result confirms a save. Failures use localized fixed messages. Page or dependency revocation publishes null and invalidates old callbacks before asynchronous cleanup. Cloud fixes `onboarding: false` in this immutable page input before UI activation, so neither Welcome nor credential onboarding registers, including while the editing source is null or revoked. Configure the key manually in the original Settings/Models panel.
 
 Configuring this deadline additionally declares the native `ui-settings-models` browser entry, using the deployment's existing `ui-settings` base. An explicit service-preview policy additionally declares `ui-tool`, which owns the tool-call card and its keyed tool views. These packages must be included in the actual publication scope with rebuilt browser artifacts; declaration alone does not prove browser activation or a rendered panel. Keep one supplier for each declared package. The general package owns the Settings panel; `ui-settings-shell` is a separate shell preference feature.
+
+### Native Settings
+
+`client.nativeSettingsRequestTimeoutMs` loads the original General, Models, Built-in plugins and Agent presets Settings sections. The page prepares `pluginInventorySettingsIntegration` and `agentPresetSettingsIntegration` before their native plugins activate; actual generated `cloudNativeSettings` callbacks attach only to that same active page. Reads check the original account/page/provider before and after every await, use the explicit observer deadline, and reject late replies after withdrawal or provider replacement. Failure never reads the unrestricted Host namespaces.
+
+Built-in plugins uses the native inventory cards. Agent presets reuses the native roster and viewer in read-only mode: no default selection, Creator action or session preset switching is registered. Its viewer labels public composition rows explicitly and never receives raw YAML, configuration values or disabled expressions. The current native account Loader and preset registry remain the data owners.
+
+General retains native language, appearance, font, developer-tools and conversation-preference controls over the original ConfigForms. Their Host namespaces and exact live fields must be registered and approved by the deployment; this option grants no additional write fields. Remaining approved scalar fields appear under General instead of adding a fifth Settings menu, while fields already owned by native preference controls are omitted from that additional form. With the option absent, the previous approved-configuration section remains unchanged.
+
+Root must select the three authenticated `cloudNativeSettings/inventory`, `cloudNativeSettings/presets` and `cloudNativeSettings/readPreset` endpoints with handler `native:cloudNativeSettings`, keep explicit `native.firstScreen` budgets and the original login Peer consumer, and mount the account-only `cordis:pe-cloud-native-settings` entry. Model settings continues using its existing approved integration. No global Profile manager, installation operation or raw preset reader is exposed.
 
 ### Native skill management
 

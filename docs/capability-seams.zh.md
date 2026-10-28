@@ -11,8 +11,9 @@
 flowchart LR
   pkg_pe_cloud_api["pe-cloud-api"]
   svc_cloudModelKey["ctx.cloudModelKey<br/>Account model-key editing"]
-  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
+  svc_cloudNativeSettings["ctx.cloudNativeSettings<br/>Account native settings reads"]
   pkg_pe_cloud_client["pe-cloud-client"]
+  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
   pkg_pe_cloud_runtime["pe-cloud-runtime"]
   svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
   svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
@@ -402,6 +403,7 @@ flowchart LR
   pkg_pe_account_instructions --> svc_peAccountInstructions
   pkg_pe_cloud_access --> svc_peAuth
   pkg_pe_cloud_api --> svc_cloudModelKey
+  pkg_pe_cloud_api --> svc_cloudNativeSettings
   pkg_pe_cloud_api --> svc_cloudPlugins
   pkg_pe_cloud_api --> svc_cloudProjects
   pkg_pe_cloud_api --> svc_cloudSkills
@@ -507,6 +509,7 @@ flowchart LR
   svc_browserUse --> pkg_experimental_browser_use_stagehand_native
   svc_clientModules --> pkg_client_hmr
   svc_cloudModelKey --> pkg_pe_cloud_api
+  svc_cloudNativeSettings --> pkg_pe_cloud_client
   svc_cloudPlugins --> pkg_pe_cloud_client
   svc_cloudPlugins --> pkg_pe_cloud_runtime
   svc_cloudProjects --> pkg_pe_cloud_api
@@ -676,6 +679,7 @@ flowchart LR
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | 通过原 Peer Use 和原生配置保存所有者公开已批准的账户模型密钥 RPC。 |
+| `ctx.cloudNativeSettings` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client) | - | 将原账户 Loader 和预设注册表投影为有界的公开清单及组成摘要，不授予配置或写入权限。 |
 | `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 把固定插件编辑接入原 Peer 准入、账户保存和原生 profile 应用。 |
 | `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 将原生 Workspace 操作接入当前账户文件所有者和已批准的项目根目录。 |
 | `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 通过原 Peer 准入、账户保存和 files 拥有的 catalog/version CAS 管理账户技能安装及完整技能包。 |
