@@ -6,7 +6,7 @@ import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import z from '@deepseek-ai/schemastery'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { PeAccountRuntime } from '../src/root.ts'
 import { RootRecipeAudit } from '../src/recipe-audit.ts'
 import type { AccountRuntimeService, DrainParticipant, RootRecipeInput, RootRecipeRole } from '../src/types.ts'
@@ -16,6 +16,7 @@ const directories: string[] = []
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
   for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true })
+  vi.restoreAllMocks()
 })
 
 const roles: RootRecipeRole[] = ['access/root', 'runtime/root', 'api/root', 'files/root', 'opensandbox/root',
@@ -232,4 +233,42 @@ it('revokes on real native config update, removal and explicit close; a new audi
   await f.runtime.close()
   expect(f.runtime.inspectRecipe().status).toBe('closed')
   expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('closed')
+})
+
+it('observes only the first actual Root plugin revocation while retaining admission refusal', async () => {
+  const f = await fixture()
+  expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('not sealed')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  await f.ctx.plugin(() => {})
+  expect(f.runtime.inspectRecipe().status).toBe('revoked')
+  expect(() => { f.runtime.assertRecipeSealed('m8m') }).toThrow('not sealed')
+  f.runtime.revokeRecipe()
+  expect(warn).toHaveBeenCalledTimes(1)
+  expect(warn).toHaveBeenCalledWith('Cloud Root recipe revoked: %j', {
+    event: 'root-recipe-revoked', pid: process.pid, previousStatus: 'blocked', reason: 'root-plugin',
+  })
+})
+
+it('reports original provider health refusal without exposing its private error', async () => {
+  const f = await fixture()
+  expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('not sealed')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  f.execution.assertReady = () => { throw new Error('private-key-and-path-must-not-appear') }
+  expect(f.runtime.inspectRecipe().status).toBe('revoked')
+  expect(() => { f.runtime.assertRecipeSealed('m8m') }).toThrow('not sealed')
+  expect(warn).toHaveBeenCalledTimes(1)
+  expect(warn).toHaveBeenCalledWith('Cloud Root recipe revoked: %j', {
+    event: 'root-recipe-revoked', pid: process.pid, previousStatus: 'blocked',
+    reason: 'provider-ownership-or-health', provider: 'peSandboxCoordinator',
+  })
+  expect(JSON.stringify(warn.mock.calls)).not.toContain('private-key-and-path')
+})
+
+it('keeps the original revocation when writing its observation fails', async () => {
+  const f = await fixture()
+  expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('not sealed')
+  vi.spyOn(console, 'warn').mockImplementation(() => { throw new Error('unavailable diagnostic sink') })
+  f.closeFiles()
+  expect(f.runtime.inspectRecipe().status).toBe('revoked')
+  expect(() => { f.runtime.assertRecipeSealed('m8m') }).toThrow('not sealed')
 })

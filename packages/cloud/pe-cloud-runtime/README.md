@@ -58,7 +58,7 @@ The account factory owns each capacity reservation until the actual work settles
 
 `inspectRecipe()` returns frozen counts and finite issue identities without paths, credentials or provider objects. Loader changes, provider replacement or closure, participant removal, explicit `revokeRecipe()` and runtime closure invalidate the retained audit. `assertRecipeSealed()` rejects admission unless the complete audit and the original files pool/storage owner remain current. Missing actual storage still rejects with `storage-root-capability-missing`. The existing AppReady callback attempts this full audit after successful native startup; the notification itself grants no admission.
 
-Root also writes the original audit's status, counts and fixed issue codes to stderr when AppReady is missing or its seal attempt returns or rejects. The fixed event and process id identify the observation; recipe configuration, versions, errors and paths are omitted. Logging failure never changes the original seal, startup or refusal.
+Root also writes the original audit's status, counts and fixed issue codes to stderr when AppReady is missing or its seal attempt returns or rejects. The first transition to revoked additionally records its fixed event, process id, prior status and internal reason; provider identity or health refusals include only the fixed provider key. Recipe configuration, versions, errors and paths are omitted. Logging failure never changes the original seal, startup or refusal.
 
 The bounded `ordinary-profile-ready` info event is emitted only from the original `onReady` callback after successful recipe sealing, proves ordinary Root startup without claiming that all accounts are ready, and contains no API keys or data bodies.
 

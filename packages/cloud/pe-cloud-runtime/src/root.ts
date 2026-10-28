@@ -170,10 +170,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         ...(stop === undefined ? {} : { closeRoot: () => metadata.shutdown ??= Promise.resolve().then(stop).then(() => {
           metadata.accepting = false
         }) }) }
-      this.recipe.revoke()
+      this.recipe.revoke('participant-registration')
       this.participants.set(participant.id, registered)
       return () => {
-        this.recipe.revoke()
+        this.recipe.revoke('participant-removal')
         const withdraw = (): void => { this.participants.delete(participant.id) }
         if (registered.closeRoot === undefined) {
           withdraw()
@@ -866,7 +866,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const control = this.control
     if (control === undefined) return
     control.failure ??= cause
-    this.recipe.revoke()
+    this.recipe.revoke('runtime-control')
     if (!this.closed) control.phase = 'failed'
     this.ctx.logger.error('Runtime root control failed or became uncertain; new account admission is closed and status requires inspection')
   }

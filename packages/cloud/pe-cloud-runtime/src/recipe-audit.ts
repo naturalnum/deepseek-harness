@@ -9,6 +9,11 @@ import type { DrainParticipant, RootRecipeInput, RootRecipeIssue, RootRecipeObse
 type Entry = NonNullable<Fiber['entry']>
 type Plan = ReturnType<Entry['prepareConfigUpdate']>
 
+type RevokeReason = 'explicit' | 'root-plugin' | 'root-service' | 'entry-init' | 'partial-dispose'
+  | 'volatile-update' | 'patch-context' | 'recipe-version' | 'reseal' | 'entry-identity' | 'entry-config-plan'
+  | 'provider-identity' | 'provider-ownership-or-health' | 'participants' | 'manifest' | 'storage-owner'
+  | 'storage-current' | 'runtime-control' | 'participant-registration' | 'participant-removal'
+
 const ROOT_ROLES = ['access/root', 'runtime/root', 'api/root', 'files/root', 'opensandbox/root'] as const
 const ROLES: readonly RootRecipeRole[] = [...ROOT_ROLES,
   'runtime/account', 'api/account', 'files/account', 'opensandbox/account', 'instructions/session', 'client/client']
@@ -63,13 +68,12 @@ export class RootRecipeAudit {
     private readonly participants: () => readonly RegisteredRootParticipant[],
     private readonly control: () => Readonly<{ phase: string; recipeVersion: string | undefined; maximum: number | undefined }>,
   ) {
-    const changed = (): void => { this.revoke() }
-    owner.on('internal/plugin', changed)
-    owner.on('internal/service', changed)
-    owner.on('loader/entry-init', changed)
-    owner.on('loader/partial-dispose', changed)
-    owner.on('loader/volatile-update', changed, { global: true })
-    owner.on('loader/patch-context', (_entry, next) => { changed(); next() })
+    owner.on('internal/plugin', () => { this.revoke('root-plugin') })
+    owner.on('internal/service', () => { this.revoke('root-service') })
+    owner.on('loader/entry-init', () => { this.revoke('entry-init') })
+    owner.on('loader/partial-dispose', () => { this.revoke('partial-dispose') })
+    owner.on('loader/volatile-update', () => { this.revoke('volatile-update') }, { global: true })
+    owner.on('loader/patch-context', (_entry, next) => { this.revoke('patch-context'); next() })
   }
 
   /**
@@ -233,15 +237,24 @@ export class RootRecipeAudit {
    */
   assertSealed(recipeVersion: string): void {
     this.recheck()
-    if (this.state.recipeVersion !== undefined && recipeVersion !== this.state.recipeVersion) this.revoke()
+    if (this.state.recipeVersion !== undefined && recipeVersion !== this.state.recipeVersion) this.revoke('recipe-version')
     if (this.state.status !== 'sealed') this.fail()
   }
 
-  /** Revoke previous audit facts after replacement, reload or explicit administrative closure. */
-  revoke(): void {
+  /** Revoke retained facts, observing only the first transition with fixed reason/provider labels.
+   * @param reason Internal fixed call site; omission denotes explicit administrative revocation.
+   * @param provider Provider whose original identity or health check refused, if applicable.
+   */
+  revoke(reason: RevokeReason = 'explicit', provider?: string): void {
     if (this.state.status === 'closed' || this.state.status === 'unsealed' || this.state.status === 'revoked') return
+    const previousStatus = this.state.status
     this.candidate = undefined
     this.state = Object.freeze({ ...this.state, status: 'revoked', issues: Object.freeze(['recipe-revoked'] as const) })
+    try {
+      const selected = PROVIDERS.find(key => key === provider)
+      console.warn('Cloud Root recipe revoked: %j', { event: 'root-recipe-revoked', pid: process.pid,
+        previousStatus, reason, ...(selected === undefined ? {} : { provider: selected }) })
+    } catch (_unavailableObservation) { /* Observation cannot reopen or alter revoked admission. */ }
   }
 
   /** Permanently close this runtime audit; a later call cannot restore its authority. */
@@ -264,7 +277,7 @@ export class RootRecipeAudit {
    */
   sealCurrent(recipeVersion: string, maximum: number): void {
     if (this.state.status === 'closed') this.fail()
-    this.revoke()
+    this.revoke('reseal')
     let remaining = maximum
     const unavailable: () => never = () => {
       this.candidate = undefined
@@ -317,28 +330,38 @@ export class RootRecipeAudit {
   private recheck(): void {
     const candidate = this.candidate
     if (candidate === undefined) return
+    let reason: RevokeReason = 'entry-identity'
+    let provider: string | undefined
     try {
       for (const { entry, fiber, plan, module } of candidate.facts) {
+        reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        reason = 'entry-config-plan'
         entry.assertConfigUpdatePlan(plan)
       }
       for (const { key, value, fiber } of candidate.providers) {
+        reason = 'provider-identity'; provider = key
         const now: unknown = this.owner.root.get(key)
         if (!object(now) || original(now) !== value || fiber.state !== FiberState.ACTIVE) throw new Error('changed')
         const fact = candidate.facts.find(row => descends(fiber, row.fiber))
+        reason = 'provider-ownership-or-health'
         if (fact === undefined || !this.healthy(key, value, fact.entry)) throw new Error('changed')
       }
+      provider = undefined; reason = 'participants'
       const now = this.participants()
       if (now.length !== candidate.participants.length || candidate.participants.some(row => !now.includes(row))) throw new Error('changed')
+      reason = 'manifest'
       if (candidate.manifest !== undefined && this.owner.root.get('peExposure')?.policy.manifest !== candidate.manifest) throw new Error('changed')
       if (candidate.storage !== undefined) {
+        reason = 'storage-owner'
         const pool = this.owner.root.get('peFilesPool')
         if (pool === undefined || original(pool) !== candidate.storage.pool || pool.requireStorageOwner() !== candidate.storage.owner) {
           throw new Error('changed')
         }
+        reason = 'storage-current'
         candidate.storage.owner.assertRootCurrent()
       }
-    } catch (_cause) { this.revoke() }
+    } catch (_cause) { this.revoke(reason, provider) }
   }
 
   private healthy(key: string, value: object, entry: Entry): boolean {
