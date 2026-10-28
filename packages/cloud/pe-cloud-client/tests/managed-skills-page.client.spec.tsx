@@ -57,10 +57,10 @@ it('copies a complete directory with nested resources and publishes an independe
 it('imports a selected ZIP through the owner and confirms uninstall without claiming deletion of history or working copies', async () => {
   const f = page()
   render(<SkillsPage {...f.props}/>)
-  fireEvent.click(screen.getByRole('button', { name: en.installBundle }))
+  fireEvent.click(screen.getByRole('button', { name: en.import }))
   const archive = await screen.findByLabelText(en.archive)
   fireEvent.change(archive, { target: { files: [new File(['archive bytes'], 'skill.zip')] } })
-  fireEvent.click(screen.getAllByRole('button', { name: en.installBundle })[1]!)
+  fireEvent.click(screen.getByRole('button', { name: en.installBundle }))
   await screen.findByText(en.bundleApplied)
   expect(f.install).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: en.close }))

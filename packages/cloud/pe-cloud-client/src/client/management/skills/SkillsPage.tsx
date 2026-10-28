@@ -1,6 +1,6 @@
 /** User management-page presentation on the current account source; no registration, transport or backend adapter. */
-import { useState, type ReactNode } from 'react'
-import { IconPlusOutlineRegular, IconSearchOutlineRegular, IconSkillOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useId, useState, type ReactNode } from 'react'
+import { Button, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Input, Pill, Switch, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SkillCard, SkillCategory, SkillManagementActions, SkillsPageInjected } from './types.ts'
 import { ManagedSkillEditor } from './ManagedSkillEditor.tsx'
@@ -32,7 +32,6 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
   const query = search.trim().toLocaleLowerCase()
   const visible = view.items.filter(item => (!installedOnly || item.installed) && (!category || item.category === category)
     && (!query || [item.name, item.description, item.id].some(value => value.toLocaleLowerCase().includes(query))))
-  const recommended = view.items.filter(item => item.recommended).slice(0, 3)
   const selected = view.items.find(item => item.id === selectedId)
   const ready = view.phase === 'ready', managed = view.managed
   const openManaged = (id: string | undefined): void => {
@@ -48,42 +47,30 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
   }
   return <main className={css.page} data-cloud-skills-management aria-busy={view.phase === 'loading'}>
     <header className={css.header}>
-      <div><h1>{t('title')}</h1><p>{t('description')}</p></div>
+      <h1>{t('title')}</h1>
       <div className={css.actions}>
-        {managed === undefined ? null : <button type="button" className={`${css.button} ${css.primary}`}
+        {managed === undefined ? null : <Button size="sm" variant="outline" icon={<IconPlusOutlineRegular size={15}/>}
           disabled={managed.canInstall === false || refresh.state === 'pending' || managed.phase === 'submitting' || managed.phase === 'opening' || managed.phase === 'downloading'}
-          onClick={() => { openManaged(undefined) }}>{t('installBundle')}</button>}
-        {managed === undefined ? <>
-          <button type="button" className={css.button} disabled={!ready || props.installText === undefined || props.limits === undefined}
-            onClick={() => { setDialog('install') }}><IconPlusOutlineRegular size={15}/>{t('install')}</button>
-          <button type="button" className={`${css.button} ${css.primary}`}
-            disabled={!ready || props.importPackage === undefined || props.limits === undefined}
-            onClick={() => { setDialog('import') }}>{t('import')}</button></> : null}
+          onClick={() => { openManaged(undefined) }}>{t('import')}</Button>}
+        {managed === undefined ? <Button size="sm" variant="outline" icon={<IconPlusOutlineRegular size={15}/>}
+          disabled={!ready || props.importPackage === undefined && props.installText === undefined || props.limits === undefined}
+          onClick={() => { setDialog('import') }}>{t('import')}</Button> : null}
       </div>
     </header>
     <section className={css.content} aria-label={t('title')}>
       {managed?.needsRefresh ? <p className={css.note} role="status">{t('bundleRefreshAfterChange')}</p> : null}
-      {managed === undefined ? null : <ManagedSkillEditor key={managed.editNumber} editor={managed} report={props.report} t={t}/> }
-      {view.sample === undefined ? null : managed === undefined ? <SampleSkillEditor key={view.sample.scope} sample={view.sample} t={t}/>
-        : <details><summary>{t('legacySampleEditor')}</summary><SampleSkillEditor key={view.sample.scope} sample={view.sample} t={t}/></details>}
-      {recommended.length > 0 ? <section aria-label={t('recommended')}>
-        <h2 className={css.sectionLabel}>{t('recommended')}</h2>
-        <div className={css.recommendations}>{recommended.map(item => <button type="button" key={item.id}
-          className={css.recommendation} onClick={() => { setSelectedId(item.id) }}>
-          <span><IconSkillOutlineRegular size={28}/><strong>{item.name}</strong></span><p>{item.description}</p>
-        </button>)}</div>
-      </section> : null}
-      <label className={css.search}><IconSearchOutlineRegular size={17}/><input type="search" aria-label={t('search')}
-        placeholder={t('search')} value={search} onChange={(event) => { setSearch(event.target.value) }}/></label>
+      <Input icon={<IconSearchOutlineRegular size={16}/>} type="search" aria-label={t('search')}
+        placeholder={t('search')} value={search} onChange={(event) => { setSearch(event.target.value) }}/>
       <div className={css.filters}>
-        <div className={css.categories} aria-label={t('categories')}>
-          <button type="button" aria-pressed={category === ''} onClick={() => { setCategory('') }}>{t('all')}</button>
-          {categories.map(value => <button type="button" key={value} aria-pressed={category === value}
-            onClick={() => { setCategory(value) }}>{t(value)}</button>)}</div>
+        <div className={css.categories} role="group" aria-label={t('categories')}>
+          <Pill active={category === ''} aria-pressed={category === ''} onClick={() => { setCategory('') }}>{t('all')}</Pill>
+          {categories.map(value => <Pill key={value} active={category === value} aria-pressed={category === value}
+            onClick={() => { setCategory(value) }}>{t(value)}</Pill>)}</div>
         <label className={css.installed}>{t('installed')}<Switch label={t('installed')} checked={installedOnly}
           onChange={setInstalledOnly}/></label>
-        <button type="button" className={css.linkButton} disabled={managed === undefined && props.refresh === undefined || refresh.state === 'pending' || managed?.phase === 'opening' || managed?.phase === 'submitting' || managed?.phase === 'downloading'}
-          onClick={onRefresh}>{t('refresh')}</button>
+        <Tooltip label={t('refresh')} portal><Button size="sm" aria-label={t('refresh')}
+          disabled={managed === undefined && props.refresh === undefined || refresh.state === 'pending' || managed?.phase === 'opening' || managed?.phase === 'submitting' || managed?.phase === 'downloading'}
+          icon={<IconRefreshOutlineRegular size={16}/>} onClick={onRefresh}/></Tooltip>
       </div>
       {view.phase === 'loading' && view.items.length === 0 ? <div className={css.grid} role="status" aria-label={t('loadLabel')}>
         {[0, 1, 2].map(index => <div key={index} className={css.skeleton}/>)}</div> : null}
@@ -93,6 +80,9 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
         : view.items.length === 0 ? null : <div className={css.grid}>{visible.map(skill =>
           <SkillCardView key={skill.id} skill={skill} actions={props} t={t}
             ready={ready} onOpen={() => { if (managed === undefined) setSelectedId(skill.id); else openManaged(skill.id) }}/>)}</div>}
+      {managed === undefined ? null : <ManagedSkillEditor key={managed.editNumber} editor={managed} report={props.report} t={t}/> }
+      {view.sample === undefined ? null : managed === undefined ? <SampleSkillEditor key={view.sample.scope} sample={view.sample} t={t}/>
+        : <details><summary>{t('legacySampleEditor')}</summary><SampleSkillEditor key={view.sample.scope} sample={view.sample} t={t}/></details>}
       <p className={css.note}>{t('note')}</p>
     </section>
     {managed === undefined && ready && selected !== undefined ? <SkillDetailDialog key={selected.id} skill={selected} actions={props} t={t}
@@ -100,7 +90,8 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
     {ready && dialog === 'install' && props.limits !== undefined ? <SkillInstallPanel limits={props.limits}
       installText={props.installText} report={props.report} t={t} onClose={() => { setDialog(undefined) }}/> : null}
     {ready && dialog === 'import' && props.limits !== undefined ? <SkillImportPanel maxBytes={props.limits.archiveBytes}
-      importPackage={props.importPackage} report={props.report} t={t} onClose={() => { setDialog(undefined) }}/> : null}
+      importPackage={props.importPackage} report={props.report} t={t} onClose={() => { setDialog(undefined) }}
+      {...props.installText === undefined ? {} : { onInstallText: () => { setDialog('install') } }}/> : null}
   </main>
 }
 function SkillCardView({ skill, actions, t, ready, onOpen }: {
@@ -110,7 +101,7 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
   readonly ready: boolean
   readonly onOpen: () => void
 }): ReactNode {
-  const action = useSkillAction(), canAct = ready && (action.state === 'idle' || action.state === 'confirmed')
+  const descriptionId = useId(), action = useSkillAction(), canAct = ready && (action.state === 'idle' || action.state === 'confirmed')
   const install = (): void => {
     const submit = actions.installCatalog
     if (submit === undefined) return
@@ -119,15 +110,9 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
     })
   }
   return <article className={css.card} data-skill-id={skill.id}>
-    <div className={css.cardHead}><span className={css.glyph} aria-hidden="true"><IconSkillOutlineRegular size={22}/></span>
-      <span className={css.badge}>{t(skill.status)}</span></div>
-    <button type="button" className={css.cardTitle} onClick={onOpen}>{skill.name}</button>
-    <p className={css.cardDescription}>{skill.description}</p>
-    {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel}</small>}
-    {skill.shadowed === true ? <small>{skill.shadowedBy === undefined ? t('bundleShadowed') : t('bundleShadowedBy', skill.shadowedBy)}</small> : null}
-    <div className={css.cardFooter}>
-      <small>{skill.version === undefined ? t(skill.installed ? 'installed' : 'available') : `${t('version')} ${skill.version}`}</small>
-      <div><button type="button" className={css.linkButton} onClick={onOpen}>{t('details')}</button>
+    <div className={css.cardHead}>
+      <button type="button" className={css.cardTitle} aria-describedby={descriptionId} onClick={onOpen}>{skill.name}</button>
+      <div className={css.cardControl}>
         {!skill.installed ? <button type="button" className={css.linkButton} disabled={!canAct || actions.installCatalog === undefined}
           onClick={install}>{t('installCatalog')}</button> : skill.enabled === undefined ? null : <Switch checked={skill.enabled}
           label={`${skill.name} ${t('toggle')}`} disabled={!canAct || !skill.canToggle || actions.toggle === undefined}
@@ -138,6 +123,13 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
             })
           }}/>}</div>
     </div>
+    <p className={css.cardDescription} id={descriptionId}>{skill.description}</p>
+    <div className={css.cardFooter}>
+      <small>{t(skill.status)}</small>
+      {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel}</small>}
+      {skill.version === undefined ? null : <small>{t('version')} {skill.version}</small>}
+    </div>
+    {skill.shadowed === true ? <small className={css.cardNotice}>{skill.shadowedBy === undefined ? t('bundleShadowed') : t('bundleShadowedBy', skill.shadowedBy)}</small> : null}
     {action.state === 'unknown' || action.state === 'conflict' || action.state === 'unavailable'
       ? <p className={css.error} role="alert">{t(action.state === 'unavailable' ? 'actionUnavailable' : action.state)}</p> : null}
   </article>

@@ -50,13 +50,13 @@ it('combines translated search, purpose and known-installed filters, retaining f
 
 it('requests a toggle once through the injected port and waits for the authoritative projection', () => {
   const f = fixture([plugin('shell')]), view = render(<PluginManagementPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   fireEvent.click(screen.getByRole('switch', { name: 'Enable shell' }))
   expect(f.requestPluginEnabled).toHaveBeenCalledExactlyOnceWith('shell', true)
   expect(screen.getByRole('switch', { name: 'Enable shell' }).getAttribute('aria-checked')).toBe('false')
   f.update({ phase: 'ready', plugins: [plugin('shell', { enabled: true })], refreshing: false })
   view.rerender(<PluginManagementPage {...f.props}/>)
   expect(screen.getByRole('switch', { name: 'Enable shell' }).getAttribute('aria-checked')).toBe('true')
-  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   fireEvent.click(screen.getByRole('button', { name: 'Configure shell' }))
   expect(f.openPluginConfiguration).toHaveBeenCalledExactlyOnceWith('shell')
 })
@@ -69,9 +69,9 @@ it.each([
   { toggle: 'read-only' as const, configuration: 'read-only' as const },
 ])('keeps account mutations closed for unavailable row state %j', (options) => {
   const f = fixture([plugin('shell', options)]); render(<PluginManagementPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   expect(screen.getByRole('switch', { name: 'Enable shell' })).toHaveProperty('disabled', true)
   fireEvent.click(screen.getByRole('switch', { name: 'Enable shell' }))
-  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   expect(screen.getByRole('button', { name: 'Configure shell' })).toHaveProperty('disabled', true)
   expect(f.requestPluginEnabled).not.toHaveBeenCalled(); expect(f.openPluginConfiguration).not.toHaveBeenCalled()
 })
@@ -80,10 +80,10 @@ it('closes controls when callbacks are absent, despite an available row, and exp
   const f = fixture([plugin('shell')])
   const { requestPluginEnabled: _toggle, openPluginConfiguration: _configure, ...closed } = f.props
   render(<PluginManagementPage {...closed}/>)
-  expect(screen.getByRole('switch', { name: 'Enable shell' })).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: en.add })).toHaveProperty('disabled', true)
   expect(screen.queryByRole('textbox')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
+  expect(screen.getByRole('switch', { name: 'Enable shell' })).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: 'Configure shell' })).toHaveProperty('disabled', true)
   expect(screen.getByText(en.notConnected)).toBeTruthy()
 })
@@ -93,6 +93,7 @@ it('retains the last readable rows after a refresh failure, closes mutations and
   render(<PluginManagementPage {...f.props}/>)
   expect(screen.getByRole('alert').textContent).toContain(en.error)
   expect(screen.getByRole('button', { name: 'View shell' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   expect(screen.getByRole('switch', { name: 'Enable shell' })).toHaveProperty('disabled', true)
   fireEvent.click(screen.getByRole('alert').querySelector('button')!)
   expect(f.refreshPluginCatalog).toHaveBeenCalledOnce()
@@ -110,10 +111,10 @@ it('renders the closed-account state without manufacturing sample rows and owns 
 it('shows busy control feedback while retaining the last read enabled state and keeping mutations closed', () => {
   const f = fixture([plugin('shell', { toggle: 'busy', configuration: 'busy' })])
   render(<PluginManagementPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   expect(screen.getByRole('switch', { name: 'Enable shell' }).getAttribute('title')).toBe(en.busy)
   expect(screen.getByRole('switch', { name: 'Enable shell' })).toHaveProperty('disabled', true)
   expect(screen.getByRole('switch', { name: 'Enable shell' }).getAttribute('aria-checked')).toBe('false')
-  fireEvent.click(screen.getByRole('button', { name: 'View shell' }))
   expect(screen.getAllByText(en.busy).length).toBeGreaterThan(0)
   expect(screen.getByRole('button', { name: 'Configure shell' })).toHaveProperty('disabled', true)
   expect(f.requestPluginEnabled).not.toHaveBeenCalled(); expect(f.refreshPluginCatalog).not.toHaveBeenCalled()
@@ -123,9 +124,9 @@ it('keeps bundle selection closed when native selection or availability is unkno
   const f = fixture([plugin('bundle', { enabled: null, moduleName: null, selected: null, toggle: 'unknown', configuration: 'read-only', installable: true,
     selectionTarget: { kind: 'bundle', name: '@example/bundle' }, operations: ['selected'], maxImpact: 'graph' })])
   render(<PluginManagementPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: 'View bundle' }))
   expect(screen.getByRole('switch', { name: 'Select bundle' })).toHaveProperty('disabled', true)
   expect(screen.getByRole('switch', { name: 'Select bundle' }).getAttribute('aria-checked')).toBe('false')
-  fireEvent.click(screen.getByRole('button', { name: 'View bundle' }))
   expect(screen.getByRole('button', { name: 'Configure bundle' })).toHaveProperty('disabled', true)
   expect(screen.getByText(en.selection)).toBeTruthy()
   expect(f.requestPluginEnabled).not.toHaveBeenCalled(); expect(f.requestPluginSelected).not.toHaveBeenCalled()
@@ -133,8 +134,8 @@ it('keeps bundle selection closed when native selection or availability is unkno
 it('does not require entry activation facts for an independently approved ordinary configuration', () => {
   const f = fixture([plugin('config-only', { enabled: null, toggle: 'read-only', operations: ['configure'] })])
   render(<PluginManagementPage {...f.props}/>)
-  expect(screen.getByRole('switch', { name: 'Enable config-only' })).toHaveProperty('disabled', true)
   fireEvent.click(screen.getByRole('button', { name: 'View config-only' }))
+  expect(screen.getByRole('switch', { name: 'Enable config-only' })).toHaveProperty('disabled', true)
   fireEvent.click(screen.getByRole('button', { name: 'Configure config-only' }))
   expect(f.openPluginConfiguration).toHaveBeenCalledExactlyOnceWith('config-only')
 })
@@ -144,18 +145,43 @@ it.each([false, true])('requests the original bundle selection port from selecte
     availability: 'installation', selectionTarget: { kind: 'bundle', name: '@example/bundle' },
     operations: ['selected'], toggle: 'available', configuration: 'read-only', version: '2.3.4' })])
   render(<PluginManagementPage {...f.props}/>)
+  expect(screen.getByRole('button', { name: en.add })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('button', { name: 'View native-bundle' }))
   const toggle = screen.getByRole('switch', { name: 'Select native-bundle' })
   expect(toggle).toHaveProperty('disabled', false)
   expect(toggle.getAttribute('aria-checked')).toBe(String(selected))
   fireEvent.click(toggle)
   expect(f.requestPluginSelected).toHaveBeenCalledExactlyOnceWith('native-bundle', !selected)
   expect(f.requestPluginEnabled).not.toHaveBeenCalled()
-  expect(screen.getByRole('button', { name: en.add })).toHaveProperty('disabled', true)
-  fireEvent.click(screen.getByRole('button', { name: 'View native-bundle' }))
   expect(screen.getByText(en.filesInstallation)).toBeTruthy()
   expect(screen.getByText(en.dependencyNotDeclared)).toBeTruthy()
   expect(screen.getByText('2.3.4')).toBeTruthy()
   expect(screen.queryByText(en.activation)).toBeNull()
   expect(screen.queryByText(en.moduleName)).toBeNull()
   expect(screen.getByRole('button', { name: 'Configure native-bundle' })).toHaveProperty('disabled', true)
+})
+
+
+it('shows one compact list with installation marks and leaves activation to the plugin detail', () => {
+  const f = fixture([plugin('shell'), plugin('agent', { installed: false, enabled: null }), plugin('browser', { installed: null })])
+  render(<PluginManagementPage {...f.props}/>)
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(en.title)
+  expect(screen.queryByText(en.intro)).toBeNull()
+  expect(screen.getAllByRole('list')).toHaveLength(1)
+  expect(screen.queryByRole('heading', { name: en.available })).toBeNull()
+  expect(screen.getByRole('button', { name: en.refresh }).textContent).toBe(en.refresh)
+  expect(screen.getAllByRole('switch')).toHaveLength(1)
+  expect(screen.getAllByRole('img').map(image => image.getAttribute('aria-label'))).toMatchInlineSnapshot(`
+    [
+      "Installed",
+      "View agent",
+      "State not confirmed",
+    ]
+  `)
+  expect(screen.getByRole('button', { name: 'View shell' }).textContent).toBe('shellshell tools')
+  fireEvent.click(screen.getByRole('button', { name: 'View agent' }))
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('agent')
+  expect(f.requestPluginEnabled).not.toHaveBeenCalled()
+  expect(f.requestPluginSelected).not.toHaveBeenCalled()
+  expect(f.openPluginConfiguration).not.toHaveBeenCalled()
 })

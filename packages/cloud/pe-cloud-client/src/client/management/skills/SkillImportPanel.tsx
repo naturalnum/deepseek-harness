@@ -10,12 +10,13 @@ import css from './SkillsPage.module.css'
  * @param props Account limit, original callback and localized labels.
  * @returns A once-only import interaction, disabled when the capability is absent.
  */
-export function SkillImportPanel({ maxBytes, importPackage, report, t, onClose }: {
+export function SkillImportPanel({ maxBytes, importPackage, report, t, onClose, onInstallText }: {
   readonly maxBytes: number
   readonly importPackage: SkillManagementActions['importPackage']
   readonly report: SkillManagementActions['report']
   readonly t: TranslateNS<'cloud-skill-management'>
   readonly onClose: () => void
+  readonly onInstallText?: () => void
 }): ReactNode {
   const [file, setFile] = useState<File>(), action = useSkillAction()
   const valid = file !== undefined && file.size > 0 && file.size <= maxBytes && /\.(?:zip|skill)$/iu.test(file.name)
@@ -41,6 +42,8 @@ export function SkillImportPanel({ maxBytes, importPackage, report, t, onClose }
       <label className={css.drop}>{t('archive')}<input type="file" aria-label={t('archive')} accept=".zip,.skill,application/zip"
         disabled={!editable} onChange={(event) => { setFile(event.target.files?.[0]) }} />
       <strong>{file?.name ?? t('chooseArchive')}</strong></label>
+      {onInstallText === undefined ? null : <button type="button" className={css.linkButton} disabled={!editable}
+        onClick={onInstallText}>{t('createFromText')}</button>}
       {file !== undefined && !valid ? <p className={css.error} role="alert">{t('invalidFile')}</p> : null}
       {action.state !== 'idle' && action.state !== 'pending' && action.state !== 'confirmed'
         ? <p className={css.error} role="alert">{t(action.state === 'unavailable' ? 'actionUnavailable' : action.state)}</p> : null}

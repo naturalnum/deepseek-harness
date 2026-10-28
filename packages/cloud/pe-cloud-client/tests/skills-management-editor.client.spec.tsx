@@ -32,7 +32,7 @@ function fixture() {
 it('copies complete UTF-8/binary files into an independent draft and retains it after an uncertain publication and remount', async () => {
   const f = fixture(), view = render(<SkillsPage {...f.props}/>)
   expect(f.prepare).not.toHaveBeenCalled()
-  expect(screen.getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
+  expect(screen.queryByRole('button', { name: en.install })).toBeNull()
   expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
   fireEvent.click(screen.getByRole('button', { name: en.sampleOpen }))
   await screen.findByText(en.samplePresent)

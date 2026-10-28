@@ -2,9 +2,10 @@
 import { useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconChevronLeftOutlineMedium, IconRefreshOutlineRegular, Input, Pill,
+  Button, IconCheckOutlineRegular, IconChevronLeftOutlineMedium, IconPlusOutlineRegular,
+  IconRefreshOutlineRegular, IconSearchOutlineRegular, Input, Pill,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkTerminal,
-  StateDot, Switch, Tag, Tooltip,
+  StateDot, Switch, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 export type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -72,20 +73,22 @@ function Status({ plugin, t }: Pick<CardProps, 'plugin' | 't'>): ReactNode {
       : plugin.enabled ? 'enabled' : 'disabled'
   return <span className={css.status}><StateDot state={key === 'enabled' || key === 'selected' ? 'done' : 'idle'}/>{t(key)}</span>
 }
-function PluginCard(props: CardProps & { readonly onOpen: () => void }): ReactNode {
-  const { plugin, t } = props, descriptionId = useId()
+function PluginCard({ plugin, t, onOpen }: Pick<CardProps, 'plugin' | 't'> & { readonly onOpen: () => void }): ReactNode {
+  const descriptionId = useId()
   return <li className={css.card}>
-    <div className={css.cardHead}>
+    <button type="button" className={css.cardOpen} aria-label={t('openDetail', { name: plugin.title })}
+      aria-describedby={descriptionId} onClick={onOpen}>
       <span className={css.cardIcon} aria-hidden="true"><Artwork category={plugin.category}/></span>
-      <div className={css.cardMain}>
-        <button type="button" className={css.cardOpen} aria-label={t('openDetail', { name: plugin.title })}
-          aria-describedby={descriptionId} onClick={props.onOpen}>{plugin.title}</button>
+      <span className={css.cardMain}>
+        <span className={css.cardTitle}>{plugin.title}</span>
         <span className={css.cardDesc} id={descriptionId}>{plugin.description}</span>
-      </div>
-      <div className={css.cardEnd}><EnableControl {...props}/></div>
-    </div>
-    <div className={css.cardFoot}><Status plugin={plugin} t={t}/><Tag tone={plugin.approved ? 'quiet' : 'warning'}>
-      {t(plugin.approved ? 'approved' : 'notApproved')}</Tag></div>
+      </span>
+      <span className={clsx(css.cardEnd, plugin.installed === true && css.installedMark)}
+        role="img" aria-label={t(plugin.installed === null ? 'stateUnknown' : plugin.installed ? 'installed' : 'openDetail', { name: plugin.title })}>
+        {plugin.installed === true ? <IconCheckOutlineRegular size={16}/> : plugin.installed === false
+          ? <IconPlusOutlineRegular size={16}/> : <StateDot state="idle"/>}
+      </span>
+    </button>
   </li>
 }
 function PluginDetail(props: CardProps & { readonly onBack: () => void }): ReactNode {
@@ -142,7 +145,6 @@ export function PluginManagementPage(props: PluginManagementPageProps): ReactNod
   const interactive = catalog.phase === 'ready' && !catalog.refreshing && catalog.editor === undefined
   const open = readable ? catalog.plugins.find(plugin => plugin.id === selected) : undefined
   const filtered = readable ? filterPlugins(catalog.plugins, query, category, installedOnly) : []
-  const installed = filtered.filter(plugin => plugin.installed === true), available = filtered.filter(plugin => plugin.installed !== true)
   const cardProps = { t, interactive,
     ...props.requestPluginEnabled === undefined ? {} : { requestPluginEnabled: props.requestPluginEnabled },
     ...props.requestPluginSelected === undefined ? {} : { requestPluginSelected: props.requestPluginSelected },
@@ -150,20 +152,20 @@ export function PluginManagementPage(props: PluginManagementPageProps): ReactNod
   return <section className={css.page} aria-label={t('title')} aria-busy={catalog.phase === 'loading' || catalog.refreshing}>
     {open === undefined ? <>
       <header className={css.pageHead} data-window-drag>
-        <div className={css.cardMain}><h1 className={css.pageTitle}>{t('title')}</h1><p className={css.intro}>{t('intro')}</p></div>
+        <h1 className={css.pageTitle}>{t('title')}</h1>
         <div className={css.toolbar}>
-          <Tooltip label={t('refresh')} portal><Button size="sm" aria-label={t('refresh')}
+          <Button size="sm" variant="outline" aria-label={t('refresh')}
             disabled={props.refreshPluginCatalog === undefined || catalog.phase === 'loading' || catalog.refreshing || catalog.editor !== undefined}
-            onClick={props.refreshPluginCatalog} icon={<IconRefreshOutlineRegular size={16}/>}/></Tooltip>
-          <Tooltip label={t(catalog.plugins.some(plugin => plugin.installable === true && plugin.selectionTarget?.kind !== 'bundle') ? 'installNotConnected' : 'addClosed')} portal><span><Button size="sm" variant="primary" disabled>{t('add')}</Button></span></Tooltip>
+            onClick={props.refreshPluginCatalog} icon={<IconRefreshOutlineRegular size={16}/>}>{t('refresh')}</Button>
+          <Tooltip label={t(catalog.plugins.some(plugin => plugin.installable === true && plugin.selectionTarget?.kind !== 'bundle') ? 'installNotConnected' : 'addClosed')} portal><span><Button size="sm" variant="outline" disabled icon={<IconPlusOutlineRegular size={16}/>}>{t('add')}</Button></span></Tooltip>
         </div>
       </header>
       {readable ? <div className={css.controls}>
-        <Input type="search" value={query} aria-label={t('search')} placeholder={t('search')}
+        <Input icon={<IconSearchOutlineRegular size={16}/>} type="search" value={query} aria-label={t('search')} placeholder={t('search')}
           onChange={(event) => { setQuery(event.target.value) }}/>
         <div className={css.filterBar}>
           <div className={css.categories} role="group" aria-label={t('categories')}>
-            {categories.map(([value, key]) => <Pill key={value} active={category === value}
+            {categories.map(([value, key]) => <Pill key={value} active={category === value} aria-pressed={category === value}
               onClick={() => { setCategory(value) }}>{t(key)}</Pill>)}
           </div>
           <label className={css.installedFilter}>{t('installedOnly')}<Switch checked={installedOnly}
@@ -178,12 +180,8 @@ export function PluginManagementPage(props: PluginManagementPageProps): ReactNod
       {catalog.phase === 'loading' ? <Loading t={t}/> : null}
       {catalog.phase === 'unavailable' ? <p className={css.empty} role="status">{t('unavailable')}</p> : null}
       {readable && filtered.length === 0 ? <p className={css.empty}>{t(query || category !== 'all' || installedOnly ? 'searchEmpty' : 'empty')}</p> : null}
-      {readable ? ([['available', available], ['installed', installed]] as const).map(([key, plugins]) => plugins.length === 0 ? null
-        : <section className={css.group} key={key} aria-label={t(key)}>
-          <div className={css.groupHead}><h2 className={css.groupTitle}>{t(key)}</h2><span className={css.count}>{t('count', { count: plugins.length })}</span></div>
-          <ul className={css.cards}>{plugins.map(plugin => <PluginCard key={plugin.id} {...cardProps} plugin={plugin}
-            onOpen={() => { setSelected(plugin.id) }}/>)}</ul>
-        </section>) : null}
+      {readable && filtered.length > 0 ? <ul className={css.cards}>{filtered.map(plugin =>
+        <PluginCard key={plugin.id} plugin={plugin} t={t} onOpen={() => { setSelected(plugin.id) }}/>)}</ul> : null}
     </> : null}
   </section>
 }

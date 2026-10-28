@@ -13,7 +13,8 @@ const en = skillsManagementDictionaries.en
 function fixture() {
   const source = createSnapshotStore<SkillManagementView>({ phase: 'ready', items: [
     { id: 'sample', name: 'Sample', description: 'Existing account sample', category: 'writing-office',
-      installed: true, recommended: true, status: 'published', enabled: true, canTry: true },
+      installed: true, recommended: true, status: 'published', enabled: true, canTry: true, canToggle: true,
+      sourceLabel: 'Account skills', version: '1.2.0' },
     { id: 'data', name: 'Data analysis', description: 'Analyze tables', category: 'data-analysis',
       installed: false, recommended: false, status: 'available' },
   ] })
@@ -30,7 +31,11 @@ it('filters original-source cards and reacts to its updates without fetching or 
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'tables' } })
   expect(document.querySelectorAll('[data-skill-id]')).toHaveLength(1)
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
+  fireEvent.click(within(screen.getByRole('group', { name: en.categories })).getByRole('button', { name: en['data-analysis'] }))
+  expect(screen.getAllByRole('article')).toHaveLength(1)
   fireEvent.click(screen.getByRole('switch', { name: en.installed }))
+  expect(screen.queryAllByRole('article')).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: en.all }))
   expect(document.querySelectorAll('[data-skill-id]')).toHaveLength(1)
   act(() => { f.source.set({ phase: 'ready', items: [] }) })
   expect(document.querySelectorAll('[data-skill-id]')).toHaveLength(0)
@@ -38,7 +43,7 @@ it('filters original-source cards and reacts to its updates without fetching or 
 })
 it('keeps missing account actions closed and does not claim an unavailable catalog is empty', () => {
   const f = fixture(); render(<SkillsPage {...f.props}/>)
-  expect(screen.getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
+  expect(screen.queryByRole('button', { name: en.install })).toBeNull()
   expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: en.installCatalog })).toHaveProperty('disabled', true)
   act(() => { f.source.set({ phase: 'unavailable', items: [] }) })
@@ -49,7 +54,8 @@ it('submits a complete text draft once, keeps unknown visible and never retries 
   const f = fixture(), held = Promise.withResolvers<SkillActionOutcome>()
   const installText = vi.fn<NonNullable<SkillsPageProps['installText']>>(() => held.promise)
   render(<SkillsPage {...f.props} installText={installText}/>)
-  fireEvent.click(screen.getByRole('button', { name: en.install }))
+  fireEvent.click(screen.getByRole('button', { name: en.import }))
+  fireEvent.click(screen.getByRole('button', { name: en.createFromText }))
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByLabelText(en.name), { target: { value: 'New skill' } })
   fireEvent.change(within(dialog).getByLabelText(en.summary), { target: { value: 'Description' } })
@@ -63,6 +69,53 @@ it('submits a complete text draft once, keeps unknown visible and never retries 
   expect(within(dialog).getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
   expect(document.querySelectorAll('[data-skill-id]')).toHaveLength(2)
 })
+it('shows one catalog without featured duplicates, with an import-only header and card-owned controls', async () => {
+  const f = fixture(), toggle = vi.fn<NonNullable<SkillsPageProps['toggle']>>(async () => 'confirmed')
+  const readDetail = vi.fn(async () => ({ instructions: 'Complete skill instructions' }))
+  const { container } = render(<SkillsPage {...f.props} toggle={toggle} readDetail={readDetail}/>)
+  const header = container.querySelector('header')!
+  expect({
+    title: within(header).getByRole('heading').textContent,
+    actions: within(header).getAllByRole('button').map(button => button.textContent),
+    categories: within(screen.getByRole('group', { name: en.categories })).getAllByRole('button').map(button => button.textContent),
+    names: screen.getAllByRole('article').map(card => within(card).getByRole('button', { name: /Sample|Data analysis/u }).textContent),
+    installed: screen.getByRole('switch', { name: en.installed }).getAttribute('aria-checked'),
+  }).toMatchInlineSnapshot(`
+    {
+      "actions": [
+        "Import skill package",
+      ],
+      "categories": [
+        "All",
+        "Writing & office",
+        "Data analysis",
+        "Research & knowledge",
+        "Development tools",
+        "Imported",
+        "Other",
+      ],
+      "installed": "false",
+      "names": [
+        "Sample",
+        "Data analysis",
+      ],
+      "title": "Skills",
+    }
+  `)
+  expect(screen.queryByText(en.recommended)).toBeNull()
+  expect(screen.queryByText(en.description)).toBeNull()
+  const card = screen.getAllByRole('article')[0]!
+  expect(within(card).getByText('Account skills')).toBeTruthy()
+  expect(within(card).getByText('Version 1.2.0')).toBeTruthy()
+  fireEvent.click(within(card).getByRole('switch', { name: `Sample ${en.toggle}` }))
+  await act(async () => {})
+  expect(toggle).toHaveBeenCalledExactlyOnceWith('sample', false, expect.any(AbortSignal))
+  expect(readDetail).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(within(card).getByRole('button', { name: 'Sample' }))
+  await screen.findByText('Complete skill instructions')
+  expect(readDetail).toHaveBeenCalledExactlyOnceWith('sample', expect.any(AbortSignal))
+})
 it('validates archive selection locally and sends the original File only to the supplied callback', async () => {
   const f = fixture(), importPackage = vi.fn<NonNullable<SkillsPageProps['importPackage']>>(async () => 'unknown')
   render(<SkillsPage {...f.props} importPackage={importPackage}/>)
@@ -75,6 +128,22 @@ it('validates archive selection locally and sends the original File only to the 
   fireEvent.click(within(dialog).getByRole('button', { name: en.import }))
   await screen.findByText(en.unknown)
   expect(importPackage).toHaveBeenCalledExactlyOnceWith(file, expect.any(AbortSignal))
+})
+it('keeps the secondary text route closed after an unconfirmed import', async () => {
+  const f = fixture(), importPackage = vi.fn<NonNullable<SkillsPageProps['importPackage']>>(async () => 'unknown')
+  const installText = vi.fn<NonNullable<SkillsPageProps['installText']>>(async () => 'confirmed')
+  render(<SkillsPage {...f.props} importPackage={importPackage} installText={installText}/>)
+  fireEvent.click(screen.getByRole('button', { name: en.import }))
+  const dialog = screen.getByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText(en.archive), { target: { files: [new File(['package'], 'skill.zip')] } })
+  fireEvent.click(within(dialog).getByRole('button', { name: en.import }))
+  await within(dialog).findByText(en.unknown)
+  const secondary = within(dialog).getByRole('button', { name: en.createFromText })
+  expect(secondary).toHaveProperty('disabled', true)
+  fireEvent.click(secondary)
+  expect(within(dialog).queryByLabelText(en.instructions)).toBeNull()
+  expect(installText).not.toHaveBeenCalled()
+  expect(importPackage).toHaveBeenCalledTimes(1)
 })
 it('reads inert Markdown in the detail dialog and invokes only the supplied draft callback', async () => {
   const f = fixture(), readDetail = vi.fn(async () => ({ instructions: '# Heading\n\n<script>window.bad = true</script>' }))
