@@ -82,7 +82,7 @@ Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.
 
 `decodeCloudBootstrap(input, limits)` 严格校验 C-11 的账户、版本、代际和能力描述，返回独立副本及深只读数据。显式传入 `maxBodyBytes`、`maxStringBytes` 和合计 `maxListItems`，不补默认值。正文预算计入完整紧凑结果的字段名、分隔符和转义后 UTF-8 字符串。调用方仍须在 `JSON.parse` 前限制原始 HTTP 字节；三项上限均可由其 `maxBootstrapResponseBytes` 派生。
 
-未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。私有 producer 等待原 `CloudAccountApi.assertBootstrapCurrent`、files/project 成员关系、已安装执行 provider 及有界 Loader/包检查。发送有界 JSON（`no-store`）前再次检查原登录、Root、Use、代际和安装。目录元数据导入在每个 await 前后保留登录、图和 provider 身份复核。完整端点检查在目录核验前后执行，最终响应复核包含原生 guard。批准项本身不代表已安装；事实缺失时拒绝整个 bootstrap。
+未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。私有 producer 等待原 `CloudAccountApi.assertBootstrapCurrent`、files/project 成员关系、已安装执行 provider 及有界 Loader/包检查。发送有界 JSON（`no-store`）前再次检查原登录、Root、Use、代际和安装。目录元数据导入在每个 await 前后保留登录、图和 provider 身份复核。完整端点检查在目录核验前及明确的响应发送检查时各执行一次；其间每个 await 仍保留原身份检查及 API 拥有者的原生审计。批准项本身不代表已安装；事实缺失时拒绝整个 bootstrap。
 
 producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `workspaceFiles/read`、`stat`、`list`、`readBytes` RPC 和 `workspaceFiles/changes` stream。这两个 namespace 的其他方法及错误的 RPC/stream 类别均拒绝。每个选中条目都经原 API owner 的当前注册审计。只有完整文件组被选中，且原 Files owner 的 `assertContentAvailable()` 通过，包含已结算的 ABI8、content 和 provider 前提时，`filePreview` 才为 available。部分文件组仍显示 disabled；任何选中的文件端点都要求该内容断言。Runtime 在 ready 前也检查相同前提。未选择文件端点的 first-trial 配方保持 preview disabled。项目元数据沿用原字段；配置及其他未批准能力保持关闭。显式 API 模型 Key 策略还可准入其四个精确、已审核 RPC。C11 原生凭据写能力仍为 false；独立服务提供实际只读元数据及编辑状态。
 
@@ -102,7 +102,7 @@ Root 解析器可批准有限的原生命名空间／字段对。producer 要求
 
 `authenticate` 通过 `disableCookieCache` 和 `disableRefresh` 强制查库。`recheckLogin` 使用原 cookie 的固定快照；已准入的验证失败时调用传入的登录失效处理者。`assertLoginCurrent` 在派发前拒绝已到复查时间的登录。Peer watcher 必须调度复查，并在任何拒绝（含容量拒绝）时关闭精确 Peer；本适配器不安装 watcher。
 
-Bootstrap 在账户定位／挂载及目录／原生异步读取后，通过同一原 Cookie 快照重新校验，再执行原同步准入守卫。既有 ingress 操作保留真实查询完成责任，包括超时后的迟到结果。此刷新不延长有效间隔，也不替代登录、取消、generation 或账户当前性检查；登录已撤销时仍拒绝响应。
+Bootstrap 在账户定位／挂载、目录／原生异步读取及完整投影返回后，通过同一原 Cookie 快照重新校验，再执行最终原生、登录及账户当前性检查。既有 ingress 操作保留真实查询完成责任，包括超时后的迟到结果。此刷新不延长有效间隔，也不替代登录、取消、generation 或账户当前性检查；登录已撤销时仍拒绝响应。
 
 内部 `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` 与 `authenticate` 共用同一认证操作及库查询，返回常规 principal 和从本次已验证用户名称产生的冻结账户投影。显式正字节上限先检查字符长度，再检查 UTF-8 字节。principal 及其登录记录不增加名称字段；后续认证可观察改名，旧投影保持不变。名称超限返回 `cloud/capacity`；非法上限在查库前返回 `cloud/account-unavailable`。两类失败均不暴露名称或账户 id。
 

@@ -354,8 +354,9 @@ export class CloudIngress {
             verified.account, this.limits.maxBootstrapResponseBytes,
             AbortSignal.any([operation.observer.signal, use.binding.lifetime]), current,
             () => this.generations.current(use.binding, operation.id), recheckLogin)
-          current()
+          await recheckLogin()
           projected.assertCurrent()
+          current()
           operation.stage = 'bootstrap.transfer'
           response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
             'content-length': Buffer.byteLength(projected.body, 'utf8') })

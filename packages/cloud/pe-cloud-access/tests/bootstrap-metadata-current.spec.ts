@@ -4,13 +4,18 @@ import { IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
 import pg from 'pg'
 import type { Auth } from 'better-auth'
+import { Context } from '@deepseek-ai/cordis'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import WebServer from '@deepseek-ai/dsh-host-webserver'
+import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
 import { CloudAccountApi, type ApprovedConfigurationCatalog } from '@deepseek-ai/dsh-pe-cloud-api'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { policyFixture } from '../../pe-cloud-runtime/tests/account-policy-fixture.ts'
 import { BetterAuthAccess } from '../src/auth.ts'
 import { produceCloudBootstrap } from '../src/bootstrap-producer.ts'
-import { accessConfig } from './ingress-fixture.ts'
+import * as producer from '../src/bootstrap-producer.ts'
+import { CloudIngress } from '../src/ingress.ts'
+import { accessConfig, carrier, ingressConfig } from './ingress-fixture.ts'
 
 const bounds = { maxHomeBytes: 4096, maxCollectionItems: 512, maxFrameBytes: 262144,
   maxQueuedEvents: 128, maxQueuedBytes: 4194304 }
@@ -83,7 +88,9 @@ it('keeps metadata projection within the original five-second login window witho
   expect(JSON.parse(projected.body)).toMatchObject({ capabilities: { configuration: {
     plugins: [{ id: 'locale' }, { id: 'model-provider' }], skills: { manage: false },
   } } })
-  expect(cost.rpc.mock.calls.length + cost.stream.mock.calls.length).toBeLessThan(100)
+  const manifest = f.native.exposureOwner.policy.manifest
+  expect(cost.rpc.mock.calls.length + cost.stream.mock.calls.length)
+    .toBe(2 * (manifest.rpcEndpoints.length + manifest.streamEndpoints.length + 1))
   expect(clock.now - 10000).toBeLessThan(5000)
   clock.now = 14999; f.auth.assertLoginCurrent(verified.principal, f.requestId)
   clock.now = 15000
@@ -95,6 +102,50 @@ it('keeps metadata projection within the original five-second login window witho
   expect(f.query).not.toHaveBeenCalled()
   expect(f.connect.mock.calls.length).toBeLessThanOrEqual(1)
   expect(f.graph.adapter.calls).toBe(0)
+})
+
+it.each([false, true])('rechecks the captured login after slow production and preserves final native refusal (withdraw=%s)', async (withdraw) => {
+  const f = await fixture(), clock = { now: 10000 }, root = new Context()
+  vi.spyOn(performance, 'now').mockImplementation(() => clock.now)
+  // Only Root storage/control admission and its AccountUse are external fixtures here; no runtime seal is issued.
+  const runtime = new PeAccountRuntime(root, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+  vi.spyOn(runtime, 'assertRecipeSealed').mockImplementation(() => {})
+  vi.spyOn(runtime, 'assertBusinessCurrent').mockImplementation((binding) => { expect(binding).toBe(f.graph.binding) })
+  vi.spyOn(runtime, 'locateAccount').mockResolvedValue(undefined)
+  const release = vi.fn()
+  vi.spyOn(runtime, 'acquireAccount').mockResolvedValue({ binding: f.graph.binding, context: f.graph.ctx,
+    assertCurrent() { f.graph.ctx.fiber.assertActive(); f.graph.binding.lifetime.throwIfAborted() }, release })
+  root.provide('peExposure', f.native.exposureOwner)
+  root.provide('pluginPackages', f.native.bootstrapPackages)
+  const web = new WebServer(root, { host: '127.0.0.1', port: 0 }), registered = vi.spyOn(web, 'register')
+  const ingress = new CloudIngress(root, { ...accessConfig(), sessionRecheckMs: 5000, authCheckTimeoutMs: 10000 },
+    { ...ingressConfig(), maxBootstrapResponseBytes: 65536 }, f.auth,
+    { web, runtime, recipeVersion: f.graph.binding.recipeVersion, exposure: f.native.exposureOwner,
+      assertAuthenticationCurrent() {} })
+  const original = producer.produceCloudBootstrap
+  vi.spyOn(producer, 'produceCloudBootstrap').mockImplementation(async (...args) => {
+    const projected = await original(...args)
+    clock.now += 6000
+    if (withdraw) f.graph.withdrawLlmGuard()
+    return projected
+  })
+  const recheck = vi.spyOn(f.auth, 'recheckLogin')
+  const input = carrier('/cloud/bootstrap', 'GET', ['Cookie', 'better-auth.session_token=external-fixture'])
+  try {
+    await ingress.install()
+    const route = registered.mock.calls.find(([row]) => row.path === '/cloud/bootstrap')?.[0]
+    if (route === undefined) throw new Error('Original bootstrap route was not registered')
+    await route.handler(input.request, input.response)
+    expect(input.response.statusCode).toBe(withdraw ? 503 : 200)
+    expect(recheck).toHaveBeenCalledTimes(7)
+    expect(release).toHaveBeenCalledTimes(1)
+    for (const [value] of f.session.mock.calls) {
+      expect(new Headers(value?.headers).get('cookie')).toBe('better-auth.session_token=external-fixture')
+    }
+    expect(f.graph.adapter.calls).toBe(0)
+  } finally {
+    await ingress.closeActual(); await root.fiber.dispose(); input.request.destroy(); input.socket.destroy()
+  }
 })
 
 it('rejects native guard withdrawal after projection and before response transfer', async () => {

@@ -184,10 +184,10 @@ export async function produceCloudBootstrap(
   }
   const inventory = await inspectBootstrapConfiguration(ctx, catalog, identitiesCurrent, resolvePackages, resumeCurrent)
   await resumeCurrent()
-  factsCurrent()
+  identitiesCurrent()
   const nativeCurrent = await api.assertBootstrapCurrent(ctx, signal)
   await resumeCurrent()
-  factsCurrent()
+  identitiesCurrent()
   inventory.assertCurrent()
   const token = generation()
   const assertCurrent = (): void => {
@@ -196,7 +196,6 @@ export async function produceCloudBootstrap(
     nativeCurrent()
     if (generation() !== token) unavailable()
   }
-  assertCurrent()
   const disabled = Object.freeze({ state: 'disabled', reason: 'not-approved' } as const)
   const value = decodeCloudBootstrap({ account, recipeVersion: binding.recipeVersion, connectionGeneration: token,
     capabilities: { projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
@@ -210,6 +209,5 @@ export async function produceCloudBootstrap(
   }, { maxBodyBytes: maximum, maxStringBytes: maximum, maxListItems: Math.min(maximum, catalog.maxEntries) })
   const body = JSON.stringify(value)
   if (Buffer.byteLength(body, 'utf8') > maximum) unavailable()
-  assertCurrent()
   return { body, assertCurrent }
 }
