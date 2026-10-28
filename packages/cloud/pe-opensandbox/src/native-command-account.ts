@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
@@ -20,6 +20,9 @@ import type { ExecutionScope } from './scopes.ts'
 import type { DevelopmentServiceId, RegisteredApplicationService, ServicePreviewIdentity } from './types.ts'
 import type { DevServiceProfile, OriginalDevServiceHooks, OriginalDevServiceWork, ResolvedServiceStart } from './dev-service-consumer.ts'
 import { projectServiceRange } from './service-projection.ts'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import { selectNativeFilePolicy } from './native-file-policy.ts'
+import type { NativeFilePolicy } from './agent-data/file-policy.ts'
 
 /** Independent Root reservations; output remains charged after the active range ends. */
 export interface NativeCommandReservation {
@@ -69,6 +72,7 @@ export interface NativeServiceAccountConfig {
 
 /** Fixed native consumers and existing finite Root budgets. */
 export interface NativeCommandAccountLimits {
+  readonly enforceSessionFilePolicy?: boolean
   readonly allowedTools: readonly string[]
   readonly maxScopes: number
   readonly commandLimits: CommandOperationLimits
@@ -101,6 +105,7 @@ interface ServiceRow {
   projection?: ReturnType<typeof projectServiceRange>
 }
 interface CommandRecord {
+  readonly filePolicy?: NativeFilePolicy
   readonly scope: ExecutionScope<Workspace>
   readonly role: 'foreground' | 'service'
   readonly reservation: NativeCommandReservation
@@ -142,6 +147,26 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       allowedTools: Object.freeze([...config.allowedTools]), getAgent: authority.getAgent,
       projectForAgent: authority.projectForAgent, assertCurrent: (scope) => { this.assertScope(scope) },
       released: (scope) => { this.releaseScope(scope) } })
+  }
+
+  /** Original Root configuration selects mandatory policy on every command path. */
+  get enforcesSessionFilePolicy(): true | undefined { return this.config.enforceSessionFilePolicy === true ? true : undefined }
+
+  /**
+   * Refuse a permission change until this Session has no unsettled original command or service.
+   * @param session Exact currently registered native Session.
+   */
+  assertSessionFilePolicyChange(session: Session): void {
+    if (this.enforcesSessionFilePolicy !== true || !this.state.open || this.state.closing !== undefined
+      || this.binding.lifetime.aborted || this.ctx.get('sessions')?.get(session.id) !== session) throw this.failure()
+    assertInstalledExecutionBinding(this.ctx, this.binding, this.ctx.root)
+    for (const record of this.records.values()) {
+      if (record.scope.sessionId !== session.id) continue
+      if (!record.activeReleased || record.unknownReported || record.privateFailure !== undefined
+        || (record.service?.requests.size ?? 0) !== 0) {
+        throw new ExecutionStateError('cloud/capacity', 'Stop the Session command and development service before changing permissions.')
+      }
+    }
   }
 
   /**
@@ -337,11 +362,14 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     if (lease.session !== lease.scope.agent.session || this.findLease(lease) !== undefined) throw this.failure()
     this.requireSlot(lease.scope, 'service'); this.validateInput(lease.scope, spec)
     if (spec.signal !== lease.scope.lifetime) throw new ExecutionStateError('cloud/invalid-config', 'The service lifetime is invalid.')
+    const filePolicy = this.config.enforceSessionFilePolicy === true
+      ? selectNativeFilePolicy(this.ctx, lease.session, lease.scope.project.path) : undefined
     const reservation = this.root.reserve(lease.scope, spec)
     let record: CommandRecord | undefined
     try {
       this.calls.assertCurrent(lease.scope); signal.throwIfAborted()
       const row: CommandRecord = { scope: lease.scope, role: 'service', reservation,
+        ...filePolicy === undefined ? {} : { filePolicy },
         activeReleased: false, retired: false, unknownReported: false }
       record = row
       const id = brandString<DevelopmentServiceId>(randomUUID()), submitted = Promise.withResolvers<void>()
@@ -427,12 +455,16 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     record.operation.cancelUnstarted(cause)
   }
 
-  create(caller: Context, spec: SubprocessSpawnSpec): ManagedCommandOperation {
+  create(caller: Context, spec: SubprocessSpawnSpec, policy?: SandboxExecutionPolicy): ManagedCommandOperation {
     const { scope, signal } = this.capture(caller)
     signal.throwIfAborted(); spec.signal?.throwIfAborted(); this.validateInput(scope, spec)
+    if (policy !== undefined && this.config.enforceSessionFilePolicy !== true) throw this.failure()
+    const filePolicy = this.config.enforceSessionFilePolicy === true
+      ? selectNativeFilePolicy(caller, scope.agent.session, scope.project.path, policy) : undefined
     if (scope.purpose === 'service') {
       const record = [...this.records.values()].find(row => row.scope === scope && row.role === 'service')
       if (record?.service === undefined || record.operation !== undefined || record.retired) throw this.failure()
+      if (record.filePolicy?.mode !== filePolicy?.mode) throw this.failure()
       this.assertQualified(record.service.profile)
       if (record.service.fingerprint !== this.fingerprint(spec) || spec.signal !== scope.lifetime) throw this.failure()
       try {
@@ -473,7 +505,8 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       } })
     try {
       reservation = this.root.reserve(scope, input); this.calls.assertCurrent(scope)
-      record = { scope, role: 'foreground', operation, reservation, activeReleased: false, retired: false, unknownReported: false }
+      record = { scope, role: 'foreground', operation, reservation,
+        ...filePolicy === undefined ? {} : { filePolicy }, activeReleased: false, retired: false, unknownReported: false }
       this.records.set(operation, record); this.claimSlot(record); this.watchEmpty(record, operation)
       return operation
     } catch (cause) { operation.release(); operation.begin(); throw cause }
@@ -678,8 +711,9 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     if (stdin === 'pipe') throw new ExecutionStateError('cloud/execution-unavailable', 'Closed or batch input is required.')
     const value = { argv: spec.argv, cwd: spec.cwd,
       stdin: stdin === 'ignore' ? { mode: 'ignore' as const } : { mode: 'batch' as const, base64: Buffer.from(stdin.data).toString('base64') } }
-    if (this.config.maxSkillCopiesPerOperation === undefined) guardianEncodedBudget(project, value)
-    else guardianWorkingCopiesBudget(project, value, this.config.maxSkillCopiesPerOperation)
+    const policy = this.config.enforceSessionFilePolicy === true ? { mode: 'workspace-write' as const } : undefined
+    if (this.config.maxSkillCopiesPerOperation === undefined) guardianEncodedBudget(project, value, undefined, policy)
+    else guardianWorkingCopiesBudget(project, value, this.config.maxSkillCopiesPerOperation, policy)
   }
   private fingerprint(spec: SubprocessSpawnSpec): string {
     return JSON.stringify({ argv: spec.argv, cwd: spec.cwd, stdio: spec.stdio, graceMs: spec.graceMs, env: spec.env })
@@ -690,7 +724,10 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       catch (cause) { record.privateFailure ??= { cause }; throw this.failure() }
     }
     return { ...(channel.release === undefined ? {} : { release: () => channel.release?.() }),
-      prepare: spec => observe(() => channel.prepare(spec)), commit: () => observe(() => channel.commit()),
+      prepare: spec => observe(() => {
+        if (this.config.enforceSessionFilePolicy === true && record.filePolicy === undefined) throw this.failure()
+        return record.filePolicy === undefined ? channel.prepare(spec) : channel.prepare(spec, record.filePolicy)
+      }), commit: () => observe(() => channel.commit()),
       poll: () => observe(() => channel.poll()), stop: () => observe(() => channel.stop()) }
   }
   private reportUnknown(record: CommandRecord, cause: unknown): void {

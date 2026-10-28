@@ -37,6 +37,9 @@ export interface CloudSkillSettingsConfig {
   readonly maxFileBytes: number
 }
 
+/** Explicit original browser controls supplied by the cloud deployment; selection grants no server capability. */
+export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments'
+
 /** Finite public configuration for bootstrap and one captured native carrier. */
 export interface CloudClientConfig {
   /** Document-relative route without query or fragment; Web manifests require `cloud/bootstrap`. */
@@ -59,6 +62,8 @@ export interface CloudClientConfig {
   modelSettingsRequestTimeoutMs?: number
   /** Omission leaves the native sample skill section unregistered. */
   skillSettings?: Readonly<CloudSkillSettingsConfig>
+  /** Original browser control groups; omission preserves the existing first-screen roster. */
+  nativeSessionControls?: readonly CloudNativeSessionControl[]
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
 }

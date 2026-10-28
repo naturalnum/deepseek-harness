@@ -1,5 +1,6 @@
 /** Exact account-generation ports issued by one closed execution owner. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { ExecutionStateError } from './errors.ts'
@@ -8,6 +9,14 @@ import { PreviewHttpError } from './application-http.ts'
 
 /** Internal factory capability; it cannot select an account, backend, or process. */
 export interface AccountExecutionPort {
+  /** Original owner declaration; Files derives mandatory policy enforcement from this same issued capability. */
+  readonly enforcesSessionFilePolicy?: true | undefined
+  /**
+   * Synchronously check retained native command/service work before changing a Session policy.
+   * @param ctx Original account caller within the exact installed graph.
+   * @param session Exact native Session whose policy is about to change.
+   */
+  assertSessionFilePolicyChange?(ctx: Context, session: Session): void
   readonly binding: AccountBinding
   /**
    * Check the exact issued object, current graph and permanent admission state.
@@ -32,6 +41,8 @@ export interface AccountExecutionPort {
 
 /** Private owner checks, retained by each original issued port rather than serialized account data. */
 export interface ExecutionPortOwner {
+  /** Mandatory on an owner that issues enforcesSessionFilePolicy ports. */
+  assertSessionFilePolicyChange?(port: AccountExecutionPort, ctx: Context, session: Session): void
   assertPort(port: AccountExecutionPort, ctx: Context): void
   assertProviders(port: AccountExecutionPort, ctx: Context): void
   /** @param port Original issued port. @param ctx Actual consumer scope. @returns Current installed service facts. */
@@ -46,6 +57,7 @@ export interface AccountServiceAvailability {
 
 /** Common nominal installation check; each mode retains its own exact-object owner registry. */
 export abstract class IssuedExecutionPort implements AccountExecutionPort {
+  declare readonly enforcesSessionFilePolicy?: true | undefined
   readonly #owner: ExecutionPortOwner
 
   /** @param binding Original runtime binding. @param owner Original mode-specific Root registry.
@@ -77,6 +89,19 @@ export abstract class IssuedExecutionPort implements AccountExecutionPort {
    * @param ctx Original installation or account consumer scope.
    */
   assertOwned(ctx: Context): void { this.#owner.assertPort(this, ctx) }
+
+  /**
+   * Require the original enforcing owner and quiescent Session ranges before a policy change.
+   * @param ctx Original account native caller.
+   * @param session Exact native Session whose policy will change synchronously after this check.
+   */
+  assertSessionFilePolicyChange(ctx: Context, session: Session): void {
+    this.assertOwned(ctx)
+    if (this.enforcesSessionFilePolicy !== true || this.#owner.assertSessionFilePolicyChange === undefined) {
+      throw new ExecutionStateError('cloud/execution-unavailable', 'Session permission changes require their original enforcing owner.')
+    }
+    this.#owner.assertSessionFilePolicyChange(this, ctx, session)
+  }
   /**
    * Verify the original installed providers without executing native work.
    * @param ctx Actual account consumer scope.

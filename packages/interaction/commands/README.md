@@ -61,6 +61,10 @@ A command may declare `input.attachments` to accept composer images and generic 
 
 An interactive adapter calls `execute(agent, line, attachments, signal)` with the exact receiving agent, the full command line, and the submission's ordered attachments. It returns the settled `CommandExecution` — the normalized result plus its lifecycle `commandId` — or `undefined` for invalid syntax or an unknown name. `list(agent)` and `find(agent, name)` serve discovery after agent-scoped shadowing.
 
+### Deployment admission
+
+A deployment subclass can override the synchronous protected `assertCommandInvocation(agent)` check. The executor calls it after attachment admission and immediately before entering the registered handler; the default accepts the invocation. Throwing prevents handler side effects and settles the existing `command/run` with a `command/done` error. Attachments already stored during admission remain subject to the ordinary unreferenced-object collection policy. This check does not interrupt a handler that has already started.
+
 ### Cancellation
 
 The caller's abort signal stops the registry from awaiting a handler; a handler that ignores the signal may continue its own external side effects after the caller stops waiting. A cancelled or thrown handler settles as a `command/done` error in the log.

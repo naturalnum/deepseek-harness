@@ -16,6 +16,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type { SubagentCapacityReservation } from '../src/types.ts'
+import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -82,7 +83,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   rootFetch?: { readonly selected: readonly ExactFetchExposure[]; readonly inspectRootFetch?: () => readonly ExactFetchExposure[] },
   bootstrapCatalog?: ApprovedConfigurationCatalog, settingsManifest?: Parameters<Typert['register']>[0],
   reserveChild?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation,
-  presetChildFiber?: 'active' | 'pending') {
+  presetChildFiber?: 'active' | 'pending', extraStreams: readonly EndpointExposure[] = []) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -137,7 +138,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     { endpoint: 'workspace/follow', handlerId: 'native:workspaceController', guard: 'account-project' as const },
     { endpoint: 'remoteAccess/follow', handlerId: 'native:remoteAccess', guard: 'authenticated-account' as const },
     { endpoint: '$events', handlerId: 'native:typertGateway', guard: 'authenticated-account' as const },
-  ]],
+  ], ...extraStreams],
   exactFetchRoutes: rootFetch?.selected ?? [], allowedSettings: bootstrapCatalog?.fields.map(field =>
     ({ namespace: field.namespace, fields: [field.field] })) ?? [] }
   const exposureOwner = new ExposureService(shared,
@@ -234,6 +235,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       ],
       { id: 'agent-loop', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop, config: { agents: [] } },
       { id: 'controller', name: 'cordis:m8z-controller', config: { nativeOpen: false } },
+      ...[...extraRpc, ...extraStreams].some(row => row.endpoint.startsWith('userQuestions/')) ? [
+        { id: 'user-questions', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.userQuestions },
+      ] : [],
       ...firstScreen === undefined ? [] : [
         { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: bootstrapCatalog === undefined ? 'cordis:m8ax-locale' : '@deepseek-ai/dsh-client-locale', config: { preference: 'en' } },
         { id: 'workspace-controller', name: 'cordis:m8ax-workspace-controller' },
@@ -340,7 +344,13 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-files': FilesAccount,
           'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': AgentPresets, 'm8z-preset': AgentPreset,
           'm8z-persona': persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
-          [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller })
+          [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller,
+          [ACCOUNT_NATIVE_ENTRIES.userQuestions]: { inject: ['peCloudApi', 'agents', 'sessionProjections'], Config: UserQuestions.Config,
+            apply(owner: Context) {
+              requireApi().createUserQuestions(owner, { ...requireGuards().sessions,
+                projectDirectory: { binding, prepare: async () => { throw new Error('Questions cannot create Session directories') } } })
+            } },
+        })
       },
     })
     let closing: Promise<void> | undefined, expectedEventFailure: { readonly error: unknown } | undefined

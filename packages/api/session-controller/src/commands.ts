@@ -96,6 +96,7 @@ export class SessionCommandController {
    * @param agents - sole owner of create, resume, and Session-local model selection.
    * @param defaultCwd - project directory used when create names neither a Workspace nor a cwd.
    * @param prepareFiles - optional awaited preparation after all receipts resolve and before content admission or receipt binding.
+   * @param assertModelSelection - optional synchronous Host recheck after model resolution and before selection commits.
    */
   constructor(
     private readonly ctx: Context,
@@ -104,6 +105,7 @@ export class SessionCommandController {
     private readonly prepareFiles?: (
       agent: Agent, receiptIds: readonly FileUploadReceiptId[], signal?: AbortSignal,
     ) => Promise<void>,
+    private readonly assertModelSelection?: (agent: Agent, selection: AgentModelSelection) => void,
   ) {}
 
   /**
@@ -177,6 +179,7 @@ export class SessionCommandController {
             ? {}
             : { reasoningEffort: resolved.reasoningEffort }),
         }
+        this.assertModelSelection?.(agent, selected)
         this.agents.selectForNextRequest(agent, selected)
         void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
           this.ctx.logger.warn(

@@ -340,6 +340,13 @@ Internal factory capability; it cannot select an account, backend, or process.
 
 ```ts cordis-catalog
 /**
+ * Synchronously check retained native command/service work before changing a Session policy.
+ * @param ctx Original account caller within the exact installed graph.
+ * @param session Exact native Session whose policy is about to change.
+ */
+assertSessionFilePolicyChange?(ctx: Context, session: Session): void
+
+/**
  * Check the exact issued object, current graph and permanent admission state.
  * @param ctx - actual installation or native caller context.
  */
@@ -362,6 +369,8 @@ claim(ctx: Context): void
 /** Permanently close only this generation; internal stop observation remains available. */
 close(): void
 ```
+
+Types: [Session](session.zh.md)
 
 Source: [`packages/cloud/pe-opensandbox/src/account-port.ts`](../../packages/cloud/pe-opensandbox/src/account-port.ts)
 
@@ -710,7 +719,7 @@ createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof 
  * @param input Exact graph profile home and all required event bounds.
  * @returns Actual registration/disposer; native Gateway owns ready and wire framing.
  */
-installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native' | 'settingsNamespaces'>): FirstScreenEvents
+installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native' | 'settingsNamespaces' | 'controls'>): FirstScreenEvents
 
 /**
  * Join the original cached event-source withdrawal before native teardown.
@@ -734,6 +743,74 @@ createController( owner: Context, guards: NativeSessionGuards, config: Construct
  * @returns Native service; its streamed route remains subject to the audited exposure policy.
  */
 createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads
+
+/**
+ * Install the original human-command registry in its account Loader fiber.
+ * @param owner Actual native Loader entry with its original dependencies.
+ * @param guards Shared active-Agent/project admission and bounded native read policy.
+ * @returns The native registry; every Remote call retains account admission.
+ */
+createCommands(owner: Context, guards: NativeSessionGuards): NativeCommands['value']
+
+/**
+ * Install the native goal domain shared by the command and its UI controls.
+ * @param owner Actual account Loader entry.
+ * @param guards Original active-Agent/project checks and native result limits.
+ * @param config Native goal round policy.
+ * @returns Original goal service with generation-bound Remote admission.
+ */
+createGoals( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeGoals>[6], ): NativeGoals['value']
+
+/**
+ * Register native command and streaming archive delivery in the account graph.
+ * @param owner Actual native Loader entry with archive dependencies ready.
+ * @param guards Same Session/project admission used by native history reads.
+ * @param config Original archive compression configuration.
+ */
+createSessionExport( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSessionExport>[6], ): void
+
+/**
+ * Install native permission controls over the actual enforcing providers.
+ * @param owner Actual account Loader entry.
+ * @param config Native two-mode preset table.
+ * @param maxFrameBytes Existing complete native result limit.
+ * @param assertEnforcement Recheck the original issued execution and Files policy enforcement.
+ * @param assertCanSwitch Refuse a policy change while original execution work remains.
+ * @returns The original native preset service.
+ */
+createPermissions( owner: Context, config: Parameters<typeof createNativePermissions>[5], maxFrameBytes: number, assertEnforcement: () => void, assertCanSwitch: Parameters<typeof createNativePermissions>[8], ): NativePermissions['value']
+
+/**
+ * Install original question replies and timed-wait claims.
+ * @param owner Actual account Loader entry.
+ * @param guards Shared native active-Agent/project admission.
+ * @returns The native question service.
+ */
+createUserQuestions(owner: Context, guards: NativeSessionGuards): NativeUserQuestions['value']
+
+/**
+ * Install the original per-Session feedback recorder.
+ * @param owner Actual account Loader entry.
+ * @param guards Shared native Session/project admission and read limits.
+ * @returns The native feedback service.
+ */
+createSessionFeedback(owner: Context, guards: NativeSessionGuards): ReturnType<typeof createNativeSessionFeedback>['value']
+
+/**
+ * Install the native versioned per-message feedback store.
+ * @param owner Actual account Loader entry.
+ * @param guards Shared native Session/project admission and read limits.
+ * @param config Original note-size policy.
+ * @returns The native feedback service with its original mutation queue and persistence handles.
+ */
+createMessageFeedback( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeMessageFeedback>[6], ): ReturnType<typeof createNativeMessageFeedback>['value']
+
+/**
+ * Supply native command acknowledgements without ambient Host-home I/O.
+ * @param owner Actual account command Loader entry.
+ * @returns Original-generation checked, account-scoped display identity callback.
+ */
+createFeedbackIdentity(owner: Context): () => string
 
 /**
  * Install the sole guarded native factory before business admission opens.
@@ -795,7 +872,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md)
+Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 

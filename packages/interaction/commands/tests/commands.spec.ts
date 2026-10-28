@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
@@ -656,6 +656,52 @@ describe('command attachments', () => {
       type: 'command/done',
       data: { kind: 'error', text: 'operator cancelled during admission' },
     })
+  })
+
+  it('rechecks business admission after native attachment storage resolves without relying on cancellation', async () => {
+    const ctx = new Context(), entered = Promise.withResolvers<undefined>(), released = Promise.withResolvers<undefined>()
+    let businessCurrent = true
+    class AdmissionCommands extends CommandRuntime {
+      protected override assertCommandInvocation(_agent: Agent): void {
+        if (!businessCurrent) throw new Error('account business admission closed')
+      }
+    }
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AdmissionCommands)
+    const store = storeOf(), controller = new AbortController()
+    store.saveImage.mockImplementationOnce(async (input) => {
+      entered.resolve(undefined)
+      await released.promise
+      return { attachmentId: 'att-admitted', mediaType: input.mediaType, bytes: 3, width: 1, height: 1 }
+    })
+    ctx.provide('attachments', store)
+    const { agent } = await mintAgentScope(ctx, 'business-close')
+    const handler = vi.fn(() => {
+      agent.session.append('turn/start', { turn: 1 })
+      return { kind: 'success' as const }
+    })
+    ctx.commands.register(accepting(handler))
+    const pending = ctx.commands.execute(
+      agent, '/vision x', [{ type: 'image', mediaType: 'image/png', data: PNG }], controller.signal,
+    )
+    const rejected = expect(pending).rejects.toThrow('account business admission closed')
+    onTestFinished(async () => {
+      released.resolve(undefined)
+      await Promise.allSettled([pending])
+      await ctx.fiber.dispose()
+    })
+    await entered.promise
+    expect(lifecycleOf(agent)).toHaveLength(1)
+    businessCurrent = false
+    released.resolve(undefined)
+    await rejected
+    expect(controller.signal.aborted).toBe(false)
+    expect(handler).not.toHaveBeenCalled()
+    expect(agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
+    expect(lifecycleOf(agent)).toMatchObject([
+      { type: 'command/run', data: { name: 'vision' } },
+      { type: 'command/done', data: { kind: 'error', text: 'account business admission closed' } },
+    ])
   })
 
   it('logs and rethrows a non-attachment admission failure', async () => {

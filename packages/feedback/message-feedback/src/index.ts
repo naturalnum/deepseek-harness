@@ -147,13 +147,23 @@ export class MessageFeedbackService extends TypertRemoteService {
   }
 
   /**
+   * Recheck trusted Host admission inside the original per-Session queue and before log access or mutation.
+   * Called after asynchronous existence, open and read operations, and immediately before an append starts.
+   * Once an append starts, its original flush and handle closure still finish without another admission check.
+   * The default performs no work; rejection before append leaves feedback unchanged.
+   * @param sessionId Exact Session addressed by the original operation.
+   * @param method Original native feedback operation.
+   */
+  protected assertSessionAccess(_sessionId: SessionId, _method: 'list' | 'put' | 'delete'): void {}
+
+  /**
    * Read current feedback from the canonical log.
    * @param request - Session to inspect.
    * @returns immutable items or a definite persistence miss.
    */
   @Remote('list')
   list(request: MessageFeedbackListRequest): Promise<MessageFeedbackListResult> {
-    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, false, events =>
+    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, 'list', events =>
       success(Object.freeze({ items: Object.freeze(currentItems(request.sessionId, events).map(snapshotItem)) }))))
   }
 
@@ -167,7 +177,7 @@ export class MessageFeedbackService extends TypertRemoteService {
   put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult> {
     const note = this.resolveNote(request.note)
     if (!note.ok) return Promise.resolve(note)
-    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, true, async (events, append) => {
+    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, 'put', async (events, append) => {
       const items = currentItems(request.sessionId, events)
       if (!events.some(event => event.type === 'assistant/message'
         && isAppendSurfaceEvent(event)
@@ -205,7 +215,7 @@ export class MessageFeedbackService extends TypertRemoteService {
    */
   @Remote('delete')
   delete(request: MessageFeedbackDeleteRequest): Promise<MessageFeedbackDeleteResult> {
-    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, true, async (events, append) => {
+    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, 'delete', async (events, append) => {
       const existing = currentItems(request.sessionId, events).find(item => item.messageId === request.messageId)
       if (existing !== undefined) {
         if (request.ifVersion !== existing.version) return rejected(this.versionConflict(existing))
@@ -220,18 +230,22 @@ export class MessageFeedbackService extends TypertRemoteService {
   /** Hold cold write ownership across read/compare/append; use live owners directly. */
   private async withSession<T>(
     sessionId: SessionId,
-    write: boolean,
+    method: 'list' | 'put' | 'delete',
     operation: (events: readonly SessionEvent[], append: Append) => T | Promise<T>,
   ): Promise<T | MissingSession> {
+    this.assertSessionAccess(sessionId, method)
     if (this.ctx.sessions.get(sessionId) === undefined
       && await this.ctx.sessionPersistence.stat(sessionId) === undefined
       && this.ctx.sessions.get(sessionId) === undefined) {
+      this.assertSessionAccess(sessionId, method)
       return rejected({ code: 'session-not-found', sessionId })
     }
+    this.assertSessionAccess(sessionId, method)
     const live = this.ctx.sessions.get(sessionId)
     if (live !== undefined) {
       // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       return operation(live.snapshotEvents(), async (event) => {
+        this.assertSessionAccess(sessionId, method)
         if (event !== undefined) {
           live.append(event.type, event.data)
         }
@@ -258,10 +272,13 @@ export class MessageFeedbackService extends TypertRemoteService {
         }
       })
     }
-    const handle = await this.ctx.sessionPersistence.open(sessionId, write ? 'write' : 'read')
+    const handle = await this.ctx.sessionPersistence.open(sessionId, method === 'list' ? 'read' : 'write')
     try {
+      this.assertSessionAccess(sessionId, method)
       const { events } = await handle.read()
+      this.assertSessionAccess(sessionId, method)
       return await operation(events, async (event) => {
+        this.assertSessionAccess(sessionId, method)
         const entry: FeedbackEvent | undefined = event === undefined ? undefined
           : { ...event, seq: SessionSeq(events.length), time: Date.now() }
         if (entry !== undefined) await handle.append([entry])

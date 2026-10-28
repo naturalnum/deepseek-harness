@@ -10,8 +10,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from paths import enter_cwd, verify_skill_world
-from wire import LIMITS
+from paths import enter_cwd, verify_skill_world, verify_file_policy
+from wire import LIMITS, file_policy
 
 RECORD = struct.Struct('!4sB3xii')
 PREPARED, SPAWNED, DIRECT, EMPTY, ERROR = range(1, 6)
@@ -62,8 +62,12 @@ def main(config, status, gate, stdin, stdout, stderr):
             st = os.stat(path)
             assert [st.st_dev, st.st_ino] == expected
         enter_cwd(spec['projectRoot'], spec['cwd'], spec['roots'][spec['projectRoot']])
+        mode = 'workspace-write'
+        if 'filePolicy' in spec:
+            mode = file_policy(spec['filePolicy'])['mode']
+            verify_file_policy(spec['projectRoot'], mode)
         if 'skillWorld' in spec:
-            verify_skill_world(spec['projectRoot'], spec['roots'][spec['projectRoot']], spec['skillWorld'])
+            verify_skill_world(spec['projectRoot'], spec['roots'][spec['projectRoot']], spec['skillWorld'], mode)
         stage = 4
         live = set()
         for name in os.listdir('/proc/self/fd'):

@@ -212,6 +212,15 @@ flowchart TD
     pkg_client_ui_workspace["client-ui-workspace"]
     pkg_client_web["client-web"]
   end
+  subgraph group_cloud["packages/cloud"]
+    pkg_pe_account_instructions["pe-account-instructions"]
+    pkg_pe_cloud_access["pe-cloud-access"]
+    pkg_pe_cloud_api["pe-cloud-api"]
+    pkg_pe_cloud_client["pe-cloud-client"]
+    pkg_pe_cloud_files["pe-cloud-files"]
+    pkg_pe_cloud_runtime["pe-cloud-runtime"]
+    pkg_pe_opensandbox["pe-opensandbox"]
+  end
   subgraph group_compaction["packages/compaction"]
     pkg_command_compact["command-compact"]
     pkg_compaction["compaction"]
@@ -969,6 +978,7 @@ flowchart TD
   pkg_message_feedback --> pkg_session_persistence
   pkg_message_feedback --> pkg_typert_protocol
   pkg_repeat_tool_reminder --> pkg_agent
+  pkg_repeat_tool_reminder --> pkg_llm
   pkg_repeat_tool_reminder --> pkg_tools
   pkg_tool_call_timeout_policy --> pkg_llm
   pkg_tool_call_timeout_policy --> pkg_timeout
@@ -1073,6 +1083,7 @@ flowchart TD
   pkg_api_settings_controller --> pkg_session
   pkg_api_settings_controller --> pkg_settings
   pkg_api_settings_controller --> pkg_typert_protocol
+  pkg_api_settings_controller --> pkg_util_values
   pkg_web_app --> pkg_shell_env
   pkg_experimental_auto_review --> pkg_agent
   pkg_experimental_auto_review --> pkg_agent_instructions
@@ -1426,6 +1437,111 @@ flowchart TD
   pkg_tool_schedule --> pkg_schedule
   pkg_tool_schedule --> pkg_subagent
   pkg_tool_schedule --> pkg_tools
+  pkg_pe_account_instructions --> pkg_agent
+  pkg_pe_account_instructions --> pkg_fs
+  pkg_pe_account_instructions --> pkg_llm
+  pkg_pe_account_instructions --> pkg_pe_cloud_files
+  pkg_pe_account_instructions --> pkg_pe_cloud_runtime
+  pkg_pe_account_instructions --> pkg_session
+  pkg_pe_account_instructions --> pkg_workspace
+  pkg_pe_cloud_api --> pkg_agent_loop
+  pkg_pe_cloud_api --> pkg_api_gateway
+  pkg_pe_cloud_api --> pkg_api_remote_access
+  pkg_pe_cloud_api --> pkg_api_remotes
+  pkg_pe_cloud_api --> pkg_api_session_controller
+  pkg_pe_cloud_api --> pkg_api_settings_controller
+  pkg_pe_cloud_api --> pkg_api_workspace_controller
+  pkg_pe_cloud_api --> pkg_api_workspace_files
+  pkg_pe_cloud_api --> pkg_app_boot
+  pkg_pe_cloud_api --> pkg_client_connection
+  pkg_pe_cloud_api --> pkg_client_file_upload
+  pkg_pe_cloud_api --> pkg_client_locale
+  pkg_pe_cloud_api --> pkg_command_feedback
+  pkg_pe_cloud_api --> pkg_commands
+  pkg_pe_cloud_api --> pkg_config_editor
+  pkg_pe_cloud_api --> pkg_credentials
+  pkg_pe_cloud_api --> pkg_credentials_local
+  pkg_pe_cloud_api --> pkg_deque
+  pkg_pe_cloud_api --> pkg_fs
+  pkg_pe_cloud_api --> pkg_goal
+  pkg_pe_cloud_api --> pkg_launch_environment
+  pkg_pe_cloud_api --> pkg_llm
+  pkg_pe_cloud_api --> pkg_message_feedback
+  pkg_pe_cloud_api --> pkg_pe_cloud_files
+  pkg_pe_cloud_api --> pkg_pe_cloud_runtime
+  pkg_pe_cloud_api --> pkg_permission_presets
+  pkg_pe_cloud_api --> pkg_plugin_manager
+  pkg_pe_cloud_api --> pkg_session
+  pkg_pe_cloud_api --> pkg_session_log_export
+  pkg_pe_cloud_api --> pkg_settings
+  pkg_pe_cloud_api --> pkg_skill
+  pkg_pe_cloud_api --> pkg_skill_filesystem
+  pkg_pe_cloud_api --> pkg_subagent
+  pkg_pe_cloud_api --> pkg_typert_protocol
+  pkg_pe_cloud_api --> pkg_user_questions
+  pkg_pe_cloud_api --> pkg_util_values
+  pkg_pe_cloud_api --> pkg_workspace
+  pkg_pe_cloud_files --> pkg_attachment
+  pkg_pe_cloud_files --> pkg_attachment_local
+  pkg_pe_cloud_files --> pkg_brand
+  pkg_pe_cloud_files --> pkg_fs
+  pkg_pe_cloud_files --> pkg_pe_cloud_runtime
+  pkg_pe_cloud_files --> pkg_workspace
+  pkg_pe_cloud_runtime --> pkg_agent
+  pkg_pe_cloud_runtime --> pkg_agent_loop
+  pkg_pe_cloud_runtime --> pkg_agent_preset
+  pkg_pe_cloud_runtime --> pkg_agent_preset_registry
+  pkg_pe_cloud_runtime --> pkg_api_remotes
+  pkg_pe_cloud_runtime --> pkg_api_session_controller
+  pkg_pe_cloud_runtime --> pkg_api_workspace_files
+  pkg_pe_cloud_runtime --> pkg_app_boot
+  pkg_pe_cloud_runtime --> pkg_attachment_local
+  pkg_pe_cloud_runtime --> pkg_brand
+  pkg_pe_cloud_runtime --> pkg_client_file_upload
+  pkg_pe_cloud_runtime --> pkg_cmdline
+  pkg_pe_cloud_runtime --> pkg_command_feedback
+  pkg_pe_cloud_runtime --> pkg_credentials
+  pkg_pe_cloud_runtime --> pkg_fs
+  pkg_pe_cloud_runtime --> pkg_goal
+  pkg_pe_cloud_runtime --> pkg_launch_environment
+  pkg_pe_cloud_runtime --> pkg_llm
+  pkg_pe_cloud_runtime --> pkg_message_feedback
+  pkg_pe_cloud_runtime --> pkg_pe_account_instructions
+  pkg_pe_cloud_runtime --> pkg_pe_cloud_api
+  pkg_pe_cloud_runtime --> pkg_pe_cloud_files
+  pkg_pe_cloud_runtime --> pkg_pe_opensandbox
+  pkg_pe_cloud_runtime --> pkg_permission_presets
+  pkg_pe_cloud_runtime --> pkg_sandbox_policy
+  pkg_pe_cloud_runtime --> pkg_scope
+  pkg_pe_cloud_runtime --> pkg_session_log_export
+  pkg_pe_cloud_runtime --> pkg_session_persistence
+  pkg_pe_cloud_runtime --> pkg_session_query
+  pkg_pe_cloud_runtime --> pkg_subagent
+  pkg_pe_cloud_runtime --> pkg_subagent_spawn_in_process
+  pkg_pe_cloud_runtime --> pkg_typert_protocol
+  pkg_pe_cloud_runtime --> pkg_user_questions
+  pkg_pe_opensandbox --> pkg_agent
+  pkg_pe_opensandbox --> pkg_brand
+  pkg_pe_opensandbox --> pkg_pe_cloud_files
+  pkg_pe_opensandbox --> pkg_pe_cloud_runtime
+  pkg_pe_opensandbox --> pkg_session
+  pkg_pe_opensandbox --> pkg_shell
+  pkg_pe_opensandbox --> pkg_shell_env
+  pkg_pe_opensandbox --> pkg_subprocess
+  pkg_pe_opensandbox --> pkg_timeout
+  pkg_pe_opensandbox --> pkg_tools
+  pkg_pe_opensandbox --> pkg_workspace
+  pkg_pe_cloud_access --> pkg_api_gateway
+  pkg_pe_cloud_access --> pkg_app_boot
+  pkg_pe_cloud_access --> pkg_client_connection
+  pkg_pe_cloud_access --> pkg_client_file_upload
+  pkg_pe_cloud_access --> pkg_credentials
+  pkg_pe_cloud_access --> pkg_pe_cloud_api
+  pkg_pe_cloud_access --> pkg_pe_cloud_files
+  pkg_pe_cloud_access --> pkg_pe_cloud_runtime
+  pkg_pe_cloud_access --> pkg_pe_opensandbox
+  pkg_pe_cloud_access --> pkg_session_log_export
+  pkg_pe_cloud_access --> pkg_typert_protocol
 ```
 
 <!-- BEGIN GENERATED module-graph:packages -->
@@ -1526,6 +1642,7 @@ flowchart TD
 | [`client-ui-workflow-run`](../packages/client/ui-workflow-run) | `client` | — |
 | [`client-ui-workspace`](../packages/client/ui-workspace) | `client` | — |
 | [`client-web`](../packages/client/web) | `client` | — |
+| [`pe-cloud-client`](../packages/cloud/pe-cloud-client) | `cloud` | — |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | — |
 | [`office-to-pdf`](../packages/document/office-to-pdf) | `document` | — |
 | [`experimental-agent-team-profile`](../packages/experimental/agent-team-profile) | `experimental` | — |
@@ -1704,7 +1821,7 @@ flowchart TD
 | [`tool-terminal`](../packages/experimental/tool-terminal) | `experimental` | [`agent`](../packages/core/agent), [`jobs`](../packages/jobs/jobs), [`llm`](../packages/llm/llm), [`output-retention`](../packages/util/output-retention), [`system-prompt`](../packages/core/system-prompt), [`terminal`](../packages/terminal/terminal), [`tools`](../packages/core/tools), [`working-directory`](../packages/session/working-directory) |
 | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | `extensions` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`command-feedback`](../packages/feedback/command-feedback), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`typert-protocol`](../packages/typert/protocol) |
-| [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder) | `guard` | [`agent`](../packages/core/agent), [`tools`](../packages/core/tools) |
+| [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder) | `guard` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |
 | [`tool-call-timeout-policy`](../packages/guard/timeout-policy) | `guard` | [`llm`](../packages/llm/llm), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`tool-ask-user`](../packages/interaction/tool-ask-user) | `interaction` | [`agent`](../packages/core/agent), [`tools`](../packages/core/tools), [`user-questions`](../packages/interaction/user-questions) |
 | [`tool-jobs`](../packages/jobs/tool-jobs) | `jobs` | [`agent`](../packages/core/agent), [`jobs`](../packages/jobs/jobs), [`llm`](../packages/llm/llm), [`output-retention`](../packages/util/output-retention), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
@@ -1723,7 +1840,7 @@ flowchart TD
 | [`plugin-package-inventory-deepseek`](../packages/llm/plugin-package-inventory-deepseek) | `llm` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions), [`session`](../packages/core/session) |
 | [`token-meter`](../packages/llm/token-meter) | `llm` | [`compaction`](../packages/compaction/compaction), [`compaction-image-offload`](../packages/compaction/compaction-image-offload), [`llm`](../packages/llm/llm), [`llm-retry`](../packages/llm/llm-retry), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
 | [`session-query`](../packages/session-query/session-query) | `session-query` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-title`](../packages/session/session-title), [`tool-todo`](../packages/todo/tool-todo) |
-| [`api-settings-controller`](../packages/api/settings-controller) | `api` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`credentials`](../packages/credentials/credentials), [`native-command`](../packages/util/native-command), [`session`](../packages/core/session), [`settings`](../packages/settings/settings), [`typert-protocol`](../packages/typert/protocol) |
+| [`api-settings-controller`](../packages/api/settings-controller) | `api` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`credentials`](../packages/credentials/credentials), [`native-command`](../packages/util/native-command), [`session`](../packages/core/session), [`settings`](../packages/settings/settings), [`typert-protocol`](../packages/typert/protocol), [`util-values`](../packages/util/values) |
 | [`web-app`](../packages/bundle/web-app) | `bundle` | [`shell-env`](../packages/shell/shell-env) |
 | [`experimental-auto-review`](../packages/experimental/auto-review) | `experimental` | [`agent`](../packages/core/agent), [`agent-instructions`](../packages/context/agent-instructions), [`llm`](../packages/llm/llm), [`permission-presets`](../packages/interaction/permission-presets), [`session`](../packages/core/session), [`tools`](../packages/core/tools), [`working-directory`](../packages/session/working-directory) |
 | [`webhook`](../packages/experimental/webhook) | `experimental` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`llm`](../packages/llm/llm), [`permission-presets`](../packages/interaction/permission-presets), [`session`](../packages/core/session), [`session-title`](../packages/session/session-title), [`workspace`](../packages/workspace/workspace) |
@@ -1773,4 +1890,10 @@ flowchart TD
 | [`client-test-runtime`](../packages/test-support/client-runtime) | `test-support` | [`api-gateway`](../packages/api/gateway), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-hmr`](../packages/client/hmr), [`client-modules`](../packages/client/modules), [`client-store`](../packages/client/store), [`client-ui-chat`](../packages/client/ui-chat), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`client-web`](../packages/client/web), [`remote-mock`](../packages/test-support/remote-mock), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
 | [`tool-schedule`](../packages/schedule/tool-schedule) | `schedule` | [`llm`](../packages/llm/llm), [`schedule`](../packages/schedule/schedule), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools) |
+| [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | `cloud` | [`agent`](../packages/core/agent), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`session`](../packages/core/session), [`workspace`](../packages/workspace/workspace) |
+| [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | `cloud` | [`agent-loop`](../packages/core/agent-loop), [`api-gateway`](../packages/api/gateway), [`api-remote-access`](../packages/api/remote-access), [`api-remotes`](../packages/api/remotes), [`api-session-controller`](../packages/api/session-controller), [`api-settings-controller`](../packages/api/settings-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`api-workspace-files`](../packages/api/workspace-files), [`app-boot`](../packages/boot/app-boot), [`client-connection`](../packages/client/connection), [`client-file-upload`](../packages/client/file-upload), [`client-locale`](../packages/client/locale), [`command-feedback`](../packages/feedback/command-feedback), [`commands`](../packages/interaction/commands), [`config-editor`](../packages/boot/config-editor), [`credentials`](../packages/credentials/credentials), [`credentials-local`](../packages/credentials/credentials-local), [`deque`](../packages/util/deque), [`fs`](../packages/fs/fs), [`goal`](../packages/goal/goal), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`message-feedback`](../packages/feedback/message-feedback), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`permission-presets`](../packages/interaction/permission-presets), [`plugin-manager`](../packages/boot/plugin-manager), [`session`](../packages/core/session), [`session-log-export`](../packages/session-query/session-log-export), [`settings`](../packages/settings/settings), [`skill`](../packages/skill/skill), [`skill-filesystem`](../packages/skill/skill-filesystem), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol), [`user-questions`](../packages/interaction/user-questions), [`util-values`](../packages/util/values), [`workspace`](../packages/workspace/workspace) |
+| [`pe-cloud-files`](../packages/cloud/pe-cloud-files) | `cloud` | [`attachment`](../packages/attachment/attachment), [`attachment-local`](../packages/attachment/attachment-local), [`brand`](../packages/util/brand), [`fs`](../packages/fs/fs), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`workspace`](../packages/workspace/workspace) |
+| [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | `cloud` | [`agent`](../packages/core/agent), [`agent-loop`](../packages/core/agent-loop), [`agent-preset`](../packages/preset/agent-preset), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`api-remotes`](../packages/api/remotes), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-files`](../packages/api/workspace-files), [`app-boot`](../packages/boot/app-boot), [`attachment-local`](../packages/attachment/attachment-local), [`brand`](../packages/util/brand), [`client-file-upload`](../packages/client/file-upload), [`cmdline`](../packages/boot/cmdline), [`command-feedback`](../packages/feedback/command-feedback), [`credentials`](../packages/credentials/credentials), [`fs`](../packages/fs/fs), [`goal`](../packages/goal/goal), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`message-feedback`](../packages/feedback/message-feedback), [`pe-account-instructions`](../packages/cloud/pe-account-instructions), [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`permission-presets`](../packages/interaction/permission-presets), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`scope`](../packages/core/scope), [`session-log-export`](../packages/session-query/session-log-export), [`session-persistence`](../packages/session/session-persistence), [`session-query`](../packages/session-query/session-query), [`subagent`](../packages/subagent/subagent), [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`typert-protocol`](../packages/typert/protocol), [`user-questions`](../packages/interaction/user-questions) |
+| [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | `cloud` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`session`](../packages/core/session), [`shell`](../packages/shell/shell), [`shell-env`](../packages/shell/shell-env), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools), [`workspace`](../packages/workspace/workspace) |
+| [`pe-cloud-access`](../packages/cloud/pe-cloud-access) | `cloud` | [`api-gateway`](../packages/api/gateway), [`app-boot`](../packages/boot/app-boot), [`client-connection`](../packages/client/connection), [`client-file-upload`](../packages/client/file-upload), [`credentials`](../packages/credentials/credentials), [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`session-log-export`](../packages/session-query/session-log-export), [`typert-protocol`](../packages/typert/protocol) |
 <!-- END GENERATED module-graph:packages -->

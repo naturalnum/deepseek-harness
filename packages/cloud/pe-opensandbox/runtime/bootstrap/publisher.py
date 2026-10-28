@@ -14,11 +14,11 @@ CLAIM = b's4-bootstrap/1\n'
 BWRAP = ('0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d', 814328)
 SOURCES = {
     'server.py': ('1d368b899c9a587c4346e110824fd7906c811190294b609b117bdbd19f89e1fd', 13930),
-    'wire.py': ('d63d99dd66428bb33a0a6a249f5e42fbf1a13e5366ccd74a08ff912be3b7c66e', 8701),
-    'manager.py': ('3fb2504f33f19c73c57dde8de9a5d1bc09352dc67268607103d99164c395de47', 10194),
-    'launcher.py': ('80538adf46352f93f232ec24b5a7cfb45140b56c19c44cf5be30833787f393db', 17164),
-    'guardian.py': ('aba4674b0e19de53a1aa9516e63b273fa5bd3b93ebbd4168549860f929d7a576', 4779),
-    'paths.py': ('b7d39bf8596ef9e937a08fa148336945ef245aa6bb863583544994ffd9c4cea1', 8832),
+    'wire.py': ('3fe52dc73a8da069ac45d6a5e9aa4e09ed2640b0d27a67df3a14678093d313bc', 9190),
+    'manager.py': ('f77fe50f041e84f6892b0a7314bbc796cb77a2c7f0e32edd8eab80b1cb2e9f64', 10286),
+    'launcher.py': ('b4e36866eeec36c15586ca21815321b8aff18ceaa01d0d5ccc07502a0f33a667', 17976),
+    'guardian.py': ('d154d7ec699fca6da6a4e46327421ee548e5b0098744142dcab2384f9b4c6f70', 5001),
+    'paths.py': ('ef950f6625a134c93b11feedb028cc69bb6b4698a9914270ec9340bb7ee7e0e7', 9728),
 }
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
 READ = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW

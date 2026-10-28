@@ -111,7 +111,9 @@ interface AccountWork {
 }
 
 class ManagedAccountPort extends IssuedExecutionPort {
-  constructor(binding: AccountBinding, private readonly owner: ManagedCoordinator) { super(binding, owner, 'session-collect') }
+  constructor(binding: AccountBinding, private readonly owner: ManagedCoordinator, override readonly enforcesSessionFilePolicy?: true) {
+    super(binding, owner, 'session-collect')
+  }
   assertCurrent(ctx: Context): void { this.owner.assertPort(this, ctx) }
   deny(ctx: Context, signal?: AbortSignal): never {
     this.assertCurrent(ctx); signal?.throwIfAborted()
@@ -231,7 +233,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
       stopId: brandString<OperationId>(randomUUID()), sessions: new Map(), observers: new Set(),
       capacity: { active: 0, resident: 0, bytes: 0, requests: 0 }, open: true, claimed: false,
       detach: () => { binding.lifetime.removeEventListener('abort', abort) } }
-    const port = Object.freeze(new ManagedAccountPort(binding, this))
+    const port = Object.freeze(new ManagedAccountPort(binding, this,
+      this.config.shell.enforceSessionFilePolicy === true ? true : undefined))
     this.bindings.set(binding, work); this.ports.set(port, work); this.accounts.set(binding.accountId, work)
     binding.lifetime.addEventListener('abort', abort, { once: true })
     return port
@@ -283,6 +286,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const work = this.owned(port)
     const configured = this.config.commands
     const commandConfig: NativeCommandAccountLimits = {
+      enforceSessionFilePolicy: this.config.shell.enforceSessionFilePolicy === true,
       allowedTools: configured.allowedTools, maxScopes: configured.maxScopes, commandLimits: configured.commandLimits,
       ...(this.deployment.skillCopies === undefined ? {}
         : { maxSkillCopiesPerOperation: this.deployment.skillCopies.maxCopiesPerOperation }),
@@ -388,7 +392,9 @@ export class ManagedCoordinator extends SandboxCoordinator {
   assertProviders(port: AccountExecutionPort, ctx: Context): void {
     this.assertPort(port, ctx)
     const providers = this.owned(port).providers
-    if (providers === undefined || providers.ctx.fiber.state !== FiberState.ACTIVE) this.stale()
+    if (providers === undefined || providers.ctx.fiber.state !== FiberState.ACTIVE
+      || providers.commands.enforcesSessionFilePolicy !== port.enforcesSessionFilePolicy
+      || (port.enforcesSessionFilePolicy === true) !== (this.config.shell.enforceSessionFilePolicy === true)) this.stale()
     const original = (value: unknown): unknown => {
       if (value === null || typeof value !== 'object' && typeof value !== 'function') return value
       const target: unknown = Reflect.get(value, symbols.original)
@@ -400,6 +406,19 @@ export class ManagedCoordinator extends SandboxCoordinator {
       if (original(ctx.get(key)) !== expected || original(ctx.root.get(key)) !== expected
         || entry?.fiber !== providers.ctx.fiber || original(entry.value) !== expected) this.stale()
     }
+  }
+
+  /**
+   * Recheck the original provider pair and retained Session work before a synchronous policy change.
+   * @param port Exact Root-issued account execution capability.
+   * @param ctx Original account caller.
+   * @param session Original native Session whose permission events will change.
+   */
+  assertSessionFilePolicyChange(port: AccountExecutionPort, ctx: Context, session: Session): void {
+    this.assertProviders(port, ctx)
+    const providers = this.owned(port).providers
+    if (port.enforcesSessionFilePolicy !== true || providers === undefined) this.stale()
+    providers.commands.assertSessionFilePolicyChange(session)
   }
 
   /**

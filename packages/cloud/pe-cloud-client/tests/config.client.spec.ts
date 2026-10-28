@@ -105,3 +105,23 @@ it('requires explicit sample-editor file/deadline bounds without enabling legacy
     expect(() => parseCloudClientConfig({ ...valid, skillSettings: invalid })).toThrow()
   }
 })
+
+it('accepts only explicit finite native Session control groups and detaches the selected roster', () => {
+  const groups = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'] as const
+  const selected = [...groups], parsed = parseCloudClientConfig({ ...valid, nativeSessionControls: selected })
+  expect(parsed.nativeSessionControls).toEqual(groups)
+  expect(parsed.nativeSessionControls).not.toBe(selected)
+  expect(Object.isFrozen(parsed.nativeSessionControls)).toBe(true)
+  selected.length = 0
+  expect(parsed.nativeSessionControls).toEqual(groups)
+  expect(Object.hasOwn(parseCloudClientConfig(valid), 'nativeSessionControls')).toBe(false)
+  expect(parseCloudClientConfig({ ...valid, nativeSessionControls: [] }).nativeSessionControls).toEqual([])
+})
+
+it.each([undefined, null, true, 'commands', ['models'], ['permissions'], ['plan'], ['feedback'], ['export'],
+  ['commands', 'commands'], ['commands', 'hostAdmin'], ['commands', { name: 'models' }]])(
+  'rejects a malformed or incomplete native Session control roster: %j', (nativeSessionControls) => {
+    expect(() => parseCloudClientConfig({ ...valid, nativeSessionControls })).toThrow()
+    expect(() => parseCloudWebManifest({ ...web, client: { ...valid, nativeSessionControls } })).toThrow()
+  },
+)

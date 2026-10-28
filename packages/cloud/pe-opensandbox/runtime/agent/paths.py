@@ -135,8 +135,11 @@ def open_skill_world(project, expected_root, value, owned_fds):
     return {'metadataFd': metadata, 'copies': copies, 'grant': grant, 'wire': fixed}
 
 
-def skill_world_argv(base, project, opened):
+def skill_world_argv(base, project, opened, mode='workspace-write'):
     """Bind pinned copies under a readonly private scaffold, leaving all other .pe readonly."""
+    if mode not in ['read-only', 'workspace-write']:
+        raise ValueError('unsupported file policy')
+    bind_fd = '--ro-bind-fd' if mode == 'read-only' else '--bind-fd'
     suffix = ['--ro-bind', project + '/.pe', project + '/.pe', '--chdir', project]
     if type(base) is not list or base[-5:] != suffix:
         raise ValueError('original fixed world suffix required')
@@ -145,12 +148,25 @@ def skill_world_argv(base, project, opened):
                         '--size', str(4096 * (len(opened['copies']) + 1)), '--tmpfs', parent]
     for copy in opened['copies']:
         path = parent + '/' + copy['version']
-        args += ['--perms', '0700', '--dir', path, '--bind-fd', str(copy['fd']), path]
+        args += ['--perms', '0700', '--dir', path, bind_fd, str(copy['fd']), path]
     return args + ['--remount-ro', parent, '--chdir', project]
 
 
-def verify_skill_world(project, expected_root, value):
+def verify_file_policy(project, mode):
+    """Before PREPARED, verify actual mount flags on every account-writable root."""
+    project_path(project)
+    if mode not in ['read-only', 'workspace-write']:
+        raise ValueError('unsupported file policy')
+    readonly = mode == 'read-only'
+    for path in [project, ENV_ROOT + '/home', ENV_ROOT + '/venv', ENV_ROOT + '/tmp', '/tmp']:
+        if bool(os.statvfs(path).f_flag & os.ST_RDONLY) != readonly:
+            raise ValueError('workload file policy mount mismatch')
+
+
+def verify_skill_world(project, expected_root, value, mode='workspace-write'):
     from wire import skill_world
+    if mode not in ['read-only', 'workspace-write']:
+        raise ValueError('unsupported file policy')
     fixed = skill_world(value)
     grant = {'metadata': [int(fixed['metadata'][k]) for k in ['device','inode']],
              'copies': [{'version': c['version'], 'identity': [int(c['identity'][k]) for k in ['device','inode']]} for c in fixed['copies']]}
@@ -172,5 +188,6 @@ def verify_skill_world(project, expected_root, value):
         value = os.lstat(path)
         if (not stat.S_ISDIR(value.st_mode) or [value.st_dev, value.st_ino] != item['identity']
                 or value.st_dev != root.st_dev or value.st_uid != 0 or value.st_gid != 0
-                or stat.S_IMODE(value.st_mode) != 0o700 or os.statvfs(path).f_flag & os.ST_RDONLY):
-            raise ValueError('writable original skill copy required')
+                or stat.S_IMODE(value.st_mode) != 0o700
+                or bool(os.statvfs(path).f_flag & os.ST_RDONLY) != (mode == 'read-only')):
+            raise ValueError('original skill copy file policy mismatch')

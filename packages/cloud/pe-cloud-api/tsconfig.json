@@ -118,6 +118,27 @@
     },
     {
       "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../goal/goal"
+    },
+    {
+      "path": "../../session-query/session-log-export/tsconfig.host.json"
+    },
+    {
+      "path": "../../feedback/command-feedback"
+    },
+    {
+      "path": "../../feedback/message-feedback"
+    },
+    {
+      "path": "../../interaction/permission-presets"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.host.json"
     }
   ]
 }

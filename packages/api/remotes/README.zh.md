@@ -50,6 +50,8 @@ Host entry 为每条 Client 流独立注册一组 allowlist listener 和一个�
 
 不带载荷的 `skills/change` 事件使原生技能目录查询失效，不携带路径或目录内容；唯一事件声明位于技能拥有包的客户端安全类型模块。无 payload 的 `schedule/changed` 事件使 Schedule 任务查询失效；Client 在收到通知及重连后重新读取。无 payload 的 `permission-presets/catalog-changed` 事件使进程目录失效。Client 在首次读取 `permissionPresets.catalog()` 前先订阅，并在通知后重新读取完整快照；该事件不携带目录状态，也不改变 Session 序号。
 
+自行提供有界 source 的应用可通过 `createRemoteWaterfallListener(event, sink)` 复用允许列表中的 waterfall 键。原监听器检查作用域 Agent，并保留结果、拒绝和 `next()` 委托语义。应用的 sink 负责准入、保留上限和撤销：接收 invocation 后保留其原始 continuation，直至结算；返回 `false` 则委托后续 Host 处理链。接收后拒绝的 invocation 必须通过其回调拒绝；source 结束时，排队或已投递的未决 invocation 均须结算。默认 source 使用同一监听器工厂。
+
 <a id="build-boundary"></a>
 ## 构建边界
 

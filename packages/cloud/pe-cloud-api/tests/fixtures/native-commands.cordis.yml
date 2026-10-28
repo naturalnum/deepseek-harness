@@ -1,0 +1,6 @@
+- id: commands
+  name: cordis:account-commands
+- id: goals
+  name: cordis:native-goals
+- id: command-goal
+  name: cordis:native-command-goal

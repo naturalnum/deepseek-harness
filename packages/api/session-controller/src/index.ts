@@ -3,7 +3,7 @@
 import { hostname } from 'node:os'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-fs'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -165,7 +165,8 @@ export class SessionController extends TypertRemoteService {
     const resolved = SessionController.Config(config)
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx, this.ensureProjectDirectory.bind(this))
-    this.commands = new SessionCommandController(ctx, this.agents, process.cwd(), this.preparePromptFiles.bind(this))
+    this.commands = new SessionCommandController(ctx, this.agents, process.cwd(), this.preparePromptFiles.bind(this),
+      this.assertModelSelection.bind(this))
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -303,6 +304,15 @@ export class SessionController extends TypertRemoteService {
   protected preparePromptFiles(
     _agent: Agent, _receiptIds: readonly FileUploadReceiptId[], _signal?: AbortSignal,
   ): Promise<void> { return Promise.resolve() }
+
+  /**
+   * Recheck trusted Host admission at the native model-selection commit point.
+   * Runs synchronously after adapter resolution and immediately before Session intent or default saving.
+   * The default performs no work; rejection leaves both selection and default unchanged.
+   * @param agent Exact live Agent selected by the native command.
+   * @param selection Adapter-normalized provider, model, and optional reasoning effort.
+   */
+  protected assertModelSelection(_agent: Agent, _selection: AgentModelSelection): void {}
 
   /**
    * Read all visible Session rows without resuming an Agent.

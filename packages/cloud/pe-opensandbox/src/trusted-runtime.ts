@@ -3,6 +3,7 @@ import { guardianEncodedBudget } from './agent-data/encoded-budget.ts'
 import type { SkillOperationCopies } from './skill-files-types.ts'
 import { copyFacts } from './skill-wire.ts'
 import { randomUUID } from 'node:crypto'
+import { filePolicy as normalizeFilePolicy } from './agent-data/file-policy.ts'
 import type { PreparedSandbox } from './allocation-owner.ts'
 import type { AgentHandshake, AgentSelection, FencedAgentRequests, TrustedAgentLifecycle } from './lifecycle-types.ts'
 import type { CommandChannel, CommandSnapshot } from './command-operation.ts'
@@ -277,12 +278,13 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     }
     return Object.freeze<CommandChannel>({
       ...copies === undefined ? {} : { release: () => { copies.release() } },
-      prepare: spec => run(() => {
+      prepare: (spec, policy) => run(() => {
         if (request !== undefined || record.fenced) unavailable()
         copies?.assertCurrent()
         const fixed = copies === undefined ? undefined : copyFacts(copies.value, copies.maxCopies)
-        guardianEncodedBudget(record.selection.mount.grant.project.rootPath, spec, fixed)
-        request = issue(makePrepared(prepared.runtimeIdentity, operationId, spec, fixed))
+        const selectedPolicy = policy === undefined ? undefined : normalizeFilePolicy(policy)
+        guardianEncodedBudget(record.selection.mount.grant.project.rootPath, spec, fixed, selectedPolicy)
+        request = issue(makePrepared(prepared.runtimeIdentity, operationId, spec, fixed, selectedPolicy))
         return client.prepare(request)
       }),
       commit: () => run(() => { copies?.assertCurrent(); return client.commit(selected().ref) }),

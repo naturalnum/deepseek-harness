@@ -61,6 +61,10 @@ ctx.commands.register({
 
 交互式适配器调用 `execute(agent, line, attachments, signal)`，传入确切的接收 agent、完整命令行与本次提交的有序附件。它返回已结算的 `CommandExecution`——规范化结果加生命周期配对 `commandId`——语法无效或名称未知时返回 `undefined`。`list(agent)` 与 `find(agent, name)` 在应用 agent 作用域遮蔽后用于命令发现。
 
+### 部署准入
+
+部署子类可以覆盖同步的受保护检查 `assertCommandInvocation(agent)`。执行器在附件准入结束后、进入已注册处理器之前调用它；缺省实现允许本次调用。抛出异常会阻止处理器产生副作用，并以 `command/done` 错误结算已有的 `command/run`。准入期间已经存储的附件仍按常规未引用对象策略回收。该检查不会中断已经开始运行的处理器。
+
 ### 取消
 
 调用方的中止信号会让注册表停止等待处理器；无视信号的处理器可能在调用方停止等待后继续产生自身的外部副作用。被取消或抛异常的处理器在日志中以 `command/done` 错误结算。

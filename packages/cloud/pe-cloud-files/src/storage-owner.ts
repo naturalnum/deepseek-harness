@@ -419,8 +419,8 @@ export class StaticAccountStorageLease {
     const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
       assertContentAvailable: () => { port.assertContentAvailable() },
       attachments: port,
-      createFileSystem: (workspace, assertInstalled, mapProcessPath) =>
-        port.createTextFileSystem(workspace, assertInstalled, resolveProject, mapProcessPath),
+      createFileSystem: (workspace, assertInstalled, mapProcessPath, enforceSessionFilePolicy) =>
+        port.createTextFileSystem(workspace, assertInstalled, resolveProject, mapProcessPath, enforceSessionFilePolicy),
       projectFor: (workspace, assertRegistered, signal) => port.projectFor(workspace, assertRegistered, signal),
       ...bank === undefined ? {} : { prepareExecutionMounts: (workspace, sessionId, environmentVersion, assertRegistered, signal) => {
         this.owner.assertExecutionStorageAvailable()

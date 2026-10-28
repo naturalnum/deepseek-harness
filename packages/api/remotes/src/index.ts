@@ -57,29 +57,35 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
           queue.push({ event, args: assertJsonArgs(event, args), ...resources === undefined ? {} : { resources } })
         }) as never)
       }
-      return ctx.on(event as never, (function (
-        this: unknown,
-        request: object,
-        next: () => unknown,
-      ) {
-        const carrierAgent = carrierKeyOf(this)
-        if (carrierAgent === undefined) return next()
-        const agent = (request as { readonly agent?: Agent }).agent
-        if (agent === undefined || agent !== carrierAgent) {
-          throw new TypeError(`forwarded scoped event ${JSON.stringify(event)} must carry its Agent directly`)
-        }
-        return forwardWaterfall(
-          queue,
-          event,
-          request,
-          { value: agent.ctx, subject: agent, agentId: agent.id },
-          next,
-        )
-      }) as never)
+      return ctx.on(event as never, createRemoteWaterfallListener(event, queue) as never)
     })
     return queue.iterate(signal, () => {
       for (const dispose of disposers) dispose()
     })
+  }
+}
+
+/**
+ * Create the native scoped-waterfall listener for an application-owned source.
+ * The sink owns queue bounds and withdrawal; accepting an invocation retains
+ * its continuation until the sink or Gateway calls its original resolve/reject.
+ * A false result delegates to the remaining Host waterfall without queueing.
+ * @param event - waterfall key from this application's original forwarded-event allowlist.
+ * @param sink - source queue accepting the live invocation and its settlement callbacks.
+ * @returns a Cordis listener preserving the original Agent carrier and continuation semantics.
+ */
+export function createRemoteWaterfallListener(
+  event: Extract<typeof API_REMOTE_FORWARDED_EVENTS[number], { readonly mode: 'waterfall' }>['event'],
+  sink: { readonly push: (invocation: TypertRemoteEventInvocation) => boolean },
+): (this: unknown, request: object, next: () => unknown) => unknown {
+  return function (this: unknown, request: object, next: () => unknown): unknown {
+    const carrierAgent = carrierKeyOf(this)
+    if (carrierAgent === undefined) return next()
+    const agent = (request as { readonly agent?: Agent }).agent
+    if (agent === undefined || agent !== carrierAgent) {
+      throw new TypeError(`forwarded scoped event ${JSON.stringify(event)} must carry its Agent directly`)
+    }
+    return forwardWaterfall(sink, event, request, { value: agent.ctx, subject: agent, agentId: agent.id }, next)
   }
 }
 
@@ -136,7 +142,7 @@ function remoteEventSourceEndReason(signal: AbortSignal): unknown {
 
 /** Bridge one Cordis waterfall listener through the Gateway-owned pending event. */
 function forwardWaterfall(
-  queue: RemoteEventQueue,
+  queue: { readonly push: (invocation: TypertRemoteEventInvocation) => boolean },
   event: string,
   request: object,
   context: TypertRemoteEventInvocation['context'],

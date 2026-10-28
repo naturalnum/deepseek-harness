@@ -63,7 +63,10 @@
     "@deepseek-ai/dsh-storage-json": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@types/yauzl": "2.10.3"
+    "@types/yauzl": "2.10.3",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
   },
   "repository": {
     "type": "git",

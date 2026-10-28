@@ -47,6 +47,8 @@ Host 子类可以覆盖受保护的 `ensureProjectDirectory(cwd): Promise<void>`
 
 Host 子类可以覆盖 `preparePromptFiles(agent, receiptIds, signal?)`，在全部同 Agent 凭证解析完成后、内容准入及 prompt 绑定前等待文件准备。去重后的凭证保留内容顺序。拒绝会阻止投递，凭证所有权保持不变；已接受请求的重试跳过准备。默认实现不执行操作，纯文本 prompt 不调用此钩子。覆盖实现负责取消和实际准备结算，钩子不退休凭证。
 
+Host 子类可以覆盖同步的 `assertModelSelection(agent, selection)`，在原生模型可用性检查及推理强度解析后，重新核对账号和 Agent 准入。控制器在构造期间捕获回调，并在追加会话模型选择或提交后台默认模型保存之前立即调用。拒绝会保留两者原状；默认实现不执行操作。模型规范化、持久化选择意图、请求选择与串行默认值保存仍由原生实现负责。
+
 Client 列表刷新保留未变化的行对象，并在顺序和值均相同时复用条目数组。每行的 `retainedBy` 包含正数的本地引用来源计数，Host 元数据刷新不能覆盖它们。缓存成员检查使用每次刷新构建的 ID 集合，因此对账成本随当前列表和保留缓存的规模线性增长。 Host 摘要更新会替换运行状态与 Agent 可用性；本地 create/fork 响应只补充已有行缺失的元数据。普通 Session 被移除后，仅在目录仍有子项时保留其投影 store。
 
 后台 job 的名册行与观测流属于 [`dsh-api-job-controller`](../job-controller/README.zh.md)；控制流只承载投影。

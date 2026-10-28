@@ -4,7 +4,7 @@ export const PROTOCOL = 's5-collect/10-skill-working-copies-v1' as const
 /** Fixed private authentication header; its value is the original 64-hex token without a scheme prefix. */
 export const AGENT_AUTH_HEADER = 'x-pe-execution-token' as const
 /** Required frozen Python runtime source digest; never learned from a handshake response. */
-export const AGENT_SOURCE_SHA256 = 'f808ab275dfb15768dd622ae69882dc9412e1c4d67121e79301692a260049a02'
+export const AGENT_SOURCE_SHA256 = 'bcd587b7b73e02e9b888409e6d812de0192e029e7094536c11cef376944f1fe2'
 /** Required fixed bwrap binary digest verified by the Python owner. */
 export const BWRAP_SHA256 = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 /** Finite core slice: residence is absolute; four records/300s do not qualify full S4 or promise four complete runs. */

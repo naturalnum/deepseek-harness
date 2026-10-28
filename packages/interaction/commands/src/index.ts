@@ -307,6 +307,12 @@ export class CommandRuntime extends TypertRemoteService {
   }
 
   /**
+   * Recheck deployment admission after attachment waits and before invoking a command handler.
+   * @param _agent Original receiving Agent.
+   */
+  protected assertCommandInvocation(_agent: Agent): void {}
+
+  /**
    * List the effective immutable command descriptors for one agent.
    * @param agent - exact receiving agent and scoped-layer key.
    * @returns name-sorted descriptors after scoped shadowing.
@@ -421,6 +427,7 @@ export class CommandRuntime extends TypertRemoteService {
     const invocation = Object.freeze({ commandId, agent, rawInput: parsed.rawInput, attachments, signal })
     let result: CommandResult
     try {
+      this.assertCommandInvocation(agent)
       const output = command.definition.handler(invocation)
       result = normalizeResult(parsed.name, await withAbort(Promise.resolve(output), signal))
     } catch (error: unknown) {

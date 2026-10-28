@@ -78,6 +78,8 @@ Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.
 
 ### Bootstrap 元数据
 
+选中的原生会话控件要求处理器身份及资源守卫精确匹配已审核声明：模型目录／选择、命令、目标、权限目录、反馈和用户问题操作分别接受审计。producer 拒绝通过命名空间前缀扩大范围，并在发出 bootstrap 前重新检查每个账户 API 的实际注册。计划互动使用原生问题回答 RPC、定时等待流及 Gateway 事件结果 RPC；准入不会凭空提供回答方。原生会话导出仅接受处理器为 `native:sessionLogDownload`、守卫为 `account-session` 的 `GET` 和 `HEAD /api/session.export`，并可与现有精确上传和服务预览路由并存。
+
 `decodeCloudBootstrap(input, limits)` 严格校验 C-11 的账户、版本、代际和能力描述，返回独立副本及深只读数据。显式传入 `maxBodyBytes`、`maxStringBytes` 和合计 `maxListItems`，不补默认值。正文预算计入完整紧凑结果的字段名、分隔符和转义后 UTF-8 字符串。调用方仍须在 `JSON.parse` 前限制原始 HTTP 字节；三项上限均可由其 `maxBootstrapResponseBytes` 派生。
 
 未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。私有 producer 等待原 `CloudAccountApi.assertBootstrapCurrent`、files/project 成员关系、已安装执行 provider 及有界 Loader/包检查。发送有界 JSON（`no-store`）前再次检查原登录、Root、Use、代际和安装。目录元数据导入在每个 await 前后保留登录、图和 provider 身份复核。完整端点检查在目录核验前后执行，最终响应复核包含原生 guard。批准项本身不代表已安装；事实缺失时拒绝整个 bootstrap。

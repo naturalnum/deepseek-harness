@@ -1,5 +1,6 @@
 /** Per-client request ownership and finite data facts; global operation/allocation authority stays with Root. */
 import { skillWorld, assertSkillParent } from './skill-world.ts'
+import { filePolicy } from './file-policy.ts'
 import { performance } from 'node:perf_hooks'
 import { asciiJSON, preparedDigest, need, record, spec } from './canonical.ts'
 import { parseReply } from './strict-json.ts'
@@ -60,13 +61,16 @@ export class DataClient implements AgentDataClient {
   }
   handshake(options?: CallOptions): Promise<Handshake> { return this.#call('/handshake', {}, undefined, options) as Promise<Handshake> }
   prepare(request: PreparedRequest, options?: CallOptions): Promise<OperationSnapshot> {
-    record(request, request.skillWorld === undefined ? ['ref', 'spec'] : ['ref', 'spec', 'skillWorld'])
+    record(request, ['ref', 'spec', ...request.skillWorld === undefined ? [] : ['skillWorld'],
+      ...request.filePolicy === undefined ? [] : ['filePolicy']])
     const reference = checkRef(request.ref, this.#expected.runtimeIdentity), normalized = spec(request.spec, this.#expected.projectRoot)
     const fixed = request.skillWorld === undefined ? undefined : skillWorld(request.skillWorld)
     if (fixed !== undefined) assertSkillParent(fixed, this.#expected.skillParent)
     need((this.#expected.skillParent === undefined) === (fixed === undefined), 'skill_parent_required')
-    need(preparedDigest(normalized, fixed) === reference.specHash, 'spec_hash_mismatch')
-    return this.#call('/prepare', { ...reference, spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed } }, reference, options) as Promise<OperationSnapshot>
+    const policy = request.filePolicy === undefined ? undefined : filePolicy(request.filePolicy)
+    need(preparedDigest(normalized, fixed, policy) === reference.specHash, 'spec_hash_mismatch')
+    return this.#call('/prepare', { ...reference, spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed },
+      ...policy === undefined ? {} : { filePolicy: policy } }, reference, options) as Promise<OperationSnapshot>
   }
   /**
    * Attempt commit once using the original reference; this method never retries a lost response.

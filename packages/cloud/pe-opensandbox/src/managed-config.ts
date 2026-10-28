@@ -185,11 +185,14 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
 }
 
 function shellLimits(value: unknown, commands: CommandOperationLimits): NativeExecutionConfig {
-  const row = object(value, shellKeys, 'shell'), path = row['bashPath']
+  const hasPolicy = value !== null && typeof value === 'object' && Object.hasOwn(value, 'enforceSessionFilePolicy')
+  const row = object(value, [...shellKeys, ...(hasPolicy ? ['enforceSessionFilePolicy'] : [])], 'shell'), path = row['bashPath']
+  if (hasPolicy && typeof row['enforceSessionFilePolicy'] !== 'boolean') refuse('shell.enforceSessionFilePolicy')
   if (typeof path !== 'string' || path.length > 512 || !path.startsWith('/') || path.startsWith('//') || path.endsWith('/')
     || posix.normalize(path) !== path || /[\u0000-\u001f\u007f]/u.test(path)
     || Buffer.from(path).toString('utf8') !== path || Buffer.byteLength(path) > 512) refuse('shell.bashPath')
   const limits: NativeExecutionConfig = Object.freeze({ bashPath: path,
+    ...(hasPolicy ? { enforceSessionFilePolicy: row['enforceSessionFilePolicy'] as boolean } : {}),
     timeoutMs: integer(row, 'timeoutMs', 'shell', commands.maxLifetimeMs),
     maxTimeoutMs: integer(row, 'maxTimeoutMs', 'shell', commands.maxLifetimeMs),
     maxOutputBytes: integer(row, 'maxOutputBytes', 'shell', commands.maxTailBytes),

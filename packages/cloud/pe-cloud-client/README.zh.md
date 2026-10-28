@@ -61,6 +61,13 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 | `maxDownloadBytes` | 无默认值 | 可选的正安全整数下载接收上限；省略时不注册两个下载动作。 |
 | `modelSettingsRequestTimeoutMs` | 无默认值 | 可选的有限正数原生模型设置 RPC 观察期限；省略时关闭此集成。 |
 | `skillSettings` | 无默认值 | 可选 `{ requestTimeoutMs, maxFileBytes }`；两项均须为正安全整数，截止时间在平台定时器范围内。省略时不启用技能管理。 |
+| `nativeSessionControls` | 无默认值 | 可选且不重复的 `commands`、`models`、`permissions`、`goals`、`plan`、`feedback`、`export` 和 `attachments` 分组；省略时不增加控件。 |
+
+### 原生会话控件
+
+`client.nativeSessionControls` 提供选中的原生浏览器插件，沿用其控制器和投影。模型、权限、计划、反馈和导出还要求选择 `commands`。解析器拒绝未知分组、重复项和不完整的命令依赖；包名由应用固定。Host 服务、Agent 预设插件及精确账户准入须分别装配；选择浏览器分组不授予方法或文件系统权限。
+
+选择 `export` 时，在原生插件激活前提供原下载插件的 HTTP 与导航集成。HEAD 预检使用页面捕获的认证 fetch，GET 下载使用捕获的账户／代际导航绑定。状态、取消和清理仍由原生下载控制器负责；页面结束后，两种集成操作均被拒绝。原生下载约定见[会话日志导出](../../session-query/session-log-export/README.zh.md)。
 
 ### 原生 Models 密钥编辑
 

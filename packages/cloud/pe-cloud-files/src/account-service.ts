@@ -22,6 +22,8 @@ import type { EnvironmentSessionId, ExecutionMountGrant } from './environment-ba
 
 /** Trusted runtime preparation only; Loader JSON cannot select an account, path, backend or plugin. */
 export interface AccountFilesPreparation {
+  /** Derived from the original issued execution port, never an independent user setting. */
+  readonly enforceSessionFilePolicy?: boolean
   /** Root storage lease supplies this private fixed-purpose port; omission grants no skill storage. */
   readonly skillVersions?: () => SkillVersionPort
   /** Fixed original-lease projection issuer; no client-selected backend or path. */
@@ -37,7 +39,7 @@ export interface AccountFilesPreparation {
    */
   readonly createFileSystem?: (
     workspace: Workspace, assertInstalled: (owner: Context) => void,
-    mapProcessPath?: (caller: Context, hostPath: string) => string | undefined,
+    mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean,
   ) => Promise<S2ProjectPort['FileSystem']>
   /** Original lane mutation capabilities; omission keeps attachment intake and staging closed. */
   readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'runNativeMutation'>
@@ -110,6 +112,7 @@ export class CloudAccountFiles extends Service {
     readonly skillProjection: AccountFilesPreparation['skillProjection']
     readonly Registry: ControlledWorkspaceRegistryConstructor
     readonly createFileSystem: AccountFilesPreparation['createFileSystem']
+    readonly enforceSessionFilePolicy: AccountFilesPreparation['enforceSessionFilePolicy']
     readonly withInstructionReaders: AccountFilesPreparation['withInstructionReaders']
     readonly projectFor: AccountFilesPreparation['projectFor']
     readonly prepareExecutionMounts: AccountFilesPreparation['prepareExecutionMounts']
@@ -161,11 +164,12 @@ export class CloudAccountFiles extends Service {
     checkGraph(ctx)
     super(ctx, 'peCloudFiles')
     this.binding = input.binding
-    this.providers = { Registry, skillVersions: input.skillVersions, skillProjection: input.skillProjection, createFileSystem
-    : input.createFileSystem, withInstructionReaders: input.withInstructionReaders,
-    projectFor: input.projectFor, prepareExecutionMounts: input.prepareExecutionMounts,
-    createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
-    attachments: input.attachments, attachmentProjection: input.attachmentProjection }
+    this.providers = { Registry, skillVersions: input.skillVersions, skillProjection: input.skillProjection,
+      createFileSystem: input.createFileSystem, enforceSessionFilePolicy: input.enforceSessionFilePolicy,
+      withInstructionReaders: input.withInstructionReaders,
+      projectFor: input.projectFor, prepareExecutionMounts: input.prepareExecutionMounts,
+      createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
+      attachments: input.attachments, attachmentProjection: input.attachmentProjection }
     this.checkGraph = checkGraph
     this.unpublished = input.assertUnpublished
     this.assertInstalled()
@@ -660,7 +664,8 @@ export class CloudAccountFiles extends Service {
       : await this.providers.createFileSystem(workspace, (consumer) => {
         this.assertInstalled(consumer)
         this.assertRegistry(work)
-      }, this.providers.attachmentProjection?.mapProcessPath.bind(this.providers.attachmentProjection))
+      }, this.providers.attachmentProjection?.mapProcessPath.bind(this.providers.attachmentProjection),
+      this.providers.enforceSessionFilePolicy)
     this.assertInstalled(owner)
     this.unpublished()
     this.assertRegistry(work)

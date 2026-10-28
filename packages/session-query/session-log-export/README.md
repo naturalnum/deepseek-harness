@@ -85,7 +85,11 @@ The Header’s More action uses the shared compact Button, with a 28px square ta
 
 Both entry paths issue a `HEAD` preflight to the document-relative `api/session.export?...`, then hand the GET route to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
 
+An application may provide `sessionLogDownloadIntegration` on the browser Context before plugin activation to bind these operations to its existing authenticated carriers. The integration supplies only `fetch` for the HEAD request and `navigationUrl` for the GET download URL; the original controller retains state, deduplication, cancellation and disposal. Omitting the integration preserves ordinary browser fetch and document-relative navigation.
+
 The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
+
+`registerSessionLogExport(ctx, config, admit)` optionally runs the deployment admission callback before Session reads and again after root preparation, before ZIP creation. Its returned signal owns stream cancellation; omission preserves ordinary native route behavior. Cloud registration also aborts its in-flight streams when the original Loader fiber is disposed.
 
 </details>
 

@@ -70,6 +70,10 @@ Feedback does not have to come from the slash command or the dialog: any UI, hoo
 
 The Web client ships the command. Headless mode, ACP automation, and JSON-RPC provide no slash commands, so `/feedback` is unavailable there.
 
+An integration may supply a native `SessionFeedbackService` subclass before this command plugin activates. The plugin reuses only an existing native instance with its original `sessionFeedback` Typert binding; an invalid replacement rejects activation. With no supplied service, the plugin mounts the original service. Compositions depending on a supplied instance declare `sessionFeedback` as a dependency on their owning command entry.
+
+An account deployment may provide synchronous `sessionFeedbackIdentity(): string` before activation. The command captures this callback and resolves it before recording; rejection records no remark. The supplied identifier is acknowledgement text, not authentication authority, and replaces harness-home identity lookup without changing Session feedback payloads. Omission retains the native harness-home behavior. Its owning command entry declares the callback dependency and its provider owns current-account checks.
+
 -----
 
 <a id="understand-the-implementation"></a>

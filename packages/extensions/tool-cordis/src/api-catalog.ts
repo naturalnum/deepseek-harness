@@ -1878,6 +1878,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Internal factory capability; it cannot select an account, backend, or process.',
     methods: [
       {
+        signature: 'readonly enforcesSessionFilePolicy?: true | undefined',
+        description: 'Original owner declaration; Files derives mandatory policy enforcement from this same issued capability.',
+        parameters: [],
+      },
+      {
+        signature: 'assertSessionFilePolicyChange?(ctx: Context, session: Session): void',
+        description: 'Synchronously check retained native command/service work before changing a Session policy.',
+        parameters: [{ name: 'ctx', description: 'Original account caller within the exact installed graph.' }, { name: 'session', description: 'Exact native Session whose policy is about to change.' }],
+      },
+      {
         signature: 'assertCurrent(ctx: Context): void',
         description: 'Check the exact issued object, current graph and permanent admission state.',
         parameters: [{ name: 'ctx', description: 'actual installation or native caller context.' }],
@@ -2203,7 +2213,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The original native service; existing filesystem provider and native Gateway retain authorization and I/O ownership.',
       },
       {
-        signature: 'installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\' | \'settingsNamespaces\'>): FirstScreenEvents',
+        signature: 'installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\' | \'settingsNamespaces\' | \'controls\'>): FirstScreenEvents',
         description: 'Register the actual bounded native event subset on the original Gateway.',
         parameters: [{ name: 'owner', description: 'Original registration Loader fiber after readonly native providers activate.' }, { name: 'input', description: 'Exact graph profile home and all required event bounds.' }],
         returns: 'Actual registration/disposer; native Gateway owns ready and wire framing.',
@@ -2225,6 +2235,53 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Construct the sole original native upload owner with controlled streamed persistence.',
         parameters: [{ name: 'owner', description: 'Actual Loader entry, with native dependencies ready.' }, { name: 'input', description: 'Same-Agent storage admission and finite native receipt capacity.' }],
         returns: 'Native service; its streamed route remains subject to the audited exposure policy.',
+      },
+      {
+        signature: 'createCommands(owner: Context, guards: NativeSessionGuards): NativeCommands[\'value\']',
+        description: 'Install the original human-command registry in its account Loader fiber.',
+        parameters: [{ name: 'owner', description: 'Actual native Loader entry with its original dependencies.' }, { name: 'guards', description: 'Shared active-Agent/project admission and bounded native read policy.' }],
+        returns: 'The native registry; every Remote call retains account admission.',
+      },
+      {
+        signature: 'createGoals( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeGoals>[6], ): NativeGoals[\'value\']',
+        description: 'Install the native goal domain shared by the command and its UI controls.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Original active-Agent/project checks and native result limits.' }, { name: 'config', description: 'Native goal round policy.' }],
+        returns: 'Original goal service with generation-bound Remote admission.',
+      },
+      {
+        signature: 'createSessionExport( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSessionExport>[6], ): void',
+        description: 'Register native command and streaming archive delivery in the account graph.',
+        parameters: [{ name: 'owner', description: 'Actual native Loader entry with archive dependencies ready.' }, { name: 'guards', description: 'Same Session/project admission used by native history reads.' }, { name: 'config', description: 'Original archive compression configuration.' }],
+      },
+      {
+        signature: 'createPermissions( owner: Context, config: Parameters<typeof createNativePermissions>[5], maxFrameBytes: number, assertEnforcement: () => void, assertCanSwitch: Parameters<typeof createNativePermissions>[8], ): NativePermissions[\'value\']',
+        description: 'Install native permission controls over the actual enforcing providers.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'config', description: 'Native two-mode preset table.' }, { name: 'maxFrameBytes', description: 'Existing complete native result limit.' }, { name: 'assertEnforcement', description: 'Recheck the original issued execution and Files policy enforcement.' }, { name: 'assertCanSwitch', description: 'Refuse a policy change while original execution work remains.' }],
+        returns: 'The original native preset service.',
+      },
+      {
+        signature: 'createUserQuestions(owner: Context, guards: NativeSessionGuards): NativeUserQuestions[\'value\']',
+        description: 'Install original question replies and timed-wait claims.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Shared native active-Agent/project admission.' }],
+        returns: 'The native question service.',
+      },
+      {
+        signature: 'createSessionFeedback(owner: Context, guards: NativeSessionGuards): ReturnType<typeof createNativeSessionFeedback>[\'value\']',
+        description: 'Install the original per-Session feedback recorder.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Shared native Session/project admission and read limits.' }],
+        returns: 'The native feedback service.',
+      },
+      {
+        signature: 'createMessageFeedback( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeMessageFeedback>[6], ): ReturnType<typeof createNativeMessageFeedback>[\'value\']',
+        description: 'Install the native versioned per-message feedback store.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Shared native Session/project admission and read limits.' }, { name: 'config', description: 'Original note-size policy.' }],
+        returns: 'The native feedback service with its original mutation queue and persistence handles.',
+      },
+      {
+        signature: 'createFeedbackIdentity(owner: Context): () => string',
+        description: 'Supply native command acknowledgements without ambient Host-home I/O.',
+        parameters: [{ name: 'owner', description: 'Actual account command Loader entry.' }],
+        returns: 'Original-generation checked, account-scoped display identity callback.',
       },
       {
         signature: 'createAgentLoop( owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1], reserveSubagent?: (depth: number) => SubagentCapacityReservation, ): AgentLoop',
@@ -5615,15 +5672,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountExecutionPort',
-    declaration: 'export interface AccountExecutionPort {\n    readonly binding: AccountBinding;\n    assertCurrent(ctx: Context): void;\n    deny(ctx: Context, signal?: AbortSignal): never;\n    claim(ctx: Context): void;\n    close(): void;\n}',
+    declaration: 'export interface AccountExecutionPort {\n    readonly enforcesSessionFilePolicy?: true | undefined;\n    assertSessionFilePolicyChange?(ctx: Context, session: Session): void;\n    readonly binding: AccountBinding;\n    assertCurrent(ctx: Context): void;\n    deny(ctx: Context, signal?: AbortSignal): never;\n    claim(ctx: Context): void;\n    close(): void;\n}',
   },
   {
     name: 'AccountFileSelection',
-    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    readonly directoryPreparation?: {\n        assertCaller(caller: Context): void;\n    };\n    assertCurrent(): void;\n}',
+    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    readonly assertMutationPolicy?: (policy?: SandboxExecutionPolicy) => void;\n    readonly directoryPreparation?: {\n        assertCaller(caller: Context): void;\n    };\n    assertCurrent(): void;\n}',
   },
   {
     name: 'AccountFilesPreparation',
-    declaration: 'export interface AccountFilesPreparation {\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'runNativeMutation\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n    readonly withInstructionReaders?: <T>(workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, contro /* …truncated — full shape in source */',
+    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'runNativeMutation\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n    readonly withInstructionReaders?: <T>(workspa /* …truncated — full shape in source */',
   },
   {
     name: 'AccountFilesProject',
@@ -6104,6 +6161,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CommandRunResult',
     declaration: 'export interface CommandRunResult {\n    text?: string;\n}',
+  },
+  {
+    name: 'CommandRuntime',
+    declaration: 'export class CommandRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    register(definition: CommandDefinition): () => void;\n    registerFileReceiptResolver(resolver: CommandFileReceiptResolver): () => void;\n    @Remote\n    list(agent: Agent): readonly CommandDescriptor[];\n    find(agent: Agent, name: string): CommandDefinition | undefined;\n    @Remote\n    async execute(agent: Agent, line: string, submittedAttachments: readonly CommandSubmitAttachment[], signal: AbortSignal): Promise<CommandExecution | undefined>;\n}',
   },
   {
     name: 'CommandSpec',
@@ -6723,11 +6784,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenEventInput',
-    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
+    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n    readonly controls?: Readonly<{\n        commands: boolean;\n        goals: boolean;\n        permissions: boolean;\n        questions?: boolean;\n    }>;\n}',
   },
   {
     name: 'FirstScreenEvents',
-    declaration: 'export interface FirstScreenEvents {\n    inspect(): {\n        readonly endpoint: \'$events\';\n        readonly gateway: Gateway;\n        readonly fiber: Fiber;\n        readonly owner: Fiber;\n        readonly home: string;\n        readonly queuedEvents: number;\n        readonly queuedBytes: number;\n    };\n    assertAdmitted(): void;\n    dispose(): Promise<void>;\n}',
+    declaration: 'export interface FirstScreenEvents {\n    inspect(): {\n        readonly endpoint: \'$events\';\n        readonly resultEndpoint?: \'$events/result\';\n        readonly gateway: Gateway;\n        readonly fiber: Fiber;\n        readonly owner: Fiber;\n        readonly home: string;\n        readonly queuedEvents: number;\n        readonly queuedBytes: number;\n    };\n    assertAdmitted(): void;\n    dispose(): Promise<void>;\n}',
   },
   {
     name: 'FirstScreenNativeInput',
@@ -6828,6 +6889,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GoalRef',
     declaration: 'export interface GoalRef {\n    readonly id: GoalId;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'GoalService',
+    declaration: 'export class GoalService extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config = {});\n    @Remote(\'get\')\n    get(agent: Agent): GoalView | undefined;\n    disarm(agent: Agent): GoalView | undefined;\n    create(agent: Agent, request: CreateGoalRequest): GoalView;\n    @Remote(\'edit\')\n    edit(agent: Agent, ref: GoalRef, request: EditGoalRequest): GoalView;\n    @Remote(\'pause\')\n    pause(agent: Agent, ref: GoalRef): GoalView;\n    @Remote(\'resume\')\n    resume(agent: Agent, ref: GoalRef): GoalView;\n    @Remote(\'complete\')\n    complete(agent: Agent, ref: GoalRef): GoalView;\n    block(agent: Agent, ref: GoalRef, reason: GoalBlockReason): GoalView;\n    @Remote(\'clear\')\n    clear(agent: Agent, ref: GoalRef): GoalRef;\n    @Remote(\'create\')\n    remoteExportCreate(agent: Agent, request: CreateGoalRequest): CreateGoalResult;\n}',
   },
   {
     name: 'GoalSnapshot',
@@ -7646,6 +7711,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface NativeAgentFactoryGuards {\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void | number>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void | number>;\n    assertPrepared(agent: PreparedAgent, parent?: CreateOptions[\'parentAgent\']): void;\n    prepareChild?(agent: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal): Promise<void>;\n    withChildPreparation?<T>(this: void, child: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal, operation: () => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'NativeCommands',
+    declaration: 'export interface NativeCommands {\n    readonly value: CommandRuntime;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
     name: 'NativeConfigSaveHook',
     declaration: 'export interface NativeConfigSaveHook {\n    admit<T>(kind: ConfigSaveKind, submit: () => Promise<T>): Promise<T>;\n}',
   },
@@ -7658,12 +7727,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface NativeFirstScreen {\n    readonly binding: AccountBinding;\n    readonly workspaceController: typeof WorkspaceController;\n    readonly settingsController: typeof SettingsController;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n    assertSessionRead(id: SessionId): void;\n}',
   },
   {
+    name: 'NativeGoals',
+    declaration: 'export interface NativeGoals {\n    readonly value: GoalService;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'NativeModelSelectionPolicy',
+    declaration: 'export interface NativeModelSelectionPolicy {\n    readonly allowedModel: (provider: string, model: string) => boolean;\n    readonly allowedProvider: (provider: string) => boolean;\n}',
+  },
+  {
+    name: 'NativePermissions',
+    declaration: 'export interface NativePermissions {\n    readonly value: PermissionPresetService;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
     name: 'NativeSessionDirectory',
     declaration: 'export interface NativeSessionDirectory {\n    readonly binding: AccountBinding;\n    prepare(cwd: string): Promise<void>;\n}',
   },
   {
     name: 'NativeSessionGuards',
-    declaration: 'export interface NativeSessionGuards {\n    readonly projectDirectory: NativeSessionDirectory;\n    readonly firstScreen?: NativeSessionReadGuards;\n    assertHandlerEnabled(handlerId: string): void;\n    resolveCreate(request: SessionCreateRequest): Promise<SessionCreateRequest>;\n    assertSessionProject(sessionId: SessionId): Promise<void>;\n    assertActiveScope(agent: NonNullable<ReturnType<Context[\'agents\'][\'get\']>>): void;\n    readonly preparePromptFiles?: (agent: Agent, receiptIds: readonly FileUploadReceiptId[], signal?: AbortSignal) => Promise<void>;\n}',
+    declaration: 'export interface NativeSessionGuards {\n    readonly projectDirectory: NativeSessionDirectory;\n    readonly firstScreen?: NativeSessionReadGuards;\n    readonly modelSelection?: NativeModelSelectionPolicy;\n    assertHandlerEnabled(handlerId: string): void;\n    resolveCreate(request: SessionCreateRequest): Promise<SessionCreateRequest>;\n    assertSessionProject(sessionId: SessionId): Promise<void>;\n    assertActiveScope(agent: NonNullable<ReturnType<Context[\'agents\'][\'get\']>>): void;\n    readonly preparePromptFiles?: (agent: Agent, receiptIds: readonly FileUploadReceiptId[], signal?: AbortSignal) => Promise<void>;\n}',
   },
   {
     name: 'NativeSessionReadGuards',
@@ -7680,6 +7761,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'NativeUploadPreparation',
     declaration: 'export interface NativeUploadPreparation {\n    readonly maxPendingReceipts: number;\n    storeFileStream(agent: Agent, input: SaveFileStreamAttachment, save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>): Promise<FileAttachmentRef>;\n}',
+  },
+  {
+    name: 'NativeUserQuestions',
+    declaration: 'export interface NativeUserQuestions {\n    readonly value: UserQuestions;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'NodeStreamTransport',
@@ -7788,6 +7873,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
+  },
+  {
+    name: 'PermissionPresetService',
+    declaration: 'export class PermissionPresetService extends TypertRemoteService {\n    static Config;\n    static inject;\n    constructor(ctx: Context, config: Config);\n    get names(): readonly string[];\n    @Remote(\'catalog\')\n    catalog(): PermissionCatalog;\n    registerAuto(admit: () => void): () => Promise<void>;\n    get defaultPreset(): string;\n    current(session: Session): string;\n    resolve(name: string): PresetSpec;\n    optionOf(name: string): PresetOption;\n    set(session: Session, name: string): void;\n}',
   },
   {
     name: 'PlatformSession',
@@ -7947,7 +8036,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PoolReadPort',
-    declaration: 'export interface PoolReadPort {\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>;\n    withInstructionReaders<T>(this: void, workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void): Promise<ResidentResult<T>>;\n    derivePreparedLeaf(grant: Is /* …truncated — full shape in source */',
+    declaration: 'export interface PoolReadPort {\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>;\n    withInstructionReaders<T>(this: void, workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, assertRegistered: () => void): Promise<ResidentResult<T /* …truncated — full shape in source */',
   },
   {
     name: 'PostToolDecision',

@@ -21,6 +21,7 @@ import SubagentRuntime, { delegationDepthOf, resolveChildAgentOptions, resolveCh
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type { AccountBinding } from './types.ts'
 import { ACCOUNT_NATIVE_ENTRIES, type AccountNativeGuards } from './account-native-integration.ts'
+import { createAccountFileMutationGuard } from './account-permissions.ts'
 
 /** Explicit deployment selection for one fixed native preset and finite exact model routes. */
 export interface AccountPolicyConfig {
@@ -312,6 +313,20 @@ class AccountPolicy {
     control.throwIfAborted()
     this.current()
     if (resolved.provider !== provider || resolved.id !== model || !this.allowedModel(provider, model)) modelDenied()
+  }
+
+  delegatedFilePolicy(child: Agent, parent: Agent): void {
+    this.current()
+    if (this.provider('peAccountExecution').enforcesSessionFilePolicy !== true) return
+    const policy = this.provider('sandboxPolicy')
+    const inherited = policy.resolve({ session: parent.session }), selected = policy.resolve({ session: child.session })
+    if (inherited.sessionId !== parent.id || selected.sessionId !== child.id
+      || inherited.workspaceRoot !== selected.workspaceRoot
+      || !['read-only', 'workspace-write'].includes(inherited.mode)
+      || !['read-only', 'workspace-write'].includes(selected.mode)
+      || inherited.mode === 'read-only' && selected.mode !== 'read-only') {
+      throw new CloudApiError('cloud/forbidden', 'A child Agent cannot widen its parent\'s current file permissions.')
+    }
   }
 
   async assertBootstrapCurrent(signal?: AbortSignal): Promise<void> {
@@ -699,11 +714,15 @@ class AccountPolicy {
       }
       assertCaller()
       const workspace = this.prepared(agent, true)
-      return { workspace, assertCurrent: () => {
+      const assertCurrent = (): void => {
         this.current()
         assertCaller()
         if (this.prepared(agent, true) !== workspace) refuse()
-      } }
+      }
+      return { workspace, assertCurrent,
+        ...this.provider('peAccountExecution').enforcesSessionFilePolicy !== true ? {} : {
+          assertMutationPolicy: createAccountFileMutationGuard(this.ctx, agent.session, workspace.path, assertCurrent),
+        } }
     }
     const invocation = caller.invocation
     if (invocation?.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles') refuse()
@@ -784,6 +803,13 @@ export function createAccountPolicy(
     assertBootstrapCurrent: signal => policy.assertBootstrapCurrent(signal),
     assertSessionRead: (id, summary) => { policy.readSession(id, summary) },
     sessions: {
+      modelSelection: {
+        allowedModel: (provider, model) => policy.allowedModel(provider, model),
+        allowedProvider: (provider) => {
+          policy.current()
+          return config.models.some(row => row.provider === provider)
+        },
+      },
       assertHandlerEnabled: (id) => { policy.handlers(id) },
       resolveCreate: async (request) => {
         if (request.workspaceId !== undefined && request.cwd !== undefined) refuse()
@@ -845,6 +871,7 @@ export function createAccountPolicy(
       assertPrepared: (agent, parent) => {
         const workspace = policy.prepared(agent, false, parent)
         if (parent !== undefined && !workspace.sessionIds.includes(agent.id)) refuse()
+        if (parent !== undefined) policy.delegatedFilePolicy(agent, parent)
       },
     },
     allowedModel: (provider, model) => policy.allowedModel(provider, model),

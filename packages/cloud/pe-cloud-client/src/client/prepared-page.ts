@@ -12,6 +12,7 @@ import { parseCloudClientConfig } from '../config.ts'
 import type { CloudClientConfig } from '../types.ts'
 import { BootstrapAttempt, type BootstrapSnapshot } from './bootstrap.ts'
 import { ClientFailure } from './errors.ts'
+import type { SessionLogDownloadIntegration } from '@deepseek-ai/dsh-session-log-export/client'
 import type { CloudServicePreviewNavigation } from './service-preview.ts'
 import { CloudPageLifetime, type CloudNativeEntry, type CloudPageSnapshot } from './page-lifetime.ts'
 import type { PreparedSkillEdit } from './skill-edit.ts'
@@ -114,6 +115,7 @@ export class PreparedCloudPage {
   private activation: Context | undefined
   private connection: ConnectionHandle | undefined
   private uploadHooks: ClientFileUploadHooks | undefined
+  private exportIntegration: SessionLogDownloadIntegration | undefined
   private readonly config: Readonly<CloudClientConfig>
   private readonly location: { readonly hostname: string }
 
@@ -473,6 +475,7 @@ export class PreparedCloudPage {
     if (this.root !== undefined || ctx.get('peCloudPage', false) !== undefined) throw new Error('Cloud page owner is already bound')
     if (ctx.get('connection', false) !== undefined) throw new Error('Cloud page requires the sole native Connection installer')
     if (ctx.get('modelsSettingsIntegration', false) !== undefined) throw new Error('Cloud page Models integration is already bound')
+    if (ctx.get('sessionLogDownloadIntegration', false) !== undefined) throw new Error('Cloud page export carrier is already bound')
     if (ctx.get('fileUpload', false) !== undefined) throw new Error('Cloud page requires upload preparation before the native upload service')
     if (this.lifetime.getSnapshot().phase !== 'running'
       || this.lifetime.persistence.getSnapshot().phase !== 'active'
@@ -490,12 +493,23 @@ export class PreparedCloudPage {
     this.root = ctx.root
     ctx.provide('peCloudPage', this)
     ctx.provide('modelsSettingsIntegration', this.modelsSettingsIntegration)
+    if (this.config.nativeSessionControls?.includes('export')) {
+      this.exportIntegration = Object.freeze({
+        fetch: (input: string | URL, init?: RequestInit) => {
+          this.assertCurrent(ctx)
+          return fetch(input, { ...init })
+        },
+        navigationUrl: (input: string | URL) => { this.assertCurrent(ctx); return this.lifetime.transport.navigationUrl(input) },
+      })
+      ctx.provide('sessionLogDownloadIntegration', this.exportIntegration)
+    }
   }
 
   private assertCurrent(ctx: Context): void {
     if (this.root === undefined || ctx.root !== this.root || ctx.get('peCloudPage') !== this
       || ctx.get('modelsSettingsIntegration') !== this.modelsSettingsIntegration
       || this.uploadHooks === undefined || ctx.get('fileUploadHooks') !== this.uploadHooks
+      || this.exportIntegration !== undefined && ctx.get('sessionLogDownloadIntegration') !== this.exportIntegration
       || ctx.get('clientPersistence') !== this.nativeOptions.persistence
       || this.lifetime.persistence.getSnapshot().phase !== 'active'
       || this.lifetime.getSnapshot().phase !== 'running') {

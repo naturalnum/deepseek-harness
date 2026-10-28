@@ -182,7 +182,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-gateway`
 
 - `inject`: `typert` · `remoteAccess`
-- `source`: [`packages/api/gateway/src/index.ts:165`](../packages/api/gateway/src/index.ts)
+- `source`: [`packages/api/gateway/src/index.ts:166`](../packages/api/gateway/src/index.ts)
 
 ```ts config-catalog
 /** Gateway transport configuration. */
@@ -2393,7 +2393,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-pe-cloud-client`
 
 - `refs`: `BindingFieldNames` (`@deepseek-ai/dsh-pe-cloud-access/types`) · `BootstrapDecodeLimits` (`@deepseek-ai/dsh-pe-cloud-access/types`)
-- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:29`](../packages/cloud/pe-cloud-client/src/index.ts)
+- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:39`](../packages/cloud/pe-cloud-client/src/index.ts)
 
 ```ts config-catalog
 /** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
@@ -2445,6 +2445,8 @@ export interface CloudClientConfig {
   modelSettingsRequestTimeoutMs?: number
   /** Omission leaves the native sample skill section unregistered. */
   skillSettings?: Readonly<CloudSkillSettingsConfig>
+  /** Original browser control groups; omission preserves the existing first-screen roster. */
+  nativeSessionControls?: readonly CloudNativeSessionControl[]
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
 }
@@ -2470,6 +2472,9 @@ export interface CloudSkillSettingsConfig {
   /** Positive safe-integer acceptance cap for each complete file; match the approved account bound. */
   readonly maxFileBytes: number
 }
+
+/** Explicit original browser controls supplied by the cloud deployment; selection grants no server capability. */
+export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments'
 
 /** Root-owned public inputs for one exact GET preview entry; no account identity or application target. */
 export interface CloudServicePreviewPolicy {

@@ -17,6 +17,26 @@ function input() {
     shell: { bashPath: '/bin/bash', timeoutMs: 3000, maxTimeoutMs: 5000, maxOutputBytes: 4096, graceMs: 1000 } }
 }
 
+it('keeps Session file-policy enforcement explicit and preserves the legacy omission', () => {
+  expect(parseManagedCoordinatorConfig(input()).shell).not.toHaveProperty('enforceSessionFilePolicy')
+  for (const value of [false, true]) {
+    const raw = input()
+    Object.assign(raw.shell, { enforceSessionFilePolicy: value })
+    expect(parseManagedCoordinatorConfig(raw).shell.enforceSessionFilePolicy).toBe(value)
+  }
+})
+
+it('rejects malformed or accessor Session file-policy flags without invoking code', () => {
+  for (const value of [undefined, null, 'true', 1, {}, []]) {
+    const raw = input()
+    Object.assign(raw.shell, { enforceSessionFilePolicy: value })
+    expect(() => parseManagedCoordinatorConfig(raw)).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+  }
+  const raw = input()
+  Object.defineProperty(raw.shell, 'enforceSessionFilePolicy', { enumerable: true, get() { throw new Error('Do not execute configuration accessors') } })
+  expect(() => parseManagedCoordinatorConfig(raw)).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+})
+
 it('requires complete explicit limits and returns independent frozen settings without changing any values', () => {
   const raw = input(), parsed = parseManagedCoordinatorConfig(raw)
   expect(parsed).toEqual(raw)

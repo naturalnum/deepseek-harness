@@ -1,4 +1,11 @@
 import { projectApprovedSettings, projectApprovedSettingsNamespace } from './approved-settings.ts'
+import type {} from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-command-feedback'
+import type {} from '@deepseek-ai/dsh-message-feedback'
+import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-user-questions'
 import type { ApprovedConfigurationField } from './types.ts'
 /** Fixed native first-screen readers; original registries, DTOs and iteration remain authoritative. */
 import { isDeepStrictEqual } from 'node:util'
@@ -73,7 +80,7 @@ function original(value: object): object {
 /**
  * Find a fixed native service's actual owner through bounded public Cordis registration metadata.
  * @param ctx - original account scope.
-   * @param key - one reviewed account reader service key.
+ * @param key - one reviewed account native service key.
  * @param value - actual class instance already checked by its consumer.
  * @param maximum - required positive visit bound, with no production default.
  * @returns the sole original service registration and fiber.
@@ -82,7 +89,8 @@ function original(value: object): object {
 export function firstScreenNativeOwner(
   ctx: Context,
   key: 'workspaceRegistry' | 'settings' | 'remoteAccess' | 'typertGateway' | 'workspaceController' | 'settingsController'
-    | 'sessionSkillCatalog',
+    | 'sessionSkillCatalog' | 'commands' | 'goals' | 'connection' | 'sessionFeedback' | 'messageFeedback'
+    | 'permissionPresets' | 'userQuestions',
   value: object, maximum: number,
 ): FirstScreenNativeOwner {
   if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()

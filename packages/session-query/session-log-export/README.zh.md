@@ -85,7 +85,11 @@ Header 的更多操作入口使用公共紧凑 Button，点击区域为 28px 正
 
 两条入口都会先向文档相对的 `api/session.export?...` 发出 `HEAD` 预检请求，然后把 GET 路由交给浏览器下载管理器，JavaScript 不缓冲 ZIP。一个控制器按会话持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按会话键控的快照存储中，因此按钮与命令按会话共享一个弹窗。
 
+应用可在浏览器插件激活前，于 Context 提供 `sessionLogDownloadIntegration`，将这些操作绑定到既有认证载体。集成仅提供 HEAD 请求使用的 `fetch`，以及 GET 下载 URL 使用的 `navigationUrl`；状态、去重、取消和清理仍由原生控制器负责。省略该集成时，保持普通浏览器 fetch 与文档相对路径导航。
+
 Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
+
+`registerSessionLogExport(ctx, config, admit)` 可在 Session 读取之前，以及根日志准备之后、创建 ZIP 之前，调用部署准入回调。回调返回的 signal 负责取消流；省略时保留普通原生路由行为。Cloud 注册所属的原 Loader fiber 销毁时，也会中止其进行中的流。
 
 </details>
 
