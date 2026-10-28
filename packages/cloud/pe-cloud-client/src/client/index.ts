@@ -8,6 +8,7 @@ import { installCloudModelSettings } from './model-settings.ts'
 import { installCloudSkillSettings } from './skill-settings.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
+import { installCloudSidebarAccount } from './sidebar-account.ts'
 
 /** Stable browser plugin name. */
 export const name = 'pe-cloud-client/client'
@@ -36,6 +37,7 @@ export function apply(ctx: Context, config: Config): void {
   installCloudSkillSettings(ctx, owner)
   installCloudManagement(ctx, owner)
   installCloudApprovedSettings(ctx, owner)
+  installCloudSidebarAccount(ctx, owner)
 }
 
 export { CloudPagePersistence, CloudPersistenceError } from './persistence.ts'

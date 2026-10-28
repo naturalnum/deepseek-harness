@@ -30,6 +30,8 @@ export interface CloudPagePreparationInput {
   readonly storage: CloudPersistenceStorage
   readonly fetch: RpcFetch
   readonly createWebSocket: ConnectionWebSocketFactory
+  /** Original Web entry's joined local cleanup and Cookie sign-out; never supplied by bootstrap JSON. */
+  readonly signOut?: () => void
   /** Optional actual navigation/feedback carrier; absence supplies no no-op preview entry. */
   readonly previewNavigation?: CloudPreviewNavigationPort
 }
@@ -102,6 +104,8 @@ export class PreparedCloudPage {
   readonly servicePreviewNavigation?: CloudServicePreviewNavigation
   /** Original page's optional Models integration; its source starts closed and is revoked before cleanup waits. */
   readonly modelsSettingsIntegration: ModelsSettingsIntegration
+  /** Request the captured Web sign-out once from this page's active native scope. */
+  readonly accountSignOut?: (owner: Context) => void
   private readonly modelsEditing = createSnapshotStore<ModelsCredentialEditing | null>(null)
   private readonly skillEditing = createSnapshotStore<SkillManagementView>(Object.freeze({ phase: 'unavailable', items: Object.freeze([]) }))
   private skillVersionBinding: { readonly owner: Context; withdraw?: () => void } | undefined
@@ -119,6 +123,16 @@ export class PreparedCloudPage {
       ...input.config.skillSettings === undefined ? {} : { skillSettings: Object.freeze({ ...input.config.skillSettings }) },
     })
     this.location = Object.freeze({ hostname: new URL(input.baseUrl).hostname })
+    const signOut = input.signOut
+    if (signOut !== undefined) {
+      let requested = false
+      this.accountSignOut = (owner) => {
+        this.assertAccountManagementCurrent(owner)
+        if (requested) return
+        requested = true
+        signOut()
+      }
+    }
     const expectation = { accountId: bootstrap.account.id, connectionGeneration: bootstrap.connectionGeneration }
     this.lifetime = new CloudPageLifetime({
       expectation,

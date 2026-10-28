@@ -101,6 +101,8 @@ Cloud entry 仅在显式提供 `maxDownloadBytes` 且 bootstrap filePreview 为 
 
 `/client` 为 Cordis 启动前的拥有者导出 `PreparedCloudPage`，以及它复用的既有 `CloudPageLifetime` 和 `CloudPagePersistence` 组件。准备流程调用 access 的正式 `decodeCloudBootstrap`，只创建一个固定生命周期和缓存端口，并提供包含必需端口、激活前 owner 绑定和销毁前同步撤销存储与 carrier 准入的原生选项。真实 Loader 的 `apply` 核验 owner 后，以捕获的 hooks 调用公开 `installConnection`；不写全局当前账户或全局 transport。
 
+Web 入口通过可选准备回调 `signOut` 提供现有的等待清理完成与 Cookie 注销流程。账号入口占用侧栏底部原生 `settings.launcher` 插槽，显示正式 bootstrap 中的用户名与默认头像。向上展开的原生菜单仅含“设置”和“退出登录”；设置打开同一个 shell 拥有的弹窗。退出前核验原页面与活跃依赖，并在调用前锁定单次请求；页面撤销时同步移除入口。不增加 DeepSeek 账户登录服务。原生页面正常运行时隐藏顶部独立退出入口，停止或失败的入口页面保留现有恢复控件。未提供回调的准备流程保留原有设置按钮。
+
 缓存接受有限正安全整数 `maxKeys`、`maxKeyBytes`、`maxValueBytes`、`maxTotalBytes` 和 `maxNamespaceBytes`。字节预算按 UTF-8 计算；总量包含物理命名空间键和序列化 envelope。键保持逻辑形式，枚举只暴露该命名空间。账户／代际元组使用不会发生分隔符碰撞的 JSON 编码。不恢复旧的未分区缓存。每次变更原子替换一个有界 envelope；同账户／同代际页面并发使用后写覆盖的完整快照，可能丢失独立更新。撤销仅作用于已签发的本地端口，不宣称跨标签页全局撤销。
 
 `dispose()` 同步撤销旧端口，停止捕获的 carrier 与原生图，等待其实际清理，然后仅移除并核验旧命名空间。自动 401／stale-generation 关闭和缓存失败进入同一流程。迟到原生订阅不能通过已撤销端口写入或删除。停止失败时保留命名空间；移除失败时保留未确认状态。原生 disposer 挂起时继续等待。清理错误通过返回的 promise、页面／缓存快照和默认启用的控制台报告保持可观察。相同账户／代际刷新恢复自己的缓存；不同代际获得另一个命名空间。

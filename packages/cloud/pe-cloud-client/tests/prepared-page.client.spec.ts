@@ -14,6 +14,10 @@ import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import * as cloud from '../src/client/index.ts'
 import { PreparedCloudPage, type CloudPagePreparationInput } from '../src/client/prepared-page.ts'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { CloudAccountMenuInjected } from '../src/client/CloudAccountMenu.tsx'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 
 const config = {
   bootstrapPath: 'cloud/bootstrap', bootstrapTimeoutMs: 1000, maxBootstrapResponseBytes: 8192,
@@ -130,6 +134,41 @@ it('uses canonical bootstrap then the real Cloud Loader entry before native cach
   expect(graph.ctx.get('connection')).toBeDefined()
   await preparation.dispose()
   expect(f.values.size).toBe(0)
+})
+
+it('installs the bootstrap account only in the native launcher, captures sign-out once and revokes old callbacks', async () => {
+  const f = fixture(), signOut = vi.fn(() => { page.accountSignOut!(graph.ctx) })
+  const input = { ...f.input, signOut }
+  const preparation = PreparedCloudPage.prepare(input, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page)
+  input.signOut = vi.fn()
+  await graph.ctx.plugin(SlotRegistry).await()
+  graph.ctx.provide('locale', new LocaleRuntime(graph.ctx))
+  await page.start(graph.entry)
+  expect(graph.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+  const host = ({ renderSlot }: PropsRenderSlots<'settings.launcher'>) => renderSlot('settings.launcher', {
+    wide: true, settingsOpen: false, openSettings: () => {}, openOnboarding: () => {},
+  })
+  const declare = () => graph.ctx.slots.register({ name: 'root', children: {
+    'settings.launcher': { kind: 'single', scope: 'root' },
+  } }, host)
+  const remove = declare()
+  expect(graph.ctx.slots.entries('settings.launcher')).toHaveLength(1)
+  const launcher = graph.ctx.slots.entries('settings.launcher')[0]!
+  const face = (launcher.inject as unknown as () => CloudAccountMenuInjected)()
+  expect(face.displayName).toBe(page.bootstrap.account.displayName)
+  face.signOut(); face.signOut()
+  expect(signOut).toHaveBeenCalledOnce()
+  expect(input.signOut).not.toHaveBeenCalled()
+  remove()
+  expect(graph.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+  declare()
+  expect(graph.ctx.slots.entries('settings.launcher')).toHaveLength(1)
+  await page.lifetime.transport.close()
+  expect(graph.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+  expect(() => { face.signOut() }).toThrow()
+  expect(signOut).toHaveBeenCalledOnce()
 })
 
 it.each(['401', 'different account', 'different generation'])('revalidates canonical identity after native WS closure (%s)', async (outcome) => {

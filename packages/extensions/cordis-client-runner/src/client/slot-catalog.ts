@@ -3015,6 +3015,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
       'client-ui-settings-account AccountMenu',
+      'pe-cloud-client CloudAccountMenu',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.launcher\', () => ctx.slots.register(\n      { name: \'settings.launcher\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
