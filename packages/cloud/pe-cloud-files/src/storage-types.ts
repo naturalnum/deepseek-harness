@@ -61,6 +61,8 @@ export interface StaticEnvironmentSlot {
 export interface StaticEnvironmentBank {
   readonly bankId: string
   readonly slots: readonly StaticEnvironmentSlot[]
+  /** Explicitly share each fixed filesystem between private per-Session directory roots. */
+  readonly mode?: 'session-directories'
 }
 
 /** Version two requires a bank for each authentic account; version one grants no execution storage. */

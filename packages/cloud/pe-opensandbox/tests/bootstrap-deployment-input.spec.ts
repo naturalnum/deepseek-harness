@@ -1,6 +1,6 @@
 /** Protected deployment selection parsing; synthetic inputs create no files or remote resources. */
 import { expect, it } from 'vitest'
-import { parseRootDeploymentInput } from '../src/bootstrap/deployment-input.ts'
+import { parseRootDeploymentInput, SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
 import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/root-deployment.ts'
 
 it('keeps legacy v1 keeper input distinct from explicit shared-path v2', () => {
@@ -35,6 +35,14 @@ it('binds each storage schema to its exact Native guard image without accepting 
   expect(() => parseRootDeploymentInput({ ...legacy, selection: shared.selection })).toThrow('selection.originalPolicy')
   expect(() => parseRootDeploymentInput({ ...shared, selection: { ...shared.selection,
     serverImageDigest: 'sha256:' + 'a'.repeat(64) } })).toThrow('selection.originalPolicy')
+})
+
+it('accepts the reviewed directory-aware guard only for shared-path deployment', () => {
+  const input = sharedPathDeploymentFixture()
+  input.selection.serverImageDigest = SESSION_DIRECTORY_SERVER_IMAGE_DIGEST
+  expect(parseRootDeploymentInput(input).selection.serverImageDigest).toBe(SESSION_DIRECTORY_SERVER_IMAGE_DIGEST)
+  expect(() => parseRootDeploymentInput({ ...rootDeploymentFixture(), selection: input.selection }))
+    .toThrow('selection.originalPolicy')
 })
 
 it.each([undefined, null, 'keeper', 'auto', ''])('rejects absent or unsupported shared-path mode %s', (mode) => {

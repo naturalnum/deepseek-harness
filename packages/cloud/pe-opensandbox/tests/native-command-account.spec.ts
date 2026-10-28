@@ -99,7 +99,10 @@ it('rejects unsupported native input, outside cwd and the complete encoded frame
 
 it('holds the single Session active reservation through direct completion and releases resident output only after final projection', async () => {
   const f = fixture(), call = f.exec()
+  expect(f.owner.isSessionQuiescent(SessionId('A'))).toBe(true)
   await f.owner.calls.run(call, async () => {
+    expect(f.owner.isSessionQuiescent(SessionId('A'))).toBe(false)
+    expect(f.owner.isSessionQuiescent(SessionId('B'))).toBe(true)
     const op = f.create(); op.publish(); op.begin(); await op.handle.done
     expect(() => f.create()).toThrow('active command range')
     expect(f.root.reserve).toHaveBeenCalledTimes(1); expect(f.root.acquire).toHaveBeenCalledTimes(1)
@@ -107,12 +110,14 @@ it('holds the single Session active reservation through direct completion and re
     f.channels[0]!.poll.resolve(complete()); await op.whenEmpty
     expect(f.reservations[0]!.releaseActive).toHaveBeenCalledTimes(1)
     expect(f.reservations[0]!.releaseResident).not.toHaveBeenCalled()
+    expect(f.owner.isSessionQuiescent(SessionId('A'))).toBe(false)
     expect(op.handle.collected.stdout!.readFrom(0).text).toBe('canonical output')
     const next = f.create(); next.publish(); next.begin(); await next.handle.done
     f.channels[1]!.poll.resolve(complete()); await next.whenEmpty
     return result
   })
   f.owner.calls.release(call.token)
+  expect(f.owner.isSessionQuiescent(SessionId('A'))).toBe(true)
   for (const held of f.reservations) expect(held.releaseResident).toHaveBeenCalledTimes(1)
 })
 
@@ -128,6 +133,8 @@ it('keeps original scopes across awaits and releases only the corresponding tool
   })
   f.owner.assertOperationCurrent(f.ctx, opA!); f.owner.assertOperationCurrent(f.ctx, opB!)
   f.owner.calls.release(a.token)
+  expect(f.owner.isSessionQuiescent(SessionId('A'))).toBe(true)
+  expect(f.owner.isSessionQuiescent(SessionId('B'))).toBe(false)
   expect(f.reservations[0]!.releaseResident).toHaveBeenCalledTimes(1)
   expect(f.reservations[1]!.releaseResident).not.toHaveBeenCalled()
   expect(() => { f.owner.assertOperationCurrent(f.ctx, opA!) }).toThrow()
@@ -178,6 +185,7 @@ it('keeps raw channel failure private and retains both budgets until original ph
   })
   f.owner.calls.release(call.token)
   expect(f.reservations[0]!.releaseResident).not.toHaveBeenCalled()
+  expect(f.owner.isSessionQuiescent(SessionId('A'))).toBe(false)
   op!.acknowledgePhysicalStop(); await op!.whenEmpty
   expect(f.reservations[0]!.releaseActive).toHaveBeenCalledTimes(1)
   expect(f.reservations[0]!.releaseResident).toHaveBeenCalledTimes(1)

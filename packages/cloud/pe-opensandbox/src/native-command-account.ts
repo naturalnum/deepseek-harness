@@ -160,6 +160,19 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   }
 
   /**
+   * Observe one Session with no invocation, retained output, service or application request.
+   * @param sessionId Exact Session considered by its Root-owned compute cache.
+   * @returns Whether no native owner remains; the caller must separately fence and stop its allocation.
+   */
+  isSessionQuiescent(sessionId: SessionId): boolean {
+    if (!this.state.open || this.state.closing !== undefined || this.binding.lifetime.aborted
+      || this.ctx.fiber.state !== FiberState.ACTIVE || this.ctx.get('peAccount') !== this.binding
+      || this.calls.hasSessionCall(sessionId) || this.active.has(sessionId)) return false
+    for (const record of this.records.values()) if (record.scope.sessionId === sessionId) return false
+    return true
+  }
+
+  /**
    * Confirm that only this never-submitted foreground acquisition is active in the Session.
    * @param scope Original current foreground scope whose acquire callback has not returned a channel.
    */

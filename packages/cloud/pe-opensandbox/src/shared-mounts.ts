@@ -10,6 +10,7 @@ import type { SkillProjectGrant } from './skill-files-types.ts'
 import type { ExecutionExportShare, ManagedExecutionDeployment } from './managed-coordinator.ts'
 import type { RetainedExecutionExports } from './export-share.ts'
 import { ExecutionStateError } from './errors.ts'
+import { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from './bootstrap/deployment-input.ts'
 
 /** Private Root failure; native callers receive the existing secret-free execution classification. */
 export class ExecutionExportFailure extends ExecutionStateError {
@@ -262,6 +263,7 @@ export interface SharedPathExecutionLimits {
 interface SharedSelection {
   readonly project: StaticStorageDomain
   readonly environment: StaticStorageDomain
+  readonly environmentLeaf: string | undefined
   readonly leaf: string
   readonly uid: number
   readonly gid: number
@@ -276,11 +278,16 @@ function selectShared(plan: StaticStoragePlanV2, grant: ExecutionMountGrant, max
   const environment = bank?.slots.find(slot => slot.slotId === grant.environment.slotId)?.domain
   if (bank?.bankId !== grant.environment.bankId || environment === undefined) invalid('selection')
   const project = account.projects, leaf = posix.relative(project.rootPath, grant.project.rootPath)
+  const environmentLeaf = bank.mode === 'session-directories'
+    ? posix.relative(environment.rootPath, grant.environment.rootPath) : undefined
+  const environmentPath = environmentLeaf === undefined ? environment.rootPath : `${environment.rootPath}/${environmentLeaf}`
   if (leaf !== 'default-workspace'
     && !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(leaf)) invalid('selection')
-  if (grant.project.rootPath !== `${project.rootPath}/${leaf}` || grant.environment.rootPath !== environment.rootPath
+  if (environmentLeaf !== undefined
+    && !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(environmentLeaf)) invalid('selection')
+  if (grant.project.rootPath !== `${project.rootPath}/${leaf}` || grant.environment.rootPath !== environmentPath
     || Buffer.byteLength(`${grant.project.rootPath}/.pe`) > maximum
-    || Buffer.byteLength(environment.rootPath) > maximum) invalid('selection')
+    || Buffer.byteLength(environmentPath) > maximum) invalid('selection')
   for (const [root, domain] of [[grant.project, project], [grant.environment, environment]] as const) {
     if (root.rootDevice !== domain.rootDevice || root.rootMountId !== domain.rootMountId
       || root.quota.device !== domain.rootDevice || root.quota.mountId !== domain.rootMountId
@@ -290,7 +297,8 @@ function selectShared(plan: StaticStoragePlanV2, grant: ExecutionMountGrant, max
       || BigInt(root.quota.maximumInodes) > BigInt(domain.maximumInodes)) invalid('selection')
   }
   const uid = plan.appUid, gid = plan.appGid
-  if (grant.environment.rootInode !== environment.rootInode
+  if ((environmentLeaf === undefined ? grant.environment.rootInode !== environment.rootInode
+    : grant.environment.rootInode === environment.rootInode)
     || grant.project.mountVersion !== `${grant.project.rootDevice}:${grant.project.rootInode}:${grant.project.rootMountId}`
     || grant.project.metadataDirectory.mountId !== project.rootMountId
     || grant.project.metadataDirectory.device !== project.rootDevice || grant.project.metadataDirectory.uid !== uid
@@ -310,7 +318,7 @@ function selectShared(plan: StaticStoragePlanV2, grant: ExecutionMountGrant, max
     if (expected.device !== environment.rootDevice || expected.mountId !== environment.rootMountId
       || expected.uid !== uid || expected.gid !== gid || expected.mode !== 0o40700) invalid('selection')
   }
-  return { project, environment, leaf, uid, gid }
+  return { project, environment, environmentLeaf, leaf, uid, gid }
 }
 
 function sharedRoot(batch: Batch, domain: StaticStorageDomain, quota: ExecutionMountGrant['project']['quota'],
@@ -345,8 +353,16 @@ function captureShared(batch: Batch, selected: SharedSelection, grant: Execution
   if (skills !== undefined) verifyDirectory(batch, open(batch, `/proc/self/fd/${metadata}/skills`, true),
     skills.skillsDirectory, project.facts, selected.project.rootMountId)
   const environment = sharedRoot(batch, selected.environment, grant.environment.quota, inventory, true, uid, gid)
+  let environmentFd = environment.fd
+  if (selected.environmentLeaf !== undefined) {
+    environmentFd = open(batch, `/proc/self/fd/${environment.fd}/${selected.environmentLeaf}`, true)
+    verifyDirectory(batch, environmentFd, { device: grant.environment.rootDevice, inode: grant.environment.rootInode,
+      uid, gid, mode: 0o40700 }, environment.facts, selected.environment.rootMountId)
+    // Retain the selected child, not the whole pool; peak/retained FD counts remain within the original reservation.
+    close(batch, environment.fd)
+  }
   for (const leaf of ['home', 'venv', 'tmp'] as const) {
-    verifyDirectory(batch, open(batch, `/proc/self/fd/${environment.fd}/${leaf}`, true), grant.environment.layout[leaf],
+    verifyDirectory(batch, open(batch, `/proc/self/fd/${environmentFd}/${leaf}`, true), grant.environment.layout[leaf],
       environment.facts, selected.environment.rootMountId)
   }
   return { projectMountId: selected.project.rootMountId, environmentMountId: selected.environment.rootMountId }
@@ -359,11 +375,12 @@ function captureShared(batch: Batch, selected: SharedSelection, grant: Execution
  * @param assertPlanCurrent Current Root selection and protected files-plan lease.
  * Each share separately requires its original files/native current callback.
  * @param limits Explicit capacities including bounded plan/proc parsing and eight retained directory FDs per share.
+ * @param serverImageDigest Protected Native selection; Session directories require the reviewed directory-aware guard.
  * @returns In-process shares retaining exact files grants until the allocation confirms physical stop and releases them.
  * @throws On plan, source, grant or quota mismatch; uncertain descriptor closure permanently retains Root responsibility.
  */
 export function createSharedPathExecutionExports(bytes: Uint8Array, digest: string, assertPlanCurrent: () => void,
-  limits: SharedPathExecutionLimits): RetainedExecutionExports {
+  limits: SharedPathExecutionLimits, serverImageDigest?: string): RetainedExecutionExports {
   limits = Object.freeze({ ...limits })
   for (const value of [limits.maxPlanBytes, limits.maxMountInfoBytes, limits.maxPathBytes, limits.maxShares, limits.maxResidentBytes]) {
     if (!Number.isSafeInteger(value) || value < 1) {
@@ -383,13 +400,17 @@ export function createSharedPathExecutionExports(bytes: Uint8Array, digest: stri
   try { plan = parseStaticStoragePlan(bytes, limits.maxPathBytes) }
   catch (cause) { throw new ExecutionExportFailure('manifest', cause) }
   if (plan.version !== 2) invalid('manifest')
+  if (plan.accounts.some(account => account.environmentBank.mode === 'session-directories')
+    && serverImageDigest !== SESSION_DIRECTORY_SERVER_IMAGE_DIGEST) invalid('selection')
   assertPlanCurrent()
   return createExecutionMountShares(limits.maxShares, {
     assertCurrent: assertPlanCurrent,
     select: (grant, skills) => selectShared(plan, grant, limits.maxPathBytes, skills),
     capture: (batch, selected, grant, skills) => captureShared(batch, selected, grant, limits.maxMountInfoBytes, skills),
     paths: (selected, skills) => Object.freeze({ project: `${selected.project.rootPath}/${selected.leaf}`,
-      protectedProject: `${selected.project.rootPath}/${selected.leaf}/.pe`, environment: selected.environment.rootPath,
+      protectedProject: `${selected.project.rootPath}/${selected.leaf}/.pe`,
+      environment: selected.environmentLeaf === undefined ? selected.environment.rootPath
+        : `${selected.environment.rootPath}/${selected.environmentLeaf}`,
       ...skills === undefined ? {} : { skills: `${selected.project.rootPath}/${selected.leaf}/.pe/skills` } }),
   })
 }

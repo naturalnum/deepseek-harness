@@ -90,7 +90,8 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
       const plan = state.storageFile
       // Publication bytes only; share admission separately checks original files grants and live source mounts.
       const planCurrent = (): void => { selection.assertCurrent(); plan.assertCurrent() }
-      state.exports = createSharedPathExecutionExports(plan.bytes(), input.storage.plan.sha256, planCurrent, input.storage.limits)
+      state.exports = createSharedPathExecutionExports(plan.bytes(), input.storage.plan.sha256, planCurrent,
+        input.storage.limits, input.selection.serverImageDigest)
       state.exports.assertCurrent()
     }
     const storageFile = state.storageFile

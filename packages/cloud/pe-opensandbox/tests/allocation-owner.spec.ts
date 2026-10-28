@@ -100,6 +100,27 @@ function fixture() {
 }
 
 describe('Root actual Session allocation ownership', () => {
+  it('observes only the original settled ready handle for idle retirement without preparing or stopping it', async () => {
+    const f = fixture(), request = f.request()
+    expect(f.owner.preparedForRetirement(request)).toBeUndefined()
+    expect(f.prepareMount).not.toHaveBeenCalled()
+    const actual = f.owner.prepare(request)
+    await vi.waitFor(() => { expect(f.backend.create).toHaveBeenCalledTimes(1) })
+    expect(f.owner.preparedForRetirement(request)).toBeUndefined()
+    f.created.resolve({ sandboxId: 'original-ready' })
+    const prepared = await actual
+    expect(f.owner.preparedForRetirement(request)).toBe(prepared)
+    expect(f.owner.preparedForRetirement({ ...request })).toBeUndefined()
+    expect(f.backend.create).toHaveBeenCalledTimes(1)
+    expect(f.backend.prepare).toHaveBeenCalledTimes(1)
+    expect(f.backend.stop).not.toHaveBeenCalled()
+    const stopped = f.owner.stop(request)
+    expect(f.owner.preparedForRetirement(request)).toBeUndefined()
+    f.stopped.resolve(undefined); await stopped
+    expect(f.owner.preparedForRetirement(request)).toBeUndefined()
+    expect(f.owner.inspect().allocations).toBe(0)
+  })
+
   it('ends a pre-intent cancellation without SQL or backend work', async () => {
     const f = fixture(), request = f.request()
     const prepared = f.owner.prepare(request)
@@ -180,6 +201,7 @@ describe('Root actual Session allocation ownership', () => {
     expect(f.backend.stop).not.toHaveBeenCalled()
     expect(f.store.failNotCreated).not.toHaveBeenCalled()
     expect(f.owner.inspect().allocations).toBe(1)
+    expect(f.owner.preparedForRetirement(request)).toBeUndefined()
   })
 
   it('retains uncertain SQL before create without claiming no allocation metadata exists', async () => {
@@ -217,6 +239,20 @@ describe('Root actual Session allocation ownership', () => {
     expect(f.store.failNotCreated).not.toHaveBeenCalled()
     expect(f.release).toHaveBeenCalledTimes(1)
     expect(f.owner.inspect().allocations).toBe(0)
+  })
+
+  it('returns a refused mount reservation only through the original stop without submitting SQL or SDK work', async () => {
+    const f = fixture(), refused = new Error('known pre-allocation mount refusal')
+    f.prepareMount.mockRejectedValue(refused)
+    for (const request of [f.request('session-A'), f.request('session-B'), f.request('session-C')]) {
+      await expect(f.owner.prepare(request)).rejects.toBe(refused)
+      expect(f.owner.inspect().allocations).toBe(1)
+      await f.owner.stop(request)
+      expect(f.owner.inspect().allocations).toBe(0)
+    }
+    expect(f.store.begin).not.toHaveBeenCalled(); expect(f.store.failNotCreated).not.toHaveBeenCalled()
+    expect(f.backend.create).not.toHaveBeenCalled(); expect(f.backend.stop).not.toHaveBeenCalled()
+    expect(f.release).not.toHaveBeenCalled()
   })
 
   it.each(['committed-response-lost', 'never-submitted'] as const)(

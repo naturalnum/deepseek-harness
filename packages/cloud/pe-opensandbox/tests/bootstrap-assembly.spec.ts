@@ -171,7 +171,8 @@ it('passes the protected explicit policy to the original deployment without crea
 it('selects actual shared storage before SDK construction without adopting or waiting for a keeper', async () => {
   const selected = sharedPathDeploymentFixture(); state.input = selected
   const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
-  expect(state.sharedCreated).toHaveBeenCalledExactlyOnceWith(Buffer.from('{}'), '5'.repeat(64), expect.any(Function), selected.storage.limits)
+  expect(state.sharedCreated).toHaveBeenCalledExactlyOnceWith(Buffer.from('{}'), '5'.repeat(64), expect.any(Function),
+    selected.storage.limits, selected.selection.serverImageDigest)
   expect(state.keeperAdopted).not.toHaveBeenCalled()
   expect(state.events).toContain('plan-current')
   expect(state.events).toContain('shared-current')

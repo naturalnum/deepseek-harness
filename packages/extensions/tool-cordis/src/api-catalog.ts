@@ -9523,7 +9523,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StaticEnvironmentBank',
-    declaration: 'export interface StaticEnvironmentBank {\n    readonly bankId: string;\n    readonly slots: readonly StaticEnvironmentSlot[];\n}',
+    declaration: 'export interface StaticEnvironmentBank {\n    readonly bankId: string;\n    readonly slots: readonly StaticEnvironmentSlot[];\n    readonly mode?: \'session-directories\';\n}',
   },
   {
     name: 'StaticEnvironmentSlot',

@@ -28,14 +28,14 @@ import * as accountEntry from '../src/account.ts'
 import * as rootEntry from '../src/root.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, FdMutationFailure, FilesFailure, type AccountFilesProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import { copyFacts } from '../src/skill-wire.ts'
 import type { SkillProjectGrant, SkillOperationCopies } from '../src/skill-files-types.ts'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness,
   provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { NativeCommandAccount } from '../src/native-command-account.ts'
-import { SessionAllocationOwner } from '../src/allocation-owner.ts'
+import { SessionAllocationOwner, type PreparedSandbox } from '../src/allocation-owner.ts'
 import type { CommandChannel, CommandSnapshot } from '../src/command-operation.ts'
 import type { PreviewHttpOwner } from '../src/application-http.ts'
 import type { OriginalDevServiceWork } from '../src/dev-service-consumer.ts'
@@ -439,12 +439,13 @@ async function applicationFixture(options: {
     for (const channel of channels) channel.empty()
   })
   let serial = 0
-  const account = async (id: string) => {
+  const account = async (id: string, sessions = 2) => {
     const a = f.bind(id)
     await mountAgentLoopTestDependencies(a.ctx, { tools: { mode: 'native' } })
     provideWorkingDirectoryFixture(a.ctx, '/project')
     const harness = await mountAgentLoopTestHarness(a.ctx)
-    const agents = await Promise.all([1, 2].map(index => harness.create(SessionId(`${id}-${index}`), {}, { cwd: '/project' })))
+    const agents = await Promise.all(Array.from({ length: sessions }, (_, i) =>
+      harness.create(SessionId(`${id}-${i + 1}`), {}, { cwd: '/project' })))
     const workspace: Workspace = { id: brandString<Workspace['id']>(`${id}-project`), path: '/project',
       sessionIds: agents.map(agent => agent.session.id), title: 'component', createdAt: '2026-10-21T00:00:00Z', updatedAt: '2026-10-21T00:00:00Z',
       setTitle: async () => {}, attachSession: async () => {}, detachSession: async () => {}, insertSessionBefore: async () => {}, status: async () => 'ok' }
@@ -663,8 +664,8 @@ it.each([true, false])('uses original NativeBoot and account entry with service 
 
 
 /** Actual Tools/Agent/subprocess/coordinator path; the existing allocation and carrier frontiers are scripted. */
-async function continuationFixture() {
-  const f = await applicationFixture(), a = await f.account('continuation'), counts = new Map<string, number>()
+async function continuationFixture(sessions = 2) {
+  const f = await applicationFixture(), a = await f.account('continuation', sessions), counts = new Map<string, number>()
   let generation = 0, serial = 0
   f.prepare.mockImplementation(async () => ({ sandboxId: `compute-${generation}`, runtimeIdentity: String(generation).padStart(64, '1'),
     protocolVersion: 'scripted-original-frontier', capabilities: ['argv-collect'] }))
@@ -692,8 +693,148 @@ async function continuationFixture() {
   applicationCleanups.push(dispose)
   const run = (signal = new AbortController().signal) => a.ctx.tools.execute({ callId: ToolCallId(`continuation-${++serial}`),
     name: 'bash', arguments: {}, agent: a.agents[0]!, signal })
-  return { ...f, a, counts, stop, due, command, retire, run }
+  const runSession = (index: number, signal = new AbortController().signal) => a.ctx.tools.execute({ callId: ToolCallId(`continuation-${++serial}`),
+    name: 'bash', arguments: {}, agent: a.agents[index]!, signal })
+  return { ...f, a, counts, stop, due, command, retire, run, runSession }
 }
+
+/** Exercises original coordinator/native ownership; external ready/stop frontiers are scripted, never deployment evidence. */
+async function idleComputeFixture() {
+  const f = await continuationFixture(4), prepared = new Map<object, PreparedSandbox>()
+  let serial = 0
+  f.prepare.mockImplementation(async (request) => {
+    let value = prepared.get(request)
+    if (value === undefined) {
+      value = { sandboxId: `warm-${++serial}`, runtimeIdentity: String(serial).padStart(64, '1'),
+        protocolVersion: 'scripted-original-frontier', capabilities: ['argv-collect'] }
+      prepared.set(request, value)
+    }
+    return value
+  })
+  const observe = vi.spyOn(SessionAllocationOwner.prototype, 'preparedForRetirement')
+    .mockImplementation(request => prepared.get(request))
+  f.due.mockReturnValue(false)
+  f.stop.mockImplementation(async () => {})
+  f.retire.mockImplementation((value) => {
+    for (const [request, original] of prepared) if (original === value) prepared.delete(request)
+  })
+  return { ...f, prepared, observe }
+}
+
+it('reuses the fixed two compute slots across four idle Sessions only after original stop and retirement', async () => {
+  const f = await idleComputeFixture()
+  for (let i = 0; i < 4; i++) expect((await f.runSession(i)).isError).toBe(false)
+  expect(f.prepare).toHaveBeenCalledTimes(4); expect(f.stop).toHaveBeenCalledTimes(2)
+  expect(f.retire).toHaveBeenCalledTimes(2); expect(f.prepared.size).toBe(2)
+  expect(f.stop.mock.calls.map(([request]) => request.sessionId)).toEqual([f.a.agents[0]!.session.id, f.a.agents[1]!.session.id])
+  expect(f.stop.mock.invocationCallOrder[0]).toBeLessThan(f.retire.mock.invocationCallOrder[0]!)
+  expect(f.retire.mock.invocationCallOrder[0]).toBeLessThan(f.prepare.mock.invocationCallOrder[2]!)
+  expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+})
+
+it.each([0, 3])('shares a pending idle retirement with Session index %i without closing unrelated work', async (waitingSession) => {
+  const f = await idleComputeFixture(), stopped = Promise.withResolvers<undefined>()
+  for (let i = 0; i < 2; i++) expect((await f.runSession(i)).isError).toBe(false)
+  f.stop.mockImplementationOnce(() => stopped.promise)
+  const third = f.runSession(2)
+  await vi.waitFor(() => { expect(f.stop).toHaveBeenCalledTimes(1) })
+  const waiting = f.runSession(waitingSession)
+  expect((await f.runSession(1)).isError).toBe(false)
+  expect(f.stop).toHaveBeenCalledTimes(1); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.prepare).toHaveBeenCalledTimes(3)
+  stopped.resolve(undefined)
+  expect((await third).isError).toBe(false); expect((await waiting).isError).toBe(false)
+  expect(f.retire).toHaveBeenCalledTimes(2); expect(f.stop).toHaveBeenCalledTimes(2)
+  expect(f.prepared.size).toBe(2)
+  if (waitingSession === 0) {
+    const rebuilt = f.prepare.mock.calls.findLast(([request]) => request.sessionId === f.a.agents[0]!.session.id)?.[0]
+    expect(rebuilt).toBeDefined(); expect(rebuilt).not.toBe(f.prepare.mock.calls[0]?.[0])
+  }
+})
+
+it.each(['stop', 'retire'] as const)('retains an unconfirmed %s and never retries retirement or creates a third compute', async (phase) => {
+  const f = await idleComputeFixture()
+  for (let i = 0; i < 2; i++) expect((await f.runSession(i)).isError).toBe(false)
+  if (phase === 'stop') f.stop.mockRejectedValueOnce(new Error('scripted original stop remains unknown'))
+  else f.retire.mockImplementationOnce(() => { throw new Error('scripted original SDK retirement refused') })
+  expect((await f.runSession(2)).isError).toBe(true)
+  expect((await f.runSession(3)).isError).toBe(true)
+  expect((await f.runSession(0)).isError).toBe(true)
+  expect(f.stop).toHaveBeenCalledTimes(1); expect(f.retire).toHaveBeenCalledTimes(phase === 'stop' ? 0 : 1)
+  expect(f.prepare).toHaveBeenCalledTimes(2); expect(f.prepared.size).toBe(2)
+})
+
+it('finishes the original retirement after caller cancellation without reserving or poisoning a replacement Session', async () => {
+  const f = await idleComputeFixture(), stopped = Promise.withResolvers<undefined>(), cancel = new AbortController()
+  for (let i = 0; i < 2; i++) expect((await f.runSession(i)).isError).toBe(false)
+  f.stop.mockImplementationOnce(() => stopped.promise)
+  const third = f.runSession(2, cancel.signal)
+  await vi.waitFor(() => { expect(f.stop).toHaveBeenCalledTimes(1) })
+  cancel.abort(new Error('original new Session cancellation')); stopped.resolve(undefined)
+  expect((await third).isError).toBe(true)
+  expect(f.retire).toHaveBeenCalledTimes(1); expect(f.prepare).toHaveBeenCalledTimes(2)
+  expect((await f.runSession(3)).isError).toBe(false)
+  expect(f.stop).toHaveBeenCalledTimes(1); expect(f.prepare).toHaveBeenCalledTimes(3)
+})
+
+it('refuses to evict either ready compute while its original service remains active', async () => {
+  const f = await idleComputeFixture()
+  await f.a.start(0); await f.a.start(1)
+  expect((await f.runSession(2)).isError).toBe(true)
+  expect(f.observe).not.toHaveBeenCalled(); expect(f.stop).not.toHaveBeenCalled(); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.prepare).toHaveBeenCalledTimes(2)
+})
+
+it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount'] as const)(
+  'reports environment exhaustion only for the confirmed pre-allocation files refusal: %s', async (kind) => {
+    const f = await applicationFixture(), a = await f.account('environment-capacity', 4)
+    const project: AccountFilesProject = { binding: a.binding,
+      workspace: a.authority.projectForSession(a.agents[0]!.session),
+      projectDirectory: { binding: a.binding, prepare: async () => {} } }
+    const capacity = kind === 'untyped-cause' ? new Error('/private/environment-key must not reach the model')
+      : new FilesFailure('cloud/capacity', '/private/environment-key must not reach the model')
+    const refused = new FdMutationFailure(kind === 'unknown' ? 'unknown' : 'not-published', 'FS_TOO_LARGE', undefined,
+      { cause: capacity })
+    const mounts = vi.fn<CloudAccountFiles['prepareExecutionMounts']>(async () => { throw refused })
+    const scripted = { projectFor: async () => project, prepareExecutionMounts: mounts }
+    const files = new Proxy(CloudAccountFiles.prototype, { get(_target, key): unknown {
+      const value: unknown = Reflect.get(scripted, key)
+      if (value === undefined) throw new Error('Unexpected files operation before environment capacity refusal')
+      return value
+    } })
+    a.authority.files.mockReturnValue(files)
+    // Only the allocation preparation frontier is scripted; its original mount callback must execute.
+    if (kind === 'outside-mount') f.prepare.mockRejectedValueOnce(refused)
+    else f.prepare.mockImplementation(async (request) => {
+      await request.prepareMount()
+      throw new Error('A refused environment must not prepare a runtime')
+    })
+    const queriesBefore = f.query.mock.calls.length, command = vi.spyOn(f.deployment.runtimes, 'command')
+    const stop = vi.spyOn(SessionAllocationOwner.prototype, 'stop')
+    const dispose = a.ctx.tools.register(defineTool({ name: 'bash', description: 'Native Shell capacity component consumer.', parameters: {},
+      output: { schema: { type: 'json' }, render: () => [] }, execute: async () => {
+        const shell = await a.ctx.shell.execute(a.ctx.shell.resolve({ command: 'printf hello', onExpiry: 'none' }))
+        await shell.done
+        return { completed: true }
+      } }))
+    applicationCleanups.push(dispose)
+    // Four known no-create refusals must not turn the two concurrent compute slots into a historical Session limit.
+    const attempts = kind === 'not-published' ? 4 : 1
+    for (let i = 0; i < attempts; i++) {
+      const result = await a.ctx.tools.execute({ callId: ToolCallId(`environment-capacity-${i}`), name: 'bash', arguments: {},
+        agent: a.agents[i]!, signal: new AbortController().signal })
+      expect(result.isError).toBe(true)
+      if (!result.isError) throw new Error('The refused environment unexpectedly executed')
+      expect(result.error.message).toBe(kind === 'not-published'
+        ? 'No free session environment is available. Continue in a session that already has an environment, or ask an administrator to release or provision one.'
+        : 'Cloud execution is not confirmed available; Root retains cleanup responsibility.')
+      expect(JSON.stringify(result.error)).not.toContain('/private/environment-key')
+    }
+    expect(mounts).toHaveBeenCalledTimes(kind === 'outside-mount' ? 0 : attempts)
+    expect(stop).toHaveBeenCalledTimes(kind === 'not-published' ? attempts : 0)
+    expect(f.prepare).toHaveBeenCalledTimes(attempts); expect(f.query).toHaveBeenCalledTimes(queriesBefore)
+    expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled(); expect(command).not.toHaveBeenCalled()
+  })
 
 it('continues the fifth and ninth never-submitted native operation on new compute without replacing account or Session', async () => {
   const f = await continuationFixture()

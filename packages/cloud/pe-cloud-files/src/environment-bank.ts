@@ -121,7 +121,17 @@ export function environmentRecordLeaf(bank: StaticEnvironmentBank, slot: StaticE
   return `.pe-env-${bank.bankId}-${slot.slotId}.json`
 }
 
-function record(bytes: Uint8Array, bank: StaticEnvironmentBank, slot: StaticEnvironmentSlot, maximum: number): EnvironmentSlotRecord {
+/**
+ * Parse one bounded original slot record, including retained legacy Session membership.
+ * @param bytes Exact stable private record read.
+ * @param bank Protected finite bank selector.
+ * @param slot Original pool entry whose generation must remain unchanged.
+ * @param maximum Existing bounded membership string ceiling.
+ * @returns The closed schema-one record; no ownership is inferred from a directory name.
+ */
+export function parseEnvironmentSlotRecord(
+  bytes: Uint8Array, bank: StaticEnvironmentBank, slot: StaticEnvironmentSlot, maximum: number,
+): EnvironmentSlotRecord {
   let raw: unknown
   try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch (cause) {
     throw refused('Environment ownership record is unreadable.', cause)
@@ -198,7 +208,7 @@ export async function prepareEnvironmentSlot(
     for (const slot of authority.bank.slots) {
       current()
       const input = await io.read(environmentRecordLeaf(authority.bank, slot))
-      const parsed = record(input.bytes, authority.bank, slot, maximum)
+      const parsed = parseEnvironmentSlotRecord(input.bytes, authority.bank, slot, maximum)
       if (parsed.state === 'bound') {
         if (sessions.has(parsed.sessionId)) throw refused('Environment bank has duplicate Session ownership.')
         sessions.add(parsed.sessionId)

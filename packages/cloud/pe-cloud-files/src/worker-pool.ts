@@ -48,6 +48,7 @@ import type { InstructionReadReaders } from './instruction-read-work.ts'
 import { executeStageBatch, planStageBatch, validateStagingLimits } from './stage-bridge.ts'
 import type { StageSources, StageFileResult, StageBatchPlan } from './stage-bridge.ts'
 import { environmentQuota, environmentWorkBytes, prepareEnvironmentSlot } from './environment-bank.ts'
+import { prepareSessionEnvironmentDirectory } from './environment-directories.ts'
 import type { EnvironmentBankAuthority, EnvironmentBankState, EnvironmentSessionId, ExecutionMountGrant } from './environment-bank.ts'
 import type { StaticEnvironmentBank } from './storage-types.ts'
 
@@ -876,7 +877,7 @@ export class LinuxFilesPool implements DrainParticipant {
         }
         const privateRoot = preferencesParent
         const leaf = projectLeaf(workspace)
-        const reservation = environmentWorkBytes(authority.bank.slots.length, this.config)
+        const reservation = environmentWorkBytes(authority.bank.slots.length + (authority.bank.mode === 'session-directories' ? 1 : 0), this.config)
         let bankState = environmentBanks.get(authority.bank)
         if (bankState === undefined) { bankState = { blocked: false }; environmentBanks.set(authority.bank, bankState) }
         const state = bankState
@@ -898,34 +899,65 @@ export class LinuxFilesPool implements DrainParticipant {
             const metadata = await client.prepareProjectMetadata({ rootPath: workspace.path, rootDevice: device,
               rootInode: inode, rootMountId: quota.mountId }, authority.appUid, authority.appGid, actual)
             running()
-            const assignment = await prepareEnvironmentSlot({
-              read: async (path) => {
-                pathBytes(path)
-                const before = await client.stat(privateRoot, path, actual)
-                if (before?.type !== 'file' || before.size === undefined || before.size > this.config.maxReadBytes) {
-                  throw new FdWorkerFailure('FS_IO_ERROR')
-                }
-                const bytes = await client.read(privateRoot, path, this.config.maxReadBytes, actual)
-                const after = await client.stat(privateRoot, path, actual)
-                if (after?.version !== before.version) throw new FdWorkerFailure('FS_STALE_VERSION')
-                return { bytes, version: before.version }
-              },
-              write: async (path, content, version) => {
-                pathBytes(path)
-                await client.writeText(privateRoot, path, content, { kind: 'replaceIfVersion', version: FsVersion(version) },
-                  this.config.maxReadBytes, actual)
-              },
-              probe: domain => client.storageProbe(domain.rootPath, actual),
-              prepareLayout: domain => client.prepareEnvironmentLayout(domain, authority.appUid, authority.appGid, actual),
-            }, authority, state, { sessionId, workspaceId: workspace.id, environmentVersion }, this.config.maxPathBytes, running)
-            const domain = assignment.slot.domain
+            const readEnvironmentRecord = async (path: string) => {
+              pathBytes(path)
+              const before = await client.stat(privateRoot, path, actual)
+              if (before === undefined) return undefined
+              if (before.type !== 'file' || before.size === undefined || before.size > this.config.maxReadBytes) {
+                throw new FdWorkerFailure('FS_IO_ERROR')
+              }
+              const bytes = await client.read(privateRoot, path, this.config.maxReadBytes, actual)
+              const after = await client.stat(privateRoot, path, actual)
+              if (after?.version !== before.version) throw new FdWorkerFailure('FS_STALE_VERSION')
+              return { bytes, version: before.version }
+            }
+            const assignment = authority.bank.mode === 'session-directories'
+              ? await prepareSessionEnvironmentDirectory({
+                read: readEnvironmentRecord,
+                write: async (path, content, intent) => {
+                  pathBytes(path)
+                  await client.writeText(privateRoot, path, content, intent.kind === 'createIfAbsent' ? intent
+                    : { kind: 'replaceIfVersion', version: FsVersion(intent.version) }, this.config.maxReadBytes, actual)
+                },
+                probe: domain => client.storageProbe(domain.rootPath, actual),
+                prepareLeaf: (domain, child) => client.prepareLeaf(domain, child, actual, 'ext4'),
+                inspect: async (domain, child) => {
+                  pathBytes(child)
+                  const observed = await client.directory(domain, child, this.config.maxPathBytes, actual)
+                  if (!observed.directory || observed.canonicalPath !== posix.join(domain.rootPath, child)) {
+                    throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+                  }
+                  const info = await client.stat(domain, child, actual)
+                  if (info?.type !== 'directory') throw new FdWorkerFailure('FS_NOT_DIRECTORY')
+                  const [device, inode] = info.identity.split(':')
+                  if (device === undefined || inode === undefined) throw new FdWorkerFailure('FS_IO_ERROR')
+                  return Object.freeze({ rootPath: observed.canonicalPath, rootDevice: device,
+                    rootInode: inode, rootMountId: domain.rootMountId })
+                },
+                prepareLayout: root => client.prepareEnvironmentLayout(root, authority.appUid, authority.appGid, actual),
+              }, authority, state, { sessionId, workspaceId: workspace.id, environmentVersion }, this.config.maxPathBytes, running)
+              : await prepareEnvironmentSlot({
+                read: async (path) => {
+                  const input = await readEnvironmentRecord(path)
+                  if (input === undefined) throw new FdWorkerFailure('FS_IO_ERROR')
+                  return input
+                },
+                write: async (path, content, version) => {
+                  pathBytes(path)
+                  await client.writeText(privateRoot, path, content, { kind: 'replaceIfVersion', version: FsVersion(version) },
+                    this.config.maxReadBytes, actual)
+                },
+                probe: domain => client.storageProbe(domain.rootPath, actual),
+                prepareLayout: domain => client.prepareEnvironmentLayout(domain, authority.appUid, authority.appGid, actual),
+              }, authority, state, { sessionId, workspaceId: workspace.id, environmentVersion }, this.config.maxPathBytes, running)
+            const domain = 'root' in assignment ? assignment.root : assignment.slot.domain
             return Object.freeze<ExecutionMountGrant>({ binding, sessionId, workspaceId: workspace.id,
               project: Object.freeze({ rootPath: workspace.path, rootDevice: device, rootInode: inode,
                 rootMountId: quota.mountId, mountVersion: `${device}:${inode}:${quota.mountId}`, quota,
                 readOnlyPaths: Object.freeze(['.pe'] as const),
                 metadataDirectory: Object.freeze({ ...metadata.directory, relativePath: '.pe' }) }),
               environment: Object.freeze({ rootPath: domain.rootPath, rootDevice: domain.rootDevice, rootInode: domain.rootInode,
-                rootMountId: domain.rootMountId, targetPath: '/opt/session-env', bankId: authority.bank.bankId,
+                rootMountId: assignment.quota.mountId, targetPath: '/opt/session-env', bankId: authority.bank.bankId,
                 rootReadOnly: true, writablePaths: Object.freeze(['home', 'venv', 'tmp'] as const), layout: assignment.layout,
                 slotId: assignment.slot.slotId, slotGeneration: assignment.record.slotGeneration, environmentVersion,
                 quota: assignment.quota }) })

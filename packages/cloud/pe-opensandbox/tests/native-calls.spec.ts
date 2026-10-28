@@ -49,9 +49,13 @@ it('keeps concurrent native invocations separate across awaits and retains them 
   })
   expect(() => f.calls.capture(f.ctx)).toThrow('original live native invocation')
   expect(f.calls.inspect()).toBe(2)
+  expect(f.calls.hasSessionCall(SessionId('A'))).toBe(true)
+  expect(f.calls.hasSessionCall(SessionId('B'))).toBe(true)
   gateB.resolve(undefined); await second
   expect(f.calls.inspect()).toBe(2)
   f.calls.release(b.token)
+  expect(f.calls.hasSessionCall(SessionId('A'))).toBe(true)
+  expect(f.calls.hasSessionCall(SessionId('B'))).toBe(false)
   gateA.resolve(undefined); await first
   f.calls.release(a.token)
   expect(f.calls.inspect()).toBe(0)

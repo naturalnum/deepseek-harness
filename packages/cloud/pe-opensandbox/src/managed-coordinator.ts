@@ -6,11 +6,11 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, AccountRuntimeService, OperationId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import { FdMutationFailure, FilesFailure, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SandboxCoordinator, type NativeAccountExecutionAuthority } from './coordinator.ts'
 import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExecutionPort, type AccountExecutionPort } from './account-port.ts'
-import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocationRequest } from './allocation-owner.ts'
+import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocationRequest, type PreparedSandbox } from './allocation-owner.ts'
 import { PostgresAllocationStore } from './allocation-store.ts'
 import type { AllocationStoreLimits } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
@@ -68,6 +68,21 @@ export interface ManagedExecutionDeployment {
 }
 
 interface EpochObserver { settle(value: ParticipantReceipt): void }
+
+interface SessionRetirement {
+  readonly request: NativeAllocationRequest<VerifiedExecutionMount>
+  readonly prepared: PreparedSandbox
+  readonly actual: Promise<void>
+}
+
+/** Files refused environment preparation before an allocation intent or SDK request existed. */
+class SessionEnvironmentCapacityError extends ExecutionStateError {
+  constructor(cause: FdMutationFailure) {
+    super('cloud/capacity', 'No free session environment is available. Continue in a session that already has an environment, or ask an administrator to release or provision one.')
+    this.cause = cause
+  }
+}
+
 interface AccountWork {
   readonly binding: AccountBinding
   readonly root: Context
@@ -89,6 +104,7 @@ interface AccountWork {
     services?: { readonly configuration: ManagedServiceConfig; readonly registration: DevServiceRegistration }
   }
   allocationsStopping?: Promise<void>
+  retiring?: SessionRetirement | undefined
   stopping?: Promise<void>
   outcome?: ParticipantReceipt
   privateFailure?: { readonly cause: unknown }
@@ -298,7 +314,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const commands = new NativeCommandAccount(ctx, work.binding, work.authority, commandConfig, {
       acquire: async (scope, signal, registered) => {
         registered?.assertCurrent()
-        const request = this.request(work, scope)
+        const request = await this.request(work, scope, signal)
         try {
           let prepared = await this.allocations.prepare(request, signal)
           if (registered === undefined && this.deployment.runtimes.needsContinuation(prepared)) {
@@ -326,6 +342,18 @@ export class ManagedCoordinator extends SandboxCoordinator {
           } catch (cause) { copies?.release(); throw cause }
         }
         catch (cause) {
+          if (cause instanceof SessionEnvironmentCapacityError) {
+            try {
+              // Only this typed, pre-intent files refusal proves no backend was created. Join the original owner anyway.
+              await this.allocations.stop(request)
+              if (work.sessions.get(request.sessionId) === request) work.sessions.delete(request.sessionId)
+            } catch (failure) {
+              work.privateFailure ??= { cause: failure }
+              return this.unavailable()
+            }
+            if (signal.aborted) throw signal.reason
+            throw new ExecutionStateError('cloud/capacity', cause.message)
+          }
           work.privateFailure ??= { cause }
           if (signal.aborted) throw signal.reason
           return this.unavailable()
@@ -486,16 +514,52 @@ export class ManagedCoordinator extends SandboxCoordinator {
     } catch (cause) { held.release(); throw cause }
   }
 
-  private request(work: AccountWork, scope: ExecutionScope<Workspace>): NativeAllocationRequest<VerifiedExecutionMount> {
-    work.authority.assertBusinessCurrent()
-    if (!work.open || scope.binding !== work.binding) this.stale()
-    const existing = work.sessions.get(scope.sessionId)
-    if (existing !== undefined) {
-      if (existing.workspaceId !== scope.project.id) this.stale()
-      existing.assertCurrent()
-      return existing
+  /** Obtain a cached request, joining one exact idle retirement when concurrent compute capacity is full.
+   * @param work Original account retaining all active and failed selections.
+   * @param scope Current original consumer; a victim Session waits for its old compute to retire before rebuilding.
+   * @param signal Original acquisition cancellation; it never cancels the shared actual retirement.
+   * @returns Original cached request or one fresh selection after actual retirement releases capacity.
+   */
+  private async request(work: AccountWork, scope: ExecutionScope<Workspace>,
+    signal: AbortSignal): Promise<NativeAllocationRequest<VerifiedExecutionMount>> {
+    for (;;) {
+      this.assertReady(); work.authority.assertBusinessCurrent(); scope.lifetime.throwIfAborted(); signal.throwIfAborted()
+      if (!work.open || scope.binding !== work.binding) this.stale()
+      const retiring = work.retiring
+      if (retiring?.request.sessionId === scope.sessionId) { await retiring.actual; continue }
+      const existing = work.sessions.get(scope.sessionId)
+      if (existing !== undefined) {
+        if (existing.workspaceId !== scope.project.id) this.stale()
+        existing.assertCurrent()
+        return existing
+      }
+      if (work.privateFailure !== undefined) this.unavailable()
+      if (work.sessions.size < this.config.allocations.maxAllocationsPerAccount
+        && this.allocations.inspect().allocations < this.config.allocations.maxAllocations) break
+      if (retiring !== undefined) { await retiring.actual; continue }
+      const commands = work.providers?.commands
+      if (commands === undefined) this.unavailable()
+      let selected: Pick<SessionRetirement, 'request' | 'prepared'> | undefined
+      for (const request of work.sessions.values()) {
+        if (!commands.isSessionQuiescent(request.sessionId)) continue
+        const prepared = this.allocations.preparedForRetirement(request)
+        if (prepared !== undefined) { selected = { request, prepared }; break }
+      }
+      if (selected === undefined) this.capacity()
+      const settled = Promise.withResolvers<void>()
+      const original: SessionRetirement = { ...selected, actual: settled.promise }
+      // Fence only this Session before any await; concurrent admission joins this original retirement.
+      work.retiring = original
+      void original.actual.catch(() => { /* The original rejected retirement remains retained. */ })
+      void this.retireSession(work, original).then(() => {
+        settled.resolve()
+        if (work.retiring === original) work.retiring = undefined
+      }, (cause: unknown) => {
+        work.privateFailure ??= { cause }
+        settled.reject(cause)
+      })
+      await original.actual
     }
-    if (work.sessions.size >= this.config.allocations.maxAllocationsPerAccount) this.capacity()
     const session: Session = scope.agent.session, workspace = scope.project
     const current = (): void => {
       this.assertReady(); work.authority.assertBusinessCurrent()
@@ -509,6 +573,13 @@ export class ManagedCoordinator extends SandboxCoordinator {
         const files = work.authority.files(), project = await files.projectFor(workspace)
         current()
         const held = await files.prepareExecutionMounts(project, session.id, this.config.allocations.environmentVersion)
+          .catch((cause: unknown) => {
+            if (cause instanceof FdMutationFailure && cause.outcome === 'not-published' && cause.code === 'FS_TOO_LARGE'
+              && cause.cause instanceof FilesFailure && cause.cause.code === 'cloud/capacity') {
+              throw new SessionEnvironmentCapacityError(cause)
+            }
+            throw cause
+          })
         let share: ExecutionExportShare | undefined
         let parent: Awaited<ReturnType<typeof files.prepareSkillProject>> | undefined
         const granted = (): void => {
@@ -533,6 +604,23 @@ export class ManagedCoordinator extends SandboxCoordinator {
       } }
     work.sessions.set(scope.sessionId, request)
     return request
+  }
+
+  /** Retire one original idle compute after synchronously fencing its Session admission.
+   * @param work Original account owner retaining the request and native operations.
+   * @param original Exact prepared object and shared retirement promise selected before this call.
+   * @returns Actual physical/SQL/SDK/runtime settlement; a rejection retains the original request and fence.
+   */
+  private async retireSession(work: AccountWork, original: SessionRetirement): Promise<void> {
+    if (work.retiring !== original || work.sessions.get(original.request.sessionId) !== original.request
+      || work.providers?.commands.isSessionQuiescent(original.request.sessionId) !== true
+      || this.allocations.preparedForRetirement(original.request) !== original.prepared) this.unavailable()
+    await this.allocations.stop(original.request)
+    this.deployment.backend.retireStopped(original.prepared, (selection) => {
+      this.deployment.runtimes.retireStopped(original.prepared, selection)
+    })
+    if (work.sessions.get(original.request.sessionId) !== original.request) this.stale()
+    work.sessions.delete(original.request.sessionId)
   }
 
   private reserve(work: AccountWork, scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): NativeCommandReservation {
@@ -582,6 +670,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     work.open = false
     if (work.allocationsStopping !== undefined) return work.allocationsStopping
     const stops = [...work.sessions.values()].map(request => this.allocations.stop(request))
+    if (work.retiring !== undefined) stops.push(work.retiring.actual)
     return work.allocationsStopping ??= Promise.allSettled(stops).then((results) => {
       const failed = results.find(result => result.status === 'rejected')
       if (failed?.status === 'rejected') throw failed.reason

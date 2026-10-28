@@ -2,6 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDispatchExecution, ToolExecutionToken, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { ExecutionScopes, type ExecutionScope, type ScopeAuthority } from './scopes.ts'
 import { assertInstalledExecutionBinding } from './account-port.ts'
@@ -214,6 +215,16 @@ export class NativeExecutionCalls<Project> {
    * @returns The number of issued native invocations, excluding actual cleanup retained by Root.
    */
   inspect(): number { return this.calls.size }
+
+  /**
+   * Observe original invocations without acquiring or revoking execution authority.
+   * @param sessionId Session whose pending native dispatches are observed.
+   * @returns Whether this issuer retains a call for that exact Session.
+   */
+  hasSessionCall(sessionId: SessionId): boolean {
+    for (const call of this.calls.values()) if (call.scope.sessionId === sessionId) return true
+    return false
+  }
 
   /** Observe this original invocation issuer without acquiring business admission.
    * @returns True only while its admission is open and every issued invocation has released.

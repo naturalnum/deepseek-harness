@@ -6,6 +6,7 @@ import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SkillProjectGrant } from '../src/skill-files-types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRetainedExecutionExports, createSharedPathExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
+import { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
 
 interface Directory { readonly path: string; readonly device: string; readonly inode: string; readonly mountId: string }
 type Opened = { readonly kind: 'directory'; readonly value: Directory } | { readonly kind: 'proc'; readonly bytes: Buffer; offset: number }
@@ -15,7 +16,7 @@ vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof imp
   openSync: fs.open, closeSync: fs.close, readSync: fs.read, fstatSync: fs.stat, statfsSync: fs.geometry, lstatSync: fs.parent }))
 afterEach(() => { vi.resetAllMocks() })
 
-function fixture(mode: 'keeper' | 'shared-path' = 'keeper') {
+function fixture(mode: 'keeper' | 'shared-path' = 'keeper', sessionDirectories = false) {
   const base = `/var/lib/docker/dsh-root-exports/${'a'.repeat(32)}/${'b'.repeat(32)}`
   const storage = [`v1-${'1'.repeat(64)}`, `v1-${'2'.repeat(64)}`]
   const directories = new Map<string, Directory>(), opened = new Map<number, Opened>()
@@ -41,10 +42,13 @@ function fixture(mode: 'keeper' | 'shared-path' = 'keeper') {
         facts: facts(device, String(301 + index * 2 + roleIndex)), readonly: true } }
   }))
   const projectAlias = mode === 'shared-path' ? `/srv/accounts/${storage[1]}/projects` : `${base}/a1/projects`
-  const environmentAlias = mode === 'shared-path' ? `/srv/accounts/${storage[1]}/environments/one` : `${base}/a1/env-one`, leaf = 'default-workspace'
+  const environmentPool = mode === 'shared-path' ? `/srv/accounts/${storage[1]}/environments/one` : `${base}/a1/env-one`
+  const sessionDirectory = 'a3b6347d-137e-4bdd-8da6-ef90f85d834c'
+  const environmentAlias = sessionDirectories ? `${environmentPool}/${sessionDirectory}` : environmentPool, leaf = 'default-workspace'
   const projectMountId = mode === 'shared-path' ? '501' : '9003', environmentMountId = mode === 'shared-path' ? '502' : '9004'
   add(`${projectAlias}/${leaf}`, '13', '1011', projectMountId); add(`${projectAlias}/${leaf}/.pe`, '13', '1012', projectMountId)
   add(`${projectAlias}/${leaf}/.pe/skills`, '13', '1013', projectMountId)
+  if (sessionDirectories) add(environmentAlias, '14', '2020', environmentMountId)
   for (const [index, name] of ['home', 'venv', 'tmp'].entries()) add(`${environmentAlias}/${name}`, '14', String(1021 + index), environmentMountId)
   const manifest = Buffer.from(JSON.stringify({ schema: 'root-daemon-exports-v1', resourceId: 'a'.repeat(32), runId: 'b'.repeat(32),
     daemonNamespace: 'mnt:[10]', sourceNamespace: 'mnt:[11]',
@@ -113,7 +117,8 @@ function fixture(mode: 'keeper' | 'shared-path' = 'keeper') {
     mountVersion: '13:1011:501',
     quota: { device: '13', mountId: '501', maximumBytes: '1048576', maximumInodes: '128' }, readOnlyPaths: ['.pe'],
     metadataDirectory: { device: '13', inode: '1012', mountId: '501', uid: 2000, gid: 2000, mode: 0o40700, relativePath: '.pe' } },
-  environment: { rootPath: `${sourceRoot}/environments/one`, rootDevice: '14', rootInode: '2', rootMountId: '502',
+  environment: { rootPath: `${sourceRoot}/environments/one${sessionDirectories ? `/${sessionDirectory}` : ''}`,
+    rootDevice: '14', rootInode: sessionDirectories ? '2020' : '2', rootMountId: '502',
     bankId: 'bank-1', slotId: 'one', slotGeneration: 1, environmentVersion: 'env-v1', targetPath: '/opt/session-env',
     rootReadOnly: true, writablePaths: ['home', 'venv', 'tmp'],
     quota: { device: '14', mountId: '502', maximumBytes: '1048576', maximumInodes: '128' },
@@ -128,17 +133,18 @@ function fixture(mode: 'keeper' | 'shared-path' = 'keeper') {
       const accountRoot = `/srv/accounts/${storageKey}`
       return { accountId: `account-${index}`, storageKey, accountRoot, private: domain(`${accountRoot}/private`, String(3 + index), String(103 + index)),
         projects: domain(`${accountRoot}/projects`, String(11 + index * 2), String(499 + index * 2)),
-        environmentBank: { bankId: `bank-${index}`, slots: [{ slotId: 'one', domain: domain(`${accountRoot}/environments/one`, String(12 + index * 2), String(500 + index * 2)) }] } }
+        environmentBank: { bankId: `bank-${index}`, ...sessionDirectories ? { mode: 'session-directories' } : {}, slots: [{ slotId: 'one', domain: domain(`${accountRoot}/environments/one`, String(12 + index * 2), String(500 + index * 2)) }] } }
     }) }
   const planBytes = Buffer.from(JSON.stringify(plan)), digest = createHash('sha256').update(planBytes).digest('hex')
   const planCurrent = vi.fn(() => {
     if (controller.signal.aborted) throw new ExecutionExportFailure('verification')
   })
   const limits = { maxPlanBytes: 32768, maxMountInfoBytes: 32768, maxPathBytes: 512, maxShares: 1, maxResidentBytes: 4000000 }
-  const exports = mode === 'shared-path' ? createSharedPathExecutionExports(planBytes, digest, planCurrent, limits)
+  const exports = mode === 'shared-path' ? createSharedPathExecutionExports(planBytes, digest, planCurrent, limits,
+    sessionDirectories ? SESSION_DIRECTORY_SERVER_IMAGE_DIGEST : undefined)
     : createRetainedExecutionExports(manifest, createHash('sha256').update(manifest).digest('hex'),
       { signal: controller.signal, assertAvailable: keeper }, { ...limits, maxManifestBytes: 32768 })
-  return { exports, grant, current, keeper, opened, events, projectAlias, environmentAlias, controller, nativeController,
+  return { exports, grant, current, keeper, opened, events, projectAlias, environmentAlias, environmentPool, controller, nativeController,
     plan, planBytes, digest, planCurrent, limits, directories,
     mountInfo: (transform: (value: string) => string) => { transformMountInfo = transform },
     makeWritable: () => { writableAlias = true }, failClose: (fd: number) => { failedClose = fd } }
@@ -251,6 +257,15 @@ it('requires the original protected plan capability, digest, bounded capacities 
   expect(fs.open).not.toHaveBeenCalled()
 })
 
+it.each([undefined, 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'])(
+  'refuses Session directory storage with Native guard %s before opening sources', (serverImage) => {
+    const f = fixture('shared-path', true)
+    expect(() => createSharedPathExecutionExports(f.planBytes, f.digest, f.planCurrent, f.limits, serverImage))
+      .toThrow(ExecutionExportFailure)
+    expect(fs.open).not.toHaveBeenCalled()
+  },
+)
+
 it.each(['account', 'recipe', 'slot', 'quota', 'project'] as const)('refuses shared-path %s mismatch before opening sources', async (changed) => {
   const f = fixture('shared-path')
   const grant: ExecutionMountGrant = changed === 'account' ? { ...f.grant, binding: { ...f.grant.binding,
@@ -335,4 +350,41 @@ it.each(['initial', 'recheck', 'release'] as const)('keeps shared-path %s close 
   expect(f.exports.retainedShares).toBe(1); expect(f.opened.size).toBe(1)
   expect(() => { f.exports.assertEpochReleased(f.grant.binding) }).toThrow('Export descriptor closure is unconfirmed')
   expect(() => { f.exports.assertCurrent() }).toThrow('Export descriptor closure is unconfirmed')
+})
+
+
+it('shares only the verified Session child while keeping the original pool quota and retained FD bound', async () => {
+  const f = fixture('shared-path', true), share = await f.exports.share(f.grant, f.current)
+  expect(share.value.exports.environment).toBe(f.environmentAlias)
+  expect(share.value.exports.environment).not.toBe(f.environmentPool)
+  expect(f.opened.size).toBe(7)
+  expect([...f.opened.values()].filter(item => item.kind === 'directory').map(item => item.value.path))
+    .not.toContain(f.environmentPool)
+  share.value.assertCurrent()
+  expect(f.opened.size).toBe(7)
+  share.release()
+  expect(f.opened.size).toBe(0)
+})
+
+it.each(['pool', 'nested', 'foreign', 'not-uuid', 'pool-inode'] as const)(
+  'rejects Session-directory %s grants before opening data', async (changed) => {
+    const f = fixture('shared-path', true)
+    const environment = { ...f.grant.environment,
+      ...changed === 'pool-inode' ? { rootInode: '2' }
+        : { rootPath: changed === 'pool' ? f.environmentPool
+          : changed === 'nested' ? `${f.environmentAlias}/home`
+            : changed === 'foreign' ? f.environmentAlias.replace('environments/one', 'environments/other')
+              : `${f.environmentPool}/untrusted` } }
+    await expect(f.exports.share({ ...f.grant, environment }, f.current)).rejects.toMatchObject({ phase: 'selection' })
+    expect(fs.open).not.toHaveBeenCalled()
+    expect(f.exports.retainedShares).toBe(0)
+  })
+
+it.each(['inode', 'mount'] as const)('rejects a Session child whose %s changed under the original parent pool', async (changed) => {
+  const f = fixture('shared-path', true), original = f.directories.get(f.environmentAlias)
+  if (original === undefined) throw new Error('Expected the Session directory')
+  f.directories.set(f.environmentAlias, { ...original, ...changed === 'inode' ? { inode: '999' } : { mountId: '999' } })
+  await expect(f.exports.share(f.grant, f.current)).rejects.toMatchObject({ phase: 'verification' })
+  expect(f.opened.size).toBe(0)
+  expect(f.exports.retainedShares).toBe(0)
 })

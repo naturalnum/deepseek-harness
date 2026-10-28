@@ -2,7 +2,7 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-const { mode = 'normal', gate, abiVersion = 7, content, storageFacts, projectMetadataVersion, environmentLayoutVersion } = workerData
+const { mode = 'normal', gate, abiVersion = 7, content, storageFacts, projectMetadataVersion, environmentLayoutVersion, sessionDirectories } = workerData
 const state = new Int32Array(gate)
 const version = info => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
 const normalize = text => text.replace(/\r\n?/g, '\n')
@@ -15,6 +15,28 @@ parentPort.postMessage({ kind: 'ready', abiVersion, ...storageFacts === undefine
   ...projectMetadataVersion === undefined ? {} : { projectMetadataVersion },
   ...environmentLayoutVersion === undefined ? {} : { environmentLayoutVersion } })
 parentPort.on('message', request => {
+  if (request.kind === 'leaf-prepare') {
+    // TEST ONLY ordinary Node mkdir + synthetic closed-FD frame. No Linux fsync/confinement proof.
+    Atomics.add(state, 5, 1)
+    const frame = new Uint8Array(64), view = new DataView(frame.buffer), path = join(request.root.rootPath, request.leaf)
+    frame.set([68, 83, 70, 54, 1, 1])
+    let info
+    try { info = lstatSync(path, { bigint: true }) } catch (cause) { if (cause.code !== 'ENOENT') throw cause }
+    let flags = 96 | 384
+    if (mode === 'session-leaf-enospc') {
+      frame[6] = 3; frame[7] = 3; flags = 97 | 256
+      view.setUint32(8, 28, true); view.setUint32(48, 28, true)
+    } else if (info === undefined) {
+      mkdirSync(path, { mode: 0o700 }); info = statSync(path, { bigint: true })
+      frame[6] = 2; frame[7] = 5; flags |= 7; Atomics.add(state, 4, 1)
+      view.setBigUint64(16, info.dev, true); view.setBigUint64(24, info.ino, true)
+    } else { frame[6] = 1; frame[7] = 5 }
+    view.setUint32(12, flags, true); frame[52] = 1
+    view.setBigUint64(32, BigInt(request.root.rootDevice), true)
+    view.setBigUint64(40, BigInt(request.root.rootInode), true)
+    view.setBigUint64(56, BigInt(request.root.rootMountId), true)
+    parentPort.postMessage({ kind: 'leaf-prepare-reply', id: request.id, frame }, [frame.buffer]); return
+  }
   if (request.kind === 'environment-layout-prepare') {
     if (environmentLayoutVersion !== 1) throw new Error('Unadvertised environment layout operation')
     const frame = new Uint8Array(256), view = new DataView(frame.buffer)
@@ -82,8 +104,13 @@ parentPort.on('message', request => {
   }
   if (request.kind === 'storage-probe' && storageFacts !== undefined) {
     // Synthetic geometry only; no real quota or Linux deployment result is established.
-    const facts = storageFacts[request.path]
+    let facts = storageFacts[request.path]
     if (facts === undefined) throw new Error('Unexpected synthetic storage probe')
+    if (sessionDirectories && /\/env-\d+$/.test(request.path)) {
+      const used = BigInt(readdirSync(request.path).length * 4)
+      facts = { ...facts, availableBlocks: mode === 'session-pool-full' ? '0' : String(BigInt(facts.availableBlocks) - used),
+        freeInodes: String(BigInt(facts.freeInodes) - used) }
+    }
     if (mode === 'probe-abort-once' && /\/env-\d+$/.test(request.path) && Atomics.compareExchange(state, 3, 0, 1) === 0) {
       parentPort.postMessage({ kind: 'reply', id: request.id, ok: false, code: 'FS_ABORTED', syscallCode: 'ECANCELED' }); return
     }
@@ -188,6 +215,11 @@ parentPort.on('message', request => {
   }
   if (request.kind !== 'text-write') throw new Error('Unexpected text fixture request')
   const count = Atomics.add(state, 0, 1) + 1
+  if (mode === 'session-identity-unknown' && request.expected?.kind === 'replaceIfVersion') {
+    // The actual write reached its original path; only its completion disposition is uncertain.
+    writeFileSync(path, request.content)
+    failed('FS_IO_ERROR', 'EIO', 'unknown'); return
+  }
   if ((mode === 'block-before' || mode === 'unknown-after-cancel') && count === 1) block()
   if (mode === 'crash') throw new Error('Actual fixture worker exit during mutation')
   if (mode === 'unknown' || mode === 'unknown-after-cancel' || mode === 'unknown-stale') {

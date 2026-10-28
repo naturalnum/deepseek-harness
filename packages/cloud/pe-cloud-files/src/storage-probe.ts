@@ -52,7 +52,9 @@ function accountV2(value: unknown, max: number): StaticStorageAccountV2 {
   const v = shape(value, ['accountId', 'storageKey', 'accountRoot', 'private', 'projects', 'environmentBank'])
   const base = account({ accountId: v.accountId, storageKey: v.storageKey, accountRoot: v.accountRoot,
     private: v.private, projects: v.projects }, max)
-  const bank = shape(v.environmentBank, ['bankId', 'slots'])
+  const withMode = object(v.environmentBank) && Object.hasOwn(v.environmentBank, 'mode')
+  const bank = shape(v.environmentBank, ['bankId', 'slots', ...withMode ? ['mode'] : []])
+  if (withMode && bank.mode !== 'session-directories') invalid()
   if (!Array.isArray(bank.slots) || bank.slots.length < 1) invalid()
   const slots = bank.slots.map((entry: unknown) => {
     const slot = shape(entry, ['slotId', 'domain'])
@@ -61,7 +63,8 @@ function accountV2(value: unknown, max: number): StaticStorageAccountV2 {
     return Object.freeze({ slotId, domain: measured })
   })
   if (new Set(slots.map(slot => slot.slotId)).size !== slots.length) invalid()
-  return Object.freeze({ ...base, environmentBank: Object.freeze({ bankId: identifier(bank.bankId), slots: Object.freeze(slots) }) })
+  return Object.freeze({ ...base, environmentBank: Object.freeze({ bankId: identifier(bank.bankId), slots: Object.freeze(slots),
+    ...withMode ? { mode: 'session-directories' as const } : {} }) })
 }
 
 /**

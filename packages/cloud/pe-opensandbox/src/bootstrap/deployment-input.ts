@@ -8,6 +8,9 @@ import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
 
+/** Reviewed Native guard accepting direct Session directories inside the original account quota pools. */
+export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:3aa887c0d80e670ffa75e252a0919e7d917dec54183f8ba3cdb8d4791c3ad72a'
+
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
 export interface SharedPathStorageLimits {
   readonly maxPlanBytes: number
@@ -135,10 +138,11 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
   const v = object(value, hasCopies ? [...fields, 'skillCopies'] : fields, 'configuration')
   const life = lifecycle(v.lifecycle), boot = bootstrap(v.bootstrap)
   const s = object(v.selection, ['serverImageDigest', 'execdImageDigest', 'apiKeyDeploymentIdentity'], 'selection')
-  const serverImage = schema === 'pe-opensandbox-root-deployment-v2'
-    ? 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'
-    : 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17'
-  need(s.serverImageDigest === serverImage
+  const serverImage = text(s.serverImageDigest, 'selection.serverImageDigest', 71)
+  need((schema === 'pe-opensandbox-root-deployment-v2'
+    ? serverImage === 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'
+      || serverImage === SESSION_DIRECTORY_SERVER_IMAGE_DIGEST
+    : serverImage === 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17')
     && s.execdImageDigest === 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')

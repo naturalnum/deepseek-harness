@@ -95,6 +95,17 @@ describe('static protected record parsing without storage authority', () => {
       expect(() => parseStaticStoragePlan(encode(value), 1024)).toThrow()
     }
   })
+  it('accepts only the explicit session-directories mode and preserves legacy omission', () => {
+    const value = rawV2()
+    Object.assign(value.accounts[0]!.environmentBank, { mode: 'session-directories' })
+    const parsed = parseStaticStoragePlan(encode(value), 1024)
+    expect(accountEnvironmentBank(parsed.accounts[0])?.mode).toBe('session-directories')
+    expect(accountEnvironmentBank(parsed.accounts[1])?.mode).toBeUndefined()
+    for (const mode of [null, 'legacy', 'session-directory', true]) {
+      Object.assign(value.accounts[0]!.environmentBank, { mode })
+      expect(() => parseStaticStoragePlan(encode(value), 1024)).toThrow()
+    }
+  })
 })
 
 describe('closed-FD storage probe ABI1', () => {
