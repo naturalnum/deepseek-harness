@@ -6,6 +6,7 @@ import { createDefaultAdapterFactory, type AdapterFactory, type CreateSandboxReq
 import type { AllocationBackend, CreatedSandbox, PreparedSandbox } from './allocation-owner.ts'
 import type { AllocationCreateIntent } from './allocation-types.ts'
 import { BoundedLifecycleConnection, type WireBudget } from './sdk-transport.ts'
+import { PrivateSemanticAudit, type SemanticSpan } from './semantic-audit.ts'
 import { SdkLifecycleFailure, type AgentHandshake, type AgentSelection, type OriginalResourceObservation,
   type OwnedSdkTransport, type SdkLifecycleConfig, type TrustedAgentLifecycle, type VerifiedExecutionMount } from './lifecycle-types.ts'
 
@@ -31,6 +32,7 @@ const check = (ok: boolean, code: ConstructorParameters<typeof SdkLifecycleFailu
 
 /** Implements only Root's private lifecycle; it exports neither an execution client nor account-facing service. */
 export class SdkAllocationBackend implements AllocationBackend<VerifiedExecutionMount> {
+  private readonly audit = new PrivateSemanticAudit()
   private readonly config: SdkLifecycleConfig
   private readonly connection: BoundedLifecycleConnection
   private readonly sandboxes: ReturnType<AdapterFactory['createLifecycleStack']>['sandboxes']
@@ -85,6 +87,8 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     const labels = this.labels(intent), deferred = Promise.withResolvers<CreatedSandbox>()
     const record: AllocationRecord = { intent, mount, labels, actual: deferred.promise, observations: new Set(), phase: 'active' }
     this.records.set(intent.allocationId, record)
+    void this.audit.watch(this.audit.begin('sdk-create', { intent }), record.actual,
+      () => ({ intent, sandboxId: record.created?.sandboxId }))
     const actual = this.own(async () => {
       try {
         const request = this.request(record)
@@ -111,7 +115,9 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     if (record.preparation !== undefined) return record.preparation
     this.assertMount(record.intent, mount)
     const budget = this.budget(Math.min(deadlineAtMs, Date.parse(record.intent.createDeadlineAt)))
-    return record.preparation = this.own(async () => {
+    let span: SemanticSpan | undefined
+    const actual = this.own(async () => {
+      span = this.audit.begin('sdk-prepare', { intent: record.intent, sandboxId: created.sandboxId })
       await record.actual
       let ready = false
       for (let poll = 0; poll < this.config.maxReadyPolls; poll++) {
@@ -136,6 +142,8 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         payloadSha256: prepared.payloadSha256, imageDigest: prepared.imageDigest, deploymentIdentity: prepared.deploymentIdentity })
       return record.prepared
     })
+    return record.preparation = this.audit.watch(span, actual,
+      () => ({ intent: record.intent, sandboxId: created.sandboxId, runtimeIdentity: record.prepared?.runtimeIdentity }))
   }
 
   /** @param created Original known-successful create handle.
@@ -221,8 +229,10 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   closeRootActual(): Promise<void> {
     this.admission = false
     if (this.closing === undefined) {
+      this.audit.point('sdk-root-fence', { fenced: true })
       const deferred = Promise.withResolvers<void>()
       this.closing = deferred.promise
+      void this.audit.watch(this.audit.begin('sdk-root-close', { fenced: true }), this.closing)
       void this.closing.then(() => { this.settleClose({ ok: true }) }, (cause: unknown) => { this.settleClose({ ok: false, cause }) })
       void this.finishClose().then(deferred.resolve, deferred.reject)
     }
@@ -244,7 +254,8 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   private stopRecord(record: AllocationRecord): Promise<void> {
     if (record.stopActual !== undefined) return record.stopActual
     record.phase = 'stopping'
-    return record.stopActual = this.own(async () => {
+    const span = this.audit.begin('sdk-stop', { intent: record.intent, sandboxId: record.created?.sandboxId })
+    return record.stopActual = this.audit.watch(span, this.own(async () => {
       try {
         await record.actual
         const budget = this.budget(Date.now() + this.config.stopBudgetMs)
@@ -272,7 +283,8 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         if (joined.status === 'rejected') throw joined.reason
         record.phase = 'stopped'
       } catch (cause) { record.phase = 'stop-unknown'; throw new SdkLifecycleFailure('sdk/stop-unknown', cause) }
-    }, true)
+    }, true), () => ({ intent: record.intent, sandboxId: record.created?.sandboxId,
+      runtimeIdentity: record.prepared?.runtimeIdentity }))
   }
 
   private selection(record: AllocationRecord): AgentSelection {

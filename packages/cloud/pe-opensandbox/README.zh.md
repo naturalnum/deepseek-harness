@@ -45,7 +45,9 @@ kind: "package-reference"
 
 私有 [Root SDK 工厂](src/bootstrap/factory.ts) 加载随包发布于 `runtime/agent` 和 `runtime/bootstrap` 的九份固定 Python 资产，仅从构建后的 `lib` 模块旁定位。文件缺失、为链接或 hash 不符时，在 HTTP 工作之前拒绝；不回退到源码树，也不下载资产。工厂保留原 bootstrap、认证登记器与 SDK 后端的拥有关系，不提供 files 导出授权或账户准入，也不改变关闭的生产配方。
 
-原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。封闭选择固定支持技能资源挂载的服务端镜像，在收养 keeper 或构造 SDK 前拒绝其他镜像摘要。装配收养原继承 FD4 keeper，绑定原 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
+原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。封闭选择固定支持技能资源挂载的服务端镜像，在收养 keeper 或构造 SDK 前拒绝其他镜像摘要。部署 v1 收养原继承 FD4 keeper，绑定 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
+
+部署 v2 显式选择 `storage.mode: shared-path`，引用 files 既有的受保护存储计划。[共享挂载拥有者](src/shared-mounts.ts) 根据该计划选择稳定的项目和 Session 环境来源，测量当前源目录身份及硬配额，并将目录描述符保留到 allocation 释放借用。此模式不收养 keeper 或 FIFO，也不发布导出清单。计划租约检查受保护配置，每次借用还必须通过原 files/native 当前授权回调。授权失效会拒绝新执行，但保留物理停止责任及未结算借用。持久挂载由部署持有，账户销毁不卸载用户卷；实际原生及网页执行仍须验收。 共享路径 v2 要求单独固定的 Native 服务镜像，支持同一账户的 `projects/<leaf>` 与 `environments/slot-0` 或 `slot-1` 布局；旧 v1 保留原镜像。两者都保留认证的代际及 socket 绑定与物理删除完成检查。
 
 runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，可信工厂将安装后的精确对象及图当前性检查传给根协调器的 `bindAccount`，再在账户入口之前调用 `installAccountExecutionPort`。绑定或 port 缺失、复制、跨图或被影子替换都会失败；重复提供方或容量耗尽也会失败。关闭登记不替代其他账户就绪检查。
 
@@ -82,6 +84,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 现有 HTTP 定时器扣除原操作、服务角色、原 ingress 请求的剩余时限，以及在首次 bootstrap 前捕获的保守驻留期限。预留和已提交观察均不重新开始计时。物理沙盒到期单独处理：提前到期沿用原请求失败和物理停止确认流程，不能仅因时间到期就释放容量。
 
 私有[受管协调器](src/managed-coordinator.ts) 通过原始延迟原生授权和 files 授权连接这些拥有者，活跃进程槽与保留输出分别释放。Root 启动时先检查持久化的非终态分配，再允许就绪；关闭时等待启动、分配、传输和元数据责任实际结束。[SDK 适配器](src/sdk-lifecycle.ts) 在唯一且受验证的物理 DELETE 前关闭并等待特权启动请求。启动失败本身不表示特权启动仍未结清：有界命令流已初始化、观察到执行完成事件并结束，且原传输实际关闭时，严格输出或错误校验仍可判启动失败，但允许进入原停止链。缺少终结事实、超出观察限额或传输关闭失败时仍保留 unknown 并阻止删除；HTTP 成功本身不证明命令终结或物理停止。[受信运行时登记器](src/trusted-runtime.ts) 保留普通认证请求直到本地实际结束；只有物理删除不能释放命令容量。有界[数据传输器](src/agent-data/index.ts) 保留原始字节坐标与原操作引用。其 Loader 安装仍要求原始受保护部署；组件安装本身不代表原生网页服务执行已通过验收。
+
+私有[语义观察器](src/semantic-audit.ts) 可选地将有界 SDK、bootstrap 及原生操作事实发布给应用导入前安装的受保护接收方。接收方在原 stderr 完整写出后确认且仅确认一次；投递丢失或失败会污染证据。观察保留原 Promise，不授予业务控制能力或恢复权限。
 
 可选的可信 `ManagedExecutionDeployment.skillCopies` 策略提供显式 `maxCopiesPerOperation`，不属于公开 Loader JSON 或模型输入。它要求原 files owner 实现 `prepareSkillProject` 和 `borrowAllBundleWorkingCopies`；缺少枚举方法时，在 allocation 前拒绝。每条命令均由原 owner 从受保护的项目关联中推导包含 legacy 与完整树副本的完整有界集合，并核验已签发的 `SkillBundleOperationCopies`；超限、未知或未取得资格的成员使整个操作拒绝；命令文本、路径和 API 发布缓存不能选择成员。allocation 保留原父目录与 export 借用，每个原命令保留真实 copies 借用，直到实际 range 完成且本地结清，或合格且已 joined 的物理停止。输出保留有独立释放点。 受保护的 `rootDeployment` 文件接受可选闭合对象 `skillCopies: { maxCopiesPerOperation }`，数量须显式为正整数且不超过 2147483647；省略时不注入策略。Assembly 将独立冻结的解析结果传给原 deployment。
 

@@ -1,26 +1,34 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { BootstrapConfig } from '../src/bootstrap/bootstrap.ts'
-import type { ManagedCoordinatorConfig } from '../src/managed-coordinator.ts'
-import { SOURCE_DIGEST } from '../src/bootstrap/asset-manifest.ts'
+import { rootDeploymentFixture as input, sharedPathDeploymentFixture, managedDeploymentFixture } from './fixtures/root-deployment.ts'
+import { BootstrapFailure } from '../src/bootstrap/bootstrap.ts'
 
 const state = vi.hoisted(() => ({
   input: {} as Record<string, unknown>, events: [] as string[], retained: 0,
   ready: Promise.withResolvers<undefined>(), adopted: Promise.withResolvers<undefined>(), sdkClose: Promise.withResolvers<undefined>(),
   guard: (): void => {}, sdkCreated: vi.fn(), epoch: vi.fn(), sandboxCreate: vi.fn(), keeperClosed: vi.fn(),
+  sharedCreated: vi.fn(), planCurrent: true, sharedAvailable: true,
+  keeperAdopted: vi.fn(),
 }))
 vi.mock('../src/bootstrap/deployment-reference.ts', () => {
   class Lease {
     constructor(private readonly reference: { path: string }) {}
-    assertCurrent(): void { state.events.push(this.reference.path.endsWith('config.json') ? 'selection-current' : 'manifest-current') }
+    assertCurrent(): void {
+      const plan = this.reference.path.endsWith('storage-plan.json')
+      state.events.push(this.reference.path.endsWith('config.json') ? 'selection-current' : plan ? 'plan-current' : 'manifest-current')
+      if (plan && !state.planCurrent) throw new Error('Synthetic plan revoked.')
+    }
     value(): unknown { return this.reference.path.endsWith('config.json') ? state.input : {
       schema: 'root-daemon-exports-v1', runId: '1'.repeat(32),
       liveness: { kind: 'inherited-fifo-v1', frameBytes: 128, nonce: '2'.repeat(64), device: '3', inode: '4' } } }
     bytes(): Buffer { return Buffer.from('{}') }
-    close(): void { state.events.push(this.reference.path.endsWith('config.json') ? 'selection-close' : 'manifest-close') }
+    close(): void { state.events.push(this.reference.path.endsWith('config.json') ? 'selection-close'
+      : this.reference.path.endsWith('storage-plan.json') ? 'plan-close' : 'manifest-close') }
   }
   return { RootDeploymentLease: Lease, readRootDeploymentReference: (reference: { path: string }) => new Lease(reference) }
 })
 vi.mock('../src/bootstrap/keeper-live.ts', () => ({ adoptExportKeeperLive: () => {
+  state.keeperAdopted()
   state.adopted.resolve(undefined)
   return { ready: state.ready.promise, signal: new AbortController().signal,
     assertAvailable(): void { state.events.push('keeper-current') },
@@ -29,7 +37,13 @@ vi.mock('../src/bootstrap/keeper-live.ts', () => ({ adoptExportKeeperLive: () =>
 vi.mock('../src/export-share.ts', () => ({ createRetainedExecutionExports: () => ({
   share: vi.fn(), assertEpochReleased: state.epoch,
   get retainedShares() { return state.retained }, assertCurrent(): void { state.events.push('exports-current') },
-}) }))
+}), createSharedPathExecutionExports: (...args: [Uint8Array, string, () => void, object]) => {
+  state.sharedCreated(...args)
+  args[2]()
+  if (!state.sharedAvailable) throw new Error('Synthetic shared storage unavailable.')
+  return { share: vi.fn(), assertEpochReleased: state.epoch,
+    get retainedShares() { return state.retained }, assertCurrent(): void { args[2](); state.events.push('shared-current') } }
+} }))
 vi.mock('../src/bootstrap/factory.ts', () => ({ createRootSdkExecutionOwner: (config: BootstrapConfig) => {
   state.sdkCreated(); state.guard = () => { config.assertDeploymentCurrent() }
   return Promise.resolve({ backend: { create: state.sandboxCreate,
@@ -39,41 +53,15 @@ vi.mock('../src/bootstrap/factory.ts', () => ({ createRootSdkExecutionOwner: (co
 import { assembleRootExecutionDeployment } from '../src/bootstrap/assembly.ts'
 import { parseRootDeploymentInput } from '../src/bootstrap/deployment-input.ts'
 
-const limits: ManagedCoordinatorConfig = {
-  maxBoundAccounts: 2, maxActiveCommands: 2, maxActiveCommandsPerAccount: 1,
-  maxResidentCommands: 4, maxResidentCommandsPerAccount: 2, maxResidentBytes: 262144, maxResidentBytesPerAccount: 131072,
-  maxStopObservers: 2, stopWaitBudgetMs: 1000, recoveryPageSize: 2,
-  allocations: { environmentVersion: 'env-v1', provider: 'selected-docker', createBudgetMs: 1000,
-    maxAllocations: 2, maxAllocationsPerAccount: 1, maxWaiters: 4, maxWaitersPerAllocation: 2 },
-  store: { maxFieldBytes: 256, maxInputBytes: 65536, maxRowBytes: 4096, maxResultBytes: 16384,
-    maxRows: 4, maxCapabilities: 5, maxPendingQueries: 2, maxMutationResponsibilities: 2, maxRetainedBytes: 262144 },
-  commands: { allowedTools: ['bash'], maxScopes: 2,
-    commandLimits: { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512, maxStdinBytes: 4096,
-      maxTailBytes: 32, maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2, maxLifetimeMs: 1000, stopWaitMs: 100 } },
-  shell: { bashPath: '/bin/bash', timeoutMs: 20, maxTimeoutMs: 100, maxOutputBytes: 32, graceMs: 10 },
-}
-function input() {
-  return { schema: 'pe-opensandbox-root-deployment-v1', selection: {
-    serverImageDigest: 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17',
-    execdImageDigest: 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf', apiKeyDeploymentIdentity: 'selected-deployment' },
-  lifecycle: { lifecycleBaseUrl: 'http://127.0.0.1:24444/v1', apiKey: 'synthetic-management-only', deploymentIdentity: 'selected-deployment',
-    environmentVersion: 'env-v1', provider: 'selected-docker', imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
-    payloadSha256: SOURCE_DIGEST, entrypoint: ['/usr/bin/tail', '-f', '/dev/null'], platform: 'arm64', cpuCores: 0.5, memoryMiB: 192,
-    ttlSeconds: 120, requestTimeoutMs: 1000, stopBudgetMs: 1000, readyPollIntervalMs: 1, maxReadyPolls: 3,
-    pageSize: 1, maxPages: 2, maxItems: 2, maxRecords: 4, maxInflightOperations: 8,
-    maxRequestBytes: 32768, maxResponseBytes: 32768, maxOperationBytes: 262144, maxFieldBytes: 512 },
-  bootstrap: { execdAccessToken: 'synthetic-execd-only', transport: { connections: 1, connectTimeoutMs: 100, headersTimeoutMs: 1000,
-    bodyTimeoutMs: 1000, keepAliveTimeoutMs: 1000, maxHeaderBytes: 4096, maxRequestBytes: 32768, maxResponseBytes: 32768 },
-  bootstrapTimeoutMs: 10000, requestTimeoutMs: 5000, commandTimeoutSeconds: 3,
-  maxRequestBytes: 32768, maxReplyBytes: 32768, maxAggregateBytes: 262144, maxEvents: 8, maxRecords: 4, agentPort: 8080 },
-  exports: { manifest: { path: '/root-private/manifest.json', sha256: '3'.repeat(64) },
-    limits: { maxManifestBytes: 16384, maxMountInfoBytes: 65536, maxPathBytes: 4096, maxShares: 4, maxResidentBytes: 8388608 } } }
-}
+const limits = managedDeploymentFixture()
+
 beforeEach(() => {
   state.input = input(); state.events.length = 0; state.retained = 0
   state.ready = Promise.withResolvers<undefined>(); state.adopted = Promise.withResolvers<undefined>()
   state.sdkClose = Promise.withResolvers<undefined>()
   state.sdkCreated.mockClear(); state.epoch.mockClear(); state.sandboxCreate.mockClear(); state.keeperClosed.mockClear()
+  state.sharedCreated.mockClear(); state.planCurrent = true; state.sharedAvailable = true
+  state.keeperAdopted.mockClear()
   const original = process
   vi.stubGlobal('process', new Proxy(original, { get(target, key, receiver) {
     if (key === 'platform') return 'linux'
@@ -178,4 +166,59 @@ it('passes the protected explicit policy to the original deployment without crea
   expect(assembly.deployment.skillCopies?.maxCopiesPerOperation).toBe(4)
   expect(state.sandboxCreate).not.toHaveBeenCalled()
   await assembly.closeActual()
+})
+
+it('selects actual shared storage before SDK construction without adopting or waiting for a keeper', async () => {
+  const selected = sharedPathDeploymentFixture(); state.input = selected
+  const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
+  expect(state.sharedCreated).toHaveBeenCalledExactlyOnceWith(Buffer.from('{}'), '5'.repeat(64), expect.any(Function), selected.storage.limits)
+  expect(state.keeperAdopted).not.toHaveBeenCalled()
+  expect(state.events).toContain('plan-current')
+  expect(state.events).toContain('shared-current')
+  expect(state.events).not.toContain('manifest-current')
+  expect(state.sdkCreated).toHaveBeenCalledOnce()
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
+  expect(state.keeperClosed).not.toHaveBeenCalled()
+  state.sdkClose.resolve(undefined); await assembly.closeActual()
+  expect(state.events.slice(-2)).toEqual(['plan-close', 'selection-close'])
+  expect(state.events).not.toContain('keeper-close')
+})
+
+it('rejects unavailable shared storage before constructing the SDK instead of treating no keeper as ready', async () => {
+  state.input = sharedPathDeploymentFixture(); state.sharedAvailable = false
+  const failure = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
+    .then(() => { throw new Error('Unavailable storage was admitted.') }, (cause: unknown) => cause)
+  if (!(failure instanceof BootstrapFailure) || typeof failure.cause !== 'object' || failure.cause === null) {
+    throw new Error('Expected retained construction cleanup.')
+  }
+  const cleanup: unknown = Reflect.get(failure.cause, 'cleanupActual')
+  expect(cleanup).toBeInstanceOf(Promise)
+  await cleanup
+  expect(state.sharedCreated).toHaveBeenCalledOnce()
+  expect(state.sdkCreated).not.toHaveBeenCalled()
+  expect(state.events).toContain('plan-close')
+  expect(state.events).toContain('selection-close')
+  expect(state.events).not.toContain('keeper-close')
+})
+
+it('keeps physical SDK stop authority after shared storage revocation and retains files until actual stop', async () => {
+  state.input = sharedPathDeploymentFixture()
+  const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
+  state.planCurrent = false
+  expect(() => { assembly.deployment.assertCurrent() }).toThrow()
+  expect(() => { state.guard() }).not.toThrow()
+  const closing = assembly.closeActual()
+  expect(state.events).toContain('sdk-close')
+  expect(state.events).not.toContain('plan-close')
+  state.sdkClose.resolve(undefined); await closing
+  expect(state.events.slice(-2)).toEqual(['plan-close', 'selection-close'])
+})
+
+it('does not release shared-plan leases while a grant remains retained after SDK stop', async () => {
+  state.input = sharedPathDeploymentFixture(); state.sdkClose.resolve(undefined)
+  const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
+  state.retained = 1
+  await expect(assembly.closeActual()).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  expect(state.events).not.toContain('plan-close')
+  expect(state.events).not.toContain('selection-close')
 })

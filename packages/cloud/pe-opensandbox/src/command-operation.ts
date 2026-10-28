@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { posix } from 'node:path'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { CollectedOutputMirror } from './collected-output.ts'
+import { PrivateSemanticAudit, type SemanticFacts } from './semantic-audit.ts'
 
 /** Authenticated raw stream facts, decoded and validated by the private channel client. */
 export interface CommandStreamSnapshot {
@@ -71,6 +72,7 @@ interface RangeWaiter { settle(empty: boolean, failure?: { readonly cause: unkno
  * revocation requests stop but retains output and cleanup until actual range/I/O settlement.
  */
 export class ManagedCommandOperation {
+  private readonly audit = new PrivateSemanticAudit()
   private readonly completion = Promise.withResolvers<SubprocessOutcome>()
   private readonly preparation = Promise.withResolvers<void>()
   private readonly empty = Promise.withResolvers<void>()
@@ -97,6 +99,7 @@ export class ManagedCommandOperation {
   private rangeConfirmed = false
   private scopeReleased = false
   private retired = false
+  private physicalStopAcknowledged = false
   private grace: ReturnType<typeof setTimeout> | undefined
   private lifetime: ReturnType<typeof setTimeout> | undefined
   private lifetimeDeadlineAtMs: number | undefined
@@ -180,11 +183,18 @@ export class ManagedCommandOperation {
   begin(): void {
     if (this.started) throw new Error('The original command operation was already started.')
     this.started = true
+    void this.audit.watch(this.audit.begin('native-command'), this.whenEmpty, () => this.auditFacts())
+    void this.audit.watch(this.audit.begin('native-direct'), this.completion.promise, () => this.auditFacts())
     this.lifetimeDeadlineAtMs = performance.now() + this.limits.maxLifetimeMs
     this.lifetime = setTimeout(() => { this.requestStop(new Error('The command exceeded its platform lifetime.')) }, this.limits.maxLifetimeMs)
-    void this.run().then(() => { this.localSettled = true; this.finishEmpty() }, (cause: unknown) => {
+    void this.run().then(() => {
+      this.localSettled = true
+      this.audit.point('native-local-settled', this.auditFacts())
+      this.finishEmpty()
+    }, (cause: unknown) => {
       this.fail(cause)
       this.localSettled = true
+      this.audit.point('native-local-settled', this.auditFacts())
       this.finishEmpty()
     })
   }
@@ -259,6 +269,7 @@ export class ManagedCommandOperation {
 
   /** Root calls only after its qualified physical stop and all local channel requests have actually settled. */
   acknowledgePhysicalStop(): void {
+    this.physicalStopAcknowledged = true
     this.rangeConfirmed = true
     this.publication.resolve()
     if (this.direct === undefined || !this.eof.stdout || !this.eof.stderr) {
@@ -407,6 +418,12 @@ export class ManagedCommandOperation {
 
   private stopRequest(): { readonly reason: unknown } | undefined { return this.requestedStop }
   private isRangeConfirmed(): boolean { return this.rangeConfirmed }
+
+  private auditFacts(): SemanticFacts {
+    return { directObserved: this.direct !== undefined, stdoutEof: this.eof.stdout, stderrEof: this.eof.stderr,
+      rangeConfirmed: this.rangeConfirmed, localSettled: this.localSettled, remoteAttempted: this.remoteAttempted,
+      failed: this.failed !== undefined, physicalStopAcknowledged: this.physicalStopAcknowledged }
+  }
 
   private assertPublic(): void {
     if (this.scopeReleased) throw new Error('The original native command output owner was released.')

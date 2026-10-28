@@ -2,6 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { ConnectionConfig } from '@alibaba-group/opensandbox'
 import { Agent } from 'undici'
+import { PrivateSemanticAudit } from './semantic-audit.ts'
 import { SdkLifecycleFailure, type OwnedSdkTransport, type SdkLifecycleConfig } from './lifecycle-types.ts'
 
 /** Explicit transport limits; Root supplies deployment values, including one finite connection pool. */
@@ -27,7 +28,8 @@ export function createOwnedSdkTransport(limits: OwnedTransportLimits): OwnedSdkT
   const dispatcher = new Agent({ connections: limits.connections, connectTimeout: limits.connectTimeoutMs,
     headersTimeout: limits.headersTimeoutMs, bodyTimeout: limits.bodyTimeoutMs, keepAliveTimeout: limits.keepAliveTimeoutMs,
     keepAliveMaxTimeout: limits.keepAliveTimeoutMs, maxHeaderSize: limits.maxHeaderBytes, pipelining: 1 })
-  return { fetch: async (input, init) => {
+  const audit = new PrivateSemanticAudit()
+  const fetchActual: typeof fetch = async (input, init) => {
     const request = new Request(input, init), url = new URL(request.url)
     const method = request.method
     if (method !== 'GET' && method !== 'POST' && method !== 'DELETE') throw new SdkLifecycleFailure('sdk/selection')
@@ -52,7 +54,14 @@ export function createOwnedSdkTransport(limits: OwnedTransportLimits): OwnedSdkT
       }
     } finally { response.body.destroy() }
     return new Response(bytes ? Buffer.concat(chunks) : null, { status: response.statusCode, headers })
-  }, close: () => dispatcher.close() }
+  }
+  return { fetch: (input, init) => {
+    const span = audit.begin('transport-fetch')
+    return audit.watch(span, fetchActual(input, init), response => ({ statusCode: response?.status }))
+  }, close: () => {
+    const span = audit.begin('transport-close')
+    return audit.watch(span, dispatcher.close())
+  } }
 }
 
 /** Shared bytes/deadline across every page or readiness read in one finite operation. */
@@ -71,6 +80,7 @@ interface WireWork {
 
 /** Public subclass used only by this adapter's LifecycleStack; endpoint/SSE/application access is not exposed. */
 export class BoundedLifecycleConnection extends ConnectionConfig {
+  private readonly audit = new PrivateSemanticAudit()
   private readonly context = new AsyncLocalStorage<WireWork>()
   private readonly pending = new Set<Promise<Response>>()
   private closing = false
@@ -93,10 +103,11 @@ export class BoundedLifecycleConnection extends ConnectionConfig {
     return (input, init) => {
       const work = this.context.getStore()
       if (this.closing || work === undefined) return Promise.reject(new SdkLifecycleFailure('sdk/closed'))
+      const span = this.audit.begin('lifecycle-request', { method: work.method })
       const actual = this.request(work, input, init)
       this.pending.add(actual)
       void actual.then(() => this.pending.delete(actual), () => this.pending.delete(actual))
-      return actual
+      return this.audit.watch(span, actual)
     }
   }
 
@@ -121,10 +132,10 @@ export class BoundedLifecycleConnection extends ConnectionConfig {
   /** @returns Actual transport settlement; rejection remains sticky and never means clean. */
   override closeTransport(): Promise<void> {
     this.closing = true
-    return this.closeActual ??= (async () => {
+    return this.closeActual ??= this.audit.watch(this.audit.begin('lifecycle-connection-close', { fenced: true }), (async () => {
       while (this.pending.size) await Promise.allSettled([...this.pending])
       await this.transport.close()
-    })()
+    })())
   }
 
   private async request(work: WireWork, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

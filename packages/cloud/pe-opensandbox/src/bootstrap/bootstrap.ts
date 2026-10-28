@@ -10,6 +10,7 @@ import { BOOTSTRAP_PINS } from './payload-pins.ts'
 import { SOURCE_DIGEST, SOURCES } from './asset-manifest.ts'
 import { RootAgentProxyTransport } from './agent-proxy.ts'
 import { createOwnedSdkTransport, type OwnedTransportLimits } from '../sdk-transport.ts'
+import { PrivateSemanticAudit, type SemanticSpan } from '../semantic-audit.ts'
 import type { AgentSelection, OwnedSdkTransport, SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { AgentDataClient, ClientOptions, RootGrant } from '../agent-data/types.ts'
 import { DataClient } from '../agent-data/client-internal.ts'
@@ -97,6 +98,7 @@ interface WireWork { readonly method: string; readonly url: string; requests: nu
 
 /** Every request is one public SDK send on a dedicated no-retry dispatcher; close fences synchronously. */
 class BootstrapConnection extends ConnectionConfig {
+  private readonly audit = new PrivateSemanticAudit()
   private readonly context = new AsyncLocalStorage<WireWork>()
   private readonly pending = new Set<Promise<Response>>()
   private closing = false
@@ -117,12 +119,13 @@ class BootstrapConnection extends ConnectionConfig {
       if (this.closing) return Promise.reject(new BootstrapFailure('closed'))
       const work = this.context.getStore()
       if (work === undefined) return Promise.reject(new BootstrapFailure('binding'))
+      const span = this.audit.begin('bootstrap-request', { method: work.method })
       const deferred = Promise.withResolvers<Response>()
       const actual = deferred.promise
       this.pending.add(actual)
       void actual.then(() => this.pending.delete(actual), () => this.pending.delete(actual))
       void this.request(work, input, init).then(deferred.resolve, deferred.reject)
-      return actual
+      return this.audit.watch(span, actual)
     }
   }
   override get sseFetch(): typeof globalThis.fetch { return this.fetch }
@@ -134,11 +137,11 @@ class BootstrapConnection extends ConnectionConfig {
   }
   override closeTransport(): Promise<void> {
     this.closing = true
-    return this.closed ??= (async () => {
+    return this.closed ??= this.audit.watch(this.audit.begin('bootstrap-connection-close', { fenced: true }), (async () => {
       while (this.pending.size) await Promise.allSettled([...this.pending])
       await this.transport.close()
       if (this.failure !== undefined) throw new BootstrapFailure('wire-unknown', this.failure.cause)
-    })()
+    })())
   }
   private async request(work: WireWork, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const request = new Request(input, init)
@@ -212,6 +215,7 @@ interface RecordState {
 
 /** Original physical allocation only: no list adoption, create, restart, user argv or account SDK access. */
 export class TrustedSdkBootstrap {
+  private readonly audit = new PrivateSemanticAudit()
   private readonly records = new Map<string, RecordState>()
   private readonly retiredIntents = new WeakSet<AgentSelection['intent']>()
   private readonly options = new WeakMap<ClientOptions, Readonly<{ record: RecordState; endpoint: URL; headers: Record<string, string> }>>()
@@ -260,6 +264,8 @@ export class TrustedSdkBootstrap {
     if (record.actual !== undefined) return record.actual
     const deferred = Promise.withResolvers<ClientOptions>()
     record.actual = deferred.promise
+    void this.audit.watch(this.audit.begin('bootstrap', { intent: selection.intent, sandboxId: selection.sandboxId }), record.actual,
+      () => ({ intent: selection.intent, sandboxId: selection.sandboxId, runtimeIdentity: record.protected?.expected.runtimeIdentity }))
     void this.start(record, signal).then(deferred.resolve, deferred.reject)
     return record.actual
   }
@@ -287,8 +293,9 @@ export class TrustedSdkBootstrap {
   fence(selection: AgentSelection): { readonly whenJoined: Promise<void>; assertDeploymentCurrent(): void } {
     const record = this.record(selection)
     record.fenced = true
+    this.audit.point('bootstrap-fence', { intent: selection.intent, sandboxId: selection.sandboxId, fenced: true })
     const closed = record.connection?.closeTransport()
-    record.joined ??= (async () => {
+    record.joined ??= this.audit.watch(this.audit.begin('bootstrap-join', { intent: selection.intent, sandboxId: selection.sandboxId }), (async () => {
       const results = await Promise.allSettled([record.actual ?? Promise.resolve(), closed ?? Promise.resolve()])
       // A reentrant Root callback may fence while transport construction is still returning.
       try { await (record.closeActual ?? record.connection?.closeTransport()) }
@@ -297,7 +304,7 @@ export class TrustedSdkBootstrap {
       if (closure.status === 'rejected') throw new BootstrapFailure('wire-unknown', closure.reason)
       if (record.privilegedFailure !== undefined) throw new BootstrapFailure('command-unknown', record.privilegedFailure.cause)
       record.joinedConfirmed = true
-    })()
+    })())
     return Object.freeze({ whenJoined: record.joined,
       assertDeploymentCurrent: () => { this.config.assertDeploymentCurrent() } })
   }
@@ -438,10 +445,13 @@ export class TrustedSdkBootstrap {
   private async command(record: RecordState, execd: ExecdStack, connection: BootstrapConnection,
     base: string, source: string, expectedOutput: string): Promise<void> {
     const admission = { started: false, terminal: false }
+    const step = expectedOutput === 's4-bootstrap-claimed\n' ? 'prep' : 'loader'
+    let span: SemanticSpan | undefined
+    let complete = false, initialized = false, failed = false, output = '', count = 0
     try {
-      await connection.run('POST', base + '/command', async () => {
-        let complete = false, initialized = false, failed = false, output = '', count = 0
+      const actual = connection.run('POST', base + '/command', async () => {
         admission.started = true
+        span = this.audit.begin('bootstrap-stream', { intent: record.selection.intent, sandboxId: record.selection.sandboxId, step })
         for await (const event of execd.commands.runStream(['/usr/local/bin/python3', '-I', '-S', '-B', '-c', source],
           { uid: 0, gid: 0, background: false, workingDirectory: '/', timeoutSeconds: this.config.commandTimeoutSeconds })) {
           need(++count <= this.config.maxEvents, 'command-unknown')
@@ -465,6 +475,8 @@ export class TrustedSdkBootstrap {
         admission.terminal = true
         need(!failed && output === expectedOutput, 'command-unknown')
       })
+      await this.audit.watch(span, actual, () => ({ intent: record.selection.intent, sandboxId: record.selection.sandboxId, step,
+        events: count, initialized, streamTerminal: admission.terminal, failed }))
     } catch (cause) {
       if (admission.started && !admission.terminal && !(cause instanceof BootstrapFailure && cause.code === 'closed')) record.privilegedFailure ??= { cause }
       throw cause

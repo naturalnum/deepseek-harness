@@ -1,5 +1,7 @@
 /** Component lifecycle tests; these synthetic snapshots do not qualify a deployed execution channel. */
 import { afterEach, expect, it, vi } from 'vitest'
+import { channel } from 'node:diagnostics_channel'
+import type { SemanticAuditEvent } from '../src/semantic-audit.ts'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { ManagedCommandOperation, type CommandChannel, type CommandSnapshot } from '../src/command-operation.ts'
 
@@ -58,6 +60,47 @@ it('returns a preparing native handle, then separates direct/stdio completion fr
   f.poll.resolve(complete()); await expect(wait).resolves.toBe(true)
   expect(f.authority.retired).not.toHaveBeenCalled()
   f.op.release(); expect(f.authority.retired).toHaveBeenCalledTimes(1)
+})
+
+it('semantic native spans distinguish original direct completion from validated range and I/O join', async () => {
+  const events: SemanticAuditEvent[] = [], bus = channel('dsh:pe-opensandbox:semantic:v1')
+  const listener = (message: unknown): void => { const event = message as SemanticAuditEvent; events.push(event); event.receipt() }
+  bus.subscribe(listener)
+  try {
+    const f = fixture(), done = f.op.handle.done, empty = f.op.whenEmpty
+    f.op.publish(); f.op.begin(); await done
+    expect(f.op.handle.done).toBe(done); expect(f.op.whenEmpty).toBe(empty)
+    const direct = events.find(event => event.operation === 'native-direct' && event.phase === 'end')
+    expect(direct?.outcome).toBe('fulfilled')
+    expect(direct?.fields).toMatchObject({ directObserved: true, stdoutEof: true, stderrEof: true, rangeConfirmed: false })
+    expect(events.filter(event => event.operation === 'native-command' && event.phase === 'end')).toHaveLength(0)
+    f.poll.resolve(complete()); await empty
+    const joined = events.find(event => event.operation === 'native-command' && event.phase === 'end')
+    expect(joined?.fields).toMatchObject({ directObserved: true, stdoutEof: true, stderrEof: true, rangeConfirmed: true,
+      localSettled: true, failed: false, physicalStopAcknowledged: false })
+    f.op.release()
+    expect(events.some(event => event.tainted)).toBe(false)
+    expect(JSON.stringify(events)).not.toContain('raw')
+  } finally { bus.unsubscribe(listener) }
+})
+
+it('semantic native failure keeps its range span open until original physical-stop acknowledgement', async () => {
+  const events: SemanticAuditEvent[] = [], bus = channel('dsh:pe-opensandbox:semantic:v1')
+  const listener = (message: unknown): void => { const event = message as SemanticAuditEvent; events.push(event); event.receipt() }
+  bus.subscribe(listener)
+  try {
+    const f = fixture(), failure = new Error('PRIVATE_UNKNOWN_PREPARE'), done = f.op.handle.done
+    f.channel.prepare.mockRejectedValue(failure)
+    f.op.publish(); f.op.begin(); await expect(done).rejects.toBe(failure)
+    expect(events.find(event => event.operation === 'native-direct' && event.phase === 'end')?.outcome).toBe('rejected')
+    expect(events.filter(event => event.operation === 'native-command' && event.phase === 'end')).toHaveLength(0)
+    f.op.acknowledgePhysicalStop(); await f.op.whenEmpty
+    const joined = events.find(event => event.operation === 'native-command' && event.phase === 'end')
+    expect(joined?.fields).toMatchObject({ failed: true, physicalStopAcknowledged: true, directObserved: false,
+      rangeConfirmed: true, localSettled: true })
+    expect(JSON.stringify(events)).not.toContain('PRIVATE_UNKNOWN_PREPARE')
+    f.op.release()
+  } finally { bus.unsubscribe(listener) }
 })
 
 it('preserves NUL and UTF-8 batch stdin bytes independently of executable argument restrictions', async () => {

@@ -1,4 +1,5 @@
-/** Closed Root-only JSON input for the original selected-server policy, fixed bootstrap and export publication. */
+/** Root-only JSON selection for the fixed SDK/bootstrap and an explicit storage deployment. */
+import { posix } from 'node:path'
 import { ExecutionStateError } from '../errors.ts'
 import type { SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { OwnedTransportLimits } from '../sdk-transport.ts'
@@ -7,16 +8,30 @@ import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
 
-/** Parsed private fields. Only retained file leases and original FD4 adoption confer the associated capabilities. */
-export interface RootDeploymentInput {
-  readonly schema: 'pe-opensandbox-root-deployment-v1'
+/** Finite plan verification and retained-grant capacities for stable shared storage. */
+export interface SharedPathStorageLimits {
+  readonly maxPlanBytes: number
+  readonly maxMountInfoBytes: number
+  readonly maxPathBytes: number
+  readonly maxShares: number
+  readonly maxResidentBytes: number
+}
+
+interface RootDeploymentFields {
   readonly selection: Readonly<{ serverImageDigest: string; execdImageDigest: string; apiKeyDeploymentIdentity: string }>
   readonly lifecycle: SdkLifecycleConfig
   readonly bootstrap: Omit<BootstrapConfig, 'lifecycle' | 'assertDeploymentCurrent'>
-  readonly exports: Readonly<{ manifest: RootDeploymentReference; limits: ExecutionExportLimits }>
   /** Optional explicit original-owner count bound; omission leaves copy execution disabled. */
   readonly skillCopies?: Readonly<{ maxCopiesPerOperation: number }>
 }
+
+/** Legacy v1 requires the original keeper; v2 selects shared paths through the existing protected files plan. */
+export type RootDeploymentInput = RootDeploymentFields & (
+  | { readonly schema: 'pe-opensandbox-root-deployment-v1'
+    readonly exports: Readonly<{ manifest: RootDeploymentReference; limits: ExecutionExportLimits }> }
+  | { readonly schema: 'pe-opensandbox-root-deployment-v2'
+    readonly storage: Readonly<{ mode: 'shared-path'; plan: RootDeploymentReference; limits: SharedPathStorageLimits }> }
+)
 function need(value: boolean, field: string): asserts value {
   if (!value) throw new ExecutionStateError('cloud/invalid-config', `Root deployment field ${field} is absent, unsupported or out of bounds.`)
 }
@@ -89,33 +104,59 @@ function bootstrap(value: unknown): RootDeploymentInput['bootstrap'] {
   return result
 }
 
+function sharedStorage(value: unknown): Extract<RootDeploymentInput, { schema: 'pe-opensandbox-root-deployment-v2' }>['storage'] {
+  const storage = object(value, ['mode', 'plan', 'limits'], 'storage')
+  need(storage.mode === 'shared-path', 'storage.mode')
+  const plan = object(storage.plan, ['path', 'sha256'], 'storage.plan')
+  const path = text(plan.path, 'storage.plan.path', 4096), digest = text(plan.sha256, 'storage.plan.sha256', 64)
+  need(path.startsWith('/') && posix.normalize(path) === path && path !== '/' && !path.endsWith('/')
+    && !path.includes('\\') && /^[a-f0-9]{64}$/.test(digest), 'storage.plan')
+  const limits = object(storage.limits, ['maxPlanBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'storage.limits')
+  return Object.freeze({ mode: storage.mode, plan: Object.freeze({ path, sha256: digest }), limits: Object.freeze({
+    maxPlanBytes: integer(limits.maxPlanBytes, 'storage.maxPlanBytes', 262144),
+    maxMountInfoBytes: integer(limits.maxMountInfoBytes, 'storage.maxMountInfoBytes', 4194304),
+    maxPathBytes: integer(limits.maxPathBytes, 'storage.maxPathBytes', 4096),
+    maxShares: integer(limits.maxShares, 'storage.maxShares'),
+    maxResidentBytes: integer(limits.maxResidentBytes, 'storage.maxResidentBytes', Number.MAX_SAFE_INTEGER),
+  }) })
+}
+
 /**
  * Parse the complete protected Root configuration with no defaults or executable/endpoint alternatives.
  * @param value Exact decoded readonly Root file; credential values remain private to this assembly.
- * @returns Independent frozen selection, limits, optional copy policy, original credentials and export reference.
+ * @returns Frozen fixed selection, credentials and either legacy exports or an explicit protected shared-path plan.
  */
 export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
-  const fields = ['schema', 'selection', 'lifecycle', 'bootstrap', 'exports']
-  const hasCopies = value !== null && typeof value === 'object' && Object.hasOwn(value, 'skillCopies')
+  need(value !== null && typeof value === 'object' && !Array.isArray(value), 'configuration')
+  const schema: unknown = Reflect.get(value, 'schema')
+  need(schema === 'pe-opensandbox-root-deployment-v1' || schema === 'pe-opensandbox-root-deployment-v2', 'schema')
+  const fields = ['schema', 'selection', 'lifecycle', 'bootstrap', schema === 'pe-opensandbox-root-deployment-v1' ? 'exports' : 'storage']
+  const hasCopies = Object.hasOwn(value, 'skillCopies')
   const v = object(value, hasCopies ? [...fields, 'skillCopies'] : fields, 'configuration')
-  need(v.schema === 'pe-opensandbox-root-deployment-v1', 'schema')
   const life = lifecycle(v.lifecycle), boot = bootstrap(v.bootstrap)
   const s = object(v.selection, ['serverImageDigest', 'execdImageDigest', 'apiKeyDeploymentIdentity'], 'selection')
-  need(s.serverImageDigest === 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17'
+  const serverImage = schema === 'pe-opensandbox-root-deployment-v2'
+    ? 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'
+    : 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17'
+  need(s.serverImageDigest === serverImage
     && s.execdImageDigest === 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
-  const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')
-  const limits = object(e.limits, ['maxManifestBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'exports.limits')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')
   let copies: RootDeploymentInput['skillCopies']
   if (hasCopies) {
     const policy = object(v.skillCopies, ['maxCopiesPerOperation'], 'skillCopies')
     copies = Object.freeze({ maxCopiesPerOperation: integer(policy.maxCopiesPerOperation, 'skillCopies.maxCopiesPerOperation') })
   }
-  return Object.freeze({ schema: v.schema, ...(copies === undefined ? {} : { skillCopies: copies }),
-    selection: Object.freeze({ serverImageDigest: s.serverImageDigest, execdImageDigest: s.execdImageDigest,
-      apiKeyDeploymentIdentity: s.apiKeyDeploymentIdentity }), lifecycle: life, bootstrap: boot,
+  const common = { ...(copies === undefined ? {} : { skillCopies: copies }),
+    selection: Object.freeze({ serverImageDigest: serverImage, execdImageDigest: s.execdImageDigest,
+      apiKeyDeploymentIdentity: s.apiKeyDeploymentIdentity }), lifecycle: life, bootstrap: boot }
+  if (schema === 'pe-opensandbox-root-deployment-v2') {
+    return Object.freeze({ ...common, schema, storage: sharedStorage(v.storage) })
+  }
+  const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')
+  const limits = object(e.limits, ['maxManifestBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'exports.limits')
+  return Object.freeze({ ...common, schema,
     exports: Object.freeze({ manifest: Object.freeze({ path: text(m.path, 'exports.manifest.path', 4096), sha256: text(m.sha256, 'exports.manifest.sha256', 64) }),
       limits: Object.freeze({ maxManifestBytes: integer(limits.maxManifestBytes, 'exports.maxManifestBytes', 131072),
         maxMountInfoBytes: integer(limits.maxMountInfoBytes, 'exports.maxMountInfoBytes', 4194304), maxPathBytes: integer(limits.maxPathBytes, 'exports.maxPathBytes', 4096),

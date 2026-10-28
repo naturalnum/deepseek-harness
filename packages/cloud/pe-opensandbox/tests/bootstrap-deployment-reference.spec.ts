@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const io = vi.hoisted(() => ({
   bytes: Buffer.from('{"schema":"unit-only","apiKey":"synthetic-private"}'),
-  mode: 0o100440n, inode: 2n, readonly: true, next: 10,
+  mode: 0o100440n, inode: 2n, readonly: true, next: 10, uid: 0n, gid: 2000n,
   fds: new Map<number, string>(), closes: [] as number[],
 }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
-  const stat = (directory = false, current = false) => ({ uid: 0n, gid: directory ? 0n : 2000n, nlink: 1n,
+  const stat = (directory = false, current = false) => ({ uid: directory ? 0n : io.uid, gid: directory ? 0n : io.gid, nlink: 1n,
     mode: directory ? 0o40755n : io.mode, size: BigInt(io.bytes.length), dev: 1n,
     ino: current ? io.inode : 2n, mtimeNs: 3n, ctimeNs: 4n, isFile: () => !directory, isDirectory: () => directory })
   return { ...actual,
@@ -25,11 +25,14 @@ vi.mock('node:fs', async (importOriginal) => {
     closeSync: (fd: number) => { io.closes.push(fd); io.fds.delete(fd) },
   }
 })
-import { readRootDeploymentReference } from '../src/bootstrap/deployment-reference.ts'
+import { readRootDeploymentReference, RootDeploymentLease } from '../src/bootstrap/deployment-reference.ts'
 
 const reference = () => ({ path: '/root-private/execution.json', sha256: createHash('sha256').update(io.bytes).digest('hex') })
 describe('Root readonly selection lease', () => {
-  beforeEach(() => { io.fds.clear(); io.closes.length = 0; io.mode = 0o100440n; io.inode = 2n; io.readonly = true })
+  beforeEach(() => {
+    io.fds.clear(); io.closes.length = 0; io.mode = 0o100440n; io.inode = 2n; io.readonly = true; io.uid = 0n; io.gid = 2000n
+    io.bytes = Buffer.from('{"schema":"unit-only","apiKey":"synthetic-private"}')
+  })
   it('retains original readable Root configuration through policy checks until explicit close', () => {
     const lease = readRootDeploymentReference(reference())
     expect(lease.value()).toEqual({ schema: 'unit-only', apiKey: 'synthetic-private' })
@@ -49,6 +52,26 @@ describe('Root readonly selection lease', () => {
     lease.close()
     io.mode = 0o100660n
     expect(() => readRootDeploymentReference(reference())).toThrow()
+    expect(io.fds.size).toBe(0)
+  })
+  it.each([0o100440n, 0o100444n, 0o100640n, 0o100644n])('retains a Root-protected files plan mode %s on a readonly mount', (mode) => {
+    io.mode = mode; io.gid = 0n
+    const lease = new RootDeploymentLease(reference(), 262144, 'storage-plan')
+    expect(lease.bytes()).toEqual(io.bytes)
+    lease.close(); expect(io.fds.size).toBe(0)
+  })
+  it('rejects writable, non-Root or swapped files plans without relaxing legacy file kinds', () => {
+    io.mode = 0o100664n
+    expect(() => new RootDeploymentLease(reference(), 262144, 'storage-plan')).toThrow()
+    io.mode = 0o100644n; io.uid = 2000n
+    expect(() => new RootDeploymentLease(reference(), 262144, 'storage-plan')).toThrow()
+    io.uid = 0n; io.readonly = false
+    expect(() => new RootDeploymentLease(reference(), 262144, 'storage-plan')).toThrow()
+    io.readonly = true
+    expect(() => new RootDeploymentLease(reference(), 262144, 'export-manifest')).toThrow()
+    expect(() => new RootDeploymentLease(reference(), 262144, 'configuration')).toThrow()
+    const lease = new RootDeploymentLease(reference(), 262144, 'storage-plan')
+    io.inode = 3n; expect(() => { lease.assertCurrent() }).toThrow(); lease.close()
     expect(io.fds.size).toBe(0)
   })
 })

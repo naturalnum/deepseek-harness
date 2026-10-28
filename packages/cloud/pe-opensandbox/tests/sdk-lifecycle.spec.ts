@@ -1,5 +1,7 @@
 /** Local units use the actual pinned public SDK over a synthetic transport; no network/backend resource is accessed. */
 import assert from 'node:assert/strict'
+import { channel } from 'node:diagnostics_channel'
+import type { SemanticAuditEvent } from '../src/semantic-audit.ts'
 import { test, vi, onTestFinished } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -24,6 +26,13 @@ const config: SdkLifecycleConfig = { lifecycleBaseUrl: 'https://selected.example
   cpuCores: 0.5, memoryMiB: 192, ttlSeconds: 120, requestTimeoutMs: 1000, stopBudgetMs: 1000,
   readyPollIntervalMs: 1, maxReadyPolls: 3, pageSize: 1, maxPages: 2, maxItems: 2, maxRecords: 4,
   maxInflightOperations: 8, maxRequestBytes: 8192, maxResponseBytes: 8192, maxOperationBytes: 16384, maxFieldBytes: 512 }
+
+function semanticEvents(): SemanticAuditEvent[] {
+  const events: SemanticAuditEvent[] = [], bus = channel('dsh:pe-opensandbox:semantic:v1')
+  const listener = (message: unknown): void => { const event = message as SemanticAuditEvent; events.push(event); event.receipt() }
+  bus.subscribe(listener); onTestFinished(() => { bus.unsubscribe(listener) })
+  return events
+}
 
 function selection(): { intent: AllocationCreateIntent; mount: VerifiedExecutionMount } {
   const intent: AllocationCreateIntent = { allocationId: 'allocation-one' as AllocationCreateIntent['allocationId'],
@@ -126,6 +135,38 @@ test('actual public SDK keeps one create, fixed payload/resources/exports and sy
   assert.equal(transport.calls.filter(value => value.method === 'POST').length, 1)
   assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 1)
   await backend.closeRoot(Date.now() + 1000); assert.equal(transport.closed, true)
+})
+
+test('semantic SDK spans retain sticky Promise identity and end after actual SDK and stop validation', async () => {
+  const events = semanticEvents(), gate = Promise.withResolvers<undefined>(), transport = new FakeTransport(), selected = selection()
+  transport.postGate = gate.promise
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const original = backend.create(selected.intent, selected.mount)
+  assert.equal(backend.create(selected.intent, selected.mount), original)
+  await transport.postEntered.promise
+  assert.equal(events.filter(event => event.operation === 'sdk-create' && event.phase === 'end').length, 0)
+  gate.resolve(undefined); const created = await original
+  const preparing = backend.prepare(created, selected.mount, Date.now() + 1000)
+  assert.equal(backend.prepare(created, selected.mount, Date.now() + 1000), preparing)
+  const prepared = await preparing, deletion = Promise.withResolvers<undefined>()
+  transport.deleteGate = deletion.promise
+  const stopped = backend.stop(created, prepared)
+  assert.equal(backend.stop(created, prepared), stopped)
+  await transport.deleteEntered.promise
+  assert.equal(events.filter(event => event.operation === 'sdk-stop' && event.phase === 'end').length, 0)
+  deletion.resolve(undefined); await stopped
+  const closing = backend.closeRootActual(); assert.equal(backend.closeRootActual(), closing); await closing
+  for (const operation of ['sdk-create', 'sdk-prepare', 'sdk-stop', 'sdk-root-close']) {
+    const ends = events.filter(event => event.operation === operation && event.phase === 'end')
+    assert.equal(ends.length, 1); assert.equal(ends[0]?.outcome, 'fulfilled')
+  }
+  const accepted = events.find(event => event.operation === 'sdk-create' && event.phase === 'end')
+  assert.match(String(accepted?.fields.intentSha256), /^[a-f0-9]{64}$/)
+  assert.match(String(accepted?.fields.sandboxIdSha256), /^[a-f0-9]{64}$/)
+  assert.equal(events.some(event => event.tainted), false)
+  assert.equal(JSON.stringify(events).includes(config.apiKey), false)
+  assert.equal(transport.calls.filter(call => call.method === 'POST').length, 1)
+  assert.equal(transport.calls.filter(call => call.method === 'DELETE').length, 1)
 })
 
 test('lost create is retained; empty metadata-filtered pages never authorize replay or stop', async () => {
@@ -510,6 +551,28 @@ async function bootstrapFailureFixture(events: readonly object[], options: { pen
 const completedWrongMarker = [{ type: 'init', text: 'loader' }, { type: 'stdout', text: 'wrong\n' }, { type: 'execution_complete' }]
 const completedFailure = [{ type: 'init', text: 'loader' }, { type: 'stderr', text: 'synthetic loader failure\n' },
   { type: 'error', error: { ename: 'RuntimeError', evalue: 'synthetic loader failure' } }, { type: 'execution_complete' }]
+
+test('semantic privileged stream records original validation and leaves bootstrap pending through actual dispatcher join', async () => {
+  const events = semanticEvents(), f = await bootstrapFailureFixture(completedWrongMarker, { pending: true })
+  const created = await f.backend.create(f.selected.intent, f.selected.mount)
+  const preparing = f.backend.prepare(created, f.selected.mount, Date.now() + 10000)
+  const failure = assert.rejects(preparing)
+  await f.entered.promise
+  assert.equal(events.filter(event => event.operation === 'bootstrap-stream' && event.fields.step === 'loader' && event.phase === 'end').length, 0)
+  f.body.resolve(undefined)
+  await vi.waitFor(() => { assert.equal(events.some(event => event.operation === 'bootstrap-stream'
+    && event.fields.step === 'loader' && event.phase === 'end'), true) })
+  const stream = events.find(event => event.operation === 'bootstrap-stream' && event.fields.step === 'loader' && event.phase === 'end')
+  assert.equal(stream?.outcome, 'rejected'); assert.equal(stream?.fields.streamTerminal, true)
+  assert.equal(events.filter(event => event.operation === 'bootstrap' && event.phase === 'end').length, 0)
+  f.closed.resolve(undefined); await failure
+  assert.equal(events.find(event => event.operation === 'bootstrap' && event.phase === 'end')?.outcome, 'rejected')
+  await f.backend.stop(created, undefined); await f.backend.closeRootActual()
+  assert.equal(events.find(event => event.operation === 'bootstrap-join' && event.phase === 'end')?.outcome, 'fulfilled')
+  assert.equal(events.some(event => event.tainted), false)
+  assert.equal(JSON.stringify(events).includes('synthetic-bootstrap-only'), false)
+  assert.equal(JSON.stringify(events).includes('wrong\\n'), false)
+})
 
 for (const [name, events] of [['marker mismatch', completedWrongMarker], ['stderr/error with terminal', completedFailure]] as const) {
   test(`known failed bootstrap ${name} still joins privileged starts and permits the original selected DELETE`, async () => {

@@ -71,12 +71,12 @@ export class RootDeploymentLease {
   /**
    * Open one protected readonly deployment file, keeping its original descriptor until actual Root cleanup.
    * @param reference Original explicit Root path/SHA.
-   * @param maximum Hard byte bound, at most128KiB; the main Root config uses16KiB.
-   * @param kind Root private configuration or the original public readonly export-manifest format.
+   * @param maximum Hard byte bound: configuration/export at most128KiB, existing files plan at most256KiB.
+   * @param kind Protected configuration, legacy export manifest or the existing files storage plan.
    */
   constructor(private readonly reference: RootDeploymentReference, private readonly maximum: number,
-    kind: 'configuration' | 'export-manifest') {
-    need(Number.isSafeInteger(maximum) && maximum > 0 && maximum <= 131072
+    kind: 'configuration' | 'export-manifest' | 'storage-plan') {
+    need(Number.isSafeInteger(maximum) && maximum > 0 && maximum <= (kind === 'storage-plan' ? 262144 : 131072)
       && reference.path.startsWith('/') && posix.normalize(reference.path) === reference.path && reference.path !== '/'
       && reference.path.length <= 4096 && Buffer.byteLength(reference.path) <= 4096 && !/[\0\\]/.test(reference.path)
       && /^[a-f0-9]{64}$/.test(reference.sha256))
@@ -84,9 +84,10 @@ export class RootDeploymentLease {
     this.fd = openSync(reference.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
       this.initial = fstatSync(this.fd, { bigint: true })
-      need(this.initial.isFile() && this.initial.uid === 0n && this.initial.nlink === 1n
-        && this.initial.gid === (kind === 'configuration' ? 2000n : 0n)
-        && (this.initial.mode & 0o7777n) === (kind === 'configuration' ? 0o440n : 0o444n)
+      const permissions = kind === 'storage-plan' ? (this.initial.mode & 0o022n) === 0n
+        : this.initial.gid === (kind === 'configuration' ? 2000n : 0n)
+          && (this.initial.mode & 0o7777n) === (kind === 'configuration' ? 0o440n : 0o444n)
+      need(this.initial.isFile() && this.initial.uid === 0n && this.initial.nlink === 1n && permissions
         && this.initial.size > 0n && this.initial.size <= BigInt(maximum))
       this.originalBytes = bounded(this.fd, maximum)
       this.assertCurrent()

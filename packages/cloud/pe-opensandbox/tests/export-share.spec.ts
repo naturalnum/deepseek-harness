@@ -1,11 +1,11 @@
-/** Mock-only Node descriptor/proc composition; actual Linux exports and keeper adoption remain Root qualification. */
+/** Mock-only Node descriptor/proc composition; actual Linux volumes and backend views remain Root qualification. */
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SkillProjectGrant } from '../src/skill-files-types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createRetainedExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
+import { createRetainedExecutionExports, createSharedPathExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
 
 interface Directory { readonly path: string; readonly device: string; readonly inode: string; readonly mountId: string }
 type Opened = { readonly kind: 'directory'; readonly value: Directory } | { readonly kind: 'proc'; readonly bytes: Buffer; offset: number }
@@ -15,22 +15,24 @@ vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof imp
   openSync: fs.open, closeSync: fs.close, readSync: fs.read, fstatSync: fs.stat, statfsSync: fs.geometry, lstatSync: fs.parent }))
 afterEach(() => { vi.resetAllMocks() })
 
-function fixture() {
+function fixture(mode: 'keeper' | 'shared-path' = 'keeper') {
   const base = `/var/lib/docker/dsh-root-exports/${'a'.repeat(32)}/${'b'.repeat(32)}`
   const storage = [`v1-${'1'.repeat(64)}`, `v1-${'2'.repeat(64)}`]
   const directories = new Map<string, Directory>(), opened = new Map<number, Opened>()
   const events: string[] = []
   let next = 50, writableAlias = false, failedClose: number | undefined
+  let transformMountInfo = (value: string): string => value
   const add = (path: string, device: string, inode: string, mountId: string): void => {
     directories.set(path, { path, device, inode, mountId })
   }
   const facts = (device: string, mountId: string) => ({ device, inode: '2', mountId, mode: String(0o40700), uid: '2000', gid: '2000',
     filesystem: '61267', blockBytes: '4096', blocks: '256', inodes: '128' })
   const entries = storage.flatMap((key, index) => (['projects', 'environment'] as const).map((role, roleIndex) => {
-    const device = String(11 + index * 2 + roleIndex), alias = `${base}/a${index}/${role === 'projects' ? 'projects' : 'env-one'}`
+    const device = String(11 + index * 2 + roleIndex)
     const source = `/srv/accounts/${key}/${role === 'projects' ? 'projects' : 'environments/one'}`
-    const sourceFacts = facts(device, String(101 + index * 2 + roleIndex))
-    add(alias, device, '2', String(9001 + index * 2 + roleIndex))
+    const alias = mode === 'shared-path' ? source : `${base}/a${index}/${role === 'projects' ? 'projects' : 'env-one'}`
+    const sourceFacts = facts(device, String((mode === 'shared-path' ? 499 : 101) + index * 2 + roleIndex))
+    add(alias, device, '2', mode === 'shared-path' ? sourceFacts.mountId : String(9001 + index * 2 + roleIndex))
     return { accountId: `account-${index}`, storageKey: key, role, bankId: role === 'environment' ? `bank-${index}` : null,
       slotId: role === 'environment' ? 'one' : null, sourceDomainPath: source, sourceFacts,
       daemon: { namespace: 'daemon', path: alias, mountId: String(201 + index * 2 + roleIndex),
@@ -38,9 +40,12 @@ function fixture() {
       control: { namespace: 'r8Init', path: alias, mountId: String(301 + index * 2 + roleIndex),
         facts: facts(device, String(301 + index * 2 + roleIndex)), readonly: true } }
   }))
-  const projectAlias = `${base}/a1/projects`, environmentAlias = `${base}/a1/env-one`, leaf = 'default-workspace'
-  add(`${projectAlias}/${leaf}`, '13', '1011', '9003'); add(`${projectAlias}/${leaf}/.pe`, '13', '1012', '9003')
-  for (const [index, name] of ['home', 'venv', 'tmp'].entries()) add(`${environmentAlias}/${name}`, '14', String(1021 + index), '9004')
+  const projectAlias = mode === 'shared-path' ? `/srv/accounts/${storage[1]}/projects` : `${base}/a1/projects`
+  const environmentAlias = mode === 'shared-path' ? `/srv/accounts/${storage[1]}/environments/one` : `${base}/a1/env-one`, leaf = 'default-workspace'
+  const projectMountId = mode === 'shared-path' ? '501' : '9003', environmentMountId = mode === 'shared-path' ? '502' : '9004'
+  add(`${projectAlias}/${leaf}`, '13', '1011', projectMountId); add(`${projectAlias}/${leaf}/.pe`, '13', '1012', projectMountId)
+  add(`${projectAlias}/${leaf}/.pe/skills`, '13', '1013', projectMountId)
+  for (const [index, name] of ['home', 'venv', 'tmp'].entries()) add(`${environmentAlias}/${name}`, '14', String(1021 + index), environmentMountId)
   const manifest = Buffer.from(JSON.stringify({ schema: 'root-daemon-exports-v1', resourceId: 'a'.repeat(32), runId: 'b'.repeat(32),
     daemonNamespace: 'mnt:[10]', sourceNamespace: 'mnt:[11]',
     keeper: { pid: 123, startTicks: '99', mountNamespace: 'mnt:[12]', comm: 'python3' },
@@ -52,13 +57,13 @@ function fixture() {
     return value.value
   }
   const mountInfo = (): string => [...directories.values()].filter(value => value.inode === '2').map((value) => {
-    const project = value.path.endsWith('/projects'), flags = value.path === projectAlias && writableAlias ? 'rw' : 'ro'
+    const project = value.path.endsWith('/projects'), flags = mode === 'shared-path' || value.path === projectAlias && writableAlias ? 'rw' : 'ro'
     return `${value.mountId} 1 7:1 / ${value.path} ${flags},nosuid,nodev${project ? ',noexec' : ''} - ext4 /dev/loop1 rw\n`
   }).join('')
   fs.open.mockImplementation((name: string, flags: number): number => {
     events.push(`open:${name}`)
     let value: Opened
-    if (name === '/proc/self/mountinfo') value = { kind: 'proc', bytes: Buffer.from(mountInfo()), offset: 0 }
+    if (name === '/proc/self/mountinfo') value = { kind: 'proc', bytes: Buffer.from(transformMountInfo(mountInfo())), offset: 0 }
     else if (name.startsWith('/proc/self/fdinfo/')) {
       const directory = originalDirectory(Number(name.slice('/proc/self/fdinfo/'.length)))
       value = { kind: 'proc', bytes: Buffer.from(`pos:\t0\nflags:\t02300000\nmnt_id:\t${directory.mountId}\n`), offset: 0 }
@@ -95,12 +100,13 @@ function fixture() {
     return { type: 61267n, bsize: 4096n, blocks: 256n, files: 128n }
   })
   fs.parent.mockImplementation(() => ({ uid: 0n, gid: 0n, mode: 0o40755n, isDirectory: () => true }))
-  const controller = new AbortController(), current = vi.fn(() => { events.push('grant') }), keeper = vi.fn(() => { events.push('keeper') })
+  const controller = new AbortController(), nativeController = new AbortController()
+  const current = vi.fn(() => { events.push('grant') }), keeper = vi.fn(() => { events.push('keeper') })
   const layout = (inode: string) => ({ device: '14', inode, mountId: '502', uid: 2000, gid: 2000, mode: 0o40700 })
   const sourceRoot = `/srv/accounts/${storage[1]}`
   const grant = Object.freeze<ExecutionMountGrant>({ binding: Object.freeze({
     accountId: brandString<ExecutionMountGrant['binding']['accountId']>('account-1'),
-    epoch: brandString<ExecutionMountGrant['binding']['epoch']>('1'), recipeVersion: 'v1', lifetime: new AbortController().signal }),
+    epoch: brandString<ExecutionMountGrant['binding']['epoch']>('1'), recipeVersion: 'v1', lifetime: nativeController.signal }),
   sessionId: brandString<ExecutionMountGrant['sessionId']>('session'),
   workspaceId: brandString<ExecutionMountGrant['workspaceId']>('workspace'),
   project: { rootPath: `${sourceRoot}/projects/${leaf}`, rootDevice: '13', rootInode: '1011', rootMountId: '501',
@@ -112,10 +118,29 @@ function fixture() {
     rootReadOnly: true, writablePaths: ['home', 'venv', 'tmp'],
     quota: { device: '14', mountId: '502', maximumBytes: '1048576', maximumInodes: '128' },
     layout: { home: layout('1021'), venv: layout('1022'), tmp: layout('1023') } } })
-  const exports = createRetainedExecutionExports(manifest, createHash('sha256').update(manifest).digest('hex'),
-    { signal: controller.signal, assertAvailable: keeper },
-    { maxManifestBytes: 32768, maxMountInfoBytes: 32768, maxPathBytes: 512, maxShares: 1, maxResidentBytes: 4000000 })
-  return { exports, grant, current, keeper, opened, events, projectAlias, environmentAlias, controller,
+  const domain = (path: string, device: string, mountId: string) => ({ rootPath: path, rootDevice: device, rootInode: '2', rootMountId: mountId,
+    minimumBytes: '1048576', maximumBytes: '1048576', minimumInodes: '128', maximumInodes: '128',
+    backing: { path: `/backing/${device}`, device: '7', inode: device, bytes: '1048576' } })
+  const plan = { version: 2, recipeVersion: 'v1', appUid: 2000, appGid: 2000, arenaReserveBytes: '1048576',
+    arena: domain('/arena', '1', '101'), control: domain('/control', '2', '102'),
+    baseConfigPath: '/app/base.yml', installAnchor: '/app/package.json', auxiliary: [],
+    accounts: storage.map((storageKey, index) => {
+      const accountRoot = `/srv/accounts/${storageKey}`
+      return { accountId: `account-${index}`, storageKey, accountRoot, private: domain(`${accountRoot}/private`, String(3 + index), String(103 + index)),
+        projects: domain(`${accountRoot}/projects`, String(11 + index * 2), String(499 + index * 2)),
+        environmentBank: { bankId: `bank-${index}`, slots: [{ slotId: 'one', domain: domain(`${accountRoot}/environments/one`, String(12 + index * 2), String(500 + index * 2)) }] } }
+    }) }
+  const planBytes = Buffer.from(JSON.stringify(plan)), digest = createHash('sha256').update(planBytes).digest('hex')
+  const planCurrent = vi.fn(() => {
+    if (controller.signal.aborted) throw new ExecutionExportFailure('verification')
+  })
+  const limits = { maxPlanBytes: 32768, maxMountInfoBytes: 32768, maxPathBytes: 512, maxShares: 1, maxResidentBytes: 4000000 }
+  const exports = mode === 'shared-path' ? createSharedPathExecutionExports(planBytes, digest, planCurrent, limits)
+    : createRetainedExecutionExports(manifest, createHash('sha256').update(manifest).digest('hex'),
+      { signal: controller.signal, assertAvailable: keeper }, { ...limits, maxManifestBytes: 32768 })
+  return { exports, grant, current, keeper, opened, events, projectAlias, environmentAlias, controller, nativeController,
+    plan, planBytes, digest, planCurrent, limits, directories,
+    mountInfo: (transform: (value: string) => string) => { transformMountInfo = transform },
     makeWritable: () => { writableAlias = true }, failClose: (fd: number) => { failedClose = fd } }
 }
 
@@ -184,4 +209,130 @@ it('retains epoch cleanup uncertainty when verification rejects before a share h
   expect(f.exports.retainedShares).toBe(1)
   expect(() => { f.exports.assertEpochReleased(f.grant.binding) }).toThrow('Export descriptor closure is unconfirmed')
   expect(fs.close.mock.calls.filter(([fd]) => fd === 50)).toHaveLength(1)
+})
+
+it('retains exact shared-path grants, optional skill parents and stable paths until allocation release', async () => {
+  const f = fixture('shared-path')
+  const parent: SkillProjectGrant = { binding: f.grant.binding, workspaceId: f.grant.workspaceId,
+    project: { ...f.grant.project, rootMountId: f.grant.project.quota.mountId },
+    metadataDirectory: f.grant.project.metadataDirectory,
+    skillsDirectory: { ...f.grant.project.metadataDirectory, inode: '1013' } }
+  const skills = { grant: parent, maxCopies: 4 }, share = await f.exports.share(f.grant, f.current, skills)
+  expect(share.value.grant).toBe(f.grant); expect(share.value.skills).toBe(skills)
+  expect(share.value.exports).toEqual({ project: f.grant.project.rootPath, protectedProject: `${f.grant.project.rootPath}/.pe`,
+    environment: f.grant.environment.rootPath, skills: `${f.grant.project.rootPath}/.pe/skills` })
+  expect(f.opened.size).toBe(8); expect(f.exports.retainedShares).toBe(1)
+  expect(() => { f.exports.assertEpochReleased(f.grant.binding) }).toThrow(ExecutionExportFailure)
+  expect(() => { f.exports.assertEpochReleased({ ...f.grant.binding }) }).not.toThrow()
+  await expect(f.exports.share(f.grant, f.current)).rejects.toMatchObject({ code: 'cloud/capacity' })
+  share.value.assertCurrent()
+  expect(f.opened.size).toBe(8); expect(f.planCurrent).toHaveBeenCalledTimes(7); expect(f.keeper).not.toHaveBeenCalled()
+  share.release(); share.release()
+  expect(f.opened.size).toBe(0); expect(f.exports.retainedShares).toBe(0)
+  expect(() => { f.exports.assertEpochReleased(f.grant.binding) }).not.toThrow()
+  expect(() => { share.value.assertCurrent() }).toThrow(ExecutionExportFailure)
+})
+
+it('requires the original protected plan capability, digest, bounded capacities and explicit v2 banks', () => {
+  const f = fixture('shared-path'), create = (bytes: Uint8Array, digest: string) =>
+    createSharedPathExecutionExports(bytes, digest, f.planCurrent, f.limits)
+  expect(() => create(f.planBytes, '0'.repeat(64))).toThrow(ExecutionExportFailure)
+  expect(() => create(new Uint8Array(), f.digest)).toThrow(ExecutionExportFailure)
+  const v1 = Buffer.from(JSON.stringify({ ...f.plan, version: 1,
+    accounts: f.plan.accounts.map(({ environmentBank: _bank, ...account }) => account) }))
+  expect(() => create(v1, createHash('sha256').update(v1).digest('hex'))).toThrow(ExecutionExportFailure)
+  const malformed = Buffer.from('{}')
+  expect(() => create(malformed, createHash('sha256').update(malformed).digest('hex'))).toThrow(ExecutionExportFailure)
+  for (const changed of [{ maxPlanBytes: 1 }, { maxResidentBytes: 1 }, { maxShares: Infinity }]) {
+    expect(() => createSharedPathExecutionExports(f.planBytes, f.digest, f.planCurrent, { ...f.limits, ...changed })).toThrow()
+  }
+  f.controller.abort()
+  expect(() => create(f.planBytes, f.digest)).toThrow(ExecutionExportFailure)
+  expect(fs.open).not.toHaveBeenCalled()
+})
+
+it.each(['account', 'recipe', 'slot', 'quota', 'project'] as const)('refuses shared-path %s mismatch before opening sources', async (changed) => {
+  const f = fixture('shared-path')
+  const grant: ExecutionMountGrant = changed === 'account' ? { ...f.grant, binding: { ...f.grant.binding,
+    accountId: brandString<ExecutionMountGrant['binding']['accountId']>('account-0') } }
+    : changed === 'recipe' ? { ...f.grant, binding: { ...f.grant.binding, recipeVersion: 'another' } }
+      : changed === 'slot' ? { ...f.grant, environment: { ...f.grant.environment, slotId: 'other' } }
+        : changed === 'quota' ? { ...f.grant, project: { ...f.grant.project, quota: { ...f.grant.project.quota, maximumBytes: '2097152' } } }
+          : { ...f.grant, project: { ...f.grant.project, rootPath: `${f.projectAlias}/../../private` } }
+  await expect(f.exports.share(grant, f.current)).rejects.toMatchObject({ phase: 'selection' })
+  expect(fs.open).not.toHaveBeenCalled(); expect(f.exports.retainedShares).toBe(0)
+})
+
+it('requires the original files/native current-grant check even when a copied grant has matching JSON fields', async () => {
+  const f = fixture('shared-path'), copied = { ...f.grant }, denied = new Error('Original files grant was not retained')
+  const originalOnly = () => { if (copied !== f.grant) throw denied }
+  await expect(f.exports.share(copied, originalOnly)).rejects.toBe(denied)
+  expect(fs.open).not.toHaveBeenCalled(); expect(f.exports.retainedShares).toBe(0)
+})
+
+it.each(['missing', 'inode', 'mount', 'geometry', 'nested', 'propagation', 'readonly', 'symlink'] as const)(
+  'refuses shared-path %s source measurement without retaining a published share or creating directories', async (changed) => {
+    const f = fixture('shared-path')
+    if (changed === 'missing') f.mountInfo(value => value.split('\n').filter(line => !line.startsWith('501 ')).join('\n'))
+    else if (changed === 'nested') f.mountInfo(value => value + `999 1 7:1 / ${f.projectAlias}/child rw,nosuid,nodev,noexec - ext4 /dev/loop1 rw\n`)
+    else if (changed === 'propagation') f.mountInfo(value => value.replaceAll('rw,nosuid,nodev,noexec -', 'rw,nosuid,nodev,noexec shared:22 -'))
+    else if (changed === 'readonly') f.mountInfo(value => value.replaceAll('rw,nosuid,nodev', 'ro,nosuid,nodev'))
+    else if (changed === 'geometry') fs.geometry.mockReturnValue({ type: 61267n, bsize: 4096n, blocks: 255n, files: 128n })
+    else if (changed === 'symlink') f.directories.delete(f.projectAlias)
+    else {
+      const path = changed === 'inode' ? `${f.grant.project.rootPath}/.pe` : f.projectAlias
+      const original = f.directories.get(path)
+      if (original === undefined) throw new Error('Expected the original fixture directory')
+      f.directories.set(path, { ...original, ...changed === 'inode' ? { inode: '999' } : { mountId: '999' } })
+    }
+    await expect(f.exports.share(f.grant, f.current)).rejects.toMatchObject({ phase: 'verification' })
+    expect(f.opened.size).toBe(0); expect(f.exports.retainedShares).toBe(0)
+    expect(() => { f.exports.assertCurrent() }).toThrow(ExecutionExportFailure)
+  })
+
+it('retains existing shared-path allocations when a later project replacement or protected-plan loss closes admission', async () => {
+  const f = fixture('shared-path'), share = await f.exports.share(f.grant, f.current)
+  const metadata = f.directories.get(`${f.grant.project.rootPath}/.pe`)
+  if (metadata === undefined) throw new Error('Expected original metadata directory')
+  f.directories.set(metadata.path, { ...metadata, inode: '999' })
+  expect(() => { share.value.assertCurrent() }).toThrow(ExecutionExportFailure)
+  expect(f.opened.size).toBe(7); expect(f.exports.retainedShares).toBe(1)
+  f.controller.abort()
+  share.release()
+  expect(f.opened.size).toBe(0); expect(f.exports.retainedShares).toBe(0)
+})
+
+it.each(['plan', 'native'] as const)('retains shared-path descriptors through revoked %s authority until allocation release', async (authority) => {
+  const f = fixture('shared-path'), share = await f.exports.share(f.grant, f.current), before = [...f.opened.keys()]
+  if (authority === 'plan') f.controller.abort()
+  else f.nativeController.abort(new ExecutionExportFailure('verification'))
+  expect(() => { share.value.assertCurrent() }).toThrow(ExecutionExportFailure)
+  expect([...f.opened.keys()]).toEqual(before); expect(f.exports.retainedShares).toBe(1)
+  share.release()
+  expect(f.opened.size).toBe(0); expect(f.exports.retainedShares).toBe(0)
+})
+
+it.each(['initial', 'recheck', 'release'] as const)('keeps shared-path %s close uncertainty sticky and never retries a descriptor number', async (phase) => {
+  const f = fixture('shared-path')
+  if (phase === 'initial') {
+    f.failClose(50)
+    await expect(f.exports.share(f.grant, f.current)).rejects.toMatchObject({ phase: 'close-unknown' })
+  } else {
+    const share = await f.exports.share(f.grant, f.current)
+    if (phase === 'recheck') {
+      fs.close.mockImplementationOnce(() => { throw new Error('Synthetic temporary proc close is unconfirmed') })
+      expect(() => { share.value.assertCurrent() }).toThrow('Export descriptor closure is unconfirmed')
+    } else {
+      const fd = [...f.opened.keys()][0]
+      if (fd === undefined) throw new Error('Expected original share descriptor')
+      f.failClose(fd)
+    }
+    expect(() => { share.release() }).toThrow('Export descriptor closure is unconfirmed')
+    const calls = fs.close.mock.calls.length
+    expect(() => { share.release() }).toThrow('Export descriptor closure is unconfirmed')
+    expect(fs.close.mock.calls).toHaveLength(calls)
+  }
+  expect(f.exports.retainedShares).toBe(1); expect(f.opened.size).toBe(1)
+  expect(() => { f.exports.assertEpochReleased(f.grant.binding) }).toThrow('Export descriptor closure is unconfirmed')
+  expect(() => { f.exports.assertCurrent() }).toThrow('Export descriptor closure is unconfirmed')
 })
