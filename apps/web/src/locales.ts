@@ -15,6 +15,7 @@ interface CloudWebCopy {
   previewDenied: string
   unavailable: string
   stopped: string
+  loginActive: string
   authUnknown: string
   logoutUnknown: string
   unconfirmed: string
@@ -31,6 +32,7 @@ const en: CloudWebCopy = {
   previewDenied: 'The preview could not open. Check the service status and try again.',
   unavailable: 'The workspace could not open. Check your sign-in status or sign out.',
   stopped: 'The workspace has closed. Check your sign-in status or sign out.',
+  loginActive: 'This browser still has a sign-in record. Sign out before signing in again.',
   authUnknown: 'Sign-in could not be confirmed. Check its status before trying again.',
   logoutUnknown: 'Sign-out could not be confirmed. Check its status before continuing.',
   unconfirmed: 'Workspace cleanup has not been confirmed. Keep this page open and do not switch accounts.',
@@ -47,6 +49,7 @@ const zh: CloudWebCopy = {
   previewDenied: '无法打开预览，请检查服务状态后重试',
   unavailable: '暂时无法打开工作区，请检查登录状态或退出登录',
   stopped: '工作区已关闭，请检查登录状态或退出登录',
+  loginActive: '此浏览器仍有登录记录，请先退出登录，再重新登录',
   authUnknown: '尚无法确认登录结果，请先检查登录状态再继续',
   logoutUnknown: '尚无法确认退出结果，请先检查登录状态再继续',
   unconfirmed: '尚未确认工作区清理完成，请保持此页面打开，暂勿切换账户',

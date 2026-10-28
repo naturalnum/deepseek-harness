@@ -45,7 +45,7 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 
 固定服务包含 Conversation 依赖声明要求的原始 `fileUpload` 浏览器 provider。供应该 provider 不授予上传路由或 RPC 权限；原生 Worker 仅在请求上传时启动。UI Host 声明仍由部署选择，`PreparedCloudPage` 仍是 Connection 的唯一安装者。
 
-应用拥有本地化 Cookie 登录与退出控件。它丢弃有界认证响应正文，再使用原始动态 factory 和正式准备流程。`/client` 重导出同一 factory 的 `ClientFailure` 与 `ClientFailureCode`。退出先撤销并加入原页面清理，再执行真实 sign-out。未知 mutation 不会重放；显式状态恢复通过重载执行只读 bootstrap。有效登录 Cookie 仍存在时，服务端必须拒绝身份替换，包括跨标签页替换。 普通刷新保留本代际缓存。BFCache 保留的文档停止旧原生图，并要求显式检查状态后恢复。
+应用拥有本地化 Cookie 登录与退出控件。它完整消费有界认证响应正文，再使用原始动态 factory 和正式准备流程。正式 `cloud/login-active` 409 显示本地化提示，要求先使用既有显式退出动作，再重新登录；其他冲突和未结束的响应仍为未知状态，不会自动退出、清除 Cookie 或重放登录。`/client` 重导出同一 factory 的 `ClientFailure` 与 `ClientFailureCode`。退出先撤销并加入原页面清理，再执行真实 sign-out。未知 mutation 不会重放；显式状态恢复通过重载执行只读 bootstrap。请求仍呈交登录 Cookie 时，服务端拒绝身份替换，包括过期 Cookie 和跨标签页请求。 普通刷新保留本代际缓存。BFCache 保留的文档停止旧原生图，并要求显式检查状态后恢复。
 
 原生浏览器 Loader 用 `{ name }` 创建 entry，不传每项配置，因此 `/client` 接受空配置并拒绝覆盖。将下表全部字段显式传入准备输入的 `config`；`/schema` 负责校验，不提供生产默认值。准备还要求显式 `decodeLimits`、`persistenceLimits`、绑定字段名、真实存储、fetch 和 WebSocket 工厂。在 `prepareContext` 绑定准备好的 owner 前，不准入原生缓存读取或 Connection。
 

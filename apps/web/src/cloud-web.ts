@@ -9,8 +9,8 @@ import styles from './cloud-web.module.css'
 
 type CloudModule = Pick<typeof import('@deepseek-ai/dsh-pe-cloud-client/client'), 'PreparedCloudPage' | 'ClientFailure'>
 type Phase = 'checking' | 'login' | 'signing-in' | 'starting' | 'running' | 'stopping'
-  | 'unavailable' | 'stopped' | 'auth-unknown' | 'logout-unknown' | 'unconfirmed'
-type AuthOutcome = 'accepted' | 'denied' | 'unknown' | 'request-too-large'
+  | 'unavailable' | 'stopped' | 'login-active' | 'auth-unknown' | 'logout-unknown' | 'unconfirmed'
+type AuthOutcome = 'accepted' | 'denied' | 'login-active' | 'unknown' | 'request-too-large'
 
 function readModule(value: unknown): CloudModule {
   if (value === null || typeof value !== 'object' || !('PreparedCloudPage' in value)
@@ -244,6 +244,7 @@ export class CloudWebEntry {
       const result = await this.authenticate('sign-in/email', body)
       if (this.stopping || this.disposed) return
       if (result === 'accepted') await this.prepareNative()
+      else if (result === 'login-active') this.setPhase('login-active')
       else if (result === 'denied' || result === 'request-too-large') {
         this.issue = result === 'denied' ? 'invalidCredentials' : 'requestTooLarge'
         this.setPhase('login')
@@ -279,6 +280,9 @@ export class CloudWebEntry {
           headers: { 'content-type': 'application/json' }, body, signal: abort.signal,
         })
         reader = response.body?.getReader()
+        const conflict = path === 'sign-in/email' && response.status === 409
+          ? new TextDecoder('utf-8', { fatal: true }) : undefined
+        let conflictText = ''
         let size = 0
         if (reader !== undefined) {
           const owned = reader
@@ -298,10 +302,20 @@ export class CloudWebEntry {
             if (next.done) break
             size += next.value.byteLength
             if (size > manifest.auth.maxResponseBytes) throw new Error('Cloud auth response exceeds its public byte budget')
+            if (conflict !== undefined) conflictText += conflict.decode(next.value, { stream: true })
           }
         }
         abort.signal.throwIfAborted()
         if (response.ok) return 'accepted'
+        if (conflict !== undefined) {
+          const value: unknown = JSON.parse(conflictText + conflict.decode())
+          if (value !== null && typeof value === 'object'
+            && 'code' in value && value.code === 'cloud/login-active'
+            && 'retry' in value && value.retry === 'never'
+            && 'message' in value && typeof value.message === 'string'
+            && 'requestId' in value && typeof value.requestId === 'string'
+            && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.requestId)) return 'login-active'
+        }
         return path === 'sign-in/email' && [400, 401, 422].includes(response.status) ? 'denied' : 'unknown'
       } catch (_error: unknown) {
         try {
@@ -439,7 +453,7 @@ export class CloudWebEntry {
     this.content.hidden = this.phase === 'running' || this.phase === 'starting'
     this.root.hidden = this.phase !== 'running' && this.phase !== 'starting'
     const messages: Partial<Record<Phase, string>> = {
-      unavailable: copy.unavailable, stopped: copy.stopped, 'auth-unknown': copy.authUnknown,
+      unavailable: copy.unavailable, stopped: copy.stopped, 'login-active': copy.loginActive, 'auth-unknown': copy.authUnknown,
       'logout-unknown': copy.logoutUnknown, unconfirmed: copy.unconfirmed,
     }
     this.notice.textContent = pending ? copy.pending : this.issue === undefined ? messages[this.phase] ?? '' : copy[this.issue]

@@ -367,6 +367,88 @@ describe('real source Cloud Web component', () => {
     expect(document.querySelector<HTMLButtonElement>('header button')!.disabled).toBe(false)
   })
 
+  it.each(['en-US', 'zh-CN'])('requires explicit sign-out after a confirmed stale-cookie refusal in %s', async (language) => {
+    vi.spyOn(window.navigator, 'language', 'get').mockReturnValue(language)
+    document.cookie = 'better-auth.session_token=expired-component-cookie; path=/'
+    const signout = Promise.withResolvers<Response>()
+    const f = fixture({ fetch: async input => pathOf(input) === '/cloud/bootstrap'
+      ? new Response(null, { status: 401 }) : pathOf(input) === '/cloud/auth/sign-out' ? signout.promise
+        : Response.json({ code: 'cloud/login-active', message: 'Server-owned text is not displayed.',
+          requestId: 'e9c56643-82bc-44ab-aa94-d567862e01a3', retry: 'never' }, { status: 409 }) })
+    try {
+      await f.entry.run()
+      submit()
+      await expect.poll(f.state).toBe('login-active')
+      expect(document.querySelector('form [role=status]')?.textContent).toBe(language === 'zh-CN'
+        ? '此浏览器仍有登录记录，请先退出登录，再重新登录'
+        : 'This browser still has a sign-in record. Sign out before signing in again.')
+      expect(document.cookie).toContain('expired-component-cookie')
+      expect(document.querySelector<HTMLButtonElement>('form button')!.hidden).toBe(true)
+      expect(document.querySelector<HTMLButtonElement>('header button')!.disabled).toBe(false)
+      submit('must-not-replay')
+      expect(f.fetcher).toHaveBeenCalledTimes(2)
+      expect(f.mount).not.toHaveBeenCalled()
+      exit()
+      await expect.poll(() => f.fetcher.mock.calls.filter(([input]) => pathOf(input) === '/cloud/auth/sign-out').length).toBe(1)
+      expect(f.fetcher).toHaveBeenCalledTimes(3)
+      signout.resolve(new Response(null, { status: 503 }))
+      await expect.poll(f.state).toBe('logout-unknown')
+    } finally {
+      signout.resolve(new Response(null, { status: 503 }))
+      document.cookie = 'better-auth.session_token=; Max-Age=0; path=/'
+    }
+  })
+
+  it.each([
+    { status: 409, body: JSON.stringify({ code: 'cloud/config-conflict', retry: 'never',
+      requestId: 'e9c56643-82bc-44ab-aa94-d567862e01a3', message: 'other conflict' }) },
+    { status: 409, body: JSON.stringify({ code: 'cloud/login-active' }) },
+    { status: 409, body: JSON.stringify({ code: 'cloud/login-active', retry: 'after-status-check',
+      requestId: 'e9c56643-82bc-44ab-aa94-d567862e01a3', message: 'not canonical' }) },
+    { status: 409, body: JSON.stringify({ code: 'cloud/login-active', retry: 'never', requestId: 'invalid', message: 'not canonical' }) },
+    { status: 503, body: JSON.stringify({ code: 'cloud/login-active', retry: 'never',
+      requestId: 'e9c56643-82bc-44ab-aa94-d567862e01a3', message: 'wrong status' }) },
+    { status: 409, body: '{"code":"cloud/login-active"' },
+  ])('keeps unconfirmed conflict response $status/$body unknown without replay', async ({ status, body }) => {
+    const f = fixture({ fetch: async input => pathOf(input) === '/cloud/bootstrap'
+      ? new Response(null, { status: 401 }) : new Response(body, { status }) })
+    await f.entry.run()
+    submit()
+    await expect.poll(f.state).toBe('auth-unknown')
+    submit('must-not-replay')
+    expect(f.fetcher).toHaveBeenCalledTimes(2)
+    expect(f.mount).not.toHaveBeenCalled()
+  })
+
+  it('keeps an over-budget canonical login-active response unknown', async () => {
+    const defaults = manifest(), body = JSON.stringify({ code: 'cloud/login-active', retry: 'never',
+      requestId: 'e9c56643-82bc-44ab-aa94-d567862e01a3', message: 'bounded response' })
+    const f = fixture({ manifest: { ...defaults, auth: { ...defaults.auth, maxResponseBytes: body.length - 1 } },
+      fetch: async input => pathOf(input) === '/cloud/bootstrap' ? new Response(null, { status: 401 })
+        : new Response(body, { status: 409 }) })
+    await f.entry.run()
+    submit()
+    await expect.poll(f.state).toBe('auth-unknown')
+    expect(f.fetcher).toHaveBeenCalledTimes(2)
+    expect(f.mount).not.toHaveBeenCalled()
+  })
+
+  it('does not confirm login-active from a valid body prefix before actual EOF and timeout cleanup', async () => {
+    const cancel = vi.fn(), defaults = manifest()
+    const f = fixture({ manifest: { ...defaults, auth: { ...defaults.auth, requestTimeoutMs: 10 } },
+      fetch: async input => pathOf(input) === '/cloud/bootstrap' ? new Response(null, { status: 401 })
+        : new Response(new ReadableStream<Uint8Array>({ start(controller) {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify({ code: 'cloud/login-active', retry: 'never',
+            requestId: 'e9c56643-82bc-44ab-aa94-d567862e01a3', message: 'still not EOF' })))
+        }, cancel }), { status: 409 }) })
+    await f.entry.run()
+    submit()
+    await expect.poll(f.state).toBe('auth-unknown')
+    await expect.poll(() => cancel.mock.calls.length).toBe(1)
+    expect(f.fetcher).toHaveBeenCalledTimes(2)
+    expect(f.mount).not.toHaveBeenCalled()
+  })
+
   it('does not send sign-out when actual native child cleanup rejects', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const f = fixture({ fetch: async () => Response.json(metadata()),
