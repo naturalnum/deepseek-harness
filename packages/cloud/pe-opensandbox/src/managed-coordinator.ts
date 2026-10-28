@@ -83,6 +83,22 @@ class SessionEnvironmentCapacityError extends ExecutionStateError {
   }
 }
 
+type PreparationFailureStage = 'request' | 'allocation-prepare' | 'continuation' | 'runtime-channel' | 'skill-copies'
+  | 'mount-current' | 'files-project' | 'environment-mounts' | 'skill-project' | 'shared-export' | 'capacity-stop'
+
+const PREPARATION_CODES: ReadonlySet<string> = new Set([
+  'cloud/invalid-config', 'cloud/stale-generation', 'cloud/account-unavailable', 'cloud/capacity',
+  'cloud/execution-unavailable', 'cloud/forbidden', 'cloud/stop-unconfirmed', 'files/prerequisite-missing',
+  'files/deadline', 'files/aborted', 'FS_IO_ERROR', 'FS_TOO_LARGE', 'FS_PERMISSION_DENIED', 'FS_NOT_FOUND',
+  'FS_NOT_DIRECTORY', 'FS_ALREADY_EXISTS', 'ENOENT', 'EACCES', 'EROFS', 'ENOSPC', 'EMFILE', 'EIO',
+])
+
+function preparationCode(cause: unknown): string | undefined {
+  if (cause === null || typeof cause !== 'object') return undefined
+  const code: unknown = Object.getOwnPropertyDescriptor(cause, 'code')?.value
+  return typeof code === 'string' && PREPARATION_CODES.has(code) ? code : undefined
+}
+
 interface AccountWork {
   readonly binding: AccountBinding
   readonly root: Context
@@ -107,6 +123,7 @@ interface AccountWork {
   retiring?: SessionRetirement | undefined
   stopping?: Promise<void>
   outcome?: ParticipantReceipt
+  preparationFailureObserved?: true
   privateFailure?: { readonly cause: unknown }
 }
 
@@ -318,10 +335,15 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const commands = new NativeCommandAccount(ctx, work.binding, work.authority, commandConfig, {
       acquire: async (scope, signal, registered) => {
         registered?.assertCurrent()
-        const request = await this.request(work, scope, signal)
+        const request = await this.request(work, scope, signal).catch((cause: unknown) => {
+          this.observePreparationFailure(work, 'request', cause)
+          throw cause
+        })
+        let stage: PreparationFailureStage = 'allocation-prepare'
         try {
           let prepared = await this.allocations.prepare(request, signal)
           if (registered === undefined && this.deployment.runtimes.needsContinuation(prepared)) {
+            stage = 'continuation'
             commands.assertContinuation(scope)
             // stop synchronously fences the old allocation; its original promise joins physical and SQL settlement.
             await this.allocations.stop(request)
@@ -331,14 +353,17 @@ export class ManagedCoordinator extends SandboxCoordinator {
             prepared = await this.allocations.prepare(request, signal)
             signal.throwIfAborted(); request.assertCurrent()
           }
+          stage = 'runtime-channel'
           const policy = this.deployment.skillCopies, parent = this.deployment.runtimes.skillProject(prepared)
           if ((policy === undefined) !== (parent === undefined)) this.stale()
           let copies: Parameters<TrustedRuntimeRegistry['command']>[1]
           try {
             if (policy !== undefined && parent !== undefined) {
+              stage = 'skill-copies'
               copies = await this.borrowProjectCopies(work, parent, signal)
               request.assertCurrent(); registered?.assertCurrent()
             }
+            stage = 'runtime-channel'
             if (registered === undefined) return this.deployment.runtimes.command(prepared, copies)
             registered.assertCurrent()
             if (registered.scope !== scope) this.stale()
@@ -346,12 +371,14 @@ export class ManagedCoordinator extends SandboxCoordinator {
           } catch (cause) { copies?.release(); throw cause }
         }
         catch (cause) {
+          this.observePreparationFailure(work, stage, cause)
           if (cause instanceof SessionEnvironmentCapacityError) {
             try {
               // Only this typed, pre-intent files refusal proves no backend was created. Join the original owner anyway.
               await this.allocations.stop(request)
               if (work.sessions.get(request.sessionId) === request) work.sessions.delete(request.sessionId)
             } catch (failure) {
+              this.observePreparationFailure(work, 'capacity-stop', failure)
               work.privateFailure ??= { cause: failure }
               return this.unavailable()
             }
@@ -588,38 +615,48 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const request: NativeAllocationRequest<VerifiedExecutionMount> = { binding: work.binding, sessionId: scope.sessionId,
       workspaceId: workspace.id, assertCurrent: current,
       prepareMount: async () => {
-        current()
-        const files = work.authority.files(), project = await files.projectFor(workspace)
-        current()
-        const held = await files.prepareExecutionMounts(project, session.id, this.config.allocations.environmentVersion)
-          .catch((cause: unknown) => {
-            if (cause instanceof FdMutationFailure && cause.outcome === 'not-published' && cause.code === 'FS_TOO_LARGE'
-              && cause.cause instanceof FilesFailure && cause.cause.code === 'cloud/capacity') {
-              throw new SessionEnvironmentCapacityError(cause)
-            }
-            throw cause
-          })
-        let share: ExecutionExportShare | undefined
-        let parent: Awaited<ReturnType<typeof files.prepareSkillProject>> | undefined
-        const granted = (): void => {
-          current(); files.assertExecutionMountGrant(held.value)
-          if (parent !== undefined) files.assertSkillProjectGrant(parent.value)
-        }
+        let stage: PreparationFailureStage = 'mount-current'
         try {
-          const policy = this.deployment.skillCopies
-          if (policy !== undefined) {
-            if (!Number.isSafeInteger(policy.maxCopiesPerOperation)
-              || policy.maxCopiesPerOperation < 1 || policy.maxCopiesPerOperation > 2147483647) this.capacity()
-            parent = await files.prepareSkillProject(project, work.binding.lifetime)
+          current()
+          stage = 'files-project'
+          const files = work.authority.files(), project = await files.projectFor(workspace)
+          current()
+          stage = 'environment-mounts'
+          const held = await files.prepareExecutionMounts(project, session.id, this.config.allocations.environmentVersion)
+            .catch((cause: unknown) => {
+              if (cause instanceof FdMutationFailure && cause.outcome === 'not-published' && cause.code === 'FS_TOO_LARGE'
+                && cause.cause instanceof FilesFailure && cause.cause.code === 'cloud/capacity') {
+                throw new SessionEnvironmentCapacityError(cause)
+              }
+              throw cause
+            })
+          let share: ExecutionExportShare | undefined
+          let parent: Awaited<ReturnType<typeof files.prepareSkillProject>> | undefined
+          const granted = (): void => {
+            current(); files.assertExecutionMountGrant(held.value)
+            if (parent !== undefined) files.assertSkillProjectGrant(parent.value)
           }
-          granted(); share = await this.deployment.share(held.value, granted, parent === undefined || policy === undefined ? undefined
-            : { grant: parent.value, maxCopies: policy.maxCopiesPerOperation }); granted()
-          if (share.value.grant !== held.value) this.stale()
-          const originalShare = share
-          return { value: originalShare.value, projectMountVersion: held.value.project.mountVersion,
-            assertCurrent: () => { granted(); originalShare.value.assertCurrent() },
-            release: () => { originalShare.release(); parent?.release(); held.release() } }
-        } catch (cause) { share?.release(); parent?.release(); held.release(); throw cause }
+          try {
+            const policy = this.deployment.skillCopies
+            if (policy !== undefined) {
+              if (!Number.isSafeInteger(policy.maxCopiesPerOperation)
+                || policy.maxCopiesPerOperation < 1 || policy.maxCopiesPerOperation > 2147483647) this.capacity()
+              stage = 'skill-project'
+              parent = await files.prepareSkillProject(project, work.binding.lifetime)
+            }
+            stage = 'shared-export'
+            granted(); share = await this.deployment.share(held.value, granted, parent === undefined || policy === undefined ? undefined
+              : { grant: parent.value, maxCopies: policy.maxCopiesPerOperation }); granted()
+            if (share.value.grant !== held.value) this.stale()
+            const originalShare = share
+            return { value: originalShare.value, projectMountVersion: held.value.project.mountVersion,
+              assertCurrent: () => { granted(); originalShare.value.assertCurrent() },
+              release: () => { originalShare.release(); parent?.release(); held.release() } }
+          } catch (cause) { share?.release(); parent?.release(); held.release(); throw cause }
+        } catch (cause) {
+          this.observePreparationFailure(work, stage, cause)
+          throw cause
+        }
       } }
     work.sessions.set(scope.sessionId, request)
     return request
@@ -744,6 +781,21 @@ export class ManagedCoordinator extends SandboxCoordinator {
     return allocations
   }
   private stale(): never { throw new ExecutionStateError('cloud/stale-generation', 'Execution requires the original current account generation.') }
+  private observePreparationFailure(work: AccountWork, stage: PreparationFailureStage, cause: unknown): void {
+    if (work.preparationFailureObserved || cause instanceof SessionEnvironmentCapacityError) return
+    work.preparationFailureObserved = true
+    try {
+      const retained = work.privateFailure === undefined ? cause : work.privateFailure.cause
+      const code = preparationCode(retained)
+      const nested: unknown = retained !== null && typeof retained === 'object'
+        ? Object.getOwnPropertyDescriptor(retained, 'cause')?.value : undefined
+      const causeCode = preparationCode(nested)
+      console.warn('Cloud managed execution preparation failed: %j', { event: 'managed-execution-preparation-failed',
+        pid: process.pid, stage, coordinatorOpen: this.state.open, coordinatorReady: this.state.ready,
+        ...(code === undefined ? {} : { code }), ...(causeCode === undefined ? {} : { causeCode }) })
+    } catch (_unavailableObservation) { /* The original failure and cleanup retain their existing owners. */ }
+  }
+
   private unavailable(): never { throw new ExecutionStateError('cloud/execution-unavailable', 'Cloud execution is not confirmed available; Root retains cleanup responsibility.') }
   private capacity(): never { throw new ExecutionStateError('cloud/capacity', 'The configured cloud execution capacity is exhausted.') }
 }

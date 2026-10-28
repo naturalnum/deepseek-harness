@@ -97,6 +97,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 显式 `shell.enforceSessionFilePolicy: true` 为 Shell 与 Subprocess 同时启用原 Session 策略；省略时保留 legacy 路径，且不能宣告权限控件可用。策略服务是必需的 peer dependency：发布的执行入口使用账户原有的 `SandboxPolicyService` 构造器，不内联另一份副本。原命令 owner 捕获 read-only 或 workspace-write 策略，并将其纳入既有 spec hash 与 Root role HMAC。只读 Session 不能通过每次调用 override 扩权。原生执行世界按该模式绑定项目、环境 home/venv/tmp、`/tmp` 别名及选中 skill 副本。Guardian 在 PREPARED 前检查这些路径的实际挂载标记，原完整 4096 字节 frame 预算也包含私有策略。权限切换要求保留命令、unknown 结果与服务正常结算。函数、argv 测试和 payload pins 本身不证明 Linux 内核或已部署浏览器验收通过。
 
+账户 epoch 中首次意外准备拒绝会向 stderr 写入固定阶段、进程 id、coordinator 准入布尔值及白名单内的自有数据错误码。不记录消息、stack、路径或请求参数，也不调用错误 accessor。已确认的 allocation 前环境容量不足保留原 capacity 响应。观察既不改变原失败与清理责任，也不证明沙盒 ready。
+
 </details>
 
 -----

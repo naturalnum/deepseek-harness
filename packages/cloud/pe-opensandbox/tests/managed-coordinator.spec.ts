@@ -785,9 +785,10 @@ it('refuses to evict either ready compute while its original service remains act
   expect(f.prepare).toHaveBeenCalledTimes(2)
 })
 
-it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount'] as const)(
+it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount', 'getter-code'] as const)(
   'reports environment exhaustion only for the confirmed pre-allocation files refusal: %s', async (kind) => {
     const f = await applicationFixture(), a = await f.account('environment-capacity', 4)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const project: AccountFilesProject = { binding: a.binding,
       workspace: a.authority.projectForSession(a.agents[0]!.session),
       projectDirectory: { binding: a.binding, prepare: async () => {} } }
@@ -804,7 +805,12 @@ it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount'] as const)
     } })
     a.authority.files.mockReturnValue(files)
     // Only the allocation preparation frontier is scripted; its original mount callback must execute.
-    if (kind === 'outside-mount') f.prepare.mockRejectedValueOnce(refused)
+    let getterReads = 0
+    if (kind === 'getter-code') {
+      const cause = new Error('/private/SDK-key must not reach the observation')
+      Object.defineProperty(cause, 'code', { get() { getterReads++; throw new Error('private getter') } })
+      f.prepare.mockRejectedValueOnce(cause)
+    } else if (kind === 'outside-mount') f.prepare.mockRejectedValueOnce(refused)
     else f.prepare.mockImplementation(async (request) => {
       await request.prepareMount()
       throw new Error('A refused environment must not prepare a runtime')
@@ -830,10 +836,23 @@ it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount'] as const)
         : 'Cloud execution is not confirmed available; Root retains cleanup responsibility.')
       expect(JSON.stringify(result.error)).not.toContain('/private/environment-key')
     }
-    expect(mounts).toHaveBeenCalledTimes(kind === 'outside-mount' ? 0 : attempts)
+    expect(mounts).toHaveBeenCalledTimes(kind === 'outside-mount' || kind === 'getter-code' ? 0 : attempts)
     expect(stop).toHaveBeenCalledTimes(kind === 'not-published' ? attempts : 0)
     expect(f.prepare).toHaveBeenCalledTimes(attempts); expect(f.query).toHaveBeenCalledTimes(queriesBefore)
     expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled(); expect(command).not.toHaveBeenCalled()
+    expect(getterReads).toBe(0)
+    if (kind === 'not-published') expect(warn).not.toHaveBeenCalled()
+    else {
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn).toHaveBeenCalledWith('Cloud managed execution preparation failed: %j', {
+        event: 'managed-execution-preparation-failed', pid: process.pid,
+        stage: kind === 'outside-mount' || kind === 'getter-code' ? 'allocation-prepare' : 'environment-mounts',
+        coordinatorOpen: true, coordinatorReady: true,
+        ...kind === 'getter-code' ? {} : { code: 'FS_TOO_LARGE' },
+        ...kind === 'unknown' || kind === 'outside-mount' ? { causeCode: 'cloud/capacity' } : {},
+      })
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(/private|SDK-key|getter/)
+    }
   })
 
 it('continues the fifth and ninth never-submitted native operation on new compute without replacing account or Session', async () => {

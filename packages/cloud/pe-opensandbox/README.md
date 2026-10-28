@@ -97,6 +97,8 @@ The managed coordinator observes local-update idleness on its original open acco
 
 Explicit `shell.enforceSessionFilePolicy: true` enables the original Session policy for both Shell and Subprocess; omission retains the legacy path and cannot advertise permission controls. The policy service is a required peer dependency: published execution entries use the account's original `SandboxPolicyService` constructor rather than an inlined copy. The original command owner captures a read-only or workspace-write policy and includes it in the existing spec hash and Root role HMAC. A read-only Session cannot widen through a per-call override. The native workload binds the project, environment home/venv/tmp, `/tmp` alias and selected skill copies according to that mode. Guardian checks their actual mount flags before PREPARED, and the original complete 4096-byte frame budget includes the private policy. Permission changes require normal settlement of retained commands, unknown results and services. Function/argv tests and payload pins alone do not establish Linux kernel or deployed browser acceptance.
 
+The first unexpected preparation refusal in an account epoch writes a fixed stage, process id, coordinator admission booleans and allowlisted own-data error codes to stderr. It omits messages, stacks, paths and request arguments and never invokes error accessors. Confirmed pre-allocation environment exhaustion keeps its existing capacity response. Observations neither change the retained original failure/cleanup nor prove sandbox readiness.
+
 </details>
 
 -----
