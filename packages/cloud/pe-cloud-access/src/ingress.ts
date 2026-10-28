@@ -325,6 +325,16 @@ export class CloudIngress {
         this.assertOperation(operation)
         operation.stage = 'account.bind'
         this.bindAccount(operation, verified.principal.accountId)
+        const recheckLogin = async (): Promise<void> => {
+          operation.stage = 'bootstrap.current'
+          this.assertOperation(operation)
+          await this.auth.recheckLogin(verified.principal, operation.id, (actual) => {
+            operation.authChecks.add(actual)
+            void actual.then(() => { operation.authChecks.delete(actual) }, () => { operation.authChecks.delete(actual) })
+          })
+          this.assertOperation(operation)
+          this.auth.assertLoginCurrent(verified.principal, operation.id)
+        }
         await this.withAccount(operation, verified.principal, undefined, async (use) => {
           const current = (): void => {
             operation.stage = 'bootstrap.current'
@@ -343,14 +353,14 @@ export class CloudIngress {
             () => this.ctx.get('pluginPackages'),
             verified.account, this.limits.maxBootstrapResponseBytes,
             AbortSignal.any([operation.observer.signal, use.binding.lifetime]), current,
-            () => this.generations.current(use.binding, operation.id))
+            () => this.generations.current(use.binding, operation.id), recheckLogin)
           current()
           projected.assertCurrent()
           operation.stage = 'bootstrap.transfer'
           response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
             'content-length': Buffer.byteLength(projected.body, 'utf8') })
           response.end(projected.body)
-        })
+        }, undefined, recheckLogin)
         return
       }
       if (url.pathname === API_PATH || url.pathname.startsWith(API_PATH + '/')) {
@@ -523,6 +533,7 @@ export class CloudIngress {
     operation: Operation, principal: AuthenticatedPrincipal,
     expected: Parameters<typeof assertExpectedGeneration>[0] | undefined, consume: (use: AccountUse) => Promise<void>,
     loginCurrent: () => void = () => { this.auth.assertLoginCurrent(principal, operation.id) },
+    recheckLogin?: () => Promise<void>,
   ): Promise<void> {
     operation.stage = 'account.locate'
     operation.principal = principal
@@ -531,6 +542,7 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertOperation(operation)
     operation.stage = 'auth.login-current'
+    if (recheckLogin !== undefined) await recheckLogin()
     loginCurrent()
     let use: AccountUse
     const hop = operation.hop, localInstanceId = runtime.activeInstanceId
@@ -556,6 +568,7 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertOperation(operation)
     operation.stage = 'auth.login-current'
+    if (recheckLogin !== undefined) await recheckLogin()
     loginCurrent()
     operation.stage = 'account.use-current'
     use.assertCurrent()

@@ -76,12 +76,13 @@ function selectedNative(row: EndpointExposure, expected: Readonly<Record<string,
  * @param signal Original request observer combined with the account lifetime.
  * @param current Original operation/login/Use/Root admission, checked around all awaited work.
  * @param generation Original access generation issuer; it grants no additional readiness.
+ * @param recheckLogin Original ingress-owned captured-cookie verification after awaited work, before the same synchronous guards.
  * @returns Bounded compact JSON and an original-fact recheck to run immediately before response.end.
  */
 export async function produceCloudBootstrap(
   ctx: Context, binding: AccountBinding, exposure: ExposureService | undefined, resolvePackages: () => PluginPackages | undefined,
   account: CloudBootstrap['account'], maximum: number, signal: AbortSignal,
-  current: () => void, generation: () => string,
+  current: () => void, generation: () => string, recheckLogin?: () => Promise<void>,
 ): Promise<{ readonly body: string; readonly assertCurrent: () => void }> {
   current()
   if (!(exposure instanceof ExposureService) || account.id !== binding.accountId
@@ -176,9 +177,16 @@ export async function produceCloudBootstrap(
     if (selectedFiles) files.assertContentAvailable()
   }
   factsCurrent()
-  const inventory = await inspectBootstrapConfiguration(ctx, catalog, identitiesCurrent, resolvePackages)
+  const resumeCurrent = async (): Promise<void> => {
+    signal.throwIfAborted()
+    if (recheckLogin !== undefined) await recheckLogin()
+    signal.throwIfAborted()
+  }
+  const inventory = await inspectBootstrapConfiguration(ctx, catalog, identitiesCurrent, resolvePackages, resumeCurrent)
+  await resumeCurrent()
   factsCurrent()
   const nativeCurrent = await api.assertBootstrapCurrent(ctx, signal)
+  await resumeCurrent()
   factsCurrent()
   inventory.assertCurrent()
   const token = generation()

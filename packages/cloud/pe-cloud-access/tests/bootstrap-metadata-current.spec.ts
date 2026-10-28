@@ -50,12 +50,13 @@ async function fixture() {
   request.rawHeaders = ['Host', '127.0.0.1:4100', 'Cookie', 'better-auth.session_token=external-fixture']
   const requestId = 'bootstrap-metadata-regression-request' as Parameters<BetterAuthAccess['authenticateForBootstrap']>[1]
   const authenticate = () => auth.authenticateForBootstrap(request, requestId, 65536)
-  const produce = (verified: Awaited<ReturnType<typeof authenticate>>) => produceCloudBootstrap(graph.ctx, graph.binding,
-    native.exposureOwner, () => native.bootstrapPackages, verified.account, 65536, graph.binding.lifetime, () => {
+  const produce = (verified: Awaited<ReturnType<typeof authenticate>>, recheckLogin?: () => Promise<void>,
+    signal: AbortSignal = graph.binding.lifetime) => produceCloudBootstrap(graph.ctx, graph.binding,
+    native.exposureOwner, () => native.bootstrapPackages, verified.account, 65536, signal, () => {
       auth.assertLoginCurrent(verified.principal, requestId)
       graph.ctx.fiber.assertActive(); graph.binding.lifetime.throwIfAborted(); native.assertRootActive()
-    }, () => 'metadata-regression-generation')
-  return { native, graph, auth, authenticate, produce, requestId, session, connect, query }
+    }, () => 'metadata-regression-generation', recheckLogin)
+  return { native, graph, auth, authenticate, produce, requestId, session, connect, query, request }
 }
 
 function costEachEndpoint(graph: Graph, clock: { now: number }, milliseconds: number) {
@@ -100,6 +101,97 @@ it('rejects native guard withdrawal after projection and before response transfe
   const f = await fixture(), projected = await f.produce(await f.authenticate())
   f.graph.withdrawLlmGuard()
   expect(projected.assertCurrent).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+})
+
+it('retains the original stale-login refusal after a slow catalog await when no captured-cookie recheck is provided', async () => {
+  const f = await fixture(), clock = { now: 10000 }
+  vi.spyOn(performance, 'now').mockImplementation(() => clock.now)
+  const verified = await f.authenticate()
+  const locale = [...f.graph.ctx.loader.entries()].find(entry => entry.options.id === 'locale')!
+  const tree = locale.parent.tree, load = tree.import.bind(tree)
+  vi.spyOn(tree, 'import').mockImplementation(async (name, stack) => {
+    const result: unknown = await load(name, stack)
+    if (name === '@deepseek-ai/dsh-client-locale') clock.now += 6000
+    return result
+  })
+  await expect(f.produce(verified)).rejects.toMatchObject({ code: 'cloud/account-unavailable', status: 503 })
+  expect(f.session).toHaveBeenCalledTimes(1)
+})
+
+it.each(['catalog', 'native'] as const)('rechecks the same captured login after a %s await exceeds the unchanged five-second window', async (phase) => {
+  const f = await fixture(), clock = { now: 10000 }
+  vi.spyOn(performance, 'now').mockImplementation(() => clock.now)
+  const verified = await f.authenticate()
+  // A later request-cookie mutation must never select a different login for the admitted bootstrap.
+  f.request.headers.cookie = 'better-auth.session_token=different-later-cookie'
+  if (phase === 'catalog') {
+    const locale = [...f.graph.ctx.loader.entries()].find(entry => entry.options.id === 'locale')!
+    const tree = locale.parent.tree, load = tree.import.bind(tree)
+    vi.spyOn(tree, 'import').mockImplementation(async (name, stack) => {
+      const result: unknown = await load(name, stack)
+      if (name === '@deepseek-ai/dsh-client-locale') clock.now += 6000
+      return result
+    })
+  } else {
+    const check = f.graph.api.assertBootstrapCurrent.bind(f.graph.api)
+    vi.spyOn(f.graph.api, 'assertBootstrapCurrent').mockImplementation(async (owner, signal) => {
+      const result = await check(owner, signal)
+      clock.now += 6000
+      return result
+    })
+  }
+  const recheck = vi.fn(() => f.auth.recheckLogin(verified.principal, f.requestId))
+  const projected = await f.produce(verified, recheck)
+  projected.assertCurrent()
+  f.auth.assertLoginCurrent(verified.principal, f.requestId)
+  expect(clock.now).toBe(16000)
+  expect(recheck).toHaveBeenCalledTimes(4)
+  expect(f.session).toHaveBeenCalledTimes(5)
+  for (const [input] of f.session.mock.calls) {
+    expect(new Headers(input?.headers).get('cookie')).toBe('better-auth.session_token=external-fixture')
+  }
+  clock.now = 21000
+  expect(() => { projected.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  expect(f.query).not.toHaveBeenCalled()
+  expect(f.graph.adapter.calls).toBe(0)
+})
+
+it('rejects a revoked captured login during the catalog await instead of refreshing only its timestamp', async () => {
+  const f = await fixture(), clock = { now: 10000 }
+  vi.spyOn(performance, 'now').mockImplementation(() => clock.now)
+  const verified = await f.authenticate()
+  const locale = [...f.graph.ctx.loader.entries()].find(entry => entry.options.id === 'locale')!
+  const tree = locale.parent.tree, load = tree.import.bind(tree)
+  vi.spyOn(tree, 'import').mockImplementation(async (name, stack) => {
+    const result: unknown = await load(name, stack)
+    if (name === '@deepseek-ai/dsh-client-locale') {
+      clock.now += 6000
+      f.session.mockResolvedValueOnce(null)
+    }
+    return result
+  })
+  const native = vi.spyOn(f.graph.api, 'assertBootstrapCurrent')
+  await expect(f.produce(verified, () => f.auth.recheckLogin(verified.principal, f.requestId)))
+    .rejects.toMatchObject({ code: 'cloud/unauthenticated', status: 401 })
+  expect(native).not.toHaveBeenCalled()
+  expect(f.session).toHaveBeenCalledTimes(2)
+  expect(() => { f.auth.assertLoginCurrent(verified.principal, f.requestId) }).toThrow()
+})
+
+it('does not start another login query when the bootstrap observer aborts during the catalog await', async () => {
+  const f = await fixture(), verified = await f.authenticate(), observer = new AbortController()
+  const aborted = new Error('Bootstrap observer ended')
+  const locale = [...f.graph.ctx.loader.entries()].find(entry => entry.options.id === 'locale')!
+  const tree = locale.parent.tree, load = tree.import.bind(tree)
+  vi.spyOn(tree, 'import').mockImplementation(async (name, stack) => {
+    const result: unknown = await load(name, stack)
+    if (name === '@deepseek-ai/dsh-client-locale') observer.abort(aborted)
+    return result
+  })
+  const recheck = vi.fn(() => f.auth.recheckLogin(verified.principal, f.requestId))
+  await expect(f.produce(verified, recheck, observer.signal)).rejects.toBe(aborted)
+  expect(recheck).not.toHaveBeenCalled()
+  expect(f.session).toHaveBeenCalledTimes(1)
 })
 
 it('rejects a substituted original native implementation before response transfer', async () => {

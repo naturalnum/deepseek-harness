@@ -18,10 +18,12 @@ function original(value: object): object {
  * @param catalog Original API-owned approved catalog.
  * @param current Original request/login/Root/account admission, invoked around every module await.
  * @param resolvePackages Read the original Root package provider; this specific private read also detects its withdrawal.
+ * @param resumeCurrent Original ingress-owned login verification after module awaits, before the unchanged installation checks.
  * @returns Redacted configuration and a synchronous recheck of all pinned actual installations.
  */
 export async function inspectBootstrapConfiguration(
   ctx: Context, catalog: ApprovedConfigurationCatalog, current: () => void, resolvePackages: () => PluginPackages | undefined,
+  resumeCurrent?: () => Promise<void>,
 ): Promise<{ readonly configuration: BootstrapConfiguration; readonly assertCurrent: () => void }> {
   current()
   const loader = ctx.get('loader'), packages = resolvePackages()
@@ -79,6 +81,7 @@ export async function inspectBootstrapConfiguration(
     }
     check()
     const imported: unknown = await entry.parent.tree.import(entry.options.name)
+    if (resumeCurrent !== undefined) await resumeCurrent()
     check()
     if (namespace !== undefined && imported !== namespace) unavailable()
     facts.push(check)

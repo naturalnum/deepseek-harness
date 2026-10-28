@@ -102,6 +102,8 @@ Root 解析器可批准有限的原生命名空间／字段对。producer 要求
 
 `authenticate` 通过 `disableCookieCache` 和 `disableRefresh` 强制查库。`recheckLogin` 使用原 cookie 的固定快照；已准入的验证失败时调用传入的登录失效处理者。`assertLoginCurrent` 在派发前拒绝已到复查时间的登录。Peer watcher 必须调度复查，并在任何拒绝（含容量拒绝）时关闭精确 Peer；本适配器不安装 watcher。
 
+Bootstrap 在账户定位／挂载及目录／原生异步读取后，通过同一原 Cookie 快照重新校验，再执行原同步准入守卫。既有 ingress 操作保留真实查询完成责任，包括超时后的迟到结果。此刷新不延长有效间隔，也不替代登录、取消、generation 或账户当前性检查；登录已撤销时仍拒绝响应。
+
 内部 `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` 与 `authenticate` 共用同一认证操作及库查询，返回常规 principal 和从本次已验证用户名称产生的冻结账户投影。显式正字节上限先检查字符长度，再检查 UTF-8 字节。principal 及其登录记录不增加名称字段；后续认证可观察改名，旧投影保持不变。名称超限返回 `cloud/capacity`；非法上限在查库前返回 `cloud/account-unavailable`。两类失败均不暴露名称或账户 id。
 
 `handleNodeRequest` 在 Host/Origin/TLS/代理检查后，将原始字节交给 Better Auth Node bridge。ingress 提供字节上限和观察者取消；标准 stream 在解析前逐 chunk 计数，并等待真实请求/响应取消。库 bridge 提前返回的 Promise 不释放响应所有权。转发头不决定身份或认证源。生产 cookie 使用 Secure、HttpOnly 和 SameSite=Lax。WS 在认证查库前要求恰好一个匹配的原始 Origin；HTTP 可省略，认证修改的 CSRF 检查仍由库负责。
