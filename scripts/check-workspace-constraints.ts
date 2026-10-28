@@ -238,6 +238,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-shortcuts': ['lib/protocol.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': ['py/**/*.py'],
+  // The SDK factory loads its pinned Python payload beside the published lib modules.
+  '@deepseek-ai/dsh-pe-opensandbox': ['runtime/agent/*.py', 'runtime/bootstrap/*.py'],
   '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice': ['runtime/assets.json'],
   // Node execution modes each launch a separately bundled bootstrap.
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js', 'lib/persistent-process.js'],
@@ -312,6 +314,15 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
   ]
   const targets = (value: ExportTarget | undefined): string[] => typeof value === 'string' ? [value]
     : typeof value === 'object' && value !== null ? Object.values(value).flatMap(targets) : []
+  const emittedTargets = Object.entries(manifest.exports ?? {}).flatMap(([subpath, value]) =>
+    targets(value).filter(target => target.startsWith('./lib/types/') && /\.(?:js|mjs|cjs)$/u.test(target))
+      .map(target => ({ subpath, target })))
+  // This types-only leaf has no runtime imports. Other emitted exports retain the complete tree and closure checks.
+  const emittedTreeFiles = manifest.name === '@deepseek-ai/dsh-pe-cloud-client'
+    ? emittedTargets.length === 1 && emittedTargets[0]?.subpath === './types'
+      && emittedTargets[0].target === './lib/types/types.js' ? ['lib/types/types.js']
+      : emittedTargets.length > 0 ? ['lib/types/**/*.js'] : []
+    : usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : []
   const icons = [
     ...typeof manifest.icon === 'string' ? [manifest.icon.replace(/^\.\//u, '')] : [],
     ...Object.entries(manifest.exports ?? {}).filter(([key]) => /^\.\/(?:.+\/)?icon$/u.test(key))
@@ -348,7 +359,7 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     // browser-safe source channels rehomed off src so plain Node can import
     // them without type stripping) publish the emitted JS alongside the
     // declarations.
-    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
+    ...emittedTreeFiles,
     'lib/types/**/*.d.ts',
     ...hasExportPair(manifest, './typert', './lib/typert.host.d.ts', './lib/typert.host.js')
       ? ['lib/typert.host.js', 'lib/typert.host.d.ts']

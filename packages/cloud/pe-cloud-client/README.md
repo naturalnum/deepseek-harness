@@ -27,7 +27,7 @@ The Cloud Loader also mounts the generated API project-creation contribution and
 <a id="use-this-package"></a>
 ## Use this package
 
-The `/schema` export provides browser-safe public configuration validation; `/types` contains its configuration types. The Host entry declares the browser package and optionally injects public Web deployment inputs, without business services or authentication routes.
+The `/schema` export provides browser-safe public configuration validation; `/types` contains its configuration types. Its empty runtime leaf is published at `lib/types/types.js`; unbundled browser compiler output is not part of the publication. The Host entry declares the browser package and optionally injects public Web deployment inputs, without business services or authentication routes.
 
 ### When to choose it
 

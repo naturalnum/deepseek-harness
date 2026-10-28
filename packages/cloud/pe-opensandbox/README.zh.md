@@ -43,7 +43,7 @@ kind: "package-reference"
 
 开发中的 `session-collect` 路径要求原始 `ManagedExecutionDeployment` 能力。普通 Loader 输入提供显式且受保护的 `rootDeployment` 引用，由 Root 据此构造原始能力；JSON 本身不提供授权。将原始对象作为第三个参数传给 Root `apply` 仅用于可信内部组合。Root 等待实际迁移和恢复检查；账户入口确认原始 port 与所选模式一致，才安装 Shell、subprocess 和固定远端 ShellEnv 提供方。实际部署与原生网页仍待验收，当前生产配方保持关闭。
 
-私有 [Root SDK 工厂](src/bootstrap/factory.ts) 加载随包发布于 `runtime/agent` 和 `runtime/bootstrap` 的九份固定 Python 资产，仅从构建后的 `lib` 模块旁定位。文件缺失、为链接或 hash 不符时，在 HTTP 工作之前拒绝；不回退到源码树，也不下载资产。工厂保留原 bootstrap、认证登记器与 SDK 后端的拥有关系，不提供 files 导出授权或账户准入，也不改变关闭的生产配方。
+私有 [Root SDK 工厂](src/bootstrap/factory.ts) 加载随包发布于 `runtime/agent` 和 `runtime/bootstrap` 的九份固定 Python 资产，仅从构建后的 `lib` 模块旁定位。包的发布列表在 JavaScript 和声明文件之外保留这两个 Python 目录。文件缺失、为链接或 hash 不符时，在 HTTP 工作之前拒绝；不回退到源码树，也不下载资产。工厂保留原 bootstrap、认证登记器与 SDK 后端的拥有关系，不提供 files 导出授权或账户准入，也不改变关闭的生产配方。
 
 原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。封闭选择固定支持技能资源挂载的服务端镜像，在收养 keeper 或构造 SDK 前拒绝其他镜像摘要。部署 v1 收养原继承 FD4 keeper，绑定 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
 

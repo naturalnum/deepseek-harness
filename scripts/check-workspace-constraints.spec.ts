@@ -69,6 +69,39 @@ describe('cloud Loader publication', () => {
       expect(expectedDshPackageFiles(other)).toEqual(['lib/index.js', 'lib/types/**/*.d.ts'])
     }
   })
+
+  it('retains the SDK factory Python payload without allowing it on other cloud packages', () => {
+    const sdk = { ...manifest, name: '@deepseek-ai/dsh-pe-opensandbox' }
+    const files = ['lib/*.js', 'runtime/agent/*.py', 'runtime/bootstrap/*.py', 'lib/types/**/*.d.ts']
+    expect(expectedDshPackageFiles(sdk)).toEqual(files)
+    for (const omitted of ['runtime/agent/*.py', 'runtime/bootstrap/*.py']) {
+      expect(checkWorkspaceManifest({ dir: 'packages/cloud/pe-opensandbox', manifest: { ...sdk,
+        files: files.filter(file => file !== omitted),
+      } })).toContainEqual(expect.stringContaining('package.json files must be'))
+    }
+    expect(expectedDshPackageFiles(manifest)).not.toContain('runtime/agent/*.py')
+    expect(expectedDshPackageFiles(manifest)).not.toContain('runtime/bootstrap/*.py')
+  })
+
+  it('publishes only the Cloud client types leaf until another emitted runtime entry is declared', () => {
+    const client = { name: '@deepseek-ai/dsh-pe-cloud-client', exports: {
+      './types': { types: './lib/types/types.d.ts', default: './lib/types/types.js' },
+    } }
+    const files = ['lib/*.js', 'lib/types/types.js', 'lib/types/**/*.d.ts']
+    expect(expectedDshPackageFiles(client)).toEqual(files)
+    for (const exports of [
+      { './types': { ...client.exports['./types'], default: './lib/types/other.js' } },
+      { ...client.exports, './another': { browser: './lib/types/client/another.js' } },
+    ]) {
+      expect(expectedDshPackageFiles({ ...client, exports })).toEqual([
+        'lib/*.js', 'lib/types/**/*.js', 'lib/types/**/*.d.ts',
+      ])
+      expect(checkWorkspaceManifest({ dir: 'packages/cloud/pe-cloud-client',
+        manifest: { ...client, exports, files },
+      })).toContainEqual(expect.stringContaining('package.json files must be'))
+    }
+    expect(expectedDshPackageFiles({ ...client, name: '@deepseek-ai/dsh-pe-cloud-runtime' })).toContain('lib/types/**/*.js')
+  })
 })
 
 const experimental = {

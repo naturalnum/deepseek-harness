@@ -27,6 +27,7 @@ function fixture(options: {
   exportPath?: string
   indexSource?: string
   files?: Record<string, string>
+  filesPatterns?: string[]
 } = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-publint-all-'))
   roots.push(root)
@@ -39,7 +40,7 @@ function fixture(options: {
     license: 'MIT',
     engines: { node: '>=22.19' },
     sideEffects: false,
-    files: ['lib'],
+    files: options.filesPatterns ?? ['lib'],
     exports: { '.': { default: options.exportPath ?? './lib/index.js' } },
   }, null, 2)}\n`)
   writeFileSync(join(packageDir, 'README.md'), '# Probe\n')
@@ -179,5 +180,21 @@ describe('publint package runner', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('imports "./missing.js"')
     expect(result.stderr).toContain('imports "./missing.css"')
+  })
+
+  it('checks imports from a published types leaf without publishing unused compiler output', async ({ signal }) => {
+    for (const missing of [false, true]) {
+      const result = await run(fixture({
+        exportPath: './lib/types/types.js',
+        filesPatterns: ['lib/index.js', 'lib/types/types.js'],
+        files: {
+          'lib/types/types.js': missing ? "import './missing.js'\nexport {}\n" : 'export {}\n',
+          'lib/types/client/unused.js': "import './unpublished.css'\n",
+        },
+      }), signal)
+      expect(result.exitCode, result.stderr).toBe(missing ? 1 : 0)
+      expect(result.stderr).not.toContain('unpublished.css')
+      if (missing) expect(result.stderr).toContain('imports "./missing.js"')
+    }
   })
 })

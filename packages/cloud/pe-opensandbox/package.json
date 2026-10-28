@@ -31,9 +31,9 @@
   },
   "files": [
     "lib/*.js",
-    "lib/types/**/*.d.ts",
     "runtime/agent/*.py",
-    "runtime/bootstrap/*.py"
+    "runtime/bootstrap/*.py",
+    "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
