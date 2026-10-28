@@ -24,6 +24,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
       "path": "../../shell/shell"
     },
     {
