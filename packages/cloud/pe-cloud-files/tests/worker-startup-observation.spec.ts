@@ -1,5 +1,7 @@
 /** Original start/catch fault injection and separate real Worker error/exit checks; neither supplies native readiness. */
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { Worker } from 'node:worker_threads'
 import ts from 'typescript'
@@ -81,9 +83,73 @@ it.each([false, true])('keeps real missing-module Worker failure and exit1 when 
     expect(await client.close()).toBe(1)
     expect(client.available).toBe(false)
     expect(terminate).toHaveBeenCalledTimes(1)
-    expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', {
-      stage: 'worker-thread-error', code: 'ERR_MODULE_NOT_FOUND',
-    })
+    expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', expect.objectContaining({
+      stage: 'worker-thread-error', code: 'ERR_MODULE_NOT_FOUND', name: 'Error', sites: expect.any(Array),
+    }))
     expect(JSON.stringify(stderr.mock.calls)).not.toContain('PRIVATE_')
   } finally { await client.close(); await client.exited }
+})
+
+it.each([
+  ['const = 1', 'SyntaxError'], ['throw new TypeError("PRIVATE_TYPE_MESSAGE")', 'TypeError'],
+] as const)('preserves real syntactic Worker failure %s and reports only its standard type', async (source, name) => {
+  const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const worker = new Worker(source, { eval: true }), client = new FdWorkerClient(worker)
+  try {
+    await expect(client.ready).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+    expect(await client.exited).toBe(1)
+    expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', expect.objectContaining({
+      stage: 'worker-thread-error', code: 'unclassified', name, sites: expect.any(Array),
+    }))
+    expect(JSON.stringify(stderr.mock.calls)).not.toContain('PRIVATE_')
+  } finally { await client.close(); await client.exited }
+})
+
+it('identifies an actual missing public named export without logging its raw SyntaxError', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'files-worker-export-')), stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const entry = join(directory, 'packages/cloud/pe-cloud-files/lib/file-worker.mjs')
+  const dependency = join(directory, 'node_modules/@deepseek-ai/dsh-fs')
+  mkdirSync(join(directory, 'packages/cloud/pe-cloud-files/lib'), { recursive: true })
+  mkdirSync(dependency, { recursive: true })
+  writeFileSync(join(dependency, 'package.json'), '{"type":"module","exports":"./index.mjs"}')
+  writeFileSync(join(dependency, 'index.mjs'), 'export const other = 1')
+  writeFileSync(entry, 'import { FsVersion } from "@deepseek-ai/dsh-fs"; export { FsVersion }')
+  const worker = new Worker(entry), client = new FdWorkerClient(worker)
+  try {
+    await expect(client.ready).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+    expect(await client.exited).toBe(1)
+    expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', expect.objectContaining({
+      stage: 'worker-thread-error', name: 'SyntaxError', code: 'unclassified',
+      namedExport: { specifier: '@deepseek-ai/dsh-fs', identifier: 'FsVersion' },
+      sites: expect.arrayContaining([expect.stringMatching(/^packages\/cloud\/pe-cloud-files\/lib\/file-worker\.mjs:1(?::[0-9]+)?$/)]),
+    }))
+    expect(JSON.stringify(stderr.mock.calls)).not.toContain(directory)
+  } finally { await client.close(); await client.exited; rmSync(directory, { recursive: true, force: true }) }
+})
+
+it('retains bounded public positions and common Node codes while excluding unknown files and raw text', () => {
+  const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const frame = '\n at loader (file:///opt/dsh-installed-products/packages/cloud/pe-cloud-files/lib/worker-client-Ab_cdE12.js:40:9)'
+  observeFileWorkerFailure('worker-thread-error', { name: 'TypeError', code: 'ERR_INVALID_ARG_TYPE',
+    message: 'PRIVATE_MESSAGE', stack: 'PRIVATE_STACK\n at /PRIVATE_PATH/secret.js:1:2' + frame.repeat(10) })
+  expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', {
+    stage: 'worker-thread-error', code: 'ERR_INVALID_ARG_TYPE', name: 'TypeError',
+    sites: Array(6).fill('packages/cloud/pe-cloud-files/lib/worker-client*.js:40:9'),
+  })
+  expect(JSON.stringify(stderr.mock.calls)).not.toContain('PRIVATE_')
+})
+
+it('never invokes error accessors and excludes oversized own stacks and nonpublic named exports', () => {
+  const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {}), getter = vi.fn(() => 'PRIVATE_GETTER')
+  const error = {}
+  for (const key of ['name', 'message', 'stack', 'code']) Object.defineProperty(error, key, { get: getter })
+  observeFileWorkerFailure('worker-thread-error', error)
+  observeFileWorkerFailure('worker-thread-error', { name: 'SyntaxError', stack: 'x'.repeat(16385),
+    message: "The requested module 'PRIVATE_MODULE' does not provide an export named 'PRIVATE_TOKEN'" })
+  expect(getter).not.toHaveBeenCalled()
+  expect(stderr.mock.calls.map(call => call[1])).toEqual([
+    { stage: 'worker-thread-error', code: 'unclassified', name: 'Error', sites: [] },
+    { stage: 'worker-thread-error', code: 'unclassified', name: 'SyntaxError', sites: [] },
+  ])
+  expect(JSON.stringify(stderr.mock.calls)).not.toContain('PRIVATE_')
 })
