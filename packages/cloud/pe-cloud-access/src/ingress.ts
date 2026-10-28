@@ -31,6 +31,7 @@ import type { OwnerRouting } from './owner-routing.ts'
 import { encodeOwnerHop, readOwnerHop, OWNER_HOP_HEADER, type OwnerHop } from './owner-hop.ts'
 import type { ForwardTransfer } from './forward-types.ts'
 import type { AccessConfig, AuthenticatedPrincipal, RequestExpectation, IngressObservation } from './types.ts'
+import { cloudFailureSites } from './failure-sites.ts'
 
 type RequestId = Branded<'pe-request-id'>
 type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.current'
@@ -813,13 +814,16 @@ export class CloudIngress {
         ? errorData(error, 'requestId') : undefined
       const requestId = typeof originalId === 'string' && originalId.length === 36
         && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(originalId) ? originalId : operation.id
-      this.ctx.logger.warn('Cloud ingress request failed: %j', {
+      const fields = {
         requestId, stage: operation.stage, code: failureCode(error),
         causeCodes: [cause === undefined ? null : failureCode(cause), nested === undefined ? null : failureCode(nested)],
+        sites: [...cloudFailureSites(error), ...cloudFailureSites(cause)].slice(0, 6),
         headersSent: operation.response?.headersSent ?? false,
         writableEnded: operation.response?.writableEnded ?? false,
         destroyed: operation.response?.destroyed ?? operation.socket?.destroyed ?? false,
-      })
+      }
+      console.warn('Cloud ingress request failed: %j', fields)
+      this.ctx.logger.warn('Cloud ingress request failed: %j', fields)
     } catch (_error) {
       try { console.error('Cloud ingress failure diagnostics unavailable.') }
       catch (_fallbackError) { /* Observability must not change the original response or cleanup. */ }

@@ -355,7 +355,7 @@ def install_completion(service):
     service._deletion_records = CompletionRecords(Path('/work/deletion-completions'))
     # Root's protected allowlist is not a stop receipt. Historical import must
     # validate retained wire OR the explicitly derived fixed-creator projection,
-    # plus actual positive history. Derived provenance is not live-accepted here.
+    # plus actual positive history. Derived request evidence is not accepted as a live creation here.
     for item in service._deletion_view.policy['historical']:
         require(set(item) == {'sandboxId', 'containerId', 'historyPath', 'historySha256',
                              'requestEvidence'}, 'historical-binding')

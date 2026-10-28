@@ -112,6 +112,8 @@ Only explicit preview configuration enables Better Auth cross-subdomain cookies 
 
 ### Failure and recovery
 
+Ingress failures also write their bounded request id, stage, error codes and up to six compiled Cloud code locations to stderr. Error messages, request values, cookies and private paths are excluded, so deployments without a logger sink retain actionable diagnostics.
+
 Missing, revoked or expired login returns `cloud/unauthenticated`/401; trust rejection returns `cloud/forbidden`/403; unavailable or timed-out verification returns `cloud/account-unavailable`/503. Full auth-operation, login-state or invalidation capacity returns `cloud/capacity`/429 without unbounded queuing. Wire errors omit raw library errors, cookies and database credentials. Unknown mutation outcomes require status inspection; neither reconnect nor bootstrap authorizes automatic replay.
 
 -----

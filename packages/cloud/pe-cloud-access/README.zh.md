@@ -112,6 +112,8 @@ Root 解析器可批准有限的原生命名空间／字段对。producer 要求
 
 ### 失败与恢复
 
+Ingress 失败也向 stderr 写入有界请求 id、阶段、错误码及最多六处已编译 Cloud 代码位置。记录不包含错误消息、请求值、cookie 或私有路径，使未安装日志接收器的部署也能定位故障。
+
 登录缺失、撤销或到期返回 `cloud/unauthenticated`/401；信任检查拒绝返回 `cloud/forbidden`/403；验证不可用或超时返回 `cloud/account-unavailable`/503。认证操作、登录状态或失效记录容量满时返回 `cloud/capacity`/429，不进行无界排队。线上错误不包含库原始错误、cookie 或数据库凭据。修改结果未知时须查状态；重连或 bootstrap 均不授权自动重放。
 
 -----
