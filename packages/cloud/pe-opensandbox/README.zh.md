@@ -49,6 +49,8 @@ kind: "package-reference"
 
 部署 v2 显式选择 `storage.mode: shared-path`，引用 files 既有的受保护存储计划。[共享挂载拥有者](src/shared-mounts.ts) 根据该计划选择稳定的项目和 Session 环境来源，测量当前源目录身份及硬配额，并将目录描述符保留到 allocation 释放借用。此模式不收养 keeper 或 FIFO，也不发布导出清单。计划租约检查受保护配置，每次借用还必须通过原 files/native 当前授权回调。授权失效会拒绝新执行，但保留物理停止责任及未结算借用。持久挂载由部署持有，账户销毁不卸载用户卷；实际原生及网页执行仍须验收。 共享路径 v2 要求单独固定的 Native 服务镜像，支持同一账户的 `projects/<leaf>` 与 `environments/slot-0` 或 `slot-1` 布局；旧 v1 保留原镜像。两者都保留认证的代际及 socket 绑定与物理删除完成检查。受保护的环境池选择 `mode: session-directories` 时，Root 只接受 `bootstrap/deployment-input.ts` 固定的新镜像；Native 守卫还检查环境路径是同一账户原环境池下的直接 UUID 子目录。[镜像覆盖层](runtime/server/Dockerfile)仅修改[守卫模块](runtime/server/completion_view.py)，原 SDK 引导、工作负载镜像及配额保持不变。
 
+files 的 `staticStorage.maxMountInfoBytes` 与 `rootDeployment` 所引用受保护输入中的 `storage.limits.maxMountInfoBytes` 是两份独立预算，均须覆盖各实际 Node 挂载命名空间中的 `/proc/self/mountinfo`。对应的 `staticStorage.rootProbeReservationBytes` 与 `storage.limits.maxResidentBytes` 必须分别满足 [files 探针](../pe-cloud-files/src/storage-probe.ts)与[共享挂载](src/shared-mounts.ts)的预留公式。宜从同一部署来源生成这两个上限，保持更新一致。
+
 runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，可信工厂将安装后的精确对象及图当前性检查传给根协调器的 `bindAccount`，再在账户入口之前调用 `installAccountExecutionPort`。绑定或 port 缺失、复制、跨图或被影子替换都会失败；重复提供方或容量耗尽也会失败。关闭登记不替代其他账户就绪检查。
 
 可信 bootstrap 装配可调用 `assertClosedAccountExecution(ctx)`，确认原始有效 port 仍持有原始且活跃的原生 Shell 和子进程提供方。缺失、未安装、影子替换、更换或已停止的提供方均被拒绝；此读取不会执行命令、停止 port 或签发 drain 证据。
