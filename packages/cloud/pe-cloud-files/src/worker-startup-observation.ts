@@ -61,6 +61,11 @@ function threadFacts(error: unknown): {
   return { name, sites, ...approved ? { namedExport: { specifier, identifier } } : {} }
 }
 
+/**
+ * Log fixed failure facts and approved public sites without changing the original Worker failure path.
+ * @param stage Fixed startup phase or the original Worker thread error notification.
+ * @param error Original failure; only approved own data properties contribute diagnostic fields.
+ */
 export function observeFileWorkerFailure(stage: FileWorkerStartupStage | 'worker-thread-error', error: unknown): void {
   let code = 'unclassified'
   try {
