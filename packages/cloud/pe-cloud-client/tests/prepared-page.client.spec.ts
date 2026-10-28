@@ -363,13 +363,15 @@ function actualNative(
       expect(ctx.get('peCloudPage')).toBe(page)
       const source = createSnapshotStore('', { persist: { name: 'native.view', storage: ctx.get('clientPersistence') } })
       source.set('mounted')
+      const fetch = captured.fetch
+      if (fetch === undefined) throw new Error('Native fixture must capture its bound HTTP carrier')
       ctx.effect(() => () => {
         cleanup.push(page.lifetime.persistence.getSnapshot().phase)
         expect(() => { source.set('late child write') }).toThrow()
         expect(() => { page.nativeOptions.persistence.removeItem('native.view') }).toThrow()
         expect(() => captured.createWebSocket!('wss://example.test/app/api/remote.mux')).toThrow()
         expect(() => navigate('api/download')).toThrow()
-        return expect((async () => captured.fetch('api/rpc', { method: 'POST', body: '{}' }))()).rejects.toMatchObject({ code: 'closed' })
+        return expect((async () => fetch('api/rpc', { method: 'POST', body: '{}' }))()).rejects.toMatchObject({ code: 'closed' })
       }, 'test: earliest native cache and captured carrier consumer cleanup')
       ctx.provide('uiRenderer', { mount: () => {
         mounted = true
