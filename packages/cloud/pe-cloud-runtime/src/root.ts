@@ -19,6 +19,7 @@ import { RootOwnerResolver } from './owner-resolver.ts'
 import { RuntimeCapacity } from './capacity.ts'
 import { resolveSubagentCapacity } from './subagent-capacity-schema.ts'
 import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
+import { recipeObservation } from './recipe-observation.ts'
 import type { OwnerRecoveryExpectation, OwnerRecoveryProof } from './owner-types.ts'
 
 function hasModelKeyPeerConsumer(value: unknown): value is ModelKeyPeerConsumer {
@@ -745,14 +746,19 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   private armRecipeSeal(config: RuntimeRootConfig): void {
     if (config.recovery !== undefined) return
     const ready = this.ctx.root.get('appReady')
-    if (ready === undefined) return
+    if (ready === undefined) {
+      this.observeRecipe('root-recipe-ready-service-missing')
+      return
+    }
     this.ctx.effect(() => ready.onReady(() => {
       if (this.closed || this.control?.phase !== 'active') return
       try { this.recipe.sealCurrent(config.recipeVersion, config.native.maxEntries) }
       catch (_cause) {
+        this.observeRecipe('root-recipe-seal-rejected')
         this.ctx.logger.error('Cloud Root recipe audit did not seal; account admission remains closed. Inspect the retained audit.')
         return
       }
+      this.observeRecipe('root-recipe-seal-returned')
       // Observe only the original ordinary launcher's actual callback and seal.
       // This log neither commits AppReady nor creates/admits an account graph.
       try {
@@ -762,6 +768,11 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           appReadyObserved: true, recipeStatus: 'sealed' }, 'info')
       } catch (_unavailableObservation) { /* Observation alone never changes the original startup outcome. */ }
     }), 'pe-cloud-runtime: audit Root after native startup commits')
+  }
+
+  private observeRecipe(event: 'root-recipe-ready-service-missing' | 'root-recipe-seal-rejected' | 'root-recipe-seal-returned'): void {
+    try { console.warn('Cloud Root recipe audit: %j', { event, pid: process.pid, ...recipeObservation(this.recipe.inspect()) }) }
+    catch (_unavailableObservation) { /* Audit observation never changes admission or startup. */ }
   }
 
   private activeControl(): RootControl {

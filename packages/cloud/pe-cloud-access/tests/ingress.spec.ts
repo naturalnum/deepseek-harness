@@ -56,7 +56,7 @@ async function fixture(preview = false) {
   const stream = vi.spyOn(TypertGatewayService.prototype, 'createNodeStreamTransport')
   const query = vi.spyOn(pool, 'query')
   return {
-    ctx, web, ingress, register, upgrade, seal, authCurrent, authenticate, previewAuth, bootstrap, authHandler,
+    ctx, web, runtime, ingress, register, upgrade, seal, authCurrent, authenticate, previewAuth, bootstrap, authHandler,
     locate, acquire, borrow, http, stream, query, stderr,
   }
 }
@@ -129,6 +129,7 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
       requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-unavailable',
       causeCodes: [null, null], sites: [], headersSent: false, writableEnded: false, destroyed: false,
+      rootRecipe: { status: 'unsealed', rootEntries: 0, providers: 0, participants: 0, issues: [] },
     })
     expect(f.stderr.mock.calls).toEqual(log.mock.calls)
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/must-not-be-read|old-account/)
@@ -166,9 +167,51 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
       requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-starting',
       causeCodes: ['ECONNRESET', 'EPIPE'], sites: [], headersSent: false, writableEnded: false, destroyed: false,
+      rootRecipe: { status: 'unsealed', rootEntries: 0, providers: 0, participants: 0, issues: [] },
     })
     expect(forbidden).not.toHaveBeenCalled()
     expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
+    expect(f.query).not.toHaveBeenCalled()
+    expect(f.ingress.observe().pendingOperations).toBe(0)
+  })
+
+  it.each(['blocked', 'revoked'] as const)('observes the actual retained %s audit without admitting the request or copying private fields', async (status) => {
+    const f = await fixture()
+    const privateGetter = vi.fn(() => 'PRIVATE_CONFIG')
+    // Only the public diagnostic read is supplied; the real unsealed runtime guard still refuses admission.
+    const audit = { ...f.runtime.inspectRecipe(), status, recipeVersion: '/PRIVATE_RECIPE',
+      issues: status === 'revoked' ? ['recipe-revoked'] as const : ['root-config-unproven'] as const }
+    Object.defineProperty(audit, 'config', { get: privateGetter })
+    vi.spyOn(f.runtime, 'inspectRecipe').mockReturnValueOnce(audit)
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(call => call[0]).find(value => value.path === '/api')
+    if (route === undefined) throw new Error('Actual API route missing')
+    const { request, response } = carrier('/api/session/list', 'POST', ['Cookie', 'PRIVATE_COOKIE'])
+    await route.handler(request, response)
+    expect(response.statusCode).toBe(503)
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+      stage: 'ingress.current', rootRecipe: { status, rootEntries: 0, providers: 0, participants: 0, issues: audit.issues },
+    }))
+    expect(privateGetter).not.toHaveBeenCalled()
+    expect(JSON.stringify(f.stderr.mock.calls)).not.toContain('PRIVATE_')
+    expect(f.authenticate).not.toHaveBeenCalled()
+    expect(f.query).not.toHaveBeenCalled()
+    expect(f.acquire).not.toHaveBeenCalled()
+  })
+
+  it('retains the original refusal and failure row when the local audit observation itself throws', async () => {
+    const f = await fixture()
+    vi.spyOn(f.runtime, 'inspectRecipe').mockImplementationOnce(() => { throw new Error('PRIVATE_AUDIT') })
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(call => call[0]).find(value => value.path === '/api')
+    if (route === undefined) throw new Error('Actual API route missing')
+    const { request, response } = carrier('/api/session/list', 'POST', ['Cookie', 'PRIVATE_COOKIE'])
+    await route.handler(request, response)
+    expect(response.statusCode).toBe(503)
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+      stage: 'ingress.current', code: 'cloud/account-unavailable', rootRecipe: undefined,
+    }))
+    expect(JSON.stringify(f.stderr.mock.calls)).not.toContain('PRIVATE_')
     expect(f.query).not.toHaveBeenCalled()
     expect(f.ingress.observe().pendingOperations).toBe(0)
   })

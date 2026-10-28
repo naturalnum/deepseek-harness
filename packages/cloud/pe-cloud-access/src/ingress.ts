@@ -821,6 +821,7 @@ export class CloudIngress {
         headersSent: operation.response?.headersSent ?? false,
         writableEnded: operation.response?.writableEnded ?? false,
         destroyed: operation.response?.destroyed ?? operation.socket?.destroyed ?? false,
+        ...(operation.stage === 'ingress.current' ? { rootRecipe: this.recipeObservation() } : {}),
       }
       console.warn('Cloud ingress request failed: %j', fields)
       this.ctx.logger.warn('Cloud ingress request failed: %j', fields)
@@ -828,6 +829,13 @@ export class CloudIngress {
       try { console.error('Cloud ingress failure diagnostics unavailable.') }
       catch (_fallbackError) { /* Observability must not change the original response or cleanup. */ }
     }
+  }
+
+  private recipeObservation(): Omit<ReturnType<AccountRuntimeService['inspectRecipe']>, 'recipeVersion'> | undefined {
+    try {
+      const { status, rootEntries, providers, participants, issues } = this.dependencies.runtime.inspectRecipe()
+      return { status, rootEntries, providers, participants, issues }
+    } catch (_unavailableObservation) { return undefined }
   }
 
   private failure(error: unknown, id: RequestId): AuthAccessError | RequestBindingError {
