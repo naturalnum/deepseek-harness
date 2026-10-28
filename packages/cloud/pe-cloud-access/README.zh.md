@@ -102,7 +102,7 @@ Root 解析器可批准有限的原生命名空间／字段对。producer 要求
 
 `authenticate` 通过 `disableCookieCache` 和 `disableRefresh` 强制查库。`recheckLogin` 使用原 cookie 的固定快照；已准入的验证失败时调用传入的登录失效处理者。`assertLoginCurrent` 在派发前拒绝已到复查时间的登录。Peer watcher 必须调度复查，并在任何拒绝（含容量拒绝）时关闭精确 Peer；本适配器不安装 watcher。
 
-Bootstrap 在账户定位／挂载、目录／原生异步读取及完整投影返回后，通过同一原 Cookie 快照重新校验，再执行最终原生、登录及账户当前性检查。既有 ingress 操作保留真实查询完成责任，包括超时后的迟到结果。此刷新不延长有效间隔，也不替代登录、取消、generation 或账户当前性检查；登录已撤销时仍拒绝响应。
+HTTP 和 WS ingress 在账户定位／取得、Peer 准备及载体准入或完成后，复查各自捕获的登录。Owner 转发也在 owner 解析及运输观察后复查。Canonical Peer 的定期复查不会刷新另一个请求的 principal。Bootstrap 还在目录／原生异步读取及完整投影返回后复查，再执行原生、登录及账户当前性检查。既有 ingress 操作保留每次真实查询的完成责任，包括超时后的迟到结果。复查通过原 Cookie 校验同一账户和登录，不延长有效间隔，也不替代取消、generation 或账户当前性检查；已撤销或被替换的登录仍被拒绝。
 
 内部 `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` 与 `authenticate` 共用同一认证操作及库查询，返回常规 principal 和从本次已验证用户名称产生的冻结账户投影。显式正字节上限先检查字符长度，再检查 UTF-8 字节。principal 及其登录记录不增加名称字段；后续认证可观察改名，旧投影保持不变。名称超限返回 `cloud/capacity`；非法上限在查库前返回 `cloud/account-unavailable`。两类失败均不暴露名称或账户 id。
 

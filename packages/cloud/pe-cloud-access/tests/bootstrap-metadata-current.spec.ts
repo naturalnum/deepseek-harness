@@ -137,7 +137,7 @@ it.each([false, true])('rechecks the captured login after slow production and pr
     if (route === undefined) throw new Error('Original bootstrap route was not registered')
     await route.handler(input.request, input.response)
     expect(input.response.statusCode).toBe(withdraw ? 503 : 200)
-    expect(recheck).toHaveBeenCalledTimes(7)
+    expect(recheck).toHaveBeenCalledTimes(withdraw ? 7 : 8)
     expect(release).toHaveBeenCalledTimes(1)
     for (const [value] of f.session.mock.calls) {
       expect(new Headers(value?.headers).get('cookie')).toBe('better-auth.session_token=external-fixture')

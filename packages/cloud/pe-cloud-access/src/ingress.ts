@@ -327,13 +327,7 @@ export class CloudIngress {
         this.bindAccount(operation, verified.principal.accountId)
         const recheckLogin = async (): Promise<void> => {
           operation.stage = 'bootstrap.current'
-          this.assertOperation(operation)
-          await this.auth.recheckLogin(verified.principal, operation.id, (actual) => {
-            operation.authChecks.add(actual)
-            void actual.then(() => { operation.authChecks.delete(actual) }, () => { operation.authChecks.delete(actual) })
-          })
-          this.assertOperation(operation)
-          this.auth.assertLoginCurrent(verified.principal, operation.id)
+          await this.recheckOperationLogin(operation, verified.principal)
         }
         await this.withAccount(operation, verified.principal, undefined, async (use) => {
           const current = (): void => {
@@ -379,6 +373,7 @@ export class CloudIngress {
           operation.stage = 'peer.acquire'
           const peer = await this.peers.acquire(principal, use.binding, Date.now() + this.limits.requestTimeoutMs,
             operation.observer.signal, operation.id)
+          await this.recheckOperationLogin(operation, principal)
           operation.stage = 'ingress.current'
           this.assertOperation(operation)
           operation.stage = 'peer.generation'
@@ -427,6 +422,7 @@ export class CloudIngress {
       operation.stage = 'peer.acquire'
       const peer = await this.peers.acquire(principal, use.binding, operation.deadlineAtMs,
         operation.observer.signal, operation.id)
+      await this.recheckOperationLogin(operation, principal)
       this.assertOperation(operation)
       operation.stage = 'peer.generation'
       this.pinGeneration(peer, operation.id)
@@ -516,6 +512,7 @@ export class CloudIngress {
         operation.stage = 'peer.acquire'
         const peer = await this.peers.acquire(principal, use.binding, Date.now() + this.limits.requestTimeoutMs,
           operation.observer.signal, operation.id)
+        await this.recheckOperationLogin(operation, principal)
         operation.stage = 'ingress.current'
         this.assertOperation(operation)
         operation.stage = 'peer.generation'
@@ -534,7 +531,7 @@ export class CloudIngress {
     operation: Operation, principal: AuthenticatedPrincipal,
     expected: Parameters<typeof assertExpectedGeneration>[0] | undefined, consume: (use: AccountUse) => Promise<void>,
     loginCurrent: () => void = () => { this.auth.assertLoginCurrent(principal, operation.id) },
-    recheckLogin?: () => Promise<void>,
+    recheckLogin: () => Promise<void> = () => this.recheckOperationLogin(operation, principal),
   ): Promise<void> {
     operation.stage = 'account.locate'
     operation.principal = principal
@@ -543,7 +540,7 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertOperation(operation)
     operation.stage = 'auth.login-current'
-    if (recheckLogin !== undefined) await recheckLogin()
+    await recheckLogin()
     loginCurrent()
     let use: AccountUse
     const hop = operation.hop, localInstanceId = runtime.activeInstanceId
@@ -558,7 +555,7 @@ export class CloudIngress {
       use = await runtime.borrowOwnedAccount(located)
     } else if (located !== undefined && located.ownerInstanceId !== null && located.ownerInstanceId !== localInstanceId) {
       if (located.phase !== 'ready') throw new AuthAccessError('cloud/account-unavailable', operation.id)
-      await this.forwardOwner(operation, principal, located, loginCurrent)
+      await this.forwardOwner(operation, principal, located, loginCurrent, recheckLogin)
       return
     } else {
       operation.stage = 'account.acquire'
@@ -569,7 +566,7 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertOperation(operation)
     operation.stage = 'auth.login-current'
-    if (recheckLogin !== undefined) await recheckLogin()
+    await recheckLogin()
     loginCurrent()
     operation.stage = 'account.use-current'
     use.assertCurrent()
@@ -588,12 +585,25 @@ export class CloudIngress {
     operation.stage = 'ingress.current'
     this.assertCurrent(operation.id)
     operation.stage = 'auth.login-current'
+    // Normal response completion ends the observer; the original settlement guard remains Root-current.
+    await this.recheckOperationLogin(operation, principal, () => { this.assertCurrent(operation.id) })
     loginCurrent()
     operation.stage = 'account.use-current'
     if (!operation.upgraded) {
       if (operation.configurationUseReleased) this.dependencies.runtime.assertBusinessCurrent(use.binding)
       else use.assertCurrent()
     }
+  }
+
+  private async recheckOperationLogin(operation: Operation, principal: AuthenticatedPrincipal,
+    current: () => void = () => { this.assertOperation(operation) }): Promise<void> {
+    current()
+    await this.auth.recheckLogin(principal, operation.id, (actual) => {
+      operation.authChecks.add(actual)
+      void actual.then(() => { operation.authChecks.delete(actual) }, () => { operation.authChecks.delete(actual) })
+    })
+    current()
+    this.auth.assertLoginCurrent(principal, operation.id)
   }
 
   private run(
@@ -685,6 +695,7 @@ export class CloudIngress {
 
   private async forwardOwner(
     operation: Operation, principal: AuthenticatedPrincipal, owner: AccountOwner, loginCurrent: () => void,
+    recheckLogin: () => Promise<void>,
   ): Promise<void> {
     const routing = this.dependencies.ownerRouting, runtime = this.dependencies.runtime
     const resolver = runtime.ownerResolver, instanceId = runtime.activeInstanceId
@@ -697,6 +708,7 @@ export class CloudIngress {
     }
     current(); operation.stage = 'owner.resolve'
     const resolved = await resolver.resolve(principal.accountId)
+    await recheckLogin()
     current()
     if (resolved.owner.accountId !== owner.accountId || resolved.owner.ownerInstanceId !== owner.ownerInstanceId
       || resolved.owner.epoch !== owner.epoch || resolved.owner.recipeVersion !== owner.recipeVersion || resolved.owner.phase !== 'ready') {
@@ -717,12 +729,14 @@ export class CloudIngress {
         onUpgradeAccepted: () => { current(); operation.upgraded = true } })
     } else throw new AuthAccessError('cloud/account-unavailable', operation.id)
     const observed = await operation.forwardTransfer.result
+    await this.recheckOperationLogin(operation, principal, () => { this.assertCurrent(operation.id) })
     this.assertCurrent(operation.id); loginCurrent()
     if (observed.status === 'unknown') {
       this.ctx.logger.error('Cloud owner forwarding closure is unconfirmed; no replay was attempted: %j',
         { requestId: operation.id, upstreamMayHaveReceived: observed.upstreamMayHaveReceived })
     }
     const terminal = await operation.forwardTransfer.settled
+    await this.recheckOperationLogin(operation, principal, () => { this.assertCurrent(operation.id) })
     this.assertCurrent(operation.id); loginCurrent()
     if (terminal.status !== 'completed') {
       if (terminal.upstreamMayHaveReceived) {
@@ -766,11 +780,7 @@ export class CloudIngress {
       const principal = operation.principal
       operation.rechecking = (async () => {
         try {
-          await this.auth.recheckLogin(principal, operation.id, (actual) => {
-            operation.authChecks.add(actual)
-            void actual.then(() => { operation.authChecks.delete(actual) }, () => { operation.authChecks.delete(actual) })
-          })
-          this.assertOperation(operation); this.auth.assertLoginCurrent(principal, operation.id)
+          await this.recheckOperationLogin(operation, principal)
           this.scheduleForwardRecheck(operation)
         } catch (error) {
           this.cancelForward(operation)
