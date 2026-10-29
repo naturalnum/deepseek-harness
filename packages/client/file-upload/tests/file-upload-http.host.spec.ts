@@ -164,14 +164,15 @@ describe('background file upload Fetch route', () => {
 
   it('does not return a receipt when cleanup fails after the service resolves', async () => {
     const receipt = { receiptId: 'receipt-unknown', file: { attachmentId: 'id', name: 'f', bytes: 1 } }
-    const service = { uploadStream: vi.fn(async () => receipt) } as unknown as FileUploads
+    const uploadStream = vi.fn(async () => receipt)
+    const service = { uploadStream } as unknown as FileUploads
     const body = new ReadableStream<Uint8Array>({ cancel() { throw new Error('cleanup failure') } }, { highWaterMark: 0 })
     const request = new Request('http://fixture/upload?sessionId=s1', {
       method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
     } as RequestInit)
     expect(await (await handleFileUploadHttp(service, request)).json()).toEqual({ ok: false, error: { code: 'gateway/internal',
       message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
-    expect(service.uploadStream).toHaveBeenCalledOnce()
+    expect(uploadStream).toHaveBeenCalledOnce()
   })
 
 })

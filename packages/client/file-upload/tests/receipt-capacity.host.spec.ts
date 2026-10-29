@@ -332,7 +332,7 @@ it('reports unconfirmed request cleanup when an unconsumed body rejects cancella
     method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
   } as RequestInit)
   const response = await f.track(handleFileUploadHttp(f.uploads, request))
-  const result = await response.json()
+  const result: unknown = await response.json()
   expect(result).toEqual({ ok: false, error: { code: 'gateway/internal',
     message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
   expect(JSON.stringify(result)).not.toContain('private-path-do-not-expose')
