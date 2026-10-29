@@ -361,10 +361,11 @@ it('cancels an unread request body when native receipt capacity rejects before t
 
 for (const mode of ['before-insert', 'after-insert', 'after-retain'] as const) {
   it(`retains one unknown slot when receipt handoff fails ${mode}`, async () => {
-    const f = await fixture(1), original = Map.prototype.set, injected = new Error(`receipt failure ${mode}`)
+    const f = await fixture(1), injected = new Error(`receipt failure ${mode}`)
+    const original = Reflect.get(Map.prototype, 'set') as (this: Map<unknown, unknown>, key: unknown, value: unknown) => Map<unknown, unknown>
     f.cleanup.unconfirmed = true
     let receiptId: unknown
-    const patch = vi.spyOn(Map.prototype, 'set').mockImplementation(function (key, value) {
+    const patch = vi.spyOn(Map.prototype, 'set').mockImplementation(function (this: Map<unknown, unknown>, key, value) {
       if (value !== null && typeof value === 'object' && Reflect.get(value, 'unconfirmed') === true
         && Reflect.get(value, 'file') !== undefined) {
         receiptId = key
