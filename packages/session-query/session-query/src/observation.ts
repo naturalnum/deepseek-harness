@@ -108,7 +108,10 @@ export class SessionObservationReader {
       const persistence = this.ctx.get('sessionPersistence')
       if (persistence === undefined) throw notFound(sessionId)
 
-      const snapshot = await this.statSource(persistence, sessionId, signal)
+      const providerIdentity = persistence.identity
+      const identity = typeof providerIdentity === 'symbol' ? providerIdentity : undefined
+      const statSettlesOnAbort = Object.is(persistence.statSettlesOnAbort, true)
+      const snapshot = await this.statSource(persistence, sessionId, signal, identity, statSettlesOnAbort)
       const attachedDuringStat = this.ctx.sessions.get(sessionId)
       if (attachedDuringStat !== undefined) return this.live(attachedDuringStat, projectionMode)
       let entry = this.cachedEntry(persistence.identity, sessionId, snapshot.revision)
@@ -168,16 +171,23 @@ export class SessionObservationReader {
     persistence: SessionPersistence,
     sessionId: SessionId,
     signal: AbortSignal | undefined,
+    identity: symbol | undefined,
+    statSettlesOnAbort: boolean,
   ): Promise<SessionPersistenceSnapshot> {
+    const isCertified = (): boolean => {
+      const current = this.ctx.get('sessionPersistence')
+      return identity !== undefined && statSettlesOnAbort && current !== undefined
+        && current.identity === identity && Object.is(current.statSettlesOnAbort, true)
+    }
     let snapshot: SessionPersistenceSnapshot | undefined
     // Dynamic providers must explicitly certify settlement with the boolean true.
     try {
       snapshot = await persistence.stat(sessionId, signal === undefined ? undefined : { signal })
     } catch (error: unknown) {
-      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal, Object.is(persistence.statSettlesOnAbort, true))
+      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal, isCertified())
       throw mapPersistenceFailure(sessionId, error)
     }
-    throwIfObservationAborted(signal, Object.is(persistence.statSettlesOnAbort, true))
+    throwIfObservationAborted(signal, isCertified())
     if (snapshot === undefined) throw notFound(sessionId)
     if (snapshot.header.id !== sessionId) {
       throw new SessionQueryError(

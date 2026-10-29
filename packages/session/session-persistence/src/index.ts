@@ -189,7 +189,8 @@ export abstract class SessionPersistence extends Service {
    * Whether a settled `stat` owns no unfinished work from that call, including
    * after cancellation, and reports every cleanup failure instead of abort.
    * Providers must opt in only when both guarantees hold. Other operations
-   * and work started by other calls are outside this contract.
+   * and work started by other calls are outside this contract. An advertised
+   * guarantee continues to cover calls already started even if later revoked.
    */
   readonly statSettlesOnAbort: boolean = false
 

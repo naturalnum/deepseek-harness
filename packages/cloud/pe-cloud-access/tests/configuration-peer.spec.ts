@@ -563,7 +563,7 @@ it.each(['return', 'abort'] as const)('releases a cancelled follow only after a 
   await f.ctx.plugin(SessionStore)
   installSessionReadTestServices(f.ctx)
   f.ctx.provide('sessionPersistence', testSessionPersistence(f.ctx, {
-    statSettlesOnAbort: true,
+    identity: Symbol('certified-stat'), statSettlesOnAbort: true,
     async stat(_id, options) {
       const signal = options?.signal
       if (signal === undefined) throw new Error('Expected the opening cancellation signal')
@@ -606,7 +606,7 @@ it.each(['io', 'cleanup'] as const)('keeps a certified stat %s failure unknown a
   installSessionReadTestServices(f.ctx)
   const failure = kind === 'cleanup' ? new AggregateError([new Error('close failed')], 'cleanup failed') : new Error('I/O failed')
   f.ctx.provide('sessionPersistence', testSessionPersistence(f.ctx, {
-    statSettlesOnAbort: true,
+    identity: Symbol('certified-stat'), statSettlesOnAbort: true,
     async stat(_id, options) {
       const signal = options?.signal
       if (signal === undefined) throw new Error('Expected the opening cancellation signal')
@@ -633,6 +633,48 @@ it.each(['io', 'cleanup'] as const)('keeps a certified stat %s failure unknown a
   socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
   await cancelled.promise
   expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
+
+it('keeps follow unknown when stat capability appears after the operation began', async () => {
+  const f = await fixture(1000)
+  const entered = Promise.withResolvers<undefined>(), cancelled = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  await f.ctx.plugin(SessionStore)
+  installSessionReadTestServices(f.ctx)
+  let enabled = false
+  const provider = testSessionPersistence(f.ctx, {
+    identity: Symbol('drifting-provider'),
+    async stat(_id, options) {
+      options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+      entered.resolve(undefined)
+      await release.promise
+      return undefined
+    },
+  })
+  Object.defineProperty(provider, 'statSettlesOnAbort', { get: () => enabled })
+  f.ctx.provide('sessionPersistence', provider as never)
+  const id = SessionId('peer-follow-drifting-stat')
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  enabled = true
   release.resolve(undefined)
   await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
   expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)

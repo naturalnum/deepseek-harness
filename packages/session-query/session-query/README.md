@@ -70,6 +70,8 @@ Cancellation recognizes the original signal reason and Node's `AbortError` with 
 
 When cancellation occurs during a provider-certified settled `stat`, `SessionQuerySettledStatAbortError` identifies that narrow case while retaining `SESSION_QUERY_ABORTED`. Other cancellation paths do not establish settlement.
 
+Observation snapshots provider identity and the advertised stat guarantee before the call. A missing or changed identity, a replacement provider, a withdrawn guarantee, or a guarantee appearing later leaves cancellation unconfirmed.
+
 -----
 
 <a id="understand-the-implementation"></a>

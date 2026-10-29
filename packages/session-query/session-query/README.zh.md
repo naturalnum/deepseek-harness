@@ -70,6 +70,8 @@ kind: "package-reference"
 
 当取消发生在 provider 明确保证已结算的 `stat` 期间，`SessionQuerySettledStatAbortError` 在保留 `SESSION_QUERY_ABORTED` 的同时标识这一狭义情况。其他取消路径不表明工作已结算。
 
+观察在调用前固定 provider identity 和已声明的 stat 保证。identity 缺失或改变、provider 更换、保证撤回或后来才出现时，取消保持未确认。
+
 -----
 
 <a id="understand-the-implementation"></a>
