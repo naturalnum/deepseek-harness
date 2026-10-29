@@ -10,11 +10,11 @@ import { compressZstdFrame } from '../src/zstd.ts'
 import { prepareCatalogFacts } from '../src/catalog-migration.ts'
 import { boot } from '../../../boot/app-boot/src/index.ts'
 
-const faults = vi.hoisted(() => ({ headerPath: '', headerClose: undefined as Error | undefined, skipCloses: 0,
+const faults = vi.hoisted(() => ({ headerPath: '', headerClose: undefined as Error | undefined, skipCloses: 0, fileCloses: 0,
   bodyReadFileClose: undefined as Error | undefined, bodyReadFileInjected: false,
   headerRead: undefined as Error | undefined, abortOnClose: undefined as AbortController | undefined,
   openFailure: undefined as Error | undefined, decoderRead: undefined as Error | undefined,
-  abortOnDecoderClose: undefined as AbortController | undefined,
+  abortOnDecoderClose: undefined as AbortController | undefined, decoderCloses: 0, privateDecoder: false, forcePublic: false,
   decoderClose: undefined as Error | undefined }))
 
 vi.mock('node:fs/promises', async (load) => {
@@ -32,6 +32,7 @@ vi.mock('node:fs/promises', async (load) => {
     if (args[0] !== faults.headerPath || args[1] !== 'r' || faults.headerClose === undefined) return handle
     return new Proxy(handle, { get(target, property) {
       if (property === 'close') return async () => {
+        faults.fileCloses += 1
         await target.close()
         if (faults.skipCloses > 0) { faults.skipCloses -= 1; return }
         faults.abortOnClose?.abort(); throw faults.headerClose
@@ -45,18 +46,32 @@ vi.mock('node:fs/promises', async (load) => {
 
 vi.mock('../src/zstd.ts', async (load) => {
   const actual = await load<typeof import('../src/zstd.ts')>()
+  const { PublicZstdFrameDecoder } = await import('../src/zstd-public-decoder.ts')
   return { ...actual, createZstdFrameDecoder: () => {
-    const decoder = actual.createZstdFrameDecoder()
-    return { decode: (...args: Parameters<typeof decoder.decode>) => {
-      if (faults.decoderRead !== undefined) throw faults.decoderRead
-      return decoder.decode(...args)
-    }, close: () => {
-      decoder.close()
+    const decoder = faults.forcePublic ? new PublicZstdFrameDecoder() : actual.createZstdFrameDecoder()
+    const decode = decoder.decode.bind(decoder), close = decoder.close.bind(decoder)
+    const stream = Reflect.get(decoder, 'stream') as { close(): void } | undefined
+    faults.privateDecoder = stream !== undefined
+    const injectCloseFailure = (): void => {
       const failure = faults.decoderClose
       faults.decoderClose = undefined
       faults.abortOnDecoderClose?.abort()
       if (failure !== undefined) throw failure
-    } }
+    }
+    if (stream !== undefined) {
+      const closeStream = stream.close.bind(stream)
+      stream.close = () => { closeStream(); injectCloseFailure() }
+    }
+    decoder.decode = (...args: Parameters<typeof decoder.decode>) => {
+      if (faults.decoderRead !== undefined) throw faults.decoderRead
+      return decode(...args)
+    }
+    decoder.close = () => {
+      faults.decoderCloses += 1
+      close()
+      if (stream === undefined) injectCloseFailure()
+    }
+    return decoder
   } }
 })
 
@@ -84,6 +99,7 @@ it('does not fulfill a parent open after a child decoder close fails', async () 
   const [result] = await Promise.allSettled([ctx.sessionPersistence.open(parent, 'read')])
   if (result?.status === 'fulfilled') { await result.value.close(); throw new Error('Parent open unexpectedly succeeded') }
   expect(result).toMatchObject({ status: 'rejected', reason: { name: 'JsonlReadCleanupError', cause: failure } })
+  expect(faults.decoderCloses).toBe(1)
 })
 
 it.each(['header', 'body'] as const)('rejects parent discovery when a child %s file close fails', async (stage) => {
@@ -109,13 +125,15 @@ it.each(['header', 'body'] as const)('rejects parent discovery when a child %s f
     throw new Error('Parent open unexpectedly succeeded')
   }
   expect(result).toMatchObject({ status: 'rejected', reason: { name: 'JsonlReadCleanupError', cause: failure } })
+  expect(faults.fileCloses).toBe(stage === 'body' ? 2 : 1)
 })
 
 const contexts: Context[] = [], roots: string[] = []
 afterEach(async () => {
-  faults.headerPath = ''; faults.headerClose = undefined; faults.headerRead = undefined; faults.skipCloses = 0
+  faults.headerPath = ''; faults.headerClose = undefined; faults.headerRead = undefined; faults.skipCloses = 0; faults.fileCloses = 0
   faults.abortOnClose = undefined; faults.openFailure = undefined; faults.decoderRead = undefined; faults.decoderClose = undefined
   faults.abortOnDecoderClose = undefined; faults.bodyReadFileClose = undefined; faults.bodyReadFileInjected = false
+  faults.decoderCloses = 0; faults.privateDecoder = false; faults.forcePublic = false
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -134,37 +152,44 @@ it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close 
   const failure = Object.assign(new Error('actual header close failed'), { code: 'ENOENT' })
   faults.headerPath = path; faults.headerClose = failure
   await expect(ctx.sessionPersistence.stat(id)).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
+  expect(faults.fileCloses).toBe(1)
+  faults.fileCloses = 0
   const readFailure = new Error('actual header read failed')
   faults.headerRead = readFailure
   const abort = new AbortController(); faults.abortOnClose = abort
   await expect(ctx.sessionPersistence.stat(id, { signal: abort.signal }))
     .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+  expect(faults.fileCloses).toBe(1)
 })
 
-it('does not discard a child file close failure as an unavailable child', async () => {
+it.each(['none', 'zstd'] as const)('does not discard a %s child file close failure as an unavailable child', async (compression) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-child-file-')); roots.push(root)
   const parent = SessionId('parent'), id = SessionId('child')
   const header = { id, version: 3, createdAt: 2, isSeeded: false, origin: 'subagent', parentSession: parent, delegationDepth: 1 }
-  const path = generationLogPath(root, undefined, id, 3, 'none')
+  const path = generationLogPath(root, undefined, id, 3, compression)
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, JSON.stringify({ type: 'session', ...header }) + '\n')
+  const data = JSON.stringify({ type: 'session', ...header }) + '\n'
+  await writeFile(path, compression === 'none' ? data : await compressZstdFrame(data))
   const failure = Object.assign(new Error('actual child file close failed'), { code: 'ENOENT' })
   faults.headerPath = path; faults.headerClose = failure; faults.bodyReadFileClose = failure
-  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'none', new AbortController().signal))
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], compression, new AbortController().signal))
     .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
+  expect(faults.fileCloses).toBe(1)
+  faults.fileCloses = 0
   const readFailure = new Error('actual child file read failed')
   faults.headerRead = readFailure
   const abort = new AbortController(); faults.abortOnClose = abort
-  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'none', abort.signal))
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], compression, abort.signal))
     .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+  expect(faults.fileCloses).toBe(1)
   const missing = Object.assign(new Error('child was removed before open'), { code: 'ENOENT' })
   faults.headerRead = undefined; faults.headerClose = undefined; faults.abortOnClose = undefined
   faults.bodyReadFileClose = undefined; faults.openFailure = missing
-  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'none', new AbortController().signal))
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], compression, new AbortController().signal))
     .resolves.toMatchObject({ failures: [{ error: missing }] })
 })
 
-it('does not treat a failed child decoder close as an unavailable child fact', async () => {
+it.each(['private', 'public'] as const)('preserves a %s child decoder close failure', async (decoderKind) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-child-')); roots.push(root)
   const parent = SessionId('parent'), id = SessionId('child')
   const header = { id, version: 3, createdAt: 2, isSeeded: false, origin: 'subagent', parentSession: parent, delegationDepth: 1 }
@@ -172,12 +197,38 @@ it('does not treat a failed child decoder close as an unavailable child fact', a
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, await compressZstdFrame(JSON.stringify({ type: 'session', ...header }) + '\n'))
   const failure = new Error('actual decoder close failed')
+  faults.forcePublic = decoderKind === 'public'
   faults.decoderClose = failure
   await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'zstd', new AbortController().signal))
-    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
+  expect(faults.privateDecoder).toBe(decoderKind === 'private')
+  expect(faults.decoderCloses).toBe(1)
+  faults.decoderCloses = 0; faults.decoderRead = undefined; faults.abortOnDecoderClose = undefined
+  await writeFile(path, Buffer.concat([
+    await compressZstdFrame(JSON.stringify({ type: 'session', ...header }) + '\n'),
+    await compressZstdFrame('{invalid json}\n' + JSON.stringify({ type: 'turn/end', seq: 0, time: 2,
+      data: { turn: 1, reason: { kind: 'completed' } } }) + '\n'),
+  ]))
+  faults.decoderClose = failure
+  const parserAbort = new AbortController(); faults.abortOnDecoderClose = parserAbort
+  const [result] = await Promise.allSettled([
+    prepareCatalogFacts(parent, [{ header: header as never, path }], 'zstd', parserAbort.signal),
+  ])
+  expect(result).toMatchObject({ status: 'rejected', reason: { name: 'JsonlReadCleanupError', cause: failure } })
+  if (result?.status !== 'rejected' || !(result.reason instanceof AggregateError)) throw new Error('Expected cleanup failure')
+  expect(result.reason.errors).toEqual([expect.any(Error), failure])
+  expect(parserAbort.signal.aborted).toBe(true)
+  expect(faults.decoderCloses).toBe(1)
+  faults.decoderCloses = 0
   const readFailure = new Error('actual decoder read failed')
   faults.decoderRead = readFailure; faults.decoderClose = failure
   const abort = new AbortController(); faults.abortOnDecoderClose = abort
   await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'zstd', abort.signal))
     .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+  expect(faults.decoderCloses).toBe(1)
+  faults.decoderCloses = 0; faults.decoderRead = failure; faults.decoderClose = failure
+  faults.abortOnDecoderClose = undefined
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'zstd', new AbortController().signal))
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure, failure] })
+  expect(faults.decoderCloses).toBe(1)
 })

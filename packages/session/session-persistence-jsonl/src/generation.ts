@@ -444,6 +444,21 @@ async function decodeStreamingMigration(
   if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
   const decoder = createZstdFrameDecoder()
   let readFailure: { readonly error: unknown } | undefined
+  let closeFailure: { readonly error: unknown } | undefined
+  let closeException: JsonlReadCleanupError | undefined
+  let closeAttempted = false
+  if (distinguishCleanup) {
+    const close = decoder.close.bind(decoder)
+    decoder.close = () => {
+      if (closeAttempted) return
+      closeAttempted = true
+      try { close() } catch (error: unknown) {
+        closeFailure = { error }
+        closeException = new JsonlReadCleanupError(error)
+        throw closeException
+      }
+    }
+  }
   try {
     const decoded = decoder.decode(bytes, frames)
     const first = decoded.next()
@@ -482,9 +497,15 @@ async function decodeStreamingMigration(
     readFailure = { error }
     throw error
   } finally {
-    try { decoder.close() } catch (error: unknown) {
-      if (distinguishCleanup) throw new JsonlReadCleanupError(error, readFailure)
-      throw error
+    if (!distinguishCleanup || !closeAttempted) {
+      try { decoder.close() } catch (error: unknown) {
+        if (!distinguishCleanup) throw error
+        closeFailure ??= { error }
+      }
+    }
+    if (closeFailure !== undefined) {
+      const previous = readFailure?.error === closeException ? undefined : readFailure
+      throw new JsonlReadCleanupError(closeFailure.error, previous)
     }
   }
 }
