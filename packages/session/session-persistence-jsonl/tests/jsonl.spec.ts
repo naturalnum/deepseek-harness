@@ -86,8 +86,28 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       listingProbe.inFlight -= 1
     }
   }
+  const probeBodyRead = async <T>(path: string | undefined, read: () => Promise<T>): Promise<T> => {
+    if (path === readFailure.path && readFailure.error !== undefined) throw readFailure.error
+    if (readTally.enabled && path !== undefined) readTally.bySuffix.set(path, (readTally.bySuffix.get(path) ?? 0) + 1)
+    if (path !== pausedRead.path || pausedRead.resume === undefined) return read()
+    const resume = pausedRead.resume, finished = pausedRead.finished
+    pausedRead.active = true; pausedRead.entered?.()
+    await resume
+    try { return await read() } finally { pausedRead.active = false; finished?.() }
+  }
   return {
     ...actual,
+    open: (async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args)
+      if (typeof args[0] !== 'string' || args[1] !== 'r') return handle
+      const path = args[0]
+      return new Proxy(handle, { get(target, property) {
+        if (property === 'readFile') return (...readArgs: Parameters<typeof target.readFile>) =>
+          probeBodyRead(path, () => target.readFile(...readArgs))
+        const value: unknown = Reflect.get(target, property, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      } })
+    }) as typeof actual.open,
     stat: (async (...args: Parameters<typeof actual.stat>) => {
       if (listingProbe.active) return probeListingRead(String(args[0]), () => actual.stat(...args))
       if (String(args[0]) === statFailure.path && statFailure.error !== undefined) throw statFailure.error
@@ -100,24 +120,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     }) as typeof actual.stat,
     readFile: (async (...args: Parameters<typeof actual.readFile>) => {
       const path = typeof args[0] === 'string' ? args[0] : undefined
-      if (path === readFailure.path && readFailure.error !== undefined) throw readFailure.error
-      if (readTally.enabled && path !== undefined) {
-        readTally.bySuffix.set(path, (readTally.bySuffix.get(path) ?? 0) + 1)
-      }
-      if (path !== pausedRead.path || pausedRead.resume === undefined) {
-        return actual.readFile(...args)
-      }
-      const resume = pausedRead.resume
-      const finished = pausedRead.finished
-      pausedRead.active = true
-      pausedRead.entered?.()
-      await resume
-      try {
-        return await actual.readFile(...args)
-      } finally {
-        pausedRead.active = false
-        finished?.()
-      }
+      return probeBodyRead(path, () => actual.readFile(...args))
     }) as typeof actual.readFile,
     readdir: (async (...args: Parameters<typeof actual.readdir>) => {
       if (listingProbe.active) return probeListingRead(String(args[0]), () => actual.readdir(...args))

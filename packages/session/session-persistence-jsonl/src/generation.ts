@@ -1037,7 +1037,7 @@ async function prepareMigration(
 export function prepareJsonlMigration(
   options: PrepareJsonlMigrationOptions,
 ): Promise<PreparedJsonlMigration> {
-  return defaultGenerationRuntime.prepare(options)
+  return ownedPreparationRuntime.prepare(options)
 }
 
 /**
@@ -1059,6 +1059,19 @@ export function createJsonlGenerationRuntime(
 }
 
 const defaultGenerationRuntime = createJsonlGenerationRuntime()
+const ownedPreparationRuntime = createJsonlGenerationRuntime({ fs: { readFile: readOwnedJsonlFile } })
+
+/** Retain close failure separately from an interrupted or failed read. */
+async function readOwnedJsonlFile(path: string, signal?: AbortSignal): Promise<Buffer> {
+  signal?.throwIfAborted()
+  const handle = await fsOpen(path, 'r')
+  let readFailure: { readonly error: unknown } | undefined
+  try { return await handle.readFile(signal === undefined ? undefined : { signal }) }
+  catch (error: unknown) { readFailure = { error }; throw error }
+  finally {
+    try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
+  }
+}
 
 /**
  * Read one stable source through the shared streaming parser without publishing a generation.
@@ -1079,16 +1092,7 @@ export async function readDecodedJsonlSource(
 ): Promise<{ artifact: SessionFormatArtifact; identity: JsonlPhysicalIdentity }> {
   const source = await readStableSnapshot(path, signal, {
     ...defaultFileSystem,
-    readFile: async (sourcePath, readSignal) => {
-      readSignal?.throwIfAborted()
-      const handle = await fsOpen(sourcePath, 'r')
-      let readFailure: { readonly error: unknown } | undefined
-      try { return await handle.readFile(readSignal === undefined ? undefined : { signal: readSignal }) }
-      catch (error: unknown) { readFailure = { error }; throw error }
-      finally {
-        try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
-      }
-    },
+    readFile: readOwnedJsonlFile,
   })
   let artifact: SessionFormatArtifact
   try {

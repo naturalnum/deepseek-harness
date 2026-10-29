@@ -1,8 +1,8 @@
 /** Independent native Profile assembly and teardown; no product files/execution/save capability is faked. */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
@@ -14,6 +14,35 @@ import * as AccountEntry from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { startNativeAccountBoot, type NativeAccountBootHandle, type NativeAccountBootInput } from '../src/native-boot.ts'
 import type { AccountId, OwnerEpoch } from '../src/types.ts'
 import NativeAccountProbe from './fixtures/native-probe.ts'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import * as JsonlPersistence from '../../../session/session-persistence-jsonl/src/index.ts'
+import { generationLogPath } from '../../../session/session-persistence-jsonl/src/format.ts'
+
+const preparationFault = vi.hoisted(() => ({ path: '', readEntered: undefined as (() => void) | undefined,
+  readRelease: undefined as Promise<unknown> | undefined, closeEntered: undefined as (() => void) | undefined,
+  closeRelease: undefined as Promise<unknown> | undefined, closeFailure: undefined as Error | undefined }))
+
+vi.mock('node:fs/promises', async (load) => {
+  const actual = await load<typeof import('node:fs/promises')>()
+  return { ...actual, open: (async (...args: Parameters<typeof actual.open>) => {
+    const handle = await actual.open(...args)
+    if (args[0] !== preparationFault.path || args[1] !== 'r') return handle
+    let body = false
+    return new Proxy(handle, { get(target, property) {
+      if (property === 'readFile') return async (...readArgs: Parameters<typeof target.readFile>) => {
+        body = true; preparationFault.readEntered?.(); await preparationFault.readRelease
+        return target.readFile(...readArgs)
+      }
+      if (property === 'close') return async () => {
+        if (body) { preparationFault.closeEntered?.(); await preparationFault.closeRelease }
+        await target.close()
+        if (body && preparationFault.closeFailure !== undefined) throw preparationFault.closeFailure
+      }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+  }) as typeof actual.open }
+})
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -82,6 +111,41 @@ function entry(ctx: Context, id: string) {
 }
 
 describe('private native account assembly', () => {
+  it('keeps detached JSONL preparation owned through native disposal and reports a late close failure', async () => {
+    const f = fixture('jsonl-preparation'), read = Promise.withResolvers<undefined>(), releaseRead = Promise.withResolvers<undefined>()
+    const close = Promise.withResolvers<undefined>(), releaseClose = Promise.withResolvers<undefined>()
+    const root = join(f.profile.home, 'sessions'), id = SessionId('native-historical')
+    const path = generationLogPath(root, f.profile.cwd, id, 0, 'none')
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, JSON.stringify({ type: 'session', id, version: 0, createdAt: 1, cwd: f.profile.cwd, delegationDepth: 0 }) + '\n')
+    const failure = new Error('late native JSONL close failed')
+    preparationFault.path = path; preparationFault.readEntered = () => { read.resolve(undefined) }
+    preparationFault.readRelease = releaseRead.promise; preparationFault.closeEntered = () => { close.resolve(undefined) }
+    preparationFault.closeRelease = releaseClose.promise; preparationFault.closeFailure = failure
+    const handle = f.start({ prepare: async (ctx, binding) => {
+      await f.input.prepare(ctx, binding)
+      await ctx.plugin(JsonlPersistence, { root, compression: 'none' })
+    } })
+    try {
+      const ctx = await mounted(handle), persistence = ctx.sessionPersistence, abort = new AbortController()
+      const reason = new Error('caller cancelled'), opening = persistence.open(id, 'read', { signal: abort.signal })
+      void opening.catch(() => {})
+      await read.promise
+      abort.abort(reason); await expect(opening).rejects.toBe(reason)
+      expect(persistence.isQuiescent(8)).toBe(false)
+      releaseRead.resolve(undefined); await close.promise
+      let settled = false
+      const disposal = handle.dispose().then((result) => { settled = true; return result })
+      await Promise.resolve(); expect(settled).toBe(false)
+      releaseClose.resolve(undefined)
+      await expect(disposal).resolves.toMatchObject({ status: 'unknown', errorEvents: expect.any(Number), overflow: false })
+      expect(persistence.isQuiescent(8)).toBe(false)
+    } finally {
+      releaseRead.resolve(undefined); releaseClose.resolve(undefined)
+      preparationFault.path = ''; preparationFault.readEntered = undefined; preparationFault.readRelease = undefined
+      preparationFault.closeEntered = undefined; preparationFault.closeRelease = undefined; preparationFault.closeFailure = undefined
+    }
+  })
   it('checks original before-read admission before parsing a private Profile patch', () => {
     const f = fixture('pre-read'), denied = new Error('Actual before-read admission refused')
     writeFileSync(f.profile.patchPath, '[unterminated')

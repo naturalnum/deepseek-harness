@@ -312,6 +312,8 @@ class JsonlSessionPersistence extends SessionPersistence {
   override readonly name = 'session-persistence-jsonl'
 
   private readonly requests = { pending: 0 }
+  private readonly activeRequests = new Set<Promise<void>>()
+  private closing = false
   private root: string
   private compression: JsonlCompression
   /**
@@ -333,6 +335,9 @@ class JsonlSessionPersistence extends SessionPersistence {
   private readonly coldLogMemo = new Map<SessionId, StoredLog>()
   /** One joinable decode/migration operation per selected historical Session file revision. */
   private readonly migrationPreparations = new Map<SessionId, MigrationPreparation>()
+  /** All actual preparation work, including detached and superseded promises. */
+  private readonly unsettledPreparations = new Set<MigrationPreparation>()
+  private preparationCleanupFailure: { readonly error: JsonlReadCleanupError; count: number } | undefined
 
   /** A completed stat joins its own I/O and reports cleanup errors before cancellation. */
   override readonly statSettlesOnAbort = true
@@ -502,9 +507,27 @@ class JsonlSessionPersistence extends SessionPersistence {
   }
 
   private async observeRequest<T>(submit: () => Promise<T>): Promise<T> {
+    if (this.closing) throw new Error('session-persistence-jsonl is disposing')
+    const done = Promise.withResolvers<void>()
+    this.activeRequests.add(done.promise)
     this.requests.pending++
     try { return await submit() }
-    finally { this.requests.pending-- }
+    finally {
+      this.requests.pending--
+      this.activeRequests.delete(done.promise)
+      done.resolve()
+    }
+  }
+
+  /** Stop admission and join requests before joining all preparations they started. */
+  async settlePreparations(): Promise<void> {
+    this.closing = true
+    await Promise.all(this.activeRequests)
+    await Promise.allSettled([...this.unsettledPreparations].map(preparation => preparation.promise))
+    if (this.preparationCleanupFailure !== undefined) {
+      throw new AggregateError([this.preparationCleanupFailure.error],
+        `session-persistence-jsonl preparation cleanup failed (${String(this.preparationCleanupFailure.count)} failure(s))`)
+    }
   }
 
   /** Observe original handles, migration preparation and bounded listing work without any disk write.
@@ -512,7 +535,8 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns True only when the native JSONL owner has no pending work or unmaterialized session.
    */
   override isQuiescent(maximum: number): boolean {
-    return this.requests.pending === 0 && this.migrationPreparations.size === 0
+    return !this.closing && this.requests.pending === 0 && this.unsettledPreparations.size === 0
+      && this.preparationCleanupFailure === undefined
       && this.listLimit.activeCount === 0 && this.listLimit.pendingCount === 0
       && this.tracker.isQuiescent(maximum)
   }
@@ -652,14 +676,24 @@ class JsonlSessionPersistence extends SessionPersistence {
           waiters: 0,
         }
         this.migrationPreparations.set(id, preparation)
+        this.unsettledPreparations.add(preparation)
         const created = preparation
         const release = (): void => {
           created.settled = true
+          this.unsettledPreparations.delete(created)
           if (this.migrationPreparations.get(id) === created) {
             this.migrationPreparations.delete(id)
           }
         }
-        void promise.then(release, release)
+        void promise.then(release, (error: unknown) => {
+          try {
+            if (error instanceof JsonlReadCleanupError) {
+              if (this.preparationCleanupFailure === undefined) this.preparationCleanupFailure = { error, count: 1 }
+              else this.preparationCleanupFailure.count = Math.min(Number.MAX_SAFE_INTEGER, this.preparationCleanupFailure.count + 1)
+              try { this.ctx.logger.error(error) } catch { /* the retained failure still blocks quiescence and is reported on teardown */ }
+            }
+          } finally { release() }
+        })
       }
       signal?.throwIfAborted()
       return this.waitForPreparation(id, preparation, signal)
@@ -1989,14 +2023,16 @@ export const Config: z<Config> = z.object({
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   let service!: Fiber
+  let persistence: JsonlSessionPersistence | undefined
   // Keep this generator synchronous so thenable disposers are registered as functions, not awaited.
   ctx.effect(function* () {
     const tracker = new JsonlBackendTracker(name)
     yield tracker.install(ctx)
+    yield async () => { await persistence?.settlePreparations() }
     service = ctx.plugin({
       name: 'session-persistence-jsonl-service',
       apply(serviceCtx: Context) {
-        new JsonlSessionPersistence(serviceCtx, config, tracker)
+        persistence = new JsonlSessionPersistence(serviceCtx, config, tracker)
       },
     })
     yield service.dispose
