@@ -223,9 +223,13 @@ interface ActiveStream {
   done: Promise<void>
 }
 
+/** The mux observed its carrier close before it attempted the queued write. */
+class CarrierClosedBeforeWriteError extends Error {}
+
 class RemoteStreamMuxConnection {
   private readonly streams = new Map<string, ActiveStream>()
   private writes = Promise.resolve()
+  private carrierClosed = false
   private failure_: { readonly error: unknown } | undefined
 
   constructor(
@@ -246,7 +250,7 @@ class RemoteStreamMuxConnection {
    */
   async run(): Promise<void> {
     const closed = new Promise<void>((resolve) => {
-      this.socket.once('close', resolve)
+      this.socket.once('close', () => { this.carrierClosed = true; resolve() })
       this.socket.once('error', () => { this.socket.terminate() })
       this.socket.on('pong', this.alive)
       this.socket.on('message', (data, isBinary) => {
@@ -363,7 +367,15 @@ class RemoteStreamMuxConnection {
       while (true) {
         const next = await iterator.next()
         if (next.done || active.abort.signal.aborted) break
-        await this.send({ type: 'item', streamId, value: next.value })
+        try {
+          await this.send({ type: 'item', streamId, value: next.value })
+        } catch (error) {
+          // Only the mux's own close-before-write result is known to be a
+          // carrier cancellation. Callback and serialization failures keep
+          // their existing unknown-cleanup semantics.
+          if (!active.abort.signal.aborted || !(error instanceof CarrierClosedBeforeWriteError)) throw error
+          break
+        }
       }
       outcome = { failed: false }
     } catch (error) {
@@ -419,7 +431,9 @@ class RemoteStreamMuxConnection {
     }
     const delivery = this.writes.then(() => new Promise<void>((resolve, reject) => {
       if (this.socket.readyState !== WebSocket.OPEN) {
-        reject(new Error('api gateway: Remote stream socket is closed'))
+        reject(this.carrierClosed
+          ? new CarrierClosedBeforeWriteError('api gateway: Remote stream socket is closed')
+          : new Error('api gateway: Remote stream socket is closed'))
         return
       }
       let queued = false
