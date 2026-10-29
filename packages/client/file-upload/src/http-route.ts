@@ -50,13 +50,16 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
     const failure = remoteErrorOf(error)
     result = {
       ok: false,
-      error: failure !== undefined
-        ? { code: failure.code, message: failure.message, details: failure.details }
-        : {
-          code: 'gateway/internal',
-          message: error instanceof Error ? error.message : String(error),
-          details: {},
-        },
+      error: error instanceof FileUploadIntakeUnconfirmedError
+        ? { code: 'gateway/internal', message: 'File upload intake settlement is unconfirmed.',
+          details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } }
+        : failure !== undefined
+          ? { code: failure.code, message: failure.message, details: failure.details }
+          : {
+            code: 'gateway/internal',
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
     }
   }
   return new Response(JSON.stringify(result), {

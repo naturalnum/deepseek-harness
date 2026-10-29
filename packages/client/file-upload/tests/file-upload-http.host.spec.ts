@@ -3,7 +3,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { handleFileUploadHttp } from '../src/http-route.ts'
-import type { FileUploads } from '../src/index.ts'
+import { FileUploadIntakeUnconfirmedError, type FileUploads } from '../src/index.ts'
 
 function request(input: {
   method?: string
@@ -123,4 +123,12 @@ describe('background file upload Fetch route', () => {
       ok: false, error: { code: 'gateway/internal', message: 'Error: disk exception', details: {} },
     })
   })
+
+  it('reports a typed unconfirmed service result with a structured reason', async () => {
+    const service = uploads(Promise.reject(new FileUploadIntakeUnconfirmedError()))
+    const response = await handleFileUploadHttp(service, request({ sessionId: 's1', contentType: 'application/octet-stream' }))
+    expect(await response.json()).toEqual({ ok: false, error: { code: 'gateway/internal',
+      message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+  })
+
 })

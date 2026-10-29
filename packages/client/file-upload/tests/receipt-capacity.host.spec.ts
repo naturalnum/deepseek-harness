@@ -332,7 +332,8 @@ it('reports unconfirmed request cleanup when an unconsumed body rejects cancella
     method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
   } as RequestInit)
   const response = await f.track(handleFileUploadHttp(f.uploads, request))
-  expect(await response.json()).toMatchObject({ ok: false, error: { message: 'File upload intake settlement is unconfirmed.' } })
+  expect(await response.json()).toMatchObject({ ok: false, error: { code: 'gateway/internal',
+    message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
   expect(cancels).toBe(1)
   // The route reports its own cleanup uncertainty; this early rejection had already released the service slot.
   f.uploads.failure = undefined
