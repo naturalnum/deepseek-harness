@@ -56,7 +56,11 @@ describe('SessionLogDownloadDialog', () => {
     expect(await b.view.findByRole('dialog', { name: 'Exporting Session' })).toBeTruthy()
     release(new Response('zip', { status: 200 }))
     await download
-    expect(await b.view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
+    const dialog = await b.view.findByRole('dialog', { name: 'Session download requested' })
+    expect(dialog.textContent).toContain('Check your browser downloads')
+    const link = b.view.getByRole('link', { name: 'Download Session ZIP' }) as HTMLAnchorElement
+    expect(link.getAttribute('href')).toBe(`api/session.export?sessionId=${SID}&includeDescendants=true`)
+    expect(link.download).toBe(`dsh-session-${SID}.zip`)
   })
 
   it('uses fallback copy when a failure has no detail', async () => {

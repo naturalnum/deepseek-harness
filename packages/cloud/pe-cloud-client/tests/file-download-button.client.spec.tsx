@@ -10,10 +10,10 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 const id = SessionId('download-original'), next = SessionId('download-next')
 const labels = { download: 'Download', pending: 'Downloading', cancel: 'Cancel download', cancelled: 'Download cancelled', started: 'Download requested',
   failed: 'Unable to download. Check this file and try again.', tooLarge: 'File is too large', invalid: 'File cannot be downloaded' }
-function complete(): Awaited<ReturnType<CloudFileReadBytes>> {
-  return { ok: true, value: { absolutePath: '/native/file', version: 'v', data: new Uint8Array([1, 2]), bytes: 2, offset: 0, eof: true } }
+function complete(offset = 0): Awaited<ReturnType<CloudFileReadBytes>> {
+  return { ok: true, value: { absolutePath: '/native/file', version: 'v', data: offset === 0 ? new Uint8Array([1, 2]) : new Uint8Array(), bytes: 2, offset, eof: true } }
 }
-function fixture(readBytes = vi.fn<CloudFileReadBytes>().mockResolvedValue(complete())) {
+function fixture(readBytes = vi.fn<CloudFileReadBytes>(async (_session, _path, options) => complete(options?.range?.offset ?? 0))) {
   const createObjectURL = vi.fn((_blob: Blob) => 'blob:owned-download')
   const revokeObjectURL = vi.fn()
   vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
@@ -42,7 +42,8 @@ it('discards a late native result after unmount and aborts that occurrence', asy
 it('captures each Session/resource and never adopts old bytes after resource replacement', async () => {
   let finishOld!: (result: Awaited<ReturnType<CloudFileReadBytes>>) => void
   const old = new Promise<Awaited<ReturnType<CloudFileReadBytes>>>((resolve) => { finishOld = resolve })
-  const read = vi.fn<CloudFileReadBytes>(session => session === id ? old : Promise.resolve(complete()))
+  const read = vi.fn<CloudFileReadBytes>((session, _path, options) =>
+    session === id ? old : Promise.resolve(complete(options?.range?.offset ?? 0)))
   const f = fixture(read)
   const view = render(<FileDownloadButton {...f.props} />)
   fireEvent.click(screen.getByRole('button', { name: labels.download }))
@@ -53,7 +54,7 @@ it('captures each Session/resource and never adopts old bytes after resource rep
   await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(labels.started) })
   await act(async () => { finishOld(complete()) })
   expect(f.clicked).toEqual(['next.bin'])
-  expect(read.mock.calls.map(call => [call[0], call[1]])).toEqual([[id, 'original.bin'], [next, 'next.bin']])
+  expect(read.mock.calls.map(call => [call[0], call[1]])).toEqual([[id, 'original.bin'], [next, 'next.bin'], [next, 'next.bin']])
   expect(f.createObjectURL).toHaveBeenCalledOnce()
   expect(f.revokeObjectURL).toHaveBeenCalledOnce()
   expect(screen.getByRole('status').textContent).toBe(labels.started)

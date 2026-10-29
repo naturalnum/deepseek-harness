@@ -12,6 +12,8 @@ export interface SessionLogDownloadEntry {
   readonly open: boolean
   readonly status: SessionLogDownloadStatus
   readonly error: string | null
+  /** Bound route for a user-initiated download if the browser did not start the requested one. */
+  readonly download?: Readonly<{ url: string; filename: string }>
 }
 
 /** Download states keyed by the Session whose Header owns the dialog. */
@@ -22,6 +24,7 @@ export interface SessionLogDownloadState {
 /** HTTP carrier for the export route. */
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 type Save = (url: string, filename: string) => void
+type BindUrl = (url: string) => string
 
 const INITIAL: SessionLogDownloadState = { bySession: {} }
 
@@ -35,8 +38,7 @@ export function sessionLogZipFilename(sessionId: SessionId): string {
 }
 
 /**
- * Hand a Host download route to the browser download manager, which resolves it
- * against the document's own base.
+ * Request a browser download without claiming that the browser accepted or completed it.
  * @param url - document-relative Host download route.
  * @param filename - browser download filename.
  */
@@ -44,7 +46,8 @@ export function downloadUrl(url: string, filename: string): void {
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = filename
-  anchor.click()
+  document.body.append(anchor)
+  try { anchor.click() } finally { anchor.remove() }
 }
 
 function messageOf(error: unknown): string {
@@ -62,16 +65,18 @@ export class SessionLogDownloadController {
   /**
    * @param fetcher - HTTP carrier used to read the host-streamed ZIP.
    * @param save - browser save operation.
+   * @param bindUrl - binds the route to the application's navigation carrier.
    */
   constructor(
     private readonly fetcher: Fetch = (input, init) => fetch(input, init),
     private readonly save: Save = downloadUrl,
+    private readonly bindUrl: BindUrl = url => url,
   ) {}
 
   /**
    * Download one Session tree; concurrent gestures for the same Session share one operation.
    * @param sessionId - root Session whose ZIP includes descendants and attachments.
-   * @returns after the browser save starts, an error state is published, or a late post-disposal request is ignored.
+   * @returns after requesting the browser download, publishing an error, or ignoring a late post-disposal request.
    */
   download(sessionId: SessionId): Promise<void> {
     const existing = this.active.get(sessionId)
@@ -116,9 +121,11 @@ export class SessionLogDownloadController {
         const detail = await response.text().catch(() => '')
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
-      this.save(route, sessionLogZipFilename(sessionId))
+      signal.throwIfAborted()
+      const download = { url: this.bindUrl(route), filename: sessionLogZipFilename(sessionId) }
+      this.save(download.url, download.filename)
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
-      this.publish(sessionId, { open, status: 'success', error: null })
+      this.publish(sessionId, { open, status: 'success', error: null, download })
     } catch (error: unknown) {
       if (signal.aborted) return
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true

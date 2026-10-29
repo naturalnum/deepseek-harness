@@ -1,4 +1,4 @@
-/** One Session/page-bound complete-file download through the original WorkspaceFiles Remote. */
+/** One Session/page-bound download through the original WorkspaceFiles Remote. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
@@ -16,7 +16,7 @@ export interface CloudFileDownloadInput {
   readonly signal: AbortSignal
   /** Bound original generated Remote method on that page's captured carrier. */
   readonly readBytes: CloudFileReadBytes
-  /** Explicit deployed native maxFileBytes, or a stricter acceptance cap; native request/body limits still bound the read. */
+  /** Explicit finite total-byte cap for the locally buffered file; native window limits still bound each read. */
   readonly maxFileBytes: number
 }
 
@@ -62,7 +62,7 @@ export class CloudFileDownload {
   /**
    * Read the complete file again under current server authorization, then request a browser save.
    * @returns A local outcome; native failures retain their cause without exposing it as UI copy.
-   * An already issued browser download cannot be rolled back. No range, attachment stage or navigation URL is used.
+   * An already issued browser download cannot be rolled back. Authorized byte ranges share one file identity and version.
    */
   save(): Promise<CloudFileDownloadResult> {
     if (this.closing !== undefined || this.input.signal.aborted) return Promise.resolve({ kind: 'cancelled' })
@@ -124,19 +124,55 @@ export class CloudFileDownload {
     }
     const name = pathPartsOf(file.path).name.replace(/[\\/\u0000-\u001f\u007f]/g, '_')
     if (name === '' || name === '.' || name === '..') return { kind: 'failed', reason: 'invalid-resource' }
-    let result: Awaited<ReturnType<CloudFileReadBytes>>
-    try { result = await readBytes(sessionId, file.path, {}, signal) } catch (cause) {
-      return signal.aborted ? { kind: 'cancelled' } : { kind: 'failed', reason: 'native', cause }
+    const chunks: Uint8Array<ArrayBuffer>[] = []
+    let offset = 0
+    let version: string | undefined
+    let absolutePath: string | undefined
+    let bytes: number | undefined
+    while (true) {
+      const length = Math.min(32 * 1024, Math.max(1, maxFileBytes - offset))
+      let result: Awaited<ReturnType<CloudFileReadBytes>>
+      try { result = await readBytes(sessionId, file.path, { range: { offset, length } }, signal) } catch (cause) {
+        return signal.aborted ? { kind: 'cancelled' } : { kind: 'failed', reason: 'native', cause }
+      }
+      if (signal.aborted) return { kind: 'cancelled' }
+      if (!result.ok) return { kind: 'failed',
+        reason: result.error.code === 'workspace-file/too-large' ? 'too-large' : 'native', cause: result.error }
+      const part = result.value
+      if (offset + part.data.byteLength > maxFileBytes || (part.bytes !== undefined && part.bytes > maxFileBytes)) {
+        return { kind: 'failed', reason: 'too-large' }
+      }
+      if (part.offset !== offset || part.data.byteLength > length
+        || (version !== undefined && part.version !== version)
+        || (absolutePath !== undefined && part.absolutePath !== absolutePath)
+        || (part.bytes !== undefined && (!Number.isSafeInteger(part.bytes) || part.bytes < 0))
+        || (bytes !== undefined && part.bytes !== undefined && part.bytes !== bytes)) return { kind: 'failed', reason: 'incomplete' }
+      version = part.version
+      absolutePath = part.absolutePath
+      bytes ??= part.bytes
+      chunks.push(part.data)
+      offset += part.data.byteLength
+      if (part.eof) {
+        if (bytes !== undefined && offset !== bytes) return { kind: 'failed', reason: 'incomplete' }
+        let final: Awaited<ReturnType<CloudFileReadBytes>>
+        try { final = await readBytes(sessionId, file.path, { range: { offset, length: 1 } }, signal) } catch (cause) {
+          return signal.aborted ? { kind: 'cancelled' } : { kind: 'failed', reason: 'native', cause }
+        }
+        if (signal.aborted) return { kind: 'cancelled' }
+        if (!final.ok) return { kind: 'failed', reason: 'native', cause: final.error }
+        if (final.value.offset !== offset || !final.value.eof || final.value.data.byteLength !== 0
+          || final.value.absolutePath !== absolutePath || final.value.version !== version
+          || (final.value.bytes !== undefined && final.value.bytes !== offset)
+          || (bytes !== undefined && final.value.bytes !== undefined && final.value.bytes !== bytes)) {
+          return { kind: 'failed', reason: 'incomplete' }
+        }
+        break
+      }
+      if (part.data.byteLength === 0) return { kind: 'failed', reason: 'incomplete' }
     }
-    if (signal.aborted) return { kind: 'cancelled' }
-    if (!result.ok) return { kind: 'failed',
-      reason: result.error.code === 'workspace-file/too-large' ? 'too-large' : 'native', cause: result.error }
-    const { data, offset, eof, bytes } = result.value
-    if (offset !== 0 || !eof) return { kind: 'failed', reason: 'incomplete' }
-    if (data.byteLength > maxFileBytes || (bytes !== undefined && bytes > maxFileBytes)) return { kind: 'failed', reason: 'too-large' }
     let anchor: HTMLAnchorElement | undefined
     try {
-      const url = URL.createObjectURL(new Blob([data], { type: 'application/octet-stream' }))
+      const url = URL.createObjectURL(new Blob(chunks, { type: 'application/octet-stream' }))
       const handedOff = new Promise<void>((released) => {
         this.lease = { url, released, timer: setTimeout(() => { this.releaseUrl() }, 0) }
       })

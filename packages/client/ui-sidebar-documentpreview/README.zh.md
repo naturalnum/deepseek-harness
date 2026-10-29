@@ -54,7 +54,7 @@ Web 和桌面端均通过代码工作工具选择 HTML 预览策略。渲染器�
 
 - 资源快照仅包含 `status`、`value` 和 `failure`；`value` 是 `WorkspaceFileStat` 元数据。提供方可用后，内容读取无需等待首个元数据帧。观察失败优先于 Preview 的变更提示显示；元数据不可用时保留已加载内容。
 - **文本页** —— 纯文本、Markdown 和代码通过 inject 回调调用 `remote.workspaceFiles.read(sessionId, path, { offset }, signal)`。首次挂载读取第一页；滚动到正文末尾或点击 **加载更多** 会读取下一页，直到 `eof`。owner 以 `{ kind: 'text', text, pages, eof }` 提供累计前缀，包含源码偏移和行数。Markdown 和代码增量渲染此前缀，不把每页当成独立文档。第一页之后到达的更新版本页会使读取从头开始，避免混合版本。尚无内容时，失败会以文件类型图标、说明和该失败对应的出路（重试、unpreviewable 子 slot，或什么都不给）填满正文；较晚的失败保留已有内容并在其下提供重试。
-- **完整字节** —— PDF、HTML、常见图片和表格调用 `remote.workspaceFiles.readBytes(sessionId, path, {}, signal)`。二进制 Remote 直接返回 `data: Uint8Array<ArrayBuffer>`，供 `{ kind: 'bytes', data }` 使用。Host 的 `maxFileBytes` 上限拒绝超大文件，不截断。PDF 和表格渲染器在传给 Worker 前复制保留的字节，使 Preview 缓冲区仍可使用。字节仅保存在临时视图状态中，绝不进入持久布局或 Session JSONL。加载模式变化会淘汰先前结果。
+- **完整字节** —— PDF、HTML、常见图片、XLS 和 XLSX 调用 `remote.workspaceFiles.readBytes(sessionId, path, {}, signal)`。内置 CSV/TSV 表格渲染器通过同一 Remote 在 `excel.maxBytes` 内分段读取，拒绝不一致的路径、偏移、大小或版本并核验 EOF，再把完整缓冲区交给渲染器；每段仍受 Host 单页上限约束。其他渲染器保持普通完整读取行为。二进制 Remote 直接返回 `data: Uint8Array<ArrayBuffer>`，供 `{ kind: 'bytes', data }` 使用。Host 的 `maxFileBytes` 上限拒绝超大完整读取，不截断。PDF 和表格渲染器在传给 Worker 前复制保留的字节，使 Preview 缓冲区仍可使用。字节仅保存在临时视图状态中，绝不进入持久布局或 Session JSONL。加载模式或字节渲染器变化会淘汰先前结果。
 - **重新载入** —— 手动重新载入仅让当前 Preview tab 通过自己的 Remote 回调重读，保留滚动偏好并淘汰旧请求。`ResourceGroup` 成员变化后，自动刷新使用相同回调。各成员首次元数据仅建立基线，不触发重新载入或首读版本对账；后续在读取期间收到的变化仍会留待下一次刷新。读取既不刷新共享元数据，也不清除其它 tab 的提示。
 
 开启代码工作工具时，HTML 以贴合正文四边的 Blob iframe 运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器通过注入的 Remote 回调，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表；固定安全上限为单个资源 4 MiB、总计 32 MiB、64 个不同资源。Host 代码解析关联路径，带 `baseFile` 的 `readBytes` 返回原生字节。依赖 Resource 在读取返回后加入，使用返回的 `absolutePath`，失败时则使用字符串类型的 `error.details.path`；没有 Host 路径时，Client 不自行猜测。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
@@ -76,7 +76,7 @@ XLSX 预览在解析前从内存副本中移除 DrawingML 部件，并忽略工�
 
 CSV 和 TSV 默认使用表格查看器，也可选择纯文本；CSV 还提供带语法高亮的 Code 预览。两者分别以逗号和制表符分隔字段，支持引号内分隔符、转义引号、多行字段、空字段和不等长行。首行仍作为数据。值保持为字面字符串，包括前导零、日期、布尔值和类似公式的文本。文本文件支持 UTF-8 或带 BOM 的 UTF-16；无效编码会显示转换提示。引号字段格式错误会使表格预览失败，不会静默丢弃数据。
 
-在同一个 `ui-sidebar-documentpreview` 条目上配置 `excel`。这些限制补充 Host 的完整文件读取限制，但不限制浏览器进程内存或解压分配量。
+在同一个 `ui-sidebar-documentpreview` 条目上配置 `excel`。CSV/TSV 的 `maxBytes` 限制拼接后的字节缓冲区，每个授权分段还受 Host 单页限制；XLS/XLSX 也受 Host 完整文件读取限制。这些限制不限制浏览器进程内存或解压分配量。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|

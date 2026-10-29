@@ -45,6 +45,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       renderSlot={renderSlot}
       revealProcess={revealProcess}
       mentions={mentions}
+      standaloneFileLinks={owner !== undefined && data.status !== 'interrupted'}
       t={t}
     />
   )

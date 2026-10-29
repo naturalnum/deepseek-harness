@@ -6,7 +6,10 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { Context, FiberState } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
@@ -62,6 +65,9 @@ async function fixture(skills: boolean, connect: boolean, toggleable = true) {
   let holdCleanup = false, owner: Context | undefined, management: ReturnType<Context['plugin']> | undefined
   ctx.provide('clientPersistence', page.nativeOptions.persistence)
   const slots = new SlotRegistry(ctx), locale = new LocaleRuntime(ctx); locale.setLocale('en'); ctx.provide('locale', locale)
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
+  ctx.provide('layout', { panelInfo, selectPanel: (panelId) => { panelInfo.set({ activePanelId: panelId }) },
+    beginNavigation: () => new AbortController().signal, toggleSidebar: () => {}, openRightbar: () => {}, closeRightbar: () => {} })
   const declare = () => slots.register({ name: 'root', children: {
     'main': { kind: 'keyed', scope: 'root' }, 'sidebar.panellist': { kind: 'list', scope: 'root' },
     'shell.overlay': { kind: 'list', scope: 'root' }, 'settings.section': { kind: 'list', scope: 'root' },
@@ -98,10 +104,49 @@ async function fixture(skills: boolean, connect: boolean, toggleable = true) {
     if (injected?.hooks === undefined || injected.dismiss === undefined) throw new Error('Missing common feedback')
     return injected as ManagementActionToastInjected
   }
-  return { page, slots, locale, current, change, skillUnused, face, toast, declare, withdrawDeclaration, connectRemote, installManagement,
+  return {
+    page, slots, locale, panelInfo, current, change, skillUnused, face, toast, declare,
+    withdrawDeclaration, connectRemote, installManagement,
     management: () => { if (management === undefined) throw new Error('Missing management owner'); return management },
     hold: () => { holdCleanup = true }, release: () => { cleanup.resolve(undefined) } }
 }
+it('loads the approved account catalog when its panel is selected, without reading on startup or retrying while selected', async () => {
+  const f = await fixture(false, true), source = f.face().hooks.accountPluginCatalog
+  expect(source.getSnapshot().phase).toBe('unread')
+  expect(f.current).not.toHaveBeenCalled()
+  const panel = brandString<MainPanelId>('power-evolve-plugins')
+  f.panelInfo.set({ activePanelId: panel })
+  await vi.waitFor(() => { expect(source.getSnapshot().phase).toBe('ready') })
+  expect(f.current).toHaveBeenCalledExactlyOnceWith({ id: TEST_PLUGIN_ID }, expect.any(AbortSignal))
+  expect(source.getSnapshot().plugins[0]).toMatchObject({ id: TEST_PLUGIN_ID, installed: true })
+  f.panelInfo.set({ activePanelId: panel })
+  expect(f.current).toHaveBeenCalledTimes(1)
+
+  f.panelInfo.set({ activePanelId: null })
+  f.current.mockRejectedValueOnce(new Error('scripted current failure'))
+  f.panelInfo.set({ activePanelId: panel })
+  await vi.waitFor(() => { expect(source.getSnapshot().phase).toBe('error') })
+  f.panelInfo.set({ activePanelId: panel })
+  expect(f.current).toHaveBeenCalledTimes(2)
+  expect(f.change).not.toHaveBeenCalled()
+  f.face().refreshPluginCatalog?.()
+  await vi.waitFor(() => { expect(source.getSnapshot().phase).toBe('ready') })
+  expect(f.current).toHaveBeenCalledTimes(3)
+  await f.page.dispose()
+  f.panelInfo.set({ activePanelId: null }); f.panelInfo.set({ activePanelId: panel })
+  expect(f.current).toHaveBeenCalledTimes(3)
+  expect(source.getSnapshot().phase).toBe('unavailable')
+})
+it('loads the selected plugin panel when its original namespace becomes available later', async () => {
+  const f = await fixture(false, false)
+  f.panelInfo.set({ activePanelId: brandString<MainPanelId>('power-evolve-plugins') })
+  expect(f.current).not.toHaveBeenCalled()
+  f.connectRemote()
+  await vi.waitFor(() => { expect(f.slots.entries('main')).toHaveLength(1) })
+  await vi.waitFor(() => { expect(f.face().hooks.accountPluginCatalog.getSnapshot().phase).toBe('ready') })
+  expect(f.current).toHaveBeenCalledOnce()
+  expect(f.change).not.toHaveBeenCalled()
+})
 it('shares one navigation and feedback owner, reads only on refresh and ignores a reply after synchronous withdrawal', async () => {
   const f = await fixture(true, true)
   expect(f.slots.entries('main').map(entry => entry.options.key).sort()).toEqual(['power-evolve-plugins', 'power-evolve-skills'])
@@ -110,7 +155,7 @@ it('shares one navigation and feedback owner, reads only on refresh and ignores 
   expect(f.slots.entries('settings.section')).toEqual([])
   expect(f.current).not.toHaveBeenCalled(); expect(f.skillUnused).not.toHaveBeenCalled()
   const face = f.face(), source = face.hooks.accountPluginCatalog, notice = f.toast().hooks.managementNotice
-  expect(source.getSnapshot()).toEqual({ phase: 'unavailable', plugins: [], refreshing: false })
+  expect(source.getSnapshot()).toEqual({ phase: 'unread', plugins: [], refreshing: false })
   expect(face.requestPluginEnabled).toBeTypeOf('function'); expect(face.openPluginConfiguration).toBeTypeOf('function')
   face.refreshPluginCatalog?.()
   await vi.waitFor(() => { expect(source.getSnapshot().phase).toBe('ready') })

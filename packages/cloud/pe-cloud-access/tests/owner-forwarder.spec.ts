@@ -150,6 +150,37 @@ it('streams a slow multi-megabyte response through bounded serial writes rather 
   expect(await f.transfers[0]!.settled).toMatchObject({ status: 'completed' })
 })
 
+it('allows an exact-size upload and its receipt only when the combined body budget includes both', async () => {
+  const attachment = Buffer.alloc(1024 * 1024, 0x5a)
+  const receipt = Buffer.from('{"receipt":"stored"}')
+  const expected = createHash('sha256').update(attachment).digest('hex')
+  for (const extra of [0, receipt.length] as const) {
+    let received = 0, digest = '', calls = 0
+    const f = await fixture((request, response) => {
+      calls++
+      const hash = createHash('sha256')
+      request.on('data', (chunk: Buffer) => { received += chunk.length; hash.update(chunk) })
+      request.on('end', () => {
+        digest = hash.digest('hex')
+        response.writeHead(201, { 'content-type': 'application/json', 'content-length': receipt.length })
+        response.end(receipt)
+      })
+    }, { limits: { maxBodyBytes: attachment.length + extra } })
+    const result = f.call('/api/session/uploadFileBinary?sessionId=original',
+      ['Host', 'public.example.test', 'Content-Type', 'application/octet-stream'], attachment).result
+    if (extra === 0) {
+      await expect(result).rejects.toBeDefined()
+      expect(await f.transfers[0]!.settled).toMatchObject({ status: 'failed', failure: { code: 'capacity' }, upstreamMayHaveReceived: true })
+    } else {
+      expect(await result).toMatchObject({ status: 201, body: receipt })
+      expect(await f.transfers[0]!.settled).toMatchObject({ status: 'completed', upstreamStatus: 201 })
+    }
+    expect(calls).toBe(1)
+    expect(received).toBe(attachment.length)
+    expect(digest).toBe(expected)
+  }
+})
+
 it('forwards terminal error/redirect responses without issuing a second request', async () => {
   let calls = 0
   const f = await fixture((_request, response) => { calls++; response.writeHead(307, { location: 'http://not-selected.invalid/path' }); response.end('original') })

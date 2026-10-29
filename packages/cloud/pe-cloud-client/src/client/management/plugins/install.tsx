@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ManagementNotice } from '../ManagementActionToast.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { IconPluginPinwheelOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PreparedCloudPage } from '../../prepared-page.ts'
 import { CLOUD_MANAGEMENT_NAMESPACE } from '../locales.ts'
@@ -49,6 +50,25 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
     owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FiberState.ACTIVE) retire() })
     owner.effect(() => retire, 'pe-cloud-client: withdraw plugin catalog')
     removers.add(registerCloudPluginManagement(owner, 'power-evolve-plugins', () => reader.injected))
+    const panelWait = owner.inject(['layout'], (scope) => {
+      const panelInfo = scope.layout.panelInfo
+      let selected = false
+      const update = (): void => {
+        if (!active) return
+        const next = panelInfo.getSnapshot().activePanelId === 'power-evolve-plugins'
+        const opened = next && !selected
+        selected = next
+        if (opened) reader.injected.refreshPluginCatalog?.()
+      }
+      scope.effect(() => {
+        const unsubscribe = panelInfo.subscribe(update)
+        update()
+        return unsubscribe
+      }, 'pe-cloud-client: load plugin catalog on panel selection')
+    })
+    removers.add(() => {
+      void observeCloudDisposal(panelWait.dispose).catch(() => { console.error('Cloud plugin panel observation withdrawal unconfirmed.') })
+    })
     let removeSidebar: (() => void) | undefined
     const stopSidebar = owner.slots.inject('sidebar.panellist', () => {
       if (!active) return () => {}

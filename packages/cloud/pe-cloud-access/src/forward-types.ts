@@ -19,6 +19,7 @@ export interface ForwardLimits {
   readonly maxChunkBytes: number
   readonly maxBufferedBytes: number
   readonly maxPendingBytes: number
+  /** Maximum combined HTTP request and response body bytes for one transfer. */
   readonly maxBodyBytes: number
   readonly maxTunnelBytes: number
   readonly queueTimeoutMs: number

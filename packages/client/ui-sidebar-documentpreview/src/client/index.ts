@@ -25,7 +25,7 @@ import type { TextPreviewInjected } from './TextPreview.tsx'
 import { TextTitle } from './TextTitle.tsx'
 import { TEXTPREVIEW_ID, textDefinition } from './definition.ts'
 import { textFace } from './face.ts'
-import { createReadPage } from './rpc.ts'
+import { createReadPage, readDelimitedBytes } from './rpc.ts'
 import { createTextStore } from './store.ts'
 import { en, zh } from './locales.ts'
 import { DocumentPreviewRegistry } from './document/registry.ts'
@@ -37,7 +37,7 @@ import { apply as registerImage } from './image/index.ts'
 import { apply as registerPdf } from './pdf/index.ts'
 import { apply as registerCode } from './code/index.ts'
 import { apply as registerOffice } from './office/index.ts'
-import { apply as registerExcel } from './excel/index.ts'
+import { apply as registerExcel, EXCEL_PREVIEW_ID } from './excel/index.ts'
 import { Config } from '../config.ts'
 
 // Values stay package-private unless another package needs them; the plugin
@@ -96,7 +96,9 @@ export function apply(ctx: ClientContext): void {
   const store = createTextStore()
   const face = textFace(
     createReadPage(ctx.remote),
-    (file, signal) => ctx.remote.workspaceFiles.readBytes(file.sessionId, file.path, {}, signal),
+    (file, signal, rendererId) => rendererId === EXCEL_PREVIEW_ID && /\.(?:csv|tsv)$/i.test(file.path)
+      ? readDelimitedBytes(ctx.remote.workspaceFiles.readBytes.bind(ctx.remote.workspaceFiles), file, config.excel.maxBytes, signal)
+      : ctx.remote.workspaceFiles.readBytes(file.sessionId, file.path, {}, signal),
     ctx.resources,
   )
   const source = { getSnapshot: previews.getSnapshot, subscribe: previews.subscribe }

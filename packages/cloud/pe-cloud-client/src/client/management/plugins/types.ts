@@ -38,7 +38,7 @@ export interface AccountPluginCard {
 }
 /** Current account's authoritative display projection; error may retain the last readable rows. */
 export interface AccountPluginCatalog {
-  readonly phase: 'loading' | 'ready' | 'unavailable' | 'error'
+  readonly phase: 'unread' | 'loading' | 'ready' | 'unavailable' | 'error'
   readonly plugins: readonly AccountPluginCard[]
   readonly refreshing: boolean
   readonly editor?: AccountPluginEditor

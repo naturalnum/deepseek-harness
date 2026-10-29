@@ -32,7 +32,7 @@ type Active = { readonly controller: AbortController; readonly kind: 'refresh' |
 export function createPagePluginCatalog(owner: Context, page: PreparedCloudPage, text: (state: Display) => AccountPluginText,
   report: Report): { readonly injected: PluginManagementInjected; readonly dispose: () => void } {
   const approved = page.bootstrap.capabilities.configuration.plugins
-  const catalog = createSnapshotStore<AccountPluginCatalog>(Object.freeze({ phase: 'unavailable', plugins: Object.freeze([]), refreshing: false }))
+  const catalog = createSnapshotStore<AccountPluginCatalog>(Object.freeze({ phase: 'unread', plugins: Object.freeze([]), refreshing: false }))
   // Only native display metadata is retained for locale changes; configuration and edit versions stay with their original interaction.
   const facts = new Map<string, Display>()
   const display = (state: AccountPluginEditState): Display => ({ id: state.id,

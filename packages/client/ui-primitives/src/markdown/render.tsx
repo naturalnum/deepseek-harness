@@ -193,6 +193,8 @@ export interface MarkdownRenderContext {
   readonly fileMentions: MarkdownFileMentions | undefined
   /** Local-path image vocabulary; absent wherever no rewriting owner exists. */
   readonly pathImages: MarkdownPathImages | undefined
+  /** Offer the scoped opener for a simple relative filename that is a whole list item. */
+  readonly standaloneFileLinks?: boolean
   /** Inside an anchor's children: interactive mentions must not nest there. */
   readonly inLink?: boolean
   /** Reference targets visible to this pass. */
@@ -440,6 +442,11 @@ function renderListItem(
   key: Key,
   context: MarkdownRenderContext,
 ): ReactNode {
+  const candidate = standaloneFileListItem(item, context)
+  if (candidate !== undefined) {
+    const child = <MarkdownFileLink file={{ path: candidate.path }} glyph>{candidate.label}</MarkdownFileLink>
+    return <li key={key}>{loose ? <p>{child}</p> : child}</li>
+  }
   const entries = renderBlockEntries(item.children, context)
   const task = typeof item.checked === 'boolean'
   if (task) {
@@ -470,6 +477,21 @@ function renderListItem(
       {parts}
     </li>
   )
+}
+
+/** A whole list-item filename is an explicit relative open request, not a verified file claim. */
+function standaloneFileListItem(item: Md.ListItem, context: MarkdownRenderContext): { path: string; label: ReactNode[] } | undefined {
+  if (context.streaming || context.standaloneFileLinks !== true || context.fileMentions !== undefined
+    || typeof item.checked === 'boolean' || item.children.length !== 1) return undefined
+  const block = item.children[0]
+  if (block?.type !== 'paragraph' || block.children.length !== 1) return undefined
+  const node = block.children[0]
+  if (node?.type !== 'text' && node?.type !== 'inlineCode') return undefined
+  const value = node.value
+  if (value.length > 255 || !/^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\/)*[A-Za-z0-9_][A-Za-z0-9._-]*\.[A-Za-z][A-Za-z0-9]{0,15}$/.test(value)
+    || value.split('/').some(part => part === '.' || part === '..')
+    || /\.(?:com|org|net|edu|gov)$/i.test(value)) return undefined
+  return { path: value, label: [node.type === 'inlineCode' ? <code key="file">{value}</code> : value] }
 }
 
 function renderTable(node: Md.Table, key: Key, context: MarkdownRenderContext): ReactNode {

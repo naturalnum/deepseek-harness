@@ -11,6 +11,7 @@ import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 import type { AccountId, AccountOwner, AccountRuntimeService, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
 import { REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
+import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
 import type { ConfigurationPeerOperation } from './peers.ts'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
@@ -364,7 +365,14 @@ export class CloudIngress {
         operation.stage = 'ingress.current'
         this.assertOperation(operation)
         operation.stage = 'request.binding'
-        const expected = readRequestExpectation(request, url, this.config.bindingFields, 'headers', operation.id)
+        const fields = this.config.bindingFields
+        const exportNavigation = request.method === 'GET' && url.pathname === SESSION_LOG_EXPORT_PATH
+          && (url.searchParams.has(fields.accountQuery) || url.searchParams.has(fields.generationQuery))
+        if (exportNavigation && request.rawHeaders.some((value, index) => index % 2 === 0
+          && (value.toLowerCase() === fields.accountHeader || value.toLowerCase() === fields.generationHeader))) {
+          throw new RequestBindingError(operation.id)
+        }
+        const expected = readRequestExpectation(request, url, fields, exportNavigation ? 'query' : 'headers', operation.id)
         assertExpectedAccount(expected, principal.accountId, operation.id)
         this.requests.set(request, { operation, expected })
         operation.stage = 'account.bind'

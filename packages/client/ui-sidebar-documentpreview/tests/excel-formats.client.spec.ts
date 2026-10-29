@@ -11,6 +11,18 @@ import { legacyWorkbook, xlsFixture } from './xls-fixture.ts'
 const limits = Config({}).excel
 const encode = (text: string) => new TextEncoder().encode(text)
 
+it('renders a 100KiB time-series CSV when the explicit preview limits accommodate its cells', async () => {
+  const rows = ['time,index,x,prediction']
+  for (let i = 0; i < 2560; i++) rows.push(`2026-10-29,${i},1.234567890,12345.6789012345`)
+  const input = encode(rows.join('\n'))
+  expect(input.byteLength).toBeGreaterThan(100 * 1024)
+  const sheet = (await convertExcel(input, 'csv', { ...limits, maxBytes: 128 * 1024, maxCells: 16_384 })).sheets[0]!
+  expect(sheet.row).toBe(2561)
+  expect(sheet.column).toBe(4)
+  expect(sheet.celldata?.length).toBe(10_244)
+  expect(sheet.celldata?.find(cell => cell.r === 2560 && cell.c === 1)?.v?.v).toBe('2559')
+})
+
 it.each(['xlsx', 'xls', 'csv', 'tsv'] as const)('resolves mixed-case %s paths and enforces byte limits', async (format) => {
   expect(excelFormat(`/dir.name/sheet.${format.toUpperCase()}`)).toBe(format)
   await expect(convertExcel(new Uint8Array(2), format, { ...limits, maxBytes: 1 })).rejects.toMatchObject({ code: 'tooLarge' })

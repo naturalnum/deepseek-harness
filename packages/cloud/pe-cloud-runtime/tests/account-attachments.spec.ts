@@ -50,7 +50,8 @@ async function consume(stream: AsyncIterable<StreamChunk>): Promise<void> {
   for await (const _chunk of stream) { /* Consume the native LLM dispatcher, including its middleware finally. */ }
 }
 
-async function fixture() {
+async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, allowIntake = false) {
+  const selectedLimits = { ...limits, ...limitOverrides }
   const home = await mkdtemp(join(tmpdir(), 'account-attachments-composition-')), ctx = new Context()
   const lifetime = new AbortController()
   onTestFinished(async () => {
@@ -65,7 +66,7 @@ async function fixture() {
   const store = new LocalAttachmentStore(ctx, { dshHome: home })
   // Only original route registration is replaced; no HTTP, Cookie, Peer or Access claim is made.
   ctx.provide('connection', { fetch: { register: () => () => {} } } as never)
-  const uploads = new FileUploads(ctx, { maxPendingReceipts: limits.maxPendingReceipts })
+  const uploads = new FileUploads(ctx, { maxPendingReceipts: selectedLimits.maxPendingReceipts })
   const native = await mountAgentLoopTestHarness(ctx), adapter = new FixtureAdapter()
   ctx.llm.registerAdapter(['fixture'], adapter)
   const selected = new Map<Agent, Workspace>(), a = workspace(join(home, 'project-a')), b = workspace(join(home, 'project-b'))
@@ -85,9 +86,13 @@ async function fixture() {
       releases.push(release)
       return { value: refs.map(staged), release }
     }),
-    runAttachmentIntake: async () => { throw new Error('Native intake settlement is outside these composition cases') },
+    runAttachmentIntake: async (_reservation, check, execute) => {
+      if (!allowIntake) throw new Error('Native intake settlement is outside these composition cases')
+      check()
+      return { value: await execute(lifetime.signal), release: () => {} }
+    },
   }
-  const feature = new AccountAttachments(ctx, binding, limits, () => port, (agent) => {
+  const feature = new AccountAttachments(ctx, binding, selectedLimits, () => port, (agent) => {
     const project = selected.get(agent)
     if (project === undefined || ctx.agents.get(agent.id) !== agent || ctx.sessions.get(agent.id) !== agent.session
       || agent.session.header.cwd !== project.path) {
@@ -112,6 +117,24 @@ async function fixture() {
   return { ctx, store, uploads, native, adapter, feature, create, preStep, selected, a, b, inputs, releases,
     insideStage: () => insideStage, fail: (error: Error) => { failure = error } }
 }
+
+it('persists exactly the configured upload limit and rejects one extra byte as not published', async () => {
+  const maximum = 1024 * 1024
+  const f = await fixture({ maxFileBytes: maximum, maxUploadChunkBytes: maximum, intakeReservationBytes: 4 * maximum }, true)
+  const agent = await f.create('upload-boundary')
+  const input = (extra: boolean) => (async function* () {
+    for (let i = 0; i < 16; i++) yield new Uint8Array(64 * 1024).fill(i)
+    if (extra) yield Uint8Array.of(0xff)
+  })()
+  const save = f.store.saveFileStream.bind(f.store)
+  const exact = await f.feature.storeFileStream(agent, { name: 'exact.bin', data: input(false) }, save)
+  let read = 0
+  for await (const chunk of f.store.readFileStream(exact)) read += chunk.byteLength
+  expect(exact.bytes).toBe(maximum)
+  expect(read).toBe(maximum)
+  await expect(f.feature.storeFileStream(agent, { name: 'too-large.bin', data: input(true) }, save))
+    .rejects.toMatchObject({ code: 'FS_TOO_LARGE', outcome: 'not-published' })
+})
 
 it('collects native cold history and actual claimed input inside the lazy builder before next, then releases after marked dispatch', async () => {
   const f = await fixture()

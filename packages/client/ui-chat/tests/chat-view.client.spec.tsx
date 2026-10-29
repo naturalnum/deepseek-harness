@@ -714,6 +714,30 @@ describe('Chat node rendering', () => {
     expect(h.openFile).toHaveBeenCalledWith('for-seq-4/site/report.html')
   })
 
+  it('opens plain file list items only from a closed turn’s uninterrupted closing reply', () => {
+    const h = makeHarness({ chat: chatSnapshotFixture({
+      nodes: [
+        userInTurn(1, 'train the model', 1),
+        assistant(2, '- intermediate.csv', 1, 1),
+        toolResult(3, 'train', 'bash'),
+        assistant(4, 'Downloads:\n\n- csv24-model.json\n- csv24-predictions.csv', 1, 2),
+        userInTurn(6, 'try another model', 2),
+        { ...assistant(7, '- interrupted.csv', 2, 1), interrupted: true },
+      ],
+      turnEnds: new Map([[1, 5], [2, 8]]),
+      turnEndReasons: new Map([[2, { kind: 'interrupted' }]]),
+    }) })
+    const view = render(<h.ChatView {...h.props} />)
+
+    fireEvent.click(view.getByRole('button', { name: 'csv24-model.json' }))
+    fireEvent.click(view.getByRole('button', { name: 'csv24-predictions.csv' }))
+    expect(h.openFile.mock.calls.map(([path]) => path)).toEqual(['csv24-model.json', 'csv24-predictions.csv'])
+    expect(view.getByText('intermediate.csv')).toBeTruthy()
+    expect(view.getByText('interrupted.csv')).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'intermediate.csv' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'interrupted.csv' })).toBeNull()
+  })
+
   it('formatRunDuration localizes units and floors partial seconds', () => {
     const t = makeTranslate(zh, commonZh)
     expect(formatRunDuration(0, t)).toBe('0秒')

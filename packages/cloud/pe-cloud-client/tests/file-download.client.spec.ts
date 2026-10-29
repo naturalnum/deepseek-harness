@@ -21,9 +21,15 @@ function complete(data = new Uint8Array([0, 255, 7])): Awaited<ReturnType<CloudF
   return { ok: true, value: { absolutePath: '/native/name.html', version: 'native-version', data,
     offset: 0, eof: true, bytes: data.byteLength } }
 }
+const completeRange: CloudFileReadBytes = async (_session, _path, options) => {
+  const offset = options?.range?.offset ?? 0
+  const data = offset === 0 ? new Uint8Array([0, 255, 7]) : new Uint8Array()
+  return { ok: true, value: { absolutePath: '/native/name.html', version: 'native-version', data,
+    offset, eof: true, bytes: 3 } }
+}
 function owner(overrides: Partial<CloudFileDownloadInput> = {}) {
   const page = new AbortController()
-  const readBytes = vi.fn<CloudFileReadBytes>().mockResolvedValue(complete())
+  const readBytes = vi.fn<CloudFileReadBytes>(completeRange)
   const input: CloudFileDownloadInput = { sessionId: id, resourceAddress: sessionFileAddress(id, 'folder/name.html'),
     signal: page.signal, readBytes, maxFileBytes: 16, ...overrides }
   const download = new CloudFileDownload(input)
@@ -36,10 +42,10 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-it('requests complete native bytes with the captured Session and unmodified path, and saves only an octet-stream Blob', async () => {
+it('requests authorized native byte ranges with the captured Session and unmodified path, and saves only an octet-stream Blob', async () => {
   const browser = surface(), f = owner()
   expect(await f.download.save()).toEqual({ kind: 'started' })
-  expect(f.readBytes).toHaveBeenCalledWith(id, 'folder/name.html', {}, expect.any(AbortSignal))
+  expect(f.readBytes).toHaveBeenCalledWith(id, 'folder/name.html', { range: { offset: 0, length: 16 } }, expect.any(AbortSignal))
   const blob = browser.createObjectURL.mock.calls[0]?.[0]
   expect(blob?.type).toBe('application/octet-stream')
   expect(blob?.size).toBe(3)
@@ -58,6 +64,71 @@ it('requests complete native bytes with the captured Session and unmodified path
   expect(document.querySelector('a')).toBeNull()
   expect(document.querySelector('iframe')).toBeNull()
   expect(browser.revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:owned-download')
+})
+
+it('downloads a 100KiB result in bounded ranges while preserving its Session, identity and version', async () => {
+  const browser = surface(), source = Uint8Array.from({ length: 102_672 }, (_, i) => i % 251)
+  const readBytes = vi.fn<CloudFileReadBytes>(async (_session, _path, options) => {
+    const range = options?.range
+    if (range?.offset === undefined || range.length === undefined) throw new Error('expected explicit range')
+    const data = source.slice(range.offset, range.offset + range.length)
+    return { ok: true, value: { absolutePath: '/native/name.html', version: 'v1', bytes: source.length,
+      offset: range.offset, data, eof: range.offset + data.length === source.length } }
+  })
+  const f = owner({ maxFileBytes: 128 * 1024, readBytes })
+  expect(await f.download.save()).toEqual({ kind: 'started' })
+  expect(readBytes.mock.calls.map(call => call[2]?.range?.offset)).toEqual([0, 32768, 65536, 98304, 102672])
+  expect(readBytes.mock.calls.every(call => call[0] === id && call[1] === 'folder/name.html'
+    && (call[2]?.range?.length ?? 0) <= 32768)).toBe(true)
+  const blob = browser.createObjectURL.mock.calls[0]?.[0]
+  expect(blob?.size).toBe(source.length)
+  if (blob === undefined) throw new Error('Download Blob not created')
+  const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error('not binary'))
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.readAsArrayBuffer(blob)
+  })
+  expect(new Uint8Array(bytes)).toEqual(source)
+})
+
+it('never saves bytes collected across changing file versions', async () => {
+  const browser = surface()
+  const readBytes = vi.fn<CloudFileReadBytes>()
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v1', bytes: 4,
+      offset: 0, data: new Uint8Array([1, 2]), eof: false } })
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v2', bytes: 4,
+      offset: 2, data: new Uint8Array([3, 4]), eof: true } })
+  const f = owner({ readBytes })
+  expect(await f.download.save()).toEqual({ kind: 'failed', reason: 'incomplete' })
+  expect(browser.createObjectURL).not.toHaveBeenCalled()
+})
+
+it('does not save when the source changes after the last data window', async () => {
+  const browser = surface()
+  const readBytes = vi.fn<CloudFileReadBytes>()
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v1', bytes: 4,
+      offset: 0, data: new Uint8Array([1, 2]), eof: false } })
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v1', bytes: 4,
+      offset: 2, data: new Uint8Array([3, 4]), eof: true } })
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v2', bytes: 4,
+      offset: 4, data: new Uint8Array(), eof: true } })
+  const f = owner({ readBytes })
+  expect(await f.download.save()).toEqual({ kind: 'failed', reason: 'incomplete' })
+  expect(readBytes).toHaveBeenCalledTimes(3)
+  expect(browser.createObjectURL).not.toHaveBeenCalled()
+})
+
+it.each([{ values: [] }, { values: [7] }])('rechecks the final version even for a single-window file with bytes $values', async ({ values }) => {
+  const browser = surface()
+  const readBytes = vi.fn<CloudFileReadBytes>()
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v1', bytes: values.length,
+      offset: 0, data: new Uint8Array(values), eof: true } })
+    .mockResolvedValueOnce({ ok: true, value: { absolutePath: '/native/name', version: 'v2', bytes: values.length,
+      offset: values.length, data: new Uint8Array(), eof: true } })
+  const f = owner({ readBytes })
+  expect(await f.download.save()).toEqual({ kind: 'failed', reason: 'incomplete' })
+  expect(browser.createObjectURL).not.toHaveBeenCalled()
 })
 
 it.each([
@@ -149,7 +220,7 @@ it('shares cancellation settlement and permits another explicit read only after 
   const browser = surface()
   let finish!: (result: Awaited<ReturnType<CloudFileReadBytes>>) => void
   const readBytes = vi.fn<CloudFileReadBytes>().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
-    .mockResolvedValue(complete())
+    .mockImplementation(completeRange)
   const f = owner({ readBytes })
   const first = f.download.save()
   const cancelled = f.download.cancel()
@@ -159,7 +230,7 @@ it('shares cancellation settlement and permits another explicit read only after 
   expect(await first).toEqual({ kind: 'cancelled' })
   await cancelled
   expect(await f.download.save()).toEqual({ kind: 'started' })
-  expect(readBytes).toHaveBeenCalledTimes(2)
+  expect(readBytes).toHaveBeenCalledTimes(3)
   expect(browser.clicked).toHaveLength(1)
 })
 

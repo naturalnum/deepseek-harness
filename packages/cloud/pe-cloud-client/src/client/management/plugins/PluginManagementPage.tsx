@@ -176,6 +176,7 @@ export function PluginManagementPage(props: PluginManagementPageProps): ReactNod
       <Button size="sm" disabled={props.refreshPluginCatalog === undefined || catalog.refreshing} onClick={props.refreshPluginCatalog}>{t('refresh')}</Button></div> : null}
     {open === undefined ? <>
       {catalog.phase === 'loading' ? <Loading t={t}/> : null}
+      {catalog.phase === 'unread' ? <p className={css.empty} role="status">{t('unread')}</p> : null}
       {catalog.phase === 'unavailable' ? <p className={css.empty} role="status">{t('unavailable')}</p> : null}
       {readable && filtered.length === 0 ? <p className={css.empty}>{t(query || category !== 'all' || installedOnly ? 'searchEmpty' : 'empty')}</p> : null}
       {readable ? ([['available', available], ['installed', installed]] as const).map(([key, plugins]) => plugins.length === 0 ? null

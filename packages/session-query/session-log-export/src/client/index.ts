@@ -45,8 +45,8 @@ export const inject = ['slots', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   const integration = ctx.get('sessionLogDownloadIntegration')
-  const controller = new SessionLogDownloadController(integration?.fetch, integration === undefined ? undefined
-    : (url, filename) => { downloadUrl(integration.navigationUrl(url), filename) })
+  const controller = new SessionLogDownloadController(integration?.fetch, downloadUrl,
+    integration === undefined ? undefined : url => integration.navigationUrl(url))
   ctx.provide('sessionLogDownload', controller)
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-log-download: browser dictionaries')

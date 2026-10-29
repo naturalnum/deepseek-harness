@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MarkdownDelegateProvider } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AssistantMarkdown, localPathMediaUrl } from '../src/client/chat/AssistantMarkdown.tsx'
 import { useDetailedPresentation } from './presentation-fixture.client.ts'
 import { unusedImageLoader } from './reasoning-component-fixture.tsx'
@@ -56,6 +57,19 @@ describe('localPathMediaUrl', () => {
 })
 
 describe('AssistantMarkdown local-path images', () => {
+  it('offers the session file opener for plain output filenames in a settled reply', () => {
+    const openFile = vi.fn()
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <AssistantMarkdown renderSlot={() => null} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
+          usePresentation={useDetailedPresentation} blocks={[textBlock('Downloads:\n\n- model.json\n- predictions.csv')]}
+          streaming={false} standaloneFileLinks loadImage={unusedImageLoader} t={t} />
+      </MarkdownDelegateProvider>,
+    )
+    fireEvent.click(view.getByRole('button', { name: 'predictions.csv' }))
+    expect(openFile).toHaveBeenCalledExactlyOnceWith('predictions.csv', undefined)
+  })
+
   it.each([BASE, 'dsh-app://app/'])('renders a local image in closing prose through %s', (base) => {
     vi.spyOn(document, 'baseURI', 'get').mockReturnValue(base)
     const { container } = render(

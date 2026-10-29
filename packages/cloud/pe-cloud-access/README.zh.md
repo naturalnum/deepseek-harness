@@ -60,6 +60,8 @@ kind: "package-reference"
 
 `ingress.ownerForwarding` 使原 ingress 经固定 HTTPS 目标转发既有远端 ready owner。Root 显式配置有界受保护 PEM 路径、身份与 peer pin 集合、标记字节和原运输限制。准入前读取 CA／客户端证书／密钥；密钥必须是当前进程用户拥有的普通单链接文件，禁止组或其他用户权限。地址和服务身份仅来自该配置。runtime 的实际启动 id 与复查后的 PG 元数据只能选择已配置条目，PG 不能增加目标。每条实际连接发送头体前均核验 CA、hostname 和精确服务证书。
 
+每次 HTTP 转发的 `maxBodyBytes` 限制请求体和响应体的合计字节数。接受大小为 N 的附件时，部署配置还须为上传凭证响应预留有限字节；仅配置 N 无法容纳非空凭证。此累计字节限制独立于有界传输缓冲，也不会提高附件大小配额。
+
 原监听器必须在 listen 前显式选择 `compression: 'none'` 与 `transportLimits`；头对捕获预算至少等于转发 `maxHeaderPairs` 并保留额外 sentinel 对。Ingress 在认证前拒绝完整已捕获头对数及字节超量。Root 客户端 CA 保留匿名公共 HTTPS；`x-dsh-cloud-owner-hop` 是保留字段，不能配置为 account／generation 头。带标记请求要求实际已授权 TLS 客户端证书命中 Root pin 集合。接收端重新认证原 Cookie，仅借用与 account、实际 recipient id、epoch、recipe 精确相符的既有本机 ready owner，不领取、重建或再次转发内部投递。普通 unowned／本机领取和 owner 原 generation producer 保持原逻辑。
 
 远端 carrier 通过原 ingress operation 持有至实际运输及 Cookie 查询结算。登录撤销同步取消对应转发，不等待正在触发撤销的复查。成功写出 101 后停止 HTTP 握手超时，但仍持有隧道与复查。未知或可能已投递的失败会关闭并记录，不重放。在 auth／转发工作开始前登记原 `PeAuth.close`，先结算 ingress、运输、auth 与 Pool，再由 runtime 关闭 resolver 及后续原拥有者。
@@ -68,7 +70,7 @@ kind: "package-reference"
 
 向 `parseRequestExpectation` 提供载体字段的全部出现值；缺失、重复、空值、首尾空白或控制字符均以 HTTP 409 失败。真实认证后，先比较预期账户再查询 owner，取得当前图后再比较代际。纯比较通过不会授予 Peer、项目范围或业务权限；派发及每个 WS 逻辑流前仍须执行 `AccountUse.assertCurrent()`。
 
-私有 ingress 持有 `/cloud/auth`、`/cloud/bootstrap`、`/cloud/settings`、`/api` 及原生 `/api/remote.mux` upgrade 注册。每个 handler/继续执行点均检查真实 seal；注册不等待 seal，也不形成 Loader 循环。原始头和 WS query 的全部出现值保留，不互相回退。有界 opaque 代际 token 要求真实 runtime 业务当前检查。请求借用保留到 HTTP 响应/错误结算；已升级 socket 使用独立 Peer 借用。根容量满时关闭 carrier，不排队。
+私有 ingress 持有 `/cloud/auth`、`/cloud/bootstrap`、`/cloud/settings`、`/api` 及原生 `/api/remote.mux` upgrade 注册。每个 handler/继续执行点均检查真实 seal；注册不等待 seal，也不形成 Loader 循环。HTTP 使用原始绑定头，只有精确的 `GET /api/session.export` 导航可改用绑定 query 字段；混合头和 query 绑定会被拒绝。WS 使用 query 字段。所选载体的全部出现值均保留，不互相回退。有界 opaque 代际 token 要求真实 runtime 业务当前检查。请求借用保留到 HTTP 响应/错误结算；已升级 socket 使用独立 Peer 借用。根容量满时关闭 carrier，不排队。
 
 原生最终分派 callback 在实际路由/envelope 选择后复核原请求、登录、Use、代际及图内 `CloudAccountApi`。每个逻辑流检查原 Peer 和每图策略。原生帧上限及 acquire/实际 settle callback 限制全局/账户/Peer 流容量；未知清理保留槽位并调度关闭，不等待自己的 transport。bootstrap 还要求原目录、原生策略及实际安装包证据；C06 settings 保持关闭。
 

@@ -13,10 +13,10 @@ afterEach(() => {
 })
 
 describe('SessionLogDownloadController', () => {
-  it('downloads the host ZIP and publishes one shared success state', async () => {
+  it('requests a browser download and retains the same bound URL for an explicit retry', async () => {
     const fetcher = vi.fn(async () => new Response('zip', { status: 200 }))
     const save = vi.fn()
-    const controller = new SessionLogDownloadController(fetcher, save)
+    const controller = new SessionLogDownloadController(fetcher, save, url => `${url}&account=bound`)
 
     await controller.download(SID)
 
@@ -26,11 +26,12 @@ describe('SessionLogDownloadController', () => {
     expect(init.method).toBe('HEAD')
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(save).toHaveBeenCalledWith(
-      route,
+      `${route}&account=bound`,
       'dsh-session-session-export-controller.zip',
     )
     expect(controller.store.getSnapshot().bySession[SID]).toEqual({
       open: true, status: 'success', error: null,
+      download: { url: `${route}&account=bound`, filename: 'dsh-session-session-export-controller.zip' },
     })
   })
 
@@ -131,7 +132,9 @@ describe('SessionLogDownloadController', () => {
 
 describe('browser download helpers', () => {
   it('sanitizes the archive filename and hands the relative route to a download anchor', () => {
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function(this: HTMLAnchorElement) {
+      expect(this.isConnected).toBe(true)
+    })
 
     expect(sessionLogZipFilename('a/b' as SessionId)).toBe('dsh-session-a_b.zip')
     downloadUrl('api/session.export?sessionId=a', 'archive.zip')
@@ -139,5 +142,6 @@ describe('browser download helpers', () => {
     const anchor = click.mock.instances[0] as HTMLAnchorElement
     expect(anchor.getAttribute('href')).toBe('api/session.export?sessionId=a')
     expect(anchor.download).toBe('archive.zip')
+    expect(anchor.isConnected).toBe(false)
   })
 })

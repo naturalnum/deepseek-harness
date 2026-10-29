@@ -7,6 +7,40 @@ import { MarkdownText } from './markdown-test-components.tsx'
 afterEach(cleanup)
 
 describe('Markdown file links', () => {
+  it('offers scoped opens for standalone assistant file list items only after settlement', () => {
+    const openFile = vi.fn()
+    const text = '- csv24-model.json\n- csv24-predictions.csv\n- notes/report.txt\n- ../outside.csv\n- https://example.com/a.csv\n- example.com\n- v1.2.3\n- `train.py`\n- prose with a file.csv\n'
+    const renderView = (streaming: boolean) => (
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText text={text} streaming={streaming} standaloneFileLinks />
+      </MarkdownDelegateProvider>
+    )
+    const view = render(renderView(true))
+    expect(view.queryByRole('button', { name: 'csv24-model.json' })).toBeNull()
+    view.rerender(renderView(false))
+    fireEvent.click(view.getByRole('button', { name: 'csv24-model.json' }))
+    fireEvent.click(view.getByRole('button', { name: 'csv24-predictions.csv' }))
+    fireEvent.click(view.getByRole('button', { name: 'notes/report.txt' }))
+    fireEvent.click(view.getByRole('button', { name: 'train.py' }))
+    expect(openFile.mock.calls.map(([path]) => path)).toEqual(['csv24-model.json', 'csv24-predictions.csv', 'notes/report.txt', 'train.py'])
+    expect(view.queryByRole('button', { name: '../outside.csv' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'example.com' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'v1.2.3' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'prose with a file.csv' })).toBeNull()
+    expect(view.getByRole('link', { name: 'https://example.com/a.csv' })).toBeTruthy()
+  })
+
+  it('keeps existing recorded-file mention disambiguation in charge', () => {
+    const openFile = vi.fn()
+    const resolve = vi.fn(() => undefined)
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText text={'- `report.txt`'} standaloneFileLinks fileMentions={{ resolve }} />
+      </MarkdownDelegateProvider>,
+    )
+    expect(view.queryByRole('button')).toBeNull()
+    expect(resolve).toHaveBeenCalledWith('report.txt')
+  })
   it.each([
     ['src/index.ts', 'src/index.ts', undefined],
     ['/workspace/src/index.ts#L24', '/workspace/src/index.ts', { line: 24 }],

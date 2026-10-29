@@ -32,6 +32,7 @@ function renderSettled(
   labels: MarkdownLabels,
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
+  standaloneFileLinks: boolean,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -41,6 +42,7 @@ function renderSettled(
     labels,
     fileMentions,
     pathImages,
+    standaloneFileLinks,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -167,18 +169,21 @@ class StreamingRenderer {
  * `body` variant uses the full document typography.
  * The provider's `openFile` enables local Markdown links in settled messages,
  * including `#L24` and `#L24-L30` destinations (ranges open at their first line).
+ * `standaloneFileLinks` additionally offers scoped opens for simple relative
+ * filenames that occupy a whole list item; the file is checked by the opener.
  * @returns A GFM document with TeX math rendered through KaTeX; raw HTML and
  * unsafe protocols are disabled. Local links without an opener remain text;
  * absolute HTTP(S) images render directly.
  */
 export const MarkdownText = memo(function MarkdownText({
-  text, streaming = false, labels, fileMentions, pathImages, variant = 'body',
+  text, streaming = false, labels, fileMentions, pathImages, standaloneFileLinks = false, variant = 'body',
 }: {
   text: string
   streaming?: boolean
   labels: MarkdownLabels
   fileMentions?: MarkdownFileMentions | undefined
   pathImages?: MarkdownPathImages | undefined
+  standaloneFileLinks?: boolean
   variant?: 'body' | 'compact'
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
@@ -186,14 +191,14 @@ export const MarkdownText = memo(function MarkdownText({
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, fileMentions, pathImages)
+      return renderSettled(text, labels, fileMentions, pathImages, standaloneFileLinks)
     }
     if (streamRef.current === null || streamLabelsRef.current !== labels) {
       streamRef.current = new StreamingRenderer(labels)
       streamLabelsRef.current = labels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, fileMentions, pathImages])
+  }, [text, streaming, labels, fileMentions, pathImages, standaloneFileLinks])
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
     data-markdown-variant={variant === 'compact' ? variant : undefined}>{children}</div>
 })

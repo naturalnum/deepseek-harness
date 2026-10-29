@@ -107,6 +107,16 @@ it('renders the closed-account state without manufacturing sample rows and owns 
   expect(Object.keys(pluginManagementDictionaries.zh).sort()).toEqual(Object.keys(en).sort())
 })
 
+it('distinguishes an unread catalog from a disconnected account and offers explicit refresh', () => {
+  const f = fixture([]); f.update({ phase: 'unread', plugins: [], refreshing: false })
+  render(<PluginManagementPage {...f.props}/>)
+  expect(screen.getByRole('status').textContent).toBe(en.unread)
+  expect(screen.queryByText(en.unavailable)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  expect(f.refreshPluginCatalog).toHaveBeenCalledOnce()
+  expect(f.requestPluginEnabled).not.toHaveBeenCalled()
+})
+
 it('shows busy control feedback while retaining the last read enabled state and keeping mutations closed', () => {
   const f = fixture([plugin('shell', { toggle: 'busy', configuration: 'busy' })])
   render(<PluginManagementPage {...f.props}/>)

@@ -59,9 +59,10 @@ export interface TextInjected {
    * @param file - the session and workspace path the tab's address names.
    * @param signal - tab lifetime.
    * @param observedVersion - metadata version observed at read start.
+   * @param rendererId - selected whole-file renderer.
    */
   readonly loadAll: (
-    tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string,
+    tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, rendererId?: string,
   ) => void
   /**
    * Discard the old complete result and read again.
@@ -69,9 +70,10 @@ export interface TextInjected {
    * @param file - the session and workspace path the tab's address names.
    * @param signal - tab lifetime.
    * @param observedVersion - metadata version observed at read start.
+   * @param rendererId - selected whole-file renderer.
    */
   readonly reloadAll: (
-    tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string,
+    tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, rendererId?: string,
   ) => void
   /**
    * Begin a renderer-owned load without reading source bytes.
@@ -165,16 +167,17 @@ export function textFace(
       })
     }
     const loadAll = (
-      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string,
+      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, rendererId?: string,
     ): void => {
       if (signal.aborted) return
-      const reads = modeOf(tabId, signal, 'bytes-complete')
+      const reads = modeOf(tabId, signal, 'bytes-complete', rendererId)
       reads.controller?.abort()
       const controller = new AbortController()
       reads.controller = controller
       const lifetime = AbortSignal.any([signal, controller.signal])
-      actions.loading(tabId, 'bytes-complete', observedVersion)
-      void readAll(file, lifetime).then((result) => {
+      actions.loading(tabId, 'bytes-complete', observedVersion, rendererId)
+      const request = rendererId === undefined ? readAll(file, lifetime) : readAll(file, lifetime, rendererId)
+      void request.then((result) => {
         if (lifetime.aborted) return
         if (!result.ok) {
           actions.failed(tabId, result.error)
@@ -192,7 +195,7 @@ export function textFace(
       })
     }
     const restart = (
-      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, mode: DocumentLoadMode = 'text-pages',
+      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, mode: DocumentLoadMode = 'text-pages', rendererId?: string,
     ): void => {
       if (signal.aborted) return
       const reads = readsOf(tabId, signal)
@@ -201,7 +204,7 @@ export function textFace(
       reads.version = undefined
       actions.reset(tabId)
       if (mode === 'text-pages') loadPage(tabId, file, 1, signal, observedVersion)
-      else loadAll(tabId, file, signal, observedVersion)
+      else loadAll(tabId, file, signal, observedVersion, rendererId)
     }
     return {
       addResource: (tabId, address, signal) => {
@@ -217,7 +220,7 @@ export function textFace(
         if (reload) actions.reset(tabId)
         actions.loading(tabId, 'renderer', observedVersion, rendererId)
       },
-      reloadAll: (tabId, file, signal, observedVersion) => { restart(tabId, file, signal, observedVersion, 'bytes-complete') },
+      reloadAll: (tabId, file, signal, observedVersion, rendererId) => { restart(tabId, file, signal, observedVersion, 'bytes-complete', rendererId) },
     }
   }
 }

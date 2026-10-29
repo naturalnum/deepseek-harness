@@ -18,9 +18,9 @@ function PreviewHost({ renderSlot }: PropsRenderSlots<typeof holes[number]>) {
   return <>{renderSlot(holes[0], { absolutePath: '/native/report.bin' })}
     {renderSlot(holes[1], { absolutePath: '/native/opaque.dat' })}</>
 }
-function complete(): Awaited<ReturnType<CloudFileReadBytes>> {
+function complete(offset = 0): Awaited<ReturnType<CloudFileReadBytes>> {
   return { ok: true, value: { absolutePath: '/native/report.bin', version: 'v', bytes: 2,
-    offset: 0, eof: true, data: new Uint8Array([0, 255]) } }
+    offset, eof: true, data: offset === 0 ? new Uint8Array([0, 255]) : new Uint8Array() } }
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -32,7 +32,7 @@ async function fixture(options: { cap?: number; disabled?: boolean; noRemote?: b
   const page: FileDownloadPage = { maxDownloadBytes: options.cap,
     bootstrap: { capabilities: { filePreview: options.disabled ? { state: 'disabled', reason: 'not-approved' } : { state: 'available' } } },
     lifetime: { transport: { signal: pageLife.signal } } }
-  const read = vi.fn(options.read ?? vi.fn<CloudFileReadBytes>().mockResolvedValue(complete()))
+  const read = vi.fn(options.read ?? vi.fn<CloudFileReadBytes>(async (_session, _path, options) => complete(options?.range?.offset ?? 0)))
   let methodReads = 0
   const workspaceFiles = { get readBytes() { methodReads++; return read } }
   const supply = () => {
@@ -89,7 +89,7 @@ it('fills late declarations, redeclares and withdraws the real component registr
   const view = render(f.action())
   fireEvent.click(screen.getByRole('button', { name: 'Download' }))
   await waitFor(() => { expect(screen.getByRole('status').textContent).toBe('Download requested') })
-  expect(f.read).toHaveBeenCalledWith(id, '/native/report.bin', {}, expect.any(AbortSignal))
+  expect(f.read).toHaveBeenCalledWith(id, '/native/report.bin', { range: { offset: 0, length: 32768 } }, expect.any(AbortSignal))
   expect(f.clicked).toEqual(['report.bin'])
   expect(f.revokeObjectURL).toHaveBeenCalledOnce()
   view.unmount()
@@ -109,7 +109,7 @@ it('also adapts the actual unpreviewable slot Session and path without querying 
   render(f.action(holes[1], sourceSession, '/native/opaque.dat'))
   fireEvent.click(screen.getByRole('button', { name: 'Download' }))
   await waitFor(() => { expect(f.clicked).toEqual(['opaque.dat']) })
-  expect(f.read).toHaveBeenCalledWith(sourceSession, '/native/opaque.dat', {}, expect.any(AbortSignal))
+  expect(f.read).toHaveBeenCalledWith(sourceSession, '/native/opaque.dat', { range: { offset: 0, length: 32768 } }, expect.any(AbortSignal))
 })
 
 it('rejects a late read after declaration withdrawal even while the old component has not unmounted', async () => {

@@ -75,7 +75,7 @@ export function TextPreview({
   }, [definitions, file.path, unviewable])
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
   const mode = selected?.loading
-  const contentRendererId = mode === 'renderer' ? selected?.id : undefined
+  const contentRendererId = mode === 'renderer' || mode === 'bytes-complete' ? selected?.id : undefined
   const current = (state?.mode ?? 'text-pages') === mode && state?.contentRendererId === contentRendererId ? state : undefined
   const add = useCallback((address: string) => {
     addResource(tab.id, address, signal)
@@ -119,7 +119,7 @@ export function TextPreview({
   useEffect(() => {
     if (started || !canRead || mode === undefined || selected === undefined) return
     if (mode === 'text-pages') loadPage(tab.id, file, 1, signal, meta.value?.version)
-    else if (mode === 'bytes-complete') loadAll(tab.id, file, signal, meta.value?.version)
+    else if (mode === 'bytes-complete') loadAll(tab.id, file, signal, meta.value?.version, selected.id)
     else prepareRenderer(tab.id, signal, selected.id, meta.value?.version)
   }, [started, tab.id, file, signal, loadPage, loadAll, prepareRenderer, canRead, mode, selected, meta.value?.version])
 
@@ -169,9 +169,9 @@ export function TextPreview({
   const reload = useCallback((): void => {
     if (!canRead) return
     if (mode === 'text-pages') reloadPages(tab.id, file, signal, observedVersion)
-    else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, observedVersion)
+    else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, observedVersion, selected?.id)
     else rendererReload()
-  }, [canRead, mode, reloadPages, reloadAll, rendererReload, tab.id, file, signal, observedVersion])
+  }, [canRead, mode, reloadPages, reloadAll, rendererReload, tab.id, file, signal, observedVersion, selected?.id])
   useEffect(() => tab.actions.bindCommands({ refresh: reload }), [tab.actions, reload])
   useEffect(() => {
     if (state?.autoRefresh && changed && current !== undefined && !current.loading && meta.status === 'live') reload()

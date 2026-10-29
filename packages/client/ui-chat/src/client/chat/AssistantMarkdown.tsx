@@ -48,6 +48,8 @@ export interface AssistantMarkdownProps extends
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
+  /** Allow simple output filename list items in the completed closing reply. */
+  standaloneFileLinks?: boolean | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -55,7 +57,7 @@ export interface AssistantMarkdownProps extends
 /** Renders non-blank reasoning blocks as independent disclosures alongside the response. */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, loadImage, groupPart, useDisclosure,
-  reasoningHidden = false, usePresentation, revealProcess, mentions, renderSlot, useGroupAction, t,
+  reasoningHidden = false, usePresentation, revealProcess, mentions, standaloneFileLinks = false, renderSlot, useGroupAction, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -88,6 +90,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             labels={labels}
             fileMentions={mentions}
             pathImages={pathImages}
+            standaloneFileLinks={standaloneFileLinks}
           />,
         )
         break

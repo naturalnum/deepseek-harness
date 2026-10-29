@@ -87,7 +87,7 @@ describe('Session export Header action', () => {
     fireEvent.click(b.view.getByRole('menuitem', { name: 'Download session log' }))
     await waitFor(() => { expect(b.request).toHaveBeenCalledWith(SID) })
     expect(b.view.queryByRole('menuitem', { name: 'Download session log' })).toBeNull()
-    expect(await b.view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
+    expect(await b.view.findByRole('dialog', { name: 'Session download requested' })).toBeTruthy()
   })
 
   it('closes the menu on Escape without downloading', () => {
