@@ -3220,6 +3220,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly readOperationsSettleOnAbort: boolean = false',
+        description: 'Whether a read `open`, its handle\'s `read`, and its `close` settle all work they start and retain actual failures when cancellation races them. A real failure must remain distinguishable even if it equals the signal reason. An advertised guarantee covers calls already started even if revoked; unrelated calls and provider-wide quiescence are not covered.',
+        parameters: [],
+      },
+      {
         signature: 'abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined>',
         description: 'Observe one stored session without reading its event log or taking ownership.\n\nThe snapshot\'s `revision` is an opaque change token comparable only against revisions from the same service instance and session id: equal revisions may be treated as an unchanged log; unequal revisions promise nothing. Write-ownership churn does not change a revision. It exists for derived read-model caches keyed off `stat`/`list`; it plays no part in open, read, or resume.',
         parameters: [{ name: 'id', description: 'the stored session to observe.' }, { name: 'options', description: 'optional cancellation.' }],
@@ -8925,7 +8930,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionObservationOptions',
-    declaration: 'export interface SessionObservationOptions {\n    readonly signal?: AbortSignal;\n    readonly projectionMode?: \'all\' | \'none\';\n}',
+    declaration: 'export interface SessionObservationOptions {\n    readonly signal?: AbortSignal;\n    readonly projectionMode?: \'all\' | \'none\';\n    readonly settleCancellation?: boolean;\n}',
   },
   {
     name: 'SessionOpenWorkspacePathRequest',
