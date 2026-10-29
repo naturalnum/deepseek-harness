@@ -20,7 +20,7 @@ import { installCloudPluginCatalog } from './plugins/install.tsx'
 
 const SKILLS_PANEL = 'power-evolve-skills'
 // FiberState is a cross-package const enum and is not exported at runtime.
-const FIBER_ACTIVE = 2 satisfies FiberState.ACTIVE
+const FIBER_ACTIVE: FiberState.ACTIVE = 2
 function SkillsPanelIcon({ size }: PropsRuntime<'sidebar.panellist'>): ReactNode {
   return <IconSkillOutlineRegular size={size}/>
 }

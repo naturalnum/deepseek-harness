@@ -13,7 +13,7 @@ import { registerCloudPluginManagement } from './register.ts'
 import { createPagePluginCatalog } from './catalog-reader.ts'
 
 // FiberState is a cross-package const enum and is not exported at runtime.
-const FIBER_ACTIVE = 2 satisfies FiberState.ACTIVE
+const FIBER_ACTIVE: FiberState.ACTIVE = 2
 
 function PluginPanelIcon({ size }: PropsRuntime<'sidebar.panellist'>): ReactNode {
   return <IconPluginPinwheelOutlineRegular size={size}/>

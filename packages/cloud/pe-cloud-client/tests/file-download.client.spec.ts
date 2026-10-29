@@ -85,8 +85,11 @@ it('downloads a 100KiB result in bounded ranges while preserving its Session, id
   if (blob === undefined) throw new Error('Download Blob not created')
   const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error('not binary'))
-    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result)
+      else reject(new Error('not binary'))
+    }
+    reader.onerror = () => { reject(reader.error ?? new Error('read failed')) }
     reader.readAsArrayBuffer(blob)
   })
   expect(new Uint8Array(bytes)).toEqual(source)
@@ -186,6 +189,29 @@ it('keeps the single read owned through cancellation and joins its late result w
   expect(browser.createObjectURL).not.toHaveBeenCalled()
   expect(await f.download.save()).toEqual({ kind: 'cancelled' })
   expect(readBytes).toHaveBeenCalledOnce()
+})
+
+it.each(['resolve', 'reject'] as const)('does not save when cancelled during final verification and the read later %ss', async (outcome) => {
+  const browser = surface()
+  let finish!: () => void
+  const readBytes = vi.fn<CloudFileReadBytes>().mockResolvedValueOnce(complete())
+    .mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finish = () => {
+        if (outcome === 'resolve') resolve({ ok: true, value: {
+          absolutePath: '/native/name.html', version: 'native-version', offset: 3, eof: true, bytes: 3, data: new Uint8Array(),
+        } })
+        else reject(new Error('late read failure'))
+      }
+    }))
+  const f = owner({ readBytes })
+  const task = f.download.save()
+  await vi.waitFor(() => { expect(readBytes).toHaveBeenCalledTimes(2) })
+  const cleanup = f.download.cancel()
+  finish()
+  expect(await task).toEqual({ kind: 'cancelled' })
+  await cleanup
+  expect(browser.createObjectURL).not.toHaveBeenCalled()
+  expect(browser.clicked).toEqual([])
 })
 
 it('releases a URL when the original page closes during Blob creation, without clicking a late save', async () => {

@@ -8,7 +8,7 @@ afterEach(cleanup)
 
 describe('Markdown file links', () => {
   it('offers scoped opens for standalone assistant file list items only after settlement', () => {
-    const openFile = vi.fn()
+    const openFile = vi.fn<(path: string, options?: { line?: number }) => void>()
     const text = '- csv24-model.json\n- csv24-predictions.csv\n- notes/report.txt\n- ../outside.csv\n- https://example.com/a.csv\n- example.com\n- v1.2.3\n- `train.py`\n- prose with a file.csv\n'
     const renderView = (streaming: boolean) => (
       <MarkdownDelegateProvider openFile={openFile}>

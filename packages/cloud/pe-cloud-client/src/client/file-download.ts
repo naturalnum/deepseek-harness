@@ -156,9 +156,9 @@ export class CloudFileDownload {
         if (bytes !== undefined && offset !== bytes) return { kind: 'failed', reason: 'incomplete' }
         let final: Awaited<ReturnType<CloudFileReadBytes>>
         try { final = await readBytes(sessionId, file.path, { range: { offset, length: 1 } }, signal) } catch (cause) {
-          return signal.aborted ? { kind: 'cancelled' } : { kind: 'failed', reason: 'native', cause }
+          return cancelled() ? { kind: 'cancelled' } : { kind: 'failed', reason: 'native', cause }
         }
-        if (signal.aborted) return { kind: 'cancelled' }
+        if (cancelled()) return { kind: 'cancelled' }
         if (!final.ok) return { kind: 'failed', reason: 'native', cause: final.error }
         if (final.value.offset !== offset || !final.value.eof || final.value.data.byteLength !== 0
           || final.value.absolutePath !== absolutePath || final.value.version !== version
