@@ -1918,6 +1918,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
         sourceVersion: number
         currentPath: string
       } | undefined>
+      readGenerationHeader(...args: never[]): Promise<unknown>
     }
     const path = rawLogPath(root, m.cwd, m.id)
     const selected = {
@@ -1942,8 +1943,9 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
       controller.abort(reason)
       return { ...selected, sourcePath: invalidPath, currentPath: invalidPath }
     })
-    await expect(persistence.stat(m.id, { signal: controller.signal })).rejects.toMatchObject({ code: 'ERR_INVALID_ARG_VALUE' })
-    expect(controller.signal.reason).toBe(reason)
+    const headerRead = vi.spyOn(internals, 'readGenerationHeader')
+    await expect(persistence.stat(m.id, { signal: controller.signal })).rejects.toBe(reason)
+    expect(headerRead).not.toHaveBeenCalled()
   })
 
   it('stat reports absence for an artifact vanishing before its identity stat and surfaces other faults', async () => {
