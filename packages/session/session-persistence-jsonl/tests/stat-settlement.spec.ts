@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { generationLogPath, toHeaderLine } from '../src/format.ts'
+import { encodeSegment, generationLogPath, toHeaderLine } from '../src/format.ts'
 import { compressZstdFrame } from '../src/zstd.ts'
 
 const hooks = vi.hoisted(() => ({
@@ -177,6 +177,22 @@ it.each(['none', 'zstd'] as const)('retains a real %s handle close failure after
   abort.abort(new Error('cancel stat'))
   close.release.resolve(undefined)
   await expect(pending).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: closeFailure, errors: [closeFailure] })
+})
+
+it.each(['distinct', 'same-reason'] as const)('retains a legacy-flat close ENOENT with %s cancellation', async (kind) => {
+  const f = await fixture('none'), close = f.barrier(), abort = new AbortController()
+  await f.ctx.sessionPersistence.stat(f.id)
+  const path = join(dirname(dirname(f.path)), `${encodeSegment(f.id)}.jsonl`)
+  await writeFile(path, 'legacy flat artifact')
+  const failure = Object.assign(new Error('legacy flat close failed'), { code: 'ENOENT' })
+  hooks.path = path; hooks.closeFailure = failure
+  hooks.closeEntered = () => { close.entered.resolve(undefined) }; hooks.closeRelease = close.release.promise
+  const pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await close.entered.promise
+  abort.abort(kind === 'same-reason' ? failure : new Error('cancel stat'))
+  close.release.resolve(undefined)
+  await expect(pending).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
 })
 
 it.each(['none', 'zstd'] as const)('retains both %s header read and close failures', async (compression) => {

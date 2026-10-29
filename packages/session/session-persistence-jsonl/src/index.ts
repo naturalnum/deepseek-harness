@@ -1808,13 +1808,11 @@ class JsonlSessionPersistence extends SessionPersistence {
   }
 
   private async exists(path: string): Promise<boolean> {
+    let handle: Awaited<ReturnType<typeof open>>
     try {
-      const handle = await open(path, 'r')
-      await handle.close()
-      return true
+      handle = await open(path, 'r')
     } catch (error) {
-      // Only ENOENT means absent. A permission/I/O error must surface rather
-      // than letting load or collision checks proceed under false absence.
+      // Only an open ENOENT means absent; close failures never prove absence.
       /* v8 ignore else -- Windows reports file-valued parents as ENOENT; POSIX covers direct ENOTDIR. */
       if (isENOENT(error)) {
         // Windows reports ENOENT, not ENOTDIR, for `regular-file/child`, so it
@@ -1828,6 +1826,8 @@ class JsonlSessionPersistence extends SessionPersistence {
       /* v8 ignore next -- Windows repairs ENOTDIR from ENOENT above; POSIX covers direct ENOTDIR. */
       throw error
     }
+    try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error) }
+    return true
   }
 
   /* v8 ignore start -- native Windows coverage exercises this repair; POSIX open reports ENOTDIR before this point. */

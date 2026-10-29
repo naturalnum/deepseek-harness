@@ -32,7 +32,7 @@ import { SessionHistoryController } from '../../../api/session-controller/src/hi
 import { installSessionReadTestServices, testSessionPersistence } from '../../../api/session-controller/tests/test-remote.ts'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '../../../session/session-persistence-jsonl/src/index.ts'
-import { generationLogPath, toHeaderLine } from '../../../session/session-persistence-jsonl/src/format.ts'
+import { encodeSegment, generationLogPath, toHeaderLine } from '../../../session/session-persistence-jsonl/src/format.ts'
 
 const jsonlCloseFault = vi.hoisted(() => ({ path: '', entered: undefined as (() => void) | undefined,
   release: undefined as Promise<unknown> | undefined, failure: undefined as Error | undefined,
@@ -366,6 +366,57 @@ it('retains a real JSONL header close failure after follow cancellation in the o
   expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
   await expect(mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
     cause: { name: 'JsonlReadCleanupError', cause: failure } })
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
+
+it.each(['distinct', 'same-reason'] as const)('retains legacy-flat close ENOENT with %s follow cancellation', async (kind) => {
+  const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const cancelled = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-legacy-close-')))
+  onTestFinished(() => {
+    release.resolve(undefined); jsonlCloseFault.path = ''; jsonlCloseFault.entered = undefined
+    jsonlCloseFault.release = undefined; jsonlCloseFault.failure = undefined; rmSync(root, { recursive: true, force: true })
+  })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  await f.ctx.sessionPersistence.stat(SessionId('warm-root-encoding'))
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId(`legacy-close-${kind}`)
+  const generation = generationLogPath(root, '/workspace', id, SESSION_FORMAT_VERSION, 'none')
+  const path = join(dirname(dirname(generation)), `${encodeSegment(id)}.jsonl`)
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'legacy flat artifact')
+  jsonlCloseFault.path = path; jsonlCloseFault.entered = () => { entered.resolve(undefined) }; jsonlCloseFault.release = release.promise
+  let observationSignal: AbortSignal | undefined
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation((sessionId, options) => {
+    observationSignal = options?.signal
+    options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+    return observe(sessionId, options)
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number; mux: { close(): Promise<void> } }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  const failure = kind === 'same-reason' ? observationSignal?.reason as Error : new Error('legacy close failed')
+  expect(failure).toBeInstanceOf(Error)
+  Object.assign(failure, { code: 'ENOENT' }); jsonlCloseFault.failure = failure
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  await expect(entry.mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'JsonlReadCleanupError', cause: failure, errors: [failure] } })
   await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
 })
 
