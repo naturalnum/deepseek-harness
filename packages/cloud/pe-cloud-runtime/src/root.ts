@@ -13,7 +13,7 @@ import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
 import { AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
-import { RuntimeInstanceControl } from './instance-control.ts'
+import { InstanceControlError, RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
 import { RootOwnerResolver } from './owner-resolver.ts'
 import { RuntimeCapacity } from './capacity.ts'
@@ -535,7 +535,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           control.factory.logObservation()
           this.scheduleHeartbeat(control)
         },
-        (cause: unknown) => { this.controlFailure(cause) },
+        (cause: unknown) => {
+          if (!isUnsubmittedHeartbeat(cause)) { this.controlFailure(cause); return }
+          if (control.heartbeat === actual) delete control.heartbeat
+          this.logControlFailure('instance-heartbeat-not-submitted', cause)
+          this.scheduleHeartbeat(control)
+        },
       )
     }, control.config.heartbeatIntervalMs)
     control.timer.unref()
@@ -566,7 +571,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       }
     }
     await control.ownerResolver?.close()
-    try { await control.heartbeat } catch (cause) { faults.push(cause) }
+    try { await control.heartbeat } catch (cause) { if (!isUnsubmittedHeartbeat(cause)) faults.push(cause) }
     let native: readonly AccountNativeCloseObservation[] = []
     try { native = await control.factory.close() } catch (cause) { faults.push(cause) }
     let rootWorkUnknown = false
@@ -865,15 +870,29 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   private controlFailure(cause: unknown): void {
     const control = this.control
     if (control === undefined) return
+    if (control.failure === undefined) this.logControlFailure('runtime-control-failed', cause)
     control.failure ??= cause
     this.recipe.revoke('runtime-control')
     if (!this.closed) control.phase = 'failed'
     this.ctx.logger.error('Runtime root control failed or became uncertain; new account admission is closed and status requires inspection')
   }
 
+  private logControlFailure(event: 'instance-heartbeat-not-submitted' | 'runtime-control-failed', cause: unknown): void {
+    try {
+      console.warn('Cloud runtime control observation: %j', { event, pid: process.pid, at: Date.now(),
+        operation: cause instanceof InstanceControlError ? cause.operation : 'control',
+        outcome: cause instanceof InstanceControlError ? cause.outcome : 'unknown',
+        code: cause instanceof AccountRuntimeError ? cause.code : 'unknown' })
+    } catch (_observationFailure) { /* The original retry, fence and actual cleanup keep their owner. */ }
+  }
+
   private assertOpen(): void {
     if (this.closed) throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime registration is closed')
   }
+}
+
+function isUnsubmittedHeartbeat(cause: unknown): cause is InstanceControlError {
+  return cause instanceof InstanceControlError && cause.operation === 'heartbeat' && cause.outcome === 'not-submitted'
 }
 
 

@@ -141,7 +141,7 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 登记合并相同的本地调用，遇到已有的持久化 id 时拒绝，不覆盖其元数据。单行读取区分行不存在、读取失败及无效结果。Heartbeat 仅更新组件自身的 registered 行。`registered`、`closed` 或过期 heartbeat 均不代表账户 ready、进程死亡或获准回收 owner。实例操作不修改账户 owner 或 epoch。
 
-每个组件最多持有一个实际 mutation。Close 关闭本地 mutation 准入，等待实际 schema/登记/heartbeat 工作，然后仅将自身登记标为 closed；账户排空及共享 executor 关闭由根单独持有。等待复用 adapter 的有界观察，不结算实际 SQL。已提交结果未知会保留类型化责任，读取或观察超时均不自动解除或重放；其他组件仍可继续。只有确定的提交前失败允许显式重试，重试 close 仍保持本地准入关闭。
+每个组件最多持有一个实际 mutation。Close 关闭本地 mutation 准入，等待实际 schema/登记/heartbeat 工作，然后仅将自身登记标为 closed；账户排空及共享 executor 关闭由根单独持有。等待复用 adapter 的有界观察，不结算实际 SQL。已提交结果未知会保留类型化责任，读取或观察超时均不自动解除或重放；其他组件仍可继续。只有确定的提交前失败允许显式重试，重试 close 仍保持本地准入关闭。 仅当原实例组件确认已结算的 `heartbeat`/`not-submitted` 失败时，Root 调度器才按既有间隔再次发起心跳。既有登记及 owner 守卫保持原样；PostgreSQL owner 读取及新领取 CAS 保留原调用者检查。停机等待正在执行的心跳，不把该已确认零提交的拒绝保留为清理故障。未知、已提交、冲突及观察超时仍撤销 Root 准入、保留实际工作，且不自动重试。固定 stderr 记录只报告操作、结果和代码，不序列化错误、凭据或部署地址；此行为不能重新激活已撤销的 Root。
 
 普通 active Root 向可信 Host 装配提供 `ownerResolver?.resolve(accountId)`。该 facade 通过原 owner store、实例 registry 和 `PgOwnerExecutor` 执行 owner → instance → owner 单行读取；元数据缺失、非 ready、已停止、不一致或变化时拒绝。它保留十进制字符串 epoch 和原读取失败分类。完整读取链共用现有 `pg.maxConnections + pg.maxQueued` 上限，不增加队列、缓存或重试。Root 关闭立即撤销 facade，并在既有实例及 executor 关闭前等待实际读取结束。组件、维护及已停止 Root 不提供它。返回的记录对只是经过复查的观察，不是原子快照、`AccountUse`、ready、恢复或网络准入；原 owner 仍须为每个业务操作重新核验。
 
