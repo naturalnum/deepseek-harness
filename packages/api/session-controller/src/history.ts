@@ -113,7 +113,7 @@ export class SessionHistoryController {
 
   /**
    * Follow events appended after an initial cursor on one durable address.
-   * Cancellation detaches live listeners and clears buffered frames while opening cleanup remains awaited.
+   * Cancellation stops live callbacks and clears buffered frames while opening cleanup remains awaited.
    * @param request - durable address and last committed sequence already held by the caller.
    * @param signal - stream cancellation owned by the Remote carrier.
    * @returns a complete opening snapshot followed by gap-free durable events and opted-in assistant frames.
@@ -144,13 +144,14 @@ export class SessionHistoryController {
       notify()
     }
     this.closeFollowers.add(close)
+    let observing = true
     const disposeEvent = this.ctx.on('session/event', (session, event) => {
-      if (session.id !== target) return
+      if (!observing || session.id !== target) return
       buffered.pushBack({ type: 'event', event })
       notify()
     }, { global: true })
     const disposeCreated = this.ctx.on('session/created', (session) => {
-      if (session.id !== target) return
+      if (!observing || session.id !== target) return
       // Constructor seed events have no session/event notification. Normally
       // only the end-seed suffix is new; if persistence advanced after the
       // opening observation, replay everything beyond that snapshot cursor.
@@ -166,7 +167,7 @@ export class SessionHistoryController {
     const disposeAssistantStream = request.assistantStream !== true
       ? undefined
       : this.ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-        if (agent.session.id !== target) return
+        if (!observing || agent.session.id !== target) return
         buffered.pushBack({
           type: 'assistant-stream',
           frame: wireAssistantStreamFrame(frame, cursorBeforeNext(agent.session.seq)),
@@ -174,7 +175,6 @@ export class SessionHistoryController {
         })
         notify()
       }, { global: true })
-    let observing = true
     const stopObserving = (): void => {
       if (!observing) return
       observing = false

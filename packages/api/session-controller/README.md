@@ -29,7 +29,7 @@ Desktop analytics follows the [product collection policy](../../client/product-a
 
 History pages and follow opening snapshots carry one `{ type: 'event', event: SessionWireEvent }` record per durable Session event. The Client retains each accepted record as one durable `SessionEventLikeEntry`; Assistant token boundaries remain inside the compact stream on `assistant/message` or `assistant/attempt`. Tool arguments, result content, failures, and `tool/result.data.meta` pass through unchanged; the controller does not resolve a Tool definition, run a presenter, or attach UI data.
 
-Cancelling a follow detaches its live listeners and discards buffered frames, while any opening observation cleanup remains awaited.
+Cancelling a follow stops its live callbacks, including callbacks already captured by an event dispatch, and discards buffered frames while any opening observation cleanup remains awaited.
 
 The Client journal validates current Session event envelopes before publishing follow snapshots, live entries, or history pages. It reuses the browser-safe Session validators for required surface markers, exact replacement endpoints, earlier unique source seqs, embedded Assistant provider metadata, request-header omissions, and tool-error consistency. Invalid records fail without field stripping or normalization; range membership and source existence remain durable-log checks on the Host.
 
