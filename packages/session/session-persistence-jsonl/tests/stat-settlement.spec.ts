@@ -126,7 +126,7 @@ async function fixture(compression: 'none' | 'zstd', cwd = '/work', headerCwd = 
     await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
   })
   await ctx.plugin(JsonlSessionPersistence, { root, compression, listConcurrency })
-  const id = SessionId('settled-stat'), header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: headerCwd }
+  const id = SessionId('settled-stat'), header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: headerCwd } as const
   const path = generationLogPath(root, cwd, id, version, compression)
   await mkdir(dirname(path), { recursive: true })
   const data = JSON.stringify(version === SESSION_FORMAT_VERSION ? toHeaderLine(header)

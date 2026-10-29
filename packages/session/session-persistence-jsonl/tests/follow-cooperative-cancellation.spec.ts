@@ -85,9 +85,9 @@ async function fixture(version: 3 | 4, compression: 'none' | 'zstd') {
   await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlPersistence, { root, compression })
   const id = SessionId(`probe-v${String(version)}`)
-  const header = { id, version, createdAt: 1, isSeeded: false, cwd: '/work', delegationDepth: 0 }
+  const header = { id, version, createdAt: 1, isSeeded: false, cwd: '/work', delegationDepth: 0 } as const
   const path = generationLogPath(root, header.cwd, id, version, compression)
-  const data = JSON.stringify(version === 3 ? { type: 'session', ...header } : toHeaderLine(header)) + '\n'
+  const data = JSON.stringify(version === 3 ? { type: 'session', ...header } : toHeaderLine({ ...header, version: 4 })) + '\n'
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, compression === 'zstd' ? await compressZstdFrame(data) : data)
   probe.path = path

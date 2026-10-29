@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { generationLogPath } from '../src/format.ts'
 
-const hooks = vi.hoisted(() => ({ paths: [] as string[], enabled: () => false,
+const hooks = vi.hoisted(() => ({ paths: [] as string[], enabled: (): boolean => false,
   entered: undefined as (() => void) | undefined, release: undefined as Promise<unknown> | undefined,
   count: 0, readFailure: undefined as Error | undefined, closeFailure: new Error('independent sibling close failure') }))
 

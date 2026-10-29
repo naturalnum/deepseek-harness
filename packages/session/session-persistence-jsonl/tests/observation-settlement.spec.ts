@@ -149,7 +149,7 @@ it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close 
   await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression })
   const id = SessionId('header-close-failure')
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, compression)
   await mkdir(dirname(path), { recursive: true })
   const data = JSON.stringify(toHeaderLine(header)) + '\n'
@@ -181,7 +181,7 @@ it.each(['private', 'public'] as const)('does not mask a %s open decoder failure
   await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
   const id = SessionId(`open-decoder-${kind}`)
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'zstd')
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, await compressZstdFrame(JSON.stringify(toHeaderLine(header)) + '\n'))
@@ -201,7 +201,7 @@ it.each(['private', 'public'] as const)('retains current %s decoder and close er
   await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
   const id = SessionId(`current-decoder-${kind}`)
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'zstd')
   await mkdir(dirname(path), { recursive: true })
   const data = await compressZstdFrame(JSON.stringify(toHeaderLine(header)) + '\n')

@@ -36,7 +36,7 @@ it('joins the actual file read before rejecting a cancelled JSONL observation', 
   })
   await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
-  const id = SessionId('native-abort'), header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/work' }
+  const id = SessionId('native-abort'), header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/work' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, JSON.stringify(toHeaderLine(header)) + '\n')
