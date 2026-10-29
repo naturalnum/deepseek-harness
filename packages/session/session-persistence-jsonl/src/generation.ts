@@ -1067,7 +1067,10 @@ async function readOwnedJsonlFile(path: string, signal?: AbortSignal): Promise<B
   signal?.throwIfAborted()
   const handle = await fsOpen(path, 'r')
   let readFailure: { readonly error: unknown } | undefined
-  try { return await handle.readFile(signal === undefined ? undefined : { signal }) }
+  try {
+    signal?.throwIfAborted()
+    return await handle.readFile(signal === undefined ? undefined : { signal })
+  }
   catch (error: unknown) { readFailure = { error }; throw error }
   finally {
     try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }

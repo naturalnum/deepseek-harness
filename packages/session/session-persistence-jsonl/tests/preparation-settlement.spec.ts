@@ -7,7 +7,9 @@ import { dirname, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { generationLogPath } from '../src/format.ts'
 
-const hooks = vi.hoisted(() => ({ path: '', readCalls: 0, blockRead: 0,
+const hooks = vi.hoisted(() => ({ path: '', openCalls: 0, blockOpen: 0, gatedOpenCloses: 0,
+  openEntered: undefined as (() => void) | undefined, openRelease: undefined as Promise<unknown> | undefined,
+  readCalls: 0, blockRead: 0,
   readEntered: undefined as (() => void) | undefined, readRelease: undefined as Promise<unknown> | undefined,
   closeCalls: 0, blockClose: 0, closeEntered: undefined as (() => void) | undefined,
   closeRelease: undefined as Promise<unknown> | undefined, closeFailure: undefined as Error | undefined,
@@ -27,6 +29,9 @@ vi.mock('node:fs/promises', async (load) => {
   }) as typeof actual.readFile, open: (async (...args: Parameters<typeof actual.open>) => {
     const handle = await actual.open(...args)
     if (args[0] !== hooks.path || args[1] !== 'r') return handle
+    hooks.openCalls += 1
+    const gatedOpen = hooks.openCalls === hooks.blockOpen
+    if (gatedOpen) { hooks.openEntered?.(); await hooks.openRelease }
     let isBody = false
     return new Proxy(handle, { get(target, property) {
       if (property === 'readFile') return async (...readArgs: Parameters<typeof target.readFile>) => {
@@ -40,7 +45,8 @@ vi.mock('node:fs/promises', async (load) => {
           if (hooks.closeCalls === hooks.blockClose) { hooks.closeEntered?.(); await hooks.closeRelease }
         }
         await target.close()
-        if (isBody && hooks.closeFailure !== undefined) throw hooks.closeFailure
+        if (gatedOpen) hooks.gatedOpenCloses += 1
+        if ((isBody || gatedOpen) && hooks.closeFailure !== undefined) throw hooks.closeFailure
       }
       const value: unknown = Reflect.get(target, property, target)
       if (typeof value !== 'function') return value
@@ -62,7 +68,7 @@ async function fixture() {
   onTestFinished(async () => {
     releases.forEach((release) => { release() })
     await fiber.dispose()
-    Object.assign(hooks, { path: '', readCalls: 0, blockRead: 0, readEntered: undefined, readRelease: undefined,
+    Object.assign(hooks, { path: '', openCalls: 0, blockOpen: 0, gatedOpenCloses: 0, openEntered: undefined, openRelease: undefined, readCalls: 0, blockRead: 0, readEntered: undefined, readRelease: undefined,
       closeCalls: 0, blockClose: 0, closeEntered: undefined, closeRelease: undefined, closeFailure: undefined })
     hooks.readdirPath = ''; hooks.readdirEntered = undefined; hooks.readdirRelease = undefined
     await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
@@ -91,6 +97,43 @@ it('joins an active open before it can create a preparation and stops new reques
   await expect(opening).rejects.toBe(reason)
   await disposal
   expect(disposed).toBe(true)
+})
+
+it('closes an acquired historical source without starting its body read after the last waiter cancels', async () => {
+  const f = await fixture(), gate = f.barrier(), abort = new AbortController()
+  hooks.blockOpen = 2; hooks.openEntered = () => { gate.entered.resolve(undefined) }; hooks.openRelease = gate.release.promise
+  const opening = f.persistence.open(f.id, 'read', { signal: abort.signal }), reason = new Error('last waiter cancelled')
+  void opening.catch(() => {})
+  await gate.entered.promise
+  abort.abort(reason)
+  await expect(opening).rejects.toBe(reason)
+  expect(f.persistence.isQuiescent(8)).toBe(false)
+  gate.release.resolve(undefined)
+  await vi.waitFor(() => { expect(f.persistence.isQuiescent(8)).toBe(true) })
+  expect(hooks.readCalls).toBe(0)
+  expect(hooks.gatedOpenCloses).toBe(1)
+})
+
+it('retains a close failure after cancellation before the historical body read', async () => {
+  const f = await fixture(), gate = f.barrier(), abort = new AbortController()
+  const failure = new Error('acquired source close failed')
+  const reported = vi.spyOn(f.ctx.logger, 'error').mockImplementation(() => undefined)
+  hooks.blockOpen = 2; hooks.openEntered = () => { gate.entered.resolve(undefined) }; hooks.openRelease = gate.release.promise
+  hooks.closeFailure = failure
+  const opening = f.persistence.open(f.id, 'read', { signal: abort.signal }), reason = new Error('last waiter cancelled')
+  void opening.catch(() => {})
+  await gate.entered.promise
+  abort.abort(reason); await expect(opening).rejects.toBe(reason)
+  gate.release.resolve(undefined)
+  await vi.waitFor(() => { expect(reported).toHaveBeenCalled() })
+  expect(hooks.readCalls).toBe(0)
+  expect(hooks.gatedOpenCloses).toBe(1)
+  expect(f.persistence.isQuiescent(8)).toBe(false)
+  await f.fiber.dispose()
+  const logged = reported.mock.calls.map(call => call[0] as unknown)
+  expect(logged).toContainEqual(expect.objectContaining({ name: 'JsonlReadCleanupError', cause: failure }))
+  expect(logged).toContainEqual(expect.objectContaining({ name: 'AggregateError',
+    errors: [expect.objectContaining({ name: 'JsonlReadCleanupError', cause: failure })] }))
 })
 
 it('lets one cancelled waiter leave while another keeps the same preparation', async () => {

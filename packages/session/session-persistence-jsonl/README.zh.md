@@ -92,7 +92,7 @@ kind: "package-reference"
 
 header 读取同样只把打开文件失败时的 `ENOENT` 视为不存在。文件成功打开后读取产生的 `ENOENT` 仍是 I/O 失败，即使它与取消并发发生。
 
-历史 preparation 会一直跟踪到其实际 promise 结算，即使最后一个等待者取消或新版 revision 替换了可加入的条目。取消一个等待者会及时返回，不会取消其他等待者。后端保留并报告 preparation 的实际关闭失败，之后不会报告空闲。provider 卸载会停止新请求，等待待处理请求和 preparation，并通过正常 disposer 诊断报告保留的清理失败。
+历史 preparation 会一直跟踪到其实际 promise 结算，即使最后一个等待者取消或新版 revision 替换了可加入的条目。 最后一个等待者在历史来源文件打开期间取消时，已取得的句柄会关闭，不再启动正文读取。取消一个等待者会及时返回，不会取消其他等待者。后端保留并报告 preparation 的实际关闭失败，之后不会报告空闲。provider 卸载会停止新请求，等待待处理请求和 preparation，并通过正常 disposer 诊断报告保留的清理失败。
 
 JSONL 启用 `statSettlesOnAbort`：调用前已取消时不会开始工作；`stat` 进行期间取消时，先等待进行中的文件系统工作与 header 清理完成，再返回取消，且不会继续启动后续读取、解码和目录探测。已与其他调用方共享的根编码检查会等待完成，不取消其他调用方。即使取消并发发生，后端失败仍可观察。这个逐次 stat 保证不覆盖历史 `open` preparation 或后端整体空闲状态。
 
