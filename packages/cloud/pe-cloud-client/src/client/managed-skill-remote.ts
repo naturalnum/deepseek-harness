@@ -62,7 +62,8 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
     remove: boolean): Promise<ManagedSkillOutcome> => {
     try {
       const answer = await request(send, observer)
-      if (!answer.ok) return { kind: answer.error.code === 'cloud/config-conflict' ? 'conflict' : 'unknown' }
+      if (!answer.ok) return { kind: answer.error.code === 'cloud/config-conflict' ? 'conflict'
+        : answer.error.code === 'cloud/capacity' ? 'unavailable' : 'unknown' }
       if (answer.value.persisted !== true || remove !== (answer.value.entry === null)) return { kind: 'unknown' }
       const entry = answer.value.entry
       if (entry !== null) selectors.set(entry.skillId, entry.skillId)

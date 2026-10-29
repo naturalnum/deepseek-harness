@@ -1,10 +1,9 @@
 /** User management-page presentation on the current account source; no registration, transport or backend adapter. */
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { IconPlusOutlineRegular, IconSearchOutlineRegular, IconSkillOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SkillCard, SkillCategory, SkillManagementActions, SkillsPageInjected } from './types.ts'
 import { ManagedSkillEditor } from './ManagedSkillEditor.tsx'
-import { SampleSkillEditor } from './SampleSkillEditor.tsx'
 import { SkillDetailDialog } from './SkillDetailDialog.tsx'
 import { SkillInstallPanel } from './SkillInstallPanel.tsx'
 import { SkillImportPanel } from './SkillImportPanel.tsx'
@@ -29,6 +28,8 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
   const [search, setSearch] = useState(''), [category, setCategory] = useState<SkillCategory | ''>('')
   const [installedOnly, setInstalledOnly] = useState(false), [selectedId, setSelectedId] = useState<string>()
   const [dialog, setDialog] = useState<'install' | 'import'>(), refresh = useSkillAction('read')
+  const importAction = useSkillAction('read'), picker = useRef<HTMLInputElement>(null)
+  const [invalidZip, setInvalidZip] = useState(false)
   const query = search.trim().toLocaleLowerCase()
   const visible = view.items.filter(item => (!installedOnly || item.installed) && (!category || item.category === category)
     && (!query || [item.name, item.description, item.id].some(value => value.toLocaleLowerCase().includes(query))))
@@ -50,9 +51,24 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
     <header className={css.header}>
       <div><h1>{t('title')}</h1><p>{t('description')}</p></div>
       <div className={css.actions}>
-        {managed === undefined ? null : <button type="button" className={`${css.button} ${css.primary}`}
-          disabled={managed.canInstall === false || refresh.state === 'pending' || managed.phase === 'submitting' || managed.phase === 'opening' || managed.phase === 'downloading'}
-          onClick={() => { openManaged(undefined) }}>{t('installBundle')}</button>}
+        {managed === undefined ? null : <>
+          <input ref={picker} type="file" accept=".zip,application/zip" hidden aria-label={t('chooseArchive')}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+              event.currentTarget.value = ''
+              if (file === undefined) return
+              if (!/\.zip$/i.test(file.name) || file.size === 0) { setInvalidZip(true); return }
+              setInvalidZip(false)
+              void importAction.run(async (signal) => {
+                const outcome = await managed.installZip(file, signal)
+                return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind
+              }).then((outcome) => { if (outcome !== undefined) props.report('install', outcome) })
+            }}/>
+          <button type="button" className={`${css.button} ${css.primary}`}
+            disabled={managed.canInstall === false || refresh.state === 'pending' || importAction.state === 'pending'
+              || managed.phase === 'submitting' || managed.phase === 'opening' || managed.phase === 'downloading' || managed.outcome?.kind === 'unknown'}
+            onClick={() => { picker.current?.click() }}>{t('installBundle')}</button>
+        </>}
         {managed === undefined ? <>
           <button type="button" className={css.button} disabled={!ready || props.installText === undefined || props.limits === undefined}
             onClick={() => { setDialog('install') }}><IconPlusOutlineRegular size={15}/>{t('install')}</button>
@@ -63,9 +79,15 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
     </header>
     <section className={css.content} aria-label={t('title')}>
       {managed?.needsRefresh ? <p className={css.note} role="status">{t('bundleRefreshAfterChange')}</p> : null}
-      {managed === undefined ? null : <ManagedSkillEditor key={managed.editNumber} editor={managed} report={props.report} t={t}/> }
-      {view.sample === undefined ? null : managed === undefined ? <SampleSkillEditor key={view.sample.scope} sample={view.sample} t={t}/>
-        : <details><summary>{t('legacySampleEditor')}</summary><SampleSkillEditor key={view.sample.scope} sample={view.sample} t={t}/></details>}
+      {invalidZip || importAction.state === 'unavailable' && managed?.outcome === undefined
+        ? <p className={css.error} role="alert">{t('invalidZip')}</p> : null}
+      {managed?.selection === null && managed.outcome !== undefined ? <p
+        className={managed.outcome.kind === 'persisted' ? css.note : css.error}
+        role={managed.outcome.kind === 'persisted' ? 'status' : 'alert'}>{t(managed.outcome.kind === 'persisted'
+          ? managed.outcome.applied ? 'bundleApplied' : 'bundleSavedPending' : managed.outcome.kind === 'conflict' ? 'sampleConflict'
+            : managed.outcome.kind === 'unavailable' ? 'bundleCapacity' : 'sampleUnknown')}</p> : null}
+      {managed === undefined || managed.selection === null ? null
+        : <ManagedSkillEditor key={managed.editNumber} editor={managed} report={props.report} t={t}/> }
       {recommended.length > 0 ? <section aria-label={t('recommended')}>
         <h2 className={css.sectionLabel}>{t('recommended')}</h2>
         <div className={css.recommendations}>{recommended.map(item => <button type="button" key={item.id}

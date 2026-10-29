@@ -147,7 +147,7 @@ Commands 在附件准入之后、原生 handler 执行之前复核原账户及 A
 
 一个 files 所有的 `skills/current.json` 目录和一个 `AccountSaves` 编辑版本覆盖全部安装项。普通读取将 schema1 保留为旧 sample；首次 schema2 修改保留该项及其他不可变版本。`current` 在 sample 不存在时仍观察整个目录 revision；安装、替换、移除和旧 publish 都使旧编辑版本失效。sample 替换仍使用完整两文件 `publish`；通用 `update` 拒绝旧 sample。
 
-完整文件或 ZIP 输入交给 files，不访问宿主文件系统或执行资源。files 负责包、路径、类型、链接和展开量验证、原生 CAS、源句柄、完整 ZIP 导出、工作副本证明、计费及回收。下载先在原保存 turn 内核对当前安装项和内容版本，再进入原 files 导出借用。移除目录项拒绝后续加载，不终止脚本或删除已有可写项目副本。
+完整文件或 ZIP 输入交给 files，不访问宿主文件系统或执行资源。files 负责包、路径、类型、链接和展开量验证、原生 CAS、源句柄、完整 ZIP 导出、工作副本证明、计费及回收。发布前确认的技能包超限拒绝返回 `cloud/capacity`。下载先在原保存 turn 内核对当前安装项和内容版本，再进入原 files 导出借用。移除目录项拒绝后续加载，不终止脚本或删除已有可写项目副本。
 
 原生 parser 为每个安装包发现一个技能根；资源 Markdown 和嵌套 `SKILL.md` 仍是包数据。原生 `skills.inspect()` 提供生效与覆盖关系；API 只投影公开来源，省略 rank、locator 和私有路径。可选 Workspace 经原 registry 和归属守卫核验后提供 `cwd`，不伪造 Agent scope。管理列表包含目录安装项，不授予其他项目或运行时贡献的编辑、下载权限；这些来源的原发现、批准根及优先级仍由原生实现负责。
 

@@ -57,13 +57,14 @@ it('copies a complete directory with nested resources and publishes an independe
 it('imports a selected ZIP through the owner and confirms uninstall without claiming deletion of history or working copies', async () => {
   const f = page()
   render(<SkillsPage {...f.props}/>)
+  const archive = screen.getByLabelText(en.chooseArchive)
+  const choose = vi.spyOn(archive, 'click')
   fireEvent.click(screen.getByRole('button', { name: en.installBundle }))
-  const archive = await screen.findByLabelText(en.archive)
+  expect(choose).toHaveBeenCalledOnce()
+  expect(archive.getAttribute('accept')).toContain('.zip')
   fireEvent.change(archive, { target: { files: [new File(['archive bytes'], 'skill.zip')] } })
-  fireEvent.click(screen.getAllByRole('button', { name: en.installBundle })[1]!)
   await screen.findByText(en.bundleApplied)
   expect(f.install).toHaveBeenCalledTimes(1)
-  fireEvent.click(screen.getByRole('button', { name: en.close }))
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
   const remove = await screen.findByRole('button', { name: en.remove })
   fireEvent.click(remove)
@@ -73,6 +74,30 @@ it('imports a selected ZIP through the owner and confirms uninstall without clai
   await screen.findByText(en.bundleApplied)
   expect(f.uninstall).toHaveBeenCalledTimes(1)
   expect(screen.queryByRole('button', { name: 'first' })).toBeNull()
+})
+
+it('rejects non-ZIP selection and does not repeat an uncertain install', async () => {
+  const f = page()
+  f.install.mockResolvedValueOnce({ kind: 'unknown' })
+  render(<SkillsPage {...f.props}/>)
+  const archive = screen.getByLabelText(en.chooseArchive)
+  fireEvent.change(archive, { target: { files: [new File(['not zip'], 'skill.skill')] } })
+  expect(screen.getByText(en.invalidZip)).toBeTruthy()
+  expect(f.installed).not.toHaveBeenCalled()
+  fireEvent.change(archive, { target: { files: [new File(['zip'], 'skill.zip')] } })
+  await screen.findByText(en.sampleUnknown)
+  expect(f.install).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: en.installBundle })).toHaveProperty('disabled', true)
+})
+
+it('shows a confirmed capacity refusal as not installed rather than an unknown outcome', async () => {
+  const f = page()
+  f.install.mockResolvedValueOnce({ kind: 'unavailable' })
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.change(screen.getByLabelText(en.chooseArchive), { target: { files: [new File(['zip'], 'skill.zip')] } })
+  await screen.findByText(en.bundleCapacity)
+  expect(screen.queryByText(en.sampleUnknown)).toBeNull()
+  expect(f.install).toHaveBeenCalledTimes(1)
 })
 
 it('leaves an uncertain draft visible after dependency withdrawal and never reopens its edit automatically', async () => {

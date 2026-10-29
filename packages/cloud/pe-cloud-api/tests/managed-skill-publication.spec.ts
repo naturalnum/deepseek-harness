@@ -396,6 +396,13 @@ it('distinguishes files admission refusal from unsettled preparation before any 
   expect(g.saves.snapshot().failures).toMatchObject([{ outcome: 'unknown' }])
 })
 
+it('reports a confirmed oversized package as capacity before catalog publication', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  f.failPrepare(new FdMutationFailure('not-published', 'FS_TOO_LARGE'))
+  await expect(f.manager.install(initial.version, bundle('large'), f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/capacity' })
+  expect(f.stats().commits).toBe(0)
+})
+
 
 // These probes require actual prepared authority, rather than treating release() as an empty fixture method.
 async function preparedOperation(kind: 'install' | 'update' | 'legacy') {

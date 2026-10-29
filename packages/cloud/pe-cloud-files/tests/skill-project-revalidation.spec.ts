@@ -6,7 +6,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { FdMutationFailure, FdWorkerClient } from '../src/worker-client.ts'
-import { createSkillProjectWork, type SkillProjectWork } from '../src/skill-project-work.ts'
+import { createSkillProjectWork, skillCopyReferences, type SkillProjectWork } from '../src/skill-project-work.ts'
 import type { SkillVersion } from '../src/skill-versions.ts'
 
 const signal = () => new AbortController().signal
@@ -37,15 +37,15 @@ async function fixture(authorize = true, sameMount = false) {
   let bytes = encode(original), revision = '1:2:3:4:5'
   const oldHash = sha(bytes), recordName = 'project-' + createHash('sha256').update(workspace.id).digest('hex') + '.json'
   vi.spyOn(client, 'skillSourceContext').mockResolvedValue(context)
-  vi.spyOn(client, 'lstat').mockImplementation(async (_root, name) => name === recordName
+  const lstat = vi.spyOn(client, 'lstat').mockImplementation(async (_root, name) => name === recordName
     ? { type: 'file', identity: '1794:99', version: revision, size: bytes.byteLength }
     : { type: 'directory', identity: '1795:55', version: 'directory' })
-  vi.spyOn(client, 'skillDirectory').mockImplementation(async (_root, _uid, _gid, purpose) => ({
+  const skillDirectory = vi.spyOn(client, 'skillDirectory').mockImplementation(async (_root, _uid, _gid, purpose) => ({
     directory: directory(purpose === 'parent-verify' ? '55' : '99', purpose === 'parent-verify' ? '1544' : '1536'), created: false }))
-  vi.spyOn(client, 'list').mockImplementation(async selected => selected.rootPath.endsWith('skill-working-copies')
+  const list = vi.spyOn(client, 'list').mockImplementation(async selected => selected.rootPath.endsWith('skill-working-copies')
     ? [{ name: recordName, type: 'file', identity: '1794:99', version: revision, size: bytes.byteLength }]
     : [{ name: version.id, type: 'directory', identity: '1795:56', version: 'copy' }])
-  vi.spyOn(client, 'read').mockImplementation(async () => bytes.slice())
+  const read = vi.spyOn(client, 'read').mockImplementation(async () => bytes.slice())
   const projection = vi.spyOn(client, 'projectSkillVersion').mockImplementation(async request => ({ outcome: 'projected', closed: true,
     errno: 0, reused: true, copies: 1, metadataDirectory: request.metadata, skillsDirectory: directory('55', '1544'), copyDirectory: directory('56', '1544') }))
   const write = vi.spyOn(client, 'writeText').mockImplementation(async (_root, _name, text) => {
@@ -73,7 +73,8 @@ async function fixture(authorize = true, sameMount = false) {
     ...authorize ? { revalidation: { workspaceId: workspace.id, recordSha256: oldHash,
       get pending() { return committedRevision === undefined }, assertRecord, confirmRecord } } : {},
   }
-  return { client, port: createSkillProjectWork(input), input, workspace, binding, lifetime, original, projection, write,
+  return { client, lstat, skillDirectory, list, read, port: createSkillProjectWork(input), input, workspace, binding, lifetime,
+    original, version, projection, write,
     sourceRead, assertRecord, confirmRecord, bytes: () => bytes, setRecord: (value: unknown) => { bytes = encode(value) } }
 }
 it('reopens existing identities with the current mount, reuses the edited copy and commits one original native CAS before issuing grants', async () => {
@@ -98,6 +99,72 @@ it('keeps the original stale rejection without Root authority or after the bound
   const changed = await fixture(); changed.setRecord({ ...changed.original, sourceContext: { ...changed.original.sourceContext, mountNamespace: 'mnt:[124]' } })
   await expect(changed.port.prepareProject(changed.workspace, () => {}, signal())).rejects.toMatchObject({ outcome: 'not-published', code: 'FS_STALE_VERSION' })
   expect(changed.write).not.toHaveBeenCalled()
+})
+it('keeps another workspace cold and charged without using its old namespace identities', async () => {
+  const f = await fixture(false, true)
+  const sibling = { ...f.original, workspaceId: 'sibling',
+    sourceContext: { bootId: '22222222-2222-4222-8222-222222222222', mountNamespace: 'mnt:[124]' },
+    copies: [{ ...f.original.copies[0]!, source: { ...f.original.copies[0]!.source, id: '22222222-2222-4222-8222-222222222222' } }] }
+  let siblingBytes = encode(sibling)
+  const siblingName = `project-${createHash('sha256').update('sibling').digest('hex')}.json`
+  const priorLstat = f.lstat.getMockImplementation()!
+  const priorRead = f.read.getMockImplementation()!
+  const priorList = f.list.getMockImplementation()!
+  f.lstat.mockImplementation(async (...args) => args[1] === siblingName
+    ? { type: 'file', identity: '1794:100', version: 'sibling-v1', size: siblingBytes.byteLength } : priorLstat(...args))
+  f.read.mockImplementation(async (...args) => args[1] === siblingName ? siblingBytes.slice() : priorRead(...args))
+  f.list.mockImplementation(async (...args) => {
+    const entries = await priorList(...args)
+    return args[0].rootPath.endsWith('skill-working-copies')
+      ? [...entries, { name: siblingName, type: 'file', identity: '1794:100', version: 'sibling-v1', size: siblingBytes.byteLength }]
+      : entries
+  })
+  const held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  const borrowed = await f.port.borrowAll(held.value, signal())
+  const references = await skillCopyReferences(f.input, f.client, signal())
+  expect(references).toEqual(new Set([f.original.copies[0]!.source.id, sibling.copies[0]!.source.id]))
+  expect(f.write).not.toHaveBeenCalled()
+  expect(borrowed.value.copies).toHaveLength(1)
+  borrowed.release()
+  const other = { ...f.workspace, id: brandString<Workspace['id']>('sibling') }
+  await expect(f.port.prepareProject(other, () => {}, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  siblingBytes = encode({ ...sibling, state: 'preparing-copy', pending: sibling.copies[0]!.source })
+  await expect(f.port.borrowAll(held.value, signal())).rejects.toMatchObject({ outcome: 'unknown' })
+  expect(f.write).not.toHaveBeenCalled()
+  held.release()
+})
+it('prepares a new workspace while preserving another workspace cold record', async () => {
+  const f = await fixture(false, true)
+  const cold = { ...f.original, workspaceId: 'cold', sourceContext: {
+    bootId: '22222222-2222-4222-8222-222222222222', mountNamespace: 'mnt:[124]' } }
+  const bytes = encode(cold), coldName = `project-${createHash('sha256').update('cold').digest('hex')}.json`
+  const directory = (inode: string, device = '1795', mountId = '1544') => ({ device, inode, mountId, uid: 2000, gid: 2000, mode: 0o40700 })
+  f.lstat.mockImplementation(async (_root, name) => name === '.pe/skills' ? undefined
+    : name === coldName ? { type: 'file', identity: '1794:100', version: 'cold-v1', size: bytes.byteLength }
+      : { type: 'directory', identity: '1795:55', version: 'directory' })
+  f.read.mockImplementation(async () => bytes.slice())
+  f.list.mockImplementation(async selected => selected.rootPath.endsWith('skill-working-copies')
+    ? [{ name: coldName, type: 'file', identity: '1794:100', version: 'cold-v1', size: bytes.byteLength }] : [])
+  f.skillDirectory.mockImplementation(async (_root, _uid, _gid, purpose) => ({
+    directory: purpose === 'store-verify' ? directory('99', '1794', '1536') : directory('55'), created: purpose === 'parent-create' }))
+  vi.spyOn(f.client, 'prepareProjectMetadata').mockResolvedValue({ created: true, directory: directory('19') })
+  const limited = createSkillProjectWork({ ...f.input, limits: { ...f.input.limits, maxProjects: 1 } })
+  await expect(limited.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(f.write).not.toHaveBeenCalled()
+  const held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  expect(held.value.workspaceId).toBe(f.workspace.id)
+  expect(f.write).toHaveBeenCalledTimes(2)
+  expect(f.write.mock.calls.every(call => call[1] !== coldName)).toBe(true)
+  expect(bytes).toEqual(encode(cold))
+  held.release()
+})
+it('rejects a selected workspace if its recorded namespace changes after its parent was issued', async () => {
+  const f = await fixture(false, true), held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  f.setRecord({ ...f.original, sourceContext: { ...f.original.sourceContext, mountNamespace: 'mnt:[124]' } })
+  await expect(f.port.borrowAll(held.value, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  await expect(f.port.materialize(held.value, f.version, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  expect(f.write).not.toHaveBeenCalled()
+  held.release()
 })
 it('refuses pending associations and an actual copy identity mismatch before CAS', async () => {
   const f = await fixture(); f.setRecord({ ...f.original, state: 'preparing-copy', pending: f.original.copies[0]!.source })

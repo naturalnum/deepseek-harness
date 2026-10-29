@@ -11,7 +11,7 @@ import { createSkillProjectWork } from '../src/skill-project-work.ts'
 import { FdWorkerClient } from '../src/worker-client.ts'
 import { limits, projectionLimits } from './fixtures/bundle-limits.ts'
 
-async function fixture() {
+async function fixture(authorizeActive = false) {
   const worker = new Worker(new URL('./fixtures/skill-exit-worker.mjs', import.meta.url)), client = new FdWorkerClient(worker)
   onTestFinished(async () => { await client.close(); await client.exited; await worker.terminate() }); await client.ready
   const lifetime = new AbortController(), binding: AccountBinding = { accountId: brandString<AccountBinding['accountId']>('A'),
@@ -54,7 +54,7 @@ async function fixture() {
     bytes = new TextEncoder().encode(value); const before = revision; revision = '1:2:3:4:6'
     return { operation: 'update', version: revision, before, after: revision }
   })
-  const authorize = vi.fn(async () => { throw new Error('An uninstalled source cannot authorize a new load') })
+  const authorize = vi.fn(async () => { if (!authorizeActive) throw new Error('An uninstalled source cannot authorize a new load') })
   const confirm = vi.fn(), sourceRead = vi.fn(async () => tree)
   const port = createSkillProjectWork({ binding, privateRoot: { rootPath: '/private', rootDevice: '1', rootInode: '2', rootMountId: '11' },
     uid: 2000, gid: 2000, quota: { ...root, rootPath: '/projects', rootInode: '2', minimumBytes: '1048576', maximumBytes: '1048576',
@@ -91,4 +91,17 @@ it('rejects an incomplete persisted tree before source/native checks or any cold
   const f = await fixture(); f.corrupt()
   await expect(f.port.prepareProject(f.workspace, () => {}, new AbortController().signal)).rejects.toThrow()
   expect(f.native).not.toHaveBeenCalled(); expect(f.sourceRead).not.toHaveBeenCalled(); expect(f.writes).not.toHaveBeenCalled()
+})
+
+it('canonicalizes an authorized source lease before issuing and borrowing an existing copy', async () => {
+  const f = await fixture(true), signal = new AbortController().signal
+  const parent = await f.port.prepareProject(f.workspace, () => {}, signal)
+  const lease = Object.freeze({ ...f.version })
+  expect(lease).not.toBe(f.version)
+  const copy = await f.port.materializeBundle(parent.value, lease, signal)
+  expect(f.authorize).toHaveBeenCalledExactlyOnceWith(expect.anything(), lease, expect.any(AbortSignal))
+  expect(copy.value.version).toBe(f.version)
+  const operation = await f.port.borrowBundles(parent.value, [copy.value], signal)
+  expect(operation.value.copies[0]).toBe(copy.value)
+  operation.release(); copy.release(); parent.release()
 })

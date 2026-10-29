@@ -118,7 +118,8 @@ export function ManagedSkillEditor({ editor, report, t }: {
     {editor.downloadStarted ? <p role="status">{t('bundleDownloadStarted')}</p> : null}
     {editor.outcome === undefined ? null : editor.outcome.kind === 'persisted'
       ? <p role="status">{t(editor.outcome.applied ? 'bundleApplied' : 'bundleSavedPending')}</p>
-      : <p className={css.error} role="alert">{t(editor.outcome.kind === 'conflict' ? 'sampleConflict' : 'sampleUnknown')}</p>}
+      : <p className={css.error} role="alert">{t(editor.outcome.kind === 'conflict' ? 'sampleConflict'
+        : editor.outcome.kind === 'unavailable' ? 'bundleCapacity' : 'sampleUnknown')}</p>}
     {invalid ? <p className={css.error} role="alert">{t('bundleInvalid')}</p> : null}
   </section>
 }

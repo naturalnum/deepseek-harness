@@ -18,7 +18,7 @@ LIMITS = MappingProxyType({
     'lifetimeOperations': 4, 'activeRanges': 2, 'tailBytesPerStream': MAX_TAIL,
     'observedStopThresholdPerStream': MAX_OBSERVED, 'prepareMs': 3000, 'preparedLeaseMs': 3000,
     'runMs': 150000, 'serviceRunMs': 120000, 'stopMs': 2000, 'residentMs': 300000,
-    'childCpuSeconds': 75, 'childAddressBytes': 134217728, 'childFileBytes': 8388608,
+    'childCpuSeconds': 75, 'childAddressBytes': 536870912, 'childFileBytes': 67108864,
     'childOpenFiles': 32, 'childProcesses': 32, 'childCoreBytes': 0,
 })
 HEX = re.compile(r'[0-9a-f]{64}\Z')

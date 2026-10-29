@@ -38,6 +38,13 @@ it.each(['cloud/config-conflict', 'cloud/account-unavailable'] as const)('does n
   expect(f.update).toHaveBeenCalledTimes(1)
 })
 
+it('reports a confirmed capacity refusal without treating it as an uncertain write', async () => {
+  const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
+  f.install.mockResolvedValueOnce({ ok: false, error: new RemoteError('cloud/capacity', 'PRIVATE_DIAGNOSTIC', {}) })
+  expect(await list.install?.(zip(), signal())).toEqual({ kind: 'unavailable' })
+  expect(f.install).toHaveBeenCalledTimes(1)
+})
+
 it('keeps original bound namespace methods and refuses local reads or RPC after original page withdrawal', async () => {
   const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input)
   const list = await api.installed(signal())

@@ -14,7 +14,7 @@ CLAIM = b's4-bootstrap/1\n'
 BWRAP = ('0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d', 814328)
 SOURCES = {
     'server.py': ('1d368b899c9a587c4346e110824fd7906c811190294b609b117bdbd19f89e1fd', 13930),
-    'wire.py': ('3fe52dc73a8da069ac45d6a5e9aa4e09ed2640b0d27a67df3a14678093d313bc', 9190),
+    'wire.py': ('ddb047c40b6ebfba24807bba127901e6e3fc707a8085711e55ee6ad33871a22b', 9191),
     'manager.py': ('f77fe50f041e84f6892b0a7314bbc796cb77a2c7f0e32edd8eab80b1cb2e9f64', 10286),
     'launcher.py': ('b4e36866eeec36c15586ca21815321b8aff18ceaa01d0d5ccc07502a0f33a667', 17976),
     'guardian.py': ('d154d7ec699fca6da6a4e46327421ee548e5b0098744142dcab2384f9b4c6f70', 5001),

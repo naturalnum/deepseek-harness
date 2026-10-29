@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-/** The management page edits its original source through a test renderer hook and scripted native edit callback. */
+/** The legacy editor retains its original source through a test renderer hook and scripted native edit callback. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
+import { SampleSkillEditor } from '../src/client/management/skills/SampleSkillEditor.tsx'
 import { skillsManagementDictionaries } from '../src/client/management/skills/locales.ts'
 import { attachSkillVersionEditing } from '../src/client/skill-version-editing.ts'
 import { prepareCloudSkillEdit, type CloudSkillRemote, type PreparedSkillEdit } from '../src/client/skill-edit.ts'
@@ -29,11 +30,21 @@ function fixture() {
     t: makeTranslate(en), report: vi.fn() }
   return { source, props, publish, prepare, withdraw }
 }
-it('copies complete UTF-8/binary files into an independent draft and retains it after an uncertain publication and remount', async () => {
-  const f = fixture(), view = render(<SkillsPage {...f.props}/>)
-  expect(f.prepare).not.toHaveBeenCalled()
+function SampleEditorHarness({ props }: { props: SkillsPageProps }) {
+  const sample = props.useSkillManagement(value => value.sample)
+  return sample === undefined ? null : <SampleSkillEditor sample={sample} t={props.t}/>
+}
+it('omits the legacy sample editor from the skills page', () => {
+  const f = fixture()
+  render(<SkillsPage {...f.props}/>)
+  expect(screen.queryByRole('button', { name: en.sampleOpen })).toBeNull()
   expect(screen.getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
+  expect(f.prepare).not.toHaveBeenCalled()
+})
+it('copies complete UTF-8/binary files into an independent draft and retains it after an uncertain publication and remount', async () => {
+  const f = fixture(), view = render(<SampleEditorHarness props={f.props}/>)
+  expect(f.prepare).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: en.sampleOpen }))
   await screen.findByText(en.samplePresent)
   expect(screen.getByText(en.sampleBodyUnavailable)).toBeTruthy()
@@ -51,7 +62,7 @@ it('copies complete UTF-8/binary files into an independent draft and retains it 
   expect(f.publish).toHaveBeenCalledExactlyOnceWith('修改后的完整说明\n', 'AP8B', expect.any(AbortSignal))
   expect(screen.getByRole('button', { name: en.samplePublish })).toHaveProperty('disabled', true)
   expect(f.prepare).toHaveBeenCalledTimes(1)
-  view.unmount(); render(<SkillsPage {...f.props}/>)
+  view.unmount(); render(<SampleEditorHarness props={f.props}/>)
   expect(screen.getByLabelText(en.sampleEditable)).toHaveProperty('value', '修改后的完整说明\n')
   expect(screen.getByText(en.sampleUnknown)).toBeTruthy()
   expect(f.prepare).toHaveBeenCalledTimes(1)
@@ -59,7 +70,7 @@ it('copies complete UTF-8/binary files into an independent draft and retains it 
   expect(f.source.getSnapshot().sample?.draft?.original.markdown).toBe(original)
 })
 it('rejects invalid UTF-8 and prevents a pending local file read from changing the source after unmount', async () => {
-  const f = fixture(), view = render(<SkillsPage {...f.props}/>)
+  const f = fixture(), view = render(<SampleEditorHarness props={f.props}/>)
   fireEvent.click(screen.getByRole('button', { name: en.sampleOpen }))
   await screen.findByLabelText(en.sampleMarkdownFile)
   fireEvent.change(screen.getByLabelText(en.sampleMarkdownFile), { target: { files: [file('SKILL.md', Uint8Array.from([0xc3, 0x28]))] } })
@@ -91,7 +102,7 @@ it('retires an unused edit on navigation and preserves the draft until an explic
   f.prepare.mockImplementation(observer => prepareCloudSkillEdit(remote, {
     signal: lifetime.signal, timeoutMs: 1000, assertCurrent: () => {},
   }, observer))
-  const view = render(<SkillsPage {...f.props}/>), stable = f.source
+  const view = render(<SampleEditorHarness props={f.props}/>), stable = f.source
   fireEvent.click(screen.getByRole('button', { name: en.sampleOpen }))
   await screen.findByLabelText(en.sampleMarkdownFile)
   const original = 'Complete original instructions\n', edited = 'Complete edited instructions\n'
@@ -108,7 +119,7 @@ it('retires an unused edit on navigation and preserves the draft until an explic
   expect(screen.getByRole('button', { name: en.samplePublish })).toHaveProperty('disabled', false)
   view.unmount()
   expect(observer?.aborted).toBe(true)
-  render(<SkillsPage {...f.props}/>)
+  render(<SampleEditorHarness props={f.props}/>)
   expect(f.source).toBe(stable)
   expect(stable.getSnapshot().sample?.phase).toBe('idle')
   expect(stable.getSnapshot().sample?.draft).toBe(draft)

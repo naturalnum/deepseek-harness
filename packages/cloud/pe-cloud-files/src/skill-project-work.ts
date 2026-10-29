@@ -210,8 +210,9 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       }
     }, signal, retention)
   }
-  const store = async (client: FdWorkerClient, control: AbortSignal, allowCreate = false,
-    selected?: { readonly workspace: Workspace; readonly root: FdRootIdentity; readonly assertRegistered: () => void }) => {
+  const store = async (client: FdWorkerClient, control: AbortSignal,
+    selected: { readonly workspaceId: Workspace['id']; readonly root: FdRootIdentity; readonly assertRegistered: () => void },
+    allowCreate = false) => {
     const context = await client.skillSourceContext(control)
     const before = await client.lstat(input.privateRoot, 'skill-working-copies', control)
     if (before === undefined && !allowCreate || before !== undefined && before.type !== 'directory') unknown()
@@ -232,14 +233,14 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       try { value = parseRecord(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), input) } catch (cause) {
         unknown(cause) }
       if (entry.name !== file(value.workspaceId) || value.state !== 'complete') unknown()
-      // Source namespace numbers are interpreted only in their recorded kernel scope. Rebinding needs Root volume evidence.
+      // A cold record stays charged and unopened until its own Workspace is selected for Root-verified revalidation.
       const changedScope = value.sourceContext.bootId !== context.bootId || value.sourceContext.mountNamespace !== context.mountNamespace
-      const selectedRecord = selected?.workspace.id === value.workspaceId
+      const selectedRecord = selected.workspaceId === value.workspaceId
       const digest = createHash('sha256').update(bytes).digest('hex'), authority = input.revalidation
       const forced = selectedRecord && !parents.has(value.workspaceId) && authority?.workspaceId === value.workspaceId
         && authority.pending && authority.recordSha256 === digest
-      if (changedScope || selectedRecord && !sameRoot(value.project, selected.root) || forced) {
-        if (!selectedRecord || authority === undefined || authority.workspaceId !== value.workspaceId
+      if (selectedRecord && (changedScope || !sameRoot(value.project, selected.root) || forced)) {
+        if (authority === undefined || authority.workspaceId !== value.workspaceId
           || authority.recordSha256 !== digest || revalidate !== undefined) denied('FS_STALE_VERSION')
         authority.assertRecord(before.version)
         revalidate = { name: entry.name, row: { value, revision: before.version, bytes: bytes.byteLength } }
@@ -250,11 +251,11 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     if (total + input.limits.maxRecordBytes > input.limits.maxMetadataBytes || rows.size
       + 2 > input.limits.maxMetadataInodes) denied('FS_TOO_LARGE')
     if (revalidate !== undefined) {
-      if (selected === undefined || input.revalidation === undefined) denied('FS_STALE_VERSION')
+      if (input.revalidation === undefined) denied('FS_STALE_VERSION')
       const previous = revalidate.row, value = await revalidateRecord(client, previous.value, selected.root, context, control)
       const bytes = Buffer.byteLength(JSON.stringify(value))
       if (total - previous.bytes + bytes + input.limits.maxRecordBytes > input.limits.maxMetadataBytes) denied('FS_TOO_LARGE')
-      current(); selected.assertRegistered(); if (selected.workspace.id !== value.workspaceId) denied('FS_STALE_VERSION')
+      current(); selected.assertRegistered(); if (selected.workspaceId !== value.workspaceId) denied('FS_STALE_VERSION')
       input.revalidation.assertRecord(previous.revision)
       control.throwIfAborted()
       const committed = await write(client, root, value, previous.revision, control)
@@ -369,7 +370,8 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     const supplied = selected === undefined ? undefined : Object.freeze([...selected])
     const held = await io(async (client, control) => {
       parent(project)
-      const scanned = await store(client, control), existing = scanned.rows.get(file(project.workspaceId))
+      const scanned = await store(client, control, { workspaceId: project.workspaceId, root: project.project,
+          assertRegistered: parent(project).current }), existing = scanned.rows.get(file(project.workspaceId))
       if (existing === undefined) unknown()
       const actual = await validateParent(client, existing.value, control)
       if (!sameRoot(actual.project, project.project) || !sameDirectory(actual.metadataDirectory, project.metadataDirectory)
@@ -405,7 +407,8 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(version.id)) denied()
     const held = await io(async (client, control) => {
       parent(project)
-      const scanned = await store(client, control), existing = scanned.rows.get(file(project.workspaceId))
+      const scanned = await store(client, control, { workspaceId: project.workspaceId, root: project.project,
+          assertRegistered: parent(project).current }), existing = scanned.rows.get(file(project.workspaceId))
       if (existing === undefined) unknown()
       const value = existing.value
       const actual = await validateParent(client, value, control)
@@ -466,7 +469,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
         assertRegistered()
         const root = await input.project(client, workspace, control)
         const preexistingParent = await client.lstat(root, '.pe/skills', control)
-        const scanned = await store(client, control, preexistingParent === undefined, { workspace, root, assertRegistered })
+        const scanned = await store(client, control, { workspaceId: workspace.id, root, assertRegistered }, preexistingParent === undefined)
         const existing = scanned.rows.get(file(workspace.id))
         if (existing !== undefined) {
           if (!sameRoot(existing.value.project, root)) denied('FS_STALE_VERSION')

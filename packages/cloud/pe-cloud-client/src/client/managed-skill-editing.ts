@@ -11,7 +11,7 @@ export type ManagedSkillBundle = { readonly kind: 'files'; readonly selection: S
 export interface ManagedSkillLimits extends SkillSelectionLimits { readonly maxArchiveBytes: number }
 /** Confirmed metadata and catalog application remain distinct from an uncertain write. */
 export type ManagedSkillOutcome = { readonly kind: 'persisted'; readonly applied: boolean; readonly item: SkillCard | null }
-  | { readonly kind: 'conflict' | 'unknown' }
+  | { readonly kind: 'conflict' | 'unknown' | 'unavailable' }
 /** Native detail projection; file paths are relative display data, never private source paths. */
 export interface ManagedSkillDetail {
   readonly item: SkillCard
@@ -43,6 +43,7 @@ export interface ManagedSkillEditing {
   readonly downloadStarted: boolean
   readonly refresh: (signal: AbortSignal) => Promise<void>
   readonly open: (id: string | undefined, signal: AbortSignal) => Promise<void>
+  readonly installZip: (file: File, signal: AbortSignal) => Promise<ManagedSkillOutcome>
   readonly choose: (bundle: ManagedSkillBundle) => void
   readonly editMarkdown: (markdown: string) => void
   readonly publish: (signal: AbortSignal) => Promise<ManagedSkillOutcome>
@@ -185,11 +186,24 @@ export function attachManagedSkillEditing(store: SnapshotStore<SkillManagementVi
     prepared = undefined
     update({ phase: 'idle', selection: undefined, detail: undefined })
   }
+  const installZip = async (file: File, observer: AbortSignal): Promise<ManagedSkillOutcome> => {
+    try {
+      await open(undefined, observer)
+      const value = current()
+      if (value.limits === undefined || !value.canPublish || !/\.zip$/i.test(file.name)
+        || file.size === 0 || file.size > value.limits.maxArchiveBytes) {
+        close()
+        return { kind: 'unavailable' }
+      }
+      choose(Object.freeze({ kind: 'zip', file }))
+    } catch { return { kind: 'unavailable' } }
+    return submit(false, observer)
+  }
   const observed = store.getSnapshot().managed
   const previous = observed?.scope === input.scope ? observed : undefined
   const managed: ManagedSkillEditing = Object.freeze({ scope: input.scope, editNumber: 0, canPublish: false, canInstall: undefined, phase: 'idle', selection: undefined, detail: undefined,
     limits: undefined, draft: previous?.draft, outcome: previous?.outcome, needsRefresh: false, downloadStarted: false,
-    refresh, open, choose, editMarkdown, publish: (observer: AbortSignal) => submit(false, observer),
+    refresh, open, installZip, choose, editMarkdown, publish: (observer: AbortSignal) => submit(false, observer),
     uninstall: (observer: AbortSignal) => submit(true, observer), download, close })
   const sample = store.getSnapshot().sample
   store.set(Object.freeze({ phase: 'unread', items: Object.freeze([]), managed,

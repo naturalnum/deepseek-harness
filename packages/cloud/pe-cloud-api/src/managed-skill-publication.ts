@@ -497,8 +497,9 @@ export class AccountManagedSkills implements SkillProvider {
     if (error instanceof FilesFailure) return { persisted: false, error: new CloudApiError(error.code === 'cloud/capacity'
       ? 'cloud/capacity' : 'cloud/account-unavailable', 'The files operation was refused before native work started.') }
     if (error instanceof FdMutationFailure && error.outcome === 'not-published') return { persisted: false,
-      error: new CloudApiError(error.code === 'FS_STALE_VERSION' ? 'cloud/config-conflict' : 'cloud/account-unavailable',
-        'The skill directory was not published; refresh before editing.') }
+      error: new CloudApiError(error.code === 'FS_STALE_VERSION' ? 'cloud/config-conflict'
+        : error.code === 'FS_TOO_LARGE' ? 'cloud/capacity' : 'cloud/account-unavailable',
+      'The skill directory was not published; refresh before editing.') }
     if (error instanceof CloudApiError) return { persisted: false, error }
     if (!committing) throw new SkillPreparationFailure()
     throw new ConfigSaveOutcomeUnknown()
