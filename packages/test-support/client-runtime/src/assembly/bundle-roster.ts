@@ -64,7 +64,7 @@ export function bundleRoster(
     if (disabledContext !== undefined
       && disabled.some(value => isJsExpr(value) && Boolean(evaluate(disabledContext, value.__jsExpr)))) continue
     seen.add(name)
-    const manifestPath = locateManifest(anchors, name)
+    const manifestPath = locateManifest(anchors, name, bundles)
     if (manifestPath === undefined) {
       throw new Error(`client-test-runtime: cannot resolve plugin package ${name} from ${bundles.join(', ')}`)
     }
@@ -130,12 +130,17 @@ function readManifest(path: string): PackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
 }
 
-/** Resolve package manifests to real paths so linked bundles use their own dependency directories. */
-function locateManifest(anchors: readonly string[], name: string): string | undefined {
-  const paths = anchors.map(anchor => createRequire(anchor).resolve.paths(name) ?? [])
-  for (let depth = 0; depth < Math.max(...paths.map(search => search.length)); depth++) {
-    for (const search of paths) {
-      const directory = search[depth]
+/** Resolve linked bundles and their dependencies in anchor and search-depth order. */
+function locateManifest(anchors: readonly string[], name: string, bundleNames: readonly string[] = []): string | undefined {
+  const searches = anchors.map((anchor, index) => ({
+    anchor,
+    bundleName: bundleNames[index],
+    paths: createRequire(anchor).resolve.paths(name) ?? [],
+  }))
+  for (let depth = 0; depth < Math.max(...searches.map(search => search.paths.length)); depth++) {
+    for (const search of searches) {
+      if (depth === 0 && search.bundleName === name) return search.anchor
+      const directory = search.paths[depth]
       if (directory === undefined) continue
       const candidate = join(directory, name, 'package.json')
       if (existsSync(candidate)) return realpathSync(candidate)
