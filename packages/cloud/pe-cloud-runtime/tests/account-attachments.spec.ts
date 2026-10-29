@@ -8,6 +8,8 @@ import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deep
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import FileUploads from '@deepseek-ai/dsh-client-file-upload'
+import { FileUploadIntakeUnconfirmedError, FileUploadTooLargeError } from '@deepseek-ai/dsh-client-file-upload'
+import { handleFileUploadHttp } from '@deepseek-ai/dsh-client-file-upload/src/http-route.ts'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { createUserMessage, LlmAdapter, markAgentLoopRequest, type GenerateOptions,
   type StreamChunk, type UserMessage } from '@deepseek-ai/dsh-llm'
@@ -133,7 +135,48 @@ it('persists exactly the configured upload limit and rejects one extra byte as n
   expect(exact.bytes).toBe(maximum)
   expect(read).toBe(maximum)
   await expect(f.feature.storeFileStream(agent, { name: 'too-large.bin', data: input(true) }, save))
-    .rejects.toMatchObject({ code: 'FS_TOO_LARGE', outcome: 'not-published' })
+    .rejects.toBeInstanceOf(FileUploadTooLargeError)
+})
+
+it('preserves only a confirmed size rejection as a typed HTTP error', async () => {
+  const f = await fixture({ maxFileBytes: 4, maxUploadChunkBytes: 4 }, true)
+  const agent = await f.create('upload-http-limit')
+  Object.defineProperty(f.uploads, 'storeFileStream', { value: (owner: Agent, input: Parameters<AccountAttachments['storeFileStream']>[1]) =>
+    f.feature.storeFileStream(owner, input, f.store.saveFileStream.bind(f.store)) })
+  const body = new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(Uint8Array.of(1, 2, 3, 4)); controller.enqueue(Uint8Array.of(5)); controller.close()
+  } })
+  const request = new Request(`http://fixture/upload?sessionId=${agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const response = await handleFileUploadHttp(f.uploads, request)
+  expect(await response.json()).toEqual({ ok: false, error: {
+    code: 'session/attachment-invalid', message: 'File exceeds the upload size limit.',
+    details: { reason: 'FILE_UPLOAD_TOO_LARGE' },
+  } })
+  const small = new Request(`http://fixture/upload?sessionId=${agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: Uint8Array.of(1, 2, 3, 4),
+  })
+  expect(await (await handleFileUploadHttp(f.uploads, small)).json()).toMatchObject({ ok: true })
+})
+
+it('does not call an oversized individual chunk a confirmed whole-file limit error', async () => {
+  const f = await fixture({ maxFileBytes: 16, maxUploadChunkBytes: 4 }, true)
+  const agent = await f.create('upload-chunk-limit')
+  await expect(f.feature.storeFileStream(agent, { data: (async function* () { yield Uint8Array.of(1, 2, 3, 4, 5) })() },
+    f.store.saveFileStream.bind(f.store))).rejects.toMatchObject({ code: 'FS_TOO_LARGE', outcome: 'not-published' })
+})
+
+it('does not report size-limit success if cleanup is unconfirmed', async () => {
+  const f = await fixture({ maxFileBytes: 4, maxUploadChunkBytes: 4 }, true)
+  const agent = await f.create('upload-cleanup-unknown')
+  let count = 0
+  const data: AsyncIterable<Uint8Array> = { [Symbol.asyncIterator]() { return {
+    async next() { return { done: false as const, value: ++count === 1 ? Uint8Array.of(1, 2, 3, 4) : Uint8Array.of(5) } },
+    async return() { throw new Error('fixture cleanup failed') },
+  } } }
+  await expect(f.feature.storeFileStream(agent, { data }, f.store.saveFileStream.bind(f.store)))
+    .rejects.toBeInstanceOf(FileUploadIntakeUnconfirmedError)
 })
 
 it('collects native cold history and actual claimed input inside the lazy builder before next, then releases after marked dispatch', async () => {

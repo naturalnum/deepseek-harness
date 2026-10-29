@@ -379,7 +379,9 @@ export class ConversationController extends Service implements IConversation {
           if (!(attachment.id in draft)) return
           draft[attachment.id] = result.ok
             ? { status: 'ready', receiptId: result.value.receiptId, file: result.value.file }
-            : { status: 'error', message: result.error.message }
+            : { status: 'error', message: result.error.message,
+              ...(result.error.code === 'session/attachment-invalid'
+                && result.error.details.reason === 'FILE_UPLOAD_TOO_LARGE' ? { reason: 'too-large' as const } : {}) }
         })
       } catch (error) {
         if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return

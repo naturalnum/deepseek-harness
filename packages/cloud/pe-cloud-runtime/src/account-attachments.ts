@@ -3,7 +3,7 @@ import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
 import { AttachmentCleanupError } from '@deepseek-ai/dsh-attachment-local'
-import { FileUploads, FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
+import { FileUploads, FileUploadIntakeUnconfirmedError, FileUploadTooLargeError } from '@deepseek-ai/dsh-client-file-upload'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import { isAgentLoopRequest, type RequestMessage } from '@deepseek-ai/dsh-llm'
 import { CloudAccountFiles, FdMutationFailure, type StageFileResult } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -198,6 +198,7 @@ export class AccountAttachments {
     save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>): Promise<FileAttachmentRef> {
     const workspace = this.current(agent)
     const check = (): void => { if (this.current(agent) !== workspace) denied() }
+    let sizeLimitFailure: FdMutationFailure | undefined
     try {
       const held = await this.files().runAttachmentIntake(this.limits.intakeReservationBytes, check, async (control) => {
         const signal = AbortSignal.any(input.signal === undefined
@@ -224,9 +225,12 @@ export class AccountAttachments {
               if (part.done === true) return
               const bytes = part.value
               if (!(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)
-                || bytes.byteLength > limits.maxUploadChunkBytes || bytes.buffer.byteLength > limits.maxUploadChunkBytes
-                || total + bytes.byteLength > limits.maxFileBytes) {
+                || bytes.byteLength > limits.maxUploadChunkBytes || bytes.buffer.byteLength > limits.maxUploadChunkBytes) {
                 inputFailure = new FdMutationFailure('not-published', 'FS_TOO_LARGE')
+                throw inputFailure
+              }
+              if (total + bytes.byteLength > limits.maxFileBytes) {
+                sizeLimitFailure = inputFailure = new FdMutationFailure('not-published', 'FS_TOO_LARGE')
                 throw inputFailure
               }
               total += bytes.byteLength
@@ -249,6 +253,9 @@ export class AccountAttachments {
       }, input.signal)
       try { check(); return held.value } finally { held.release() }
     } catch (error) {
+      // Only the exact confirmed byte-limit failure is safe to classify. Cleanup
+      // failures and all other upload errors retain their existing disposition.
+      if (sizeLimitFailure !== undefined && error === sizeLimitFailure) throw new FileUploadTooLargeError()
       if (error instanceof FdMutationFailure && error.outcome === 'not-published') throw error
       throw new FileUploadIntakeUnconfirmedError()
     }

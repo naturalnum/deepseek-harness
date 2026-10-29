@@ -27,6 +27,17 @@ export class FileUploadIntakeUnconfirmedError extends Error {
   }
 }
 
+/** Upload rejected at a confirmed file-size boundary before any receipt was published. */
+export class FileUploadTooLargeError extends Error {
+  readonly code = 'FS_TOO_LARGE'
+  readonly outcome = 'not-published'
+
+  constructor() {
+    super('File exceeds the upload size limit.')
+    this.name = 'FileUploadTooLargeError'
+  }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host storage and staged-receipt service for browser file uploads. */
@@ -263,6 +274,10 @@ export class FileUploads extends TypertRemoteService {
     } catch (error) {
       if (error instanceof FileUploadIntakeUnconfirmedError) throw error
       if (error instanceof Error && error.cause instanceof FileUploadIntakeUnconfirmedError) throw error.cause
+      if (error instanceof FileUploadTooLargeError) {
+        throw new RemoteError('session/attachment-invalid' as never,
+          'File exceeds the upload size limit.', { reason: 'FILE_UPLOAD_TOO_LARGE' } as never)
+      }
       if (attachments.isAttachmentError(error)) {
         throw new RemoteError('session/attachment-invalid' as never, error.message, { reason: error.code } as never)
       }

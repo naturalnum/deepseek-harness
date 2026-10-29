@@ -65,7 +65,9 @@ export function ComposerAttachments({
                     {...upload?.status === 'uploading' && upload.total !== undefined && upload.total > 0
                       ? { progress: upload.loaded / upload.total }
                       : {}}
-                    labels={fileCardLabels(t, attachment.file.name)}
+                    labels={{ ...fileCardLabels(t, attachment.file.name),
+                      ...upload?.status === 'error' && upload.reason === 'too-large'
+                        ? { failed: t('file.uploadTooLarge') } : {} }}
                     onRemove={() => { onRemoveAttachment(attachment.id) }}
                     onRetry={() => { onRetryFile(attachment.id) }}
                   />

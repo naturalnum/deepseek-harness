@@ -28,6 +28,7 @@ const t = ((key: string, params?: Readonly<Record<string, unknown>>): string => 
     'file.pending': '待发送文件',
     'file.uploading': '上传中…',
     'file.uploadFailed': '上传失败，点击重试',
+    'file.uploadTooLarge': '文件超过上传大小限制，请选择较小的文件',
     'file.label': '文件',
     'image.pending': '待发送图片',
     'image.original': '原图',
@@ -230,6 +231,20 @@ describe('ComposerAttachments', () => {
 })
 
 describe('ComposerAttachments file drafts', () => {
+  it('shows the fixed size-limit message only for a confirmed size error', () => {
+    const view = render(<ComposerAttachments {...props({
+      attachments: [fileDraft('large'), fileDraft('network')],
+      uploads: {
+        large: { status: 'error', message: 'private server detail', reason: 'too-large' },
+        network: { status: 'error', message: 'network unavailable' },
+      },
+    })} />)
+    const content = view.getByRole('group', { name: '待发送附件' }).textContent
+    expect(content).toContain('文件超过上传大小限制，请选择较小的文件')
+    expect(content).toContain('上传失败，点击重试')
+    expect(content).not.toContain('private server detail')
+    expect(content).not.toContain('network unavailable')
+  })
   it('renders uploading, ready, and failed cards with remove and retry affordances', () => {
     const onRemoveAttachment = vi.fn()
     const onRetryFile = vi.fn()

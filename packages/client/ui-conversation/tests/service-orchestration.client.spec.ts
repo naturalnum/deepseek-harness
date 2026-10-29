@@ -54,6 +54,23 @@ async function bench(maxConcurrentFileUploads = 2) {
 }
 
 describe('ConversationController', () => {
+  it('classifies only the structured confirmed size error, not network or generic failures', async () => {
+    const b = await bench()
+    const session = b.runtime.sessions.binding('s1')!.session
+    const uploadFile = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('session/attachment-invalid', 'private detail', { reason: 'FILE_UPLOAD_TOO_LARGE' }) })
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'network', {}) })
+      .mockRejectedValueOnce(new Error('connection lost'))
+    ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
+    const drafts = b.root.createDrafts(session.sessionId, [
+      new File([Uint8Array.of(1)], 'large'), new File([Uint8Array.of(1)], 'network'), new File([Uint8Array.of(1)], 'lost'),
+    ])
+    await vi.waitFor(() => { expect(drafts.every(d => b.root.fileUploads.getSnapshot()[d.id]?.status === 'error')).toBe(true) })
+    expect(b.root.fileUploads.getSnapshot()[drafts[0]!.id]).toMatchObject({ status: 'error', reason: 'too-large' })
+    expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).not.toHaveProperty('reason')
+    expect(b.root.fileUploads.getSnapshot()[drafts[2]!.id]).not.toHaveProperty('reason')
+    await b.runtime.dispose()
+  })
   it('does not revive a withdrawn generation when an old input submits before scoped cleanup', async () => {
     const b = await bench()
     try {
