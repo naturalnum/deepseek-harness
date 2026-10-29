@@ -3215,6 +3215,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'False unless the concrete provider can observe all pending native work.',
       },
       {
+        signature: 'readonly statSettlesOnAbort: boolean = false',
+        description: 'Whether a settled `stat` owns no unfinished work from that call, including after cancellation, and reports every cleanup failure instead of abort. Providers must opt in only when both guarantees hold. Other operations and work started by other calls are outside this contract.',
+        parameters: [],
+      },
+      {
         signature: 'abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined>',
         description: 'Observe one stored session without reading its event log or taking ownership.\n\nThe snapshot\'s `revision` is an opaque change token comparable only against revisions from the same service instance and session id: equal revisions may be treated as an unchanged log; unequal revisions promise nothing. Write-ownership churn does not change a revision. It exists for derived read-model caches keyed off `stat`/`list`; it plays no part in open, read, or resume.',
         parameters: [{ name: 'id', description: 'the stored session to observe.' }, { name: 'options', description: 'optional cancellation.' }],

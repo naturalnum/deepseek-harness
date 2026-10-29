@@ -49,7 +49,13 @@ export async function readColdSessionLog(
   return readColdSessionLogActual(persistence, sessionId, signal, false)
 }
 
-/** Read for an observation that must retain failed handle cleanup. */
+/**
+ * Read for an observation that must retain failed handle cleanup.
+ * @param persistence - the mounted persistence service.
+ * @param sessionId - the stored session to read.
+ * @param signal - optional cancellation for the open and read work.
+ * @returns the stored log with locally generated closers for interrupted turns.
+ */
 export async function readColdSessionLogForObservation(
   persistence: SessionPersistence,
   sessionId: SessionId,
