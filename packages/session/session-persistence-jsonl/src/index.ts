@@ -263,19 +263,20 @@ function settledStatValues<R>(outcomes: readonly PromiseSettledResult<R>[], stop
   return settledValues(outcomes)
 }
 
-/** Preserve failures from every started sibling before propagating cancellation. */
-function prioritizeCancelledFailures<R>(outcomes: readonly PromiseSettledResult<R>[], signal?: AbortSignal): void {
-  if (signal?.aborted !== true) return
+/** Preserve actual sibling failures on cancellation and every resource-close failure. */
+function prioritizeReadFailures<R>(outcomes: readonly PromiseSettledResult<R>[], signal?: AbortSignal): void {
   const failures: unknown[] = []
   for (const outcome of outcomes) {
     if (outcome.status !== 'rejected') continue
     const failure: unknown = outcome.reason
-    if (failure !== signal.reason) failures.push(failure)
+    if (failure === STAT_CANCELLED || signal?.aborted === true && failure === signal.reason) continue
+    failures.push(failure)
   }
+  const cleanup = failures.find(failure => failure instanceof JsonlReadCleanupError)
+  if (signal?.aborted !== true && !(cleanup instanceof JsonlReadCleanupError)) return
   if (failures.length === 0) return
   if (failures.length === 1) throw failures[0]
-  const combined = new AggregateError(failures, 'multiple JSONL operations failed during cancellation')
-  const cleanup = failures.find(failure => failure instanceof JsonlReadCleanupError)
+  const combined = new AggregateError(failures, 'multiple JSONL operations failed')
   if (cleanup instanceof JsonlReadCleanupError) throw new JsonlReadCleanupError(cleanup.cause, { error: combined })
   throw combined
 }
@@ -332,6 +333,7 @@ class JsonlSessionPersistence extends SessionPersistence {
 
   /** A completed stat joins its own I/O and reports cleanup errors before cancellation. */
   override readonly statSettlesOnAbort = true
+  override readonly readOperationsSettleOnAbort = true
 
   constructor(ctx: Context, public config: Config, private readonly tracker: JsonlBackendTracker) {
     super(ctx)
@@ -410,7 +412,9 @@ class JsonlSessionPersistence extends SessionPersistence {
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     return this.observeRequest(async () => {
       options?.signal?.throwIfAborted()
-      await this.ensureRootEncoding()
+      if (access === 'read' && options?.signal !== undefined) {
+        await this.ensureRootEncodingForStat(() => options.signal?.throwIfAborted(), options.signal)
+      } else await this.ensureRootEncoding()
       options?.signal?.throwIfAborted()
       const pending = this.tracker.pendingOf(id)
       if (access === 'read') {
@@ -421,7 +425,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         try {
           stored = await this.requireStoredLog(id, options?.signal)
         } catch (error: unknown) {
-          if (!(error instanceof JsonlGenerationSourceChangedError)) throw error
+          if (!(error instanceof JsonlGenerationSourceChangedError) || options?.signal?.aborted === true) throw error
           stored = await this.requireStoredLog(id, options?.signal)
         }
         let state: StorageHandleState
@@ -995,7 +999,8 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the current artifact path, or `undefined` while only a historical generation exists.
    */
   async resolveCurrentLog(id: SessionId, signal?: AbortSignal): Promise<string | undefined> {
-    await this.ensureRootEncoding()
+    if (signal === undefined) await this.ensureRootEncoding()
+    else await this.ensureRootEncodingForStat(() => { signal.throwIfAborted() }, signal)
     signal?.throwIfAborted()
     const selected = await this.findLog(id, signal)
     if (selected === undefined) return undefined
@@ -1113,11 +1118,21 @@ class JsonlSessionPersistence extends SessionPersistence {
     signal?.throwIfAborted()
     if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
 
-    const decoder = createZstdFrameDecoder()
+    let decoder: ReturnType<typeof createZstdFrameDecoder>
+    try { decoder = createZstdFrameDecoder() } catch (error: unknown) {
+      if (signal?.aborted === true && error === signal.reason) {
+        throw new AggregateError([error], 'JSONL decoder creation failed during cancellation', { cause: error })
+      }
+      throw error
+    }
     let readFailure: { readonly error: unknown } | undefined
+    let decoderFailure: { readonly error: unknown } | undefined
     let closeFailure: { readonly error: unknown } | undefined
     let closeException: JsonlReadCleanupError | undefined
     const closeState = { attempted: false }
+    const runDecoder = <T>(operation: () => T): T => {
+      try { return operation() } catch (error: unknown) { decoderFailure = { error }; throw error }
+    }
     const close = decoder.close.bind(decoder)
     decoder.close = () => {
       if (closeState.attempted) return
@@ -1130,9 +1145,9 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     let yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
     try {
-      const decodedFrames = decoder.decode(buffer, frames)
+      const decodedFrames = runDecoder(() => decoder.decode(buffer, frames))
       signal?.throwIfAborted()
-      const headerFrame = decodedFrames.next()
+      const headerFrame = runDecoder(() => decodedFrames.next())
       signal?.throwIfAborted()
       /* v8 ignore next -- a non-empty structural frame list makes the decoder yield its first frame or throw. */
       if (headerFrame.done) throw new Error('empty or header-less Zstandard session log')
@@ -1140,9 +1155,12 @@ class JsonlSessionPersistence extends SessionPersistence {
       const scanner = new SessionLogScanner(headerFrame.value)
 
       let remainingFrames = frames.length - 1
-      for (const plaintext of decodedFrames) {
+      for (;;) {
         signal?.throwIfAborted()
-        scanner.write(plaintext)
+        const next = runDecoder(() => decodedFrames.next())
+        if (next.done) break
+        signal?.throwIfAborted()
+        scanner.write(next.value)
         remainingFrames -= 1
         if (remainingFrames > 0 && performance.now() >= yieldDeadline) {
           await scheduler.yield()
@@ -1169,9 +1187,9 @@ class JsonlSessionPersistence extends SessionPersistence {
       // already flushed into it are real emitted events: recover them, and let
       // the write path truncate the torn bytes and rewrite them durably.
       let recoveredPlaintext: Buffer = Buffer.alloc(0)
+      signal?.throwIfAborted()
       try {
-        signal?.throwIfAborted()
-        recoveredPlaintext = await decompressZstdPrefix(buffer.subarray(tornStart))
+        recoveredPlaintext = await readJsonlIo(signal, () => decompressZstdPrefix(buffer.subarray(tornStart)))
       } catch (error: unknown) {
         if (signal?.aborted === true) {
           if (error === signal.reason) throw error
@@ -1198,12 +1216,18 @@ class JsonlSessionPersistence extends SessionPersistence {
         try { decoder.close() } catch (error: unknown) { closeFailure ??= { error } }
       }
       if (closeFailure !== undefined) {
-        let previous = readFailure?.error === closeException ? undefined : readFailure
+        const interrupted = signal?.aborted === true && readFailure?.error === signal.reason
+          && decoderFailure?.error !== readFailure.error
+        let previous = readFailure?.error === closeException || interrupted ? undefined : readFailure
         if (previous?.error instanceof AggregateError && previous.error.cause === closeException
           && previous.error.errors.length === 2 && previous.error.errors[1] === closeException) {
           previous = { error: previous.error.errors[0] }
         }
         throw new JsonlReadCleanupError(closeFailure.error, previous)
+      }
+      if (signal?.aborted === true && readFailure !== undefined && decoderFailure !== undefined
+        && readFailure.error === signal.reason && decoderFailure.error === readFailure.error) {
+        throw new AggregateError([readFailure.error], 'JSONL decoder failed during cancellation', { cause: readFailure.error })
       }
     }
   }
@@ -1248,7 +1272,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     if (stop !== undefined && projects.some(outcome => outcome.status === 'rejected' && outcome.reason === STAT_CANCELLED)) {
       settledStatValues(projects, stop)
     }
-    prioritizeCancelledFailures(projects, signal)
+    prioritizeReadFailures(projects, signal)
     signal?.throwIfAborted()
     const dirs: string[] = []
     let projectFailure: PromiseRejectedResult | undefined
@@ -1271,7 +1295,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       && !outcomes.some(outcome => outcome.status === 'rejected' && outcome.reason !== STAT_CANCELLED)) {
       throw projectFailure.reason
     }
-    prioritizeCancelledFailures([...outcomes, ...projects], signal)
+    prioritizeReadFailures([...outcomes, ...projects], signal)
     const results = settledStatValues(outcomes, stop)
     if (projectFailure !== undefined) throw projectFailure.reason
     return results
@@ -1293,7 +1317,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         return { path, revision: 'missing' }
       }
     })
-    prioritizeCancelledFailures(outcomes, signal)
+    prioritizeReadFailures(outcomes, signal)
     const entries = settledStatValues(outcomes, stop)
     const hash = createHash('sha256')
     for (const { path, revision } of entries) hash.update(JSON.stringify([path, revision]))
@@ -1320,7 +1344,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         throw error
       }
     })
-    prioritizeCancelledFailures(headers, signal)
+    prioritizeReadFailures(headers, signal)
     const artifacts: Array<GenerationHeader & { path: string; sourceVersion: number }> = []
     const ids = new Set<SessionId>()
     for (const outcome of headers) {
@@ -1664,7 +1688,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         chunks.push(Buffer.from(slice))
       }
     } catch (error: unknown) {
-      readFailure = error === STAT_CANCELLED ? undefined : { error }
+      readFailure = error === STAT_CANCELLED || signal?.aborted === true && error === signal.reason ? undefined : { error }
       throw error
     } finally {
       try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
@@ -1720,7 +1744,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         }
       }
     } catch (error: unknown) {
-      readFailure = error === STAT_CANCELLED ? undefined : { error }
+      readFailure = error === STAT_CANCELLED || signal?.aborted === true && error === signal.reason ? undefined : { error }
       throw error
     } finally {
       try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
@@ -1904,17 +1928,24 @@ class JsonlSessionPersistence extends SessionPersistence {
   /** Join one actual root check; abandoned callers still await its settlement. */
   private async ensureRootEncodingForStat(stop: () => void, signal?: AbortSignal): Promise<void> {
     for (;;) {
-      if (this.rootEncodingCheck !== undefined) { await this.rootEncodingCheck; stop(); return }
+      if (this.rootEncodingCheck !== undefined) {
+        const check = this.rootEncodingCheck
+        await readJsonlIo(signal, () => check)
+        stop()
+        return
+      }
       const run = this.rootEncodingRun ?? this.startRootEncodingCheck()
       const waiter = { signal }
       run.waiters.add(waiter)
       try {
-        await run.promise
+        try { await readJsonlIo(signal, () => run.promise) }
+        catch (error: unknown) {
+          if (error !== STAT_CANCELLED) throw error
+          stop()
+          continue
+        }
         stop()
         return
-      } catch (error: unknown) {
-        if (error !== STAT_CANCELLED) throw error
-        stop()
       } finally {
         run.waiters.delete(waiter)
       }
@@ -2020,7 +2051,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         // directory a storage fault. POSIX open already reported ENOTDIR before
         // this point, where the extra stat would only cost a syscall per probe.
         /* v8 ignore next -- native Windows coverage exercises this platform dispatch; POSIX reports ENOTDIR from open */
-        if (process.platform === 'win32') await this.assertLogParentAllowsAbsence(path)
+        if (process.platform === 'win32') await this.assertLogParentAllowsAbsence(path, signal)
         return false
       }
       /* v8 ignore next -- Windows repairs ENOTDIR from ENOENT above; POSIX covers direct ENOTDIR. */
@@ -2031,10 +2062,10 @@ class JsonlSessionPersistence extends SessionPersistence {
   }
 
   /* v8 ignore start -- native Windows coverage exercises this repair; POSIX open reports ENOTDIR before this point. */
-  private async assertLogParentAllowsAbsence(path: string): Promise<void> {
+  private async assertLogParentAllowsAbsence(path: string, signal?: AbortSignal): Promise<void> {
     try {
       const parent = dirname(path)
-      const info = await stat(parent)
+      const info = await readJsonlIo(signal, () => stat(parent))
       if (info.isDirectory()) return
       const error = new Error(`ENOTDIR: parent path exists but is not a directory: ${parent}`) as NodeJS.ErrnoException
       error.code = 'ENOTDIR'

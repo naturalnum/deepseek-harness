@@ -111,7 +111,7 @@ seam 的共享辅助函数校验由 `SESSION_FORMAT_VERSION` 标识的当前逻�
 
 `statSettlesOnAbort` 默认为 false。只有当每次已结算的 `stat`（包括被取消的调用）均已完成自身工作，并且清理失败不会被取消覆盖时，provider 才能启用它。这个逐次保证不覆盖 `open`、`read`、其他调用或 provider 整体空闲状态。
 
-已声明的 stat 保证即使后来被撤回，也必须继续覆盖已开始的调用。provider identity 在实例生命周期内保持稳定。
+`readOperationsSettleOnAbort` 同样默认为 false。只有只读 `open`、所得句柄的 `read` 和 `close` 各自完成自身工作并保留独立失败（包括与 signal 原因相同的错误）时，provider 才能启用它。该保证不代表 provider 整体空闲。已声明的保证即使后来被撤回，也必须继续覆盖已开始的调用；provider identity 在实例生命周期内保持稳定。
 
 </details>
 -----

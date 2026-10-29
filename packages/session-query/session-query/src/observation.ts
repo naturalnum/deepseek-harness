@@ -10,8 +10,8 @@ import type {
 } from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
-import { SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, SessionQueryError, SessionQuerySettledStatAbortError } from './config.ts'
-import { readColdSessionLogForObservation, type ColdSessionLog } from './cold-read.ts'
+import { SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, SessionQueryError, SessionQuerySettledStatAbortError, SessionQuerySettledReadAbortError } from './config.ts'
+import { readColdSessionLogForObservation, readColdSessionLogForSettledObservation, type ColdSessionLog } from './cold-read.ts'
 
 /** One exact immutable Session cut retained for the caller's read lifetime. */
 export interface SessionObservation extends Disposable {
@@ -46,6 +46,8 @@ export interface SessionObservationOptions {
   readonly signal?: AbortSignal
   /** Whether to compute every projection or leave projection state untouched. */
   readonly projectionMode?: 'all' | 'none'
+  /** Join provider-certified read work before reporting cancellation. */
+  readonly settleCancellation?: boolean
 }
 
 /**
@@ -100,7 +102,7 @@ export class SessionObservationReader {
     sessionId: SessionId,
     options: SessionObservationOptions = {},
   ): Promise<SessionObservation> {
-    const { signal, projectionMode = 'all' } = options
+    const { signal, projectionMode = 'all', settleCancellation = false } = options
     for (;;) {
       throwIfObservationAborted(signal)
       const live = this.ctx.sessions.get(sessionId)
@@ -111,12 +113,23 @@ export class SessionObservationReader {
       const providerIdentity = persistence.identity
       const identity = typeof providerIdentity === 'symbol' ? providerIdentity : undefined
       const statSettlesOnAbort = Object.is(persistence.statSettlesOnAbort, true)
+      const readSettlesOnAbort = settleCancellation && Object.is(persistence.readOperationsSettleOnAbort, true)
       const snapshot = await this.statSource(persistence, sessionId, signal, identity, statSettlesOnAbort)
       const attachedDuringStat = this.ctx.sessions.get(sessionId)
       if (attachedDuringStat !== undefined) return this.live(attachedDuringStat, projectionMode)
       let entry = this.cachedEntry(persistence.identity, sessionId, snapshot.revision)
       if (entry === undefined) {
-        const loaded = await this.loadSource(persistence, sessionId, signal)
+        const isCertified = (): boolean => {
+          const current = this.ctx.get('sessionPersistence')
+          return identity !== undefined && statSettlesOnAbort && readSettlesOnAbort && current !== undefined
+            && current.identity === identity && Object.is(current.statSettlesOnAbort, true)
+            && Object.is(current.readOperationsSettleOnAbort, true)
+        }
+        const certified = signal !== undefined && isCertified()
+        const loaded = await this.loadSource(persistence, sessionId, signal, certified, isCertified)
+        if (signal?.aborted === true && certified && isCertified() && !(signal.reason instanceof AggregateError)) {
+          throw new SessionQuerySettledReadAbortError(signal.reason)
+        }
         throwIfObservationAborted(signal)
         const attached = this.ctx.sessions.get(sessionId)
         if (attached !== undefined) return this.live(attached, projectionMode)
@@ -203,7 +216,20 @@ export class SessionObservationReader {
     persistence: SessionPersistence,
     sessionId: SessionId,
     signal: AbortSignal | undefined,
+    certified: boolean,
+    isCertified: () => boolean,
   ): Promise<ColdSessionLog> {
+    if (certified && signal !== undefined) {
+      let result: ColdSessionLog | undefined
+      try { result = await readColdSessionLogForSettledObservation(persistence, sessionId, signal) }
+      catch (error: unknown) { throw mapPersistenceFailure(sessionId, error) }
+      if (signal.aborted && isCertified() && !(signal.reason instanceof AggregateError)) {
+        throw new SessionQuerySettledReadAbortError(signal.reason)
+      }
+      throwIfObservationAborted(signal)
+      if (result === undefined) throw new Error('certified read stopped without cancellation')
+      return result
+    }
     try {
       return await readColdSessionLogForObservation(persistence, sessionId, signal)
     } catch (error: unknown) {

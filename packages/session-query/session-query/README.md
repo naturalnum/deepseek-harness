@@ -68,9 +68,9 @@ For a cold `observeSession` read, a handle close failure is retained as a persis
 
 Cancellation recognizes the original signal reason and Node's `AbortError` with `ABORT_ERR` whose cause is that exact reason. Aggregate cleanup errors are preserved even if they carry those fields. Backend persistence and corruption failures mapped during observation use fixed messages and retain backend diagnostics in their causes.
 
-When cancellation occurs during a provider-certified settled `stat`, `SessionQuerySettledStatAbortError` identifies that narrow case while retaining `SESSION_QUERY_ABORTED`. Other cancellation paths do not establish settlement.
+When cancellation occurs during a provider-certified settled `stat`, `SessionQuerySettledStatAbortError` identifies that narrow case while retaining `SESSION_QUERY_ABORTED`. With `settleCancellation`, a provider that also certifies read operations joins the open, read and handle close, stops before later stages, and reports successful cancellation as `SessionQuerySettledReadAbortError`. Real failures remain failures.
 
-Observation snapshots provider identity and the advertised stat guarantee before the call. A missing or changed identity, a replacement provider, a withdrawn guarantee, or a guarantee appearing later leaves cancellation unconfirmed.
+Observation snapshots provider identity and the advertised guarantees before the call. A missing or changed identity, a replacement provider, a withdrawn guarantee, or a guarantee appearing later leaves cancellation unconfirmed. These per-call results do not establish provider-wide quiescence.
 
 -----
 

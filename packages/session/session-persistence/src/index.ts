@@ -195,6 +195,15 @@ export abstract class SessionPersistence extends Service {
   readonly statSettlesOnAbort: boolean = false
 
   /**
+   * Whether a read `open`, its handle's `read`, and its `close` settle all work
+   * they start and retain actual failures when cancellation races them. A real
+   * failure must remain distinguishable even if it equals the signal reason.
+   * An advertised guarantee covers calls already started even if revoked;
+   * unrelated calls and provider-wide quiescence are not covered.
+   */
+  readonly readOperationsSettleOnAbort: boolean = false
+
+  /**
    * Observe one stored session without reading its event log or taking
    * ownership.
    *

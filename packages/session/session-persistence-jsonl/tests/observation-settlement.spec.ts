@@ -15,7 +15,8 @@ const faults = vi.hoisted(() => ({ headerPath: '', headerClose: undefined as Err
   bodyReadFileClose: undefined as Error | undefined, bodyReadFileInjected: false,
   headerRead: undefined as Error | undefined, abortOnClose: undefined as AbortController | undefined,
   openFailure: undefined as Error | undefined, decoderRead: undefined as Error | undefined,
-  abortOnDecoderClose: undefined as AbortController | undefined, decoderCloses: 0, privateDecoder: false, forcePublic: false,
+  abortOnDecoderClose: undefined as AbortController | undefined, abortReason: undefined as Error | undefined,
+  decoderCloses: 0, privateDecoder: false, forcePublic: false,
   decoderClose: undefined as Error | undefined }))
 
 vi.mock('node:fs/promises', async (load) => {
@@ -58,7 +59,7 @@ vi.mock('../src/zstd.ts', async (load) => {
     const injectCloseFailure = (): void => {
       const failure = faults.decoderClose
       faults.decoderClose = undefined
-      faults.abortOnDecoderClose?.abort()
+      faults.abortOnDecoderClose?.abort(faults.abortReason)
       if (failure !== undefined) throw failure
     }
     if (stream !== undefined) {
@@ -135,7 +136,8 @@ const contexts: Context[] = [], roots: string[] = []
 afterEach(async () => {
   faults.headerPath = ''; faults.headerClose = undefined; faults.headerRead = undefined; faults.skipCloses = 0; faults.fileCloses = 0
   faults.abortOnClose = undefined; faults.openFailure = undefined; faults.decoderRead = undefined; faults.decoderClose = undefined
-  faults.abortOnDecoderClose = undefined; faults.bodyReadFileClose = undefined; faults.bodyReadFileInjected = false
+  faults.abortOnDecoderClose = undefined; faults.abortReason = undefined
+  faults.bodyReadFileClose = undefined; faults.bodyReadFileInjected = false
   faults.decoderCloses = 0; faults.privateDecoder = false; faults.forcePublic = false
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -171,6 +173,26 @@ it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close 
       name: 'JsonlReadCleanupError', cause: failure, errors: [failure],
     } })
   expect(faults.fileCloses).toBe(1)
+})
+
+it.each(['private', 'public'] as const)('does not mask a %s open decoder failure equal to the cancellation reason', async (kind) => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-open-decoder-same-reason-')); roots.push(root)
+  const ctx = new Context(); contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
+  const id = SessionId(`open-decoder-${kind}`)
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'zstd')
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, await compressZstdFrame(JSON.stringify(toHeaderLine(header)) + '\n'))
+  const reason = new Error('independent decoder failed'), abort = new AbortController()
+  faults.forcePublic = kind === 'public'; faults.decoderRead = reason
+  faults.abortOnDecoderClose = abort; faults.abortReason = reason
+  await expect(new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none' }))
+    .rejects.toMatchObject({ code: 'SESSION_QUERY_CORRUPT_SESSION', cause: {
+      name: 'SessionPersistenceCorruptionError', cause: { name: 'AggregateError', errors: [reason] },
+    } })
+  expect(abort.signal.aborted).toBe(true)
 })
 
 it.each(['private', 'public'] as const)('retains current %s decoder and close errors during cancellation', async (kind) => {

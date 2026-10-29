@@ -62,3 +62,10 @@ export class SessionQuerySettledStatAbortError extends SessionQueryError {
     super('session observation was aborted', 'SESSION_QUERY_ABORTED', { cause: reason })
   }
 }
+
+/** Cancellation after provider-certified read work and handle cleanup actually settled. */
+export class SessionQuerySettledReadAbortError extends SessionQueryError {
+  constructor(reason: unknown) {
+    super('session observation was aborted', 'SESSION_QUERY_ABORTED', { cause: reason })
+  }
+}

@@ -216,7 +216,7 @@ export interface JsonlGenerationRuntime {
 
 const defaultFileSystem: GenerationFileSystem = {
   open: (path, flags, mode) => fsOpen(path, flags, mode),
-  readFile: path => fsReadFile(path),
+  readFile: (path, signal) => readJsonlIo(signal, () => fsReadFile(path)),
   readdir: path => fsReaddir(path),
   stat: path => fsStat(path, { bigint: true }),
   lstat: path => fsLstat(path),
@@ -443,8 +443,18 @@ async function decodeStreamingMigration(
 
   const { frames, tornStart } = scanZstdFrames(bytes)
   if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
-  const decoder = createZstdFrameDecoder()
+  let decoder: ReturnType<typeof createZstdFrameDecoder>
+  try { decoder = createZstdFrameDecoder() } catch (error: unknown) {
+    if (signal?.aborted === true && error === signal.reason) {
+      throw new AggregateError([error], 'historical decoder creation failed during cancellation', { cause: error })
+    }
+    throw error
+  }
   let readFailure: { readonly error: unknown } | undefined
+  let decoderFailure: { readonly error: unknown } | undefined
+  const runDecoder = <T>(operation: () => T): T => {
+    try { return operation() } catch (error: unknown) { decoderFailure = { error }; throw error }
+  }
   let closeFailure: { readonly error: unknown } | undefined
   let closeException: JsonlReadCleanupError | undefined
   const closeState = { attempted: false }
@@ -461,8 +471,8 @@ async function decodeStreamingMigration(
     }
   }
   try {
-    const decoded = decoder.decode(bytes, frames)
-    const first = decoded.next()
+    const decoded = runDecoder(() => decoder.decode(bytes, frames))
+    const first = runDecoder(() => decoded.next())
     /* v8 ignore next -- a non-empty structural frame list yields once or throws. */
     if (first.done) throw new Error('empty or header-less Zstandard session log')
     assertIndependentHeaderFrame(first.value)
@@ -473,12 +483,22 @@ async function decodeStreamingMigration(
       validateHistoricalHeader,
     )
     signal?.throwIfAborted()
-    await consumeMigrationBytes(stream.parser, decoded, signal)
+    function* remainingFrames(): Generator<Buffer, void, void> {
+      try {
+        for (;;) {
+          const next = runDecoder(() => decoded.next())
+          if (next.done) return
+          yield next.value
+        }
+      } finally { decoded.return(undefined) }
+    }
+    await consumeMigrationBytes(stream.parser, remainingFrames(), signal)
     stream.parser.assertCompleteFramesEndOnRecord()
     if (tornStart !== undefined) {
       let recovered: Buffer = Buffer.alloc(0)
+      signal?.throwIfAborted()
       try {
-        recovered = await decompressZstdPrefix(bytes.subarray(tornStart))
+        recovered = await readJsonlIo(signal, () => decompressZstdPrefix(bytes.subarray(tornStart)))
       } catch (error: unknown) {
         if (signal?.aborted === true) {
           if (error === signal.reason) throw error
@@ -507,12 +527,18 @@ async function decodeStreamingMigration(
       }
     }
     if (closeFailure !== undefined) {
-      let previous = readFailure?.error === closeException ? undefined : readFailure
+      const interrupted = signal?.aborted === true && readFailure?.error === signal.reason
+        && decoderFailure?.error !== readFailure.error
+      let previous = readFailure?.error === closeException || interrupted ? undefined : readFailure
       if (previous?.error instanceof AggregateError && previous.error.cause === closeException
         && previous.error.errors.length === 2 && previous.error.errors[1] === closeException) {
         previous = { error: previous.error.errors[0] }
       }
       throw new JsonlReadCleanupError(closeFailure.error, previous)
+    }
+    if (signal?.aborted === true && readFailure !== undefined && decoderFailure !== undefined
+      && readFailure.error === signal.reason && decoderFailure.error === readFailure.error) {
+      throw new AggregateError([readFailure.error], 'historical decoder failed during cancellation', { cause: readFailure.error })
     }
   }
 }
@@ -1078,7 +1104,10 @@ async function readOwnedJsonlFile(path: string, signal?: AbortSignal): Promise<B
     signal?.throwIfAborted()
     return await readJsonlIo(signal, () => handle.readFile())
   }
-  catch (error: unknown) { readFailure = { error }; throw error }
+  catch (error: unknown) {
+    readFailure = signal?.aborted === true && error === signal.reason ? undefined : { error }
+    throw error
+  }
   finally {
     try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
   }

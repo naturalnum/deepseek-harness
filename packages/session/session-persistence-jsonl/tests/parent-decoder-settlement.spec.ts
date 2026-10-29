@@ -17,7 +17,8 @@ import { generationLogPath } from '../src/format.ts'
 import { compressZstdFrame } from '../src/zstd.ts'
 
 const hooks = vi.hoisted(() => ({ started: false, forcePublic: false, privateDecoder: false, closes: 0,
-  closeFailure: undefined as Error | undefined }))
+  closeFailure: undefined as Error | undefined, beforeDecode: undefined as (() => void) | undefined,
+  decodeFailure: undefined as unknown }))
 
 vi.mock('../src/zstd.ts', async (load) => {
   const actual = await load<typeof import('../src/zstd.ts')>()
@@ -26,7 +27,11 @@ vi.mock('../src/zstd.ts', async (load) => {
     const decoder = hooks.forcePublic ? new PublicZstdFrameDecoder() : actual.createZstdFrameDecoder()
     hooks.privateDecoder = Reflect.get(decoder, 'stream') !== undefined
     const decode = decoder.decode.bind(decoder), close = decoder.close.bind(decoder)
-    decoder.decode = (...args: Parameters<typeof decoder.decode>) => { hooks.started = true; return decode(...args) }
+    decoder.decode = (...args: Parameters<typeof decoder.decode>) => {
+      hooks.started = true; hooks.beforeDecode?.()
+      if (hooks.decodeFailure !== undefined) throw hooks.decodeFailure
+      return decode(...args)
+    }
     decoder.close = () => { hooks.closes += 1; close(); if (hooks.closeFailure !== undefined) throw hooks.closeFailure }
     return decoder
   } }
@@ -102,6 +107,32 @@ it.each(['private', 'public'] as const)('does not treat an ordinary %s parent de
   expect(reported.mock.calls.length).toBe(0)
   expect(hooks.closes).toBe(1)
   hooks.started = false; hooks.forcePublic = false; hooks.closes = 0
+})
+
+it.each(['private', 'public'] as const)('preserves a %s parent decoder failure equal to the internal cancellation reason', async (kind) => {
+  const root = await mkdtemp(join(tmpdir(), 'jsonl-parent-internal-reason-')), ctx = new Context()
+  onTestFinished(async () => {
+    hooks.started = false; hooks.forcePublic = false; hooks.closes = 0; hooks.beforeDecode = undefined; hooks.decodeFailure = undefined
+    await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
+  })
+  const id = SessionId(`internal-${kind}`), abort = new AbortController(), reason = new Error('caller cancellation')
+  await parentFile(root, id)
+  await ctx.plugin(JsonlPersistence, { root, compression: 'zstd' })
+  const persistence = ctx.sessionPersistence
+  const internal = persistence as unknown as { migrationPreparations: Map<SessionId, { controller: AbortController }> }
+  let actualFailure: unknown
+  hooks.forcePublic = kind === 'public'
+  hooks.beforeDecode = () => {
+    const preparation = internal.migrationPreparations.get(id)
+    if (preparation === undefined) throw new Error('Missing preparation')
+    abort.abort(reason)
+    actualFailure = preparation.controller.signal.reason
+    hooks.decodeFailure = actualFailure
+  }
+  const failure: unknown = await persistence.open(id, 'read', { signal: abort.signal }).catch((error: unknown) => error)
+  expect(failure).toMatchObject({ name: 'SessionPersistenceCorruptionError', cause: {
+    name: 'AggregateError', cause: actualFailure, errors: [actualFailure],
+  } })
 })
 
 it.each(['private', 'public'] as const)('retains both a %s parent decode error and its internal close error', async (kind) => {

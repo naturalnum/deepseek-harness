@@ -64,6 +64,47 @@ export async function readColdSessionLogForObservation(
   return readColdSessionLogActual(persistence, sessionId, signal, true)
 }
 
+/** Join certified open and read work, stopping between stages and always closing the handle.
+ * @param persistence - the provider whose guarantees were captured by the caller.
+ * @param sessionId - the stored session to read.
+ * @param signal - cancellation forwarded to the provider through a private reason.
+ * @returns The balanced log, or undefined after successful cancellation and cleanup.
+ */
+export async function readColdSessionLogForSettledObservation(
+  persistence: SessionPersistence,
+  sessionId: SessionId,
+  signal: AbortSignal,
+): Promise<ColdSessionLog | undefined> {
+  const cancellation = new Error('certified observation cancelled')
+  const controller = new AbortController()
+  const stop = (): void => { controller.abort(cancellation) }
+  signal.addEventListener('abort', stop, { once: true })
+  if (signal.aborted) stop()
+  const stopped = (error: unknown): boolean => controller.signal.aborted && error === cancellation
+  try {
+    if (controller.signal.aborted) return undefined
+    let handle: Awaited<ReturnType<SessionPersistence['open']>>
+    try { handle = await persistence.open(sessionId, 'read', { signal: controller.signal }) }
+    catch (error: unknown) { if (stopped(error)) return undefined; throw error }
+    let read: SessionHandleReadResult | undefined
+    let readFailure: { readonly error: unknown } | undefined
+    if (!Object.is(controller.signal.aborted, true)) {
+      try { read = await handle.read(0, undefined, { signal: controller.signal }) }
+      catch (error: unknown) { readFailure = { error } }
+    }
+    try { await handle.close() } catch (error: unknown) {
+      throw new ColdSessionReadCleanupError(error, readFailure !== undefined && stopped(readFailure.error) ? undefined : readFailure)
+    }
+    if (readFailure !== undefined && !stopped(readFailure.error)) throw readFailure.error
+    if (Object.is(controller.signal.aborted, true) || read === undefined) return undefined
+    const { events } = read
+    return {
+      eventState: read.eventState, header: handle.header, inheritedEventCount: handle.inheritedEventCount,
+      events: [...events, ...interruptedTurnClosers(events)],
+    }
+  } finally { signal.removeEventListener('abort', stop) }
+}
+
 async function readColdSessionLogActual(
   persistence: SessionPersistence,
   sessionId: SessionId,

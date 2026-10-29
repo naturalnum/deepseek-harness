@@ -31,7 +31,7 @@ History pages and follow opening snapshots carry one `{ type: 'event', event: Se
 
 Cancelling a follow stops its live callbacks, including callbacks already captured by an event dispatch, and discards buffered frames while any opening observation cleanup remains awaited.
 
-If cancellation finishes during a `stat` that its provider explicitly guarantees has settled, follow reports that cancellation after the call settles. Cleanup failures and cancellation without that guarantee remain unconfirmed.
+If cancellation occurs during provider-certified `stat` or read work, follow reports cancellation after the actual work and handle cleanup settle. A changed provider or capability, cleanup failure, or cancellation without the relevant guarantee remains unconfirmed.
 
 The Client journal validates current Session event envelopes before publishing follow snapshots, live entries, or history pages. It reuses the browser-safe Session validators for required surface markers, exact replacement endpoints, earlier unique source seqs, embedded Assistant provider metadata, request-header omissions, and tool-error consistency. Invalid records fail without field stripping or normalization; range membership and source existence remain durable-log checks on the Host.
 

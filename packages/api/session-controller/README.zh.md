@@ -31,7 +31,7 @@ kind: "package-reference"
 
 取消 follow 会停止实时回调，包括事件派发已捕获的回调，并清空缓冲帧，同时继续等待初始观察的清理完成。
 
-如果取消发生在 provider 明确保证已结算的 `stat` 期间，follow 会在该调用结算后报告取消。清理失败以及没有此保证的取消仍为未确认状态。
+如果取消发生在 provider 明确保证结算的 `stat` 或读取工作期间，follow 会在实际工作和句柄清理结算后报告取消。provider 或能力改变、清理失败，以及没有相应保证的取消，仍为未确认状态。
 
 Client journal 在发布 follow 快照、live entry 或历史页之前验证当前 Session 事件 envelope。它复用浏览器安全的 Session validator，检查必需的 surface marker、精确的 replacement endpoint、更早且唯一的 source seq、内嵌 Assistant 提供方元数据、request header 可选字段的省略规则以及工具错误一致性。无效 record 直接失败，不删除字段或归一化；范围成员与来源存在性仍由 Host 的持久日志检查。
 

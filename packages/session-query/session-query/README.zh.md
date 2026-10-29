@@ -68,9 +68,9 @@ kind: "package-reference"
 
 取消识别信号的原始原因，以及 Node 的 `AbortError`：其代码须为 `ABORT_ERR`，且 cause 必须严格等于该原因。聚合清理错误即使带有这些字段也会保留。观察期间映射的后端持久化和损坏失败使用固定消息，并在 cause 中保留后端诊断信息。
 
-当取消发生在 provider 明确保证已结算的 `stat` 期间，`SessionQuerySettledStatAbortError` 在保留 `SESSION_QUERY_ABORTED` 的同时标识这一狭义情况。其他取消路径不表明工作已结算。
+当取消发生在 provider 明确保证已结算的 `stat` 期间，`SessionQuerySettledStatAbortError` 在保留 `SESSION_QUERY_ABORTED` 的同时标识这一狭义情况。请求 `settleCancellation` 且 provider 同时保证读取结算时，观察会等待 open、read 和句柄 close，在后续阶段前停止，并以 `SessionQuerySettledReadAbortError` 报告成功结算的取消。真实失败仍为失败。
 
-观察在调用前固定 provider identity 和已声明的 stat 保证。identity 缺失或改变、provider 更换、保证撤回或后来才出现时，取消保持未确认。
+观察在调用前固定 provider identity 和已声明的保证。identity 缺失或改变、provider 更换、保证撤回或后来才出现时，取消保持未确认。这些逐次结果不代表 provider 整体空闲。
 
 -----
 

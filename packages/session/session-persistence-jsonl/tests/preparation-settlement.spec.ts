@@ -127,7 +127,7 @@ it('retains a close failure after cancellation before the historical body read',
   await gate.entered.promise
   abort.abort(reason)
   gate.release.resolve(undefined)
-  await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
+  await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
   await vi.waitFor(() => { expect(reported).toHaveBeenCalled() })
   expect(hooks.readCalls).toBe(0)
   expect(hooks.gatedOpenCloses).toBe(1)

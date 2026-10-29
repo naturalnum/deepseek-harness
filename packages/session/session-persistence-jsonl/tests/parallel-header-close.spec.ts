@@ -35,7 +35,7 @@ vi.mock('node:fs/promises', async (load) => {
   } }
 })
 
-it.each(['cancel', 'no-cancel', 'cancel-double'] as const)('retains a parallel sibling header close failure with %s', async (mode) => {
+it.each(['cancel', 'no-cancel', 'cancel-double', 'no-cancel-double'] as const)('retains a parallel sibling header close failure with %s', async (mode) => {
   const root = await mkdtemp(join(tmpdir(), 'parallel-close-cancel-')), ctx = new Context()
   const parent = SessionId('parent'), cwd = '/work'
   for (const id of [parent, SessionId('aaa-child'), SessionId('zzz-child')]) {
@@ -57,13 +57,13 @@ it.each(['cancel', 'no-cancel', 'cancel-double'] as const)('retains a parallel s
   const opening = ctx.sessionPersistence.open(parent, 'read', { signal: abort.signal })
   void opening.catch(() => {})
   await entered.promise
-  if (mode !== 'no-cancel') abort.abort(reason)
+  if (mode === 'cancel' || mode === 'cancel-double') abort.abort(reason)
   const readFailure = Object.assign(new Error('independent sibling read failure'), { code: 'EIO' })
-  if (mode === 'cancel-double') hooks.readFailure = readFailure
+  if (mode === 'cancel-double' || mode === 'no-cancel-double') hooks.readFailure = readFailure
   release.resolve(undefined)
   const error: unknown = await opening.catch((failure: unknown) => failure)
   expect(error).toMatchObject({ name: 'JsonlReadCleanupError', cause: hooks.closeFailure })
-  if (mode === 'cancel-double') expect(error).toMatchObject({ errors: [
+  if (mode === 'cancel-double' || mode === 'no-cancel-double') expect(error).toMatchObject({ errors: [
     { name: 'AggregateError', errors: [readFailure, expect.objectContaining({ name: 'JsonlReadCleanupError', cause: hooks.closeFailure })] },
     hooks.closeFailure,
   ] })
