@@ -29,6 +29,7 @@ export function createProcessShutdown(
   let timeout: ReturnType<typeof setTimeout> | undefined
   let completed = false
   let forceExited = false
+  let requestedCode = 0
 
   const clearExitTimeout = (): void => {
     /* v8 ignore else -- shutdown() arms the timer before any asynchronous exit path can run. */
@@ -54,6 +55,7 @@ export function createProcessShutdown(
 
   const start = (code: number, forceAfterDispose: boolean): Promise<void> => {
     if (pending !== undefined) return pending
+    requestedCode = code
     timeout = setTimeout(() => { forceExitOnce(unconfirmedCode(code)) }, timeoutMs)
     pending = Promise.resolve().then(dispose).then(
       () => {
@@ -71,7 +73,8 @@ export function createProcessShutdown(
     },
     interrupt(code) {
       if (pending !== undefined) {
-        forceExitOnce(unconfirmedCode(code))
+        // Preserve an explicit later signal code; a zero signal cannot erase an earlier failure.
+        forceExitOnce(code !== 0 ? code : requestedCode !== 0 ? requestedCode : completed ? code : unconfirmedCode(code))
         return
       }
       void start(code, true)

@@ -226,4 +226,28 @@ describe('process shutdown', () => {
     expect(exit).toHaveBeenCalledOnce()
     expect(exit).toHaveBeenCalledWith(130)
   })
+
+  it('preserves a completed successful shutdown when SIGTERM arrives afterward', async () => {
+    const exit = vi.fn()
+    const complete = vi.fn()
+    const shutdown = createProcessShutdown(() => Promise.resolve(), exit, complete)
+    await shutdown.shutdown(0)
+    shutdown.interrupt(0)
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete).toHaveBeenCalledWith(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(0)
+  })
+
+  it.each([false, true])('preserves the first failure code on SIGTERM (completed=%s)', async (completed) => {
+    const disposal = deferred()
+    const exit = vi.fn()
+    const shutdown = createProcessShutdown(() => disposal.promise, exit, vi.fn())
+    const pending = shutdown.shutdown(7)
+    if (completed) { disposal.resolve(); await pending }
+    shutdown.interrupt(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(7)
+    if (!completed) { disposal.resolve(); await pending }
+  })
 })
