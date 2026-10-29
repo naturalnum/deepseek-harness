@@ -61,6 +61,57 @@ describe('Markdown file links', () => {
     expect(view.queryByRole('button', { name: 'unknown.csv' })).toBeNull()
     expect(view.queryByRole('button', { name: '../outside.csv' })).toBeNull()
   })
+
+  it('routes an authority-free file URI in a settled closing reply through the scoped opener', () => {
+    const openFile = vi.fn()
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>
+      <MarkdownText text={'- [predictions.csv](file:///srv/dsh/projects/abc/predictions.csv)\n- [report][file]\n\n[file]: file:///srv/dsh/projects/abc/hello%20world.csv#L2'} standaloneFileLinks />
+    </MarkdownDelegateProvider>)
+    fireEvent.click(view.getByRole('button', { name: 'predictions.csv' }))
+    fireEvent.click(view.getByRole('button', { name: 'report' }))
+    expect(openFile.mock.calls).toEqual([
+      ['/srv/dsh/projects/abc/predictions.csv', undefined],
+      ['/srv/dsh/projects/abc/hello world.csv', { line: 2 }],
+    ])
+    expect(view.container.querySelector('a')).toBeNull()
+  })
+
+  it.each([
+    'file://host/private.csv', 'file://localhost/private.csv', 'file:////server/private.csv',
+    'file:///%2fserver/private.csv', 'file:///project%2fprivate.csv', 'file:///project/%2e%2e/private.csv', 'file:///project/../private.csv',
+    'file:///project/%5cprivate.csv', 'file:///project/%00private.csv', 'file:///project/a.csv?raw=1',
+    'file:%2F%2F%2Fproject/a.csv', 'javascript:alert', 'data:text/plain,hi',
+  ])('keeps unsafe scoped URI %s inert', (target) => {
+    const openFile = vi.fn()
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>
+      <MarkdownText text={`[file](${target})`} standaloneFileLinks />
+    </MarkdownDelegateProvider>)
+    expect(view.container.querySelector('button, a')).toBeNull()
+    expect(openFile).not.toHaveBeenCalled()
+  })
+
+  it('keeps file URIs inert before settlement and outside an enabled closing reply', () => {
+    const openFile = vi.fn()
+    const text = '[file](file:///srv/project/a.csv)'
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>
+      <MarkdownText text={text} standaloneFileLinks streaming />
+    </MarkdownDelegateProvider>)
+    expect(view.queryByRole('button')).toBeNull()
+    view.rerender(<MarkdownDelegateProvider openFile={openFile}>
+      <MarkdownText text={text} />
+    </MarkdownDelegateProvider>)
+    expect(view.queryByRole('button')).toBeNull()
+    expect(openFile).not.toHaveBeenCalled()
+  })
+
+  it('does not turn a file URI written as inline or fenced code into a link', () => {
+    const openFile = vi.fn()
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>
+      <MarkdownText text={'`file:///srv/project/a.csv`\n\n```text\nfile:///srv/project/a.csv\n```'} standaloneFileLinks />
+    </MarkdownDelegateProvider>)
+    expect(view.queryByRole('button', { name: /file:\/\// })).toBeNull()
+    expect(openFile).not.toHaveBeenCalled()
+  })
   it.each([
     ['src/index.ts', 'src/index.ts', undefined],
     ['/workspace/src/index.ts#L24', '/workspace/src/index.ts', { line: 24 }],

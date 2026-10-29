@@ -718,11 +718,11 @@ describe('Chat node rendering', () => {
     const h = makeHarness({ chat: chatSnapshotFixture({
       nodes: [
         userInTurn(1, 'train the model', 1),
-        assistant(2, '- intermediate.csv', 1, 1),
+        assistant(2, '- [intermediate.csv](file:///srv/project/intermediate.csv)', 1, 1),
         toolResult(3, 'train', 'bash'),
-        assistant(4, 'Downloads:\n\n- csv24-model.json\n- csv24-predictions.csv', 1, 2),
+        assistant(4, 'Downloads:\n\n- [csv24-model.json](file:///srv/project/csv24-model.json)\n- [csv24-predictions.csv](file:///srv/project/csv24-predictions.csv)', 1, 2),
         userInTurn(6, 'try another model', 2),
-        { ...assistant(7, '- interrupted.csv', 2, 1), interrupted: true },
+        { ...assistant(7, '- [interrupted.csv](file:///srv/project/interrupted.csv)', 2, 1), interrupted: true },
       ],
       turnEnds: new Map([[1, 5], [2, 8]]),
       turnEndReasons: new Map([[2, { kind: 'interrupted' }]]),
@@ -734,7 +734,7 @@ describe('Chat node rendering', () => {
 
     fireEvent.click(view.getByRole('button', { name: 'csv24-model.json' }))
     fireEvent.click(view.getByRole('button', { name: 'csv24-predictions.csv' }))
-    expect(h.openFile.mock.calls.map(([path]) => path)).toEqual(['csv24-model.json', 'csv24-predictions.csv'])
+    expect(h.openFile.mock.calls.map(([path]) => path)).toEqual(['/srv/project/csv24-model.json', '/srv/project/csv24-predictions.csv'])
     expect(view.getByText('intermediate.csv')).toBeTruthy()
     expect(view.getByText('interrupted.csv')).toBeTruthy()
     expect(view.queryByRole('button', { name: 'intermediate.csv' })).toBeNull()

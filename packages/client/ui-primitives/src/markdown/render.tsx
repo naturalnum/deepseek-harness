@@ -351,7 +351,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'link':
       return renderAnchor(
         node.url, renderChildren(node.children, { ...context, inLink: true }), key,
-        !anchorWrapsOnlyImages(node.children), context.streaming,
+        !anchorWrapsOnlyImages(node.children), context.streaming, context.standaloneFileLinks === true,
       )
     case 'linkReference':
       return renderLinkReference(node, key, context)
@@ -596,8 +596,8 @@ function MarkdownAnchor({ href, glyph, children }: {
 }
 
 /** Local destinations use the scoped file delegate after settlement. */
-function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false): ReactNode {
-  const file = streaming ? undefined : parseFileLink(url)
+function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false, allowLocalFileUri = false): ReactNode {
+  const file = streaming ? undefined : parseFileLink(url, allowLocalFileUri)
   if (file !== undefined) {
     return <MarkdownFileLink key={key} file={file} glyph={glyph}>{children}</MarkdownFileLink>
   }
@@ -709,7 +709,9 @@ function renderLinkReference(
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
   const rendered = renderChildren(node.children, { ...context, inLink: true })
-  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming)
+  return renderAnchor(
+    definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming, context.standaloneFileLinks === true,
+  )
 }
 
 function renderImageReference(
