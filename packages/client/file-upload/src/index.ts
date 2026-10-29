@@ -308,9 +308,10 @@ export class FileUploads extends TypertRemoteService {
       if (this.stagedFiles.get(agent.session) !== staged || staged.get(receiptId) !== row) {
         throw new Error('The upload receipt owner changed before handoff.')
       }
+      const result = { receiptId, file }
       retainReceipt()
       row.unconfirmed = false
-      return { receiptId, file }
+      return result
     } catch (cause) {
       throw new FileUploadIntakeUnconfirmedError({ cause })
     }
