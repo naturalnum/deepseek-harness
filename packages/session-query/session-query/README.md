@@ -66,6 +66,8 @@ Failures are typed with a stable `SessionQueryError.code`. The ones you will mee
 
 For a cold `observeSession` read, a handle close failure is retained as a persistence failure even when the read also fails or cancellation races it. Its cause retains the close error and, if present, the preceding read error. An independent backend failure reported during cancellation is also preserved; this does not establish that detached backend work has settled.
 
+Cancellation recognizes the original signal reason and Node's `AbortError` with `ABORT_ERR` whose cause is that exact reason. Aggregate cleanup errors are preserved even if they carry those fields. Backend persistence and corruption failures mapped during observation use fixed messages and retain backend diagnostics in their causes.
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -66,6 +66,8 @@ kind: "package-reference"
 
 冷 `observeSession` 读取时，即使读取同时失败或取消与关闭并发，句柄关闭失败仍会作为持久化失败保留。其 cause 保留关闭错误，以及存在时先前的读取错误。取消期间报告的独立后端失败也会保留；这并不证明已脱离的后端工作已经结算。
 
+取消识别信号的原始原因，以及 Node 的 `AbortError`：其代码须为 `ABORT_ERR`，且 cause 必须严格等于该原因。聚合清理错误即使带有这些字段也会保留。观察期间映射的后端持久化和损坏失败使用固定消息，并在 cause 中保留后端诊断信息。
+
 -----
 
 <a id="understand-the-implementation"></a>

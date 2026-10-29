@@ -2,7 +2,44 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import { expect, it, onTestFinished } from 'vitest'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { SessionObservationReader } from '../src/observation.ts'
+
+it('recognizes the real Node readFile abort wrapper for the same signal reason', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observation-native-abort-'))
+  const ctx = new Context(), abort = new AbortController()
+  onTestFinished(async () => { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) })
+  await ctx.plugin(SessionStore)
+  const path = join(root, 'source'), reason = new Error('cancel native read')
+  await writeFile(path, 'content')
+  let nativeFailure: unknown
+  ctx.provide('sessionPersistence', {
+    identity: Symbol('native-abort'),
+    async stat() {
+      abort.abort(reason)
+      try { await readFile(path, { signal: abort.signal }) } catch (error: unknown) { nativeFailure = error; throw error }
+      throw new Error('expected native read cancellation')
+    },
+  } as never)
+  await expect(new SessionObservationReader(ctx).read(SessionId('native-abort'), { signal: abort.signal }))
+    .rejects.toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
+  expect(nativeFailure).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: reason })
+  expect(nativeFailure).not.toBe(reason)
+})
+
+it.each(['name-only', 'different-cause'] as const)('does not mistake an independent %s error for native cancellation', async (kind) => {
+  const ctx = new Context(), abort = new AbortController()
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(SessionStore)
+  const reason = new Error('cancel'), failure = Object.assign(new Error('independent failure', {
+    cause: kind === 'different-cause' ? new Error('other cause') : reason,
+  }), { name: 'AbortError', ...(kind === 'different-cause' ? { code: 'ABORT_ERR' } : {}) })
+  ctx.provide('sessionPersistence', { identity: Symbol('fixture'), async stat() { abort.abort(reason); throw failure } } as never)
+  await expect(new SessionObservationReader(ctx).read(SessionId(kind), { signal: abort.signal }))
+    .rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: failure })
+})
 
 it.each(['stat', 'open', 'read'] as const)('retains the original abort result from an old provider during %s', async (stage) => {
   const ctx = new Context(), abort = new AbortController()
@@ -39,6 +76,18 @@ it('retains a cleanup error even when it is also the abort reason', async () => 
     async stat() { abort.abort(cleanup); throw cleanup },
   } as never)
   await expect(new SessionObservationReader(ctx).read(SessionId('same-abort-error'), { signal: abort.signal }))
+    .rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: cleanup })
+})
+
+it('does not normalize an aggregate carrying Node abort fields', async () => {
+  const ctx = new Context(), abort = new AbortController()
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(SessionStore)
+  const reason = new Error('cancel'), closeFailure = new Error('close failed')
+  const cleanup = Object.assign(new AggregateError([closeFailure], 'cleanup failed', { cause: reason }),
+    { name: 'AbortError', code: 'ABORT_ERR' })
+  ctx.provide('sessionPersistence', { identity: Symbol('fixture'), async stat() { abort.abort(reason); throw cleanup } } as never)
+  await expect(new SessionObservationReader(ctx).read(SessionId('aggregate-abort-fields'), { signal: abort.signal }))
     .rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: cleanup })
 })
 

@@ -281,6 +281,33 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     expectCleanupFailure: () => { expectedCleanupFailure = true } }
 }
 
+it('does not expose persistence diagnostics in a real follow Gateway error frame', async () => {
+  const f = await fixture(1000)
+  await f.ctx.plugin(SessionStore)
+  installSessionReadTestServices(f.ctx)
+  const failure = new Error('read failed at /private/storage/secret-token')
+  f.ctx.provide('sessionPersistence', testSessionPersistence(f.ctx, {
+    async stat() { throw failure },
+  }) as never)
+  const id = SessionId('peer-follow-private-error')
+  let internalFailure: unknown
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation(async (sessionId, options) => {
+    try { return await observe(sessionId, options) } catch (error: unknown) { internalFailure = error; throw error }
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await vi.waitFor(() => { expect(socket.frames.some(frame => Reflect.get(frame as object, 'type') === 'error')).toBe(true) })
+  expect(JSON.stringify(socket.frames)).not.toContain('/private/storage/secret-token')
+  expect(internalFailure).toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: failure })
+})
+
 it('retains a real JSONL header close failure after follow cancellation in the original Peer and mux', async () => {
   const f = await fixture(1000)
   const closeEntered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()

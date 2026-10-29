@@ -173,7 +173,7 @@ export class SessionObservationReader {
     try {
       snapshot = await persistence.stat(sessionId, signal === undefined ? undefined : { signal })
     } catch (error: unknown) {
-      if (signal?.aborted === true && error === signal.reason && !(error instanceof AggregateError)) throwIfObservationAborted(signal)
+      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal)
       throw mapPersistenceFailure(sessionId, error)
     }
     throwIfObservationAborted(signal)
@@ -196,7 +196,7 @@ export class SessionObservationReader {
     try {
       return await readColdSessionLogForObservation(persistence, sessionId, signal)
     } catch (error: unknown) {
-      if (signal?.aborted === true && error === signal.reason && !(error instanceof AggregateError)) throwIfObservationAborted(signal)
+      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal)
       throw mapPersistenceFailure(sessionId, error)
     }
   }
@@ -326,6 +326,14 @@ export class SessionObservationReader {
   }
 }
 
+/** Recognize the original reason or Node's abort wrapper tied to that exact reason. */
+function isObservationAbort(error: unknown, signal: AbortSignal | undefined): boolean {
+  if (signal?.aborted !== true || error instanceof AggregateError || signal.reason instanceof AggregateError) return false
+  if (error === signal.reason) return true
+  return error instanceof Error && error.name === 'AbortError'
+    && Reflect.get(error, 'code') === 'ABORT_ERR' && error.cause === signal.reason
+}
+
 function throwIfObservationAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted !== true) return
   throw new SessionQueryError(
@@ -339,13 +347,13 @@ function mapPersistenceFailure(sessionId: SessionId, error: unknown): SessionQue
   if (hasErrorName(error, 'SessionPersistenceNotFoundError')) return notFound(sessionId, error)
   if (hasErrorName(error, 'SessionPersistenceCorruptionError')) {
     return new SessionQueryError(
-      `stored session "${sessionId}" is corrupt: ${error.message}`,
+      'stored session is corrupt',
       'SESSION_QUERY_CORRUPT_SESSION',
       { cause: error },
     )
   }
   return new SessionQueryError(
-    `failed to observe session "${sessionId}": ${errorMessage(error)}`,
+    'failed to observe stored session',
     'SESSION_QUERY_PERSISTENCE_FAILED',
     { cause: error },
   )
