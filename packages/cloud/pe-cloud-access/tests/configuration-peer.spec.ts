@@ -33,6 +33,7 @@ import { installSessionReadTestServices, testSessionPersistence } from '../../..
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '../../../session/session-persistence-jsonl/src/index.ts'
 import { encodeSegment, generationLogPath, toHeaderLine } from '../../../session/session-persistence-jsonl/src/format.ts'
+import { compressZstdFrame } from '../../../session/session-persistence-jsonl/src/zstd.ts'
 
 const jsonlCloseFault = vi.hoisted(() => ({ path: '', entered: undefined as (() => void) | undefined,
   release: undefined as Promise<unknown> | undefined, failure: undefined as Error | undefined,
@@ -471,7 +472,9 @@ it.each(['read', 'close'] as const)('releases a real JSONL follow after its %s h
   expect(f.observe().inUse).toBe(0)
 })
 
-it.each(['independent', 'same-reason'] as const)('keeps a real JSONL %s read failure unknown after cancellation', async (kind) => {
+it.each([
+  ['none', 'independent'], ['none', 'same-reason'], ['zstd', 'independent'], ['zstd', 'same-reason'],
+] as const)('keeps a real JSONL %s %s read ENOENT unknown after cancellation', async (compression, kind) => {
   const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const cancelled = Promise.withResolvers<undefined>()
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-stat-read-failure-')))
@@ -481,12 +484,13 @@ it.each(['independent', 'same-reason'] as const)('keeps a real JSONL %s read fai
     rmSync(root, { recursive: true, force: true })
   })
   await f.ctx.plugin(SessionStore)
-  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression })
   installSessionReadTestServices(f.ctx)
-  const id = SessionId(`peer-jsonl-${kind}`)
+  const id = SessionId(`peer-jsonl-${compression}-${kind}`)
   const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
-  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
-  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, compression)
+  const data = JSON.stringify(toHeaderLine(header)) + '\n'
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, compression === 'none' ? data : await compressZstdFrame(data))
   jsonlCloseFault.path = path; jsonlCloseFault.readEntered = () => { entered.resolve(undefined) }
   jsonlCloseFault.readRelease = release.promise
   let observationSignal: AbortSignal | undefined
@@ -513,6 +517,7 @@ it.each(['independent', 'same-reason'] as const)('keeps a real JSONL %s read fai
   await cancelled.promise
   const failure = kind === 'same-reason' ? observationSignal?.reason as Error : new Error('independent read failed')
   expect(failure).toBeInstanceOf(Error)
+  Object.assign(failure, { code: 'ENOENT' })
   jsonlCloseFault.readFailure = failure
   expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
   release.resolve(undefined)

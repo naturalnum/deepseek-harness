@@ -1216,17 +1216,9 @@ class JsonlSessionPersistence extends SessionPersistence {
     expectedId?: SessionId,
     signal?: AbortSignal,
   ): Promise<GenerationHeader | undefined> {
-    let first: string | undefined
-    try {
-      first = this.compression === 'zstd'
-        ? await this.readFirstZstdLine(selected.sourcePath, signal)
-        : await this.readFirstLine(selected.sourcePath, signal)
-    } catch (error: unknown) {
-      if (error instanceof JsonlReadCleanupError) throw error
-      signal?.throwIfAborted()
-      if (isENOENT(error)) return undefined
-      throw error
-    }
+    const first = this.compression === 'zstd'
+      ? await this.readFirstZstdLine(selected.sourcePath, signal)
+      : await this.readFirstLine(selected.sourcePath, signal)
     signal?.throwIfAborted()
     if (first === undefined) return undefined
     let value: unknown
@@ -1513,7 +1505,11 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   private async readFirstLine(path: string, signal?: AbortSignal): Promise<string | undefined> {
     signal?.throwIfAborted()
-    const handle = await open(path, 'r')
+    let handle: Awaited<ReturnType<typeof open>>
+    try { handle = await open(path, 'r') } catch (error: unknown) {
+      if (isENOENT(error)) return undefined
+      throw error
+    }
     let readFailure: { readonly error: unknown } | undefined
     try {
       signal?.throwIfAborted()
@@ -1544,7 +1540,11 @@ class JsonlSessionPersistence extends SessionPersistence {
   /** Read only the header frame; compression failures reject as corruption, while I/O and cancellation propagate. */
   private async readFirstZstdLine(path: string, signal?: AbortSignal): Promise<string | undefined> {
     signal?.throwIfAborted()
-    const handle = await open(path, 'r')
+    let handle: Awaited<ReturnType<typeof open>>
+    try { handle = await open(path, 'r') } catch (error: unknown) {
+      if (isENOENT(error)) return undefined
+      throw error
+    }
     let readFailure: { readonly error: unknown } | undefined
     try {
       signal?.throwIfAborted()

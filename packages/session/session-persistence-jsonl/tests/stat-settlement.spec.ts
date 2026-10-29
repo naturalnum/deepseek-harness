@@ -208,6 +208,39 @@ it.each(['none', 'zstd'] as const)('retains both %s header read and close failur
     errors: [readFailure, closeFailure] })
 })
 
+it.each(['none', 'zstd'] as const)('retains a %s header read ENOENT after a successful open and cancellation', async (compression) => {
+  const f = await fixture(compression), read = f.barrier(), abort = new AbortController()
+  const failure = Object.assign(new Error('header read failed'), { code: 'ENOENT' })
+  hooks.readEntered = () => { read.entered.resolve(undefined) }; hooks.readRelease = read.release.promise; hooks.readFailure = failure
+  const pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await read.entered.promise
+  abort.abort(new Error('cancel stat')); read.release.resolve(undefined)
+  await expect(pending).rejects.toBe(failure)
+})
+
+it.each(['none', 'zstd'] as const)('retains a %s header read ENOENT even when it is the abort reason', async (compression) => {
+  const f = await fixture(compression), read = f.barrier(), abort = new AbortController()
+  const failure = Object.assign(new Error('header read failed'), { code: 'ENOENT' })
+  hooks.readEntered = () => { read.entered.resolve(undefined) }; hooks.readRelease = read.release.promise; hooks.readFailure = failure
+  const pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await read.entered.promise
+  abort.abort(failure); read.release.resolve(undefined)
+  await expect(pending).rejects.toMatchObject({ name: 'AggregateError', cause: failure, errors: [failure] })
+})
+
+it.each(['none', 'zstd'] as const)('retains a %s header read ENOENT during a cancelled listing', async (compression) => {
+  const f = await fixture(compression), read = f.barrier(), abort = new AbortController()
+  const failure = Object.assign(new Error('header read failed'), { code: 'ENOENT' })
+  hooks.readEntered = () => { read.entered.resolve(undefined) }; hooks.readRelease = read.release.promise; hooks.readFailure = failure
+  const pending = f.ctx.sessionPersistence.list({ signal: abort.signal })
+  void pending.catch(() => {})
+  await read.entered.promise
+  abort.abort(new Error('cancel list')); read.release.resolve(undefined)
+  await expect(pending).rejects.toBe(failure)
+})
+
 it('does not turn a historical corpus directory failure into an absent target', async () => {
   const f = await fixture('none', '/work', '/work', 0)
   const failure = Object.assign(new Error('historical directory disappeared'), { code: 'ENOENT' })
