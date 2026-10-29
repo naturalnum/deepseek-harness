@@ -50,6 +50,8 @@ declare module '@deepseek-ai/cordis' {
 
 interface StagedFileUpload {
   readonly file: FileAttachmentRef
+  /** Row inserted but not yet confirmed for receipt handoff. */
+  unconfirmed?: boolean
   /** Prompt that accepted this receipt; absent until successful admission. */
   requestId?: string
 }
@@ -204,7 +206,8 @@ export class FileUploads extends TypertRemoteService {
    * @returns durable file reference, or `undefined` for an unknown or foreign receipt.
    */
   resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined {
-    return this.stagedFiles.get(agent.session)?.get(receiptId)?.file
+    const upload = this.stagedFiles.get(agent.session)?.get(receiptId)
+    return upload?.unconfirmed === true ? undefined : upload?.file
   }
 
   /**
@@ -223,7 +226,7 @@ export class FileUploads extends TypertRemoteService {
     const staged = this.stagedFiles.get(agent.session)
     const bound = receiptIds.map((receiptId) => {
       const upload = staged?.get(receiptId)
-      if (upload === undefined) throw fileNotStaged()
+      if (upload === undefined || upload.unconfirmed === true) throw fileNotStaged()
       return { upload, previous: upload.requestId }
     })
     for (const { upload } of bound) upload.requestId = requestId
@@ -291,17 +294,26 @@ export class FileUploads extends TypertRemoteService {
         { cause: error },
       )
     }
-    try { this.assertCurrentAgent(agent) }
-    catch (cause) { throw new FileUploadIntakeUnconfirmedError({ cause }) }
-    let staged = this.stagedFiles.get(agent.session)
-    if (staged === undefined) {
-      staged = new Map()
-      this.stagedFiles.set(agent.session, staged)
+    try {
+      this.assertCurrentAgent(agent)
+      let staged = this.stagedFiles.get(agent.session)
+      if (staged === undefined) {
+        staged = new Map()
+        this.stagedFiles.set(agent.session, staged)
+      }
+      const receiptId = randomUUID() as FileUploadReceiptId
+      const row: StagedFileUpload = { file, unconfirmed: true }
+      staged.set(receiptId, row)
+      this.assertCurrentAgent(agent)
+      if (this.stagedFiles.get(agent.session) !== staged || staged.get(receiptId) !== row) {
+        throw new Error('The upload receipt owner changed before handoff.')
+      }
+      retainReceipt()
+      row.unconfirmed = false
+      return { receiptId, file }
+    } catch (cause) {
+      throw new FileUploadIntakeUnconfirmedError({ cause })
     }
-    const receiptId = randomUUID() as FileUploadReceiptId
-    staged.set(receiptId, { file })
-    retainReceipt()
-    return { receiptId, file }
   }
 
   private assertCurrentAgent(agent: Agent): void {
@@ -317,7 +329,7 @@ export class FileUploads extends TypertRemoteService {
   private dropSession(session: Session): void {
     const staged = this.stagedFiles.get(session)
     if (staged === undefined) return
-    this.state.occupied -= staged.size
+    for (const upload of staged.values()) if (upload.unconfirmed !== true) this.state.occupied--
     this.stagedFiles.delete(session)
   }
 
@@ -351,7 +363,7 @@ export class FileUploads extends TypertRemoteService {
     const staged = this.stagedFiles.get(session)
     if (staged === undefined) return
     for (const [receiptId, upload] of staged) {
-      if (upload.requestId === requestId) {
+      if (upload.unconfirmed !== true && upload.requestId === requestId) {
         staged.delete(receiptId)
         this.state.occupied--
       }

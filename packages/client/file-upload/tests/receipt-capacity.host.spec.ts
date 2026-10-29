@@ -6,7 +6,8 @@ import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/d
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -356,3 +357,41 @@ it('cancels an unread request body when native receipt capacity rejects before t
   expect(pulls).toBe(0)
   expect(cancels).toBe(1)
 })
+
+
+for (const mode of ['before-insert', 'after-insert', 'after-retain'] as const) {
+  it(`retains one unknown slot when receipt handoff fails ${mode}`, async () => {
+    const f = await fixture(1), original = Map.prototype.set, injected = new Error(`receipt failure ${mode}`)
+    f.cleanup.unconfirmed = true
+    let receiptId: unknown
+    const patch = vi.spyOn(Map.prototype, 'set').mockImplementation(function (key, value) {
+      if (value !== null && typeof value === 'object' && Reflect.get(value, 'unconfirmed') === true
+        && Reflect.get(value, 'file') !== undefined) {
+        receiptId = key
+        if (mode === 'before-insert') throw injected
+        const result = original.call(this, key, value)
+        if (mode === 'after-insert') throw injected
+        Object.freeze(value)
+        return result
+      }
+      return original.call(this, key, value)
+    })
+    try {
+      const error = await f.track(f.empty()).then(() => undefined, (cause: unknown) => cause)
+      expect(error).toBeInstanceOf(FileUploadIntakeUnconfirmedError)
+      if (mode === 'after-retain') expect((error as Error).cause).toBeInstanceOf(TypeError)
+      else expect((error as Error).cause).toBe(injected)
+    } finally { patch.mockRestore() }
+    expect(typeof receiptId).toBe('string')
+    const state = Reflect.get(f.uploads, 'state') as { occupied: number; closed: boolean }
+    expect(state).toMatchObject({ occupied: 1, closed: true })
+    expect(f.uploads.resolve(f.handle.agent, receiptId as never)).toBeUndefined()
+    expect(() => f.uploads.bindPrompt(f.handle.agent, [receiptId as never], 'unused')).toThrow()
+    const digest = createHash('sha256').update(new Uint8Array()).digest('hex')
+    expect((await stat(join(f.store.root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(0)
+    await f.handle.dispose()
+    expect(state).toMatchObject({ occupied: 1, closed: true })
+    expect((await stat(join(f.store.root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(0)
+    await expect(f.track(f.empty())).rejects.toMatchObject(full)
+  })
+}
