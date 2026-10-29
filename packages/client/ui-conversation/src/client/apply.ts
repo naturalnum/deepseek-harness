@@ -32,6 +32,7 @@ import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
 import { InputHub } from './input/hub.ts'
+import type { SessionInputShell } from './input/facade.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { queueDockEntry } from './queue/QueueDock.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
@@ -256,10 +257,40 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }
   }, 'ui-conversation: View selection')
 
-  const stop = (sessionId: SessionId): void => {
-    scopedConversation(sessions, sessionId).cancel().catch((_error: unknown) => {
-      // Stop failure is published through Session promptError.
-    })
+  let active = true
+  const stopping = new WeakSet<SessionBinding>()
+  ctx.effect(() => () => { active = false }, 'ui-conversation: stop action lifetime')
+  const stop = (sessionId: SessionId, shell?: Pick<SessionInputShell, 'notify'>, shortcutBinding?: SessionBinding): void => {
+    if (!active) return
+    const notify = (): void => {
+      if (!active) return
+      // The button already owns its shell; a shortcut supplies the binding it
+      // observed. Do not rely on a failing lookup to report that failure.
+      try { (shell ?? (shortcutBinding === undefined ? undefined : inputHub.shellFor(shortcutBinding)))?.notify('error', t('input.stopUnconfirmed')) }
+      catch { console.error('[ui-conversation] Unable to report an unconfirmed stop.') }
+    }
+    let binding: SessionBinding | undefined
+    try {
+      binding = sessions.binding(sessionId)
+      if (binding === undefined) { notify(); return }
+      if (shortcutBinding !== undefined && binding !== shortcutBinding) return
+      if (stopping.has(binding)) return
+    } catch { notify(); return }
+    if (binding === undefined) return
+    const selected = binding
+    stopping.add(selected)
+    void Promise.resolve().then(() => {
+      if (!active || sessions.binding(sessionId) !== selected) return
+      return scopedConversation(sessions, sessionId).cancel()
+    }).catch((_error: unknown) => {
+      if (!active) return
+      try {
+        if (sessions.binding(sessionId) !== selected) return
+      } catch { notify(); return }
+      // Do not infer this request's outcome from another operation's snapshot.
+      // The composer owns a single toast, even if the Session also reports it.
+      notify()
+    }).finally(() => { stopping.delete(selected) })
   }
   const stopShortcut = createSnapshotStore<readonly string[]>([])
   ctx.inject(['shortcuts'], (scope) => {
@@ -281,7 +312,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       scope.effect(() => scope.shortcuts.registerFixed(command), `ui-conversation: ${command.id}`)
     }
     scope.effect(() => installStopShortcut(
-      scope.shortcuts, sessions, binding => uiConversation.binding(binding).openTurn, ctx.uiSession, stop,
+      scope.shortcuts, sessions, binding => uiConversation.binding(binding).openTurn, ctx.uiSession,
+      (id, binding) => { stop(id, undefined, binding) },
     ), 'ui-conversation: fixed stop input')
     scope.effect(() => {
       const command: ShortcutFixedCommand = {
@@ -551,7 +583,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               span: { ...selection, draftRev: snapshot.draftRev },
             })
           },
-        stop: () => { stop(sessionId) },
+        stop: () => { stop(sessionId, shell) },
         hooks: {
           stopShortcut,
           busyEnter: submissionPolicy.busyEnter,

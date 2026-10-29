@@ -20,7 +20,7 @@ export function installStopShortcut(
   sessions: ISessions,
   openTurn: (binding: SessionBinding) => ObservableSnapshot<number | undefined>,
   uiSession: UiSession,
-  cancel: (sessionId: SessionId) => void,
+  cancel: (sessionId: SessionId, binding: SessionBinding) => void,
 ): () => void {
   let unwatch = (): void => {}
   const sequence = new StopSequence(shortcuts.stopSequenceMs, () => {
@@ -53,7 +53,7 @@ export function installStopShortcut(
     const turn = currentTurn()
     if (turn === undefined) { reset(); return }
     input.consume()
-    const stopped = sequence.press({ sessionId, turn, generation: binding, region, cancel: () => { cancel(sessionId) } })
+    const stopped = sequence.press({ sessionId, turn, generation: binding, region, cancel: () => { cancel(sessionId, binding) } })
     if (stopped) return
     const changed = (): void => {
       if (sessions.binding(sessionId) !== binding || currentTurn() !== turn) reset()

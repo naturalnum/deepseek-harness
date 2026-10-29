@@ -145,6 +145,124 @@ async function bench() {
 }
 
 describe('Conversation inject API', () => {
+  it('surfaces a rejected stop without losing the draft or exposing the exception', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    shell.setDraft('keep this draft')
+    b.sessionFake.cancel.mockRejectedValueOnce(new Error('private assembly detail'))
+    b.composerApi(ROOT).stop!()
+    await vi.waitFor(() => {
+      expect(shell.notices.getSnapshot()).toMatchObject({ level: 'error', text: '无法确认是否已停止生成，请检查当前状态。' })
+    })
+    expect(b.sessionFake.cancel).toHaveBeenCalledOnce()
+    expect(shell.snapshot.draft).toBe('keep this draft')
+  })
+
+  it('reports an unconfirmed result after the cancellation request has started without retrying', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    const request = Promise.withResolvers<never>()
+    b.sessionFake.cancel.mockReturnValueOnce(request.promise)
+    b.composerApi(ROOT).stop!()
+    await vi.waitFor(() => { expect(b.sessionFake.cancel).toHaveBeenCalledOnce() })
+    request.reject(new Error('fixture response unavailable'))
+    await vi.waitFor(() => {
+      expect(shell.notices.getSnapshot()).toMatchObject({ level: 'error', text: '无法确认是否已停止生成，请检查当前状态。' })
+    })
+    expect(b.sessionFake.cancel).toHaveBeenCalledOnce()
+  })
+
+  it('reports its own stop failure even if the Session has published another stop error', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    const binding = b.runtime.sessions.binding(ROOT)!
+    const original = binding.session.getSnapshot.bind(binding.session)
+    const failure = new RemoteError('gateway/internal', 'other RPC failure', {})
+    vi.spyOn(binding.session, 'getSnapshot').mockImplementation(() => ({
+      ...original(), promptError: { op: 'stop', error: failure },
+    }))
+    b.sessionFake.cancel.mockImplementationOnce(async () => {
+      throw new Error('this stop was not confirmed')
+    })
+    b.composerApi(ROOT).stop!()
+    await vi.waitFor(() => {
+      expect(shell.notices.getSnapshot()?.text).toBe('无法确认是否已停止生成，请检查当前状态。')
+    })
+    expect(b.sessionFake.cancel).toHaveBeenCalledOnce()
+  })
+
+  it('reports a synchronous missing conversation scope as unconfirmed', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    const stop = b.composerApi(ROOT).stop!
+    vi.spyOn(b.runtime.sessions, 'scope').mockReturnValueOnce(undefined)
+    stop()
+    await vi.waitFor(() => {
+      expect(shell.notices.getSnapshot()).toMatchObject({ level: 'error', text: '无法确认是否已停止生成，请检查当前状态。' })
+    })
+    expect(b.sessionFake.cancel).not.toHaveBeenCalled()
+  })
+
+  it('reports a synchronous binding lookup failure on the original composer', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    const stop = b.composerApi(ROOT).stop!
+    vi.spyOn(b.runtime.sessions, 'binding').mockImplementationOnce(() => { throw new Error('binding failed') })
+    expect(() => { stop() }).not.toThrow()
+    expect(shell.notices.getSnapshot()).toMatchObject({ level: 'error', text: '无法确认是否已停止生成，请检查当前状态。' })
+    expect(b.sessionFake.cancel).not.toHaveBeenCalled()
+  })
+
+  it('does not synchronously read the Session snapshot to initiate a stop', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const stop = b.composerApi(ROOT).stop!
+    const binding = b.runtime.sessions.binding(ROOT)!
+    const snapshot = vi.spyOn(binding.session, 'getSnapshot').mockImplementationOnce(() => { throw new Error('snapshot failed') })
+    expect(() => { stop() }).not.toThrow()
+    expect(snapshot).not.toHaveBeenCalled()
+    snapshot.mockRestore()
+    await vi.waitFor(() => { expect(b.sessionFake.cancel).toHaveBeenCalledOnce() })
+  })
+
+  it('coalesces repeated stop actions until the actual request settles', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    const pending = Promise.withResolvers<never>()
+    b.sessionFake.cancel.mockReturnValueOnce(pending.promise)
+    const stop = b.composerApi(ROOT).stop!
+    stop()
+    stop()
+    await vi.waitFor(() => { expect(b.sessionFake.cancel).toHaveBeenCalledOnce() })
+    stop()
+    expect(b.sessionFake.cancel).toHaveBeenCalledOnce()
+    pending.reject(new Error('outcome unknown'))
+    await vi.waitFor(() => { expect(shell.notices.getSnapshot()?.text).toBe('无法确认是否已停止生成，请检查当前状态。') })
+    await Promise.resolve()
+    stop()
+    await vi.waitFor(() => { expect(b.sessionFake.cancel).toHaveBeenCalledTimes(2) })
+  })
+
+  it('does not send a late stop error to an unloaded Session', async () => {
+    const b = await bench()
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    const pending = Promise.withResolvers<never>()
+    b.sessionFake.cancel.mockReturnValueOnce(pending.promise)
+    b.composerApi(ROOT).stop!()
+    await vi.waitFor(() => { expect(b.sessionFake.cancel).toHaveBeenCalledOnce() })
+    await b.runtime.dispose()
+    pending.reject(new Error('late rejection'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(shell.notices.getSnapshot()).toBeNull()
+  })
+
   it('owns the File action, reads its mounted composer availability, and unregisters on disposal', async () => {
     const b = await bench()
     onTestFinished(() => b.runtime.dispose())
@@ -489,7 +607,7 @@ describe('Conversation inject API', () => {
     }
   })
 
-  it('fails loud for an unknown binding or an unloaded scoped service', async () => {
+  it('fails loud for an unknown binding and ignores an unloaded stop action', async () => {
     const b = await bench()
     const entry = b.entryOf('conversation.composer.bar')
     const injectBar = entry.inject as unknown as (
@@ -507,7 +625,8 @@ describe('Conversation inject API', () => {
 
     const stop = injectBar(ROOT).stop!
     await b.feature.dispose()
-    expect(() => { stop() }).toThrow(/unavailable through the session scope/)
+    expect(() => { stop() }).not.toThrow()
+    expect(b.sessionFake.cancel).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 

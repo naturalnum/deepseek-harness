@@ -109,6 +109,10 @@ export const InputBar = memo(function InputBar({
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
+    if (promptError.op === 'stop') {
+      showToast(t('input.stopUnconfirmed'))
+      return
+    }
     if (error.code === 'session/writer-held') {
       showToast(t('error.sessionInUse'))
       return

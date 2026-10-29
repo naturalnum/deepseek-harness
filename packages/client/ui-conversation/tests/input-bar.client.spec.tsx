@@ -1762,6 +1762,17 @@ describe('insertText (scoped event body)', () => {
 })
 
 describe('strips and variants', () => {
+  it.each([zh, en])('reports a stop error as an unconfirmed outcome without a retry action', (dictionary) => {
+    const stop = bench({
+      promptError: { op: 'stop', error: new RemoteError('gateway/internal', 'private transport detail', {}) },
+      t: makeTranslate(dictionary, commonZh),
+    })
+    expect(stop.view.getByRole('alert').textContent).toBe(dictionary['input.stopUnconfirmed'])
+    expect(stop.view.queryByRole('button', { name: 'Retry' })).toBeNull()
+    act(() => { stop.shell.notify('error', dictionary['input.stopUnconfirmed']) })
+    expect(stop.view.getAllByRole('alert')).toHaveLength(1)
+  })
+
   it.each([zh, en])('shows localized guidance when another writer owns the Session', (dictionary) => {
     const send = bench({
       promptError: {
