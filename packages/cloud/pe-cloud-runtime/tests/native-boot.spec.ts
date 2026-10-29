@@ -39,9 +39,11 @@ vi.mock('node:fs/promises', async (load) => {
         if (body && preparationFault.closeFailure !== undefined) throw preparationFault.closeFailure
       }
       const value: unknown = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
+      if (typeof value !== 'function') return value
+      const bound: unknown = value.bind(target)
+      return bound
     } })
-  }) as typeof actual.open }
+  }) }
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -138,7 +140,7 @@ describe('private native account assembly', () => {
       const disposal = handle.dispose().then((result) => { settled = true; return result })
       await Promise.resolve(); expect(settled).toBe(false)
       releaseClose.resolve(undefined)
-      await expect(disposal).resolves.toMatchObject({ status: 'unknown', errorEvents: expect.any(Number), overflow: false })
+      await expect(disposal).resolves.toMatchObject({ status: 'unknown', errorEvents: expect.any(Number) as unknown, overflow: false })
       expect(persistence.isQuiescent(8)).toBe(false)
     } finally {
       releaseRead.resolve(undefined); releaseClose.resolve(undefined)

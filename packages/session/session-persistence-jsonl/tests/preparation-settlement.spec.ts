@@ -43,9 +43,11 @@ vi.mock('node:fs/promises', async (load) => {
         if (isBody && hooks.closeFailure !== undefined) throw hooks.closeFailure
       }
       const value: unknown = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
+      if (typeof value !== 'function') return value
+      const bound: unknown = value.bind(target)
+      return bound
     } })
-  }) as typeof actual.open }
+  }) }
 })
 
 async function fixture() {
@@ -58,7 +60,7 @@ async function fixture() {
   await writeFile(path, JSON.stringify({ type: 'session', id, version: 0, createdAt: 1, cwd: '/work', delegationDepth: 0 }) + '\n')
   hooks.path = path
   onTestFinished(async () => {
-    releases.forEach(release => release())
+    releases.forEach((release) => { release() })
     await fiber.dispose()
     Object.assign(hooks, { path: '', readCalls: 0, blockRead: 0, readEntered: undefined, readRelease: undefined,
       closeCalls: 0, blockClose: 0, closeEntered: undefined, closeRelease: undefined, closeFailure: undefined })

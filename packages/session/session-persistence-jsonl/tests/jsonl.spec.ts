@@ -105,9 +105,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         if (property === 'readFile') return (...readArgs: Parameters<typeof target.readFile>) =>
           probeBodyRead(path, () => target.readFile(...readArgs))
         const value: unknown = Reflect.get(target, property, target)
-        return typeof value === 'function' ? value.bind(target) : value
+        if (typeof value !== 'function') return value
+        const bound: unknown = value.bind(target)
+        return bound
       } })
-    }) as typeof actual.open,
+    }),
     stat: (async (...args: Parameters<typeof actual.stat>) => {
       if (listingProbe.active) return probeListingRead(String(args[0]), () => actual.stat(...args))
       if (String(args[0]) === statFailure.path && statFailure.error !== undefined) throw statFailure.error
