@@ -20,6 +20,7 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { AccountAttachments, type AccountAttachmentLimits } from '../src/account-attachments.ts'
 import { AccountRuntimeError } from '../src/errors.ts'
 import { CloudApiError } from '@deepseek-ai/dsh-pe-cloud-api'
+import { createNativeUploads } from '@deepseek-ai/dsh-pe-cloud-api/src/native-uploads.ts'
 import type { AccountBinding, AccountId, OwnerEpoch } from '../src/types.ts'
 
 const limits: AccountAttachmentLimits = { maxSurfaceNodes: 8192, maxRefs: 16, maxRefBytes: 8192,
@@ -52,7 +53,7 @@ async function consume(stream: AsyncIterable<StreamChunk>): Promise<void> {
   for await (const _chunk of stream) { /* Consume the native LLM dispatcher, including its middleware finally. */ }
 }
 
-async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, allowIntake = false) {
+async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, allowIntake = false, nativeUpload = false) {
   const selectedLimits = { ...limits, ...limitOverrides }
   const home = await mkdtemp(join(tmpdir(), 'account-attachments-composition-')), ctx = new Context()
   const lifetime = new AbortController()
@@ -68,8 +69,11 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
   const store = new LocalAttachmentStore(ctx, { dshHome: home })
   // Only original route registration is replaced; no HTTP, Cookie, Peer or Access claim is made.
   ctx.provide('connection', { fetch: { register: () => () => {} } } as never)
-  const uploads = new FileUploads(ctx, { maxPendingReceipts: selectedLimits.maxPendingReceipts })
   const native = await mountAgentLoopTestHarness(ctx), adapter = new FixtureAdapter()
+  const uploads = nativeUpload ? createNativeUploads(ctx, binding, () => {}, () => {}, 1024, {
+    maxPendingReceipts: selectedLimits.maxPendingReceipts,
+    storeFileStream: (agent, input, save) => feature.storeFileStream(agent, input, save),
+  }).value : new FileUploads(ctx, { maxPendingReceipts: selectedLimits.maxPendingReceipts })
   ctx.llm.registerAdapter(['fixture'], adapter)
   const selected = new Map<Agent, Workspace>(), a = workspace(join(home, 'project-a')), b = workspace(join(home, 'project-b'))
   let insideStage = false, failure: Error | undefined
@@ -240,4 +244,22 @@ it('does not call next or retire a native upload receipt when copy preparation f
   expect(f.uploads.resolve(agent, uploaded.receiptId)).toBe(uploaded.file)
   expect(retire).not.toHaveBeenCalled()
   expect(f.adapter.calls).toBe(0)
+})
+
+
+it('keeps an original account preparation size rejection usable through native HTTP', async () => {
+  const f = await fixture({ maxFileBytes: 4, maxUploadChunkBytes: 4 }, true, true)
+  const agent = await f.create('full-native-size-limit')
+  const body = new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(Uint8Array.of(1, 2, 3, 4)); controller.enqueue(Uint8Array.of(5)); controller.close()
+  } })
+  const request = new Request(`http://fixture/upload?sessionId=${agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  expect(await (await handleFileUploadHttp(f.uploads, request)).json()).toMatchObject({ ok: false,
+    error: { details: { reason: 'FILE_UPLOAD_TOO_LARGE' } } })
+  const small = new Request(`http://fixture/upload?sessionId=${agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: Uint8Array.of(1, 2, 3, 4),
+  })
+  expect(await (await handleFileUploadHttp(f.uploads, small)).json()).toMatchObject({ ok: true })
 })

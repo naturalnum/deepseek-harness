@@ -204,7 +204,8 @@ it('refuses a late receipt for a disposed native Session even if Agent lookup st
   const f = await fixture(1), source = heldSource()
   f.release.push(() => { source.finish.resolve(undefined) })
   const pending = f.track(f.uploads.uploadStream({ sessionId: f.handle.agent.id, data: source.data }))
-  const rejected = expect(pending).rejects.toMatchObject({ code: 'session/not-found' })
+  f.cleanup.unconfirmed = true
+  const rejected = expect(pending).rejects.toMatchObject({ name: 'FileUploadIntakeUnconfirmedError', cause: { code: 'session/not-found' } })
   await source.waiting.promise
   await f.handle.dispose()
   const lookup = vi.spyOn(f.ctx.agents, 'get').mockReturnValue(f.handle.agent)

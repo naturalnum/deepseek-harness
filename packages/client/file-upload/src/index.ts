@@ -291,7 +291,8 @@ export class FileUploads extends TypertRemoteService {
         { cause: error },
       )
     }
-    this.assertCurrentAgent(agent)
+    try { this.assertCurrentAgent(agent) }
+    catch (cause) { throw new FileUploadIntakeUnconfirmedError({ cause }) }
     let staged = this.stagedFiles.get(agent.session)
     if (staged === undefined) {
       staged = new Map()

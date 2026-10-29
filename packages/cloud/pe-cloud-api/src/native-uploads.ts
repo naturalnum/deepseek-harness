@@ -1,6 +1,6 @@
 /** Sole native upload owner with account admission and its original streamed persistence hook. */
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
-import { FileUploads, FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
+import { FileUploads, FILE_UPLOAD_PATH, FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -62,9 +62,39 @@ export function createNativeUploads(
     protected override async storeFileStream(agent: Agent, input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
       graph()
       admit()
-      const result = await preparation.storeFileStream(agent, input, next => super.storeFileStream(agent, next))
-      graph()
-      admit()
+      let firstSave: Promise<boolean> | undefined
+      let called = false, repeated = false, open = true
+      const save = (next: SaveFileStreamAttachment): Promise<FileAttachmentRef> => {
+        if (!open) return Promise.reject(new CloudApiError('cloud/account-unavailable', 'The file upload preparation has settled.'))
+        if (called) {
+          repeated = true
+          return Promise.reject(new CloudApiError('cloud/account-unavailable', 'The file upload hook was already called.'))
+        }
+        called = true
+        let pending: Promise<FileAttachmentRef>
+        try { pending = super.storeFileStream(agent, next) }
+        catch (cause) { firstSave = Promise.resolve(false); throw cause }
+        firstSave = pending.then(() => true, () => false)
+        return pending
+      }
+      let result: FileAttachmentRef
+      try { result = await preparation.storeFileStream(agent, input, save) }
+      catch (cause) {
+        open = false
+        if (firstSave !== undefined) {
+          const firstPublished = await firstSave
+          if (firstPublished || repeated) throw new FileUploadIntakeUnconfirmedError({ cause })
+        } else if (repeated) throw new FileUploadIntakeUnconfirmedError({ cause })
+        throw cause
+      }
+      open = false
+      const firstPublished = firstSave === undefined ? false : await firstSave
+      if (firstSave !== undefined && !firstPublished) throw new FileUploadIntakeUnconfirmedError()
+      try { graph(); admit() }
+      catch (cause) {
+        if (firstPublished) throw new FileUploadIntakeUnconfirmedError({ cause })
+        throw cause
+      }
       return result
     }
 
