@@ -21,8 +21,9 @@ export type Config = z.input<typeof FileUploads.Config>
 
 /** An intake whose owned work has not confirmed settlement; its slot must remain occupied. */
 export class FileUploadIntakeUnconfirmedError extends Error {
-  constructor() {
-    super('File upload intake settlement is unconfirmed.')
+  /** @param options Private causal errors; never serialized by the raw HTTP route. */
+  constructor(options?: ErrorOptions) {
+    super('File upload intake settlement is unconfirmed.', options)
     this.name = 'FileUploadIntakeUnconfirmedError'
   }
 }

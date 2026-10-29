@@ -325,15 +325,17 @@ it('waits for real request-body cancellation when the native hook refuses before
 
 it('reports unconfirmed request cleanup when an unconsumed body rejects cancellation', async () => {
   const f = await fixture(1)
-  f.uploads.failure = new Error('native hook rejected')
+  f.uploads.failure = new Error('private-path-do-not-expose')
   let cancels = 0
   const body = new ReadableStream<Uint8Array>({ cancel() { cancels++; throw new Error('cancel failed') } }, { highWaterMark: 0 })
   const request = new Request(`http://fixture${FILE_UPLOAD_PATH}?sessionId=${f.handle.agent.id}`, {
     method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
   } as RequestInit)
   const response = await f.track(handleFileUploadHttp(f.uploads, request))
-  expect(await response.json()).toMatchObject({ ok: false, error: { code: 'gateway/internal',
+  const result = await response.json()
+  expect(result).toEqual({ ok: false, error: { code: 'gateway/internal',
     message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+  expect(JSON.stringify(result)).not.toContain('private-path-do-not-expose')
   expect(cancels).toBe(1)
   // The route reports its own cleanup uncertainty; this early rejection had already released the service slot.
   f.uploads.failure = undefined

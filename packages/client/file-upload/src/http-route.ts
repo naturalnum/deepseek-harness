@@ -36,7 +36,9 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
   let result: FileUploadHttpResult
   const body = requestBodyChunks(request.body)
   try {
-    let value: FileUploadValue
+    let value: FileUploadValue | undefined
+    let uploadError: unknown
+    let uploadFailed = false
     try {
       value = await service.uploadStream({
         sessionId: brandString<SessionId>(sessionId),
@@ -44,7 +46,14 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
         signal: request.signal,
         ...(name === undefined ? {} : { name }),
       })
-    } finally { await body.return() }
+    } catch (error) { uploadFailed = true; uploadError = error }
+    try { await body.return() }
+    catch (cleanupError) {
+      const cause = uploadFailed ? new AggregateError([uploadError, cleanupError], 'Upload and request cleanup failed.') : cleanupError
+      throw new FileUploadIntakeUnconfirmedError({ cause })
+    }
+    if (uploadFailed) throw uploadError
+    if (value === undefined) throw new FileUploadIntakeUnconfirmedError()
     result = { ok: true, value }
   } catch (error) {
     const failure = remoteErrorOf(error)
