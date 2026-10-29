@@ -315,6 +315,7 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   private readonly listLimit: LimitFunction
   private rootEncodingCheck: Promise<void> | undefined
+  private readonly rootStatChecks = new Set<Promise<void>>()
   private readonly generationFormat: Omit<JsonlGenerationFormatAdapter, 'createRestore'>
   /**
    * Bounded LRU of parsed, validated stored logs keyed by session id and
@@ -1161,7 +1162,10 @@ class JsonlSessionPersistence extends SessionPersistence {
   ): Promise<R[]> {
     const limit = this.listLimit
     // The root read counts against the same bound as every other listing read.
-    const projectDirs = await limit(() => this.listProjectDirs(signal))
+    const projectDirs = await limit(() => {
+      stop?.()
+      return this.listProjectDirs(signal)
+    })
     stop?.()
     const projects = await settleLimited(limit, projectDirs, async (project) => {
       stop?.()
@@ -1169,7 +1173,9 @@ class JsonlSessionPersistence extends SessionPersistence {
       stop?.()
       return dirs
     })
-    if (stop !== undefined) settledStatValues(projects, stop)
+    if (stop !== undefined && projects.some(outcome => outcome.status === 'rejected' && outcome.reason === STAT_CANCELLED)) {
+      settledStatValues(projects, stop)
+    }
     const dirs: string[] = []
     let projectFailure: PromiseRejectedResult | undefined
     for (const outcome of projects) {
@@ -1180,12 +1186,18 @@ class JsonlSessionPersistence extends SessionPersistence {
       // Appended one by one: spreading a large project as call arguments exceeds the engine's argument limit.
       for (const dir of outcome.value) dirs.push(dir)
     }
-    const results = settledStatValues(await settleLimited(limit, dirs, async (dir) => {
+    const outcomes = await settleLimited(limit, dirs, async (dir) => {
       stop?.()
       const result = await task(dir)
       stop?.()
       return result
-    }), stop)
+    })
+    if (stop !== undefined && projectFailure !== undefined
+      && outcomes.some(outcome => outcome.status === 'rejected' && outcome.reason === STAT_CANCELLED)
+      && !outcomes.some(outcome => outcome.status === 'rejected' && outcome.reason !== STAT_CANCELLED)) {
+      throw projectFailure.reason
+    }
+    const results = settledStatValues(outcomes, stop)
     if (projectFailure !== undefined) throw projectFailure.reason
     return results
   }
@@ -1792,24 +1804,34 @@ class JsonlSessionPersistence extends SessionPersistence {
 
   /** Reject a root that already belongs to the other physical encoding. */
   private ensureRootEncoding(): Promise<void> {
-    this.rootEncodingCheck ??= this.checkRootEncoding()
+    this.rootEncodingCheck ??= this.joinRootEncodingChecks([...this.rootStatChecks, this.checkRootEncoding()])
     return this.rootEncodingCheck
+  }
+
+  /** Join overlapping checks, ignoring only another stat's cooperative cancellation. */
+  private async joinRootEncodingChecks(checks: readonly Promise<void>[]): Promise<void> {
+    const outcomes = await Promise.allSettled(checks)
+    const failed = outcomes.find(outcome => outcome.status === 'rejected' && outcome.reason !== STAT_CANCELLED)
+    if (failed?.status === 'rejected') throw failed.reason
   }
 
   /** A stat that starts the check stops queued work without cancelling another caller's shared check. */
   private async ensureRootEncodingForStat(stop: () => void): Promise<void> {
     const shared = this.rootEncodingCheck
     if (shared !== undefined) { await shared; stop(); return }
-    try { await this.checkRootEncoding(stop) } catch (error: unknown) {
+    const check = this.checkRootEncoding(stop)
+    this.rootStatChecks.add(check)
+    try { await check } catch (error: unknown) {
       if (error !== STAT_CANCELLED && this.rootEncodingCheck === undefined) {
         const failed = Promise.reject(error)
         void failed.catch(() => {})
         this.rootEncodingCheck = failed
       }
       throw error
-    }
+    } finally { this.rootStatChecks.delete(check) }
+    this.rootEncodingCheck ??= this.joinRootEncodingChecks([...this.rootStatChecks])
+    await this.rootEncodingCheck
     stop()
-    this.rootEncodingCheck ??= Promise.resolve()
   }
 
   private async checkRootEncoding(stop?: () => void): Promise<void> {

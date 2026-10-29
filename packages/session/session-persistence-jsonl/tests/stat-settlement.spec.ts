@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -18,12 +18,14 @@ const hooks = vi.hoisted(() => ({
   statFailure: undefined as Error | undefined, realpathPath: '', realpathEntered: undefined as (() => void) | undefined,
   realpathRelease: undefined as Promise<unknown> | undefined, realpathFailure: undefined as Error | undefined,
   readdirPath: '', readdirEntered: undefined as (() => void) | undefined, readdirRelease: undefined as Promise<unknown> | undefined,
-  readdirCalls: 0, readdirFailAt: 0, readdirFailure: undefined as Error | undefined,
+  readdirCalls: 0, readdirFailAt: 0, readdirBlockAt: 0, readdirFailure: undefined as Error | undefined,
   decodeEntered: undefined as (() => void) | undefined, decodeRelease: undefined as Promise<unknown> | undefined,
   decodeFailure: undefined as Error | undefined, decodeCalls: 0,
   openPrefix: '', openCalls: 0, openEntered: undefined as (() => void) | undefined, openRelease: undefined as Promise<unknown> | undefined,
   projectPrefix: '', projectReads: 0, projectEntered: undefined as (() => void) | undefined,
   projectRelease: undefined as Promise<unknown> | undefined,
+  readdirFailures: new Map<string, Error>(),
+  readdirGates: new Map<number, { entered: () => void; release: Promise<unknown> }>(),
 }))
 
 vi.mock('node:fs/promises', async (load) => {
@@ -72,6 +74,8 @@ vi.mock('node:fs/promises', async (load) => {
       return actual.realpath(...args)
     }) as typeof actual.realpath,
     readdir: (async (...args: Parameters<typeof actual.readdir>) => {
+      const failure = hooks.readdirFailures.get(String(args[0]))
+      if (failure !== undefined) throw failure
       const trackedProject = hooks.projectPrefix !== '' && typeof args[0] === 'string' && dirname(args[0]) === hooks.projectPrefix
       if (trackedProject) {
         hooks.projectReads += 1
@@ -80,9 +84,12 @@ vi.mock('node:fs/promises', async (load) => {
         return entries
       }
       if (args[0] === hooks.readdirPath) {
-        hooks.readdirEntered?.(); await hooks.readdirRelease
         hooks.readdirCalls += 1
-        if (hooks.readdirCalls === hooks.readdirFailAt && hooks.readdirFailure !== undefined) throw hooks.readdirFailure
+        const call = hooks.readdirCalls
+        const gate = hooks.readdirGates.get(call)
+        if (gate !== undefined) { gate.entered(); await gate.release }
+        else if (hooks.readdirBlockAt === 0 || hooks.readdirBlockAt === call) { hooks.readdirEntered?.(); await hooks.readdirRelease }
+        if (call === hooks.readdirFailAt && hooks.readdirFailure !== undefined) throw hooks.readdirFailure
       }
       return actual.readdir(...args)
     }) as typeof actual.readdir,
@@ -108,10 +115,12 @@ async function fixture(compression: 'none' | 'zstd', cwd = '/work', headerCwd = 
       closeEntered: undefined, closeRelease: undefined, closeFailure: undefined, statEntered: undefined,
       statRelease: undefined, statFailure: undefined, realpathPath: '', realpathEntered: undefined,
       realpathRelease: undefined, realpathFailure: undefined, readdirPath: '', readdirEntered: undefined, readdirRelease: undefined,
-      readdirCalls: 0, readdirFailAt: 0, readdirFailure: undefined,
+      readdirCalls: 0, readdirFailAt: 0, readdirBlockAt: 0, readdirFailure: undefined,
       decodeEntered: undefined, decodeRelease: undefined, decodeFailure: undefined, decodeCalls: 0,
       openPrefix: '', openCalls: 0, openEntered: undefined, openRelease: undefined,
       projectPrefix: '', projectReads: 0, projectEntered: undefined, projectRelease: undefined })
+    hooks.readdirFailures.clear()
+    hooks.readdirGates.clear()
     await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
   })
   await ctx.plugin(JsonlSessionPersistence, { root, compression, listConcurrency })
@@ -256,6 +265,23 @@ it('does not start queued root-encoding directory reads after cancellation', asy
   expect(hooks.projectReads).toBe(1)
 })
 
+it('does not start the root readdir when a queued stat is cancelled before its limiter slot', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
+  const { listLimit } = f.ctx.sessionPersistence as unknown as {
+    listLimit: ((task: () => Promise<void>) => Promise<void>) & { readonly pendingCount: number }
+  }
+  const occupying = listLimit(async () => { gate.entered.resolve(undefined); await gate.release.promise })
+  await gate.entered.promise
+  hooks.readdirPath = f.root
+  const reason = new Error('cancel queued stat'), pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await expect.poll(() => listLimit.pendingCount).toBe(1)
+  abort.abort(reason); gate.release.resolve(undefined)
+  await occupying
+  await expect(pending).rejects.toBe(reason)
+  expect(hooks.readdirCalls).toBe(0)
+})
+
 it('preserves an independent project read failure while cancelling queued root checks', async () => {
   const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
   const failure = Object.assign(new Error('project read failed'), { code: 'EACCES' })
@@ -279,6 +305,78 @@ it('does not cancel a second stat while stopping the first stat root check', asy
   abort.abort(reason); gate.release.resolve(undefined)
   await expect(first).rejects.toBe(reason)
   await expect(second).resolves.toMatchObject({ header: { id: f.id } })
+})
+
+it('joins a concurrently recorded root-check failure before returning its own successful check', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), gate = f.barrier()
+  const failure = Object.assign(new Error('concurrent root check failed'), { code: 'EACCES' })
+  hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirBlockAt = 1; hooks.readdirFailAt = 2; hooks.readdirFailure = failure
+  hooks.readdirEntered = () => { gate.entered.resolve(undefined) }; hooks.readdirRelease = gate.release.promise
+  const first = f.ctx.sessionPersistence.stat(f.id)
+  void first.catch(() => {})
+  await gate.entered.promise
+  const second = f.ctx.sessionPersistence.stat(f.id)
+  await expect(second).rejects.toBe(failure)
+  gate.release.resolve(undefined)
+  await expect(first).rejects.toBe(failure)
+})
+
+it.each(['stat', 'list'] as const)('joins an earlier successful stat with a later failing concurrent %s root check', async (kind) => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), firstGate = f.barrier(), secondGate = f.barrier()
+  const failure = Object.assign(new Error('concurrent root check failed'), { code: 'EACCES' })
+  hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirFailAt = 2; hooks.readdirFailure = failure
+  hooks.readdirGates.set(1, { entered: () => { firstGate.entered.resolve(undefined) }, release: firstGate.release.promise })
+  hooks.readdirGates.set(2, { entered: () => { secondGate.entered.resolve(undefined) }, release: secondGate.release.promise })
+  const first = f.ctx.sessionPersistence.stat(f.id)
+  let firstSettled = false
+  void first.then(() => { firstSettled = true }, () => { firstSettled = true })
+  await firstGate.entered.promise
+  const second = kind === 'stat' ? f.ctx.sessionPersistence.stat(f.id) : f.ctx.sessionPersistence.list()
+  void second.catch(() => {})
+  await secondGate.entered.promise
+  firstGate.release.resolve(undefined)
+  await new Promise<void>(resolve => setImmediate(resolve))
+  expect(firstSettled).toBe(false)
+  secondGate.release.resolve(undefined)
+  await expect(second).rejects.toBe(failure)
+  await expect(first).rejects.toBe(failure)
+})
+
+it('preserves the earlier session-directory failure ahead of a later project failure', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2)
+  await mkdir(dirname(generationLogPath(f.root, '/other', f.id, 0, 'none')), { recursive: true })
+  const projects = (await readdir(f.root, { withFileTypes: true })).filter(entry => entry.isDirectory())
+  const first = projects[0], second = projects[1]
+  if (first === undefined || second === undefined) throw new Error('Expected two real project directories')
+  const firstPath = join(f.root, first.name), secondPath = join(f.root, second.name)
+  const sessions = (await readdir(firstPath, { withFileTypes: true })).filter(entry => entry.isDirectory())
+  const session = sessions[0]
+  if (session === undefined) throw new Error('Expected a real session directory')
+  const early = Object.assign(new Error('earlier session directory failed'), { code: 'EIO' })
+  const later = Object.assign(new Error('later project failed'), { code: 'EACCES' })
+  hooks.readdirFailures.set(join(firstPath, session.name), early)
+  hooks.readdirFailures.set(secondPath, later)
+  await expect(f.ctx.sessionPersistence.stat(f.id)).rejects.toBe(early)
+})
+
+it('preserves an already-reported project failure when cancellation stops an earlier directory check', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), gate = f.barrier(), abort = new AbortController()
+  await mkdir(dirname(generationLogPath(f.root, '/other', f.id, 0, 'none')), { recursive: true })
+  const projects = (await readdir(f.root, { withFileTypes: true })).filter(entry => entry.isDirectory())
+  const first = projects[0], second = projects[1]
+  if (first === undefined || second === undefined) throw new Error('Expected two real project directories')
+  const firstPath = join(f.root, first.name), secondPath = join(f.root, second.name)
+  const session = (await readdir(firstPath, { withFileTypes: true })).find(entry => entry.isDirectory())
+  if (session === undefined) throw new Error('Expected a real session directory')
+  const failure = Object.assign(new Error('project failed'), { code: 'EACCES' })
+  hooks.readdirFailures.set(secondPath, failure)
+  hooks.readdirPath = join(firstPath, session.name); hooks.readdirEntered = () => { gate.entered.resolve(undefined) }
+  hooks.readdirRelease = gate.release.promise
+  const pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await gate.entered.promise
+  abort.abort(new Error('cancel directory')); gate.release.resolve(undefined)
+  await expect(pending).rejects.toBe(failure)
 })
 
 it.each(['none', 'zstd'] as const)('retains a real %s handle close failure after cancellation', async (compression) => {
