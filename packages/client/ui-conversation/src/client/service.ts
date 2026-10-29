@@ -326,7 +326,8 @@ export class ConversationController extends Service implements IConversation {
   retryFileUpload(sessionId: SessionId, id: DraftAttachmentId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined || attachment.kind !== 'file') return
-    if (this.fileUploads.getSnapshot()[id]?.status !== 'error') return
+    const upload = this.fileUploads.getSnapshot()[id]
+    if (upload?.status !== 'error' || upload.reason === 'unconfirmed') return
     this.beginFileUpload(sessionId, attachment)
   }
 
@@ -338,7 +339,10 @@ export class ConversationController extends Service implements IConversation {
   rebindDraftFiles(sessionId: SessionId, ids: readonly DraftAttachmentId[]): void {
     for (const id of ids) {
       const attachment = this.draftAttachments.get(id)
-      if (attachment?.kind === 'file') this.beginFileUpload(sessionId, attachment)
+      const upload = this.fileUploads.getSnapshot()[id]
+      if (attachment?.kind === 'file' && !(upload?.status === 'error' && upload.reason === 'unconfirmed')) {
+        this.beginFileUpload(sessionId, attachment)
+      }
     }
   }
 
@@ -380,8 +384,12 @@ export class ConversationController extends Service implements IConversation {
           draft[attachment.id] = result.ok
             ? { status: 'ready', receiptId: result.value.receiptId, file: result.value.file }
             : { status: 'error', message: result.error.message,
-              ...(result.error.code === 'session/attachment-invalid'
-                && result.error.details.reason === 'FILE_UPLOAD_TOO_LARGE' ? { reason: 'too-large' as const } : {}) }
+              ...(result.error.details.reason === 'FILE_UPLOAD_INTAKE_UNCONFIRMED'
+                || (result.error.code === 'gateway/internal'
+                  && result.error.message === 'File upload intake settlement is unconfirmed.')
+                ? { reason: 'unconfirmed' as const }
+                : result.error.code === 'session/attachment-invalid'
+                  && result.error.details.reason === 'FILE_UPLOAD_TOO_LARGE' ? { reason: 'too-large' as const } : {}) }
         })
       } catch (error) {
         if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return

@@ -54,6 +54,40 @@ async function bench(maxConcurrentFileUploads = 2) {
 }
 
 describe('ConversationController', () => {
+  it('retains an explicitly unconfirmed intake and will not retry it, including on rebind', async () => {
+    const b = await bench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const uploadFile = vi.fn().mockResolvedValue({ ok: false, error: new RemoteError(
+        'gateway/internal', 'File upload intake settlement is unconfirmed.', {},
+      ) })
+      ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
+      const [draft] = b.root.createDrafts(session.sessionId, [new File([Uint8Array.of(1)], 'unknown')])
+      if (draft === undefined) throw new Error('missing draft')
+      await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[draft.id]).toMatchObject({ status: 'error', reason: 'unconfirmed' }) })
+      b.root.retryFileUpload(session.sessionId, draft.id)
+      b.root.rebindDraftFiles(session.sessionId, [draft.id])
+      await b.runtime.flush()
+      expect(uploadFile).toHaveBeenCalledOnce()
+      expect(b.root.fileUploads.getSnapshot()[draft.id]).toMatchObject({ status: 'error', reason: 'unconfirmed' })
+    } finally { await b.runtime.dispose() }
+  })
+
+  it('recognizes the structured unconfirmed reason but not the same text under a different error code', async () => {
+    const b = await bench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const uploadFile = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'private', { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' }) })
+        .mockResolvedValueOnce({ ok: false, error: new RemoteError('session/not-found', 'File upload intake settlement is unconfirmed.', {}) })
+      ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
+      const drafts = b.root.createDrafts(session.sessionId, [new File(['a'], 'structured'), new File(['b'], 'other')])
+      await vi.waitFor(() => { expect(drafts.every(d => b.root.fileUploads.getSnapshot()[d.id]?.status === 'error')).toBe(true) })
+      expect(b.root.fileUploads.getSnapshot()[drafts[0]!.id]).toMatchObject({ reason: 'unconfirmed' })
+      expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).not.toHaveProperty('reason')
+    } finally { await b.runtime.dispose() }
+  })
+
   it('classifies only the structured confirmed size error, not network or generic failures', async () => {
     const b = await bench()
     const session = b.runtime.sessions.binding('s1')!.session

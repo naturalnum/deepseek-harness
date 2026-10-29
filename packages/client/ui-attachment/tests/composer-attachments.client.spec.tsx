@@ -28,6 +28,7 @@ const t = ((key: string, params?: Readonly<Record<string, unknown>>): string => 
     'file.pending': '待发送文件',
     'file.uploading': '上传中…',
     'file.uploadFailed': '上传失败，点击重试',
+    'file.uploadUnconfirmed': '上传结果未确认，请勿重复提交',
     'file.uploadTooLarge': '文件超过上传大小限制，请选择较小的文件',
     'file.label': '文件',
     'image.pending': '待发送图片',
@@ -231,6 +232,20 @@ describe('ComposerAttachments', () => {
 })
 
 describe('ComposerAttachments file drafts', () => {
+  it('announces an unconfirmed result without offering retry', () => {
+    const onRetryFile = vi.fn(), onRemoveAttachment = vi.fn()
+    const view = render(<ComposerAttachments {...props({
+      attachments: [fileDraft('unknown')],
+      uploads: { unknown: { status: 'error', message: 'private detail', reason: 'unconfirmed' } as never },
+      onRetryFile, onRemoveAttachment,
+    })} />)
+    expect(view.getByRole('status').textContent).toContain('上传结果未确认，请勿重复提交')
+    expect(view.queryByRole('button', { name: '重试上传 unknown.pdf' })).toBeNull()
+    expect(view.container.textContent).not.toContain('private detail')
+    fireEvent.click(view.getByRole('button', { name: '移除文件 unknown.pdf' }))
+    expect(onRemoveAttachment).toHaveBeenCalledWith('unknown')
+    expect(onRetryFile).not.toHaveBeenCalled()
+  })
   it('shows the fixed size-limit message only for a confirmed size error', () => {
     const view = render(<ComposerAttachments {...props({
       attachments: [fileDraft('large'), fileDraft('network')],

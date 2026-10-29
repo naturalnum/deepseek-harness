@@ -20,7 +20,7 @@ export type FileCardState = 'uploading' | 'ready' | 'error'
 
 /** One pending file card: type glyph, name, size or upload status, remove, retry. */
 export function FileCard({
-  name, bytes, state, progress, labels, onRemove, onRetry,
+  name, bytes, state, progress, labels, onRemove, onRetry, retryAllowed = true,
 }: {
   name: string
   bytes: number
@@ -29,6 +29,7 @@ export function FileCard({
   labels: FileCardLabels
   onRemove: () => void
   onRetry: () => void
+  retryAllowed?: boolean
 }) {
   const extension = fileExtension(name).toUpperCase().slice(0, 8)
   const meta = state === 'uploading'
@@ -36,10 +37,10 @@ export function FileCard({
     : state === 'error'
       ? labels.failed
       : [extension, fileSizeText(bytes)].filter(part => part !== '').join(' ')
-  const retryable = state === 'error'
+  const retryable = state === 'error' && retryAllowed
   return (
     <div
-      className={`${css.card}${retryable ? ` ${css.failed}` : ''}`}
+      className={`${css.card}${state === 'error' ? ` ${css.failed}` : ''}${state === 'error' && !retryAllowed ? ` ${css.unconfirmed}` : ''}`}
       title={name}
     >
       <span className={css.icon} aria-hidden>
@@ -55,14 +56,15 @@ export function FileCard({
           </button>
         )
         : (
-          <span className={css.body} aria-label={labels.label}>
+          <span className={css.body} aria-label={state === 'error' ? undefined : labels.label}>
             <span className={css.name}>{name}</span>
-            <span className={css.meta}>{meta}</span>
+            <span className={state === 'error' ? `${css.meta} ${css.metaFailed} ${css.metaUnconfirmed}` : css.meta}
+              role={state === 'error' ? 'status' : undefined}>{meta}</span>
           </span>
         )}
       <button
         type="button"
-        className={retryable ? `${css.remove} ${css.removeFailed}` : css.remove}
+        className={state === 'error' ? `${css.remove} ${css.removeFailed}` : css.remove}
         aria-label={labels.remove}
         onClick={onRemove}
       >

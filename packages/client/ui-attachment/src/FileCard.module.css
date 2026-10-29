@@ -17,6 +17,11 @@
   border-color: var(--dsw-alias-state-error-primary, #d54941);
 }
 
+.unconfirmed {
+  height: auto;
+  min-height: 64px;
+}
+
 .icon {
   display: inline-flex;
   flex: none;
@@ -79,6 +84,10 @@
 
 .metaFailed {
   color: var(--dsw-alias-state-error-primary, #d54941);
+}
+
+.metaUnconfirmed {
+  white-space: normal;
 }
 
 .remove {

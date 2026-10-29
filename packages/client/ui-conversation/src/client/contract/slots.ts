@@ -51,7 +51,7 @@ export interface ComposerFileAttachment {
 export type DraftFileUpload =
   | { readonly status: 'uploading'; readonly loaded: number; readonly total?: number }
   | { readonly status: 'ready'; readonly receiptId: FileUploadReceiptId; readonly file: FileAttachmentRef }
-  | { readonly status: 'error'; readonly message: string; readonly reason?: 'too-large' }
+  | { readonly status: 'error'; readonly message: string; readonly reason?: 'too-large' | 'unconfirmed' }
 
 /** Per-draft upload states keyed by draft attachment id. */
 export type DraftFileUploads = Readonly<Record<string, DraftFileUpload>>
