@@ -481,12 +481,16 @@ function renderListItem(
 
 /** A whole list-item filename is an explicit relative open request, not a verified file claim. */
 function standaloneFileListItem(item: Md.ListItem, context: MarkdownRenderContext): { path: string; label: ReactNode[] } | undefined {
-  if (context.streaming || context.standaloneFileLinks !== true || context.fileMentions !== undefined
+  if (context.streaming || context.standaloneFileLinks !== true
     || typeof item.checked === 'boolean' || item.children.length !== 1) return undefined
   const block = item.children[0]
   if (block?.type !== 'paragraph' || block.children.length !== 1) return undefined
   const node = block.children[0]
   if (node?.type !== 'text' && node?.type !== 'inlineCode') return undefined
+  // The recorded-file vocabulary owns code mentions, including ambiguous and
+  // unknown names. Plain list text does not enter that vocabulary and may use
+  // the scoped opener even when the deliverables plugin is active.
+  if (node.type === 'inlineCode' && context.fileMentions !== undefined) return undefined
   const value = node.value
   if (value.length > 255 || !/^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\/)*[A-Za-z0-9_][A-Za-z0-9._-]*\.[A-Za-z][A-Za-z0-9]{0,15}$/.test(value)
     || value.split('/').some(part => part === '.' || part === '..')

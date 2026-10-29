@@ -727,6 +727,9 @@ describe('Chat node rendering', () => {
       turnEnds: new Map([[1, 5], [2, 8]]),
       turnEndReasons: new Map([[2, { kind: 'interrupted' }]]),
     }) })
+    // Production composes ui-deliverables and returns a vocabulary even when
+    // these authored plain-text filenames are not recorded code mentions.
+    h.props.fileMentions = () => ({ resolve: () => undefined })
     const view = render(<h.ChatView {...h.props} />)
 
     fireEvent.click(view.getByRole('button', { name: 'csv24-model.json' }))

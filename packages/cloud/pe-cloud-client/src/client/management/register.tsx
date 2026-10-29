@@ -1,6 +1,6 @@
 /** Sole Cloud management navigation, locale and transient feedback assembly. */
 import { observeCloudDisposal } from '../observe-disposal.ts'
-import { FiberState, type Context } from '@deepseek-ai/cordis'
+import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type { ReactNode } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -19,6 +19,8 @@ import { CLOUD_MANAGEMENT_NAMESPACE, cloudManagementDictionaries } from './local
 import { installCloudPluginCatalog } from './plugins/install.tsx'
 
 const SKILLS_PANEL = 'power-evolve-skills'
+// FiberState is a cross-package const enum and is not exported at runtime.
+const FIBER_ACTIVE = 2 satisfies FiberState.ACTIVE
 function SkillsPanelIcon({ size }: PropsRuntime<'sidebar.panellist'>): ReactNode {
   return <IconSkillOutlineRegular size={size}/>
 }
@@ -51,7 +53,7 @@ export function installCloudManagement(ctx: Context, page: PreparedCloudPage): v
     }
     assertCurrent()
     owner.on('internal/plugin', (fiber) => { if (fiber === owner.fiber && fiber.uid === null) withdraw() })
-    owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FiberState.ACTIVE) withdraw() })
+    owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) withdraw() })
     owner.effect(() => track(owner.locale.register(CLOUD_MANAGEMENT_NAMESPACE, cloudManagementDictionaries)), 'pe-cloud-client: management copy')
     if (skills) owner.effect(() => track(owner.locale.register(SKILLS_MANAGEMENT_NAMESPACE, skillsManagementDictionaries)), 'pe-cloud-client: skills copy')
     const notice = createSnapshotStore<ManagementNotice | null>(null)

@@ -1,6 +1,6 @@
 /** Plugin page and reader contribution inside the one original Cloud management assembly. */
 import { observeCloudDisposal } from '../../observe-disposal.ts'
-import { FiberState, type Context } from '@deepseek-ai/cordis'
+import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type { ReactNode } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ManagementNotice } from '../ManagementActionToast.tsx'
@@ -11,6 +11,9 @@ import type { PreparedCloudPage } from '../../prepared-page.ts'
 import { CLOUD_MANAGEMENT_NAMESPACE } from '../locales.ts'
 import { registerCloudPluginManagement } from './register.ts'
 import { createPagePluginCatalog } from './catalog-reader.ts'
+
+// FiberState is a cross-package const enum and is not exported at runtime.
+const FIBER_ACTIVE = 2 satisfies FiberState.ACTIVE
 
 function PluginPanelIcon({ size }: PropsRuntime<'sidebar.panellist'>): ReactNode {
   return <IconPluginPinwheelOutlineRegular size={size}/>
@@ -47,7 +50,7 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
     }
     withdrawActive = retire
     owner.on('internal/plugin', (fiber) => { if (fiber === owner.fiber && fiber.uid === null) retire() })
-    owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FiberState.ACTIVE) retire() })
+    owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) retire() })
     owner.effect(() => retire, 'pe-cloud-client: withdraw plugin catalog')
     removers.add(registerCloudPluginManagement(owner, 'power-evolve-plugins', () => reader.injected))
     const panelWait = owner.inject(['layout'], (scope) => {

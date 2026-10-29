@@ -41,6 +41,26 @@ describe('Markdown file links', () => {
     expect(view.queryByRole('button')).toBeNull()
     expect(resolve).toHaveBeenCalledWith('report.txt')
   })
+
+  it('opens plain list filenames when recorded-file mentions are present without bypassing code disambiguation', () => {
+    const openFile = vi.fn()
+    const knownOpen = vi.fn()
+    const resolve = vi.fn((value: string) => value === 'known.csv'
+      ? { open: knownOpen, label: 'recorded file', title: 'nested/known.csv' }
+      : undefined)
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText text={'- report.txt\n- `known.csv`\n- `unknown.csv`\n- ../outside.csv'}
+          standaloneFileLinks fileMentions={{ resolve }} />
+      </MarkdownDelegateProvider>,
+    )
+    fireEvent.click(view.getByRole('button', { name: 'report.txt' }))
+    fireEvent.click(view.getByRole('button', { name: 'recorded file' }))
+    expect(openFile).toHaveBeenCalledExactlyOnceWith('report.txt', undefined)
+    expect(knownOpen).toHaveBeenCalledOnce()
+    expect(view.queryByRole('button', { name: 'unknown.csv' })).toBeNull()
+    expect(view.queryByRole('button', { name: '../outside.csv' })).toBeNull()
+  })
   it.each([
     ['src/index.ts', 'src/index.ts', undefined],
     ['/workspace/src/index.ts#L24', '/workspace/src/index.ts', { line: 24 }],
