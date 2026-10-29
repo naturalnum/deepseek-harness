@@ -113,6 +113,7 @@ export class SessionHistoryController {
 
   /**
    * Follow events appended after an initial cursor on one durable address.
+   * Cancellation detaches live listeners and clears buffered frames while opening cleanup remains awaited.
    * @param request - durable address and last committed sequence already held by the caller.
    * @param signal - stream cancellation owned by the Remote carrier.
    * @returns a complete opening snapshot followed by gap-free durable events and opted-in assistant frames.
@@ -173,8 +174,18 @@ export class SessionHistoryController {
         })
         notify()
       }, { global: true })
-    const onAbort = (): void => { notify() }
+    let observing = true
+    const stopObserving = (): void => {
+      if (!observing) return
+      observing = false
+      disposeCreated()
+      disposeEvent()
+      disposeAssistantStream?.()
+      buffered.clear()
+    }
+    const onAbort = (): void => { stopObserving(); notify() }
     signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
     try {
       using source = await this.sourceFor(address, signal, true)
       const events = source.events
@@ -234,9 +245,7 @@ export class SessionHistoryController {
     } finally {
       this.closeFollowers.delete(close)
       signal.removeEventListener('abort', onAbort)
-      disposeCreated()
-      disposeEvent()
-      disposeAssistantStream?.()
+      stopObserving()
     }
   }
 

@@ -7,13 +7,14 @@ import { createRequire } from 'node:module'
 import type { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { Deque } from '../../../util/deque/src/index.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { boot, initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import Gateway, { TypertGatewayService } from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import Typert from '@deepseek-ai/dsh-typert-registry'
-import { bindTypertRemote, Remote } from '@deepseek-ai/dsh-typert-protocol'
+import { bindTypertRemote, Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { apply as connectionApply, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import type { AccountBinding, AccountId, AccountUse, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Auth } from 'better-auth'
@@ -26,6 +27,9 @@ import z from '@deepseek-ai/schemastery'
 import { BetterAuthAccess } from '../src/auth.ts'
 import { LoginPeerRegistry, type ConfigurationPeerOperation, type LoginPeer } from '../src/peers.ts'
 import { accessConfig, carrier } from './ingress-fixture.ts'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionHistoryController } from '../../../api/session-controller/src/history.ts'
+import { installSessionReadTestServices, testSessionPersistence } from '../../../api/session-controller/tests/test-remote.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service } }
 const requestId = brandString<Parameters<BetterAuthAccess['authenticate']>[1]>('configuration-peer-component')
@@ -53,6 +57,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   const saves = saveOwner.createAccount(binding)
   let registry: LoginPeerRegistry | undefined = undefined
   let auth: BetterAuthAccess | undefined = undefined, ctx: Context | undefined = undefined
+  let expectedCleanupFailure = false
   const gates: Array<() => void | Promise<void>> = [], cleanupFailures: unknown[] = []
   const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'unused', database: 'unused', max: 1, connectionTimeoutMillis: 30 })
   vi.spyOn(pool, 'connect').mockImplementation(() => { throw new Error('No physical M1 connection in this component') })
@@ -62,7 +67,9 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   onTestFinished(async () => {
     for (const finish of gates) await finish()
     try {
-      await registry?.closeActual(); await auth?.close()
+      if (expectedCleanupFailure) await registry?.closeActual().catch(() => {})
+      else await registry?.closeActual()
+      await auth?.close()
       await saves.stopConfigSaves(Date.now() + 1000)
       await ctx?.fiber.dispose()
       saveOwner.releaseAccount(saves); saveOwner.close()
@@ -189,7 +196,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     void body.catch((_cause: unknown) => {})
     return { body, actual: bridged.promise, disconnect: () => { request.destroy() }, result: (): unknown => answer }
   }
-  const websocket = async (handle: LoginPeer) => {
+  const websocket = async (handle: LoginPeer, endpoint = '$events', waitForReady = true) => {
     // External event producer is idle; ready, framing and close come from the original Gateway.
     const unregister = native.typertGateway.registerRemoteEvents(async function *(signal) {
       await new Promise<void>((resolve) => {
@@ -218,6 +225,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     })
     const opened = Promise.withResolvers<undefined>(), closed = Promise.withResolvers<undefined>()
     const ready = Promise.withResolvers<undefined>()
+    void ready.promise.catch(() => {})
     let didClose = false
     const frames: unknown[] = []
     client.once('open', () => { opened.resolve(undefined) })
@@ -238,15 +246,67 @@ async function fixture(peerCloseTimeoutMs = 1000) {
       await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
     })
     await Promise.all([opened.promise, upgraded.promise])
-    client.send(JSON.stringify({ type: 'open', streamId: 'original-observation', endpoint: '$events', payload: { args: {} } }))
-    await ready.promise
-    return { frames, closed: closed.promise, didClose: () => didClose }
+    client.send(JSON.stringify({ type: 'open', streamId: 'original-observation', endpoint, payload: { args: {} } }))
+    if (waitForReady) await ready.promise
+    return { frames, client, closed: closed.promise, didClose: () => didClose }
   }
   return { ctx: native, registry: peers, binding, acquire, run, http, websocket, query, cleanupFailures,
     writeNativeValue, patch: () => readFileSync(profile.patchPath, 'utf8'), saves,
     issueUse: () => issueUse(binding), observe: () => ({ borrowed, released, inUse, calls }),
-    setOperation: (next: ConfigurationPeerOperation<unknown>) => { consume = next } }
+    setOperation: (next: ConfigurationPeerOperation<unknown>) => { consume = next },
+    expectCleanupFailure: () => { expectedCleanupFailure = true } }
 }
+
+it('detaches the cancelled follow while the actual Peer and mux still await its opening read', async () => {
+  const f = await fixture(1000)
+  const entered = Promise.withResolvers<undefined>(), cancelled = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  await f.ctx.plugin(SessionStore)
+  installSessionReadTestServices(f.ctx)
+  f.ctx.provide('sessionPersistence', testSessionPersistence(f.ctx, {
+    async stat(_id, options) {
+      const signal = options?.signal
+      if (signal === undefined) throw new Error('Expected the opening cancellation signal')
+      signal.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+      entered.resolve(undefined)
+      await release.promise
+      return undefined
+    },
+  }) as never)
+  const id = SessionId('peer-follow-buffer')
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a')
+  const socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const push = vi.spyOn(Deque.prototype, 'pushBack')
+  const event = { type: 'turn/start', seq: 0 }
+  f.ctx.emit('session/event', { id } as never, event as never)
+  const index = push.mock.calls.findIndex(([value]) => typeof value === 'object' && value !== null && Reflect.get(value, 'event') === event)
+  if (index < 0) throw new Error('Expected the real follow buffer to receive an event')
+  const buffer = push.mock.instances[index] as Deque<unknown>
+  expect(buffer.size).toBe(1)
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  expect(buffer.size).toBe(0)
+  for (let i = 0; i < 10; i += 1) f.ctx.emit('session/event', { id } as never, event as never)
+  expect(buffer.size).toBe(0)
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  expect(entry.streamCount).toBe(1)
+  expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
 
 it('releases actual original Uses, joins the pure observer Peer and restores one new Use with the same native root and epoch', async () => {
   const f = await fixture(), active = await f.acquire('login=a'), observer = await f.acquire('login=b')
