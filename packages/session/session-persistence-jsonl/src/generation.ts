@@ -29,7 +29,7 @@ import { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import { SessionFormatError } from '@deepseek-ai/dsh-session-format'
-import { JsonlReadCleanupError } from './read-cleanup.ts'
+import { JsonlReadCleanupError, readJsonlIo } from './read-cleanup.ts'
 import type {
   SessionFormatArtifact,
   SessionFormatJsonValue,
@@ -216,7 +216,7 @@ export interface JsonlGenerationRuntime {
 
 const defaultFileSystem: GenerationFileSystem = {
   open: (path, flags, mode) => fsOpen(path, flags, mode),
-  readFile: (path, signal) => fsReadFile(path, signal === undefined ? undefined : { signal }),
+  readFile: path => fsReadFile(path),
   readdir: path => fsReaddir(path),
   stat: path => fsStat(path, { bigint: true }),
   lstat: path => fsLstat(path),
@@ -266,12 +266,12 @@ async function readStableSnapshot(
   fs: GenerationFileSystem,
 ): Promise<StablePhysicalFile> {
   signal?.throwIfAborted()
-  let before = await fs.stat(path)
+  let before = await readJsonlIo(signal, () => fs.stat(path))
   for (let attempt = 0; ; attempt += 1) {
     signal?.throwIfAborted()
     const bytes = await fs.readFile(path, signal)
     signal?.throwIfAborted()
-    const after = await fs.stat(path)
+    const after = await readJsonlIo(signal, () => fs.stat(path))
     if (identity(before) === identity(after)) {
       signal?.throwIfAborted()
       return { bytes, identity: after }
@@ -1072,11 +1072,11 @@ const ownedPreparationRuntime = createJsonlGenerationRuntime({ fs: { readFile: r
 /** Retain close failure separately from an interrupted or failed read. */
 async function readOwnedJsonlFile(path: string, signal?: AbortSignal): Promise<Buffer> {
   signal?.throwIfAborted()
-  const handle = await fsOpen(path, 'r')
+  const handle = await readJsonlIo(signal, () => fsOpen(path, 'r'))
   let readFailure: { readonly error: unknown } | undefined
   try {
     signal?.throwIfAborted()
-    return await handle.readFile()
+    return await readJsonlIo(signal, () => handle.readFile())
   }
   catch (error: unknown) { readFailure = { error }; throw error }
   finally {

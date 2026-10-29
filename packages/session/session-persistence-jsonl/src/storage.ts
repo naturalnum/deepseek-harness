@@ -126,7 +126,29 @@ export class JsonlSessionHandle implements SessionHandle {
    */
   async read(offset = 0, length = Number.MAX_SAFE_INTEGER, options?: SessionHandleReadOptions): Promise<SessionHandleReadResult> {
     this.pendingReads++
-    try { return await this.readOwned(offset, length, options) } finally { this.pendingReads-- }
+    const signal = options?.signal
+    const controller = signal === undefined ? undefined : new AbortController()
+    const cancelled = new Error('JSONL handle read cancelled')
+    const stop = (): void => { controller?.abort(cancelled) }
+    signal?.addEventListener('abort', stop, { once: true })
+    if (signal?.aborted === true) stop()
+    try {
+      let result: SessionHandleReadResult
+      try { result = await this.readOwned(offset, length, controller === undefined ? options : { signal: controller.signal }) }
+      catch (error: unknown) {
+        if (signal?.aborted === true && error === cancelled) signal.throwIfAborted()
+        if (signal?.aborted === true && (error === signal.reason || error instanceof Error
+          && error.name === 'AbortError' && Reflect.get(error, 'code') === 'ABORT_ERR' && error.cause === signal.reason)) {
+          throw new AggregateError([error], 'JSONL handle read failed during cancellation', { cause: error })
+        }
+        throw error
+      }
+      signal?.throwIfAborted()
+      return result
+    } finally {
+      signal?.removeEventListener('abort', stop)
+      this.pendingReads--
+    }
   }
 
   private async readOwned(offset: number, length: number, options?: SessionHandleReadOptions): Promise<SessionHandleReadResult> {

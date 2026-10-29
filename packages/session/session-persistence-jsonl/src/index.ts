@@ -47,7 +47,7 @@ import {
 import { ensureDurableDirectoryWin32, publishNewFileWin32 } from './win32.ts'
 import { verifyCurrentGenerationInWorker } from './migration-verifier.ts'
 import { prepareCatalogFacts } from './catalog-migration.ts'
-import { JsonlReadCleanupError } from './read-cleanup.ts'
+import { JsonlReadCleanupError, readJsonlIo } from './read-cleanup.ts'
 import {
   JsonlGenerationSourceChangedError,
   JsonlGenerationUnsupportedMigrationError,
@@ -141,7 +141,7 @@ interface CurrentStoredLog extends StoredLogBase {
 /** A migrated historical generation retained until an explicit write open publishes it. */
 interface PreparedStoredLog extends StoredLogBase {
   readonly status: 'prepared'
-  readonly validateRelatedSources: () => Promise<void>
+  readonly validateRelatedSources: (signal?: AbortSignal) => Promise<void>
   readonly publication: {
     readonly source: ResolvedJsonlGeneration
     readonly value: PreparedJsonlMigration
@@ -261,6 +261,23 @@ function settledStatValues<R>(outcomes: readonly PromiseSettledResult<R>[], stop
     if (failed?.status === 'rejected') throw failed.reason
   }
   return settledValues(outcomes)
+}
+
+/** Preserve failures from every started sibling before propagating cancellation. */
+function prioritizeCancelledFailures<R>(outcomes: readonly PromiseSettledResult<R>[], signal?: AbortSignal): void {
+  if (signal?.aborted !== true) return
+  const failures: unknown[] = []
+  for (const outcome of outcomes) {
+    if (outcome.status !== 'rejected') continue
+    const failure: unknown = outcome.reason
+    if (failure !== signal.reason) failures.push(failure)
+  }
+  if (failures.length === 0) return
+  if (failures.length === 1) throw failures[0]
+  const combined = new AggregateError(failures, 'multiple JSONL operations failed during cancellation')
+  const cleanup = failures.find(failure => failure instanceof JsonlReadCleanupError)
+  if (cleanup instanceof JsonlReadCleanupError) throw new JsonlReadCleanupError(cleanup.cause, { error: combined })
+  throw combined
 }
 
 /** Whether a filesystem-owned failure should retain its original errno and path. */
@@ -633,7 +650,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     const selected = await this.findLog(id, signal)
     if (selected === undefined) throw new SessionPersistenceNotFoundError(id)
     if (selected.sourceVersion < SESSION_FORMAT_VERSION) {
-      const sourceRevision = fileRevision(await stat(selected.sourcePath, { bigint: true }))
+      const sourceRevision = fileRevision(await readJsonlIo(signal, () => stat(selected.sourcePath, { bigint: true })))
       signal?.throwIfAborted()
       let preparation = this.migrationPreparations.get(id)
       if (preparation === undefined
@@ -686,7 +703,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         { kind: 'jsonl', path: selected.sourcePath },
       )
     }
-    const probe = fileRevision(await stat(selected.sourcePath, { bigint: true }))
+    const probe = fileRevision(await readJsonlIo(signal, () => stat(selected.sourcePath, { bigint: true })))
     const memoized = this.coldLogMemo.get(id)
     if (memoized?.status === 'current' && memoized.revision === probe) {
       this.coldLogMemo.delete(id)
@@ -714,7 +731,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     const memoized = this.coldLogMemo.get(id)
     if (memoized?.status === 'prepared' && memoized.revision === sourceRevision) {
       try {
-        await memoized.validateRelatedSources()
+        await memoized.validateRelatedSources(signal)
       } catch (error: unknown) {
         this.coldLogMemo.delete(id)
         throw this.generationFailure(id, selected, error)
@@ -771,9 +788,9 @@ class JsonlSessionPersistence extends SessionPersistence {
     signal: AbortSignal,
   ): Promise<PreparedStoredLog> {
     let prepared: Awaited<ReturnType<typeof prepareJsonlMigration>>
-    let validateRelatedSources: () => Promise<void>
+    let validateRelatedSources: (signal?: AbortSignal) => Promise<void>
     try {
-      const children = async () => (await this.listArtifacts(signal))
+      const children = async (currentSignal = signal) => (await this.listArtifacts(currentSignal))
         .filter(source => source.header.origin === 'subagent' && source.header.parentSession === id)
       const sources = await children()
       const related = await prepareCatalogFacts(id, sources, this.compression, signal)
@@ -781,13 +798,13 @@ class JsonlSessionPersistence extends SessionPersistence {
         this.ctx.logger.warn(`${this.name}: session "${id}" catalog retained a child with unknown descriptor (raw log: ${failure.path}): ${String(failure.error)}`)
       }
       const membership = sources.map(source => source.path).sort()
-      validateRelatedSources = async () => {
-        const current = (await children()).map(source => source.path).sort()
+      validateRelatedSources = async (validationSignal = signal) => {
+        const current = (await children(validationSignal)).map(source => source.path).sort()
         const before = new Set(membership)
         const after = new Set(current)
         const changed = current.find(path => !before.has(path)) ?? membership.find(path => !after.has(path))
         if (changed !== undefined) throw new JsonlGenerationSourceChangedError(changed)
-        await related.validate()
+        await related.validate(validationSignal)
       }
       prepared = await prepareJsonlMigration({
         sourcePath: selected.sourcePath,
@@ -800,7 +817,7 @@ class JsonlSessionPersistence extends SessionPersistence {
             recovery: 'recoverable', validation: 'transformed',
           }),
         },
-        validateRelatedSources,
+        validateRelatedSources: () => validateRelatedSources(signal),
         verifyCurrentFile: verifyCurrentGenerationInWorker,
         validateHistoricalHeader: headerValue => this.validateSourceIdentity(
           selected,
@@ -890,7 +907,7 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   async readStoredLog(path: string, expectedId: SessionId, signal?: AbortSignal): Promise<CurrentStoredLog> {
     signal?.throwIfAborted()
-    const probe = fileRevision(await stat(path, { bigint: true }))
+    const probe = fileRevision(await readJsonlIo(signal, () => stat(path, { bigint: true })))
     const memoized = this.coldLogMemo.get(expectedId)
     if (memoized?.status === 'current' && memoized.revision === probe) {
       this.coldLogMemo.delete(expectedId)
@@ -934,7 +951,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         }
       }
     } catch (error: unknown) {
-      signal?.throwIfAborted()
+      if (error instanceof JsonlReadCleanupError || signal?.aborted === true && error === signal.reason) throw error
       // A parse-time format refusal predates any SessionHeader, so attach the
       // artifact this read actually refused; every other parse failure is
       // committed bytes the decoder cannot interpret — damage, classified for
@@ -1097,6 +1114,20 @@ class JsonlSessionPersistence extends SessionPersistence {
     if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
 
     const decoder = createZstdFrameDecoder()
+    let readFailure: { readonly error: unknown } | undefined
+    let closeFailure: { readonly error: unknown } | undefined
+    let closeException: JsonlReadCleanupError | undefined
+    const closeState = { attempted: false }
+    const close = decoder.close.bind(decoder)
+    decoder.close = () => {
+      if (closeState.attempted) return
+      closeState.attempted = true
+      try { close() } catch (error: unknown) {
+        closeFailure = { error }
+        closeException = new JsonlReadCleanupError(error)
+        throw closeException
+      }
+    }
     let yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
     try {
       const decodedFrames = decoder.decode(buffer, frames)
@@ -1141,9 +1172,11 @@ class JsonlSessionPersistence extends SessionPersistence {
       try {
         signal?.throwIfAborted()
         recoveredPlaintext = await decompressZstdPrefix(buffer.subarray(tornStart))
-      } catch {
-        /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent */
-        if (signal?.aborted) signal.throwIfAborted()
+      } catch (error: unknown) {
+        if (signal?.aborted === true) {
+          if (error === signal.reason) throw error
+          throw new AggregateError([error], 'JSONL decoder failed during cancellation', { cause: error })
+        }
         // A structurally incomplete final frame may end before Node's decoder
         // can emit any plaintext; the complete prior frames remain recoverable.
       }
@@ -1157,12 +1190,21 @@ class JsonlSessionPersistence extends SessionPersistence {
         tornTruncateTo: tornStart,
         recoveredTail: prefix.events.slice(complete.eventCount),
       }
-    } catch (error) {
-      /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent */
-      if (signal?.aborted) signal.throwIfAborted()
+    } catch (error: unknown) {
+      readFailure = { error }
       throw error
     } finally {
-      decoder.close()
+      if (!closeState.attempted) {
+        try { decoder.close() } catch (error: unknown) { closeFailure ??= { error } }
+      }
+      if (closeFailure !== undefined) {
+        let previous = readFailure?.error === closeException ? undefined : readFailure
+        if (previous?.error instanceof AggregateError && previous.error.cause === closeException
+          && previous.error.errors.length === 2 && previous.error.errors[1] === closeException) {
+          previous = { error: previous.error.errors[0] }
+        }
+        throw new JsonlReadCleanupError(closeFailure.error, previous)
+      }
     }
   }
 
@@ -1206,6 +1248,8 @@ class JsonlSessionPersistence extends SessionPersistence {
     if (stop !== undefined && projects.some(outcome => outcome.status === 'rejected' && outcome.reason === STAT_CANCELLED)) {
       settledStatValues(projects, stop)
     }
+    prioritizeCancelledFailures(projects, signal)
+    signal?.throwIfAborted()
     const dirs: string[] = []
     let projectFailure: PromiseRejectedResult | undefined
     for (const outcome of projects) {
@@ -1227,6 +1271,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       && !outcomes.some(outcome => outcome.status === 'rejected' && outcome.reason !== STAT_CANCELLED)) {
       throw projectFailure.reason
     }
+    prioritizeCancelledFailures([...outcomes, ...projects], signal)
     const results = settledStatValues(outcomes, stop)
     if (projectFailure !== undefined) throw projectFailure.reason
     return results
@@ -1235,11 +1280,11 @@ class JsonlSessionPersistence extends SessionPersistence {
   /** Historical logical events depend on the corpus, including members with unreadable headers. */
   private async historicalCorpusRevision(signal?: AbortSignal, stop?: () => void): Promise<string> {
     const paths = (await this.listGenerations(signal, stop)).map(source => source.sourcePath).sort()
-    const entries = settledStatValues(await settleLimited(this.listLimit, paths, async (path) => {
+    const outcomes = await settleLimited(this.listLimit, paths, async (path) => {
       signal?.throwIfAborted()
       stop?.()
       try {
-        const identity = await stat(path, { bigint: true })
+        const identity = await readJsonlIo(signal, () => stat(path, { bigint: true }))
         stop?.()
         return { path, revision: fileRevision(identity) }
       } catch (error: unknown) {
@@ -1247,7 +1292,9 @@ class JsonlSessionPersistence extends SessionPersistence {
         stop?.()
         return { path, revision: 'missing' }
       }
-    }), stop)
+    })
+    prioritizeCancelledFailures(outcomes, signal)
+    const entries = settledStatValues(outcomes, stop)
     const hash = createHash('sha256')
     for (const { path, revision } of entries) hash.update(JSON.stringify([path, revision]))
     signal?.throwIfAborted()
@@ -1267,11 +1314,13 @@ class JsonlSessionPersistence extends SessionPersistence {
         return { selected, metadata: await this.readGenerationHeader(selected, undefined, signal) }
       } catch (error: unknown) {
         if (error instanceof SessionFormatUnsupportedError || error instanceof SessionPersistenceCorruptionError) {
+          if (signal?.aborted === true) throw error
           return { selected, metadata: undefined }
         }
         throw error
       }
     })
+    prioritizeCancelledFailures(headers, signal)
     const artifacts: Array<GenerationHeader & { path: string; sourceVersion: number }> = []
     const ids = new Set<SessionId>()
     for (const outcome of headers) {
@@ -1588,7 +1637,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private async readFirstLine(path: string, signal?: AbortSignal, stop?: () => void): Promise<string | undefined> {
     signal?.throwIfAborted()
     let handle: Awaited<ReturnType<typeof open>>
-    try { handle = await open(path, 'r') } catch (error: unknown) {
+    try { handle = await readJsonlIo(signal, () => open(path, 'r')) } catch (error: unknown) {
       if (isENOENT(error)) return undefined
       throw error
     }
@@ -1601,7 +1650,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       for (;;) {
         signal?.throwIfAborted()
         stop?.()
-        const { bytesRead } = await handle.read(buf, 0, buf.length, null)
+        const { bytesRead } = await readJsonlIo(signal, () => handle.read(buf, 0, buf.length, null))
         stop?.()
         signal?.throwIfAborted()
         if (bytesRead === 0) return undefined // EOF with no newline → no complete line
@@ -1626,7 +1675,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private async readFirstZstdLine(path: string, signal?: AbortSignal, stop?: () => void): Promise<string | undefined> {
     signal?.throwIfAborted()
     let handle: Awaited<ReturnType<typeof open>>
-    try { handle = await open(path, 'r') } catch (error: unknown) {
+    try { handle = await readJsonlIo(signal, () => open(path, 'r')) } catch (error: unknown) {
       if (isENOENT(error)) return undefined
       throw error
     }
@@ -1639,7 +1688,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       for (;;) {
         signal?.throwIfAborted()
         stop?.()
-        const { bytesRead } = await handle.read(chunk, 0, chunk.length, null)
+        const { bytesRead } = await readJsonlIo(signal, () => handle.read(chunk, 0, chunk.length, null))
         stop?.()
         signal?.throwIfAborted()
         if (bytesRead === 0) return undefined
@@ -1649,7 +1698,14 @@ class JsonlSessionPersistence extends SessionPersistence {
         try {
           const first = scanZstdFrames(content, 1).frames[0]
           if (first === undefined) continue
-          const plaintext = await decompressZstdFrame(content.subarray(first.start, first.end))
+          let plaintext: Buffer
+          try { plaintext = await decompressZstdFrame(content.subarray(first.start, first.end)) }
+          catch (error: unknown) {
+            if (signal?.aborted === true && error === signal.reason) {
+              throw new AggregateError([error], 'JSONL header decompression failed during cancellation', { cause: error })
+            }
+            throw error
+          }
           stop?.()
           signal?.throwIfAborted()
           assertZstdHeaderFrame(plaintext)
@@ -1680,7 +1736,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     signal?.throwIfAborted()
     let entries: Dirent[]
     try {
-      entries = await readdir(dir, { withFileTypes: true })
+      entries = await readJsonlIo(signal, () => readdir(dir, { withFileTypes: true }))
     } catch (error: unknown) {
       if (isENOENT(error)) return undefined
       throw error
@@ -1798,7 +1854,9 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   private async sameFile(path: string, expectedPath: string, signal?: AbortSignal): Promise<boolean> {
     signal?.throwIfAborted()
-    const [actual, expected] = await Promise.allSettled([realpath(path), realpath(expectedPath)])
+    const [actual, expected] = await Promise.allSettled([
+      readJsonlIo(signal, () => realpath(path)), readJsonlIo(signal, () => realpath(expectedPath)),
+    ])
     for (const outcome of [actual, expected]) {
       if (outcome.status === 'rejected' && !isENOENT(outcome.reason)) throw outcome.reason
     }
@@ -1810,7 +1868,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private async listProjectDirs(signal?: AbortSignal): Promise<string[]> {
     try {
       signal?.throwIfAborted()
-      const entries = await readdir(this.root, { withFileTypes: true })
+      const entries = await readJsonlIo(signal, () => readdir(this.root, { withFileTypes: true }))
       signal?.throwIfAborted()
       return entries.filter(e => e.isDirectory()).map(e => join(this.root, e.name))
     } catch (error) {
@@ -1823,7 +1881,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   /** List session-owned directories and reject the obsolete flat-file layout. */
   private async listSessionDirs(project: string, signal?: AbortSignal): Promise<string[]> {
     signal?.throwIfAborted()
-    const entries = await readdir(project, { withFileTypes: true })
+    const entries = await readJsonlIo(signal, () => readdir(project, { withFileTypes: true }))
     signal?.throwIfAborted()
     const legacy = entries.find(entry =>
       entry.isFile() && (entry.name.endsWith('.jsonl') || entry.name.endsWith('.jsonl.zstd')))
@@ -1900,7 +1958,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     for (const compression of ['zstd', 'none'] as const) {
       stop?.()
       const path = join(project, encoded + logSuffix(compression))
-      const artifactExists = await this.exists(path)
+      const artifactExists = await this.exists(path, signal)
       stop?.()
       signal?.throwIfAborted()
       if (artifactExists) throw this.legacyLayout(path)
@@ -1949,10 +2007,10 @@ class JsonlSessionPersistence extends SessionPersistence {
     )
   }
 
-  private async exists(path: string): Promise<boolean> {
+  private async exists(path: string, signal?: AbortSignal): Promise<boolean> {
     let handle: Awaited<ReturnType<typeof open>>
     try {
-      handle = await open(path, 'r')
+      handle = await readJsonlIo(signal, () => open(path, 'r'))
     } catch (error) {
       // Only an open ENOENT means absent; close failures never prove absence.
       /* v8 ignore else -- Windows reports file-valued parents as ENOENT; POSIX covers direct ENOTDIR. */

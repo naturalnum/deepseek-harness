@@ -113,7 +113,7 @@ function entry(ctx: Context, id: string) {
 }
 
 describe('private native account assembly', () => {
-  it('keeps detached JSONL preparation owned through native disposal and reports a late close failure', async () => {
+  it('joins cancelled JSONL preparation and reports its close failure through native disposal', async () => {
     const f = fixture('jsonl-preparation'), read = Promise.withResolvers<undefined>(), releaseRead = Promise.withResolvers<undefined>()
     const close = Promise.withResolvers<undefined>(), releaseClose = Promise.withResolvers<undefined>()
     const root = join(f.profile.home, 'sessions'), id = SessionId('native-historical')
@@ -131,16 +131,23 @@ describe('private native account assembly', () => {
     try {
       const ctx = await mounted(handle), persistence = ctx.sessionPersistence, abort = new AbortController()
       const reason = new Error('caller cancelled'), opening = persistence.open(id, 'read', { signal: abort.signal })
-      void opening.catch(() => {})
+      let openingSettled = false
+      void opening.then(() => { openingSettled = true }, () => { openingSettled = true })
       await read.promise
-      abort.abort(reason); await expect(opening).rejects.toBe(reason)
+      abort.abort(reason)
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(openingSettled).toBe(false)
       expect(persistence.isQuiescent(8)).toBe(false)
       releaseRead.resolve(undefined); await close.promise
+      expect(openingSettled).toBe(false)
       let settled = false
       const disposal = handle.dispose().then((result) => { settled = true; return result })
       await Promise.resolve(); expect(settled).toBe(false)
       releaseClose.resolve(undefined)
-      await expect(disposal).resolves.toMatchObject({ status: 'unknown', errorEvents: expect.any(Number) as unknown, overflow: false })
+      await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
+      const outcome = await disposal
+      expect(outcome).toMatchObject({ status: 'unknown', overflow: false })
+      expect(outcome.errorEvents).toBeGreaterThan(0)
       expect(persistence.isQuiescent(8)).toBe(false)
     } finally {
       releaseRead.resolve(undefined); releaseClose.resolve(undefined)

@@ -194,6 +194,24 @@ it.each(['generic', 'errno'] as const)('preserves an independent %s read failure
     : { name: 'SessionPersistenceCorruptionError', cause: failure })
 })
 
+it('preserves a real read failure equal to the internal preparation cancellation reason', async () => {
+  const f = await fixture(), gate = f.barrier(), abort = new AbortController(), reason = new Error('caller cancellation')
+  hooks.blockRead = 1; hooks.readEntered = () => { gate.entered.resolve(undefined) }; hooks.readRelease = gate.release.promise
+  const opening = f.persistence.open(f.id, 'read', { signal: abort.signal })
+  void opening.catch(() => {})
+  await gate.entered.promise
+  const internal = f.persistence as unknown as { migrationPreparations: Map<SessionId, { controller: AbortController }> }
+  const preparation = internal.migrationPreparations.get(f.id)
+  if (preparation === undefined) throw new Error('Missing preparation')
+  abort.abort(reason)
+  const failure: unknown = preparation.controller.signal.reason
+  hooks.readFailure = failure as Error
+  gate.release.resolve(undefined)
+  await expect(opening).rejects.toMatchObject({ name: 'SessionPersistenceCorruptionError', cause: {
+    name: 'AggregateError', cause: failure, errors: [failure],
+  } })
+})
+
 it('keeps the same preparation for another waiter after cancellation', async () => {
   const f = await fixture(), gate = f.barrier(), abort = new AbortController(), reason = new Error('one waiter cancelled')
   hooks.blockRead = 1; hooks.readEntered = () => { gate.entered.resolve(undefined) }; hooks.readRelease = gate.release.promise

@@ -40,14 +40,26 @@ const jsonlCloseFault = vi.hoisted(() => ({ path: '', entered: undefined as (() 
   readEntered: undefined as (() => void) | undefined, readRelease: undefined as Promise<unknown> | undefined,
   readFailure: undefined as Error | undefined, bodyEntered: undefined as (() => void) | undefined,
   bodyRelease: undefined as Promise<unknown> | undefined, bodyFailure: undefined as Error | undefined,
-  bodyCloseEntered: undefined as (() => void) | undefined, bodyCloseRelease: undefined as Promise<unknown> | undefined }))
+  bodyCloseEntered: undefined as (() => void) | undefined, bodyCloseRelease: undefined as Promise<unknown> | undefined,
+  dir: '', dirEntered: undefined as (() => void) | undefined, dirRelease: undefined as Promise<unknown> | undefined,
+  dirFailure: undefined as Error | undefined, parallelPaths: [] as string[], parallelCount: 0,
+  parallelEntered: undefined as (() => void) | undefined, parallelRelease: undefined as Promise<unknown> | undefined,
+  parallelFailure: undefined as Error | undefined, parallelReadFailure: undefined as Error | undefined }))
 
 vi.mock('node:fs/promises', async (load) => {
   const actual = await load<typeof import('node:fs/promises')>()
-  return { ...actual, open: async (...args: Parameters<typeof actual.open>) => {
+  return { ...actual, readdir: (async (...args: Parameters<typeof actual.readdir>) => {
+    const result = await actual.readdir(...args)
+    if (args[0] === jsonlCloseFault.dir) {
+      jsonlCloseFault.dirEntered?.(); await jsonlCloseFault.dirRelease
+      if (jsonlCloseFault.dirFailure !== undefined) throw jsonlCloseFault.dirFailure
+    }
+    return result
+  }) as typeof actual.readdir, open: async (...args: Parameters<typeof actual.open>) => {
     const handle = await actual.open(...args)
-    if (args[0] !== jsonlCloseFault.path || args[1] !== 'r') return handle
-    let body = false
+    const parallelIndex = jsonlCloseFault.parallelPaths.indexOf(String(args[0]))
+    if ((args[0] !== jsonlCloseFault.path && parallelIndex < 0) || args[1] !== 'r') return handle
+    let body = false, parallelRead = false
     return new Proxy(handle, { get(target, property) {
       if (property === 'readFile') return async (...readArgs: Parameters<typeof target.readFile>) => {
         body = true; jsonlCloseFault.bodyEntered?.(); await jsonlCloseFault.bodyRelease
@@ -55,6 +67,12 @@ vi.mock('node:fs/promises', async (load) => {
         return target.readFile(...readArgs)
       }
       if (property === 'read') return async (...readArgs: Parameters<typeof target.read>) => {
+        if (parallelIndex >= 0 && !parallelRead) {
+          parallelRead = true; jsonlCloseFault.parallelCount += 1
+          if (jsonlCloseFault.parallelCount === 2) jsonlCloseFault.parallelEntered?.()
+          await jsonlCloseFault.parallelRelease
+          if (parallelIndex === 0 && jsonlCloseFault.parallelReadFailure !== undefined) throw jsonlCloseFault.parallelReadFailure
+        }
         jsonlCloseFault.readEntered?.()
         await jsonlCloseFault.readRelease
         if (jsonlCloseFault.readFailure !== undefined) throw jsonlCloseFault.readFailure
@@ -65,6 +83,7 @@ vi.mock('node:fs/promises', async (load) => {
         jsonlCloseFault.entered?.()
         await jsonlCloseFault.release
         await target.close()
+        if (parallelRead && parallelIndex === 1 && jsonlCloseFault.parallelFailure !== undefined) throw jsonlCloseFault.parallelFailure
         if (jsonlCloseFault.failure !== undefined) throw jsonlCloseFault.failure
       }
       const value: unknown = Reflect.get(target, property, target)
@@ -692,6 +711,122 @@ it.each(['cancel', 'same-reason'] as const)('retains the real Peer through a his
     await expect(entry.mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
       cause: { name: 'AggregateError', cause: failure, errors: [failure] } })
   }
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
+
+it.each(['close', 'read-and-close'] as const)('retains the Peer for parallel historical header %s failure', async (kind) => {
+  const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const cancelled = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-parallel-header-')))
+  const failure = new Error('actual sibling close failed')
+  onTestFinished(() => {
+    release.resolve(undefined); jsonlCloseFault.parallelPaths = []; jsonlCloseFault.parallelCount = 0
+    jsonlCloseFault.parallelEntered = undefined; jsonlCloseFault.parallelRelease = undefined; jsonlCloseFault.parallelFailure = undefined
+    jsonlCloseFault.parallelReadFailure = undefined
+    rmSync(root, { recursive: true, force: true })
+  })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId('peer-parent')
+  for (const child of [id, SessionId('aaa-child'), SessionId('zzz-child')]) {
+    const path = generationLogPath(root, '/workspace', child, 3, 'none')
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, JSON.stringify({ type: 'session', id: child, version: 3, createdAt: 1,
+      cwd: '/workspace', isSeeded: false, delegationDepth: 0 }) + '\n')
+    if (child !== id) jsonlCloseFault.parallelPaths.push(path)
+  }
+  jsonlCloseFault.parallelEntered = () => { entered.resolve(undefined) }; jsonlCloseFault.parallelRelease = release.promise
+  jsonlCloseFault.parallelFailure = failure
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation((sessionId, options) => {
+    options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+    return observe(sessionId, options)
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number; mux: { close(): Promise<void> } }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  const readFailure = Object.assign(new Error('actual sibling read failed'), { code: 'EIO' })
+  if (kind === 'read-and-close') jsonlCloseFault.parallelReadFailure = readFailure
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  expect(f.ctx.sessionPersistence.isQuiescent(8)).toBe(false)
+  await expect(entry.mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'JsonlReadCleanupError', cause: failure, ...(kind === 'read-and-close' ? { errors: [
+      { name: 'AggregateError', errors: [readFailure, expect.objectContaining({ name: 'JsonlReadCleanupError', cause: failure })] },
+      failure,
+    ] } : {}) } })
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
+
+it('retains the Peer when a handle directory read fails with the cancellation reason', async () => {
+  const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const cancelled = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-handle-lookup-')))
+  onTestFinished(() => {
+    release.resolve(undefined); jsonlCloseFault.dir = ''; jsonlCloseFault.dirEntered = undefined
+    jsonlCloseFault.dirRelease = undefined; jsonlCloseFault.dirFailure = undefined
+    rmSync(root, { recursive: true, force: true })
+  })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId('peer-handle-lookup-failure')
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
+  const persistence = f.ctx.sessionPersistence, open = persistence.open.bind(persistence)
+  vi.spyOn(persistence, 'open').mockImplementation(async (...args) => {
+    const result = await open(...args)
+    jsonlCloseFault.dir = dirname(path); jsonlCloseFault.dirEntered = () => { entered.resolve(undefined) }
+    jsonlCloseFault.dirRelease = release.promise
+    return result
+  })
+  let observationSignal: AbortSignal | undefined
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation((sessionId, options) => {
+    observationSignal = options?.signal
+    options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+    return observe(sessionId, options)
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number; mux: { close(): Promise<void> } }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  const failure = observationSignal?.reason as Error
+  expect(failure).toBeInstanceOf(Error)
+  Object.assign(failure, { code: 'EIO' }); jsonlCloseFault.dirFailure = failure
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  await expect(entry.mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'AggregateError', cause: failure, errors: [failure] } })
   await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
 })
 

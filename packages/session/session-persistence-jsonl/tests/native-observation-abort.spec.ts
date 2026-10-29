@@ -9,21 +9,24 @@ import { SessionObservationReader } from '../../../session-query/session-query/s
 import { generationLogPath, toHeaderLine } from '../src/format.ts'
 
 const gate = vi.hoisted(() => ({ path: '', entered: undefined as (() => void) | undefined,
-  release: undefined as Promise<void> | undefined, failure: undefined as unknown }))
+  release: undefined as Promise<void> | undefined, finished: false, options: undefined as unknown }))
 
 vi.mock('node:fs/promises', async (load) => {
   const actual = await load<typeof import('node:fs/promises')>()
   return { ...actual, readFile: (async (...args: Parameters<typeof actual.readFile>) => {
     if (args[0] === gate.path && gate.release !== undefined) {
+      gate.options = args[1]
+      const result = await actual.readFile(...args)
       gate.entered?.()
       await gate.release
-      try { return await actual.readFile(...args) } catch (error: unknown) { gate.failure = error; throw error }
+      gate.finished = true
+      return result
     }
     return actual.readFile(...args)
   }) as typeof actual.readFile }
 })
 
-it('recognizes actual Node cancellation during a bounded JSONL observation read', async () => {
+it('joins the actual file read before rejecting a cancelled JSONL observation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'jsonl-native-observation-abort-'))
   const ctx = new Context(), abort = new AbortController()
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
@@ -37,13 +40,19 @@ it('recognizes actual Node cancellation during a bounded JSONL observation read'
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, JSON.stringify(toHeaderLine(header)) + '\n')
-  gate.path = path; gate.entered = () => { entered.resolve(undefined) }; gate.release = release.promise; gate.failure = undefined
+  gate.path = path; gate.entered = () => { entered.resolve(undefined) }; gate.release = release.promise
+  gate.finished = false; gate.options = undefined
   const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none' })
   void pending.catch(() => {})
   await entered.promise
   const reason = new Error('cancel JSONL read')
-  abort.abort(reason); release.resolve(undefined)
+  let settled = false
+  void pending.then(() => { settled = true }, () => { settled = true })
+  abort.abort(reason)
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  expect(settled).toBe(false)
+  expect(gate.options).toBeUndefined()
+  release.resolve(undefined)
   await expect(pending).rejects.toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
-  expect(gate.failure).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: reason })
-  expect(gate.failure).not.toBe(reason)
+  expect(gate.finished).toBe(true)
 }, 5000)

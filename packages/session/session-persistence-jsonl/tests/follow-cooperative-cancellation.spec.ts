@@ -7,13 +7,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { readColdSessionLogForObservation } from '../../../session-query/session-query/src/cold-read.ts'
+import { SessionObservationReader } from '../../../session-query/session-query/src/observation.ts'
 import { generationLogPath, toHeaderLine } from '../src/format.ts'
 import { compressZstdFrame } from '../src/zstd.ts'
 
 const probe = vi.hoisted(() => ({ path: '', cancelled: false, fileEntered: undefined as (() => void) | undefined,
   fileRelease: undefined as Promise<unknown> | undefined, closeEntered: undefined as (() => void) | undefined,
   closeRelease: undefined as Promise<unknown> | undefined, closeFailure: undefined as Error | undefined, closes: 0, dir: '', dirEntered: undefined as (() => void) | undefined,
-  dirRelease: undefined as Promise<unknown> | undefined, parentReadsAfterCancel: 0, bodyReadsAfterCancel: 0, decodersAfterCancel: 0 }))
+  dirRelease: undefined as Promise<unknown> | undefined, dirFailure: undefined as Error | undefined,
+  bodyEntered: undefined as (() => void) | undefined, bodyRelease: undefined as Promise<unknown> | undefined,
+  bodyFailure: undefined as Error | undefined, parentReadsAfterCancel: 0, bodyReadsAfterCancel: 0, decodersAfterCancel: 0 }))
 
 vi.mock('../src/zstd.ts', async (load) => {
   const actual = await load<typeof import('../src/zstd.ts')>()
@@ -28,12 +31,20 @@ vi.mock('node:fs/promises', async (load) => {
   return { ...actual,
     readdir: (async (...args: Parameters<typeof actual.readdir>) => {
       const result = await actual.readdir(...args)
-      if (args[0] === probe.dir) { probe.dirEntered?.(); await probe.dirRelease }
+      if (args[0] === probe.dir) {
+        probe.dirEntered?.(); await probe.dirRelease
+        if (probe.dirFailure !== undefined) throw probe.dirFailure
+      }
       return result
     }) as typeof actual.readdir,
     readFile: (async (...args: Parameters<typeof actual.readFile>) => {
       if (args[0] === probe.path && probe.cancelled) probe.bodyReadsAfterCancel += 1
-      return actual.readFile(...args)
+      const result = await actual.readFile(...args)
+      if (args[0] === probe.path && probe.bodyEntered !== undefined) {
+        probe.bodyEntered(); await probe.bodyRelease
+        if (probe.bodyFailure !== undefined) throw probe.bodyFailure
+      }
+      return result
     }) as typeof actual.readFile,
     open: async (...args: Parameters<typeof actual.open>) => {
       const handle = await actual.open(...args)
@@ -67,7 +78,8 @@ async function fixture(version: 3 | 4, compression: 'none' | 'zstd') {
   onTestFinished(async () => {
     release.resolve(undefined)
     Object.assign(probe, { path: '', cancelled: false, fileEntered: undefined, fileRelease: undefined, closeEntered: undefined, closeRelease: undefined, closeFailure: undefined, closes: 0, dir: '',
-      dirEntered: undefined, dirRelease: undefined, parentReadsAfterCancel: 0, bodyReadsAfterCancel: 0, decodersAfterCancel: 0 })
+      dirEntered: undefined, dirRelease: undefined, dirFailure: undefined, bodyEntered: undefined,
+      bodyRelease: undefined, bodyFailure: undefined, parentReadsAfterCancel: 0, bodyReadsAfterCancel: 0, decodersAfterCancel: 0 })
     await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
   })
   await ctx.plugin(SessionStore)
@@ -97,6 +109,23 @@ it('starts the historical decoder after external cancellation of a signal-free c
   expect(probe.decodersAfterCancel).toBeGreaterThan(0)
 })
 
+it('joins the only historical waiter and does not start a decoder after cancellation', async () => {
+  const f = await fixture(3, 'zstd'), abort = new AbortController(), reason = new Error('cancel')
+  probe.fileEntered = () => { f.entered.resolve(undefined) }; probe.fileRelease = f.release.promise
+  const pending = f.ctx.sessionPersistence.open(f.id, 'read', { signal: abort.signal })
+  void pending.catch(() => {})
+  await Promise.race([f.entered.promise, pending.then(() => { throw new Error('Open completed before the gate') })])
+  let settled = false
+  void pending.then(() => { settled = true }, () => { settled = true })
+  abort.abort(reason); probe.cancelled = true
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  expect(settled).toBe(false)
+  f.release.resolve(undefined)
+  await expect(pending).rejects.toBe(reason)
+  expect(probe.closes).toBe(1)
+  expect(probe.decodersAfterCancel).toBe(0)
+})
+
 it('starts a body read after external cancellation during a signal-free handle directory probe', async () => {
   const f = await fixture(4, 'none'), abort = new AbortController()
   const persistence = f.ctx.sessionPersistence, open = persistence.open.bind(persistence)
@@ -113,4 +142,60 @@ it('starts a body read after external cancellation during a signal-free handle d
   f.release.resolve(undefined)
   await pending
   expect(probe.bodyReadsAfterCancel).toBeGreaterThan(0)
+})
+
+it.each(['cancel', 'same-reason'] as const)('joins handle directory lookup and preserves %s after cancellation', async (kind) => {
+  const f = await fixture(4, 'none'), abort = new AbortController(), reason = new Error('cancelled lookup')
+  const persistence = f.ctx.sessionPersistence, open = persistence.open.bind(persistence)
+  let closed = false
+  vi.spyOn(persistence, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args), close = handle.close.bind(handle)
+    vi.spyOn(handle, 'close').mockImplementation(async () => { await close(); closed = true })
+    probe.dir = dirname(f.path); probe.dirEntered = () => { f.entered.resolve(undefined) }; probe.dirRelease = f.release.promise
+    return handle
+  })
+  const pending = new SessionObservationReader(f.ctx).read(f.id, { signal: abort.signal, projectionMode: 'none' })
+  void pending.catch(() => {})
+  await Promise.race([f.entered.promise, pending.then(() => { throw new Error('Read completed before the gate') })])
+  let settled = false
+  void pending.then(() => { settled = true }, () => { settled = true })
+  abort.abort(reason); probe.cancelled = true
+  if (kind === 'same-reason') { Object.assign(reason, { code: 'EIO' }); probe.dirFailure = reason }
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  expect(settled).toBe(false)
+  f.release.resolve(undefined)
+  const error: unknown = await pending.catch((failure: unknown) => failure)
+  expect(closed).toBe(true)
+  expect(probe.bodyReadsAfterCancel).toBe(0)
+  if (kind === 'same-reason') expect(error).toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'AggregateError', cause: reason, errors: [reason] } })
+  else expect(error).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
+})
+
+it.each(['cancel', 'same-reason'] as const)('joins a current body read and preserves %s during cancellation', async (kind) => {
+  const f = await fixture(4, 'none'), abort = new AbortController(), reason = new Error('cancelled body read')
+  const persistence = f.ctx.sessionPersistence, open = persistence.open.bind(persistence)
+  let closed = false
+  vi.spyOn(persistence, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args), close = handle.close.bind(handle)
+    vi.spyOn(handle, 'close').mockImplementation(async () => { await close(); closed = true })
+    await appendFile(f.path, '\n')
+    probe.bodyEntered = () => { f.entered.resolve(undefined) }; probe.bodyRelease = f.release.promise
+    return handle
+  })
+  const pending = new SessionObservationReader(f.ctx).read(f.id, { signal: abort.signal, projectionMode: 'none' })
+  void pending.catch(() => {})
+  await Promise.race([f.entered.promise, pending.then(() => { throw new Error('Read completed before the gate') })])
+  let settled = false
+  void pending.then(() => { settled = true }, () => { settled = true })
+  abort.abort(reason); probe.cancelled = true
+  if (kind === 'same-reason') { Object.assign(reason, { code: 'EIO' }); probe.bodyFailure = reason }
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  expect(settled).toBe(false)
+  f.release.resolve(undefined)
+  const error: unknown = await pending.catch((failure: unknown) => failure)
+  expect(closed).toBe(true)
+  if (kind === 'same-reason') expect(error).toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'AggregateError', cause: reason, errors: [reason] } })
+  else expect(error).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
 })

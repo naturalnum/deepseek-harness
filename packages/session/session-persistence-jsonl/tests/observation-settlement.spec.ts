@@ -173,6 +173,31 @@ it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close 
   expect(faults.fileCloses).toBe(1)
 })
 
+it.each(['private', 'public'] as const)('retains current %s decoder and close errors during cancellation', async (kind) => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-current-decoder-errors-')); roots.push(root)
+  const ctx = new Context(); contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
+  const id = SessionId(`current-decoder-${kind}`)
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'zstd')
+  await mkdir(dirname(path), { recursive: true })
+  const data = await compressZstdFrame(JSON.stringify(toHeaderLine(header)) + '\n')
+  await writeFile(path, data)
+  const handle = await ctx.sessionPersistence.open(id, 'read')
+  await writeFile(path, Buffer.concat([data, await compressZstdFrame('\n')]))
+  const readFailure = new Error('actual decoder read failed'), closeFailure = new Error('actual decoder close failed')
+  const abort = new AbortController()
+  faults.forcePublic = kind === 'public'; faults.decoderRead = readFailure
+  faults.decoderClose = closeFailure; faults.abortOnDecoderClose = abort
+  try {
+    await expect(handle.read(0, undefined, { signal: abort.signal })).rejects.toMatchObject({
+      name: 'JsonlReadCleanupError', cause: closeFailure, errors: [readFailure, closeFailure],
+    })
+    expect(abort.signal.aborted).toBe(true)
+  } finally { await handle.close() }
+})
+
 it.each(['none', 'zstd'] as const)('does not discard a %s child file close failure as an unavailable child', async (compression) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-child-file-')); roots.push(root)
   const parent = SessionId('parent'), id = SessionId('child')
