@@ -70,7 +70,7 @@ describe('process shutdown', () => {
     expect(exit).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(exit).toHaveBeenCalledOnce()
-    expect(exit).toHaveBeenCalledWith(0)
+    expect(exit).toHaveBeenCalledWith(1)
 
     disposal.resolve()
     await pending
@@ -92,6 +92,56 @@ describe('process shutdown', () => {
 
     disposal.resolve()
     await pending
+  })
+
+  it('does not report successful shutdown when disposal rejects for SIGTERM', async () => {
+    const exit = vi.fn()
+    const complete = vi.fn()
+    const shutdown = createProcessShutdown(() => Promise.reject(new Error('dispose failed')), exit, complete)
+    shutdown.interrupt(0)
+    await shutdown.shutdown(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('returns nonzero when natural shutdown disposal rejects after requested success', async () => {
+    const exit = vi.fn()
+    const shutdown = createProcessShutdown(() => Promise.reject(new Error('dispose failed')), exit, vi.fn())
+    await shutdown.shutdown(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(1)
+  })
+
+  it('retains successful SIGTERM when the disposer resolves', async () => {
+    const exit = vi.fn()
+    const shutdown = createProcessShutdown(() => Promise.resolve(), exit, vi.fn())
+    shutdown.interrupt(0)
+    await shutdown.shutdown(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(0)
+  })
+
+  it('preserves a nonzero requested exit code when disposal rejects', async () => {
+    const exit = vi.fn()
+    const shutdown = createProcessShutdown(() => Promise.reject(new Error('dispose failed')), exit, vi.fn())
+    shutdown.interrupt(130)
+    await shutdown.shutdown(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(130)
+  })
+
+  it('does not report successful shutdown when SIGTERM is repeated before disposal', async () => {
+    const disposal = deferred()
+    const exit = vi.fn()
+    const shutdown = createProcessShutdown(() => disposal.promise, exit, vi.fn())
+    shutdown.interrupt(0)
+    shutdown.interrupt(0)
+    expect(exit).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(1)
+    disposal.resolve()
+    await shutdown.shutdown(0)
+    expect(exit).toHaveBeenCalledOnce()
   })
 
   it('lets Ctrl+C force a normal shutdown already stuck in disposal', async () => {

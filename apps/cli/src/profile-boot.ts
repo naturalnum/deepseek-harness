@@ -309,9 +309,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     }
     // Signals own teardown throughout the startup window, not only after boot()
     // settles: an inserted provider can publish before sibling rows finish mounting.
-    // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
-    // surface — the launcher does not know whether the app considered its work
-    // complete; SIGINT is a user interrupt and reports 130.
+    // SIGTERM reports 0 when the disposer resolves; failure, timeout or escalation
+    // report nonzero. A resolved disposer does not independently verify every resource.
+    // SIGINT is a user interrupt and reports 130.
     process.on('SIGTERM', () => { interrupt(0) })
     process.on('SIGINT', () => { interrupt(130) })
     installFailLoud(NAME, process, async () => {

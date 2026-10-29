@@ -7,7 +7,7 @@ export const PROCESS_SHUTDOWN_TIMEOUT_MS = 5_000
 export interface ProcessShutdown {
   /** Start or join graceful disposal before allowing natural completion with `code`. */
   shutdown(code: number): Promise<void>
-  /** Start graceful disposal followed by exit, or force exit when shutdown is already running. */
+  /** Start graceful disposal followed by exit, or force a nonzero exit when shutdown is already running. */
   interrupt(code: number): void
 }
 
@@ -49,15 +49,18 @@ export function createProcessShutdown(
     complete(code)
   }
 
+  // Failure, timeout, and escalation cannot certify release. Preserve any preexisting failure code.
+  const unconfirmedCode = (code: number): number => code === 0 ? 1 : code
+
   const start = (code: number, forceAfterDispose: boolean): Promise<void> => {
     if (pending !== undefined) return pending
-    timeout = setTimeout(() => { forceExitOnce(code) }, timeoutMs)
+    timeout = setTimeout(() => { forceExitOnce(unconfirmedCode(code)) }, timeoutMs)
     pending = Promise.resolve().then(dispose).then(
       () => {
         if (forceAfterDispose) forceExitOnce(code)
         else completeOnce(code)
       },
-      () => { forceExitOnce(code) },
+      () => { forceExitOnce(unconfirmedCode(code)) },
     )
     return pending
   }
@@ -68,7 +71,7 @@ export function createProcessShutdown(
     },
     interrupt(code) {
       if (pending !== undefined) {
-        forceExitOnce(code)
+        forceExitOnce(unconfirmedCode(code))
         return
       }
       void start(code, true)
