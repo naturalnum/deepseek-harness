@@ -446,12 +446,12 @@ async function decodeStreamingMigration(
   let readFailure: { readonly error: unknown } | undefined
   let closeFailure: { readonly error: unknown } | undefined
   let closeException: JsonlReadCleanupError | undefined
-  let closeAttempted = false
+  const closeState = { attempted: false }
   if (distinguishCleanup) {
     const close = decoder.close.bind(decoder)
     decoder.close = () => {
-      if (closeAttempted) return
-      closeAttempted = true
+      if (closeState.attempted) return
+      closeState.attempted = true
       try { close() } catch (error: unknown) {
         closeFailure = { error }
         closeException = new JsonlReadCleanupError(error)
@@ -497,7 +497,7 @@ async function decodeStreamingMigration(
     readFailure = { error }
     throw error
   } finally {
-    if (!distinguishCleanup || !closeAttempted) {
+    if (!distinguishCleanup || !closeState.attempted) {
       try { decoder.close() } catch (error: unknown) {
         if (!distinguishCleanup) throw error
         closeFailure ??= { error }

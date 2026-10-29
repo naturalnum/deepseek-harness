@@ -40,9 +40,11 @@ vi.mock('node:fs/promises', async (load) => {
       }
       if ((property === 'read' || property === 'readFile') && faults.headerRead !== undefined) return async () => { throw faults.headerRead }
       const value: unknown = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
+      if (typeof value !== 'function') return value
+      const bound: unknown = value.bind(target)
+      return bound
     } })
-  }) as typeof actual.open }
+  }) }
 })
 
 vi.mock('../src/zstd.ts', async (load) => {
