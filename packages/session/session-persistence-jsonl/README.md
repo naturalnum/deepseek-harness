@@ -88,7 +88,7 @@ Materialized `stat` and `list` snapshots include the format catalog's header cla
 
 Verification accepts a successful Worker response only after the Worker exits naturally with code 0. Its concurrency slot remains held through that exit; cancellation and Worker errors terminate and join the Worker before rejecting.
 
-While a caller is still waiting, header and historical child read resource-close failures reject as `JsonlReadCleanupError`, an `AggregateError` whose cause is the close failure and whose errors also retain any preceding read failure. Existence probes likewise report a close failure, including `ENOENT`, after a successful open; only an open-time `ENOENT` establishes absence. A cancelled waiter may return before shared preparation ends, so a later close failure is not reported to that waiter.
+While a caller is still waiting, header and historical parent or child read resource-close failures reject as `JsonlReadCleanupError`, an `AggregateError` whose cause is the close failure and whose errors also retain a preceding read failure when it reaches the cleanup boundary. Existence probes likewise report a close failure, including `ENOENT`, after a successful open; only an open-time `ENOENT` establishes absence. A cancelled waiter may return before shared preparation ends, so a later close failure is not reported to that waiter.
 
 Header reads likewise treat `ENOENT` as absence only when opening the file fails. An `ENOENT` from reading a file that was successfully opened remains an I/O failure, including when cancellation races it.
 

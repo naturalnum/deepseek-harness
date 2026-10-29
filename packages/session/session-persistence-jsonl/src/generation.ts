@@ -998,6 +998,7 @@ async function prepareMigration(
       format,
       options.validateHistoricalHeader,
       signal,
+      true,
     )
   } catch (error: unknown) {
     if (format.isUnsupportedMigrationError?.(error) === true) {
