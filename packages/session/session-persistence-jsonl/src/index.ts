@@ -275,34 +275,6 @@ function abortError(signal: AbortSignal): Error {
     : new Error('session migration preparation aborted', { cause: signal.reason })
 }
 
-/** Let one caller stop waiting without transferring cancellation ownership to shared work. */
-function waitWithAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (signal === undefined) return operation
-  /* v8 ignore next -- requireStoredLog synchronously rechecks the signal immediately before waiting. */
-  if (signal.aborted) return Promise.reject(abortError(signal))
-  return new Promise<T>((resolve, reject) => {
-    const stopWaiting = (): void => {
-      reject(abortError(signal))
-    }
-    signal.addEventListener('abort', stopWaiting, { once: true })
-    void operation.then(
-      (value) => {
-        signal.removeEventListener('abort', stopWaiting)
-        resolve(value)
-      },
-      (error: unknown) => {
-        signal.removeEventListener('abort', stopWaiting)
-        /* v8 ignore else -- the preparation owner normalizes every rejection before this waiter sees it. */
-        if (error instanceof Error) {
-          reject(error)
-        } else {
-          reject(new Error('session migration preparation failed', { cause: error }))
-        }
-      },
-    )
-  })
-}
-
 /**
  * The JSONL backend registered as `ctx.sessionPersistence` by the plugin.
  * Sessions materialize lazily: a created session is
@@ -697,7 +669,6 @@ class JsonlSessionPersistence extends SessionPersistence {
           } finally { release() }
         })
       }
-      signal?.throwIfAborted()
       return this.waitForPreparation(id, preparation, signal)
     }
     if (selected.sourceVersion > SESSION_FORMAT_VERSION) {
@@ -755,24 +726,41 @@ class JsonlSessionPersistence extends SessionPersistence {
     return this.prepareStoredMigration(id, selected, signal)
   }
 
-  /** Await shared preparation for one caller and abort it only after its last waiter leaves. */
+  /** Release cancelled interest promptly, but join the shared operation before returning. */
   private async waitForPreparation(
     id: SessionId,
     preparation: MigrationPreparation,
     signal?: AbortSignal,
   ): Promise<PreparedStoredLog> {
     preparation.waiters += 1
-    try {
-      return await waitWithAbort(preparation.promise, signal)
-    } finally {
+    let interested = true
+    const releaseInterest = (): void => {
+      if (!interested) return
+      interested = false
       preparation.waiters -= 1
       if (preparation.waiters === 0 && !preparation.settled) {
-        /* v8 ignore else -- a newer selected source may already own this id's preparation slot. */
-        if (this.migrationPreparations.get(id) === preparation) {
-          this.migrationPreparations.delete(id)
-        }
+        if (this.migrationPreparations.get(id) === preparation) this.migrationPreparations.delete(id)
         preparation.controller.abort()
       }
+    }
+    signal?.addEventListener('abort', releaseInterest, { once: true })
+    if (signal?.aborted === true) releaseInterest()
+    try {
+      let prepared: PreparedStoredLog
+      try { prepared = await preparation.promise } catch (error: unknown) {
+        if (signal?.aborted === true && preparation.controller.signal.aborted
+          && error === preparation.controller.signal.reason) throw abortError(signal)
+        if (signal?.aborted === true && (error === signal.reason || error instanceof Error
+          && error.name === 'AbortError' && Reflect.get(error, 'code') === 'ABORT_ERR' && error.cause === signal.reason)) {
+          throw new AggregateError([error], 'JSONL preparation failed during cancellation', { cause: error })
+        }
+        throw error
+      }
+      if (signal?.aborted === true) throw abortError(signal)
+      return prepared
+    } finally {
+      signal?.removeEventListener('abort', releaseInterest)
+      releaseInterest()
     }
   }
 
@@ -1668,8 +1656,7 @@ class JsonlSessionPersistence extends SessionPersistence {
           return plaintext.subarray(0, -1).toString('utf8')
         } catch (error) {
           if (error === STAT_CANCELLED) throw error
-          /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent */
-          if (signal?.aborted) signal.throwIfAborted()
+          if (signal?.aborted === true && error === signal.reason) throw error
           throw new SessionPersistenceCorruptionError(
             `corrupt Zstandard session log: header frame failed validation: ${String(error)} (raw log: ${path})`,
             { cause: error },

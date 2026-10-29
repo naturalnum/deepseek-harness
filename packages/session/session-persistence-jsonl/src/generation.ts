@@ -268,6 +268,7 @@ async function readStableSnapshot(
   signal?.throwIfAborted()
   let before = await fs.stat(path)
   for (let attempt = 0; ; attempt += 1) {
+    signal?.throwIfAborted()
     const bytes = await fs.readFile(path, signal)
     signal?.throwIfAborted()
     const after = await fs.stat(path)
@@ -478,9 +479,11 @@ async function decodeStreamingMigration(
       let recovered: Buffer = Buffer.alloc(0)
       try {
         recovered = await decompressZstdPrefix(bytes.subarray(tornStart))
-      } catch {
-        /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent. */
-        if (signal?.aborted) signal.throwIfAborted()
+      } catch (error: unknown) {
+        if (signal?.aborted === true) {
+          if (error === signal.reason) throw error
+          throw new AggregateError([error], 'historical decoder failed during cancellation', { cause: error })
+        }
       }
       signal?.throwIfAborted()
       const newline = recovered.lastIndexOf(0x0A)
@@ -1073,7 +1076,7 @@ async function readOwnedJsonlFile(path: string, signal?: AbortSignal): Promise<B
   let readFailure: { readonly error: unknown } | undefined
   try {
     signal?.throwIfAborted()
-    return await handle.readFile(signal === undefined ? undefined : { signal })
+    return await handle.readFile()
   }
   catch (error: unknown) { readFailure = { error }; throw error }
   finally {

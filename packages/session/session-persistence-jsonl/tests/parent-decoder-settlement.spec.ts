@@ -75,9 +75,10 @@ it.each(['private', 'public'] as const)('retains a late first internal %s parent
   const opening = persistence.open(id, 'read', { signal: abort.signal })
   void opening.catch(() => {})
   await gate.entered.promise
-  abort.abort(reason); await expect(opening).rejects.toBe(reason)
+  abort.abort(reason)
   expect(persistence.isQuiescent(8)).toBe(false)
   gate.release.resolve(undefined)
+  await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
   await vi.waitFor(() => { expect(reported).toHaveBeenCalled() })
   expect(persistence.isQuiescent(8)).toBe(false)
   expect(hooks.privateDecoder).toBe(kind === 'private')
@@ -149,12 +150,13 @@ it('waits for a cancelled parent decoder and reports its late close failure thro
     const opening = persistence.open(id, 'read', { signal: abort.signal })
     void opening.catch(() => {})
     await gate.entered.promise
-    abort.abort(reason); await expect(opening).rejects.toBe(reason)
+    abort.abort(reason)
     expect(persistence.isQuiescent(8)).toBe(false)
     let settled = false
     const disposal = handle.dispose().then((result) => { settled = true; return result })
     await Promise.resolve(); expect(settled).toBe(false)
     gate.release.resolve(undefined)
+    await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
     const observed = await disposal
     expect(observed).toMatchObject({ status: 'unknown', overflow: false })
     expect(observed.errorEvents).toBeGreaterThan(0)

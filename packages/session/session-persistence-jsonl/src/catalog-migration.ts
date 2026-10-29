@@ -57,7 +57,10 @@ export async function prepareCatalogFacts(
       }, signal)
     } catch (error: unknown) {
       if (error instanceof JsonlReadCleanupError) throw error
-      signal.throwIfAborted()
+      if (signal.aborted) {
+        if (error === signal.reason) throw error
+        throw new AggregateError([error], 'historical child read failed during cancellation', { cause: error })
+      }
       failures.push({ path: source.path, error })
       facts.push(unavailable)
       continue

@@ -925,8 +925,8 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       // Both callers must join the preparation before either caller leaves it.
       await expect.poll(() => internals.migrationPreparations.get(header.id)?.waiters).toBe(2)
       controller.abort(reason)
-      await expect(first).rejects.toBe(reason)
       pause.release()
+      await expect(first).rejects.toBe(reason)
       const handle = await second
       expect((await handle.read()).events).toEqual([])
       expect(readTally.bySuffix.get(sourcePath)).toBe(1)
@@ -952,11 +952,11 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const opening = ctx.sessionPersistence.open(header.id, 'read', { signal: controller.signal })
     await pause.entered
     controller.abort(reason)
+    pause.release()
     await expect(opening).rejects.toMatchObject({
       message: 'session migration preparation aborted',
       cause: reason,
     })
-    pause.release()
     await pause.finished
     await scheduler.yield()
 

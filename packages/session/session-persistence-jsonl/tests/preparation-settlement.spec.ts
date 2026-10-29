@@ -9,7 +9,7 @@ import { generationLogPath } from '../src/format.ts'
 
 const hooks = vi.hoisted(() => ({ path: '', openCalls: 0, blockOpen: 0, gatedOpenCloses: 0,
   openEntered: undefined as (() => void) | undefined, openRelease: undefined as Promise<unknown> | undefined,
-  readCalls: 0, blockRead: 0,
+  readCalls: 0, blockRead: 0, readFailure: undefined as Error | undefined,
   readEntered: undefined as (() => void) | undefined, readRelease: undefined as Promise<unknown> | undefined,
   closeCalls: 0, blockClose: 0, closeEntered: undefined as (() => void) | undefined,
   closeRelease: undefined as Promise<unknown> | undefined, closeFailure: undefined as Error | undefined,
@@ -37,7 +37,9 @@ vi.mock('node:fs/promises', async (load) => {
       if (property === 'readFile') return async (...readArgs: Parameters<typeof target.readFile>) => {
         isBody = true; hooks.readCalls += 1
         if (hooks.readCalls === hooks.blockRead) { hooks.readEntered?.(); await hooks.readRelease }
-        return target.readFile(...readArgs)
+        const result = await target.readFile(...readArgs)
+        if (hooks.readFailure !== undefined) throw hooks.readFailure
+        return result
       }
       if (property === 'close') return async () => {
         if (isBody) {
@@ -68,7 +70,7 @@ async function fixture() {
   onTestFinished(async () => {
     releases.forEach((release) => { release() })
     await fiber.dispose()
-    Object.assign(hooks, { path: '', openCalls: 0, blockOpen: 0, gatedOpenCloses: 0, openEntered: undefined, openRelease: undefined, readCalls: 0, blockRead: 0, readEntered: undefined, readRelease: undefined,
+    Object.assign(hooks, { path: '', openCalls: 0, blockOpen: 0, gatedOpenCloses: 0, openEntered: undefined, openRelease: undefined, readCalls: 0, blockRead: 0, readFailure: undefined, readEntered: undefined, readRelease: undefined,
       closeCalls: 0, blockClose: 0, closeEntered: undefined, closeRelease: undefined, closeFailure: undefined })
     hooks.readdirPath = ''; hooks.readdirEntered = undefined; hooks.readdirRelease = undefined
     await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
@@ -106,9 +108,9 @@ it('closes an acquired historical source without starting its body read after th
   void opening.catch(() => {})
   await gate.entered.promise
   abort.abort(reason)
-  await expect(opening).rejects.toBe(reason)
   expect(f.persistence.isQuiescent(8)).toBe(false)
   gate.release.resolve(undefined)
+  await expect(opening).rejects.toBe(reason)
   await vi.waitFor(() => { expect(f.persistence.isQuiescent(8)).toBe(true) })
   expect(hooks.readCalls).toBe(0)
   expect(hooks.gatedOpenCloses).toBe(1)
@@ -123,8 +125,9 @@ it('retains a close failure after cancellation before the historical body read',
   const opening = f.persistence.open(f.id, 'read', { signal: abort.signal }), reason = new Error('last waiter cancelled')
   void opening.catch(() => {})
   await gate.entered.promise
-  abort.abort(reason); await expect(opening).rejects.toBe(reason)
+  abort.abort(reason)
   gate.release.resolve(undefined)
+  await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
   await vi.waitFor(() => { expect(reported).toHaveBeenCalled() })
   expect(hooks.readCalls).toBe(0)
   expect(hooks.gatedOpenCloses).toBe(1)
@@ -136,7 +139,62 @@ it('retains a close failure after cancellation before the historical body read',
     errors: [expect.objectContaining({ name: 'JsonlReadCleanupError', cause: failure })] }))
 })
 
-it('lets one cancelled waiter leave while another keeps the same preparation', async () => {
+it('joins the last cancelled waiter through the source close', async () => {
+  const f = await fixture(), read = f.barrier(), close = f.barrier(), abort = new AbortController()
+  hooks.blockRead = 1; hooks.readEntered = () => { read.entered.resolve(undefined) }; hooks.readRelease = read.release.promise
+  hooks.blockClose = 1; hooks.closeEntered = () => { close.entered.resolve(undefined) }; hooks.closeRelease = close.release.promise
+  const reason = new Error('cancel'), opening = f.persistence.open(f.id, 'read', { signal: abort.signal })
+  let settled = false
+  void opening.then(() => { settled = true }, () => { settled = true })
+  await read.entered.promise
+  abort.abort(reason)
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  expect(settled).toBe(false)
+  read.release.resolve(undefined)
+  await close.entered.promise
+  expect(settled).toBe(false)
+  close.release.resolve(undefined)
+  await expect(opening).rejects.toBe(reason)
+  expect(f.persistence.isQuiescent(8)).toBe(true)
+})
+
+it('joins a cancelled waiter without aborting the other waiter', async () => {
+  const f = await fixture(), gate = f.barrier(), abort = new AbortController(), reason = new Error('cancel one')
+  hooks.blockRead = 1; hooks.readEntered = () => { gate.entered.resolve(undefined) }; hooks.readRelease = gate.release.promise
+  const first = f.persistence.open(f.id, 'read', { signal: abort.signal }), second = f.persistence.open(f.id, 'read')
+  let settled = false
+  void first.then(() => { settled = true }, () => { settled = true }); void second.catch(() => {})
+  await gate.entered.promise
+  const internal = f.persistence as unknown as { migrationPreparations: Map<SessionId, { waiters: number }> }
+  await expect.poll(() => internal.migrationPreparations.get(f.id)?.waiters).toBe(2)
+  abort.abort(reason)
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  expect(settled).toBe(false)
+  expect(internal.migrationPreparations.get(f.id)?.waiters).toBe(1)
+  gate.release.resolve(undefined)
+  await expect(first).rejects.toBe(reason)
+  const handle = await second
+  expect((await handle.read()).events).toEqual([])
+  await handle.close()
+  expect(hooks.readCalls).toBe(1)
+})
+
+it.each(['generic', 'errno'] as const)('preserves an independent %s read failure equal to the cancellation reason', async (kind) => {
+  const f = await fixture(), gate = f.barrier(), abort = new AbortController()
+  const failure = new Error('read and cancellation share a reason')
+  if (kind === 'errno') Object.assign(failure, { code: 'ENOENT' })
+  hooks.blockRead = 1; hooks.readEntered = () => { gate.entered.resolve(undefined) }; hooks.readRelease = gate.release.promise
+  hooks.readFailure = failure
+  const opening = f.persistence.open(f.id, 'read', { signal: abort.signal })
+  void opening.catch(() => {})
+  await gate.entered.promise
+  abort.abort(failure); gate.release.resolve(undefined)
+  await expect(opening).rejects.toMatchObject(kind === 'errno'
+    ? { name: 'AggregateError', errors: [failure], cause: failure }
+    : { name: 'SessionPersistenceCorruptionError', cause: failure })
+})
+
+it('keeps the same preparation for another waiter after cancellation', async () => {
   const f = await fixture(), gate = f.barrier(), abort = new AbortController(), reason = new Error('one waiter cancelled')
   hooks.blockRead = 1; hooks.readEntered = () => { gate.entered.resolve(undefined) }; hooks.readRelease = gate.release.promise
   const first = f.persistence.open(f.id, 'read', { signal: abort.signal })
@@ -146,9 +204,9 @@ it('lets one cancelled waiter leave while another keeps the same preparation', a
   const internal = f.persistence as unknown as { migrationPreparations: Map<SessionId, { waiters: number }> }
   await expect.poll(() => internal.migrationPreparations.get(f.id)?.waiters).toBe(2)
   abort.abort(reason)
-  await expect(first).rejects.toBe(reason)
   expect(f.persistence.isQuiescent(8)).toBe(false)
   gate.release.resolve(undefined)
+  await expect(first).rejects.toBe(reason)
   const handle = await second
   expect((await handle.read()).events).toEqual([])
   await handle.close()
@@ -164,7 +222,6 @@ it('tracks the last cancelled waiter until actual handle close and dispose settl
   void opening.catch(() => {})
   await read.entered.promise
   abort.abort(reason)
-  await expect(opening).rejects.toBe(reason)
   expect(f.persistence.isQuiescent(8)).toBe(false)
   read.release.resolve(undefined)
   await close.entered.promise
@@ -173,6 +230,7 @@ it('tracks the last cancelled waiter until actual handle close and dispose settl
   const disposal = f.fiber.dispose().then(() => { disposed = true })
   await Promise.resolve(); expect(disposed).toBe(false)
   close.release.resolve(undefined)
+  await expect(opening).rejects.toBe(reason)
   await disposal
   expect(disposed).toBe(true)
 })
@@ -187,11 +245,12 @@ it('keeps a detached old revision while a replacement finishes', async () => {
   await appendFile(f.path, '\n')
   const replacement = await f.persistence.open(f.id, 'read')
   await replacement.close()
-  abort.abort(reason); await expect(first).rejects.toBe(reason)
+  abort.abort(reason)
   expect(f.persistence.isQuiescent(8)).toBe(false)
   read.release.resolve(undefined); await close.entered.promise
   expect(f.persistence.isQuiescent(8)).toBe(false)
   close.release.resolve(undefined)
+  await expect(first).rejects.toBe(reason)
   await vi.waitFor(() => { expect(f.persistence.isQuiescent(8)).toBe(true) })
 })
 
@@ -205,10 +264,11 @@ it('retains and reports a late actual source close failure after the last waiter
   const opening = f.persistence.open(f.id, 'read', { signal: abort.signal }), reason = new Error('last waiter cancelled')
   void opening.catch(() => {})
   await read.entered.promise
-  abort.abort(reason); await expect(opening).rejects.toBe(reason)
+  abort.abort(reason)
   read.release.resolve(undefined); await close.entered.promise
   expect(f.persistence.isQuiescent(8)).toBe(false)
   close.release.resolve(undefined)
+  await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
   await vi.waitFor(() => { expect(reported).toHaveBeenCalled() })
   expect(f.persistence.isQuiescent(8)).toBe(false)
   await f.fiber.dispose()
@@ -233,10 +293,11 @@ it('retains a late child source close failure after the last parent waiter cance
   const reason = new Error('cancel parent'), opening = f.persistence.open(f.id, 'read', { signal: abort.signal })
   void opening.catch(() => {})
   await read.entered.promise
-  abort.abort(reason); await expect(opening).rejects.toBe(reason)
+  abort.abort(reason)
   read.release.resolve(undefined); await close.entered.promise
   expect(f.persistence.isQuiescent(8)).toBe(false)
   close.release.resolve(undefined)
+  await expect(opening).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
   await vi.waitFor(() => { expect(reported).toHaveBeenCalled() })
   expect(f.persistence.isQuiescent(8)).toBe(false)
   expect(reported.mock.calls.map(call => call[0] as unknown))
