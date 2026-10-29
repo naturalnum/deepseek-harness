@@ -1,5 +1,7 @@
 /** Real native Agent/Session/receipt composition; typed files-port fixtures prove no Linux or quota facts. */
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
+import { realpathSync, statSync } from 'node:fs'
+import { Worker } from 'node:worker_threads'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +17,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { createUserMessage, LlmAdapter, markAgentLoopRequest, type GenerateOptions,
   type StreamChunk, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { CloudAccountFiles, StageFileResult } from '@deepseek-ai/dsh-pe-cloud-files'
+import { LinuxFilesPool } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
 import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type Workspace } from '@deepseek-ai/dsh-workspace'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -54,7 +57,8 @@ async function consume(stream: AsyncIterable<StreamChunk>): Promise<void> {
   for await (const _chunk of stream) { /* Consume the native LLM dispatcher, including its middleware finally. */ }
 }
 
-async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, allowIntake = false, nativeUpload = false) {
+async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, allowIntake = false, nativeUpload = false,
+  intake?: CloudAccountFiles['runAttachmentIntake']) {
   const selectedLimits = { ...limits, ...limitOverrides }
   const home = await mkdtemp(join(tmpdir(), 'account-attachments-composition-')), ctx = new Context()
   const lifetime = new AbortController()
@@ -93,7 +97,8 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
       releases.push(release)
       return { value: refs.map(staged), release }
     }),
-    runAttachmentIntake: async (_reservation, check, execute) => {
+    runAttachmentIntake: async (reservation, check, execute, signal) => {
+      if (intake !== undefined) return intake(reservation, check, execute, signal)
       if (!allowIntake) throw new Error('Native intake settlement is outside these composition cases')
       check()
       return { value: await execute(lifetime.signal), release: () => {} }
@@ -121,7 +126,7 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
     ctx.agents.withInitiator(agent, () => agentEvents(ctx, agent).waterfall('agent/pre-step', {
       messages, turn: 1, step: 1, signal: lifetime.signal,
     }, next))
-  return { ctx, store, uploads, native, adapter, feature, create, preStep, selected, a, b, inputs, releases,
+  return { binding, ctx, store, uploads, native, adapter, feature, create, preStep, selected, a, b, inputs, releases,
     insideStage: () => insideStage, fail: (error: Error) => { failure = error } }
 }
 
@@ -279,4 +284,59 @@ it('reports native alias publication failure as unconfirmed through real HTTP an
   expect(JSON.stringify(result)).not.toContain(root)
   expect((await stat(join(root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(bytes.byteLength)
   expect(Reflect.get(f.uploads, 'state')).toMatchObject({ occupied: 1, closed: true })
+})
+
+
+it('retains the actual lane, reservation and HTTP intake when selection expires immediately after native save', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-post-save-lane-')), root = realpathSync(home)
+  const gate = new SharedArrayBuffer(24), counters = new Int32Array(gate), workers: Worker[] = []
+  const staging = { helperPath: '/test-only/staging.node', maxFileBytes: 8 * 1024 * 1024, maxBatchRefs: 4,
+    maxBatchBytes: 32 * 1024 * 1024, maxSourceChunkBytes: 65536, operationTimeoutMs: 30000, reservationBytes: 2 * 1024 * 1024 }
+  const pool = new LinuxFilesPool({ maxLanes: 4, maxRunning: 2, maxRunningPerLane: 1, maxQueued: 8, maxQueuedPerLane: 4,
+    maxResidentBytes: 256 * 1024 * 1024, maxResidentBytesPerLane: 64 * 1024 * 1024, waitTimeoutMs: 30000,
+    workerCount: 2, minimumHealthyWorkers: 1, workerReservationBytes: 8 * 1024 * 1024, replyOverheadBytes: 4096,
+    readyTimeoutMs: 3000, drainTimeoutMs: 20, helperPath: '/test-only/fd.node', maxReadBytes: 65536,
+    maxPathBytes: 4096, maxResolveRetries: 2, readChunkBytes: 4096, staging,
+  }, (input) => {
+    const worker = new Worker(new URL('../../pe-cloud-files/tests/fixtures/stage-worker.mjs', import.meta.url),
+      { workerData: { mode: 'normal', gate, staging: input.staging } })
+    workers.push(worker)
+    return worker
+  })
+  onTestFinished(async () => {
+    Atomics.store(counters, 2, 1); Atomics.notify(counters, 2)
+    await pool.stop(Date.now() + 100)
+    await Promise.all(workers.map(worker => worker.terminate()))
+    await rm(home, { recursive: true, force: true })
+  })
+  await pool.start()
+  const lane: { port?: ReturnType<LinuxFilesPool['bind']> } = {}
+  const f = await fixture({}, true, true, (bytes, check, execute, signal) => {
+    if (lane.port === undefined) throw new Error('Fixture lane not installed')
+    return lane.port.runNativeMutation(bytes, check, execute, signal)
+  })
+  const info = statSync(root, { bigint: true }), current = () => {}
+  const port = pool.bind(f.binding, { rootPath: root, rootDevice: String(info.dev), rootInode: String(info.ino), rootMountId: '1' }, current)
+  lane.port = port
+  const agent = await f.create('post-save-stale-project'), bytes = Uint8Array.of(3, 2, 1)
+  const nativeSave = f.store.saveFileStream.bind(f.store)
+  Object.defineProperty(f.store, 'saveFileStream', { configurable: true,
+    value: async (input: Parameters<LocalAttachmentStore['saveFileStream']>[0]) => {
+      const ref = await nativeSave(input)
+      f.selected.set(agent, f.b)
+      return ref
+    },
+  })
+  const request = new Request(`http://fixture/upload?sessionId=${agent.id}&name=evidence.bin`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes,
+  })
+  expect(await (await handleFileUploadHttp(f.uploads, request)).json()).toMatchObject({ ok: false,
+    error: { details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  expect((await stat(join(f.store.root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(bytes.byteLength)
+  expect(pool.inspect().work).toMatchObject({ running: 1, pending: 1, residentBytes: limits.intakeReservationBytes })
+  expect(Reflect.get(f.uploads, 'state')).toMatchObject({ occupied: 1, closed: true })
+  let entered = false
+  await expect(port.runNativeMutation(4096, current, async () => { entered = true })).rejects.toMatchObject({ outcome: 'unknown' })
+  expect(entered).toBe(false)
 })

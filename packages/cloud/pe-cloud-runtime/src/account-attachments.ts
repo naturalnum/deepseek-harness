@@ -238,11 +238,14 @@ export class AccountAttachments {
             }
           } finally { await stop() }
         })()
+        let saveReturned = false
         try {
           const ref = await save({ data, signal, ...input.name === undefined ? {} : { name: input.name } })
+          saveReturned = true
           check()
           return ref
         } catch (error) {
+          if (saveReturned) throw new FileUploadIntakeUnconfirmedError({ cause: error })
           if (error instanceof AttachmentCleanupError || error instanceof FileUploadIntakeUnconfirmedError) throw error
           if (error instanceof AttachmentPublicationUnconfirmedError) throw new FileUploadIntakeUnconfirmedError({ cause: error })
           if (inputFailure !== undefined) throw inputFailure
