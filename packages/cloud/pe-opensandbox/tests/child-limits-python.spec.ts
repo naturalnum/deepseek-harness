@@ -4,6 +4,22 @@ import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { SLICE_LIMITS } from '../src/agent-data/constants.ts'
 
+it.skipIf(process.platform === 'win32')('sets an overridable OpenBLAS default in the command world', () => {
+  const directory = fileURLToPath(new URL('../runtime/agent', import.meta.url))
+  const program = String.raw`
+import subprocess, sys
+sys.path.insert(0, sys.argv[1])
+import launcher, paths
+assert paths.ENV['OPENBLAS_NUM_THREADS'] == '1'
+argv = launcher.world_argv('/srv/project')
+i = argv.index('OPENBLAS_NUM_THREADS')
+assert argv[i - 1:i + 2] == ['--setenv', 'OPENBLAS_NUM_THREADS', '1']
+assert subprocess.check_output(['/bin/sh', '-c', 'printf %s "$OPENBLAS_NUM_THREADS"'], env=paths.ENV) == b'1'
+assert subprocess.check_output(['/bin/sh', '-c', 'OPENBLAS_NUM_THREADS=2; export OPENBLAS_NUM_THREADS; printf %s "$OPENBLAS_NUM_THREADS"'], env=paths.ENV) == b'2'
+`
+  execFileSync('python3', ['-I', '-S', '-B', '-c', program, directory], { timeout: 10000 })
+})
+
 it.skipIf(process.platform === 'win32')('sets the fixed child limits and rejects a file beyond the process limit', () => {
   const directory = fileURLToPath(new URL('../runtime/agent', import.meta.url))
   const program = String.raw`

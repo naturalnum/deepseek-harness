@@ -27,7 +27,7 @@ else:
  raise AssertionError('policy tamper was accepted')
 tree=ast.parse((root/'launcher.py').read_text())
 function=next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=='world_argv')
-env={'PATH':'/opt/session-env/venv/bin:/usr/local/bin:/usr/bin:/bin','HOME':'/opt/session-env/home','TMPDIR':'/opt/session-env/tmp','LANG':'C.UTF-8'}
+from paths import ENV as env
 scope={'project_path':lambda path:path,'ENV':env,'ENV_ROOT':'/opt/session-env'}
 exec(compile(ast.Module(body=[function],type_ignores=[]),str(root/'launcher.py'),'exec'),scope)
 ro=scope['world_argv']('/srv/project','read-only');rw=scope['world_argv']('/srv/project','workspace-write')

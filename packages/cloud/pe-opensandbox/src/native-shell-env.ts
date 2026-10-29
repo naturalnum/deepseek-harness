@@ -9,7 +9,7 @@ import type { NativeExecutionProviderPort } from './native-providers.ts'
 /**
  * Keep the native shellEnv service without exporting host DSHCLI, Session or profile facts.
  * Root's original port retains scope lookup and authorization; execution arguments create no authority.
- * Remote PATH/HOME/TMPDIR/LANG remain owned by the fixed command world, not this DSH overlay.
+ * Remote PATH/HOME/TMPDIR/LANG and the OpenBLAS thread default belong to the command world, not this DSH overlay.
  */
 export class CloudShellEnvRegistry extends ShellEnvRegistry {
   private readonly empty: DshEnvironment = Object.freeze({})

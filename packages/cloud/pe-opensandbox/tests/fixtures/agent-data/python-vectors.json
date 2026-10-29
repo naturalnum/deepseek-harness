@@ -1,5 +1,5 @@
 {
-  "origin": "Python stdlib json canonical and frozen launcher AST only; no prepared module imported or primitive executed",
+  "origin": "Python stdlib canonical values and launcher.world_argv; no resource primitive executed",
   "canonical": [
     {
       "value": {
@@ -104,6 +104,9 @@
         "--setenv",
         "LANG",
         "C.UTF-8",
+        "--setenv",
+        "OPENBLAS_NUM_THREADS",
+        "1",
         "--ro-bind",
         "/",
         "/",
@@ -142,7 +145,7 @@
         "--chdir",
         "/srv/project"
       ],
-      "sha256": "bfd1b360b3e0acc940d74af62c2a6cd4188003f926c1edb4c7d87c94d403799f"
+      "sha256": "49373d3902fb8e825a273cf8b9ade65c9bb0c4967c37343ef65c77f2c49672dc"
     },
     {
       "project": "/srv/\u6848\u4f8b/project",
@@ -175,6 +178,9 @@
         "--setenv",
         "LANG",
         "C.UTF-8",
+        "--setenv",
+        "OPENBLAS_NUM_THREADS",
+        "1",
         "--ro-bind",
         "/",
         "/",
@@ -213,7 +219,7 @@
         "--chdir",
         "/srv/\u6848\u4f8b/project"
       ],
-      "sha256": "1038af93a87d14252147b9bc8189c777345ba8d51b957021c1db1eac643b1165"
+      "sha256": "f8740810ca859f98d50c28417a319cbcbf5c132d104fb93b06150e32adbaf01a"
     }
   ]
 }

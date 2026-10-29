@@ -5,7 +5,8 @@ import stat
 
 ENV_ROOT = '/opt/session-env'
 ENV = {'PATH': ENV_ROOT + '/venv/bin:/usr/local/bin:/usr/bin:/bin',
-       'HOME': ENV_ROOT + '/home', 'TMPDIR': ENV_ROOT + '/tmp', 'LANG': 'C.UTF-8'}
+       'HOME': ENV_ROOT + '/home', 'TMPDIR': ENV_ROOT + '/tmp', 'LANG': 'C.UTF-8',
+       'OPENBLAS_NUM_THREADS': '1'}
 RESERVED = [ENV_ROOT, '/trusted', '/root-secret', '/proc', '/sys', '/dev', '/tmp',
             '/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', '/root']
 

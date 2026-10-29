@@ -6,7 +6,7 @@ import { filePolicy, type NativeFilePolicy } from './file-policy.ts'
 
 const ENV_ROOT = '/opt/session-env'
 const ENV = { PATH: ENV_ROOT + '/venv/bin:/usr/local/bin:/usr/bin:/bin', HOME: ENV_ROOT + '/home',
-  TMPDIR: ENV_ROOT + '/tmp', LANG: 'C.UTF-8' }
+  TMPDIR: ENV_ROOT + '/tmp', LANG: 'C.UTF-8', OPENBLAS_NUM_THREADS: '1' }
 const U64_MAX_DECIMAL = '18446744073709551615'
 const ROOT_PAIR = '[' + U64_MAX_DECIMAL + ',' + U64_MAX_DECIMAL + ']'
 

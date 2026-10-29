@@ -25,6 +25,7 @@ def world_argv(project, mode='workspace-write'):
         '--die-with-parent', '--new-session', '--cap-drop', 'ALL', '--clearenv',
         '--setenv', 'PATH', ENV['PATH'], '--setenv', 'HOME', ENV['HOME'],
         '--setenv', 'TMPDIR', ENV['TMPDIR'], '--setenv', 'LANG', ENV['LANG'],
+        '--setenv', 'OPENBLAS_NUM_THREADS', ENV['OPENBLAS_NUM_THREADS'],
         '--ro-bind', '/', '/', '--proc', '/proc', '--ro-bind', '/dev', '/dev',
         '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',
         writable_bind, project, project, '--ro-bind', ENV_ROOT, ENV_ROOT,

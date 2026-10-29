@@ -45,7 +45,7 @@ kind: "package-reference"
 
 私有 [Root SDK 工厂](src/bootstrap/factory.ts) 加载随包发布于 `runtime/agent` 和 `runtime/bootstrap` 的九份固定 Python 资产，仅从构建后的 `lib` 模块旁定位。包的发布列表在 JavaScript 和声明文件之外保留这两个 Python 目录。文件缺失、为链接或 hash 不符时，在 HTTP 工作之前拒绝；不回退到源码树，也不下载资产。工厂保留原 bootstrap、认证登记器与 SDK 后端的拥有关系，不提供 files 导出授权或账户准入，也不改变关闭的生产配方。
 
-固定命令配置将子进程的单文件限制为 64 MiB、虚拟地址空间限制为 512 MiB。这些是进程级限制，与部署的容器内存及账户存储配额独立；超出任一配额仍会导致安装或计算中止。启用变更后的配置前，必须完成实际 Linux 沙箱验证。
+固定命令配置将子进程的单文件限制为 64 MiB、虚拟地址空间限制为 512 MiB。这些是进程级限制，与部署的容器内存及账户存储配额独立；超出任一配额仍会导致安装或计算中止。命令默认设置 `OPENBLAS_NUM_THREADS=1`，可由命令自行覆盖。启用变更后的配置前，必须完成实际 Linux 沙箱验证。
 
 原 `/root` 入口通过显式 `rootDeployment: { path, sha256 }` 引用在内部[装配部署](src/bootstrap/assembly.ts)。Linux CLI 保持 UID/GID2000，读取只读挂载上 Root 拥有的 `0:2000/0440` 配置，并将原文件描述符和精确字节保留到实际清理。此选择租约记录部署策略，不证明服务器存活。封闭选择固定支持技能资源挂载的服务端镜像，在收养 keeper 或构造 SDK 前拒绝其他镜像摘要。部署 v1 收养原继承 FD4 keeper，绑定 retained exports 及其 epoch 释放检查。observer 关闭结果未知时，须保留未知状态直到进程实际退出；构造本身不会创建 sandbox。
 

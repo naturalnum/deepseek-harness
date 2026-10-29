@@ -16,9 +16,9 @@ SOURCES = {
     'server.py': ('1d368b899c9a587c4346e110824fd7906c811190294b609b117bdbd19f89e1fd', 13930),
     'wire.py': ('ddb047c40b6ebfba24807bba127901e6e3fc707a8085711e55ee6ad33871a22b', 9191),
     'manager.py': ('f77fe50f041e84f6892b0a7314bbc796cb77a2c7f0e32edd8eab80b1cb2e9f64', 10286),
-    'launcher.py': ('b4e36866eeec36c15586ca21815321b8aff18ceaa01d0d5ccc07502a0f33a667', 17976),
+    'launcher.py': ('3bf36a1d9d6949d9ebe3c4072a023e9fa8284a1394c70cf63eca2256d70d94e6', 18049),
     'guardian.py': ('d154d7ec699fca6da6a4e46327421ee548e5b0098744142dcab2384f9b4c6f70', 5001),
-    'paths.py': ('ef950f6625a134c93b11feedb028cc69bb6b4698a9914270ec9340bb7ee7e0e7', 9728),
+    'paths.py': ('11043c68c68641401d16ef683939d13ccb1c86a7dd6c49e4c3e27c4880cfd8b6', 9764),
 }
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
 READ = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
