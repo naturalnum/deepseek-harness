@@ -79,8 +79,10 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
     </header>
     <section className={css.content} aria-label={t('title')}>
       {managed?.needsRefresh ? <p className={css.note} role="status">{t('bundleRefreshAfterChange')}</p> : null}
-      {invalidZip || importAction.state === 'unavailable' && managed?.outcome === undefined
+      {invalidZip || importAction.state === 'unavailable' && managed?.outcome === undefined && managed?.phase !== 'unavailable'
         ? <p className={css.error} role="alert">{t('invalidZip')}</p> : null}
+      {managed?.selection === null && managed.phase === 'unavailable'
+        ? <p className={css.error} role="alert">{t('unavailable')}</p> : null}
       {managed?.selection === null && managed.outcome !== undefined ? <p
         className={managed.outcome.kind === 'persisted' ? css.note : css.error}
         role={managed.outcome.kind === 'persisted' ? 'status' : 'alert'}>{t(managed.outcome.kind === 'persisted'

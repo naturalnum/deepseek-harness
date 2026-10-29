@@ -18,6 +18,7 @@ export function ManagedSkillEditor({ editor, report, t }: {
 }): ReactNode {
   const observer = useRef<AbortController>()
   const [copying, setCopying] = useState(false), [invalid, setInvalid] = useState(false)
+  const [downloadFailed, setDownloadFailed] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
   useEffect(() => {
     const control = new AbortController(); observer.current = control
@@ -89,8 +90,8 @@ export function ManagedSkillEditor({ editor, report, t }: {
         onClick={() => {
           const control = observer.current
           if (control === undefined) return
-          setInvalid(false)
-          void editor.download(control.signal).then(() => { report('download', 'confirmed') }, () => { if (alive(control)) setInvalid(true) })
+          setDownloadFailed(false)
+          void editor.download(control.signal).then(() => { report('download', 'confirmed') }, () => { if (alive(control)) setDownloadFailed(true) })
         }}>{t('bundleDownload')}</button>}
     </>}
     {canPublish && limits !== undefined ? <>
@@ -116,6 +117,7 @@ export function ManagedSkillEditor({ editor, report, t }: {
       <button type="button" className={css.button} disabled={busy || editor.phase !== 'editing'}
         onClick={() => { if (confirmRemove) submit(true); else setConfirmRemove(true) }}>{t(confirmRemove ? 'confirmRemove' : 'remove')}</button></div>}
     {editor.downloadStarted ? <p role="status">{t('bundleDownloadStarted')}</p> : null}
+    {downloadFailed ? <p className={css.error} role="alert">{t('bundleDownloadFailed')}</p> : null}
     {editor.outcome === undefined ? null : editor.outcome.kind === 'persisted'
       ? <p role="status">{t(editor.outcome.applied ? 'bundleApplied' : 'bundleSavedPending')}</p>
       : <p className={css.error} role="alert">{t(editor.outcome.kind === 'conflict' ? 'sampleConflict'

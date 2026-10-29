@@ -101,7 +101,9 @@ export function attachManagedSkillEditing(store: SnapshotStore<SkillManagementVi
   const open = async (id: string | undefined, observer: AbortSignal): Promise<void> => {
     const { operation, signal } = begin(observer)
     prepared = undefined
-    update({ editNumber: current().editNumber + 1, phase: 'opening', selection: id ?? null, detail: undefined, downloadStarted: false })
+    const previous = current()
+    update({ editNumber: previous.editNumber + 1, phase: 'opening', selection: id ?? null, detail: undefined, downloadStarted: false,
+      ...previous.outcome?.kind === 'persisted' ? { outcome: undefined } : {} })
     try {
       if (id === undefined) {
         const list = await input.installed(signal)
