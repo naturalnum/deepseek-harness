@@ -172,6 +172,7 @@ export class FileUploadRuntime extends Service implements FileUploadService {
 
   /**
    * Post one body with the carrier captured when this service was constructed.
+   * Startup failures release acquired browser resources before propagating the original error.
    * @param request - target, body, cancellation, and progress observer.
    * @returns the response status and text body.
    */
@@ -246,8 +247,9 @@ function workerTransport(): FileUploadTransport {
       const workerUrl = URL.createObjectURL(new Blob([
         `(${fileUploadWorker.toString()})()`,
       ], { type: 'text/javascript' }))
-      const worker = new Worker(workerUrl, { name: 'dsh-file-upload' })
-      URL.revokeObjectURL(workerUrl)
+      let worker: Worker
+      try { worker = new Worker(workerUrl, { name: 'dsh-file-upload' }) }
+      finally { URL.revokeObjectURL(workerUrl) }
       return new Promise((resolve, reject) => {
         let settled = false
         const abort = (): void => {
@@ -284,14 +286,19 @@ function workerTransport(): FileUploadTransport {
           return
         }
         request.signal?.addEventListener('abort', abort, { once: true })
-        const message: UploadWorkerStart = {
-          // The Worker's own base is `blob:`, so its request URL must be absolute.
-          url: new URL(request.path, document.baseURI).href,
-          body: request.body,
-          headers: request.headers ?? {},
+        try {
+          const message: UploadWorkerStart = {
+            // The Worker's own base is `blob:`, so its request URL must be absolute.
+            url: new URL(request.path, document.baseURI).href,
+            body: request.body,
+            headers: request.headers ?? {},
+          }
+          if (request.body instanceof ReadableStream) worker.postMessage(message, [request.body])
+          else worker.postMessage(message)
+        } catch (error: unknown) {
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Browser setup failures retain the original thrown value.
+          finish(() => { reject(error) })
         }
-        if (request.body instanceof ReadableStream) worker.postMessage(message, [request.body])
-        else worker.postMessage(message)
       })
     },
   }

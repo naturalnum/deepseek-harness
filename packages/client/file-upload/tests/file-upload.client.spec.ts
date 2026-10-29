@@ -369,6 +369,84 @@ describe('file upload service', () => {
   })
 })
 
+describe('background upload setup cleanup', () => {
+  it('releases the Blob URL when the Worker constructor fails', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:worker-constructor')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const failure = new DOMException('Worker unavailable', 'SecurityError')
+    vi.stubGlobal('Worker', function UnavailableWorker() { throw failure })
+    const ctx = new Context(), fiber = ctx.plugin(FileUploadRuntime)
+    await fiber
+    try {
+      expect(() => (ctx.fileUpload as FileUploadRuntime).post({ path: 'upload', body: new Blob() })).toThrow(failure)
+      expect(revoked).toHaveBeenCalledWith('blob:worker-constructor')
+    } finally { await fiber.dispose() }
+  })
+
+  it('settles a failed stream transfer once before a later caller abort', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:worker-transfer')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    let cloneFailure: unknown
+    class TransferWorker {
+      static last: TransferWorker | undefined
+      readonly terminate = vi.fn()
+      readonly postMessage = vi.fn((message: object, transfer: Transferable[]) => {
+        try { structuredClone(message, { transfer }) }
+        catch (error) { cloneFailure = error; throw error }
+      })
+      constructor() { TransferWorker.last = this }
+    }
+    vi.stubGlobal('Worker', TransferWorker)
+    vi.stubGlobal('document', { baseURI: 'https://harness.test/mount/' })
+    const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
+    const reader = stream.getReader(), controller = new AbortController()
+    const removed = vi.spyOn(controller.signal, 'removeEventListener')
+    const ctx = new Context(), fiber = ctx.plugin(FileUploadRuntime)
+    await fiber
+    try {
+      const task = (ctx.fileUpload as FileUploadRuntime).post({ path: 'upload', body: stream, signal: controller.signal })
+      await expect(task).rejects.toMatchObject({ name: 'DataCloneError' })
+      await expect(task).rejects.toBe(cloneFailure)
+      expect(TransferWorker.last?.terminate).toHaveBeenCalledOnce()
+      expect(removed).toHaveBeenCalledWith('abort', expect.any(Function))
+      controller.abort()
+      expect(TransferWorker.last?.terminate).toHaveBeenCalledOnce()
+      await expect(task).rejects.toBe(cloneFailure)
+    } finally {
+      controller.abort()
+      reader.releaseLock()
+      await fiber.dispose()
+    }
+  })
+
+  it('terminates the Worker before an invalid URL can submit a body', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:worker-url')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    class InvalidUrlWorker {
+      static last: InvalidUrlWorker | undefined
+      readonly terminate = vi.fn()
+      readonly postMessage = vi.fn()
+      constructor() { InvalidUrlWorker.last = this }
+    }
+    vi.stubGlobal('Worker', InvalidUrlWorker)
+    vi.stubGlobal('document', { baseURI: 'https://harness.test/mount/' })
+    const controller = new AbortController()
+    const removed = vi.spyOn(controller.signal, 'removeEventListener')
+    const ctx = new Context(), fiber = ctx.plugin(FileUploadRuntime)
+    await fiber
+    try {
+      await expect((ctx.fileUpload as FileUploadRuntime).post({ path: 'http://[', body: new Blob(), signal: controller.signal }))
+        .rejects.toBeInstanceOf(TypeError)
+      expect(InvalidUrlWorker.last?.terminate).toHaveBeenCalledOnce()
+      expect(InvalidUrlWorker.last?.postMessage).not.toHaveBeenCalled()
+      expect(removed).toHaveBeenCalledWith('abort', expect.any(Function))
+    } finally {
+      controller.abort()
+      await fiber.dispose()
+    }
+  })
+})
+
 describe('Session-addressed file upload', () => {
   const SESSION_ID = 's1' as SessionId
 
