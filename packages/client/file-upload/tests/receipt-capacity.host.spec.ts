@@ -296,3 +296,59 @@ it('interrupts a blocked Request read and keeps return pending until actual sour
   expect(body.locked).toBe(false)
   expect(cancels).toBe(1)
 })
+
+
+it('waits for real request-body cancellation when the native hook refuses before reading', async () => {
+  const f = await fixture(1), cancelStarted = Promise.withResolvers<undefined>(), cancelFinish = Promise.withResolvers<undefined>()
+  f.release.push(() => { cancelFinish.resolve(undefined) })
+  f.uploads.failure = new Error('native hook rejected')
+  let pulls = 0, cancels = 0, responded = false
+  const body = new ReadableStream<Uint8Array>({
+    pull() { pulls++ },
+    cancel() { cancels++; cancelStarted.resolve(undefined); return cancelFinish.promise },
+  }, { highWaterMark: 0 })
+  const request = new Request(`http://fixture${FILE_UPLOAD_PATH}?sessionId=${f.handle.agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const response = f.track(handleFileUploadHttp(f.uploads, request))
+  void response.then(() => { responded = true })
+  await cancelStarted.promise
+  expect(pulls).toBe(0)
+  expect(cancels).toBe(1)
+  expect(responded).toBe(false)
+  expect(body.locked).toBe(true)
+  cancelFinish.resolve(undefined)
+  expect(await (await response).json()).toMatchObject({ ok: false, error: { message: 'failed to store file upload: Error: native hook rejected' } })
+  expect(cancels).toBe(1)
+  expect(body.locked).toBe(false)
+})
+
+it('reports unconfirmed request cleanup when an unconsumed body rejects cancellation', async () => {
+  const f = await fixture(1)
+  f.uploads.failure = new Error('native hook rejected')
+  let cancels = 0
+  const body = new ReadableStream<Uint8Array>({ cancel() { cancels++; throw new Error('cancel failed') } }, { highWaterMark: 0 })
+  const request = new Request(`http://fixture${FILE_UPLOAD_PATH}?sessionId=${f.handle.agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const response = await f.track(handleFileUploadHttp(f.uploads, request))
+  expect(await response.json()).toMatchObject({ ok: false, error: { message: 'File upload intake settlement is unconfirmed.' } })
+  expect(cancels).toBe(1)
+  // The route reports its own cleanup uncertainty; this early rejection had already released the service slot.
+  f.uploads.failure = undefined
+  await expect(f.track(f.empty())).resolves.toMatchObject({ file: { name: 'empty.bin' } })
+})
+
+it('cancels an unread request body when native receipt capacity rejects before the hook', async () => {
+  const f = await fixture(1)
+  await f.track(f.empty())
+  let pulls = 0, cancels = 0
+  const body = new ReadableStream<Uint8Array>({ pull() { pulls++ }, cancel() { cancels++ } }, { highWaterMark: 0 })
+  const request = new Request(`http://fixture${FILE_UPLOAD_PATH}?sessionId=${f.handle.agent.id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const response = await f.track(handleFileUploadHttp(f.uploads, request))
+  expect(await response.json()).toMatchObject({ ok: false, error: { details: { reason: 'FILE_UPLOAD_CAPACITY' } } })
+  expect(pulls).toBe(0)
+  expect(cancels).toBe(1)
+})

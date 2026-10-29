@@ -34,16 +34,18 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
   }
   const name = url.searchParams.get('name') ?? undefined
   let result: FileUploadHttpResult
+  const body = requestBodyChunks(request.body)
   try {
-    result = {
-      ok: true,
-      value: await service.uploadStream({
+    let value: FileUploadValue
+    try {
+      value = await service.uploadStream({
         sessionId: brandString<SessionId>(sessionId),
-        data: requestBodyChunks(request.body),
+        data: body,
         signal: request.signal,
         ...(name === undefined ? {} : { name }),
-      }),
-    }
+      })
+    } finally { await body.return() }
+    result = { ok: true, value }
   } catch (error) {
     const failure = remoteErrorOf(error)
     result = {
@@ -66,7 +68,9 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
   })
 }
 
-function requestBodyChunks(body: ReadableStream<Uint8Array> | null): AsyncIterableIterator<Uint8Array> {
+function requestBodyChunks(
+  body: ReadableStream<Uint8Array> | null,
+): AsyncIterableIterator<Uint8Array> & { return(): Promise<IteratorResult<Uint8Array>> } {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined
   let ending: Promise<IteratorResult<Uint8Array>> | undefined
