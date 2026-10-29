@@ -200,6 +200,12 @@ interface MigrationPreparation {
 /** Private control flow for a stat that has joined its current I/O. */
 const STAT_CANCELLED = Symbol('jsonl-stat-cancelled')
 
+interface RootEncodingRun {
+  readonly waiters: Set<{ readonly signal: AbortSignal | undefined }>
+  permanent: boolean
+  promise: Promise<void>
+}
+
 /** Build the stat-derived best-effort change token shared by full and lightweight reads. */
 function fileRevision(identity: JsonlPhysicalIdentity): PersistenceRevision {
   return SessionPersistenceRevision([
@@ -315,7 +321,7 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   private readonly listLimit: LimitFunction
   private rootEncodingCheck: Promise<void> | undefined
-  private readonly rootStatChecks = new Set<Promise<void>>()
+  private rootEncodingRun: RootEncodingRun | undefined
   private readonly generationFormat: Omit<JsonlGenerationFormatAdapter, 'createRestore'>
   /**
    * Bounded LRU of parsed, validated stored logs keyed by session id and
@@ -528,7 +534,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       const stop = (): void => { if (signal?.aborted === true) throw STAT_CANCELLED }
       let result: SessionPersistenceSnapshot | undefined
       try {
-        result = await this.statActual(id, stop)
+        result = await this.statActual(id, stop, signal)
       } catch (error: unknown) {
         if (error === STAT_CANCELLED) { signal?.throwIfAborted(); throw error }
         // An independent failure can be the very same object as the abort
@@ -545,8 +551,8 @@ class JsonlSessionPersistence extends SessionPersistence {
   }
 
   /** Run stat to physical completion without cancellation masking backend failures. */
-  private async statActual(id: SessionId, stop: () => void): Promise<SessionPersistenceSnapshot | undefined> {
-    await this.ensureRootEncodingForStat(stop)
+  private async statActual(id: SessionId, stop: () => void, signal?: AbortSignal): Promise<SessionPersistenceSnapshot | undefined> {
+    await this.ensureRootEncodingForStat(stop, signal)
     stop()
     const pending = this.tracker.pendingOf(id)
     if (pending !== undefined) return { header: pending.header, revision: pending.revision }
@@ -1803,35 +1809,56 @@ class JsonlSessionPersistence extends SessionPersistence {
   }
 
   /** Reject a root that already belongs to the other physical encoding. */
-  private ensureRootEncoding(): Promise<void> {
-    this.rootEncodingCheck ??= this.joinRootEncodingChecks([...this.rootStatChecks, this.checkRootEncoding()])
-    return this.rootEncodingCheck
-  }
-
-  /** Join overlapping checks, ignoring only another stat's cooperative cancellation. */
-  private async joinRootEncodingChecks(checks: readonly Promise<void>[]): Promise<void> {
-    const outcomes = await Promise.allSettled(checks)
-    const failed = outcomes.find(outcome => outcome.status === 'rejected' && outcome.reason !== STAT_CANCELLED)
-    if (failed?.status === 'rejected') throw failed.reason
-  }
-
-  /** A stat that starts the check stops queued work without cancelling another caller's shared check. */
-  private async ensureRootEncodingForStat(stop: () => void): Promise<void> {
-    const shared = this.rootEncodingCheck
-    if (shared !== undefined) { await shared; stop(); return }
-    const check = this.checkRootEncoding(stop)
-    this.rootStatChecks.add(check)
-    try { await check } catch (error: unknown) {
-      if (error !== STAT_CANCELLED && this.rootEncodingCheck === undefined) {
-        const failed = Promise.reject(error)
-        void failed.catch(() => {})
-        this.rootEncodingCheck = failed
+  private async ensureRootEncoding(): Promise<void> {
+    for (;;) {
+      if (this.rootEncodingCheck !== undefined) return this.rootEncodingCheck
+      const run = this.rootEncodingRun ?? this.startRootEncodingCheck()
+      run.permanent = true
+      try { await run.promise; return } catch (error: unknown) {
+        if (error !== STAT_CANCELLED) throw error
       }
-      throw error
-    } finally { this.rootStatChecks.delete(check) }
-    this.rootEncodingCheck ??= this.joinRootEncodingChecks([...this.rootStatChecks])
-    await this.rootEncodingCheck
-    stop()
+    }
+  }
+
+  /** Join one actual root check; abandoned callers still await its settlement. */
+  private async ensureRootEncodingForStat(stop: () => void, signal?: AbortSignal): Promise<void> {
+    for (;;) {
+      if (this.rootEncodingCheck !== undefined) { await this.rootEncodingCheck; stop(); return }
+      const run = this.rootEncodingRun ?? this.startRootEncodingCheck()
+      const waiter = { signal }
+      run.waiters.add(waiter)
+      try {
+        await run.promise
+        stop()
+        return
+      } catch (error: unknown) {
+        if (error !== STAT_CANCELLED) throw error
+        stop()
+      } finally {
+        run.waiters.delete(waiter)
+      }
+    }
+  }
+
+  private startRootEncodingCheck(): RootEncodingRun {
+    const run: RootEncodingRun = { waiters: new Set(), permanent: false, promise: Promise.resolve() }
+    this.rootEncodingRun = run
+    run.promise = Promise.resolve().then(() => this.checkRootEncoding(() => {
+      if (!run.permanent && [...run.waiters].every(waiter => waiter.signal?.aborted === true)) throw STAT_CANCELLED
+    }))
+    void run.promise.then(() => {
+      if (this.rootEncodingRun !== run) return
+      this.rootEncodingRun = undefined
+      this.rootEncodingCheck = Promise.resolve()
+    }, (error: unknown) => {
+      if (this.rootEncodingRun !== run) return
+      this.rootEncodingRun = undefined
+      if (error === STAT_CANCELLED) return
+      const failed = Promise.reject(error)
+      void failed.catch(() => {})
+      this.rootEncodingCheck = failed
+    })
+    return run
   }
 
   private async checkRootEncoding(stop?: () => void): Promise<void> {

@@ -265,6 +265,19 @@ it('does not start queued root-encoding directory reads after cancellation', asy
   expect(hooks.projectReads).toBe(1)
 })
 
+it('shares the first root encoding check across eight concurrent stats', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 4), gate = f.barrier()
+  hooks.readdirPath = f.root
+  hooks.readdirGates.set(1, { entered: () => { gate.entered.resolve(undefined) }, release: gate.release.promise })
+  const jobs = Array.from({ length: 8 }, () => f.ctx.sessionPersistence.stat(f.id))
+  await gate.entered.promise
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  gate.release.resolve(undefined)
+  await Promise.all(jobs)
+  // One root encoding pass, plus one ordinary lookup for each caller.
+  expect(hooks.readdirCalls).toBe(9)
+})
+
 it('does not start the root readdir when a queued stat is cancelled before its limiter slot', async () => {
   const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
   const { listLimit } = f.ctx.sessionPersistence as unknown as {
@@ -307,39 +320,135 @@ it('does not cancel a second stat while stopping the first stat root check', asy
   await expect(second).resolves.toMatchObject({ header: { id: f.id } })
 })
 
-it('joins a concurrently recorded root-check failure before returning its own successful check', async () => {
-  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), gate = f.barrier()
-  const failure = Object.assign(new Error('concurrent root check failed'), { code: 'EACCES' })
-  hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirBlockAt = 1; hooks.readdirFailAt = 2; hooks.readdirFailure = failure
-  hooks.readdirEntered = () => { gate.entered.resolve(undefined) }; hooks.readdirRelease = gate.release.promise
-  const first = f.ctx.sessionPersistence.stat(f.id)
-  void first.catch(() => {})
+it('waits for a shared check to settle before a cancelled waiter returns', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
+  hooks.projectPrefix = f.root; hooks.projectEntered = () => { gate.entered.resolve(undefined) }
+  hooks.projectRelease = gate.release.promise
+  const reason = new Error('cancel first waiter')
+  const first = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  let settled = false
+  void first.then(() => { settled = true }, () => { settled = true })
   await gate.entered.promise
   const second = f.ctx.sessionPersistence.stat(f.id)
-  await expect(second).rejects.toBe(failure)
+  abort.abort(reason)
+  await new Promise<void>(resolve => setImmediate(resolve))
+  expect(settled).toBe(false)
   gate.release.resolve(undefined)
-  await expect(first).rejects.toBe(failure)
+  await expect(first).rejects.toBe(reason)
+  await expect(second).resolves.toMatchObject({ header: { id: f.id } })
+  expect(hooks.projectReads).toBe(1)
 })
 
-it.each(['stat', 'list'] as const)('joins an earlier successful stat with a later failing concurrent %s root check', async (kind) => {
-  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), firstGate = f.barrier(), secondGate = f.barrier()
-  const failure = Object.assign(new Error('concurrent root check failed'), { code: 'EACCES' })
-  hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirFailAt = 2; hooks.readdirFailure = failure
+it('stops a shared root check once every stat waiter cancels, then allows a later check', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier()
+  const firstAbort = new AbortController(), secondAbort = new AbortController()
+  for (const cwd of ['/other-one', '/other-two']) {
+    await mkdir(dirname(dirname(generationLogPath(f.root, cwd, f.id, 0, 'none'))), { recursive: true })
+  }
+  hooks.projectPrefix = f.root; hooks.projectEntered = () => { gate.entered.resolve(undefined) }
+  hooks.projectRelease = gate.release.promise
+  const first = f.ctx.sessionPersistence.stat(f.id, { signal: firstAbort.signal })
+  const second = f.ctx.sessionPersistence.stat(f.id, { signal: secondAbort.signal })
+  void first.catch(() => {}); void second.catch(() => {})
+  await gate.entered.promise
+  const reason1 = new Error('first cancelled'), reason2 = new Error('second cancelled')
+  firstAbort.abort(reason1); secondAbort.abort(reason2)
+  gate.release.resolve(undefined)
+  await expect(first).rejects.toBe(reason1)
+  await expect(second).rejects.toBe(reason2)
+  expect(hooks.projectReads).toBe(1)
+  await expect(f.ctx.sessionPersistence.stat(f.id)).resolves.toMatchObject({ header: { id: f.id } })
+  expect(hooks.projectReads).toBeGreaterThan(1)
+})
+
+it('keeps a shared root check alive for a non-stat caller after the stat cancels', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
+  hooks.projectPrefix = f.root; hooks.projectEntered = () => { gate.entered.resolve(undefined) }
+  hooks.projectRelease = gate.release.promise
+  const reason = new Error('cancel stat'), first = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void first.catch(() => {})
+  await gate.entered.promise
+  const listing = f.ctx.sessionPersistence.list()
+  await new Promise<void>(resolve => setImmediate(resolve))
+  abort.abort(reason); gate.release.resolve(undefined)
+  await expect(first).rejects.toBe(reason)
+  await expect(listing).resolves.toEqual(expect.arrayContaining([
+    expect.objectContaining({ header: expect.objectContaining({ id: f.id }) }),
+  ]))
+  expect(hooks.projectReads).toBeGreaterThan(0)
+})
+
+it.each(['stat', 'list'] as const)('retries a cancelled root check for a late %s waiter without returning early', async (kind) => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1)
+  const occupied = f.barrier(), cancelling = f.barrier(), abort = new AbortController()
+  const internals = f.ctx.sessionPersistence as unknown as {
+    listLimit: ((task: () => Promise<void>) => Promise<void>) & { readonly pendingCount: number }
+    checkRootEncoding(stop?: () => void): Promise<void>
+  }
+  const original = internals.checkRootEncoding.bind(internals)
+  vi.spyOn(internals, 'checkRootEncoding').mockImplementation(async (stop) => {
+    try { await original(stop) } catch (error: unknown) {
+      cancelling.entered.resolve(undefined)
+      await cancelling.release.promise
+      throw error
+    }
+  })
+  const occupying = internals.listLimit(async () => { occupied.entered.resolve(undefined); await occupied.release.promise })
+  await occupied.entered.promise
+  const reason = new Error('original waiter cancelled')
+  const first = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void first.catch(() => {})
+  await expect.poll(() => internals.listLimit.pendingCount).toBe(1)
+  abort.abort(reason); occupied.release.resolve(undefined)
+  await occupying
+  await cancelling.entered.promise
+  const late = kind === 'stat' ? f.ctx.sessionPersistence.stat(f.id) : f.ctx.sessionPersistence.list()
+  let lateSettled = false
+  void late.then(() => { lateSettled = true }, () => { lateSettled = true })
+  await new Promise<void>(resolve => setImmediate(resolve))
+  expect(lateSettled).toBe(false)
+  cancelling.release.resolve(undefined)
+  await expect(first).rejects.toBe(reason)
+  if (kind === 'stat') await expect(late).resolves.toMatchObject({ header: { id: f.id } })
+  else await expect(late).resolves.toEqual(expect.arrayContaining([
+    expect.objectContaining({ header: expect.objectContaining({ id: f.id }) }),
+  ]))
+})
+
+it.each(['stat', 'list'] as const)('shares and propagates a real root-check failure to concurrent %s', async (kind) => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), firstGate = f.barrier()
+  const failure = Object.assign(new Error('shared root check failed'), { code: 'EACCES' })
+  hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirFailAt = 1; hooks.readdirFailure = failure
   hooks.readdirGates.set(1, { entered: () => { firstGate.entered.resolve(undefined) }, release: firstGate.release.promise })
-  hooks.readdirGates.set(2, { entered: () => { secondGate.entered.resolve(undefined) }, release: secondGate.release.promise })
   const first = f.ctx.sessionPersistence.stat(f.id)
   let firstSettled = false
   void first.then(() => { firstSettled = true }, () => { firstSettled = true })
   await firstGate.entered.promise
   const second = kind === 'stat' ? f.ctx.sessionPersistence.stat(f.id) : f.ctx.sessionPersistence.list()
   void second.catch(() => {})
-  await secondGate.entered.promise
-  firstGate.release.resolve(undefined)
   await new Promise<void>(resolve => setImmediate(resolve))
   expect(firstSettled).toBe(false)
-  secondGate.release.resolve(undefined)
+  expect(hooks.readdirCalls).toBe(1)
+  firstGate.release.resolve(undefined)
   await expect(second).rejects.toBe(failure)
   await expect(first).rejects.toBe(failure)
+})
+
+it('retains a shared root I/O failure even when it is one cancelled waiter’s reason', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), gate = f.barrier(), abort = new AbortController()
+  const failure = Object.assign(new Error('shared real I/O failure'), { code: 'EIO' })
+  hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirFailAt = 1; hooks.readdirFailure = failure
+  hooks.readdirGates.set(1, { entered: () => { gate.entered.resolve(undefined) }, release: gate.release.promise })
+  const first = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void first.catch(() => {})
+  await gate.entered.promise
+  const second = f.ctx.sessionPersistence.stat(f.id)
+  void second.catch(() => {})
+  await new Promise<void>(resolve => setImmediate(resolve))
+  abort.abort(failure); gate.release.resolve(undefined)
+  await expect(first).rejects.toMatchObject({ name: 'AggregateError', cause: failure, errors: [failure] })
+  await expect(second).rejects.toBe(failure)
+  expect(hooks.readdirCalls).toBe(1)
 })
 
 it('preserves the earlier session-directory failure ahead of a later project failure', async () => {
