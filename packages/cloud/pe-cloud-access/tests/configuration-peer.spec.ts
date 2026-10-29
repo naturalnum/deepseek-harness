@@ -292,6 +292,66 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     expectCleanupFailure: () => { expectedCleanupFailure = true } }
 }
 
+it('logs only bounded Peer work counts when acquisition is refused during the original update', async () => {
+  const f = await fixture(), cookie = 'login=PRIVATE_COOKIE_TOKEN', handle = await f.acquire(cookie)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(await f.acquire(cookie)).toBe(handle)
+  expect(warn).not.toHaveBeenCalled()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  f.setOperation(async () => { entered.resolve(undefined); await release.promise; return 'original-result' })
+  const request = f.run(handle, 'if-idle')
+  try {
+    await entered.promise
+    await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(warn).toHaveBeenCalledExactlyOnceWith('Cloud login Peer acquisition refused: %j',
+      { phase: 'updating', waiters: 0, carriers: 1, streams: 0, tasks: 1 })
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_COOKIE_TOKEN')
+    expect(f.registry.reservedPeers).toBe(1)
+  } finally { release.resolve(undefined) }
+  await request.body; request.finish()
+  expect(request.value()).toBe('original-result')
+  expect(await f.acquire(cookie)).toBe(handle)
+  expect(warn).toHaveBeenCalledTimes(1)
+})
+
+it('does not emit a Peer phase diagnostic for capacity rejection', async () => {
+  const f = await fixture(), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  await f.acquire('login=first')
+  await f.acquire('login=second')
+  await expect(f.acquire('login=third')).rejects.toMatchObject({ code: 'cloud/capacity' })
+  expect(warn).not.toHaveBeenCalled()
+  expect(f.registry.reservedPeers).toBe(2)
+})
+
+it('preserves closing and blocked ownership when Peer diagnostics or cleanup fail', async () => {
+  const f = await fixture(), cookie = 'login=PRIVATE_COOKIE_TOKEN', handle = await f.acquire(cookie)
+  f.expectCleanupFailure()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const dispose = handle.peer.dispose.bind(handle.peer)
+  vi.spyOn(handle.peer, 'dispose').mockImplementation(async () => {
+    entered.resolve(undefined); await release.promise; await dispose(); throw new Error('PRIVATE_CLEANUP_FAILURE')
+  })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const closing = f.registry.closeBinding(f.binding, Date.now() + 1000)
+  void closing.catch(() => {})
+  try {
+    await entered.promise
+    await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(warn).toHaveBeenCalledExactlyOnceWith('Cloud login Peer acquisition refused: %j',
+      { phase: 'closing', waiters: 0, carriers: 0, streams: 0, tasks: 0 })
+  } finally { release.resolve(undefined) }
+  await expect(closing).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+  await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(warn).toHaveBeenLastCalledWith('Cloud login Peer acquisition refused: %j',
+    { phase: 'blocked', waiters: 0, carriers: 0, streams: 0, tasks: 0 })
+  expect(JSON.stringify(warn.mock.calls)).not.toMatch(/PRIVATE_COOKIE_TOKEN|PRIVATE_CLEANUP_FAILURE/)
+  warn.mockImplementation(() => { throw new Error('PRIVATE_LOGGER_FAILURE') })
+  await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.registry.reservedPeers).toBe(1)
+  expect(f.observe().inUse).toBe(1)
+  expect(f.cleanupFailures).toHaveLength(1)
+})
+
 it('does not expose persistence diagnostics in a real follow Gateway error frame', async () => {
   const f = await fixture(1000)
   await f.ctx.plugin(SessionStore)

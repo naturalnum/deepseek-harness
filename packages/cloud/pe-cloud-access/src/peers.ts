@@ -191,6 +191,10 @@ export class LoginPeerRegistry {
       binding.lifetime.addEventListener('abort', owned.lifetimeEnded, { once: true })
       void this.prepare(owned, requestId)
     } else if (entry.phase !== 'preparing' && entry.phase !== 'ready') {
+      try {
+        console.warn('Cloud login Peer acquisition refused: %j', { phase: entry.phase, waiters: entry.waiters.size,
+          carriers: entry.carrierCount, streams: entry.streamCount, tasks: entry.tasks.size })
+      } catch (_unavailableObservation) { /* Diagnostics cannot alter admission. */ }
       throw new AuthAccessError('cloud/account-unavailable', requestId)
     }
     this.waiters++
