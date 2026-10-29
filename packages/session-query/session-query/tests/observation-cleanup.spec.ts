@@ -30,6 +30,20 @@ it('recognizes the real Node readFile abort wrapper for the same signal reason',
   expect(nativeFailure).not.toBe(reason)
 })
 
+it.each(['return', 'throw'] as const)('does not treat a non-boolean settlement claim as certified when stat can %s', async (completion) => {
+  const ctx = new Context(), abort = new AbortController(), reason = new Error('cancel')
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(SessionStore)
+  ctx.provide('sessionPersistence', {
+    identity: Symbol('untyped-provider'), statSettlesOnAbort: 'yes',
+    async stat() { abort.abort(reason); if (completion === 'throw') throw reason; return undefined },
+  } as never)
+  const failure: unknown = await new SessionObservationReader(ctx).read(SessionId('untyped-provider'), { signal: abort.signal })
+    .catch((error: unknown) => error)
+  expect(failure).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
+  expect(failure).not.toBeInstanceOf(SessionQuerySettledStatAbortError)
+})
+
 it.each(['name-only', 'different-cause'] as const)('does not mistake an independent %s error for native cancellation', async (kind) => {
   const ctx = new Context(), abort = new AbortController()
   onTestFinished(() => ctx.fiber.dispose())

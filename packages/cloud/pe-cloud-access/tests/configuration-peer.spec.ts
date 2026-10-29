@@ -39,7 +39,7 @@ const jsonlCloseFault = vi.hoisted(() => ({ path: '', entered: undefined as (() 
 
 vi.mock('node:fs/promises', async (load) => {
   const actual = await load<typeof import('node:fs/promises')>()
-  return { ...actual, open: (async (...args: Parameters<typeof actual.open>) => {
+  return { ...actual, open: async (...args: Parameters<typeof actual.open>) => {
     const handle = await actual.open(...args)
     if (args[0] !== jsonlCloseFault.path || args[1] !== 'r' || jsonlCloseFault.failure === undefined) return handle
     return new Proxy(handle, { get(target, property) {
@@ -50,9 +50,11 @@ vi.mock('node:fs/promises', async (load) => {
         throw jsonlCloseFault.failure
       }
       const value: unknown = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
+      if (typeof value !== 'function') return value
+      const bound: unknown = value.bind(target)
+      return bound
     } })
-  }) as typeof actual.open }
+  } }
 })
 
 declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service } }

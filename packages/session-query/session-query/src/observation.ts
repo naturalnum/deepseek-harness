@@ -170,13 +170,14 @@ export class SessionObservationReader {
     signal: AbortSignal | undefined,
   ): Promise<SessionPersistenceSnapshot> {
     let snapshot: SessionPersistenceSnapshot | undefined
+    // Dynamic providers must explicitly certify settlement with the boolean true.
     try {
       snapshot = await persistence.stat(sessionId, signal === undefined ? undefined : { signal })
     } catch (error: unknown) {
-      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal, persistence.statSettlesOnAbort === true)
+      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal, Object.is(persistence.statSettlesOnAbort, true))
       throw mapPersistenceFailure(sessionId, error)
     }
-    throwIfObservationAborted(signal, persistence.statSettlesOnAbort === true)
+    throwIfObservationAborted(signal, Object.is(persistence.statSettlesOnAbort, true))
     if (snapshot === undefined) throw notFound(sessionId)
     if (snapshot.header.id !== sessionId) {
       throw new SessionQueryError(
