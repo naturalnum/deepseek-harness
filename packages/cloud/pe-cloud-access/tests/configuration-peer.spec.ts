@@ -426,7 +426,7 @@ it('retains a real JSONL header close failure after follow cancellation in the o
   await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   installSessionReadTestServices(f.ctx)
   const id = SessionId('peer-jsonl-close-failure')
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
   const failure = new Error('actual JSONL header close failed')
@@ -532,7 +532,7 @@ it.each(['read', 'close'] as const)('releases a real JSONL follow after its %s h
   expect(f.ctx.sessionPersistence.statSettlesOnAbort).toBe(true)
   installSessionReadTestServices(f.ctx)
   const id = SessionId(`peer-jsonl-settled-${stage}`)
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
   jsonlCloseFault.path = path
@@ -581,7 +581,7 @@ it.each(['none', 'zstd'] as const)('keeps the private stat marker out of a direc
   await f.ctx.plugin(JsonlSessionPersistence, { root, compression })
   installSessionReadTestServices(f.ctx)
   const id = SessionId(`direct-jsonl-cleanup-${compression}`)
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, compression)
   const data = JSON.stringify(toHeaderLine(header)) + '\n'
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, compression === 'none' ? data : await compressZstdFrame(data))
@@ -610,7 +610,7 @@ it.each([
   await f.ctx.plugin(JsonlSessionPersistence, { root, compression })
   installSessionReadTestServices(f.ctx)
   const id = SessionId(`peer-jsonl-${compression}-${kind}`)
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, compression)
   const data = JSON.stringify(toHeaderLine(header)) + '\n'
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, compression === 'none' ? data : await compressZstdFrame(data))
@@ -814,7 +814,7 @@ it.each(['cancel', 'same-reason', 'close-failure'] as const)('joins handle looku
   await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   installSessionReadTestServices(f.ctx)
   const id = SessionId('peer-handle-lookup-failure')
-  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' } as const
   const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
   const persistence = f.ctx.sessionPersistence, open = persistence.open.bind(persistence)
