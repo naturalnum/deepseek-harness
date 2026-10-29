@@ -315,6 +315,9 @@ class JsonlSessionPersistence extends SessionPersistence {
   /** One joinable decode/migration operation per selected historical Session file revision. */
   private readonly migrationPreparations = new Map<SessionId, MigrationPreparation>()
 
+  /** A completed stat joins its own I/O and reports cleanup errors before cancellation. */
+  override readonly statSettlesOnAbort = true
+
   constructor(ctx: Context, public config: Config, private readonly tracker: JsonlBackendTracker) {
     super(ctx)
     /* v8 ignore next 5 -- generated catalog and Session source share one build-time version owner. */
@@ -507,33 +510,46 @@ class JsonlSessionPersistence extends SessionPersistence {
     options?: SessionPersistenceStatOptions,
   ): Promise<SessionPersistenceSnapshot | undefined> {
     return this.observeRequest(async () => {
-      options?.signal?.throwIfAborted()
-      await this.ensureRootEncoding()
-      options?.signal?.throwIfAborted()
-      const pending = this.tracker.pendingOf(id)
-      if (pending !== undefined) {
-        return { header: pending.header, revision: pending.revision }
-      }
-      const selected = await this.findLog(id, options?.signal)
-      if (selected === undefined) return undefined
-      const metadata = await this.readGenerationHeader(selected, id, options?.signal)
-      if (metadata === undefined) return undefined
+      const signal = options?.signal
+      signal?.throwIfAborted()
+      let result: SessionPersistenceSnapshot | undefined
       try {
-        const identity = await stat(selected.sourcePath, { bigint: true })
-        options?.signal?.throwIfAborted()
-        return {
-          ...metadata,
-          revision: selected.sourceVersion < SESSION_FORMAT_VERSION
-            ? SessionPersistenceRevision(`${fileRevision(identity)}:${await this.historicalCorpusRevision(options?.signal)}`)
-            : fileRevision(identity),
-          sizeBytes: Number(identity.size),
-        }
+        result = await this.statActual(id)
       } catch (error: unknown) {
-        options?.signal?.throwIfAborted()
-        if (isENOENT(error)) return undefined
+        // An independent failure can be the very same object as the abort
+        // reason, or resemble Node's wrapper. Keep it distinguishable.
+        if (signal?.aborted === true && (error === signal.reason || error instanceof Error
+          && error.name === 'AbortError' && Reflect.get(error, 'code') === 'ABORT_ERR' && error.cause === signal.reason)) {
+          throw new AggregateError([error], 'JSONL stat failed during cancellation', { cause: error })
+        }
         throw error
       }
+      signal?.throwIfAborted()
+      return result
     })
+  }
+
+  /** Run stat to physical completion without cancellation masking backend failures. */
+  private async statActual(id: SessionId): Promise<SessionPersistenceSnapshot | undefined> {
+    await this.ensureRootEncoding()
+    const pending = this.tracker.pendingOf(id)
+    if (pending !== undefined) return { header: pending.header, revision: pending.revision }
+    const selected = await this.findLog(id)
+    if (selected === undefined) return undefined
+    const metadata = await this.readGenerationHeader(selected, id)
+    if (metadata === undefined) return undefined
+    let identity: Awaited<ReturnType<typeof stat>>
+    try { identity = await stat(selected.sourcePath, { bigint: true }) } catch (error: unknown) {
+      if (isENOENT(error)) return undefined
+      throw error
+    }
+    return {
+      ...metadata,
+      revision: selected.sourceVersion < SESSION_FORMAT_VERSION
+        ? SessionPersistenceRevision(`${fileRevision(identity)}:${await this.historicalCorpusRevision()}`)
+        : fileRevision(identity),
+      sizeBytes: Number(identity.size),
+    }
   }
 
   /**
@@ -1688,17 +1704,12 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   private async sameFile(path: string, expectedPath: string, signal?: AbortSignal): Promise<boolean> {
     signal?.throwIfAborted()
-    try {
-      const [actual, expected] = await Promise.all([realpath(path), realpath(expectedPath)])
-      signal?.throwIfAborted()
-      return actual === expected
-    } catch (error) {
-      signal?.throwIfAborted()
-      /* v8 ignore else -- non-ENOENT realpath failures require an external permission or I/O fault */
-      if (isENOENT(error)) return false
-      /* v8 ignore next -- non-ENOENT realpath failures are external I/O faults, propagated unchanged */
-      throw error
+    const [actual, expected] = await Promise.allSettled([realpath(path), realpath(expectedPath)])
+    for (const outcome of [actual, expected]) {
+      if (outcome.status === 'rejected' && !isENOENT(outcome.reason)) throw outcome.reason
     }
+    signal?.throwIfAborted()
+    return actual.status === 'fulfilled' && expected.status === 'fulfilled' && actual.value === expected.value
   }
 
   /** The human-readable project directories under the configured root. */

@@ -35,19 +35,27 @@ import * as JsonlSessionPersistence from '../../../session/session-persistence-j
 import { generationLogPath, toHeaderLine } from '../../../session/session-persistence-jsonl/src/format.ts'
 
 const jsonlCloseFault = vi.hoisted(() => ({ path: '', entered: undefined as (() => void) | undefined,
-  release: undefined as Promise<unknown> | undefined, failure: undefined as Error | undefined }))
+  release: undefined as Promise<unknown> | undefined, failure: undefined as Error | undefined,
+  readEntered: undefined as (() => void) | undefined, readRelease: undefined as Promise<unknown> | undefined,
+  readFailure: undefined as Error | undefined }))
 
 vi.mock('node:fs/promises', async (load) => {
   const actual = await load<typeof import('node:fs/promises')>()
   return { ...actual, open: async (...args: Parameters<typeof actual.open>) => {
     const handle = await actual.open(...args)
-    if (args[0] !== jsonlCloseFault.path || args[1] !== 'r' || jsonlCloseFault.failure === undefined) return handle
+    if (args[0] !== jsonlCloseFault.path || args[1] !== 'r') return handle
     return new Proxy(handle, { get(target, property) {
+      if (property === 'read') return async (...readArgs: Parameters<typeof target.read>) => {
+        jsonlCloseFault.readEntered?.()
+        await jsonlCloseFault.readRelease
+        if (jsonlCloseFault.readFailure !== undefined) throw jsonlCloseFault.readFailure
+        return target.read(...readArgs)
+      }
       if (property === 'close') return async () => {
         jsonlCloseFault.entered?.()
         await jsonlCloseFault.release
         await target.close()
-        throw jsonlCloseFault.failure
+        if (jsonlCloseFault.failure !== undefined) throw jsonlCloseFault.failure
       }
       const value: unknown = Reflect.get(target, property, target)
       if (typeof value !== 'function') return value
@@ -358,6 +366,109 @@ it('retains a real JSONL header close failure after follow cancellation in the o
   expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
   await expect(mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
     cause: { name: 'JsonlReadCleanupError', cause: failure } })
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
+
+it.each(['read', 'close'] as const)('releases a real JSONL follow after its %s has actually settled', async (stage) => {
+  const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const cancelled = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-settled-stat-')))
+  onTestFinished(() => {
+    release.resolve(undefined); jsonlCloseFault.path = ''; jsonlCloseFault.entered = undefined
+    jsonlCloseFault.release = undefined; jsonlCloseFault.failure = undefined; jsonlCloseFault.readEntered = undefined
+    jsonlCloseFault.readRelease = undefined; jsonlCloseFault.readFailure = undefined
+    rmSync(root, { recursive: true, force: true })
+  })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  expect(f.ctx.sessionPersistence.statSettlesOnAbort).toBe(true)
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId(`peer-jsonl-settled-${stage}`)
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
+  jsonlCloseFault.path = path
+  if (stage === 'read') {
+    jsonlCloseFault.readEntered = () => { entered.resolve(undefined) }; jsonlCloseFault.readRelease = release.promise
+  } else {
+    jsonlCloseFault.entered = () => { entered.resolve(undefined) }; jsonlCloseFault.release = release.promise
+  }
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation((sessionId, options) => {
+    options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+    return observe(sessionId, options)
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.streamCount).toBe(0) })
+  expect(entry.phase).not.toBe('blocked')
+  await f.registry.closeActual()
+  expect(f.observe().inUse).toBe(0)
+})
+
+it.each(['independent', 'same-reason'] as const)('keeps a real JSONL %s read failure unknown after cancellation', async (kind) => {
+  const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const cancelled = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-stat-read-failure-')))
+  onTestFinished(() => {
+    release.resolve(undefined); jsonlCloseFault.path = ''; jsonlCloseFault.readEntered = undefined
+    jsonlCloseFault.readRelease = undefined; jsonlCloseFault.readFailure = undefined
+    rmSync(root, { recursive: true, force: true })
+  })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId(`peer-jsonl-${kind}`)
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
+  jsonlCloseFault.path = path; jsonlCloseFault.readEntered = () => { entered.resolve(undefined) }
+  jsonlCloseFault.readRelease = release.promise
+  let observationSignal: AbortSignal | undefined
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation((sessionId, options) => {
+    observationSignal = options?.signal
+    options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+    return observe(sessionId, options)
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await entered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, { phase: string; streamCount: number; mux: { close(): Promise<void> } }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  const failure = kind === 'same-reason' ? observationSignal?.reason as Error : new Error('independent read failed')
+  expect(failure).toBeInstanceOf(Error)
+  jsonlCloseFault.readFailure = failure
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  await expect(entry.mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: kind === 'same-reason' ? { name: 'AggregateError', cause: failure, errors: [failure] } : failure })
   await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
 })
 

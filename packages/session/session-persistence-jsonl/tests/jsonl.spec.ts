@@ -1942,7 +1942,8 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
       controller.abort(reason)
       return { ...selected, sourcePath: invalidPath, currentPath: invalidPath }
     })
-    await expect(persistence.stat(m.id, { signal: controller.signal })).rejects.toBe(reason)
+    await expect(persistence.stat(m.id, { signal: controller.signal })).rejects.toMatchObject({ code: 'ERR_INVALID_ARG_VALUE' })
+    expect(controller.signal.reason).toBe(reason)
   })
 
   it('stat reports absence for an artifact vanishing before its identity stat and surfaces other faults', async () => {
