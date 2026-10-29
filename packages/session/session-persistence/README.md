@@ -109,6 +109,8 @@ The seam's shared helpers validate current logical records identified by `SESSIO
 
 `isQuiescent(maximum)` is a read-only producer observation. The base provider returns false, so a provider that has not implemented actual pending-work observation cannot authorize an idle configuration update. This observation neither flushes nor closes persistence.
 
+`statSettlesOnAbort` defaults to false. A provider may opt in only when every settled `stat` call, including a cancelled one, has completed its own work and reports cleanup failures instead of cancellation. This per-call guarantee does not cover `open`, `read`, other calls, or provider-wide quiescence.
+
 </details>
 -----
 

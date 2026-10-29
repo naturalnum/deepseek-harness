@@ -67,6 +67,7 @@ export {
   SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE,
   SESSION_QUERY_READ_WINDOW_MAX,
   SessionQueryError,
+  SessionQuerySettledStatAbortError,
 } from './config.ts'
 export { readColdSessionLog } from './cold-read.ts'
 export type { ColdSessionLog } from './cold-read.ts'

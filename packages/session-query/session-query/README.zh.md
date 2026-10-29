@@ -68,6 +68,8 @@ kind: "package-reference"
 
 取消识别信号的原始原因，以及 Node 的 `AbortError`：其代码须为 `ABORT_ERR`，且 cause 必须严格等于该原因。聚合清理错误即使带有这些字段也会保留。观察期间映射的后端持久化和损坏失败使用固定消息，并在 cause 中保留后端诊断信息。
 
+当取消发生在 provider 明确保证已结算的 `stat` 期间，`SessionQuerySettledStatAbortError` 在保留 `SESSION_QUERY_ABORTED` 的同时标识这一狭义情况。其他取消路径不表明工作已结算。
+
 -----
 
 <a id="understand-the-implementation"></a>

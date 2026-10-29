@@ -68,6 +68,8 @@ For a cold `observeSession` read, a handle close failure is retained as a persis
 
 Cancellation recognizes the original signal reason and Node's `AbortError` with `ABORT_ERR` whose cause is that exact reason. Aggregate cleanup errors are preserved even if they carry those fields. Backend persistence and corruption failures mapped during observation use fixed messages and retain backend diagnostics in their causes.
 
+When cancellation occurs during a provider-certified settled `stat`, `SessionQuerySettledStatAbortError` identifies that narrow case while retaining `SESSION_QUERY_ABORTED`. Other cancellation paths do not establish settlement.
+
 -----
 
 <a id="understand-the-implementation"></a>

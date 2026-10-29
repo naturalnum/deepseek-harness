@@ -186,6 +186,14 @@ export abstract class SessionPersistence extends Service {
   isQuiescent(_maximum: number): boolean { return false }
 
   /**
+   * Whether a settled `stat` owns no unfinished work from that call, including
+   * after cancellation, and reports every cleanup failure instead of abort.
+   * Providers must opt in only when both guarantees hold. Other operations
+   * and work started by other calls are outside this contract.
+   */
+  readonly statSettlesOnAbort: boolean = false
+
+  /**
    * Observe one stored session without reading its event log or taking
    * ownership.
    *

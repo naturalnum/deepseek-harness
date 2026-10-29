@@ -15,7 +15,7 @@ import type {
   SessionLogOffset as SessionLogOffsetType,
   SessionSeqCursor,
 } from '@deepseek-ai/dsh-session'
-import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionQueryError, SessionQuerySettledStatAbortError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -187,7 +187,7 @@ export class SessionHistoryController {
     signal.addEventListener('abort', onAbort, { once: true })
     if (signal.aborted) onAbort()
     try {
-      using source = await this.sourceFor(address, signal, true)
+      using source = await this.sourceFor(address, signal, true, true)
       const events = source.events
       signal.throwIfAborted()
       const cursor = source.cursor
@@ -253,6 +253,7 @@ export class SessionHistoryController {
     address: SessionAddress,
     signal: AbortSignal,
     withProjections: boolean,
+    confirmSettledStatAbort = false,
   ): Promise<SessionObservation> {
     const sessionId = addressId(address)
     try {
@@ -277,6 +278,8 @@ export class SessionHistoryController {
       }
       return observation
     } catch (error: unknown) {
+      if (confirmSettledStatAbort && error instanceof SessionQuerySettledStatAbortError
+        && signal.aborted && error.cause === signal.reason) throw signal.reason
       if (error instanceof SessionQueryError
         && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') rejectNotFound(address)
       throw error

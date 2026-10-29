@@ -10,7 +10,7 @@ import type {
 } from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
-import { SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, SessionQueryError } from './config.ts'
+import { SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, SessionQueryError, SessionQuerySettledStatAbortError } from './config.ts'
 import { readColdSessionLogForObservation, type ColdSessionLog } from './cold-read.ts'
 
 /** One exact immutable Session cut retained for the caller's read lifetime. */
@@ -173,10 +173,10 @@ export class SessionObservationReader {
     try {
       snapshot = await persistence.stat(sessionId, signal === undefined ? undefined : { signal })
     } catch (error: unknown) {
-      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal)
+      if (isObservationAbort(error, signal)) throwIfObservationAborted(signal, persistence.statSettlesOnAbort === true)
       throw mapPersistenceFailure(sessionId, error)
     }
-    throwIfObservationAborted(signal)
+    throwIfObservationAborted(signal, persistence.statSettlesOnAbort === true)
     if (snapshot === undefined) throw notFound(sessionId)
     if (snapshot.header.id !== sessionId) {
       throw new SessionQueryError(
@@ -334,8 +334,9 @@ function isObservationAbort(error: unknown, signal: AbortSignal | undefined): bo
     && Reflect.get(error, 'code') === 'ABORT_ERR' && error.cause === signal.reason
 }
 
-function throwIfObservationAborted(signal: AbortSignal | undefined): void {
+function throwIfObservationAborted(signal: AbortSignal | undefined, settledStat = false): void {
   if (signal?.aborted !== true) return
+  if (settledStat && !(signal.reason instanceof AggregateError)) throw new SessionQuerySettledStatAbortError(signal.reason)
   throw new SessionQueryError(
     'session observation was aborted',
     'SESSION_QUERY_ABORTED',

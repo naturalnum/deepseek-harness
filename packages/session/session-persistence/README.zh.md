@@ -109,6 +109,8 @@ seam 的共享辅助函数校验由 `SESSION_FORMAT_VERSION` 标识的当前逻�
 
 `isQuiescent(maximum)` 是只读的 producer 观察。基础 provider 返回 false，因此没有实现实际待处理工作观察的 provider 不能授权 idle 配置更新。该观察不会 flush 或关闭持久化。
 
+`statSettlesOnAbort` 默认为 false。只有当每次已结算的 `stat`（包括被取消的调用）均已完成自身工作，并且清理失败不会被取消覆盖时，provider 才能启用它。这个逐次保证不覆盖 `open`、`read`、其他调用或 provider 整体空闲状态。
+
 </details>
 -----
 

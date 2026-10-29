@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionObservationReader } from '../src/observation.ts'
+import { SessionQuerySettledStatAbortError } from '../src/config.ts'
 
 it('recognizes the real Node readFile abort wrapper for the same signal reason', async () => {
   const root = await mkdtemp(join(tmpdir(), 'observation-native-abort-'))
@@ -89,6 +90,43 @@ it('does not normalize an aggregate carrying Node abort fields', async () => {
   ctx.provide('sessionPersistence', { identity: Symbol('fixture'), async stat() { abort.abort(reason); throw cleanup } } as never)
   await expect(new SessionObservationReader(ctx).read(SessionId('aggregate-abort-fields'), { signal: abort.signal }))
     .rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: cleanup })
+})
+
+it('does not certify an aggregate abort reason even when stat reports completion', async () => {
+  const ctx = new Context(), abort = new AbortController()
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(SessionStore)
+  const reason = new AggregateError([new Error('cleanup failure')], 'aggregate cancellation')
+  ctx.provide('sessionPersistence', {
+    identity: Symbol('fixture'), statSettlesOnAbort: true,
+    async stat() { abort.abort(reason); return undefined },
+  } as never)
+  const error: unknown = await new SessionObservationReader(ctx).read(SessionId('aggregate-reason'), { signal: abort.signal })
+    .catch((failure: unknown) => failure)
+  expect(error).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
+  expect(error).not.toBeInstanceOf(SessionQuerySettledStatAbortError)
+})
+
+it.each(['open', 'read'] as const)('does not extend the stat guarantee to cancellation during %s', async (stage) => {
+  const ctx = new Context(), abort = new AbortController()
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(SessionStore)
+  const id = SessionId(`stat-guarantee-${stage}`), reason = new Error('cancel')
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const cancel = (): never => { abort.abort(reason); throw reason }
+  ctx.provide('sessionPersistence', {
+    identity: Symbol('fixture'), statSettlesOnAbort: true,
+    async stat() { return { header, revision: SessionPersistenceRevision('fixture') } },
+    async open() {
+      if (stage === 'open') return cancel()
+      return { id, header, access: 'read', inheritedEventCount: SessionLogOffset(0),
+        async read() { return cancel() }, async close() {} }
+    },
+  } as never)
+  const error: unknown = await new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none' })
+    .catch((failure: unknown) => failure)
+  expect(error).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
+  expect(error).not.toBeInstanceOf(SessionQuerySettledStatAbortError)
 })
 
 it.each(['stat', 'open', 'read'] as const)('retains an independent %s failure racing abort', async (stage) => {
