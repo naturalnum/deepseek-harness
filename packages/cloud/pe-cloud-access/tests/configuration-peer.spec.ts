@@ -472,6 +472,33 @@ it.each(['read', 'close'] as const)('releases a real JSONL follow after its %s h
   expect(f.observe().inUse).toBe(0)
 })
 
+it.each(['none', 'zstd'] as const)('keeps the private stat marker out of a direct %s observation cleanup failure', async (compression) => {
+  const f = await fixture(1000), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'direct-jsonl-observation-'))), abort = new AbortController()
+  const closeFailure = new Error('actual close failure')
+  onTestFinished(() => {
+    release.resolve(undefined); jsonlCloseFault.path = ''; jsonlCloseFault.failure = undefined
+    jsonlCloseFault.readEntered = undefined; jsonlCloseFault.readRelease = undefined; jsonlCloseFault.readFailure = undefined
+    rmSync(root, { recursive: true, force: true })
+  })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression })
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId(`direct-jsonl-cleanup-${compression}`)
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, compression)
+  const data = JSON.stringify(toHeaderLine(header)) + '\n'
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, compression === 'none' ? data : await compressZstdFrame(data))
+  jsonlCloseFault.path = path; jsonlCloseFault.failure = closeFailure
+  jsonlCloseFault.readEntered = () => { entered.resolve(undefined) }; jsonlCloseFault.readRelease = release.promise
+  const pending = f.ctx.sessionQuery.observeSession(id, { signal: abort.signal, projectionMode: 'none' })
+  void pending.catch(() => {})
+  await entered.promise
+  abort.abort(new Error('public cancellation reason')); release.resolve(undefined)
+  await expect(pending).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'JsonlReadCleanupError', cause: closeFailure, errors: [closeFailure] } })
+})
+
 it.each([
   ['none', 'independent'], ['none', 'same-reason'], ['zstd', 'independent'], ['zstd', 'same-reason'],
 ] as const)('keeps a real JSONL %s %s read ENOENT unknown after cancellation', async (compression, kind) => {

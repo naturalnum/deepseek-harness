@@ -31,7 +31,7 @@ const hooks = vi.hoisted(() => ({
 vi.mock('node:fs/promises', async (load) => {
   const actual = await load<typeof import('node:fs/promises')>()
   return { ...actual,
-    open: (async (...args: Parameters<typeof actual.open>) => {
+    open: async (...args: Parameters<typeof actual.open>) => {
       const tracked = hooks.openPrefix !== '' && typeof args[0] === 'string' && args[0].startsWith(hooks.openPrefix) && args[1] === 'r'
       if (tracked) hooks.openCalls += 1
       let handle: Awaited<ReturnType<typeof actual.open>>
@@ -56,9 +56,11 @@ vi.mock('node:fs/promises', async (load) => {
           if (hooks.closeFailure !== undefined) throw hooks.closeFailure
         }
         const value: unknown = Reflect.get(target, property, target)
-        return typeof value === 'function' ? value.bind(target) : value
+        if (typeof value !== 'function') return value
+        const bound: unknown = value.bind(target)
+        return bound
       } })
-    }) as typeof actual.open,
+    },
     stat: (async (...args: Parameters<typeof actual.stat>) => {
       if (args[0] === hooks.path) {
         hooks.statEntered?.(); await hooks.statRelease
@@ -110,7 +112,7 @@ async function fixture(compression: 'none' | 'zstd', cwd = '/work', headerCwd = 
   const root = await mkdtemp(join(tmpdir(), 'jsonl-stat-settlement-')), ctx = new Context()
   const releases: Array<() => void> = []
   onTestFinished(async () => {
-    releases.forEach(release => release())
+    releases.forEach((release) => { release() })
     Object.assign(hooks, { path: '', readEntered: undefined, readRelease: undefined, readFailure: undefined, readCalls: 0, readBytes: 0,
       closeEntered: undefined, closeRelease: undefined, closeFailure: undefined, statEntered: undefined,
       statRelease: undefined, statFailure: undefined, realpathPath: '', realpathEntered: undefined,
@@ -361,6 +363,33 @@ it('stops a shared root check once every stat waiter cancels, then allows a late
   expect(hooks.projectReads).toBeGreaterThan(1)
 })
 
+it('keeps the cancelled root-check marker private and out of the settled cache', async () => {
+  const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
+  const internals = f.ctx.sessionPersistence as unknown as {
+    readonly rootEncodingRun?: { readonly promise: Promise<void> }
+    readonly rootEncodingCheck?: Promise<void>
+  }
+  hooks.projectPrefix = f.root; hooks.projectEntered = () => { gate.entered.resolve(undefined) }
+  hooks.projectRelease = gate.release.promise
+  const reason = new Error('public cancellation reason'), pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await gate.entered.promise
+  const run = internals.rootEncodingRun
+  if (run === undefined) throw new Error('Expected an active root check')
+  const internalFailure = run.promise.catch((error: unknown) => error)
+  abort.abort(reason); gate.release.resolve(undefined)
+  const marker: unknown = await internalFailure
+  if (!(marker instanceof Error)) throw new Error('Expected an internal Error marker')
+  expect(marker).not.toBe(reason)
+  expect(marker.message).toBe('')
+  expect(marker.stack).toBeUndefined()
+  expect(Object.isFrozen(marker)).toBe(true)
+  await expect(pending).rejects.toBe(reason)
+  expect(internals.rootEncodingRun).toBeUndefined()
+  expect(internals.rootEncodingCheck).toBeUndefined()
+  await expect(f.ctx.sessionPersistence.stat(f.id)).resolves.toMatchObject({ header: { id: f.id } })
+})
+
 it('keeps a shared root check alive for a non-stat caller after the stat cancels', async () => {
   const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 1), gate = f.barrier(), abort = new AbortController()
   hooks.projectPrefix = f.root; hooks.projectEntered = () => { gate.entered.resolve(undefined) }
@@ -372,8 +401,9 @@ it('keeps a shared root check alive for a non-stat caller after the stat cancels
   await new Promise<void>(resolve => setImmediate(resolve))
   abort.abort(reason); gate.release.resolve(undefined)
   await expect(first).rejects.toBe(reason)
+  const expectedHeader: unknown = expect.objectContaining({ id: f.id })
   await expect(listing).resolves.toEqual(expect.arrayContaining([
-    expect.objectContaining({ header: expect.objectContaining({ id: f.id }) }),
+    expect.objectContaining({ header: expectedHeader }),
   ]))
   expect(hooks.projectReads).toBeGreaterThan(0)
 })
@@ -410,9 +440,12 @@ it.each(['stat', 'list'] as const)('retries a cancelled root check for a late %s
   cancelling.release.resolve(undefined)
   await expect(first).rejects.toBe(reason)
   if (kind === 'stat') await expect(late).resolves.toMatchObject({ header: { id: f.id } })
-  else await expect(late).resolves.toEqual(expect.arrayContaining([
-    expect.objectContaining({ header: expect.objectContaining({ id: f.id }) }),
-  ]))
+  else {
+    const expectedHeader: unknown = expect.objectContaining({ id: f.id })
+    await expect(late).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ header: expectedHeader }),
+    ]))
+  }
 })
 
 it.each(['stat', 'list'] as const)('shares and propagates a real root-check failure to concurrent %s', async (kind) => {
@@ -434,9 +467,9 @@ it.each(['stat', 'list'] as const)('shares and propagates a real root-check fail
   await expect(first).rejects.toBe(failure)
 })
 
-it('retains a shared root I/O failure even when it is one cancelled waiter’s reason', async () => {
+it('retains a same-reason root I/O failure even when its message matches the cancellation marker', async () => {
   const f = await fixture('none', '/work', '/work', SESSION_FORMAT_VERSION, 2), gate = f.barrier(), abort = new AbortController()
-  const failure = Object.assign(new Error('shared real I/O failure'), { code: 'EIO' })
+  const failure = Object.assign(new Error(), { code: 'EIO' })
   hooks.readdirPath = dirname(dirname(f.path)); hooks.readdirFailAt = 1; hooks.readdirFailure = failure
   hooks.readdirGates.set(1, { entered: () => { gate.entered.resolve(undefined) }, release: gate.release.promise })
   const first = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
@@ -448,6 +481,7 @@ it('retains a shared root I/O failure even when it is one cancelled waiter’s r
   abort.abort(failure); gate.release.resolve(undefined)
   await expect(first).rejects.toMatchObject({ name: 'AggregateError', cause: failure, errors: [failure] })
   await expect(second).rejects.toBe(failure)
+  await expect(f.ctx.sessionPersistence.stat(f.id)).rejects.toBe(failure)
   expect(hooks.readdirCalls).toBe(1)
 })
 
@@ -499,6 +533,30 @@ it.each(['none', 'zstd'] as const)('retains a real %s handle close failure after
   abort.abort(new Error('cancel stat'))
   close.release.resolve(undefined)
   await expect(pending).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: closeFailure, errors: [closeFailure] })
+})
+
+it.each(['none', 'zstd'] as const)('excludes the private cancellation marker from direct %s stat cleanup failure', async (compression) => {
+  const f = await fixture(compression), read = f.barrier(), abort = new AbortController()
+  const closeFailure = new Error('actual close failure')
+  hooks.readEntered = () => { read.entered.resolve(undefined) }; hooks.readRelease = read.release.promise
+  hooks.closeFailure = closeFailure
+  const pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await read.entered.promise
+  abort.abort(new Error('public cancellation reason')); read.release.resolve(undefined)
+  await expect(pending).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: closeFailure, errors: [closeFailure] })
+})
+
+it.each(['none', 'zstd'] as const)('retains a real %s read failure shared with the abort reason and a close failure', async (compression) => {
+  const f = await fixture(compression), read = f.barrier(), abort = new AbortController()
+  const failure = new Error('real read failure'), closeFailure = new Error('actual close failure')
+  hooks.readEntered = () => { read.entered.resolve(undefined) }; hooks.readRelease = read.release.promise
+  hooks.readFailure = failure; hooks.closeFailure = closeFailure
+  const pending = f.ctx.sessionPersistence.stat(f.id, { signal: abort.signal })
+  void pending.catch(() => {})
+  await read.entered.promise
+  abort.abort(failure); read.release.resolve(undefined)
+  await expect(pending).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: closeFailure, errors: [failure, closeFailure] })
 })
 
 it.each(['distinct', 'same-reason'] as const)('retains a legacy-flat close ENOENT with %s cancellation', async (kind) => {

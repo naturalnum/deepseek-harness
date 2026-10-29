@@ -198,7 +198,9 @@ interface MigrationPreparation {
 }
 
 /** Private control flow for a stat that has joined its current I/O. */
-const STAT_CANCELLED = Symbol('jsonl-stat-cancelled')
+const STAT_CANCELLED = new Error()
+Object.defineProperty(STAT_CANCELLED, 'stack', { value: undefined })
+Object.freeze(STAT_CANCELLED)
 
 interface RootEncodingRun {
   readonly waiters: Set<{ readonly signal: AbortSignal | undefined }>
@@ -1625,7 +1627,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         chunks.push(Buffer.from(slice))
       }
     } catch (error: unknown) {
-      readFailure = { error }
+      readFailure = error === STAT_CANCELLED ? undefined : { error }
       throw error
     } finally {
       try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
@@ -1675,7 +1677,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         }
       }
     } catch (error: unknown) {
-      readFailure = { error }
+      readFailure = error === STAT_CANCELLED ? undefined : { error }
       throw error
     } finally {
       try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
@@ -1888,9 +1890,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       if (this.rootEncodingRun !== run) return
       this.rootEncodingRun = undefined
       if (error === STAT_CANCELLED) return
-      const failed = Promise.reject(error)
-      void failed.catch(() => {})
-      this.rootEncodingCheck = failed
+      this.rootEncodingCheck = run.promise
     })
     return run
   }
