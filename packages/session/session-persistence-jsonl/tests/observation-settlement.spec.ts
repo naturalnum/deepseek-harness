@@ -1,0 +1,183 @@
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterEach, expect, it, vi } from 'vitest'
+import { generationLogPath, toHeaderLine } from '../src/format.ts'
+import { compressZstdFrame } from '../src/zstd.ts'
+import { prepareCatalogFacts } from '../src/catalog-migration.ts'
+import { boot } from '../../../boot/app-boot/src/index.ts'
+
+const faults = vi.hoisted(() => ({ headerPath: '', headerClose: undefined as Error | undefined, skipCloses: 0,
+  bodyReadFileClose: undefined as Error | undefined, bodyReadFileInjected: false,
+  headerRead: undefined as Error | undefined, abortOnClose: undefined as AbortController | undefined,
+  openFailure: undefined as Error | undefined, decoderRead: undefined as Error | undefined,
+  abortOnDecoderClose: undefined as AbortController | undefined,
+  decoderClose: undefined as Error | undefined }))
+
+vi.mock('node:fs/promises', async (load) => {
+  const actual = await load<typeof import('node:fs/promises')>()
+  return { ...actual, readFile: (async (...args: Parameters<typeof actual.readFile>) => {
+    const result = await actual.readFile(...args)
+    if (args[0] === faults.headerPath && faults.bodyReadFileClose !== undefined) {
+      faults.bodyReadFileInjected = true
+      throw faults.bodyReadFileClose
+    }
+    return result
+  }) as typeof actual.readFile, open: (async (...args: Parameters<typeof actual.open>) => {
+    if (args[0] === faults.headerPath && faults.openFailure !== undefined) throw faults.openFailure
+    const handle = await actual.open(...args)
+    if (args[0] !== faults.headerPath || args[1] !== 'r' || faults.headerClose === undefined) return handle
+    return new Proxy(handle, { get(target, property) {
+      if (property === 'close') return async () => {
+        await target.close()
+        if (faults.skipCloses > 0) { faults.skipCloses -= 1; return }
+        faults.abortOnClose?.abort(); throw faults.headerClose
+      }
+      if ((property === 'read' || property === 'readFile') && faults.headerRead !== undefined) return async () => { throw faults.headerRead }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+  }) as typeof actual.open }
+})
+
+vi.mock('../src/zstd.ts', async (load) => {
+  const actual = await load<typeof import('../src/zstd.ts')>()
+  return { ...actual, createZstdFrameDecoder: () => {
+    const decoder = actual.createZstdFrameDecoder()
+    return { decode: (...args: Parameters<typeof decoder.decode>) => {
+      if (faults.decoderRead !== undefined) throw faults.decoderRead
+      return decoder.decode(...args)
+    }, close: () => {
+      decoder.close()
+      const failure = faults.decoderClose
+      faults.decoderClose = undefined
+      faults.abortOnDecoderClose?.abort()
+      if (failure !== undefined) throw failure
+    } }
+  } }
+})
+
+it('does not fulfill a parent open after a child decoder close fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-parent-')); roots.push(root)
+  const sessionsRoot = join(root, 'sessions'), configPath = join(root, 'cordis.yml')
+  await writeFile(configPath, JSON.stringify([
+    { id: 'sessions', name: 'cordis:sessions' },
+    { id: 'persistence', name: 'cordis:persistence', config: { root: sessionsRoot, compression: 'zstd' } },
+  ]))
+  const ctx = await boot('dsh', configPath, [], (owner) => {
+    Object.assign(owner.loader.builtins, { sessions: SessionStore, persistence: JsonlSessionPersistence })
+  })
+  contexts.push(ctx)
+  const parent = SessionId('parent'), child = SessionId('child')
+  const parentHeader = { type: 'session', id: parent, version: 3, createdAt: 1, isSeeded: false, delegationDepth: 0 }
+  const childHeader = { ...parentHeader, id: child, createdAt: 2, origin: 'subagent', parentSession: parent, delegationDepth: 1 }
+  for (const header of [parentHeader, childHeader]) {
+    const path = generationLogPath(sessionsRoot, undefined, header.id, 3, 'zstd')
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, await compressZstdFrame(JSON.stringify(header) + '\n'))
+  }
+  const failure = new Error('child decoder close failed')
+  faults.decoderClose = failure
+  const [result] = await Promise.allSettled([ctx.sessionPersistence.open(parent, 'read')])
+  if (result?.status === 'fulfilled') { await result.value.close(); throw new Error('Parent open unexpectedly succeeded') }
+  expect(result).toMatchObject({ status: 'rejected', reason: { name: 'JsonlReadCleanupError', cause: failure } })
+})
+
+it.each(['header', 'body'] as const)('rejects parent discovery when a child %s file close fails', async (stage) => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-discovery-')); roots.push(root)
+  const ctx = new Context(); contexts.push(ctx)
+  await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  const parent = SessionId('parent'), child = SessionId('child')
+  const parentHeader = { type: 'session', id: parent, version: 3, createdAt: 1, isSeeded: false, delegationDepth: 0 }
+  const childHeader = { ...parentHeader, id: child, createdAt: 2, origin: 'subagent', parentSession: parent, delegationDepth: 1 }
+  for (const header of [parentHeader, childHeader]) {
+    const path = generationLogPath(root, undefined, header.id, 3, 'none')
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, JSON.stringify(header) + '\n')
+  }
+  const failure = Object.assign(new Error('child header close failed'), { code: 'ENOENT' })
+  faults.headerPath = generationLogPath(root, undefined, child, 3, 'none'); faults.headerClose = failure
+  faults.skipCloses = stage === 'body' ? 1 : 0
+  if (stage === 'body') faults.bodyReadFileClose = failure
+  const [result] = await Promise.allSettled([ctx.sessionPersistence.open(parent, 'read')])
+  if (result?.status === 'fulfilled') {
+    await result.value.close()
+    if (stage === 'body') expect(faults.bodyReadFileInjected).toBe(true)
+    throw new Error('Parent open unexpectedly succeeded')
+  }
+  expect(result).toMatchObject({ status: 'rejected', reason: { name: 'JsonlReadCleanupError', cause: failure } })
+})
+
+const contexts: Context[] = [], roots: string[] = []
+afterEach(async () => {
+  faults.headerPath = ''; faults.headerClose = undefined; faults.headerRead = undefined; faults.skipCloses = 0
+  faults.abortOnClose = undefined; faults.openFailure = undefined; faults.decoderRead = undefined; faults.decoderClose = undefined
+  faults.abortOnDecoderClose = undefined; faults.bodyReadFileClose = undefined; faults.bodyReadFileInjected = false
+  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
+
+it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close into an absent stat result', async (compression) => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-header-')); roots.push(root)
+  const ctx = new Context(); contexts.push(ctx)
+  await ctx.plugin(JsonlSessionPersistence, { root, compression })
+  const id = SessionId('header-close-failure')
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, compression)
+  await mkdir(dirname(path), { recursive: true })
+  const data = JSON.stringify(toHeaderLine(header)) + '\n'
+  await writeFile(path, compression === 'none' ? data : await compressZstdFrame(data))
+  await expect(ctx.sessionPersistence.stat(SessionId('missing'))).resolves.toBeUndefined()
+  const failure = Object.assign(new Error('actual header close failed'), { code: 'ENOENT' })
+  faults.headerPath = path; faults.headerClose = failure
+  await expect(ctx.sessionPersistence.stat(id)).rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
+  const readFailure = new Error('actual header read failed')
+  faults.headerRead = readFailure
+  const abort = new AbortController(); faults.abortOnClose = abort
+  await expect(ctx.sessionPersistence.stat(id, { signal: abort.signal }))
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+})
+
+it('does not discard a child file close failure as an unavailable child', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-child-file-')); roots.push(root)
+  const parent = SessionId('parent'), id = SessionId('child')
+  const header = { id, version: 3, createdAt: 2, isSeeded: false, origin: 'subagent', parentSession: parent, delegationDepth: 1 }
+  const path = generationLogPath(root, undefined, id, 3, 'none')
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, JSON.stringify({ type: 'session', ...header }) + '\n')
+  const failure = Object.assign(new Error('actual child file close failed'), { code: 'ENOENT' })
+  faults.headerPath = path; faults.headerClose = failure; faults.bodyReadFileClose = failure
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'none', new AbortController().signal))
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [failure] })
+  const readFailure = new Error('actual child file read failed')
+  faults.headerRead = readFailure
+  const abort = new AbortController(); faults.abortOnClose = abort
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'none', abort.signal))
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+  const missing = Object.assign(new Error('child was removed before open'), { code: 'ENOENT' })
+  faults.headerRead = undefined; faults.headerClose = undefined; faults.abortOnClose = undefined
+  faults.bodyReadFileClose = undefined; faults.openFailure = missing
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'none', new AbortController().signal))
+    .resolves.toMatchObject({ failures: [{ error: missing }] })
+})
+
+it('does not treat a failed child decoder close as an unavailable child fact', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-child-')); roots.push(root)
+  const parent = SessionId('parent'), id = SessionId('child')
+  const header = { id, version: 3, createdAt: 2, isSeeded: false, origin: 'subagent', parentSession: parent, delegationDepth: 1 }
+  const path = generationLogPath(root, undefined, id, 3, 'zstd')
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, await compressZstdFrame(JSON.stringify({ type: 'session', ...header }) + '\n'))
+  const failure = new Error('actual decoder close failed')
+  faults.decoderClose = failure
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'zstd', new AbortController().signal))
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure })
+  const readFailure = new Error('actual decoder read failed')
+  faults.decoderRead = readFailure; faults.decoderClose = failure
+  const abort = new AbortController(); faults.abortOnDecoderClose = abort
+  await expect(prepareCatalogFacts(parent, [{ header: header as never, path }], 'zstd', abort.signal))
+    .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+})

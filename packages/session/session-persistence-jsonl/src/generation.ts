@@ -29,6 +29,7 @@ import { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import { SessionFormatError } from '@deepseek-ai/dsh-session-format'
+import { JsonlReadCleanupError } from './read-cleanup.ts'
 import type {
   SessionFormatArtifact,
   SessionFormatJsonValue,
@@ -415,6 +416,7 @@ async function decodeStreamingMigration(
   format: Pick<JsonlGenerationFormatAdapter, 'createRestore'>,
   validateHistoricalHeader: PrepareJsonlMigrationOptions['validateHistoricalHeader'],
   signal?: AbortSignal,
+  distinguishCleanup: boolean = false,
 ): Promise<SessionFormatArtifact> {
   signal?.throwIfAborted()
   if (compression === 'none') {
@@ -441,6 +443,7 @@ async function decodeStreamingMigration(
   const { frames, tornStart } = scanZstdFrames(bytes)
   if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
   const decoder = createZstdFrameDecoder()
+  let readFailure: { readonly error: unknown } | undefined
   try {
     const decoded = decoder.decode(bytes, frames)
     const first = decoded.next()
@@ -475,8 +478,14 @@ async function decodeStreamingMigration(
       }
     }
     return stream.parser.finish()
+  } catch (error: unknown) {
+    readFailure = { error }
+    throw error
   } finally {
-    decoder.close()
+    try { decoder.close() } catch (error: unknown) {
+      if (distinguishCleanup) throw new JsonlReadCleanupError(error, readFailure)
+      throw error
+    }
   }
 }
 
@@ -1047,12 +1056,24 @@ export async function readDecodedJsonlSource(
   format: Pick<JsonlGenerationFormatAdapter, 'createRestore'>,
   signal?: AbortSignal,
 ): Promise<{ artifact: SessionFormatArtifact; identity: JsonlPhysicalIdentity }> {
-  const source = await readStableJsonlFile(path, signal)
+  const source = await readStableSnapshot(path, signal, {
+    ...defaultFileSystem,
+    readFile: async (sourcePath, readSignal) => {
+      readSignal?.throwIfAborted()
+      const handle = await fsOpen(sourcePath, 'r')
+      let readFailure: { readonly error: unknown } | undefined
+      try { return await handle.readFile(readSignal === undefined ? undefined : { signal: readSignal }) }
+      catch (error: unknown) { readFailure = { error }; throw error }
+      finally {
+        try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
+      }
+    },
+  })
   let artifact: SessionFormatArtifact
   try {
-    artifact = await decodeStreamingMigration(source.bytes, compression, version, format, undefined, signal)
+    artifact = await decodeStreamingMigration(source.bytes, compression, version, format, undefined, signal, true)
   } catch (error: unknown) {
-    if (signal?.aborted || error instanceof SessionFormatError) throw error
+    if (error instanceof JsonlReadCleanupError || signal?.aborted || error instanceof SessionFormatError) throw error
     throw new SessionFormatError(String(error), { cause: error })
   }
   return { artifact, identity: source.identity }

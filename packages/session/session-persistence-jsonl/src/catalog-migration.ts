@@ -10,6 +10,7 @@ import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { parseGenerationLogFilename } from './format.ts'
 import type { JsonlCompression } from './format.ts'
 import { JsonlGenerationSourceChangedError, readDecodedJsonlSource } from './generation.ts'
+import { JsonlReadCleanupError } from './read-cleanup.ts'
 import type { JsonlPhysicalIdentity } from './generation.ts'
 
 /** Per-parent supplemental facts and the source checks required before serving or publishing them. */
@@ -55,6 +56,7 @@ export async function prepareCatalogFacts(
         }),
       }, signal)
     } catch (error: unknown) {
+      if (error instanceof JsonlReadCleanupError) throw error
       signal.throwIfAborted()
       failures.push({ path: source.path, error })
       facts.push(unavailable)

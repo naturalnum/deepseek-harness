@@ -47,6 +47,7 @@ import {
 import { ensureDurableDirectoryWin32, publishNewFileWin32 } from './win32.ts'
 import { verifyCurrentGenerationInWorker } from './migration-verifier.ts'
 import { prepareCatalogFacts } from './catalog-migration.ts'
+import { JsonlReadCleanupError } from './read-cleanup.ts'
 import {
   JsonlGenerationSourceChangedError,
   JsonlGenerationUnsupportedMigrationError,
@@ -797,6 +798,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     selected: ResolvedJsonlGeneration,
     error: unknown,
   ): Error {
+    if (error instanceof JsonlReadCleanupError) return error
     if (error instanceof JsonlGenerationUnsupportedMigrationError) {
       return new SessionFormatUnsupportedError(
         `${error.message}; source v${error.fromVersion} artifact remains unchanged (raw log: ${selected.sourcePath})`,
@@ -1204,6 +1206,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         ? await this.readFirstZstdLine(selected.sourcePath, signal)
         : await this.readFirstLine(selected.sourcePath, signal)
     } catch (error: unknown) {
+      if (error instanceof JsonlReadCleanupError) throw error
       signal?.throwIfAborted()
       if (isENOENT(error)) return undefined
       throw error
@@ -1495,6 +1498,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private async readFirstLine(path: string, signal?: AbortSignal): Promise<string | undefined> {
     signal?.throwIfAborted()
     const handle = await open(path, 'r')
+    let readFailure: { readonly error: unknown } | undefined
     try {
       signal?.throwIfAborted()
       const chunks: Buffer[] = []
@@ -1513,8 +1517,11 @@ class JsonlSessionPersistence extends SessionPersistence {
         }
         chunks.push(Buffer.from(slice))
       }
+    } catch (error: unknown) {
+      readFailure = { error }
+      throw error
     } finally {
-      await handle.close()
+      try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
     }
   }
 
@@ -1522,6 +1529,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private async readFirstZstdLine(path: string, signal?: AbortSignal): Promise<string | undefined> {
     signal?.throwIfAborted()
     const handle = await open(path, 'r')
+    let readFailure: { readonly error: unknown } | undefined
     try {
       signal?.throwIfAborted()
       let content = Buffer.alloc(0)
@@ -1550,8 +1558,11 @@ class JsonlSessionPersistence extends SessionPersistence {
           )
         }
       }
+    } catch (error: unknown) {
+      readFailure = { error }
+      throw error
     } finally {
-      await handle.close()
+      try { await handle.close() } catch (error: unknown) { throw new JsonlReadCleanupError(error, readFailure) }
     }
   }
 
