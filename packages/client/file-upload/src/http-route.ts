@@ -21,16 +21,16 @@ type FileUploadHttpResult =
  */
 export async function handleFileUploadHttp(service: FileUploads, request: Request): Promise<Response> {
   if (request.method !== 'POST') {
-    return new Response(null, { status: 405, headers: { allow: 'POST' } })
+    return rejectBeforeIntake(request.body, new Response(null, { status: 405, headers: { allow: 'POST' } }))
   }
   const mediaType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
   if (mediaType !== 'application/octet-stream') {
-    return new Response('content type must be application/octet-stream', { status: 415 })
+    return rejectBeforeIntake(request.body, new Response('content type must be application/octet-stream', { status: 415 }))
   }
   const url = new URL(request.url)
   const sessionId = url.searchParams.get('sessionId')
   if (sessionId === null || sessionId === '') {
-    return new Response('sessionId is required', { status: 400 })
+    return rejectBeforeIntake(request.body, new Response('sessionId is required', { status: 400 }))
   }
   const name = url.searchParams.get('name') ?? undefined
   let result: FileUploadHttpResult
@@ -78,6 +78,16 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
       'cache-control': 'no-store',
     },
   })
+}
+
+async function rejectBeforeIntake(body: ReadableStream<Uint8Array> | null, response: Response): Promise<Response> {
+  try { await requestBodyChunks(body).return(); return response }
+  catch {
+    return new Response(JSON.stringify({ ok: false, error: { code: 'gateway/internal',
+      message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } }), {
+      status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    })
+  }
 }
 
 function requestBodyChunks(

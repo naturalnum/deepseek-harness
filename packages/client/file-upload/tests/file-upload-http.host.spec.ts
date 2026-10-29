@@ -131,4 +131,47 @@ describe('background file upload Fetch route', () => {
       message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
   })
 
+
+  it('cancels unread request bodies before each early route rejection', async () => {
+    for (const [method, contentType, sessionId, expected] of [
+      ['PUT', 'application/octet-stream', 's1', 405],
+      ['POST', 'application/json', 's1', 415],
+      ['POST', 'application/octet-stream', '', 400],
+    ] as const) {
+      let pulls = 0, cancels = 0
+      const body = new ReadableStream<Uint8Array>({ pull() { pulls++ }, cancel() { cancels++ } }, { highWaterMark: 0 })
+      const request = new Request(`http://fixture/upload?sessionId=${sessionId}`, {
+        method, headers: { 'content-type': contentType }, body, duplex: 'half',
+      } as RequestInit)
+      const response = await handleFileUploadHttp(uploads(Promise.resolve({})), request)
+      expect(response.status).toBe(expected)
+      expect(pulls).toBe(0)
+      expect(cancels).toBe(1)
+    }
+  })
+
+  it('reports unconfirmed cleanup if cancellation fails before route validation', async () => {
+    let cancels = 0
+    const body = new ReadableStream<Uint8Array>({ cancel() { cancels++; throw new Error('private path') } }, { highWaterMark: 0 })
+    const request = new Request('http://fixture/upload?sessionId=s1', {
+      method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+    } as RequestInit)
+    const response = await handleFileUploadHttp(uploads(Promise.resolve({})), request)
+    expect(await response.json()).toEqual({ ok: false, error: { code: 'gateway/internal',
+      message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+    expect(cancels).toBe(1)
+  })
+
+  it('does not return a receipt when cleanup fails after the service resolves', async () => {
+    const receipt = { receiptId: 'receipt-unknown', file: { attachmentId: 'id', name: 'f', bytes: 1 } }
+    const service = { uploadStream: vi.fn(async () => receipt) } as unknown as FileUploads
+    const body = new ReadableStream<Uint8Array>({ cancel() { throw new Error('cleanup failure') } }, { highWaterMark: 0 })
+    const request = new Request('http://fixture/upload?sessionId=s1', {
+      method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+    } as RequestInit)
+    expect(await (await handleFileUploadHttp(service, request)).json()).toEqual({ ok: false, error: { code: 'gateway/internal',
+      message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+    expect(service.uploadStream).toHaveBeenCalledOnce()
+  })
+
 })
