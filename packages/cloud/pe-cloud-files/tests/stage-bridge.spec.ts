@@ -1,11 +1,14 @@
 /** Private lane/protocol integration with real native source streams; Node sink fixture establishes no Linux ABI facts. */
+import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { readFileStreamVerbatim, saveFileVerbatim } from '@deepseek-ai/dsh-attachment-local/src/file-store.ts'
+import { readFileStreamVerbatim, saveFileStreamVerbatim, saveFileVerbatim } from '@deepseek-ai/dsh-attachment-local/src/file-store.ts'
+import { AccountAttachments } from '@deepseek-ai/dsh-pe-cloud-runtime/src/account-attachments.ts'
+import { FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
 import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime/src/errors.ts'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { LinuxFilesPool } from '../src/worker-pool.ts'
@@ -256,4 +259,27 @@ it('does not replace a corrupt existing copy and exposes earlier completed publi
   await expect(test.port.stageFiles(test.workspace, [first.entry], test.assertCurrent)).rejects.toMatchObject({ outcome: 'not-published' })
   expect(readFileSync(first.path, 'utf8')).toBe('changed')
   expect(first.opens()).toBe(1)
+})
+
+
+it('retains the real mutation lane when native alias publication fails after object persistence', async () => {
+  const test = await fixture(), bytes = Uint8Array.of(9, 8, 7)
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  mkdirSync(join(test.originalRoot, 'files', digest.slice(0, 2), digest, 'collision.bin'), { recursive: true })
+  const feature = Object.assign(Object.create(AccountAttachments.prototype), {
+    limits: { maxUploadChunkBytes: 4, maxFileBytes: 4, intakeReservationBytes: 16384 },
+    binding: test.binding,
+    current: () => test.workspace,
+    files: () => ({ runAttachmentIntake: (reservation: number, check: () => void,
+      execute: (signal: AbortSignal) => Promise<unknown>, signal?: AbortSignal) =>
+      test.port.runNativeMutation(reservation, check, execute, signal) }),
+  }) as AccountAttachments
+  await expect(feature.storeFileStream({} as never, { name: 'collision.bin', data: (async function* () { yield bytes })() },
+    input => saveFileStreamVerbatim(test.originalRoot, input))).rejects.toBeInstanceOf(FileUploadIntakeUnconfirmedError)
+  expect(readFileSync(join(test.originalRoot, 'file-objects', digest.slice(0, 2), digest))).toEqual(Buffer.from(bytes))
+  expect(test.pool.inspect().work).toMatchObject({ running: 1, pending: 1, residentBytes: 16384 })
+  let invoked = false
+  await expect(test.port.runNativeMutation(4096, test.assertCurrent, async () => { invoked = true }))
+    .rejects.toMatchObject({ outcome: 'unknown' })
+  expect(invoked).toBe(false)
 })

@@ -237,6 +237,17 @@ describe('attachment store actual cleanup settlement', () => {
     expect((await readdir(join(value.root, 'tmp'))).length).toBe(1)
   })
 
+  it('keeps cleanup failure primary after streaming object publication', async () => {
+    const value = await setup(), cause = new Error('streaming post-link unlink failed')
+    io.unlinkError = cause
+    async function* source(): AsyncIterable<Uint8Array> { yield value.data }
+    const error = await rejected(publishImmutableObjectStream(value.root, source(), () => value.target))
+    expect(error).toBeInstanceOf(AttachmentCleanupError)
+    expect(error).toHaveProperty('cause', cause)
+    expect(io.unlinks).toBe(1)
+    expect(new Uint8Array(await readFile(value.target))).toEqual(value.data)
+  })
+
   it('waits for the real digest stream close before deduplication resolves', async () => {
     const value = await setup()
     await publishImmutableObject(value.root, value.target, value.data, value.digest)

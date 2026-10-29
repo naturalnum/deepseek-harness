@@ -8,6 +8,7 @@ import type {
   FileAttachmentRef, SaveFileAttachment, SaveFileStreamAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import {
+  AttachmentCleanupError, AttachmentPublicationUnconfirmedError,
   publishImmutableAlias, publishImmutableObject, publishImmutableObjectStream,
 } from './store.ts'
 
@@ -121,20 +122,25 @@ export async function saveFileStreamVerbatim(
     sha256 => storedFileObjectPath(root, sha256),
     input.signal,
   )
-  const ref: FileAttachmentRef = {
-    attachmentId: AttachmentId(`sha256:${stored.sha256}`),
-    name,
-    bytes: stored.bytes,
+  try {
+    const ref: FileAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${stored.sha256}`),
+      name,
+      bytes: stored.bytes,
+    }
+    input.signal?.throwIfAborted()
+    await publishImmutableAlias(
+      root,
+      storedFileObjectPath(root, stored.sha256),
+      storedFilePath(root, ref),
+      stored.sha256,
+    )
+    input.signal?.throwIfAborted()
+    return ref
+  } catch (cause) {
+    if (cause instanceof AttachmentCleanupError || cause instanceof AttachmentPublicationUnconfirmedError) throw cause
+    throw new AttachmentPublicationUnconfirmedError(cause)
   }
-  input.signal?.throwIfAborted()
-  await publishImmutableAlias(
-    root,
-    storedFileObjectPath(root, stored.sha256),
-    storedFilePath(root, ref),
-    stored.sha256,
-  )
-  input.signal?.throwIfAborted()
-  return ref
 }
 
 /**

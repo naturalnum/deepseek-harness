@@ -1,5 +1,6 @@
 /** Real native Agent/Session/receipt composition; typed files-port fixtures prove no Linux or quota facts. */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -262,4 +263,20 @@ it('keeps an original account preparation size rejection usable through native H
     method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: Uint8Array.of(1, 2, 3, 4),
   })
   expect(await (await handleFileUploadHttp(f.uploads, small)).json()).toMatchObject({ ok: true })
+})
+
+
+it('reports native alias publication failure as unconfirmed through real HTTP and retains the saved object', async () => {
+  const f = await fixture({}, true, true), agent = await f.create('native-alias-failure')
+  const bytes = Uint8Array.of(1, 2, 3), digest = createHash('sha256').update(bytes).digest('hex'), root = f.store.root
+  await mkdir(join(root, 'files', digest.slice(0, 2), digest, 'collision.bin'), { recursive: true })
+  const request = new Request(`http://fixture/upload?sessionId=${agent.id}&name=collision.bin`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes,
+  })
+  const response = await handleFileUploadHttp(f.uploads, request), result: unknown = await response.json()
+  expect(result).toMatchObject({ ok: false, error: { code: 'gateway/internal',
+    details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+  expect(JSON.stringify(result)).not.toContain(root)
+  expect((await stat(join(root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(bytes.byteLength)
+  expect(Reflect.get(f.uploads, 'state')).toMatchObject({ occupied: 1, closed: true })
 })

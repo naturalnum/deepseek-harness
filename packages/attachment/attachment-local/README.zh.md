@@ -89,7 +89,7 @@ kind: "package-reference"
 
 通用文件字节的唯一规范对象位于 `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`。每条引用路径 `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是只读硬链接，所以名称不同但字节相同的文件不会重复占用磁盘。`readFileStream` 以有界分块读取引用路径，并在消费方成功结束前校验完整摘要与记录的字节数。对象缺失、被改写或截断时，消费方会失败，不会得到字节已经变化的完整导出。每次文件读取都会等待源流实际关闭后，才结算正常结束、取消、读取失败或迭代器提前返回。
 
-普通取消或写入错误只有在自有描述符关闭且临时文件清理成功后才返回。关闭或临时文件 unlink 失败会抛出导出的 `AttachmentCleanupError`（`ATTACHMENT_WRITE_FAILED`），并保留 cause；调用方继续承担未结算的工作或存储责任，不得重试失败的 close。去重完整性读取同样等待流关闭，并通过该错误报告关闭失败。即使保存失败，已经发布的私有对象也会保留，存储所有者必须继续计入其容量占用。
+普通取消或写入错误只有在自有描述符关闭且临时文件清理成功后才返回。流式文件一旦开始对象发布，原生发布或之后的别名失败会抛出 `AttachmentPublicationUnconfirmedError`，保留原始 cause，且不代表已经回滚。关闭或临时文件 unlink 失败会抛出导出的 `AttachmentCleanupError`（`ATTACHMENT_WRITE_FAILED`），并保留 cause；调用方继续承担未结算的工作或存储责任，不得重试失败的 close。去重完整性读取同样等待流关闭，并通过该错误报告关闭失败。即使保存失败，已经发布的私有对象也会保留，存储所有者必须继续计入其容量占用。
 
 ### 源码地图
 

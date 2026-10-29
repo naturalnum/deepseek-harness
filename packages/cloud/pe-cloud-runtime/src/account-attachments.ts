@@ -2,7 +2,7 @@
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
-import { AttachmentCleanupError } from '@deepseek-ai/dsh-attachment-local'
+import { AttachmentCleanupError, AttachmentPublicationUnconfirmedError } from '@deepseek-ai/dsh-attachment-local'
 import { FileUploads, FileUploadIntakeUnconfirmedError, FileUploadTooLargeError } from '@deepseek-ai/dsh-client-file-upload'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import { isAgentLoopRequest, type RequestMessage } from '@deepseek-ai/dsh-llm'
@@ -244,6 +244,7 @@ export class AccountAttachments {
           return ref
         } catch (error) {
           if (error instanceof AttachmentCleanupError || error instanceof FileUploadIntakeUnconfirmedError) throw error
+          if (error instanceof AttachmentPublicationUnconfirmedError) throw new FileUploadIntakeUnconfirmedError({ cause: error })
           if (inputFailure !== undefined) throw inputFailure
           throw new FdMutationFailure('not-published', signal.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR', undefined, { cause: error })
         } finally {
@@ -257,7 +258,7 @@ export class AccountAttachments {
       // failures and all other upload errors retain their existing disposition.
       if (sizeLimitFailure !== undefined && error === sizeLimitFailure) throw new FileUploadTooLargeError()
       if (error instanceof FdMutationFailure && error.outcome === 'not-published') throw error
-      throw new FileUploadIntakeUnconfirmedError()
+      throw new FileUploadIntakeUnconfirmedError({ cause: error })
     }
   }
 }

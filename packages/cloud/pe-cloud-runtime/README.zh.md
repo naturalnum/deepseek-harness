@@ -99,7 +99,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 原生 generation 审计核验 Loader Entry 的规范根 fiber。插件和注入 fiber 若从父 fiber 继承同一 Entry，不增加组合条目；所属根仍须通过精确的活动 fiber、模块 namespace、callback 与配置 plan 核验。
 
-可选 `native.attachments` 显式提供 surface 节点、引用及元数据上限、prompt 和上传容量、上传预留及原生待处理收据数；省略时两个附件 builtin 保持关闭。准备阶段选择唯一原生存储及 FileUploads 服务，将 Controller 可等待文件钩子委托给原来的同 Agent 收据。前置 pre-step listener 在 files 预算内收集有界原生 Session surface 与本次 claimed 消息，先于其他 listener 的路径计价和消费。最终原生 LLM 请求只能使用该准备集合，原始消息与持久引用不改写。两个同步路径映射均检查当前实际 Agent、项目与调用者。结果仅保留到该请求，拒绝、idle、销毁或 lifetime 结束时撤销，释放前继续占用原驻留预算。当前宿主文件系统将已验证副本映射为自身；后续沙盒 backend 的相同文件映射须单独验收。
+可选 `native.attachments` 显式提供 surface 节点、引用及元数据上限、prompt 和上传容量、上传预留及原生待处理收据数；省略时两个附件 builtin 保持关闭。原生流式文件发布失败若标记为未确认，会保留上传责任而不会报告为已确认拒绝；自定义回调吞掉或替换此错误不在该保证范围内。准备阶段选择唯一原生存储及 FileUploads 服务，将 Controller 可等待文件钩子委托给原来的同 Agent 收据。前置 pre-step listener 在 files 预算内收集有界原生 Session surface 与本次 claimed 消息，先于其他 listener 的路径计价和消费。最终原生 LLM 请求只能使用该准备集合，原始消息与持久引用不改写。两个同步路径映射均检查当前实际 Agent、项目与调用者。结果仅保留到该请求，拒绝、idle、销毁或 lifetime 结束时撤销，释放前继续占用原驻留预算。当前宿主文件系统将已验证副本映射为自身；后续沙盒 backend 的相同文件映射须单独验收。
 
 ### Account layout
 

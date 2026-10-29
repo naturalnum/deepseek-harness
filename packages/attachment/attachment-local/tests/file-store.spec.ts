@@ -9,7 +9,7 @@ import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
   fileLeafName, readFileStreamVerbatim, saveFileStreamVerbatim, saveFileVerbatim, storedFilePath,
 } from '../src/file-store.ts'
-import { publishImmutableAlias } from '../src/store.ts'
+import { AttachmentPublicationUnconfirmedError, publishImmutableAlias } from '../src/store.ts'
 
 const roots: string[] = []
 
@@ -275,4 +275,38 @@ describe('storedFilePath', () => {
       .toThrow(expect.objectContaining({ code: 'INVALID_ATTACHMENT_REF' }) as Error)
     expect(storedFilePath('/root', good).endsWith(join('a'.repeat(64), 'ok.txt'))).toBe(true)
   })
+})
+
+
+it('reports unconfirmed when native object publication is attempted and fails', async () => {
+  const root = await makeRoot(), bytes = Uint8Array.of(1, 2, 3), digest = sha256(bytes)
+  const object = join(root, 'file-objects', digest.slice(0, 2), digest)
+  await mkdir(object, { recursive: true })
+  const error = await saveFileStreamVerbatim(root, { data: (async function* () { yield bytes })() })
+    .then(() => undefined, (cause: unknown) => cause)
+  expect(error).toBeInstanceOf(AttachmentPublicationUnconfirmedError)
+  expect((error as Error).cause).toBeInstanceOf(Error)
+  expect((await stat(object)).isDirectory()).toBe(true)
+})
+
+it('retains native object and cancellation cause after object publication', async () => {
+  const root = await makeRoot(), bytes = Uint8Array.of(4, 5, 6), digest = sha256(bytes), reason = new Error('late abort')
+  let calls = 0
+  const signal = { throwIfAborted() { if (++calls === 4) throw reason } } as AbortSignal
+  const error = await saveFileStreamVerbatim(root, { name: 'late.bin', signal, data: (async function* () { yield bytes })() })
+    .then(() => undefined, (cause: unknown) => cause)
+  expect(error).toBeInstanceOf(AttachmentPublicationUnconfirmedError)
+  expect((error as Error).cause).toBe(reason)
+  expect((await stat(join(root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(bytes.byteLength)
+})
+
+it('retains native object when alias publication fails', async () => {
+  const root = await makeRoot(), bytes = Uint8Array.of(7, 8, 9), digest = sha256(bytes)
+  const alias = join(root, 'files', digest.slice(0, 2), digest, 'collision.bin')
+  await mkdir(alias, { recursive: true })
+  const error = await saveFileStreamVerbatim(root, { name: 'collision.bin', data: (async function* () { yield bytes })() })
+    .then(() => undefined, (cause: unknown) => cause)
+  expect(error).toBeInstanceOf(AttachmentPublicationUnconfirmedError)
+  expect((error as Error).cause).toBeInstanceOf(Error)
+  expect((await stat(join(root, 'file-objects', digest.slice(0, 2), digest))).size).toBe(bytes.byteLength)
 })
