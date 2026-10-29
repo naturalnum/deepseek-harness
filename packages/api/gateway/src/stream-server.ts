@@ -358,6 +358,8 @@ class RemoteStreamMuxConnection {
     let outcome: { readonly failed: false } | { readonly failed: true; readonly error: unknown }
     let iterator: AsyncIterator<unknown> | undefined
     let cleanup: { readonly error: unknown } | undefined
+    // The signal can change while a carrier write is pending.
+    const isAborted = (): boolean => active.abort.signal.aborted
     try {
       const source = await this.open(endpoint, payload, active.inbox, active.abort, {
         maxBytes: this.streamInboxBytes,
@@ -373,7 +375,7 @@ class RemoteStreamMuxConnection {
           // Only the mux's own close-before-write result is known to be a
           // carrier cancellation. Callback and serialization failures keep
           // their existing unknown-cleanup semantics.
-          if (!active.abort.signal.aborted || !(error instanceof CarrierClosedBeforeWriteError)) throw error
+          if (!isAborted() || !(error instanceof CarrierClosedBeforeWriteError)) throw error
           break
         }
       }

@@ -276,7 +276,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       if (shortcutBinding !== undefined && binding !== shortcutBinding) return
       if (stopping.has(binding)) return
     } catch { notify(); return }
-    if (binding === undefined) return
     const selected = binding
     stopping.add(selected)
     void Promise.resolve().then(() => {
