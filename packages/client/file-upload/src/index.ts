@@ -29,7 +29,9 @@ export class FileUploadIntakeUnconfirmedError extends Error {
 
 /** Upload rejected at a confirmed file-size boundary before any receipt was published. */
 export class FileUploadTooLargeError extends Error {
+  /** Stable code for a confirmed file-size rejection. */
   readonly code = 'FS_TOO_LARGE'
+  /** Confirms that this intake did not publish a receipt. */
   readonly outcome = 'not-published'
 
   constructor() {
