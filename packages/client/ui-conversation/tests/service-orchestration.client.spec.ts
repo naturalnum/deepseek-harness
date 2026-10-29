@@ -378,17 +378,17 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('cancels a superseded upload and stages the carried draft on the target Session', async () => {
+  it('waits for an in-flight upload and keeps its confirmed receipt bound to the original Session', async () => {
     const b = await bench()
     const source = b.runtime.sessions.binding('s1')!.session
     let sourceSignal: AbortSignal | undefined
+    const settled = Promise.withResolvers<{
+      ok: true
+      value: { receiptId: never; file: { attachmentId: never; name: string; bytes: number } }
+    }>()
     const sourceUpload = vi.fn((_data: Blob | Uint8Array, _name?: string, signal?: AbortSignal) => {
       sourceSignal = signal
-      return new Promise((resolve) => {
-        signal?.addEventListener('abort', () => {
-          resolve({ ok: false, error: { message: 'aborted' } })
-        }, { once: true })
-      })
+      return settled.promise
     })
     ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
     const [attachment] = b.root.createDrafts(source.sessionId, [
@@ -411,13 +411,128 @@ describe('ConversationController', () => {
     await _target.ready
     b.root.rebindDraftFiles(b.runtime.sessions.binding('s2')!.session.sessionId, [attachment.id])
 
-    expect(sourceSignal?.aborted).toBe(true)
+    expect(sourceSignal?.aborted).toBe(false)
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    // Multiple navigations only change the intended target; they never replay the old request.
+    b.root.rebindDraftFiles('s1' as SessionId, [attachment.id])
+    b.root.rebindDraftFiles('s2' as SessionId, [attachment.id])
+    settled.resolve({ ok: true, value: { receiptId: 'source-receipt' as never,
+      file: { attachmentId: 'source-file' as never, name: 'carry.pdf', bytes: 1 } } })
     await vi.waitFor(() => {
-      expect(b.root.fileUploads.getSnapshot()[attachment.id]).toEqual({
-        status: 'ready', receiptId: 'target-receipt',
-        file: { attachmentId: 'target-file', name: 'carry.pdf', bytes: 1 },
-      })
+      expect(b.root.fileUploads.getSnapshot()[attachment.id]).toMatchObject({ status: 'error', reason: 'previous-session' })
     })
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    b.root.rebindDraftFiles('s1' as SessionId, [attachment.id])
+    expect(b.root.fileUploads.getSnapshot()[attachment.id]).toMatchObject({ status: 'ready', receiptId: 'source-receipt' })
+    await b.runtime.dispose()
+  })
+
+  it.each(['network', 'unconfirmed'] as const)('does not reupload after %s from the original attempt', async (failure) => {
+    const b = await bench(), source = b.runtime.sessions.binding('s1')!.session
+    const settled = Promise.withResolvers<never>()
+    const sourceUpload = vi.fn(() => settled.promise)
+    ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
+    const [attachment] = b.root.createDrafts(source.sessionId, [new File(['x'], 'carry.pdf')])
+    if (attachment === undefined) throw new Error('file draft missing')
+    await vi.waitFor(() => { expect(sourceUpload).toHaveBeenCalledOnce() })
+    const target = { uploadFile: vi.fn() }
+    await b.runtime.sessions.add({ id: 's2', session: target })
+    using targetReference = b.runtime.sessions.retain('s2' as SessionId)
+    await targetReference.ready
+    b.root.rebindDraftFiles('s2' as SessionId, [attachment.id])
+    if (failure === 'network') settled.reject(new Error('lost response'))
+    else settled.resolve({ ok: false, error: new RemoteError('gateway/internal', 'File upload intake settlement is unconfirmed.', {}) } as never)
+    await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[attachment.id]).toMatchObject({ status: 'error', reason: 'unconfirmed' }) })
+    b.root.rebindDraftFiles('s2' as SessionId, [attachment.id])
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('rebinds after the original operation confirms it was rejected before admission', async () => {
+    const b = await bench(), source = b.runtime.sessions.binding('s1')!.session
+    const settled = Promise.withResolvers<never>()
+    const sourceUpload = vi.fn(() => settled.promise)
+    ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
+    const [attachment] = b.root.createDrafts(source.sessionId, [new File(['x'], 'carry.pdf')])
+    if (attachment === undefined) throw new Error('file draft missing')
+    await vi.waitFor(() => { expect(sourceUpload).toHaveBeenCalledOnce() })
+    const target = { uploadFile: vi.fn(() => Promise.resolve({ ok: true as const, value: {
+      receiptId: 'new-receipt' as never, file: { attachmentId: 'new-file' as never, name: 'carry.pdf', bytes: 1 },
+    } })) }
+    await b.runtime.sessions.add({ id: 's2', session: target })
+    using targetReference = b.runtime.sessions.retain('s2' as SessionId)
+    await targetReference.ready
+    b.root.rebindDraftFiles('s2' as SessionId, [attachment.id])
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    settled.resolve({ ok: false, error: new RemoteError('session/attachment-invalid', 'capacity', { reason: 'FILE_UPLOAD_CAPACITY' }) } as never)
+    await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[attachment.id]).toMatchObject({ status: 'ready', receiptId: 'new-receipt' }) })
+    expect(target.uploadFile).toHaveBeenCalledOnce()
+    await b.runtime.dispose()
+  })
+
+  it('does not create a target upload when the draft is removed while rebind waits', async () => {
+    const b = await bench(), source = b.runtime.sessions.binding('s1')!.session
+    let signal: AbortSignal | undefined
+    const settled = Promise.withResolvers<never>()
+    const sourceUpload = vi.fn((_data: Blob, _name?: string, value?: AbortSignal) => { signal = value; return settled.promise })
+    ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
+    const [attachment] = b.root.createDrafts(source.sessionId, [new File(['x'], 'carry.pdf')])
+    if (attachment === undefined) throw new Error('file draft missing')
+    await vi.waitFor(() => { expect(sourceUpload).toHaveBeenCalledOnce() })
+    const target = { uploadFile: vi.fn() }
+    await b.runtime.sessions.add({ id: 's2', session: target })
+    using targetReference = b.runtime.sessions.retain('s2' as SessionId)
+    await targetReference.ready
+    b.root.rebindDraftFiles('s2' as SessionId, [attachment.id])
+    b.root.releaseDraftAttachment(attachment.id)
+    expect(signal?.aborted).toBe(true)
+    settled.resolve({ ok: false, error: new RemoteError('session/attachment-invalid', 'capacity', { reason: 'FILE_UPLOAD_CAPACITY' }) } as never)
+    await b.runtime.flush()
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    expect(b.root.fileUploads.getSnapshot()[attachment.id]).toBeUndefined()
+    await b.runtime.dispose()
+  })
+
+  it('does not create a target upload when the service is disposed while rebind waits', async () => {
+    const b = await bench(), source = b.runtime.sessions.binding('s1')!.session
+    const settled = Promise.withResolvers<never>()
+    const sourceUpload = vi.fn(() => settled.promise)
+    ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
+    const [attachment] = b.root.createDrafts(source.sessionId, [new File(['x'], 'carry.pdf')])
+    if (attachment === undefined) throw new Error('file draft missing')
+    await vi.waitFor(() => { expect(sourceUpload).toHaveBeenCalledOnce() })
+    const target = { uploadFile: vi.fn() }
+    await b.runtime.sessions.add({ id: 's2', session: target })
+    using targetReference = b.runtime.sessions.retain('s2' as SessionId)
+    await targetReference.ready
+    b.root.rebindDraftFiles('s2' as SessionId, [attachment.id])
+    const closing = b.fiber.dispose()
+    settled.resolve({ ok: false, error: new RemoteError('session/attachment-invalid', 'capacity', { reason: 'FILE_UPLOAD_CAPACITY' }) } as never)
+    await closing
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('can rebind a queued draft whose source transport was never invoked', async () => {
+    const b = await bench(1), source = b.runtime.sessions.binding('s1')!.session
+    const held = Promise.withResolvers<never>()
+    const sourceUpload = vi.fn(() => held.promise)
+    ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
+    const drafts = b.root.createDrafts(source.sessionId, [new File(['a'], 'first'), new File(['b'], 'queued')])
+    await vi.waitFor(() => { expect(sourceUpload).toHaveBeenCalledOnce() })
+    const target = { uploadFile: vi.fn(() => Promise.resolve({ ok: true as const, value: {
+      receiptId: 'target-receipt' as never, file: { attachmentId: 'target-file' as never, name: 'queued', bytes: 1 },
+    } })) }
+    await b.runtime.sessions.add({ id: 's2', session: target })
+    using targetReference = b.runtime.sessions.retain('s2' as SessionId)
+    await targetReference.ready
+    b.root.rebindDraftFiles('s2' as SessionId, [drafts[1]!.id])
+    expect(sourceUpload).toHaveBeenCalledOnce()
+    expect(target.uploadFile).not.toHaveBeenCalled()
+    held.resolve({ ok: true, value: { receiptId: 'first-receipt', file: { attachmentId: 'first-file', name: 'first', bytes: 1 } } } as never)
+    await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).toMatchObject({ status: 'ready', receiptId: 'target-receipt' }) })
+    expect(sourceUpload).toHaveBeenCalledOnce()
+    expect(target.uploadFile).toHaveBeenCalledOnce()
     await b.runtime.dispose()
   })
 

@@ -67,8 +67,9 @@ export function ComposerAttachments({
                       : {}}
                     labels={{ ...fileCardLabels(t, attachment.file.name),
                       ...upload?.status === 'error' && upload.reason === 'too-large' ? { failed: t('file.uploadTooLarge') }
-                        : upload?.status === 'error' && upload.reason === 'unconfirmed' ? { failed: t('file.uploadUnconfirmed') } : {} }}
-                    retryAllowed={!(upload?.status === 'error' && upload.reason === 'unconfirmed')}
+                        : upload?.status === 'error' && upload.reason === 'unconfirmed' ? { failed: t('file.uploadUnconfirmed') }
+                          : upload?.status === 'error' && upload.reason === 'previous-session' ? { failed: t('file.uploadPreviousSession') } : {} }}
+                    retryAllowed={!(upload?.status === 'error' && (upload.reason === 'unconfirmed' || upload.reason === 'previous-session'))}
                     onRemove={() => { onRemoveAttachment(attachment.id) }}
                     onRetry={() => { onRetryFile(attachment.id) }}
                   />

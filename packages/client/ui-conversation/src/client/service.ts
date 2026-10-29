@@ -161,7 +161,15 @@ export class ConversationController extends Service implements IConversation {
   private readonly fileUploadOperations = new Map<DraftAttachmentId, {
     readonly controller: AbortController
     readonly done: Promise<void>
+    readonly sessionId: SessionId
+    started: boolean
+    rebind: SessionId | undefined
   }>()
+  private readonly completedFileUploads = new Map<DraftAttachmentId, {
+    readonly sessionId: SessionId
+    readonly upload: Extract<DraftFileUpload, { status: 'ready' }>
+  }>()
+  private readonly safelyRejectedFileUploads = new Set<DraftAttachmentId>()
   private readonly pendingFileUploads = new Set<Promise<void>>()
   private readonly fileUploadQueue: Array<{
     readonly run: () => Promise<void>
@@ -191,6 +199,8 @@ export class ConversationController extends Service implements IConversation {
       for (const operation of operations) operation.controller.abort()
       await Promise.allSettled([...this.pendingFileUploads])
       this.fileUploadOperations.clear()
+      this.completedFileUploads.clear()
+      this.safelyRejectedFileUploads.clear()
       this.fileUploadQueue.length = 0
       for (const attachment of this.draftAttachments.values()) {
         if (attachment.kind === 'image') revokePreview(attachment.previewUrl)
@@ -327,7 +337,7 @@ export class ConversationController extends Service implements IConversation {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined || attachment.kind !== 'file') return
     const upload = this.fileUploads.getSnapshot()[id]
-    if (upload?.status !== 'error' || upload.reason === 'unconfirmed') return
+    if (upload?.status !== 'error' || upload.reason === 'unconfirmed' || upload.reason === 'previous-session') return
     this.beginFileUpload(sessionId, attachment)
   }
 
@@ -339,28 +349,53 @@ export class ConversationController extends Service implements IConversation {
   rebindDraftFiles(sessionId: SessionId, ids: readonly DraftAttachmentId[]): void {
     for (const id of ids) {
       const attachment = this.draftAttachments.get(id)
+      if (attachment?.kind !== 'file') continue
       const upload = this.fileUploads.getSnapshot()[id]
-      if (attachment?.kind === 'file' && !(upload?.status === 'error' && upload.reason === 'unconfirmed')) {
+      const operation = this.fileUploadOperations.get(id)
+      if (operation !== undefined) {
+        if (operation.sessionId === sessionId) { operation.rebind = undefined; continue }
+        if (operation.started) { operation.rebind = sessionId; continue }
+        // The queue has not invoked the transport, so the old attempt cannot have been submitted.
         this.beginFileUpload(sessionId, attachment)
+        continue
+      }
+      const completed = this.completedFileUploads.get(id)
+      if (completed !== undefined) {
+        this.fileUploads.update((draft) => {
+          if (!(id in draft)) return
+          draft[id] = completed.sessionId === sessionId ? completed.upload
+            : { status: 'error', message: '', reason: 'previous-session' }
+        })
+      } else if (upload?.status === 'error' && this.safelyRejectedFileUploads.has(id)) {
+        this.beginFileUpload(sessionId, attachment)
+      } else if (upload !== undefined) {
+        this.fileUploads.update((draft) => {
+          if (id in draft) draft[id] = { status: 'error', message: '', reason: 'unconfirmed' }
+        })
       }
     }
   }
 
   private beginFileUpload(sessionId: SessionId, attachment: ComposerFileAttachment): void {
     this.fileUploadOperations.get(attachment.id)?.controller.abort()
+    this.completedFileUploads.delete(attachment.id)
+    this.safelyRejectedFileUploads.delete(attachment.id)
     const controller = new AbortController()
     this.fileUploads.update((draft) => {
       draft[attachment.id] = { status: 'uploading', loaded: 0 }
     })
     let settle!: () => void
     const done = new Promise<void>((resolve) => { settle = resolve })
-    this.fileUploadOperations.set(attachment.id, { controller, done })
+    const operation = { controller, done, sessionId, started: false, rebind: undefined as SessionId | undefined }
+    this.fileUploadOperations.set(attachment.id, operation)
     this.pendingFileUploads.add(done)
     void done.then(() => { this.pendingFileUploads.delete(done) })
     const run = async (): Promise<void> => {
+      let retrySession: SessionId | undefined
       try {
         if (controller.signal.aborted
           || this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        operation.started = true
         const result = await this.ctx.fileUpload.upload(
           sessionId,
           attachment.file,
@@ -379,12 +414,27 @@ export class ConversationController extends Service implements IConversation {
           },
         )
         if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        const safeRejection = !result.ok && result.error.code === 'session/attachment-invalid'
+          && (result.error.details.reason === 'FILE_UPLOAD_TOO_LARGE' || result.error.details.reason === 'FILE_UPLOAD_CAPACITY')
+        if (safeRejection) this.safelyRejectedFileUploads.add(attachment.id)
+        if (result.ok) {
+          this.completedFileUploads.set(attachment.id, { sessionId,
+            upload: { status: 'ready', receiptId: result.value.receiptId, file: result.value.file } })
+        }
+        if (operation.rebind !== undefined && operation.rebind !== sessionId) {
+          if (safeRejection) retrySession = operation.rebind
+          else this.fileUploads.update((draft) => {
+            if (attachment.id in draft) draft[attachment.id] = { status: 'error', message: '',
+              reason: result.ok ? 'previous-session' : 'unconfirmed' }
+          })
+          return
+        }
         this.fileUploads.update((draft) => {
           if (!(attachment.id in draft)) return
           draft[attachment.id] = result.ok
             ? { status: 'ready', receiptId: result.value.receiptId, file: result.value.file }
             : { status: 'error', message: result.error.message,
-              ...(result.error.details.reason === 'FILE_UPLOAD_INTAKE_UNCONFIRMED'
+              ...(('reason' in result.error.details && result.error.details.reason === 'FILE_UPLOAD_INTAKE_UNCONFIRMED')
                 || (result.error.code === 'gateway/internal'
                   && result.error.message === 'File upload intake settlement is unconfirmed.')
                 ? { reason: 'unconfirmed' as const }
@@ -398,11 +448,15 @@ export class ConversationController extends Service implements IConversation {
           draft[attachment.id] = {
             status: 'error',
             message: error instanceof Error ? error.message : String(error),
+            ...(operation.rebind !== undefined && operation.rebind !== sessionId ? { reason: 'unconfirmed' as const } : {}),
           }
         })
       } finally {
         if (this.fileUploadOperations.get(attachment.id)?.controller === controller) {
           this.fileUploadOperations.delete(attachment.id)
+          if (retrySession !== undefined && !controller.signal.aborted && this.draftAttachments.has(attachment.id)) {
+            this.beginFileUpload(retrySession, attachment)
+          }
         }
       }
     }
@@ -474,6 +528,8 @@ export class ConversationController extends Service implements IConversation {
     if (attachment === undefined) return
     const operation = this.fileUploadOperations.get(id)
     this.fileUploadOperations.delete(id)
+    this.completedFileUploads.delete(id)
+    this.safelyRejectedFileUploads.delete(id)
     operation?.controller.abort()
     this.draftAttachments.delete(id)
     if (attachment.kind === 'image') {

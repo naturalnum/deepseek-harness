@@ -29,6 +29,7 @@ const t = ((key: string, params?: Readonly<Record<string, unknown>>): string => 
     'file.uploading': '上传中…',
     'file.uploadFailed': '上传失败，点击重试',
     'file.uploadUnconfirmed': '上传结果未确认，请勿重复提交',
+    'file.uploadPreviousSession': '文件已上传到原会话，请移除后重新选择',
     'file.uploadTooLarge': '文件超过上传大小限制，请选择较小的文件',
     'file.label': '文件',
     'image.pending': '待发送图片',
@@ -245,6 +246,16 @@ describe('ComposerAttachments file drafts', () => {
     fireEvent.click(view.getByRole('button', { name: '移除文件 unknown.pdf' }))
     expect(onRemoveAttachment).toHaveBeenCalledWith('unknown')
     expect(onRetryFile).not.toHaveBeenCalled()
+  })
+
+  it('announces an original-session receipt without offering retry in a different Session', () => {
+    const view = render(<ComposerAttachments {...props({
+      attachments: [fileDraft('old')],
+      uploads: { old: { status: 'error', message: '', reason: 'previous-session' } },
+    })} />)
+    expect(view.getByRole('status').textContent).toContain('文件已上传到原会话，请移除后重新选择')
+    expect(view.queryByRole('button', { name: '重试上传 old.pdf' })).toBeNull()
+    expect(view.getByRole('button', { name: '移除文件 old.pdf' })).toBeTruthy()
   })
   it('shows the fixed size-limit message only for a confirmed size error', () => {
     const view = render(<ComposerAttachments {...props({
