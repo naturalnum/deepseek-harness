@@ -103,6 +103,24 @@ it.each(['private', 'public'] as const)('does not treat an ordinary %s parent de
   hooks.started = false; hooks.forcePublic = false; hooks.closes = 0
 })
 
+it.each(['private', 'public'] as const)('retains both a %s parent decode error and its internal close error', async (kind) => {
+  const root = await mkdtemp(join(tmpdir(), 'jsonl-parent-double-error-')), ctx = new Context()
+  onTestFinished(async () => {
+    hooks.started = false; hooks.forcePublic = false; hooks.closes = 0; hooks.closeFailure = undefined
+    await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
+  })
+  const id = SessionId(`double-${kind}`), closeFailure = new Error('actual decoder close failed')
+  await parentFile(root, id, undefined, true)
+  await ctx.plugin(JsonlPersistence, { root, compression: 'zstd' })
+  vi.spyOn(ctx.logger, 'error').mockImplementation(() => undefined)
+  hooks.forcePublic = kind === 'public'; hooks.closeFailure = closeFailure
+  const error: unknown = await ctx.sessionPersistence.open(id, 'read').catch((failure: unknown) => failure)
+  expect(error).toMatchObject({ name: 'JsonlReadCleanupError', cause: closeFailure })
+  expect((error as AggregateError).errors).toEqual([expect.any(Error), closeFailure])
+  expect((error as AggregateError).errors[0]).not.toBe(closeFailure)
+  expect(hooks.closes).toBe(1)
+})
+
 it('waits for a cancelled parent decoder and reports its late close failure through native root disposal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'jsonl-parent-native-'))
   const home = join(root, 'home'), cwd = join(root, 'project'), dir = join(home, 'profiles', 'account')

@@ -504,7 +504,11 @@ async function decodeStreamingMigration(
       }
     }
     if (closeFailure !== undefined) {
-      const previous = readFailure?.error === closeException ? undefined : readFailure
+      let previous = readFailure?.error === closeException ? undefined : readFailure
+      if (previous?.error instanceof AggregateError && previous.error.cause === closeException
+        && previous.error.errors.length === 2 && previous.error.errors[1] === closeException) {
+        previous = { error: previous.error.errors[0] }
+      }
       throw new JsonlReadCleanupError(closeFailure.error, previous)
     }
   }

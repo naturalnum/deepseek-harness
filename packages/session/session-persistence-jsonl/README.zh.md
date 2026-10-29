@@ -88,7 +88,7 @@ kind: "package-reference"
 
 校验只有在 Worker 自然以退出码 0 结束后，才接受其成功响应。并发配额一直保留到该次退出；取消或 Worker 错误会先终止并等待 Worker 退出，再使校验失败。
 
-当调用方仍在等待时，header 和历史父、子会话读取的资源关闭失败会以 `JsonlReadCleanupError` 拒绝。该错误是 `AggregateError`，其 cause 为关闭失败，errors 中也保留已到达清理边界的先前读取失败。存在性探测成功打开后，关闭失败（包括 `ENOENT`）同样会报告；只有打开时的 `ENOENT` 表示不存在。取消的等待者可能在共享准备结束前返回，因此不会收到之后发生的关闭错误。
+当调用方仍在等待时，header 和历史父、子会话读取的资源关闭失败会以 `JsonlReadCleanupError` 拒绝。该错误是 `AggregateError`，其 cause 为关闭失败，errors 中也保留已到达清理边界的先前读取或解码失败。存在性探测成功打开后，关闭失败（包括 `ENOENT`）同样会报告；只有打开时的 `ENOENT` 表示不存在。取消的等待者可能在共享准备结束前返回，因此不会收到之后发生的关闭错误。
 
 header 读取同样只把打开文件失败时的 `ENOENT` 视为不存在。文件成功打开后读取产生的 `ENOENT` 仍是 I/O 失败，即使它与取消并发发生。
 
