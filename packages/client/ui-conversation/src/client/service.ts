@@ -434,12 +434,8 @@ export class ConversationController extends Service implements IConversation {
           draft[attachment.id] = result.ok
             ? { status: 'ready', receiptId: result.value.receiptId, file: result.value.file }
             : { status: 'error', message: result.error.message,
-              ...(('reason' in result.error.details && result.error.details.reason === 'FILE_UPLOAD_INTAKE_UNCONFIRMED')
-                || (result.error.code === 'gateway/internal'
-                  && result.error.message === 'File upload intake settlement is unconfirmed.')
-                ? { reason: 'unconfirmed' as const }
-                : result.error.code === 'session/attachment-invalid'
-                  && result.error.details.reason === 'FILE_UPLOAD_TOO_LARGE' ? { reason: 'too-large' as const } : {}) }
+              ...(!safeRejection ? { reason: 'unconfirmed' as const }
+                : result.error.details.reason === 'FILE_UPLOAD_TOO_LARGE' ? { reason: 'too-large' as const } : {}) }
         })
       } catch (error) {
         if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
@@ -448,7 +444,7 @@ export class ConversationController extends Service implements IConversation {
           draft[attachment.id] = {
             status: 'error',
             message: error instanceof Error ? error.message : String(error),
-            ...(operation.rebind !== undefined && operation.rebind !== sessionId ? { reason: 'unconfirmed' as const } : {}),
+            reason: 'unconfirmed',
           }
         })
       } finally {

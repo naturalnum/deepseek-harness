@@ -73,7 +73,7 @@ describe('ConversationController', () => {
     } finally { await b.runtime.dispose() }
   })
 
-  it('recognizes the structured unconfirmed reason but not the same text under a different error code', async () => {
+  it('treats structured and other server failures without proof of rejection as unconfirmed', async () => {
     const b = await bench()
     try {
       const session = b.runtime.sessions.binding('s1')!.session
@@ -84,11 +84,11 @@ describe('ConversationController', () => {
       const drafts = b.root.createDrafts(session.sessionId, [new File(['a'], 'structured'), new File(['b'], 'other')])
       await vi.waitFor(() => { expect(drafts.every(d => b.root.fileUploads.getSnapshot()[d.id]?.status === 'error')).toBe(true) })
       expect(b.root.fileUploads.getSnapshot()[drafts[0]!.id]).toMatchObject({ reason: 'unconfirmed' })
-      expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).not.toHaveProperty('reason')
+      expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).toMatchObject({ reason: 'unconfirmed' })
     } finally { await b.runtime.dispose() }
   })
 
-  it('classifies only the structured confirmed size error, not network or generic failures', async () => {
+  it('distinguishes confirmed size rejection from unconfirmed network and server failures', async () => {
     const b = await bench()
     const session = b.runtime.sessions.binding('s1')!.session
     const uploadFile = vi.fn()
@@ -101,9 +101,43 @@ describe('ConversationController', () => {
     ])
     await vi.waitFor(() => { expect(drafts.every(d => b.root.fileUploads.getSnapshot()[d.id]?.status === 'error')).toBe(true) })
     expect(b.root.fileUploads.getSnapshot()[drafts[0]!.id]).toMatchObject({ status: 'error', reason: 'too-large' })
-    expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).not.toHaveProperty('reason')
-    expect(b.root.fileUploads.getSnapshot()[drafts[2]!.id]).not.toHaveProperty('reason')
+    expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]).toMatchObject({ reason: 'unconfirmed' })
+    expect(b.root.fileUploads.getSnapshot()[drafts[2]!.id]).toMatchObject({ reason: 'unconfirmed' })
     await b.runtime.dispose()
+  })
+
+  it('does not retry a same-session timeout whose submission outcome is unknown', async () => {
+    const b = await bench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const uploadFile = vi.fn().mockRejectedValue(new Error('request timed out'))
+      ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
+      const [draft] = b.root.createDrafts(session.sessionId, [new File(['x'], 'timeout')])
+      if (draft === undefined) throw new Error('missing draft')
+      await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[draft.id]).toMatchObject({ status: 'error', reason: 'unconfirmed' }) })
+      b.root.retryFileUpload(session.sessionId, draft.id)
+      await b.runtime.flush()
+      expect(uploadFile).toHaveBeenCalledOnce()
+    } finally { await b.runtime.dispose() }
+  })
+
+  it('allows an explicit retry after a confirmed intake capacity rejection', async () => {
+    const b = await bench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const uploadFile = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: new RemoteError('session/attachment-invalid', 'capacity', { reason: 'FILE_UPLOAD_CAPACITY' }) })
+        .mockResolvedValueOnce({ ok: true, value: { receiptId: 'retry-ok',
+          file: { attachmentId: 'retry-file', name: 'retry', bytes: 1 } } })
+      ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
+      const [draft] = b.root.createDrafts(session.sessionId, [new File(['x'], 'retry')])
+      if (draft === undefined) throw new Error('missing draft')
+      await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[draft.id]).toMatchObject({ status: 'error' }) })
+      expect(b.root.fileUploads.getSnapshot()[draft.id]).not.toHaveProperty('reason')
+      b.root.retryFileUpload(session.sessionId, draft.id)
+      await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[draft.id]).toMatchObject({ status: 'ready', receiptId: 'retry-ok' }) })
+      expect(uploadFile).toHaveBeenCalledTimes(2)
+    } finally { await b.runtime.dispose() }
   })
   it('does not revive a withdrawn generation when an old input submits before scoped cleanup', async () => {
     const b = await bench()
