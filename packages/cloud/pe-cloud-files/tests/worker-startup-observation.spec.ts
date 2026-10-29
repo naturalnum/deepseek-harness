@@ -63,7 +63,7 @@ it.each(['PRIVATE_CODE', 'x'.repeat(4096), 'EIO\nPRIVATE', 'accessor', 'inherite
   const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {}), forbidden = vi.fn(() => 'PRIVATE_ACCESSOR')
   let error: object = { code: kind }
   if (kind === 'accessor') Object.defineProperty(error, 'code', { get: forbidden })
-  if (kind === 'inherited') error = Object.create({ code: 'EIO' })
+  if (kind === 'inherited') error = Object.create({ code: 'EIO' }) as object
   if (kind === 'proxy') error = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error('PRIVATE_PROXY') } })
   Object.defineProperty(error, 'message', { get: forbidden })
   Object.defineProperty(error, 'stack', { get: forbidden })
@@ -84,7 +84,7 @@ it.each([false, true])('keeps real missing-module Worker failure and exit1 when 
     expect(client.available).toBe(false)
     expect(terminate).toHaveBeenCalledTimes(1)
     expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', expect.objectContaining({
-      stage: 'worker-thread-error', code: 'ERR_MODULE_NOT_FOUND', name: 'Error', sites: expect.any(Array),
+      stage: 'worker-thread-error', code: 'ERR_MODULE_NOT_FOUND', name: 'Error', sites: expect.any(Array) as unknown,
     }))
     expect(JSON.stringify(stderr.mock.calls)).not.toContain('PRIVATE_')
   } finally { await client.close(); await client.exited }
@@ -99,7 +99,7 @@ it.each([
     await expect(client.ready).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
     expect(await client.exited).toBe(1)
     expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', expect.objectContaining({
-      stage: 'worker-thread-error', code: 'unclassified', name, sites: expect.any(Array),
+      stage: 'worker-thread-error', code: 'unclassified', name, sites: expect.any(Array) as unknown,
     }))
     expect(JSON.stringify(stderr.mock.calls)).not.toContain('PRIVATE_')
   } finally { await client.close(); await client.exited }
@@ -121,7 +121,9 @@ it('identifies an actual missing public named export without logging its raw Syn
     expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud files worker failure: %j', expect.objectContaining({
       stage: 'worker-thread-error', name: 'SyntaxError', code: 'unclassified',
       namedExport: { specifier: '@deepseek-ai/dsh-fs', identifier: 'FsVersion' },
-      sites: expect.arrayContaining([expect.stringMatching(/^packages\/cloud\/pe-cloud-files\/lib\/file-worker\.mjs:1(?::[0-9]+)?$/)]),
+      sites: expect.arrayContaining([
+        expect.stringMatching(/^packages\/cloud\/pe-cloud-files\/lib\/file-worker\.mjs:1(?::[0-9]+)?$/) as unknown,
+      ]) as unknown,
     }))
     expect(JSON.stringify(stderr.mock.calls)).not.toContain(directory)
   } finally { await client.close(); await client.exited; rmSync(directory, { recursive: true, force: true }) }
@@ -147,7 +149,7 @@ it('never invokes error accessors and excludes oversized own stacks and nonpubli
   observeFileWorkerFailure('worker-thread-error', { name: 'SyntaxError', stack: 'x'.repeat(16385),
     message: "The requested module 'PRIVATE_MODULE' does not provide an export named 'PRIVATE_TOKEN'" })
   expect(getter).not.toHaveBeenCalled()
-  expect(stderr.mock.calls.map(call => call[1])).toEqual([
+  expect(stderr.mock.calls.map((call): unknown => call[1])).toEqual([
     { stage: 'worker-thread-error', code: 'unclassified', name: 'Error', sites: [] },
     { stage: 'worker-thread-error', code: 'unclassified', name: 'SyntaxError', sites: [] },
   ])

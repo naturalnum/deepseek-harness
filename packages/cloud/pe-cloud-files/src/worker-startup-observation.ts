@@ -41,7 +41,10 @@ function threadFacts(error: unknown): {
   try {
     const own = ownString(error, 'name')
     if (own !== undefined && [...NAMES.values()].includes(own)) name = own
-    else if (typeof error === 'object' && error !== null) name = NAMES.get(Object.getPrototypeOf(error)) ?? name
+    else if (typeof error === 'object' && error !== null) {
+      const prototype: unknown = Object.getPrototypeOf(error)
+      if (typeof prototype === 'object' && prototype !== null) name = NAMES.get(prototype) ?? name
+    }
   } catch (_unavailableName) { /* Unknown error types retain only the fixed generic name. */ }
   const stack = ownString(error, 'stack'), sites: string[] = []
   if (stack !== undefined && stack.length <= 16384) for (const line of stack.split('\n')) {

@@ -3,7 +3,7 @@ const SITE = new RegExp(
   String.raw`/packages/cloud/(pe-cloud-access|pe-cloud-api|pe-cloud-files|pe-cloud-runtime|pe-opensandbox)`
   + String.raw`/lib/(root|index|account-service|managed-coordinator|closed-owner)(-[A-Za-z0-9_-]{8})?\.js:([0-9]{1,7}):([0-9]{1,7})\)?$`,
 )
-const NATIVE_STACK_GETTER = Object.getOwnPropertyDescriptor(new Error(), 'stack')?.get
+const NATIVE_STACK_GETTER: unknown = Reflect.get(Object.getOwnPropertyDescriptor(new Error(), 'stack') ?? {}, 'get')
 const CHUNKS: Readonly<Record<string, readonly string[]>> = {
   'pe-cloud-api': ['account-service'], 'pe-cloud-files': ['account-service'],
   'pe-opensandbox': ['managed-coordinator', 'closed-owner'],
@@ -19,7 +19,7 @@ export function cloudFailureSites(error: unknown): readonly string[] {
   try {
     const descriptor = Object.getOwnPropertyDescriptor(error, 'stack')
     const stack: unknown = descriptor !== undefined && 'value' in descriptor ? descriptor.value
-      : NATIVE_STACK_GETTER !== undefined && descriptor?.get === NATIVE_STACK_GETTER
+      : typeof NATIVE_STACK_GETTER === 'function' && descriptor?.get === NATIVE_STACK_GETTER
         ? Reflect.apply(NATIVE_STACK_GETTER, error, []) : undefined
     if (typeof stack !== 'string' || stack.length > 16384) return []
     const sites: string[] = []

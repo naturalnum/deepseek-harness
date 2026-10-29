@@ -62,14 +62,15 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
   vi.spyOn(runtime, 'locateAccount').mockImplementation(async () => { if (phase === 'locate') await crossedNow(); return undefined })
   vi.spyOn(runtime, 'acquireAccount').mockImplementation(async () => { if (phase === 'acquire') await crossedNow(); return borrow() })
   vi.spyOn(runtime, 'borrowAccount').mockImplementation(async () => borrow())
-  const acquire = LoginPeerRegistry.prototype.acquire
+  const acquire = Reflect.get(LoginPeerRegistry.prototype, 'acquire')
   vi.spyOn(LoginPeerRegistry.prototype, 'acquire').mockImplementation(async function (this: LoginPeerRegistry, ...args) {
     const result = await acquire.apply(this, args)
     canonical ??= result.principal
     if (phase === 'peer') await crossedNow()
     return result
   })
-  const handleHttp = LoginPeerRegistry.prototype.handleNodeRequest, handleUpgrade = LoginPeerRegistry.prototype.handleUpgrade
+  const handleHttp = Reflect.get(LoginPeerRegistry.prototype, 'handleNodeRequest')
+  const handleUpgrade = Reflect.get(LoginPeerRegistry.prototype, 'handleUpgrade')
   vi.spyOn(LoginPeerRegistry.prototype, 'handleNodeRequest').mockImplementation(async function (this: LoginPeerRegistry, ...args) {
     const finished = once(args[2], 'finish')
     await handleHttp.apply(this, args)
@@ -159,7 +160,7 @@ for (const transport of ['http', 'upgrade'] as const) {
     }
     await Promise.all(f.pending)
     expect(f.crossed.value).toBe(true)
-    const original = await f.authenticated.mock.results[0]!.value
+    const original = await (f.authenticated.mock.results[0]!.value as ReturnType<BetterAuthAccess['authenticate']>)
     expect(original).not.toBe(f.canonical())
     expect(f.rechecks.mock.calls.filter(([principal]) => principal === original)).toHaveLength(4)
     for (const [input] of f.sessions.mock.calls) expect(new Headers(input?.headers).get('cookie'))
@@ -177,7 +178,7 @@ for (const transport of ['http', 'upgrade'] as const) {
       else expect((await f.upgrade()).status).toBe(401)
       await Promise.all(f.pending)
       expect(f.dispatches).not.toHaveBeenCalled()
-      const original = await f.authenticated.mock.results[0]!.value
+      const original = await (f.authenticated.mock.results[0]!.value as ReturnType<BetterAuthAccess['authenticate']>)
       expect(f.rechecks.mock.calls.at(-1)?.[0]).toBe(original)
       expect(() => { f.auth.assertLoginCurrent(original, 'fixture-request' as Parameters<BetterAuthAccess['assertLoginCurrent']>[1]) }).toThrow()
       expect(f.ingress.observe().pendingOperations).toBe(0)
