@@ -5,6 +5,19 @@ import type { SessionEvent, SessionHeader, SessionId, SessionLogOffset, SessionS
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandleReadResult } from '@deepseek-ai/dsh-session-persistence'
 
+/** An observation's cold read handle did not confirm its close. */
+export class ColdSessionReadCleanupError extends AggregateError {
+  override readonly name = 'ColdSessionReadCleanupError'
+
+  /** @param closeError - actual handle close failure.
+   * @param readFailure - any preceding read failure.
+   */
+  constructor(closeError: unknown, readFailure?: { readonly error: unknown }) {
+    super(readFailure === undefined ? [closeError] : [readFailure.error, closeError],
+      'Cold Session read handle cleanup failed', { cause: closeError })
+  }
+}
+
 /** A stored session log balanced for read-only viewing. */
 export interface ColdSessionLog {
   /** Aliasing state of the persisted events; synthetic closers are locally owned. */
@@ -33,6 +46,24 @@ export async function readColdSessionLog(
   sessionId: SessionId,
   signal?: AbortSignal,
 ): Promise<ColdSessionLog> {
+  return readColdSessionLogActual(persistence, sessionId, signal, false)
+}
+
+/** Read for an observation that must retain failed handle cleanup. */
+export async function readColdSessionLogForObservation(
+  persistence: SessionPersistence,
+  sessionId: SessionId,
+  signal?: AbortSignal,
+): Promise<ColdSessionLog> {
+  return readColdSessionLogActual(persistence, sessionId, signal, true)
+}
+
+async function readColdSessionLogActual(
+  persistence: SessionPersistence,
+  sessionId: SessionId,
+  signal: AbortSignal | undefined,
+  preserveCleanupFailure: boolean,
+): Promise<ColdSessionLog> {
   const options = signal === undefined ? undefined : { signal }
   const handle = await persistence.open(sessionId, 'read', options)
   let read: SessionHandleReadResult
@@ -41,12 +72,15 @@ export async function readColdSessionLog(
   } catch (error: unknown) {
     try {
       await handle.close()
-    } catch {
-      // The read failure is the actionable cause; a close failure on the same broken handle adds nothing.
+    } catch (closeError: unknown) {
+      if (preserveCleanupFailure) throw new ColdSessionReadCleanupError(closeError, { error })
     }
     throw error
   }
-  await handle.close()
+  try { await handle.close() } catch (error: unknown) {
+    if (preserveCleanupFailure) throw new ColdSessionReadCleanupError(error)
+    throw error
+  }
   const { events } = read
   return {
     eventState: read.eventState,

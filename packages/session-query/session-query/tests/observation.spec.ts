@@ -688,7 +688,7 @@ describe('SessionObservationReader cold path', () => {
     hooks.onStat = () => {
       delete hooks.onStat
       statAbort.abort(new Error('stat deadline'))
-      throw new Error('stat interrupted')
+      throw statAbort.signal.reason
     }
     await expect(reader.read(meta.id, { signal: statAbort.signal })).rejects.toMatchObject({
       code: 'SESSION_QUERY_ABORTED',
@@ -707,7 +707,7 @@ describe('SessionObservationReader cold path', () => {
     hooks.onRead = () => {
       delete hooks.onRead
       readAbort.abort(new Error('read deadline'))
-      throw new Error('read interrupted')
+      throw readAbort.signal.reason
     }
     await expect(reader.read(meta.id, { signal: readAbort.signal })).rejects.toMatchObject({
       code: 'SESSION_QUERY_ABORTED',

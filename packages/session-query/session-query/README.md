@@ -64,6 +64,8 @@ The inherited knobs are set through the mounted backend's config:
 
 Failures are typed with a stable `SessionQueryError.code`. The ones you will meet: `SESSION_QUERY_SESSION_NOT_FOUND` when an id is absent; `SESSION_QUERY_SOURCE_CONFLICT` when live and persisted observations of one session disagree on immutable headers; `SESSION_QUERY_PERSISTENCE_FAILED` when mounted persistence is unreadable; `SESSION_QUERY_CORRUPT_SESSION` when a durable record fails Session validation or a live or prepared observation fails projection computation; and `SESSION_QUERY_INVALID_SURFACE` when a loaded log breaks the surface contract. Projection failures retain the original error as `cause`. Reads targeting a known live session never consult persistence, so a failing backend cannot make current in-memory history unreadable.
 
+For a cold `observeSession` read, a handle close failure is retained as a persistence failure even when the read also fails or cancellation races it. Its cause retains the close error and, if present, the preceding read error. An independent backend failure reported during cancellation is also preserved; this does not establish that detached backend work has settled.
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -11,7 +11,7 @@ import type {
 import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import { SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, SessionQueryError } from './config.ts'
-import { readColdSessionLog, type ColdSessionLog } from './cold-read.ts'
+import { readColdSessionLogForObservation, type ColdSessionLog } from './cold-read.ts'
 
 /** One exact immutable Session cut retained for the caller's read lifetime. */
 export interface SessionObservation extends Disposable {
@@ -93,6 +93,7 @@ export class SessionObservationReader {
    * @param sessionId - logical Session identity.
    * @param options - cancellation and all-or-none projection computation for this read.
    * @returns one exact immutable observation.
+   * @throws A failed cold read handle close remains in the persistence failure cause, including when the read also fails.
    * @throws {@link SessionQueryError} with code `SESSION_QUERY_CORRUPT_SESSION` when live or prepared projection computation fails.
    */
   async read(
@@ -172,7 +173,7 @@ export class SessionObservationReader {
     try {
       snapshot = await persistence.stat(sessionId, signal === undefined ? undefined : { signal })
     } catch (error: unknown) {
-      throwIfObservationAborted(signal)
+      if (signal?.aborted === true && error === signal.reason && !(error instanceof AggregateError)) throwIfObservationAborted(signal)
       throw mapPersistenceFailure(sessionId, error)
     }
     throwIfObservationAborted(signal)
@@ -193,9 +194,9 @@ export class SessionObservationReader {
     signal: AbortSignal | undefined,
   ): Promise<ColdSessionLog> {
     try {
-      return await readColdSessionLog(persistence, sessionId, signal)
+      return await readColdSessionLogForObservation(persistence, sessionId, signal)
     } catch (error: unknown) {
-      throwIfObservationAborted(signal)
+      if (signal?.aborted === true && error === signal.reason && !(error instanceof AggregateError)) throwIfObservationAborted(signal)
       throw mapPersistenceFailure(sessionId, error)
     }
   }

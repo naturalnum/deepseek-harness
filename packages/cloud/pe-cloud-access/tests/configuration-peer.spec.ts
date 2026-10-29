@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { createServer, request as httpRequest } from 'node:http'
 import { createRequire } from 'node:module'
 import type { EventEmitter } from 'node:events'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { Deque } from '../../../util/deque/src/index.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -30,6 +30,30 @@ import { accessConfig, carrier } from './ingress-fixture.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionHistoryController } from '../../../api/session-controller/src/history.ts'
 import { installSessionReadTestServices, testSessionPersistence } from '../../../api/session-controller/tests/test-remote.ts'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import * as JsonlSessionPersistence from '../../../session/session-persistence-jsonl/src/index.ts'
+import { generationLogPath, toHeaderLine } from '../../../session/session-persistence-jsonl/src/format.ts'
+
+const jsonlCloseFault = vi.hoisted(() => ({ path: '', entered: undefined as (() => void) | undefined,
+  release: undefined as Promise<unknown> | undefined, failure: undefined as Error | undefined }))
+
+vi.mock('node:fs/promises', async (load) => {
+  const actual = await load<typeof import('node:fs/promises')>()
+  return { ...actual, open: (async (...args: Parameters<typeof actual.open>) => {
+    const handle = await actual.open(...args)
+    if (args[0] !== jsonlCloseFault.path || args[1] !== 'r' || jsonlCloseFault.failure === undefined) return handle
+    return new Proxy(handle, { get(target, property) {
+      if (property === 'close') return async () => {
+        jsonlCloseFault.entered?.()
+        await jsonlCloseFault.release
+        await target.close()
+        throw jsonlCloseFault.failure
+      }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+  }) as typeof actual.open }
+})
 
 declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service } }
 const requestId = brandString<Parameters<BetterAuthAccess['authenticate']>[1]>('configuration-peer-component')
@@ -256,6 +280,57 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     setOperation: (next: ConfigurationPeerOperation<unknown>) => { consume = next },
     expectCleanupFailure: () => { expectedCleanupFailure = true } }
 }
+
+it('retains a real JSONL header close failure after follow cancellation in the original Peer and mux', async () => {
+  const f = await fixture(1000)
+  const closeEntered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const cancelled = Promise.withResolvers<undefined>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'peer-jsonl-observation-')))
+  onTestFinished(() => { release.resolve(undefined); jsonlCloseFault.path = ''; jsonlCloseFault.failure = undefined
+    jsonlCloseFault.entered = undefined; jsonlCloseFault.release = undefined; rmSync(root, { recursive: true, force: true }) })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  installSessionReadTestServices(f.ctx)
+  const id = SessionId('peer-jsonl-close-failure')
+  const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
+  const path = generationLogPath(root, header.cwd, id, SESSION_FORMAT_VERSION, 'none')
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(toHeaderLine(header)) + '\n')
+  const failure = new Error('actual JSONL header close failed')
+  jsonlCloseFault.path = path; jsonlCloseFault.entered = () => { closeEntered.resolve(undefined) }
+  jsonlCloseFault.release = release.promise; jsonlCloseFault.failure = failure
+  const observe = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation((sessionId, options) => {
+    options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
+    return observe(sessionId, options)
+  })
+  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  class FollowFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    follow(signal: AbortSignal) { return history.follow({ address: { kind: 'session', sessionId: id } }, signal) }
+  }
+  await f.ctx.plugin(FollowFixture)
+  const handle = await f.acquire('login=a'), socket = await f.websocket(handle, 'session/follow', false)
+  await closeEntered.promise
+  const entries = Reflect.get(f.registry, 'entries') as Map<string, {
+    phase: string
+    streamCount: number
+    mux: { close(): Promise<void> }
+  }>
+  const entry = [...entries.values()][0]
+  if (entry === undefined) throw new Error('Expected retained Peer entry')
+  const mux = entry.mux
+  f.expectCleanupFailure()
+  socket.client.send(JSON.stringify({ type: 'cancel', streamId: 'original-observation' }))
+  await cancelled.promise
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(entry.phase).toBe('blocked') })
+  expect(entry.streamCount).toBe(1); expect(f.observe().inUse).toBe(1)
+  await expect(mux.close()).rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+    cause: { name: 'JsonlReadCleanupError', cause: failure } })
+  await expect(f.registry.closeActual()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
 
 it('detaches the cancelled follow while the actual Peer and mux still await its opening read', async () => {
   const f = await fixture(1000)

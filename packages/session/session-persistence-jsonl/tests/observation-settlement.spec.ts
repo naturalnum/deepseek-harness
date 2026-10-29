@@ -9,6 +9,7 @@ import { generationLogPath, toHeaderLine } from '../src/format.ts'
 import { compressZstdFrame } from '../src/zstd.ts'
 import { prepareCatalogFacts } from '../src/catalog-migration.ts'
 import { boot } from '../../../boot/app-boot/src/index.ts'
+import { SessionObservationReader } from '../../../session-query/session-query/src/observation.ts'
 
 const faults = vi.hoisted(() => ({ headerPath: '', headerClose: undefined as Error | undefined, skipCloses: 0, fileCloses: 0,
   bodyReadFileClose: undefined as Error | undefined, bodyReadFileInjected: false,
@@ -141,6 +142,7 @@ afterEach(async () => {
 it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close into an absent stat result', async (compression) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-settlement-header-')); roots.push(root)
   const ctx = new Context(); contexts.push(ctx)
+  await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression })
   const id = SessionId('header-close-failure')
   const header = { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/workspace' }
@@ -159,6 +161,13 @@ it.each(['none', 'zstd'] as const)('does not turn a failed %s header file close 
   const abort = new AbortController(); faults.abortOnClose = abort
   await expect(ctx.sessionPersistence.stat(id, { signal: abort.signal }))
     .rejects.toMatchObject({ name: 'JsonlReadCleanupError', cause: failure, errors: [readFailure, failure] })
+  expect(faults.fileCloses).toBe(1)
+  faults.fileCloses = 0; faults.headerRead = undefined
+  const observationAbort = new AbortController(); faults.abortOnClose = observationAbort
+  await expect(new SessionObservationReader(ctx).read(id, { signal: observationAbort.signal, projectionMode: 'none' }))
+    .rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: {
+      name: 'JsonlReadCleanupError', cause: failure, errors: [failure],
+    } })
   expect(faults.fileCloses).toBe(1)
 })
 
