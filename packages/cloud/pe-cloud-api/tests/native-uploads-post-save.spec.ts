@@ -4,6 +4,8 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { FileUploads, FileUploadIntakeUnconfirmedError, FileUploadTooLargeError } from '@deepseek-ai/dsh-client-file-upload'
@@ -151,11 +153,14 @@ it('revokes an unused callback after preparation has already rejected', async ()
 it('continues to invoke a custom preinstalled FileUploads hook exactly once', async () => {
   const descriptor = Object.getOwnPropertyDescriptor(FileUploads.prototype, 'storeFileStream')
   if (descriptor === undefined || typeof descriptor.value !== 'function') throw new Error('Native hook not found')
+  const original = descriptor.value as (this: FileUploads, agent: Agent, input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>
   let calls = 0
-  Object.defineProperty(FileUploads.prototype, 'storeFileStream', { ...descriptor, value: function (...args: unknown[]) {
-    calls++
-    return descriptor.value.apply(this, args)
-  } })
+  Object.defineProperty(FileUploads.prototype, 'storeFileStream', { ...descriptor,
+    value: function (this: FileUploads, agent: Agent, input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
+      calls++
+      return original.call(this, agent, input)
+    },
+  })
   try {
     const f = await fixture(async (_agent, input, save) => save(input)), bytes = Uint8Array.of(71, 72)
     const result = await f.uploads.uploadStream({ sessionId: f.agent.id, data: (async function* () { yield bytes })() })

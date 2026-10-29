@@ -62,34 +62,35 @@ export function createNativeUploads(
     protected override async storeFileStream(agent: Agent, input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
       graph()
       admit()
-      let firstSave: Promise<boolean> | undefined
-      let called = false, repeated = false, open = true
+      const first: { completion?: Promise<boolean>; repeated: boolean } = { repeated: false }
+      let called = false, open = true
       const save = (next: SaveFileStreamAttachment): Promise<FileAttachmentRef> => {
         if (!open) return Promise.reject(new CloudApiError('cloud/account-unavailable', 'The file upload preparation has settled.'))
         if (called) {
-          repeated = true
+          first.repeated = true
           return Promise.reject(new CloudApiError('cloud/account-unavailable', 'The file upload hook was already called.'))
         }
         called = true
         let pending: Promise<FileAttachmentRef>
         try { pending = super.storeFileStream(agent, next) }
-        catch (cause) { firstSave = Promise.resolve(false); throw cause }
-        firstSave = pending.then(() => true, () => false)
+        catch (cause) { first.completion = Promise.resolve(false); throw cause }
+        first.completion = pending.then(() => true, () => false)
         return pending
       }
       let result: FileAttachmentRef
       try { result = await preparation.storeFileStream(agent, input, save) }
       catch (cause) {
         open = false
-        if (firstSave !== undefined) {
-          const firstPublished = await firstSave
-          if (firstPublished || repeated) throw new FileUploadIntakeUnconfirmedError({ cause })
-        } else if (repeated) throw new FileUploadIntakeUnconfirmedError({ cause })
+        if (first.completion !== undefined) {
+          const firstPublished = await first.completion
+          if (firstPublished || first.repeated) throw new FileUploadIntakeUnconfirmedError({ cause })
+        } else if (first.repeated) throw new FileUploadIntakeUnconfirmedError({ cause })
         throw cause
       }
       open = false
-      const firstPublished = firstSave === undefined ? false : await firstSave
-      if (firstSave !== undefined && !firstPublished) throw new FileUploadIntakeUnconfirmedError()
+      const completion = first.completion
+      const firstPublished = completion === undefined ? false : await completion
+      if (completion !== undefined && !firstPublished) throw new FileUploadIntakeUnconfirmedError()
       try { graph(); admit() }
       catch (cause) {
         if (firstPublished) throw new FileUploadIntakeUnconfirmedError({ cause })
