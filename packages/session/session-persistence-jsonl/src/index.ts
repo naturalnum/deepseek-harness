@@ -264,7 +264,7 @@ function settledStatValues<R>(outcomes: readonly PromiseSettledResult<R>[], stop
 }
 
 /** Preserve actual sibling failures on cancellation and every resource-close failure. */
-function prioritizeReadFailures<R>(outcomes: readonly PromiseSettledResult<R>[], signal?: AbortSignal): void {
+function prioritizeReadFailures(outcomes: readonly PromiseSettledResult<unknown>[], signal?: AbortSignal): void {
   const failures: unknown[] = []
   for (const outcome of outcomes) {
     if (outcome.status !== 'rejected') continue
@@ -1216,7 +1216,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         try { decoder.close() } catch (error: unknown) { closeFailure ??= { error } }
       }
       if (closeFailure !== undefined) {
-        const interrupted = signal?.aborted === true && readFailure?.error === signal.reason
+        const interrupted = signal?.aborted === true && readFailure !== undefined && readFailure.error === signal.reason
           && decoderFailure?.error !== readFailure.error
         let previous = readFailure?.error === closeException || interrupted ? undefined : readFailure
         if (previous?.error instanceof AggregateError && previous.error.cause === closeException

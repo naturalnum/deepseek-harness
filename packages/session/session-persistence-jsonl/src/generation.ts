@@ -527,7 +527,7 @@ async function decodeStreamingMigration(
       }
     }
     if (closeFailure !== undefined) {
-      const interrupted = signal?.aborted === true && readFailure?.error === signal.reason
+      const interrupted = signal?.aborted === true && readFailure !== undefined && readFailure.error === signal.reason
         && decoderFailure?.error !== readFailure.error
       let previous = readFailure?.error === closeException || interrupted ? undefined : readFailure
       if (previous?.error instanceof AggregateError && previous.error.cause === closeException
