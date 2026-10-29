@@ -118,7 +118,7 @@ Only explicit preview configuration enables Better Auth cross-subdomain cookies 
 
 ### Failure and recovery
 
-Ingress failures also write their bounded request id, stage, error codes and up to six compiled Cloud code locations to stderr. Error messages, request values, cookies and private paths are excluded, so deployments without a logger sink retain actionable diagnostics. When an existing login Peer refuses acquisition during update or cleanup, stderr records only its phase and counts of waiters, carriers, streams and tasks.
+Ingress failures also write their bounded request id, stage, error codes and up to six compiled Cloud code locations to stderr. Error messages, request values, cookies and private paths are excluded, so deployments without a logger sink retain actionable diagnostics. When an existing login Peer refuses acquisition during update or cleanup, stderr records its phase and counts of waiters, carriers, streams and tasks once per Peer and phase; a failed write may be retried. The row has no request ID and cannot identify an individual request.
 
 At `ingress.current`, the same row includes only the original Root recipe audit's status, counts and fixed issue codes. Configuration and recipe versions are omitted; an unavailable audit observation does not suppress the failure row or change admission and cleanup.
 

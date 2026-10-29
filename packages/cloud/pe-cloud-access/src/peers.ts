@@ -76,6 +76,7 @@ interface Entry {
   readonly waiters: Set<ReadyWaiter>
   readonly tasks: Set<Promise<unknown>>
   readonly carriers: Map<{ destroy(): void }, 'http' | 'websocket'>
+  readonly reportedRefusalPhases: Set<'updating' | 'closing' | 'blocked'>
   readonly lifetimeEnded: () => void
   phase: 'preparing' | 'ready' | 'updating' | 'closing' | 'blocked'
   preparing: boolean
@@ -170,7 +171,8 @@ export class LoginPeerRegistry {
       }
       const owned: Entry = {
         key, binding, principal, ready: Promise.withResolvers<LoginPeer>(), done: Promise.withResolvers<void>(),
-        waiters: new Set(), tasks: new Set(), carriers: new Map(), phase: 'preparing', preparing: true,
+        waiters: new Set(), tasks: new Set(), carriers: new Map(), reportedRefusalPhases: new Set(),
+        phase: 'preparing', preparing: true,
         use: undefined, handle: undefined, connection: undefined, mux: undefined, cleanupFault: false, removeObserver: undefined,
         nativeCleanup: undefined, cleanup: undefined,
         timer: undefined, recheck: undefined, carrierCount: 0, streamCount: 0, businessStreamCount: 0,
@@ -191,10 +193,16 @@ export class LoginPeerRegistry {
       binding.lifetime.addEventListener('abort', owned.lifetimeEnded, { once: true })
       void this.prepare(owned, requestId)
     } else if (entry.phase !== 'preparing' && entry.phase !== 'ready') {
-      try {
-        console.warn('Cloud login Peer acquisition refused: %j', { phase: entry.phase, waiters: entry.waiters.size,
-          carriers: entry.carrierCount, streams: entry.streamCount, tasks: entry.tasks.size })
-      } catch (_unavailableObservation) { /* Diagnostics cannot alter admission. */ }
+      const phase = entry.phase
+      if (!entry.reportedRefusalPhases.has(phase)) {
+        entry.reportedRefusalPhases.add(phase)
+        try {
+          console.warn('Cloud login Peer acquisition refused: %j', { phase, waiters: entry.waiters.size,
+            carriers: entry.carrierCount, streams: entry.streamCount, tasks: entry.tasks.size })
+        } catch (_unavailableObservation) {
+          entry.reportedRefusalPhases.delete(phase) // A later refusal can retry the diagnostic.
+        }
+      }
       throw new AuthAccessError('cloud/account-unavailable', requestId)
     }
     this.waiters++

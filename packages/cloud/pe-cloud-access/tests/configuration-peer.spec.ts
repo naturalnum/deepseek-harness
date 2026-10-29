@@ -302,7 +302,9 @@ it('logs only bounded Peer work counts when acquisition is refused during the or
   const request = f.run(handle, 'if-idle')
   try {
     await entered.promise
-    await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    }
     expect(warn).toHaveBeenCalledExactlyOnceWith('Cloud login Peer acquisition refused: %j',
       { phase: 'updating', waiters: 0, carriers: 1, streams: 0, tasks: 1 })
     expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_COOKIE_TOKEN')
@@ -336,17 +338,23 @@ it('preserves closing and blocked ownership when Peer diagnostics or cleanup fai
   void closing.catch(() => {})
   try {
     await entered.promise
-    await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    }
     expect(warn).toHaveBeenCalledExactlyOnceWith('Cloud login Peer acquisition refused: %j',
       { phase: 'closing', waiters: 0, carriers: 0, streams: 0, tasks: 0 })
   } finally { release.resolve(undefined) }
   await expect(closing).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+  warn.mockImplementationOnce(() => { throw new Error('PRIVATE_LOGGER_FAILURE') })
   await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(warn).toHaveBeenCalledTimes(2)
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  }
+  expect(warn).toHaveBeenCalledTimes(3)
   expect(warn).toHaveBeenLastCalledWith('Cloud login Peer acquisition refused: %j',
     { phase: 'blocked', waiters: 0, carriers: 0, streams: 0, tasks: 0 })
-  expect(JSON.stringify(warn.mock.calls)).not.toMatch(/PRIVATE_COOKIE_TOKEN|PRIVATE_CLEANUP_FAILURE/)
-  warn.mockImplementation(() => { throw new Error('PRIVATE_LOGGER_FAILURE') })
-  await expect(f.acquire(cookie)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(JSON.stringify(warn.mock.calls)).not.toMatch(/PRIVATE_COOKIE_TOKEN|PRIVATE_CLEANUP_FAILURE|PRIVATE_LOGGER_FAILURE/)
   expect(f.registry.reservedPeers).toBe(1)
   expect(f.observe().inUse).toBe(1)
   expect(f.cleanupFailures).toHaveLength(1)
