@@ -251,7 +251,7 @@ describe('ComposerAttachments file drafts', () => {
   it('announces an original-session receipt without offering retry in a different Session', () => {
     const view = render(<ComposerAttachments {...props({
       attachments: [fileDraft('old')],
-      uploads: { old: { status: 'error', message: '', reason: 'previous-session' } },
+      uploads: { old: { status: 'error', message: '', reason: 'previous-session' } as never },
     })} />)
     expect(view.getByRole('status').textContent).toContain('文件已上传到原会话，请移除后重新选择')
     expect(view.queryByRole('button', { name: '重试上传 old.pdf' })).toBeNull()

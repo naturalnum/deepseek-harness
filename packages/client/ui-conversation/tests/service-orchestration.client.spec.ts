@@ -79,7 +79,8 @@ describe('ConversationController', () => {
       const session = b.runtime.sessions.binding('s1')!.session
       const uploadFile = vi.fn()
         .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'private', { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' }) })
-        .mockResolvedValueOnce({ ok: false, error: new RemoteError('session/not-found', 'File upload intake settlement is unconfirmed.', {}) })
+        .mockResolvedValueOnce({ ok: false, error: new RemoteError('session/not-found',
+          'File upload intake settlement is unconfirmed.', { sessionId: 's1' as SessionId }) })
       ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
       const drafts = b.root.createDrafts(session.sessionId, [new File(['a'], 'structured'), new File(['b'], 'other')])
       await vi.waitFor(() => { expect(drafts.every(d => b.root.fileUploads.getSnapshot()[d.id]?.status === 'error')).toBe(true) })
