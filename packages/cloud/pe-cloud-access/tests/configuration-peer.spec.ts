@@ -1298,7 +1298,7 @@ it.each(['settled', 'timeout'] as const)('joins the Session control snapshot bef
     async *control(signal: AbortSignal) {
       try {
         yield { type: 'baseline', value: { projections: {} } }
-        await new Promise<void>(resolve => {
+        await new Promise<void>((resolve) => {
           if (signal.aborted) resolve()
           else signal.addEventListener('abort', () => { resolve() }, { once: true })
         })
@@ -1307,7 +1307,8 @@ it.each(['settled', 'timeout'] as const)('joins the Session control snapshot bef
   }
   await f.ctx.plugin(ControlFixture)
   const peer = await f.acquire('login=control'), ws = await f.websocket(peer, 'session/control', false)
-  await vi.waitFor(() => { expect(ws.frames).toContainEqual(expect.objectContaining({ type: 'item', value: expect.objectContaining({ type: 'baseline' }) })) })
+  const baseline: unknown = expect.objectContaining({ type: 'baseline' })
+  await vi.waitFor(() => { expect(ws.frames).toContainEqual(expect.objectContaining({ type: 'item', value: baseline })) })
   let writes = 0
   f.setOperation(async (_binding, _context, current, close) => {
     current(); await close(); current(); writes++
@@ -1334,7 +1335,7 @@ it('keeps a different Session stream busy during an idle configuration request',
     @Remote({ mode: 'stream' })
     async *work(signal: AbortSignal) {
       yield { type: 'working' }
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve) => {
         if (signal.aborted) resolve()
         else signal.addEventListener('abort', () => { resolve() }, { once: true })
       })
