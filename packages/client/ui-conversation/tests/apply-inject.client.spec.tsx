@@ -632,13 +632,20 @@ describe('Conversation inject API', () => {
 
   it('moves a draft only when Workspace navigation changes Session', async () => {
     const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
     const resident = b.residentApi(ROOT)
     const { state, actions } = b.inputApi(ROOT)
     actions.setDraft('carry me')
     expect(b.composerApi(ROOT).addFiles?.([
       new File([Uint8Array.of(1)], 'draft.pdf', { type: 'application/pdf' }),
     ])).toBeNull()
-    await vi.waitFor(() => { expect(b.rootUpload).toHaveBeenCalledOnce() })
+    const [attachmentId] = state.getSnapshot().attachmentIds
+    if (attachmentId === undefined) throw new Error('missing draft attachment')
+    await vi.waitFor(() => {
+      expect(b.rootUpload).toHaveBeenCalledOnce()
+      expect(b.composerApi(ROOT).hooks.fileUploads.getSnapshot()[attachmentId])
+        .toMatchObject({ status: 'ready', receiptId: 'root-receipt' })
+    })
 
     b.connectWorkspace.mockResolvedValueOnce(ROOT)
     await resident.selectWorkspace('workspace-1' as WorkspaceId)
@@ -660,9 +667,11 @@ describe('Conversation inject API', () => {
     expect(b.opened).toHaveBeenCalledWith(other)
     expect(state.getSnapshot().draft).toBe('')
     expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry me')
-    await vi.waitFor(() => { expect(targetUpload).toHaveBeenCalledOnce() })
-    expect(b.inputApi(other).state.getSnapshot().attachmentIds).toHaveLength(1)
-    await b.runtime.dispose()
+    expect(b.inputApi(other).state.getSnapshot().attachmentIds).toEqual([attachmentId])
+    expect(b.composerApi(other).hooks.fileUploads.getSnapshot()[attachmentId])
+      .toMatchObject({ status: 'error', reason: 'previous-session' })
+    expect(targetUpload).not.toHaveBeenCalled()
+    expect(b.rootUpload).toHaveBeenCalledOnce()
   })
 
   it('carries structured references through Workspace selection without flattening them', async () => {
