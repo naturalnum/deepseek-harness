@@ -218,11 +218,12 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     expect(readFileSync(profile.patchPath, 'utf8')).toContain('value: ' + String(value))
   }
   // Loopback transports exercise Node's actual HTTP/WS sockets and close events.
-  const http = async (handle: LoginPeer, releaseRequestUse: () => void) => {
+  const http = async (handle: LoginPeer, releaseRequestUse: () => void,
+    mode: 'if-idle' | 'stop-and-apply' = 'if-idle', requestActual?: Promise<void>) => {
     const bridged = Promise.withResolvers<undefined>()
     void bridged.promise.catch((_cause: unknown) => {})
     const server = createServer((request, response) => {
-      void peers.handleNodeRequest(handle, request, response, 4096, requestId, releaseRequestUse).then(
+      void peers.handleNodeRequest(handle, request, response, 4096, requestId, releaseRequestUse, requestActual).then(
         () => { bridged.resolve(undefined) }, (error: unknown) => { response.destroy(); bridged.reject(error) },
       )
     })
@@ -254,7 +255,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
       await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
     })
     request.end(JSON.stringify({ type: 'client-request', rpcId: '11111111-1111-4111-8111-111111111111',
-      method: 'configurationPeerOperation/operate', payload: { args: { mode: 'if-idle' } } }))
+      method: 'configurationPeerOperation/operate', payload: { args: { mode } } }))
     const body = Promise.all([returned, bridged.promise]).then(() => {})
     void body.catch((_cause: unknown) => {})
     return { body, actual: bridged.promise, disconnect: () => { request.destroy() }, result: (): unknown => answer }
@@ -1245,6 +1246,47 @@ it('does not consume the HTTP release capability when another real carrier trigg
   } finally { completed.resolve(undefined); ingressUse.release(); held.request.destroy(); held.socket.destroy() }
 })
 
+
+it.each(['settled', 'failed'] as const)('waits the initiating ingress AccountUse before terminal Peer closure (%s)', async (result) => {
+  const f = await fixture(), peer = await f.acquire('login=terminal-ingress'), use = f.issueUse()
+  const ingress = Promise.withResolvers<undefined>(), terminalDone = Promise.withResolvers<undefined>()
+  void ingress.promise.catch(() => {})
+  let closed = false, failure: unknown
+  f.setOperation(async (_binding, _context, current, _close, handoff) => {
+    current()
+    void (async () => {
+      try {
+        await handoff.afterRequest()
+        await handoff.closeAll(Date.now() + 1000)
+        expect(f.observe().inUse).toBe(0)
+        closed = true
+      } catch (error) { failure = error }
+      finally { terminalDone.resolve(undefined) }
+    })()
+    return { kind: 'accepted-only' }
+  })
+  const request = await f.http(peer, () => { throw new Error('terminal request must retain ingress Use') }, 'stop-and-apply', ingress.promise)
+  try {
+    await request.body
+    expect(request.result()).toMatchObject({ result: { ok: true, value: { kind: 'accepted-only' } } })
+    expect(closed).toBe(false)
+    expect(f.observe().inUse).toBe(2)
+    if (result === 'settled') { use.release(); ingress.resolve(undefined) }
+    else ingress.reject(new Error('Original ingress cleanup is unconfirmed'))
+    await terminalDone.promise
+    expect(closed).toBe(result === 'settled')
+    if (result === 'failed') expect(failure).toMatchObject({ message: 'Original ingress cleanup is unconfirmed' })
+  } finally { use.release() }
+})
+
+it('refuses terminal application without the original ingress settlement', async () => {
+  const f = await fixture(), peer = await f.acquire('login=missing-ingress')
+  f.setOperation(async () => { throw new Error('A terminal handoff without ingress must not be scheduled') })
+  const request = await f.http(peer, () => { throw new Error('No release expected') }, 'stop-and-apply')
+  await request.body
+  expect(request.result()).toMatchObject({ result: { ok: false } })
+  expect(f.observe()).toMatchObject({ inUse: 1, calls: 0 })
+})
 
 it('joins a real native WebSocket observation before the same HTTP configuration result is returned', async () => {
   const f = await fixture(), peer = await f.acquire('login=actual-http-ws')

@@ -71,7 +71,7 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
   })
   const handleHttp = Reflect.get(LoginPeerRegistry.prototype, 'handleNodeRequest')
   const handleUpgrade = Reflect.get(LoginPeerRegistry.prototype, 'handleUpgrade')
-  vi.spyOn(LoginPeerRegistry.prototype, 'handleNodeRequest').mockImplementation(async function (this: LoginPeerRegistry, ...args) {
+  const ingressHttp = vi.spyOn(LoginPeerRegistry.prototype, 'handleNodeRequest').mockImplementation(async function (this: LoginPeerRegistry, ...args) {
     const finished = once(args[2], 'finish')
     await handleHttp.apply(this, args)
     await finished
@@ -144,9 +144,19 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
     armed = false; expect(await http()).toBe(200); await Promise.all(pending)
     armed = true; rechecks.mockClear(); sessions.mockClear(); authenticated.mockClear(); dispatches.mockClear()
   }
-  return { http, upgrade, warm, ingress, auth, clock, rechecks, sessions, authenticated, dispatches, crossed, pending, release,
+  return { http, upgrade, warm, ingress, ingressHttp, auth, clock, rechecks, sessions, authenticated, dispatches, crossed, pending, release,
     canonical: () => canonical }
 }
+
+it('supplies the original HTTP ingress settlement after response transfer and account release', async () => {
+  const f = await fixture('consume')
+  expect(await f.http()).toBe(200)
+  const actual = f.ingressHttp.mock.calls[0]?.[6]
+  expect(actual).toBeInstanceOf(Promise)
+  await actual
+  expect(f.release).toHaveBeenCalled()
+  expect(f.ingress.observe().pendingOperations).toBe(0)
+})
 
 for (const transport of ['http', 'upgrade'] as const) {
   it.each<Phase>(['locate', 'acquire', 'peer', 'consume'])(`renews the same operation login after a slow %s await on real ${transport}`, async (phase) => {

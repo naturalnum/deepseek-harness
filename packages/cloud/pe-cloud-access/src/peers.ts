@@ -105,6 +105,7 @@ export class LoginPeerRegistry {
     readonly entry: Entry
     settlement?: Promise<unknown>
     readonly releaseRequestUse?: () => void
+    readonly requestActual?: Promise<void>
   }>()
   private readonly entries: Map<string, Entry> = new Map()
   private readonly handles: WeakMap<LoginPeer, Entry> = new WeakMap()
@@ -278,9 +279,12 @@ export class LoginPeerRegistry {
       assertPrincipal: (): void => { this.auth.assertLoginCurrent(entry.principal, id) },
     })
     if (mode === 'stop-and-apply') {
+      const requestActual = carrier.requestActual
+      if (requestActual === undefined) throw new AuthAccessError('cloud/stop-unconfirmed', id)
       // The factory first registers actual work, then waits this request's real settlement before closing the old Peer.
+      const terminalHandoff = Object.freeze({ ...handoff, afterRequest: async (): Promise<void> => { await requestActual } })
       return consume(binding, use.context, () => { this.assertCurrent(handle, id); current(handle); use.assertCurrent() },
-        () => Promise.reject(new RemoteError('cloud/config-busy', 'A terminal update must use its original full-close handoff.', {})), handoff)
+        () => Promise.reject(new RemoteError('cloud/config-busy', 'A terminal update must use its original full-close handoff.', {})), terminalHandoff)
     }
     const related = [...this.entries.values()].filter(row => row.binding.accountId === binding.accountId
       && row.binding.epoch === binding.epoch && row.binding.lifetime === binding.lifetime)
@@ -383,17 +387,23 @@ export class LoginPeerRegistry {
    * @param requestId - Server correlation id.
    * @param releaseRequestUse Trusted ingress transfer of this request's own Use after configuration admission;
    * ordinary HTTP retains its reference.
+   * @param requestActual Original ingress completion, including response transfer and Use release, required for terminal handoff.
    * @returns Actual bridge settlement; caller timeout must not release this operation early.
    */
   handleNodeRequest(
     handle: LoginPeer, request: IncomingMessage, response: ServerResponse, maxRequestBodyBytes: number, requestId: RequestId,
-    releaseRequestUse?: () => void,
+    releaseRequestUse?: () => void, requestActual?: Promise<void>,
   ): Promise<void> {
     const entry = this.admitCarrier(handle, requestId)
     entry.carriers.set(request, 'http')
     entry.carriers.set(response, 'http')
-    const carrier: { readonly entry: Entry; settlement?: Promise<unknown>; readonly releaseRequestUse?: () => void } = { entry,
-      ...releaseRequestUse === undefined ? {} : { releaseRequestUse } }
+    const carrier: {
+      readonly entry: Entry
+      settlement?: Promise<unknown>
+      readonly releaseRequestUse?: () => void
+      readonly requestActual?: Promise<void>
+    } = { entry,
+      ...releaseRequestUse === undefined ? {} : { releaseRequestUse }, ...requestActual === undefined ? {} : { requestActual } }
     const task = this.requestCarrier.run(carrier, async () => {
       await this.authenticateCarrier(entry, request, requestId)
       this.ports.beforeHttp(request, handle)
@@ -448,7 +458,7 @@ export class LoginPeerRegistry {
     void tracked.catch((_error: unknown) => {
       // Original ingress observes its failure; Entry cleanupFault/blocked and done retain unknown responsibility.
     })
-    return this.requestCarrier.run({ entry, settlement: tracked }, async () => {
+    return this.requestCarrier.run({ entry, settlement: tracked, requestActual: input.actual }, async () => {
       await this.authenticateCarrier(entry, request, requestId, input.authenticate)
       this.assertCurrent(handle, requestId)
       await input.consume()

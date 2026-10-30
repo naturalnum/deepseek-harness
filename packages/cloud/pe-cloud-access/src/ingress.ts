@@ -395,7 +395,7 @@ export class CloudIngress {
             if (operation.use !== use || operation.configurationUseReleased) throw new AuthAccessError('cloud/account-unavailable', operation.id)
             this.releaseUse(operation)
             operation.configurationUseReleased = true
-          })
+          }, operation.actual)
           operation.stage = 'ingress.current'
           this.assertCurrent(operation.id)
         })
