@@ -866,8 +866,10 @@ it('rejects a foreign native Session and a real no-cwd history even though the n
     peer: { id: brandString<PeerId>('native-file-foreign-scope'), ctx, principal: { kind: 'owner' }, interactions: 'answer',
       signal: outcome.binding.lifetime, dispose: async () => {} } })
   expect(created.sessionId).not.toBe(own.sessionId)
-  await expect(read(created.sessionId)).rejects.toBeInstanceOf(Error)
+  const metadata = vi.spyOn(ctx.sessionPersistence, 'stat')
+  await expect(read(created.sessionId)).rejects.toMatchObject({ code: 'cloud/forbidden' })
   await expect(read(detached.header.id)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(metadata).not.toHaveBeenCalled()
   expect(content).not.toHaveBeenCalled()
   await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data remains private' })
 })
@@ -1099,7 +1101,19 @@ it('retains the original account Session file authority for the native Office Re
   await expect(render(created.sessionId, join(secondPath, 'other.docx'))).rejects.toBeInstanceOf(Error)
   await expect(render(created.sessionId, 'escape.docx')).rejects.toBeInstanceOf(Error)
   await expect(render(otherSession.sessionId, join(f.project, 'report.docx'))).rejects.toBeInstanceOf(Error)
-  await expect(render(foreignSession.sessionId, 'report.docx')).rejects.toBeInstanceOf(Error)
+  const stat = vi.spyOn(ctx.sessionPersistence, 'stat')
+  const orphan = ctx.sessions.prepare(SessionId('office-orphan-session'), { meta: { agentPreset: 'instruction-chat' } })
+  const writer = await ctx.sessionPersistence.create(orphan.header)
+  await writer.flush(); await writer.close()
+  const observed = []
+  for (const id of [foreignSession.sessionId, SessionId('office-missing-session'), orphan.header.id]) {
+    try { await render(id, 'report.docx'); throw new Error('Unauthorized scope was admitted') }
+    catch (cause) { observed.push(cause) }
+  }
+  expect(observed).toHaveLength(3)
+  for (const error of observed) expect(error).toMatchObject({ code: 'cloud/forbidden' })
+  expect(stat).not.toHaveBeenCalled()
+
   await expect(ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
     args: { workspaceFileScopeId: created.sessionId, path: 'report.docx', priority: 'foreground' }, peer,
     signal: AbortSignal.abort() })).rejects.toBeInstanceOf(Error)

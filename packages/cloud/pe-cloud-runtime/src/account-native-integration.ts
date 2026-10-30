@@ -57,6 +57,8 @@ export interface AccountNativeGuards {
   readonly projectForDirectory: (cwd: string) => Workspace
   /** Shared Agent or original file-RPC selection, with native cold observation when needed. */
   readonly getFileProject: ResolveAccountFileProject
+  /** Resolve only an original member Session before Gateway can read its persisted header. */
+  readonly resolveFileScope: (id: SessionId) => Promise<{ sessionId: SessionId; workspaceRoot: string }>
   readonly sessions: Omit<Parameters<CloudAccountApi['createController']>[1], 'projectDirectory'>
   readonly agents: Parameters<CloudAccountApi['createAgentLoop']>[1]
   readonly allowedModel: Parameters<CloudAccountApi['installLlmGuard']>[1]
@@ -527,6 +529,7 @@ export class AccountNativeIntegration {
         api.installLlmGuard(owner, approved.allowedModel)
       },
     }
+    const assertRootCurrent = (): void => { this.input.assertRootCurrent() }
     const builtins = ctx.loader.builtins
     const pluginManager = api.providers.pluginManager
     const entries = {
@@ -580,6 +583,16 @@ export class AccountNativeIntegration {
         inject: [...WorkspaceFiles.inject, 'peCloudApi'], Config: WorkspaceFiles.Config,
         apply(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]) {
           api.createWorkspaceFiles(owner, nativeConfig)
+          ctx.typert.lookups.configure('workspaceFileScope', async (id) => {
+            assertRootCurrent()
+            businessCurrent(binding)
+            api.assertInstalled(owner)
+            const selected = await requireGuards(owner).resolveFileScope(id)
+            assertRootCurrent()
+            businessCurrent(binding)
+            api.assertInstalled(owner)
+            return selected
+          })
         },
       },
       [ACCOUNT_NATIVE_ENTRIES.officeToPdf]: {

@@ -732,7 +732,18 @@ class AccountPolicy {
     if (!workspaceFiles && !officeRender) refuse()
     const raw = invocation.request.args['workspaceFileScopeId']
     if (typeof raw !== 'string') refuse()
-    const id = SessionId(raw), session = this.provider('sessions').get(id)
+    return this.fileSession(SessionId(raw), control)
+  }
+
+  async fileScope(id: SessionId): Promise<{ sessionId: SessionId; workspaceRoot: string }> {
+    const selected = await this.fileSession(id, this.binding.lifetime)
+    selected.assertCurrent()
+    return { sessionId: id, workspaceRoot: selected.workspace.path }
+  }
+
+  private async fileSession(id: SessionId, control: AbortSignal): Promise<AccountFileSelection> {
+    control.throwIfAborted()
+    const session = this.provider('sessions').get(id)
     if (session !== undefined) {
       const workspace = this.liveSessionProject(session)
       return { workspace, assertCurrent: () => {
@@ -804,6 +815,7 @@ export function createAccountPolicy(
     projectForObservedHeader: (id, header) => policy.observedProject(id, header),
     projectForDirectory: cwd => policy.workspaceAt(cwd),
     getFileProject: (caller, signal) => policy.fileProject(caller, signal),
+    resolveFileScope: id => policy.fileScope(id),
     assertBootstrapCurrent: signal => policy.assertBootstrapCurrent(signal),
     assertSessionRead: (id, summary) => { policy.readSession(id, summary) },
     sessions: {
