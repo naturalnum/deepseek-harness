@@ -1,6 +1,6 @@
 /** Host LibreOffice kit provider with reusable converters and private disk input/output. */
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, isAbsolute, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -97,6 +97,19 @@ interface Slot {
   converter?: Promise<Converter>
 }
 
+interface RetainedScratch {
+  readonly directory: string
+  readonly device?: bigint
+  readonly inode?: bigint
+  readonly cause: unknown
+}
+
+function scratchError(retained: RetainedScratch): Error {
+  const identity = retained.device === undefined || retained.inode === undefined ? 'unobserved'
+    : `${retained.device}:${retained.inode}`
+  return new Error(`Office scratch cleanup unconfirmed: ${retained.directory} (${identity}).`, { cause: retained.cause })
+}
+
 /** A provider lifetime owns all converters, queued calls, and temporary files. */
 export class OfficeToPdf extends TypertRemoteService {
   static Config = Config
@@ -105,6 +118,8 @@ export class OfficeToPdf extends TypertRemoteService {
   private readonly remoteLifetime = new AbortController()
   private readonly remoteRequests = new Set<Promise<RenderedDocumentBytes>>()
   private readonly slots: Slot[] = []
+  // Retained on this provider; without an anchored deletion primitive pathname retry is unsafe.
+  private readonly unresolvedScratch = new Map<string, RetainedScratch>()
   private readonly queue: ConversionQueue
   private readonly options: ConverterOptions
 
@@ -132,8 +147,9 @@ export class OfficeToPdf extends TypertRemoteService {
         const converter = await slot.converter
         await converter?.dispose()
       }))
-      const failures = results.filter(result => result.status === 'rejected')
-      if (failures.length > 0) throw new AggregateError(failures.map((result): unknown => result.reason), 'LibreOffice converter disposal failed.')
+      const failures = results.filter(result => result.status === 'rejected').map((result): unknown => result.reason)
+      for (const retained of this.unresolvedScratch.values()) failures.push(scratchError(retained))
+      if (failures.length > 0) throw new AggregateError(failures, 'LibreOffice converter or scratch cleanup remains unconfirmed.')
     })
   }
 
@@ -145,6 +161,7 @@ export class OfficeToPdf extends TypertRemoteService {
    * @throws {OfficeToPdfError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.
    */
   convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult> {
+    if (this.unresolvedScratch.size > 0) return Promise.reject(new OfficeToPdfError('unavailable', 'Office scratch cleanup remains unconfirmed.'))
     return this.queue.read(request, signal)
   }
 
@@ -232,10 +249,13 @@ export class OfficeToPdf extends TypertRemoteService {
 
   private async convertBytes(bytes: Uint8Array, extension: OfficeExtension, signal: AbortSignal): Promise<Pick<OfficeToPdfResult, 'pdf' | 'missingFonts'>> {
     signal.throwIfAborted()
+    if (this.unresolvedScratch.size > 0) throw new OfficeToPdfError('unavailable', 'Office scratch cleanup remains unconfirmed.')
     let slot = this.slots.find(candidate => !candidate.busy)
     if (slot === undefined) { slot = { busy: false }; this.slots.push(slot) }
     slot.busy = true
     let directory: string | undefined
+    let identity: { device: bigint; inode: bigint } | undefined
+    let identityFailure: unknown
     try {
       if (slot.converter === undefined) {
         slot.converter = createConverter(this.options).catch((error: unknown) => {
@@ -246,6 +266,11 @@ export class OfficeToPdf extends TypertRemoteService {
       const converter = await slot.converter
       signal.throwIfAborted()
       directory = await mkdtemp(join(tmpdir(), 'dsh-office-to-pdf-'))
+      try {
+        const facts = await lstat(directory, { bigint: true })
+        if (!facts.isDirectory()) throw new Error('Office scratch is not a directory.')
+        identity = { device: facts.dev, inode: facts.ino }
+      } catch (cause) { identityFailure = cause; throw cause }
       const inputPath = join(directory, `source.${extension}`)
       const outputPath = join(directory, 'converted.pdf')
       await writeFile(inputPath, bytes, { flag: 'wx', mode: 0o600, signal })
@@ -271,8 +296,22 @@ export class OfficeToPdf extends TypertRemoteService {
         default: throw new OfficeToPdfError('failed', 'LibreOffice conversion failed.', { cause })
       }
     } finally {
-      try { if (directory !== undefined) await rm(directory, { recursive: true, force: true }) }
-      finally { slot.busy = false }
+      let retained = false
+      try {
+        if (directory !== undefined) {
+          try {
+            if (identity === undefined) throw identityFailure ?? new Error('Office scratch identity was not observed.')
+            await rm(directory, { recursive: true, force: true })
+          } catch (cause) {
+            retained = true
+            const scratch = Object.freeze({ directory, ...identity, cause })
+            this.unresolvedScratch.set(directory, scratch)
+            this.queue.failClosed()
+            this.ctx.logger.error(scratchError(scratch))
+            throw new OfficeToPdfError('unavailable', 'Office scratch cleanup remains unconfirmed.', { cause })
+          }
+        }
+      } finally { if (!retained) slot.busy = false }
     }
   }
 }

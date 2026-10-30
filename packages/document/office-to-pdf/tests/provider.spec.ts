@@ -1,10 +1,16 @@
 /** Disk output, resource bounds, and cancellation around the external kit. */
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import * as fs from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Converter, ConverterOptions } from '@deepseek-ai/libreoffice-kit'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import OfficeToPdf, { Config, OfficeSourceKey, type OfficeToPdfRequest } from '../src/index.ts'
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof fs>()
+  return { ...original, rm: vi.fn(original.rm) }
+})
 
 const kit = vi.hoisted(() => ({ create: vi.fn<(options?: ConverterOptions) => Promise<Converter>>() }))
 vi.mock('@deepseek-ai/libreoffice-kit', () => ({ createConverter: kit.create }))
@@ -272,4 +278,41 @@ it('joins every converter disposal before reporting an engine cleanup failure', 
     await cleanupEntered.promise
     expect(disposed).toBe(false)
   } finally { cleanupRelease.resolve(undefined); await closing }
+})
+
+
+it('retains an unconfirmed scratch cleanup, closes cached and new reads, and reports it on disposal', async () => {
+  const provider = await mount({ maxConcurrentConversions: 1 })
+  await provider.convert(request)
+  let scratch = ''
+  render.mockImplementationOnce(async ({ inputPath, outputPath }) => {
+    scratch = dirname(inputPath)
+    await writeFile(outputPath, pdf)
+    return { backend: 'wasm', missingFonts: [] }
+  })
+  const failure = Object.assign(new Error('scratch removal failed'), { code: 'EIO' })
+  const logged = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  vi.mocked(rm).mockRejectedValueOnce(failure)
+  await expect(provider.convert(distinct(11))).rejects.toMatchObject({ code: 'unavailable' })
+  expect(scratch).not.toBe('')
+  await expect(access(scratch)).resolves.toBeUndefined()
+  const originalFacts = await stat(scratch, { bigint: true })
+  expect(logged.mock.calls[0]?.[0]).toMatchObject({ cause: failure })
+  expect(String(logged.mock.calls[0]?.[0])).toContain(scratch)
+  expect(String(logged.mock.calls[0]?.[0])).toContain(`${originalFacts.dev}:${originalFacts.ino}`)
+  const original = scratch + '-retained-original'
+  await rename(scratch, original)
+  await mkdir(scratch)
+  await writeFile(scratch + '/replacement.txt', 'do not remove')
+  const calls = vi.mocked(rm).mock.calls.length
+  await expect(provider.convert(request)).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(provider.convert(distinct(12))).rejects.toMatchObject({ code: 'unavailable' })
+  expect(logged).toHaveBeenCalled()
+  await ctx.fiber.dispose()
+  expect(vi.mocked(rm)).toHaveBeenCalledTimes(calls)
+  expect(logged).toHaveBeenCalled()
+  expect(await readFile(scratch + '/replacement.txt', 'utf8')).toBe('do not remove')
+  // This test owns the isolated fixtures and can remove them; the provider cannot retry the path.
+  await rm(scratch, { recursive: true, force: true })
+  await rm(original, { recursive: true, force: true })
 })
