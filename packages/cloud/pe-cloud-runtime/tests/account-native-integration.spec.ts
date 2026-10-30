@@ -3,6 +3,7 @@ import { MODEL_KEY_FIXTURE as APPROVED_MODEL_KEY, modelKeyBinding } from '../../
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
+import type { OfficeToPdfKey } from '@deepseek-ai/dsh-office-to-pdf/types'
 import * as fs from 'node:fs/promises'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -176,6 +177,7 @@ async function fixture(options: {
     return {
       assertWorkspace: unavailable, projectForAgent: unavailable, projectForSession: unavailable,
       projectForObservedHeader: unavailable, projectForDirectory: unavailable, getFileProject: async () => unavailable(),
+      resolveFileScope: async () => unavailable(),
       sessions: { assertHandlerEnabled: unavailable,
         resolveCreate: async () => unavailable(), assertSessionProject: async () => unavailable(), assertActiveScope: unavailable },
       agents: { assertCreate: async () => unavailable(), assertResume: async () => unavailable(), assertPrepared: unavailable },
@@ -1089,7 +1091,7 @@ it('retains the original account Session file authority for the native Office Re
     const data = await request.source.read(new AbortController().signal, 4096)
     expect(Buffer.from(data.bytes).toString()).toBe('owned office document')
     return { pdf: new Uint8Array([37, 80, 68, 70]), missingFonts: [],
-      cacheKey: brandString('fixture-key'), generation: ctx.officeToPdf.generation }
+      cacheKey: brandString<OfficeToPdfKey>('fixture-key'), generation: ctx.officeToPdf.generation }
   })
   const peer = { id: brandString<PeerId>('office-session-scope'), ctx, principal: { kind: 'owner' as const },
     interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
