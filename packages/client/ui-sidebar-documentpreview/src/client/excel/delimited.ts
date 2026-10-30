@@ -17,6 +17,9 @@ export function convertDelimited(bytes: Uint8Array<ArrayBuffer>, format: 'csv' |
   let text: string
   try { text = new TextDecoder(encoding, { fatal: true }).decode(bytes) }
   catch (error) { throw new ExcelPreviewError('encoding', { cause: error }) }
+  // Papa Parse treats the final record terminator as an extra empty row. Drop
+  // only that terminator; preceding blank records and quoted newlines remain.
+  text = text.replace(/(?:\r\n|\r|\n)$/, '')
   const celldata: NonNullable<Sheet['celldata']> = []
   let row = 0
   let column = 1

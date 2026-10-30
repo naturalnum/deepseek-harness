@@ -149,3 +149,20 @@ it('handles empty text and rejects invalid encoding, broken quoting, and excess 
   await expect(convertExcel(encode('a,b\nc,d'), 'csv', { ...limits, maxCells: 3 })).rejects.toMatchObject({ code: 'tooLarge' })
   expect((await convertExcel(encode('a,b\nc,d'), 'csv', { ...limits, maxCells: 4 })).sheets[0]).toMatchObject({ row: 2, column: 2 })
 })
+
+it.each(['csv', 'tsv'] as const)('accepts a final record terminator at the exact %s cell limit', async (format) => {
+  const sep = format === 'csv' ? ',' : '\t'
+  for (const newline of ['\n', '\r\n', '\r']) {
+    const body = `a${sep}b${newline}c${sep}d`
+    const without = (await convertExcel(encode(body), format, { ...limits, maxCells: 4 })).sheets[0]!
+    const withTerminator = (await convertExcel(encode(body + newline), format, { ...limits, maxCells: 4 })).sheets[0]!
+    expect(withTerminator.row).toBe(2)
+    expect(withTerminator.celldata).toEqual(without.celldata)
+    await expect(convertExcel(encode(body + newline + newline), format, { ...limits, maxCells: 4 }))
+      .rejects.toMatchObject({ code: 'tooLarge' })
+    const blankRow = (await convertExcel(encode(body + newline + newline), format, { ...limits, maxCells: 6 })).sheets[0]!
+    expect(blankRow.row).toBe(3)
+    const quoted = (await convertExcel(encode(`"one${newline}two"${sep}x${newline}`), format, { ...limits, maxCells: 2 })).sheets[0]!
+    expect(quoted.celldata![0]!.v!.v).toBe(`one${newline}two`)
+  }
+})
