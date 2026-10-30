@@ -88,7 +88,8 @@ export class ManagedShellExecution implements ShellExecution {
     const stderr = this.readers.stderr.readFrom(this.state.stderrOffset)
     this.state.stdoutOffset = stdout.nextOffset
     this.state.stderrOffset = stderr.nextOffset
-    return { delta: stdout.text + (stderr.text ? `\n[stderr]\n${stderr.text}` : ''), lossy: stdout.lossy || stderr.lossy,
+    const separator = stdout.text.length > 0 && !stdout.text.endsWith('\n') ? '\n' : ''
+    return { delta: stdout.text + (stderr.text ? `${separator}[stderr]\n${stderr.text}` : ''), lossy: stdout.lossy || stderr.lossy,
       ...(stdout.spillPath === undefined ? {} : { stdoutSpillPath: stdout.spillPath }),
       ...(stderr.spillPath === undefined ? {} : { stderrSpillPath: stderr.spillPath }) }
   }

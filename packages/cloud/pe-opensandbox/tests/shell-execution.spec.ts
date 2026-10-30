@@ -113,3 +113,16 @@ it('retains the original timeout echo and does not fabricate native sandbox poli
   await expect(f.handle.result()).resolves.toMatchObject({ timeoutMs: 1000 })
   await expect(f.handle.result()).resolves.not.toHaveProperty('sandbox')
 })
+
+it.each([
+  { stdout: '', stderr: 'error', expected: '[stderr]\nerror' },
+  { stdout: 'line\n', stderr: 'error', expected: 'line\n[stderr]\nerror' },
+  { stdout: 'line', stderr: 'error', expected: 'line\n[stderr]\nerror' },
+  { stdout: 'line\n', stderr: '', expected: 'line\n' },
+])('formats developer command output with a single separator: $stdout / $stderr', ({ stdout, stderr, expected }) => {
+  const f = fixture()
+  f.stdout.push(Buffer.from(stdout))
+  f.stderr.push(Buffer.from(stderr))
+  expect(f.handle.readOutput()).toEqual({ delta: expected, lossy: false })
+  expect(f.handle.readOutput()).toEqual({ delta: '', lossy: false })
+})
