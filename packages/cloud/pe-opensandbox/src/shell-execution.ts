@@ -35,6 +35,7 @@ export class ManagedShellExecution implements ShellExecution {
     stderrOffset: number
     result?: Promise<ShellRunResult>
   } = { status: 'running', stdoutOffset: 0, stderrOffset: 0 }
+  private displayAtLineStart = true
   private readonly actual: Promise<void>
   private readonly timeoutMs: number
   readonly observed: { readonly stdout: SubprocessOutputReader; readonly stderr: SubprocessOutputReader }
@@ -88,8 +89,10 @@ export class ManagedShellExecution implements ShellExecution {
     const stderr = this.readers.stderr.readFrom(this.state.stderrOffset)
     this.state.stdoutOffset = stdout.nextOffset
     this.state.stderrOffset = stderr.nextOffset
-    const separator = stdout.text.length > 0 && !stdout.text.endsWith('\n') ? '\n' : ''
-    return { delta: stdout.text + (stderr.text ? `${separator}[stderr]\n${stderr.text}` : ''), lossy: stdout.lossy || stderr.lossy,
+    const atLineStart = stdout.text.length === 0 ? this.displayAtLineStart : stdout.text.endsWith('\n')
+    const delta = stdout.text + (stderr.text ? `${atLineStart ? '' : '\n'}[stderr]\n${stderr.text}` : '')
+    if (delta.length > 0) this.displayAtLineStart = delta.endsWith('\n')
+    return { delta, lossy: stdout.lossy || stderr.lossy,
       ...(stdout.spillPath === undefined ? {} : { stdoutSpillPath: stdout.spillPath }),
       ...(stderr.spillPath === undefined ? {} : { stderrSpillPath: stderr.spillPath }) }
   }

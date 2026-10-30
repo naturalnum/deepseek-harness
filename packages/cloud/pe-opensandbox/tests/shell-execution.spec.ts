@@ -126,3 +126,16 @@ it.each([
   expect(f.handle.readOutput()).toEqual({ delta: expected, lossy: false })
   expect(f.handle.readOutput()).toEqual({ delta: '', lossy: false })
 })
+
+
+it.each([
+  { first: 'line', expected: '\n[stderr]\nerror' },
+  { first: 'line\n', expected: '[stderr]\nerror' },
+])('separates stderr after a previous stdout read: $first', ({ first, expected }) => {
+  const f = fixture()
+  f.stdout.push(Buffer.from(first))
+  expect(f.handle.readOutput()).toEqual({ delta: first, lossy: false })
+  expect(f.handle.readOutput()).toEqual({ delta: '', lossy: false })
+  f.stderr.push(Buffer.from('error'))
+  expect(f.handle.readOutput()).toEqual({ delta: expected, lossy: false })
+})
