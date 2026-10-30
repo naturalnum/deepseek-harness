@@ -50,3 +50,36 @@ it('closes the provider when cleanup fails after the caller has already cancelle
   expect(vi.mocked(fs.rm)).toHaveBeenCalledTimes(1)
   await fs.rm(scratch, { recursive: true, force: true })
 })
+
+it('retains the kit cleanup error even after the reader cancels', async () => {
+  const ctx = new Context()
+  vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const failure = new AggregateError([Object.assign(new Error('inner rm failed'), { code: 'EACCES' })],
+    'LibreOffice conversion cleanup failed.')
+  const render = vi.fn<Converter['render']>().mockImplementation(async () => {
+    entered.resolve(undefined)
+    await release.promise
+    throw failure
+  })
+  kit.create.mockResolvedValue({ backend: 'wasm', render, dispose: vi.fn().mockResolvedValue(undefined),
+    renderImages: vi.fn(), convert: vi.fn(), recalculate: vi.fn() })
+  await ctx.plugin(OfficeToPdf)
+  const bytes = new Uint8Array([80, 75, 3, 4])
+  const request = { extension: 'docx' as const, priority: 'foreground' as const,
+    source: { key: OfficeSourceKey('cancelled-kit'), version: 'v1', bytes: bytes.length,
+      read: async () => ({ bytes, version: 'v1' }) } }
+  const caller = new AbortController(), provider = ctx.officeToPdf
+  const work = provider.convert(request, caller.signal)
+  const rejected = expect(work).rejects.toMatchObject({ name: 'AbortError' })
+  await entered.promise
+  caller.abort()
+  await rejected
+  const closing = provider.closeAndConfirm()
+  release.resolve(undefined)
+  const closeFailure = await closing.catch((error: unknown) => error)
+  expect(closeFailure).toBeInstanceOf(AggregateError)
+  expect((closeFailure as AggregateError).errors).toContain(failure)
+  await expect(provider.convert(request)).rejects.toMatchObject({ code: 'unavailable' })
+  await ctx.fiber.dispose()
+})
