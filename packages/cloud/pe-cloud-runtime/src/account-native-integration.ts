@@ -805,6 +805,7 @@ export class AccountNativeIntegration {
         // The original audit may still own a native metadata read; joining is not a successful audit.
         try { await this.bootstrapping } catch (_cause) { /* factory retains the original assembly failure */ }
         await this.api?.stopFirstScreenEvents()
+        await this.api?.stopOffice()
         await this.loop?.stop()
         if (this.agents !== undefined && this.agents.list().length !== 0) {
           throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Native Agent lifecycle work has not settled')

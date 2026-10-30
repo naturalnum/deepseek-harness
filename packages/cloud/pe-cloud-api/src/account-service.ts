@@ -256,7 +256,8 @@ export class CloudAccountApi extends Service {
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
       rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
-        ...files?.rpcEndpoints ?? [], ...office?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [], ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
+        ...files?.rpcEndpoints ?? [], ...office?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [],
+        ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
@@ -844,6 +845,11 @@ export class CloudAccountApi extends Service {
     await this.stopFirstScreenEvents()
     await this.installation.withdraw()
   }
+
+  /** Join the original Office owner before account graph withdrawal.
+   * @returns Its retained cleanup settlement; an unresolved scratch rejects the account drain.
+   */
+  async stopOffice(): Promise<void> { await this.office.native?.value.closeAndConfirm() }
 
   /** Bind a trusted request borrow to the existing native credential installation; registers no endpoint.
    * @param use Original runtime-issued AccountUse; its caller retains release ownership through settlement.

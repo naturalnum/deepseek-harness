@@ -122,6 +122,7 @@ export class OfficeToPdf extends TypertRemoteService {
   private readonly unresolvedScratch = new Map<string, RetainedScratch>()
   private readonly queue: ConversionQueue
   private readonly options: ConverterOptions
+  private closing?: Promise<void>
 
   /**
    * @param ctx - owning Host context.
@@ -139,7 +140,14 @@ export class OfficeToPdf extends TypertRemoteService {
       ...(fontFallbacks === undefined ? {} : { fontFallbacks }),
     }
     this.queue = new ConversionQueue(config, this.generation, (bytes, extension, signal) => this.convertBytes(bytes, extension, signal))
-    ctx.effect(() => async () => {
+    ctx.effect(() => () => this.closeAndConfirm())
+  }
+
+  /** Stop admission, join original work and surface any unconfirmed scratch or converter cleanup.
+   * @returns The same retained settlement for every caller.
+   */
+  closeAndConfirm(): Promise<void> {
+    this.closing ??= (async () => {
       this.remoteLifetime.abort()
       await this.queue.dispose()
       await Promise.allSettled(this.remoteRequests)
@@ -150,7 +158,8 @@ export class OfficeToPdf extends TypertRemoteService {
       const failures = results.filter(result => result.status === 'rejected').map((result): unknown => result.reason)
       for (const retained of this.unresolvedScratch.values()) failures.push(scratchError(retained))
       if (failures.length > 0) throw new AggregateError(failures, 'LibreOffice converter or scratch cleanup remains unconfirmed.')
-    })
+    })()
+    return this.closing
   }
 
   /**
@@ -300,7 +309,7 @@ export class OfficeToPdf extends TypertRemoteService {
       try {
         if (directory !== undefined) {
           try {
-            if (identity === undefined) throw identityFailure ?? new Error('Office scratch identity was not observed.')
+            if (identity === undefined) throw new Error('Office scratch identity was not observed.', { cause: identityFailure })
             await rm(directory, { recursive: true, force: true })
           } catch (cause) {
             retained = true
@@ -311,7 +320,7 @@ export class OfficeToPdf extends TypertRemoteService {
             throw new OfficeToPdfError('unavailable', 'Office scratch cleanup remains unconfirmed.', { cause })
           }
         }
-      } finally { if (!retained) slot.busy = false }
+      } finally { slot.busy = retained }
     }
   }
 }

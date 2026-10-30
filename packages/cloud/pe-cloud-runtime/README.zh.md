@@ -81,6 +81,8 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和固定 Preset 校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入/分叉身份仍被拒绝。下述可选原生 child 路径单独核验 subagent 身份。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
 
+在撤销账户 graph 前，原生账户 stop 显式等待原 Office provider 的结算。转换临时目录或转换器清理未确认会使 stop 拒绝，由现有 factory 将账户槽保留为 unknown，而不是把 Cordis fiber 日志当作成功 drain。
+
 显式选中的原生 `officeToPdf/render` invocation 使用与 `workspaceFiles` 相同的 Session 成员及项目选择，不授予原始绝对路径权限。账户 Office provider 和两个原生 Remote 方法必须在发布前通过 API 清单审核。
 
 账户持有的 `workspaceFileScope` lookup 在读取冷持久化 header 前检查原 Session 成员关系；未知、外账户及未挂载的 ID 不触发该元数据读取。lookup 使用账户生命周期，并在观察后复核原 provider。

@@ -119,9 +119,9 @@ async function fixture(options: {
         endpoint: 'session/' + method, handlerId: 'native:sessionController', guard: method === 'create' ? 'account-project' : 'account-session',
       })).concat(options.auditedFileCalls ? ['read', 'stat'].map(method => ({ endpoint: `workspaceFiles/${method}`,
         handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []).concat(options.office && !options.officeUnselected ? [
-          { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
-          { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
-        ] : []),
+        { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
+        { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
+      ] : []),
       streamEndpoints: options.auditedFileCalls ? [{ endpoint: 'workspaceFiles/changes',
         handlerId: 'native:workspaceFiles', guard: 'account-session' }] : [], exactFetchRoutes: [], allowedSettings: [] } },
     { id: 'execution', name: 'cordis:execution', config: { mode: 'closed', requiredCapabilities: [], maxBoundAccounts: 2 } },
@@ -1085,7 +1085,7 @@ it('retains the original account Session file authority for the native Office Re
   writeFileSync(join(f.project, 'report.docx'), 'owned office document')
   await ctx.sessionPersistence.flush()
   await ctx.agentLoop.stop()
-  const converter = vi.spyOn(ctx.officeToPdf, 'convert').mockImplementation(async request => {
+  const converter = vi.spyOn(ctx.officeToPdf, 'convert').mockImplementation(async (request) => {
     const data = await request.source.read(new AbortController().signal, 4096)
     expect(Buffer.from(data.bytes).toString()).toBe('owned office document')
     return { pdf: new Uint8Array([37, 80, 68, 70]), missingFonts: [],
@@ -1118,7 +1118,7 @@ it('retains the original account Session file authority for the native Office Re
     args: { workspaceFileScopeId: created.sessionId, path: 'report.docx', priority: 'foreground' }, peer,
     signal: AbortSignal.abort() })).rejects.toBeInstanceOf(Error)
   expect(converter).toHaveBeenCalledTimes(1)
-  converter.mockImplementationOnce(async request => {
+  converter.mockImplementationOnce(async (request) => {
     writeFileSync(join(f.project, 'report.docx'), 'changed after original authorization')
     await request.source.read(new AbortController().signal, 4096)
     throw new Error('changed source unexpectedly admitted')
@@ -1165,4 +1165,18 @@ it('rejects unselected Office calls before reading the original project', async 
   const metadata = vi.spyOn(ctx.sessionPersistence, 'stat')
   await expect(resolver.resolve(created.sessionId)).rejects.toBeInstanceOf(Error)
   expect(metadata).not.toHaveBeenCalled()
+})
+
+it('retains the factory account slot if the original Office owner cannot confirm shutdown', async () => {
+  const f = await fixture({ nativeFiles: true, installFileApi: true, office: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, original: unknown = Reflect.get(ctx.officeToPdf, symbols.original) ?? ctx.officeToPdf
+  if (original === null || typeof original !== 'object' || !('closeAndConfirm' in original)) throw new Error('Office owner absent')
+  const office = ctx.officeToPdf, failure = new Error('Unconfirmed original scratch')
+  const stop = vi.spyOn(office, 'closeAndConfirm').mockRejectedValueOnce(failure)
+  await expect(f.factory.stopNative(outcome.binding.accountId)).resolves.toMatchObject({ status: 'unknown', cause: failure })
+  expect(stop).toHaveBeenCalledOnce()
+  expect(f.factory.inspect()).toMatchObject({ slots: 1, unknown: 1 })
+  expect(ctx.fiber.state).toBe(FiberState.ACTIVE)
 })

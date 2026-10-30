@@ -16,7 +16,7 @@ vi.mock('@deepseek-ai/libreoffice-kit', () => ({ createConverter: kit.create }))
 it('closes the provider when cleanup fails after the caller has already cancelled', async () => {
   const ctx = new Context()
   const logged = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
-  const entered = Promise.withResolvers<string>(), release = Promise.withResolvers<void>()
+  const entered = Promise.withResolvers<string>(), release = Promise.withResolvers<undefined>()
   const render = vi.fn<Converter['render']>().mockImplementation(async ({ inputPath, outputPath }) => {
     entered.resolve(dirname(inputPath))
     await release.promise
@@ -38,12 +38,14 @@ it('closes the provider when cleanup fails after the caller has already cancelle
   caller.abort()
   await rejected
   let disposed = false
-  const closing = ctx.fiber.dispose().then(() => { disposed = true })
+  const closing = provider.closeAndConfirm().then(() => { disposed = true }, (error: unknown) => { disposed = true; throw error })
+  const closeFailure = expect(closing).rejects.toBeInstanceOf(AggregateError)
   await Promise.resolve()
   expect(disposed).toBe(false)
-  release.resolve()
+  release.resolve(undefined)
   await vi.waitFor(() => { expect(logged).toHaveBeenCalled() })
-  await closing
+  await closeFailure
+  await ctx.fiber.dispose()
   await expect(provider.convert(request)).rejects.toMatchObject({ code: 'unavailable' })
   expect(vi.mocked(fs.rm)).toHaveBeenCalledTimes(1)
   await fs.rm(scratch, { recursive: true, force: true })
