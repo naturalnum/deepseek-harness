@@ -239,6 +239,7 @@ it.each(['settings/mutate', 'settings/update'])('Root refuses %s before bootstra
 })
 
 const nativeControlRpc: readonly EndpointExposure[] = [
+  { endpoint: 'session/updateQueue', handlerId: 'native:sessionController', guard: 'account-session' },
   { endpoint: 'session/modelCatalog', handlerId: 'native:sessionController', guard: 'authenticated-account' },
   { endpoint: 'session/selectModel', handlerId: 'native:sessionController', guard: 'account-session' },
   ...['list', 'execute'].map(method => ({ endpoint: 'commands/' + method, handlerId: 'native:commands', guard: 'account-session' as const })),
@@ -272,6 +273,8 @@ it('keeps unselected native Session controls absent from bootstrap owner reads',
 })
 
 it.each([
+  { endpoint: 'session/updateQueue', handlerId: 'native:sessionController', guard: 'authenticated-account' },
+  { endpoint: 'session/updateQueue', handlerId: 'foreign:sessionController', guard: 'account-session' },
   { endpoint: 'session/modelCatalog', handlerId: 'native:sessionController', guard: 'account-session' },
   { endpoint: 'session/selectModel', handlerId: 'foreign:sessionController', guard: 'account-session' },
   { endpoint: 'commands/execute', handlerId: 'native:commands', guard: 'authenticated-account' },

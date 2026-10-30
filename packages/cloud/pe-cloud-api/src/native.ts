@@ -5,6 +5,7 @@ import SessionController, { SessionSkillCatalog, type SessionControlBufferLimits
 import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
+  SessionUpdateQueueRequest, SessionUpdateQueueValue,
   SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
   SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary,
   SkillListRequest, SkillListValue, ModelCatalog, ModelSelection, SessionSelectModelRequest, SessionSelectModelValue,
@@ -137,7 +138,7 @@ class NativeSessionAdmission {
     }
   }
 
-  async session(endpoint: 'session/prompt' | 'session/fork', sessionId: SessionId): Promise<void> {
+  async session(endpoint: 'session/prompt' | 'session/fork' | 'session/updateQueue', sessionId: SessionId): Promise<void> {
     this.admit(endpoint, 'account-session')
     await this.guards.assertSessionProject(sessionId)
   }
@@ -416,6 +417,12 @@ class AccountSessionController extends SessionController {
     return super.fork(request)
   }
 
+  override async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
+    await this.admission.session('session/updateQueue', request.sessionId)
+    this.admission.admit('session/updateQueue', 'account-session')
+    return super.updateQueue(request)
+  }
+
   override cancel(request: SessionCancelRequest): SessionCancelValue {
     this.admission.cancel(request.sessionId)
     return super.cancel(request)
@@ -556,7 +563,7 @@ export function inspectNativeController(
   const stream: ExposureInventory['streamEndpoints'][number][] = []
   for (const marker of methods) {
     const method = marker.method
-    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow'].includes(method)
+    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow', 'updateQueue'].includes(method)
       && !(actual.hasFirstScreenReader() && ['list', 'control'].includes(method))
       && !(method === 'modelCatalog' && actual.hasModelSelection('session/modelCatalog'))
       && !(method === 'selectModel' && actual.hasModelSelection('session/selectModel'))) continue

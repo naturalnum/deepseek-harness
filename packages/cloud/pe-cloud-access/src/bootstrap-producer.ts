@@ -26,7 +26,7 @@ const fileStreamEndpoint = 'workspaceFiles/changes'
 
 const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>> = {
   'session/create': { handlerId: 'native:sessionController', guard: 'account-project' },
-  ...Object.fromEntries(['prompt', 'fork', 'cancel', 'page', 'list', 'selectModel'].map(method => [
+  ...Object.fromEntries(['prompt', 'fork', 'cancel', 'page', 'list', 'selectModel', 'updateQueue'].map(method => [
     'session/' + method, { handlerId: 'native:sessionController', guard: 'account-session' as const },
   ])),
   'session/modelCatalog': { handlerId: 'native:sessionController', guard: 'authenticated-account' },

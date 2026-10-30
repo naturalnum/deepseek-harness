@@ -21,11 +21,11 @@ import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deep
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-working-directory'
-import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, createUserMessage, MessageId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { CloudApiError } from '../src/errors.ts'
-import { createNativeController, type NativeSessionGuards } from '../src/native.ts'
+import { createNativeController, inspectNativeController, type NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 
 type ActiveAgent = NonNullable<ReturnType<Context['agents']['get']>>
@@ -118,7 +118,7 @@ async function fixture(accountId = 'reuse', firstScreen = false, skills = false)
   let instances = 0
   const manifest = {
     recipeVersion: binding.recipeVersion,
-    rpcEndpoints: ['create', 'prompt', 'fork', 'cancel', ...firstScreen ? ['list'] : []].map(method => ({
+    rpcEndpoints: ['create', 'prompt', 'fork', 'cancel', 'updateQueue', ...firstScreen ? ['list'] : []].map(method => ({
       endpoint: 'session/' + method, handlerId: 'native-session',
       guard: method === 'create' ? 'account-project' as const : 'account-session' as const,
     })).concat(skills ? [{ endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' as const }] : []),
@@ -149,6 +149,97 @@ async function fixture(accountId = 'reuse', firstScreen = false, skills = false)
     ctx, controller, project, outside, binding, lifetime, denied, guards, instances, adapter, invoke, create, assertCurrent, policy, peer,
   }
 }
+
+it('updates only pending items in the admitted native Session', async () => {
+  const f = await fixture('queue-owned')
+  const { sessionId } = await f.create()
+  const agent = f.ctx.agents.get(sessionId)!
+  const queued = createUserMessage({ content: [{ type: 'text', text: 'original' }], source: { kind: 'user' } })
+  agent.inbox.append('next-turn', queued)
+  await expect(f.invoke('updateQueue', { sessionId, itemId: queued.id, action: {
+    kind: 'edit', content: [{ type: 'text', text: 'edited' }],
+  } })).resolves.toEqual({ accepted: true })
+  expect(agent.inbox.nextTurn[0]?.content).toEqual([{ type: 'text', text: 'edited' }])
+  const other = await f.create()
+  const otherAgent = f.ctx.agents.get(other.sessionId)!
+  const otherItem = createUserMessage({ content: [{ type: 'text', text: 'other' }], source: { kind: 'user' } })
+  otherAgent.inbox.append('next-turn', otherItem)
+  await expect(f.invoke('updateQueue', { sessionId, itemId: otherItem.id, action: { kind: 'remove' } }))
+    .rejects.toMatchObject({ code: 'session/queue-item-not-found' })
+  expect(otherAgent.inbox.nextTurn).toHaveLength(1)
+  await expect(f.invoke('updateQueue', { sessionId, itemId: MessageId('missing'), action: { kind: 'remove' } }))
+    .rejects.toMatchObject({ code: 'session/queue-item-not-found' })
+  await expect(f.invoke('updateQueue', { sessionId, itemId: queued.id, action: { kind: 'remove' } }))
+    .resolves.toEqual({ accepted: true })
+  expect(agent.inbox.nextTurn).toHaveLength(0)
+})
+
+it('does not operate on another account Session or its queue item', async () => {
+  const a = await fixture('queue-account-a'), b = await fixture('queue-account-b')
+  const { sessionId } = await b.create()
+  const queued = createUserMessage({ content: [{ type: 'text', text: 'private' }], source: { kind: 'user' } })
+  b.ctx.agents.get(sessionId)!.inbox.append('next-turn', queued)
+  const native = vi.spyOn(SessionController.prototype, 'updateQueue')
+  await expect(a.invoke('updateQueue', { sessionId, itemId: queued.id, action: { kind: 'remove' } })).rejects.toThrow()
+  expect(native).not.toHaveBeenCalled()
+  expect(b.ctx.agents.get(sessionId)!.inbox.nextTurn).toHaveLength(1)
+})
+
+it('guards queue changes against another Session project and a stale generation before native dispatch', async () => {
+  const f = await fixture('queue-denied')
+  const { sessionId } = await f.create()
+  const agent = f.ctx.agents.get(sessionId)!
+  const queued = createUserMessage({ content: [{ type: 'text', text: 'keep' }], source: { kind: 'user' } })
+  agent.inbox.append('next-turn', queued)
+  const native = vi.spyOn(SessionController.prototype, 'updateQueue')
+  const foreign = f.ctx.sessions.create(SessionId('foreign-queue'), { meta: { cwd: f.outside } })
+  await expect(f.invoke('updateQueue', { sessionId: foreign.id, itemId: queued.id, action: { kind: 'remove' } }))
+    .rejects.toBe(f.denied)
+  f.guards.assertSessionProject.mockRejectedValueOnce(f.denied)
+  await expect(f.invoke('updateQueue', { sessionId, itemId: queued.id, action: { kind: 'remove' } })).rejects.toBe(f.denied)
+  expect(agent.inbox.nextTurn).toHaveLength(1)
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  f.guards.assertSessionProject.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+  const operation = f.invoke('updateQueue', { sessionId, itemId: queued.id, action: { kind: 'remove' } })
+  const rejected = expect(operation).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([operation]) })
+  await entered.promise
+  f.lifetime.abort()
+  release.resolve(undefined)
+  await rejected
+  expect(native).not.toHaveBeenCalled()
+  expect(agent.inbox.nextTurn).toHaveLength(1)
+})
+
+it('steers an admitted pending message through the native controller during a running turn', async () => {
+  const f = await fixture('queue-steer')
+  const release = Promise.withResolvers<undefined>()
+  vi.spyOn(f.adapter, 'stream').mockImplementation(async function* () {
+    await release.promise
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  })
+  onTestFinished(() => { release.resolve(undefined) })
+  const { sessionId } = await f.create()
+  await f.invoke('prompt', { sessionId, requestId: 'running', content: [{ type: 'text', text: 'start' }] })
+  const agent = f.ctx.agents.get(sessionId)!
+  await vi.waitFor(() => { expect(agent.status).toBe('running') })
+  const queued = createUserMessage({ content: [{ type: 'text', text: 'steer' }], source: { kind: 'user' } })
+  agent.inbox.append('next-turn', queued)
+  await expect(f.invoke('updateQueue', { sessionId, itemId: queued.id, action: { kind: 'steer' } }))
+    .resolves.toEqual({ accepted: true })
+  expect(agent.inbox.nextTurn.some(item => item.id === queued.id)).toBe(false)
+  release.resolve(undefined)
+})
+
+it('inventories only the original guarded queue controller', async () => {
+  const f = await fixture('queue-inventory')
+  expect(inspectNativeController(f.controller, f.binding.recipeVersion, 128).rpcEndpoints).toContainEqual({
+    endpoint: 'session/updateQueue', handlerId: 'native:sessionController', guard: 'account-session',
+  })
+  vi.spyOn(f.controller, 'updateQueue').mockResolvedValue({ accepted: true })
+  expect(() => inspectNativeController(f.controller, f.binding.recipeVersion, 128))
+    .toThrow('The original native guarded method changed')
+})
 
 it('reads the original cold native skill catalog after shared project admission without activating an Agent', async () => {
   const f = await fixture('skill-cold', true, true)
