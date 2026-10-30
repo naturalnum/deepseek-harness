@@ -636,7 +636,7 @@ export class LoginPeerRegistry {
           queueMicrotask(() => { void this.startClose(entry, id) })
         })
         if (settle === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
-        const business = !['$events', 'workspace/follow', 'remoteAccess/follow', 'session/follow'].includes(endpoint)
+        const business = !['$events', 'workspace/follow', 'remoteAccess/follow', 'session/follow', 'session/control'].includes(endpoint)
         entry.streamCount++
         if (business) entry.businessStreamCount++
         let settled = false

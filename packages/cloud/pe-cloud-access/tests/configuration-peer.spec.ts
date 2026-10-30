@@ -1288,6 +1288,69 @@ it('refuses terminal application without the original ingress settlement', async
   expect(f.observe()).toMatchObject({ inUse: 1, calls: 0 })
 })
 
+it.each(['settled', 'timeout'] as const)('joins the Session control snapshot before an idle configuration write (%s)', async (mode) => {
+  const f = await fixture(mode === 'timeout' ? 30 : 1000), cleanup = Promise.withResolvers<undefined>()
+  if (mode === 'settled') cleanup.resolve(undefined)
+  onTestFinished(() => { cleanup.resolve(undefined) })
+  class ControlFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    async *control(signal: AbortSignal) {
+      try {
+        yield { type: 'baseline', value: { projections: {} } }
+        await new Promise<void>(resolve => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener('abort', () => { resolve() }, { once: true })
+        })
+      } finally { await cleanup.promise }
+    }
+  }
+  await f.ctx.plugin(ControlFixture)
+  const peer = await f.acquire('login=control'), ws = await f.websocket(peer, 'session/control', false)
+  await vi.waitFor(() => { expect(ws.frames).toContainEqual(expect.objectContaining({ type: 'item', value: expect.objectContaining({ type: 'baseline' }) })) })
+  let writes = 0
+  f.setOperation(async (_binding, _context, current, close) => {
+    current(); await close(); current(); writes++
+  })
+  const request = f.run(peer, 'if-idle')
+  try {
+    if (mode === 'settled') {
+      await request.body
+      await ws.closed
+      expect(writes).toBe(1)
+    } else {
+      await expect(request.body).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+      expect(writes).toBe(0)
+    }
+  } finally { request.finish(); cleanup.resolve(undefined) }
+  await f.registry.closeActual()
+  expect(writes).toBe(mode === 'settled' ? 1 : 0)
+})
+
+it('keeps a different Session stream busy during an idle configuration request', async () => {
+  const f = await fixture()
+  class BusinessFixture extends TypertRemoteService {
+    constructor(owner: Context) { super(owner, 'session') }
+    @Remote({ mode: 'stream' })
+    async *work(signal: AbortSignal) {
+      yield { type: 'working' }
+      await new Promise<void>(resolve => {
+        if (signal.aborted) resolve()
+        else signal.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    }
+  }
+  await f.ctx.plugin(BusinessFixture)
+  const peer = await f.acquire('login=business'), ws = await f.websocket(peer, 'session/work', false)
+  await vi.waitFor(() => { expect(ws.frames).toContainEqual(expect.objectContaining({ type: 'item', value: { type: 'working' } })) })
+  const request = f.run(peer, 'if-idle')
+  try {
+    await expect(request.body).rejects.toMatchObject({ code: 'cloud/config-busy', details: { peerWork: { businessStreamPeers: 1 } } })
+    expect(f.observe().calls).toBe(0)
+    expect(ws.didClose()).toBe(false)
+  } finally { request.finish() }
+})
+
 it('joins a real native WebSocket observation before the same HTTP configuration result is returned', async () => {
   const f = await fixture(), peer = await f.acquire('login=actual-http-ws')
   const ws = await f.websocket(peer), ingressUse = f.issueUse()
