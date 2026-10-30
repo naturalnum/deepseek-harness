@@ -10,4 +10,6 @@ The injection contains one stable `hooks.accountPluginCatalog` source and option
 
 Approval, installation and activation are distinct. `installed: null` and `enabled: null` mean unconfirmed; an approved deployment catalog is not evidence of actual installation. Controls require a ready, non-refreshing projection, an approved and confirmed installed row, confirmed activation state, an `available` operation and its real callback. Missing callbacks close the controls even when a row says `available`. A failed refresh retains readable rows with closed mutation controls. Add plugin stays disabled; no npm/Git/path form or legacy global PluginManager write API is included.
 
+An HTTP 403 from the account's plugin-current endpoint shows management as unavailable and exposes no plugin actions or inferred installation rows. Other refresh failures retain the ordinary error state.
+
 The existing page owns approved refresh and edits; see the [cloud client](../../../../README.md) for version capture, application modes and withdrawal.

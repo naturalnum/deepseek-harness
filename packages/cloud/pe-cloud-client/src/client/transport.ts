@@ -223,6 +223,11 @@ export class BoundTransport {
       await this.discard(response, signal)
       throw new ClientFailure('unauthenticated')
     }
+    if (response.status === 403 && init.method === 'POST'
+      && target.pathname === new URL('api/cloudPlugins/current', this.base).pathname) {
+      await this.discard(response, signal)
+      throw new ClientFailure('plugin-management-unavailable')
+    }
     if (response.status !== 409) return response
     let bytes: Uint8Array<ArrayBuffer>
     try {

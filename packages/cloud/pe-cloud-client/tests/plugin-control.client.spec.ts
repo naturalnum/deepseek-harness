@@ -37,7 +37,7 @@ class Socket implements ConnectionWebSocket {
     if (event === 'close') this.closed.delete(listener)
   }
 }
-async function fixture(additional: readonly Current[] = [], generation = 'generation-A') {
+async function fixture(additional: readonly Current[] = [], generation = 'generation-A', initialCurrentStatus = 200) {
   const disabled = { state: 'disabled', reason: 'not-approved' } as const
   const bootstrap: CloudBootstrap = { account: { id: 'A', displayName: 'A' }, recipeVersion: 'approved-plugin', connectionGeneration: generation,
     capabilities: { projects: { state: 'available' }, filePreview: disabled, shell: disabled, developmentServices: disabled, servicePreview: disabled,
@@ -48,7 +48,7 @@ async function fixture(additional: readonly Current[] = [], generation = 'genera
       skills: { manage: false }, credentials: { write: false }, fields: [] } } }
   const requests: ClientRequest[] = [], currentReplies: Current[] = []
   let currentCount = 0, changeReply: Answer = { ok: true, value: { kind: 'applied', value: facts('after', true) } }
-  let blocked: Promise<undefined> | undefined, failChange = false
+  let blocked: Promise<undefined> | undefined, failChange = false, currentStatus = initialCurrentStatus
   const fetch: RpcFetch = async (_target, init) => {
     if (init?.method !== 'POST') return Response.json(bootstrap)
     if (typeof init.body !== 'string') throw new Error('Native RPC body is missing')
@@ -58,6 +58,7 @@ async function fixture(additional: readonly Current[] = [], generation = 'genera
     requests.push(request)
     if (request.method === 'cloudPlugins/current') {
       currentCount++
+      if (currentStatus !== 200) return new Response(null, { status: currentStatus })
       const value = currentReplies.shift() ?? facts(`edit-${currentCount}`)
       if (blocked !== undefined) await blocked
       return Response.json({ type: 'server-response', rpcId: request.rpcId, result: { ok: true, value } })
@@ -103,9 +104,26 @@ async function fixture(additional: readonly Current[] = [], generation = 'genera
   return { page, ctx, locale, source, injected, notices, requests, currentReplies,
     changes: () => requests.filter(request => request.method === 'cloudPlugins/change'),
     reply: (value: Answer) => { changeReply = value }, loseResponse: () => { failChange = true },
+    setCurrentStatus: (status: number) => { currentStatus = status },
     block: (value: Promise<undefined> | undefined) => { blocked = value },
     withdraw: () => { control?.dispose(); return owner?.dispose() } }
 }
+it.each([403, 500])('distinguishes a closed plugin reader from HTTP %s failure', async (status) => {
+  const f = await fixture([], 'generation-A', status)
+  f.injected.refreshPluginCatalog?.()
+  await vi.waitFor(() => { expect(f.source.getSnapshot().phase).toBe(status === 403 ? 'unavailable' : 'error') })
+  expect(f.source.getSnapshot().plugins).toEqual([])
+  expect(f.changes()).toEqual([])
+  expect(f.notices).toEqual(status === 403 ? [] : [{ action: 'plugin-refresh', outcome: 'unavailable' }])
+})
+it('withdraws previous rows when the account plugin reader becomes forbidden', async () => {
+  const f = await fixture(); await read(f)
+  expect(f.source.getSnapshot().plugins).toHaveLength(1)
+  f.setCurrentStatus(403); f.injected.refreshPluginCatalog?.()
+  await vi.waitFor(() => { expect(f.source.getSnapshot().phase).toBe('unavailable') })
+  expect(f.source.getSnapshot().plugins).toEqual([])
+  expect(f.changes()).toEqual([])
+})
 async function read(f: Awaited<ReturnType<typeof fixture>>) {
   f.injected.refreshPluginCatalog?.()
   await vi.waitFor(() => { expect(f.source.getSnapshot().phase).toBe('ready'); expect(f.source.getSnapshot().refreshing).toBe(false) })

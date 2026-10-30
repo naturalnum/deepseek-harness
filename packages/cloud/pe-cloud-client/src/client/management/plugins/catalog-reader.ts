@@ -180,11 +180,16 @@ export function createPagePluginCatalog(owner: Context, page: PreparedCloudPage,
         for (const state of observed) facts.set(state.id, display(state))
         catalog.set(Object.freeze({ phase: 'ready', plugins: Object.freeze(rows), refreshing: false }))
         report('plugin-refresh', 'confirmed')
-      } catch (_unavailable) {
+      } catch (error) {
         if (current && !signal.aborted) {
           try {
-            check(); catalog.set(Object.freeze({ phase: 'error', plugins: catalog.getSnapshot().plugins, refreshing: false }))
-            report('plugin-refresh', 'unavailable')
+            check()
+            if (error instanceof ClientFailure && error.code === 'plugin-management-unavailable') {
+              catalog.set(Object.freeze({ phase: 'unavailable', plugins: Object.freeze([]), refreshing: false }))
+            } else {
+              catalog.set(Object.freeze({ phase: 'error', plugins: catalog.getSnapshot().plugins, refreshing: false }))
+              report('plugin-refresh', 'unavailable')
+            }
           } catch (_closed) { /* The original owner already retired this read. */ }
         }
       } finally { if (active === operation) active = undefined }

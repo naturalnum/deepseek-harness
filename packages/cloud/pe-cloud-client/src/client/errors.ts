@@ -4,6 +4,7 @@
 export type ClientFailureCode =
   | 'closed' | 'capacity' | 'target-denied' | 'binding-conflict'
   | 'unauthenticated' | 'stale-generation' | 'response-too-large'
+  | 'plugin-management-unavailable'
   | 'bootstrap-rejected' | 'bootstrap-invalid' | 'bootstrap-timeout' | 'close-unconfirmed'
 
 /** Internal typed failure; snapshots and diagnostics expose no rejected wire values. */

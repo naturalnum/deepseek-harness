@@ -151,12 +151,12 @@ export function PluginManagementPage(props: PluginManagementPageProps): ReactNod
     {open === undefined ? <>
       <header className={css.pageHead} data-window-drag>
         <div className={css.cardMain}><h1 className={css.pageTitle}>{t('title')}</h1><p className={css.intro}>{t('intro')}</p></div>
-        <div className={css.toolbar}>
+        {catalog.phase === 'unavailable' ? null : <div className={css.toolbar}>
           <Tooltip label={t('refresh')} portal><Button size="sm" aria-label={t('refresh')}
             disabled={props.refreshPluginCatalog === undefined || catalog.phase === 'loading' || catalog.refreshing || catalog.editor !== undefined}
             onClick={props.refreshPluginCatalog} icon={<IconRefreshOutlineRegular size={16}/>}/></Tooltip>
           <Tooltip label={t(catalog.plugins.some(plugin => plugin.installable === true && plugin.selectionTarget?.kind !== 'bundle') ? 'installNotConnected' : 'addClosed')} portal><span><Button size="sm" variant="primary" disabled>{t('add')}</Button></span></Tooltip>
-        </div>
+        </div>}
       </header>
       {readable ? <div className={css.controls}>
         <Input type="search" value={query} aria-label={t('search')} placeholder={t('search')}

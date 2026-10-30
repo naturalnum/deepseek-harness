@@ -101,8 +101,9 @@ it('retains the last readable rows after a refresh failure, closes mutations and
 it('renders the closed-account state without manufacturing sample rows and owns bilingual page copy', () => {
   const f = fixture([]); f.update({ phase: 'unavailable', plugins: [], refreshing: false })
   render(<PluginManagementPage {...f.props}/>)
-  expect(screen.getByRole('status').textContent).toMatchInlineSnapshot('"The account plugin catalog is not connected yet."')
+  expect(screen.getByRole('status').textContent).toBe(en.unavailable)
   expect(screen.queryByRole('listitem')).toBeNull()
+  expect(screen.queryByRole('button')).toBeNull()
   expect(f.requestPluginEnabled).not.toHaveBeenCalled()
   expect(Object.keys(pluginManagementDictionaries.zh).sort()).toEqual(Object.keys(en).sort())
 })

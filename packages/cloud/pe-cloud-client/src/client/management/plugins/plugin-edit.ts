@@ -58,6 +58,11 @@ export async function prepareAccountPluginEdit(remote: CloudPluginRemote, id: st
   }
   const reference = Object.freeze({ id })
   const answer = await request(signal => current(reference, signal), observer)
+  // The original Gateway folds carrier failures into this exact endpoint-scoped error.
+  if (!answer.ok && answer.error.code === 'gateway/internal'
+    && answer.error.message === 'client api: cloudPlugins/current failed: cloud client plugin-management-unavailable') {
+    throw new ClientFailure('plugin-management-unavailable')
+  }
   if (!answer.ok || answer.value.id !== id) throw new ClientFailure('closed')
   const version = Object.freeze({ epoch: answer.value.version.epoch, editToken: answer.value.version.editToken })
   const state = visibleState(answer.value)
