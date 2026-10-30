@@ -86,7 +86,7 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
     const remote = value.typertRemote, markers = remoteMethods(value)
     if (remote.service !== value || remote.serviceKey !== 'officeToPdf' || remote.namespace !== 'officeToPdf'
       || markers.length !== 2) unavailable()
-    const entries = markers.map(marker => {
+    const entries = markers.map((marker) => {
       const method = marker.exportName ?? marker.method
       if ((marker.mode ?? 'rpc') !== 'rpc' || !['render', 'generation'].includes(method)
         || Reflect.get(value, marker.method) !== Reflect.get(OfficeToPdf.prototype, marker.method)) unavailable()
