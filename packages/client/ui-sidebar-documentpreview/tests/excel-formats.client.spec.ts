@@ -188,3 +188,13 @@ it.each(['csv', 'tsv'] as const)('retains mixed-line-ending data and quoted fina
   expect(blank.row).toBe(3)
   expect(blank.celldata!.map(cell => cell.v!.v)).toEqual(['one', '', ''])
 })
+
+it.each(['utf8', 'le', 'be'] as const)('preserves an additional leading BOM character with %s and a final terminator', async (encoding) => {
+  const text = '\ufeff\ufeff名称,编号\n中文,001\n'
+  const bytes = encoding === 'utf8' ? encode(text) : new Uint8Array(Buffer.from(text, 'utf16le'))
+  if (encoding === 'be') for (let i = 0; i < bytes.length; i += 2) [bytes[i], bytes[i + 1]] = [bytes[i + 1]!, bytes[i]!]
+  const sheet = (await convertExcel(bytes, 'csv', { ...limits, maxCells: 4 })).sheets[0]!
+  expect(sheet.row).toBe(2)
+  expect(sheet.celldata!.find(cell => cell.r === 0 && cell.c === 0)!.v!.v).toBe('\ufeff名称')
+  expect(sheet.celldata!.find(cell => cell.r === 1 && cell.c === 1)!.v!.v).toBe('001')
+})

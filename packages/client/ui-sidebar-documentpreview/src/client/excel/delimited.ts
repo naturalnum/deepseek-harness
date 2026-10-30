@@ -15,8 +15,11 @@ export function convertDelimited(bytes: Uint8Array<ArrayBuffer>, format: 'csv' |
   const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
     : bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be' : 'utf-8'
   let text: string
-  try { text = new TextDecoder(encoding, { fatal: true }).decode(bytes) }
+  // Papa removes one leading BOM itself. Preserve it here so a second U+FEFF
+  // in the first field remains data rather than being removed twice.
+  try { text = new TextDecoder(encoding, { fatal: true, ignoreBOM: true }).decode(bytes) }
   catch (error) { throw new ExcelPreviewError('encoding', { cause: error }) }
+  const parsedLength = text.length - (text.charCodeAt(0) === 0xfeff ? 1 : 0)
   const celldata: NonNullable<Sheet['celldata']> = []
   let row = 0
   let column = 1
@@ -29,7 +32,7 @@ export function convertDelimited(bytes: Uint8Array<ArrayBuffer>, format: 'csv' |
       // Compare its actual parser cursor and chosen linebreak, rather than
       // stripping a character that may belong to a mixed-line-ending field.
       const syntheticTail = result.errors.length === 0 && previousCursor === result.meta.cursor
-        && result.meta.cursor === text.length && text.endsWith(result.meta.linebreak)
+        && result.meta.cursor === parsedLength && text.endsWith(result.meta.linebreak)
         && result.data.length === 1 && result.data[0] === ''
       previousCursor = result.meta.cursor
       if (syntheticTail) return
