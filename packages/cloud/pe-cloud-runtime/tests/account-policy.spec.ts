@@ -11,14 +11,14 @@ import { accountPresetConfigDigest, createAccountPolicy } from '../src/account-p
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
 import { policyFixture } from './account-policy-fixture.ts'
 
-it.each(['rpc', 'stream'] as const)('rejects %s file exposure during Runtime bootstrap when the original Node files owner has no content grant', async (mode) => {
+it.each(['rpc', 'stream', 'office'] as const)('rejects %s file exposure during Runtime bootstrap when the original Node files owner has no content grant', async (mode) => {
   const f = policyFixture(), graph = await f.start(), manifest = f.exposureOwner.policy.manifest
-  const row = { endpoint: mode === 'rpc' ? 'workspaceFiles/read' : 'workspaceFiles/changes',
-    handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
+  const row = { endpoint: mode === 'office' ? 'officeToPdf/render' : mode === 'rpc' ? 'workspaceFiles/read' : 'workspaceFiles/changes',
+    handlerId: mode === 'office' ? 'native:officeToPdf' : 'native:workspaceFiles', guard: 'account-session' as const }
   const root = new Context()
   onTestFinished(async () => { await root.fiber.dispose() })
   const exposure = new ExposureService(root, { ...manifest,
-    rpcEndpoints: [...manifest.rpcEndpoints, ...mode === 'rpc' ? [row] : []],
+    rpcEndpoints: [...manifest.rpcEndpoints, ...mode !== 'stream' ? [row] : []],
     streamEndpoints: [...manifest.streamEndpoints, ...mode === 'stream' ? [row] : []],
   }).policy
   const selected = createAccountPolicy(graph.ctx, graph.binding, graph.files, f.config, exposure, graph.maxEntries)

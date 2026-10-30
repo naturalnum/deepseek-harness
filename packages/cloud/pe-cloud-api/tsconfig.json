@@ -81,6 +81,9 @@
       "path": "../../api/workspace-files/tsconfig.host.json"
     },
     {
+      "path": "../../document/office-to-pdf"
+    },
+    {
       "path": "../../client/file-upload/tsconfig.host.json"
     },
     {

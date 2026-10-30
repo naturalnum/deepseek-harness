@@ -4,8 +4,8 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
 import * as fs from 'node:fs/promises'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
 import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
@@ -99,6 +99,8 @@ async function fixture(options: {
   nativeFiles?: boolean
   auditedFileCalls?: boolean
   installFileApi?: boolean
+  office?: boolean
+  officeUnselected?: boolean
   beforeBootstrap?: (ctx: Context) => void
   verifyBootstrap?: (api: CloudAccountApi) => Promise<void>
 } = {}) {
@@ -116,7 +118,10 @@ async function fixture(options: {
       rpcEndpoints: options.instructionSources === undefined ? [] : ['create', 'prompt', 'cancel', 'page'].map(method => ({
         endpoint: 'session/' + method, handlerId: 'native:sessionController', guard: method === 'create' ? 'account-project' : 'account-session',
       })).concat(options.auditedFileCalls ? ['read', 'stat'].map(method => ({ endpoint: `workspaceFiles/${method}`,
-        handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []),
+        handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []).concat(options.office && !options.officeUnselected ? [
+          { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
+          { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
+        ] : []),
       streamEndpoints: options.auditedFileCalls ? [{ endpoint: 'workspaceFiles/changes',
         handlerId: 'native:workspaceFiles', guard: 'account-session' }] : [], exactFetchRoutes: [], allowedSettings: [] } },
     { id: 'execution', name: 'cordis:execution', config: { mode: 'closed', requiredCapabilities: [], maxBoundAccounts: 2 } },
@@ -216,6 +221,7 @@ async function fixture(options: {
       config: { mode: 'workspace-write', workspaceRoot: project } }] : [],
     ...options.auditedFileCalls || options.installFileApi ? [{ id: 'native-file-api', name: 'cordis:' + names.workspaceFiles,
       config: { maxBytes: 4096, maxFileBytes: 4096, maxLines: 20, maxEntries: 20 } }] : [],
+    ...options.office ? [{ id: 'native-office', name: 'cordis:' + names.officeToPdf, config: { maxInputBytes: 16 } }] : [],
     ...options.instructionSources === undefined ? [] : [
       { id: 'instruction-adapter', name: 'cordis:m8s-instruction-adapter' },
       { id: 'instruction-presets', name: 'cordis:m8s-presets', config: { default: declaration.id } },
@@ -1056,4 +1062,82 @@ it('retains replacement verification inside the real unpublished native bootstra
   await rejected
   await expect(f.finishBootstrap()).rejects.toBe(failure)
   expect(f.factory.inspect().slots).toBe(0)
+})
+
+it('retains the original account Session file authority for the native Office Remote', async () => {
+  const sources = instructionSourceFixture(), f = await fixture({ instructionSources: sources, nativeFiles: true,
+    auditedFileCalls: true, office: true,
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const other = await fixture({ instructionSources: instructionSourceFixture() })
+  const outcome = await f.start(), foreign = await other.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  if (foreign.status === 'failed') throw foreign.cause
+  const foreignSession = await foreign.context.sessionController.create({})
+  const ctx = outcome.context, created = await ctx.sessionController.create({})
+  const secondPath = join(dirname(f.project), 'office-other-project')
+  mkdirSync(secondPath)
+  const second = await ctx.workspaceRegistry.create(secondPath, 'Other project')
+  const otherSession = await ctx.sessionController.create({ workspaceId: second.id })
+  writeFileSync(join(secondPath, 'other.docx'), 'other project private document')
+  symlinkSync(join(secondPath, 'other.docx'), join(f.project, 'escape.docx'))
+  writeFileSync(join(f.project, 'report.docx'), 'owned office document')
+  await ctx.sessionPersistence.flush()
+  await ctx.agentLoop.stop()
+  const converter = vi.spyOn(ctx.officeToPdf, 'convert').mockImplementation(async request => {
+    const data = await request.source.read(new AbortController().signal, 4096)
+    expect(Buffer.from(data.bytes).toString()).toBe('owned office document')
+    return { pdf: new Uint8Array([37, 80, 68, 70]), missingFonts: [],
+      cacheKey: brandString('fixture-key'), generation: ctx.officeToPdf.generation }
+  })
+  const peer = { id: brandString<PeerId>('office-session-scope'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const render = (sessionId: SessionId, path: string) => ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
+    args: { workspaceFileScopeId: sessionId, path, priority: 'foreground' }, peer, signal: outcome.binding.lifetime })
+  await expect(render(created.sessionId, 'report.docx')).resolves.toMatchObject({ data: new Uint8Array([37, 80, 68, 70]) })
+  expect(converter).toHaveBeenCalledTimes(1)
+  await expect(render(created.sessionId, '/etc/passwd.docx')).rejects.toBeInstanceOf(Error)
+  await expect(render(created.sessionId, join(secondPath, 'other.docx'))).rejects.toBeInstanceOf(Error)
+  await expect(render(created.sessionId, 'escape.docx')).rejects.toBeInstanceOf(Error)
+  await expect(render(otherSession.sessionId, join(f.project, 'report.docx'))).rejects.toBeInstanceOf(Error)
+  await expect(render(foreignSession.sessionId, 'report.docx')).rejects.toBeInstanceOf(Error)
+  await expect(ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
+    args: { workspaceFileScopeId: created.sessionId, path: 'report.docx', priority: 'foreground' }, peer,
+    signal: AbortSignal.abort() })).rejects.toBeInstanceOf(Error)
+  expect(converter).toHaveBeenCalledTimes(1)
+  converter.mockImplementationOnce(async request => {
+    writeFileSync(join(f.project, 'report.docx'), 'changed after original authorization')
+    await request.source.read(new AbortController().signal, 4096)
+    throw new Error('changed source unexpectedly admitted')
+  })
+  await expect(render(created.sessionId, 'report.docx')).rejects.toMatchObject({ code: 'document-render/failed' })
+  expect(converter).toHaveBeenCalledTimes(2)
+  converter.mockRestore()
+  await expect(render(created.sessionId, 'report.docx')).rejects.toMatchObject({ code: 'document-render/failed',
+    details: { reason: 'input-too-large' } })
+  const fibers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
+    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.officeToPdf?.fiber === fiber)
+  expect(fibers).toHaveLength(1)
+  const provider = fibers[0]
+  if (provider === undefined) throw new Error('Original Office provider absent')
+  await provider.dispose()
+  expect(() => ctx.peCloudApi.requireRpc('officeToPdf/render')).toThrow()
+})
+
+it('rejects unselected Office calls before reading the original project', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true,
+    auditedFileCalls: true, office: true, officeUnselected: true,
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, created = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'report.docx'), 'unselected document')
+  await ctx.sessionPersistence.flush()
+  await ctx.agentLoop.stop()
+  const read = vi.spyOn(ctx.fs, 'readByteRange'), convert = vi.spyOn(ctx.officeToPdf, 'convert')
+  await expect(ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
+    args: { workspaceFileScopeId: created.sessionId, path: 'report.docx', priority: 'foreground' },
+    peer: { id: brandString<PeerId>('office-unselected'), ctx, principal: { kind: 'owner' }, interactions: 'answer',
+      signal: outcome.binding.lifetime, dispose: async () => {} } })).rejects.toBeInstanceOf(Error)
+  expect(read).not.toHaveBeenCalled()
+  expect(convert).not.toHaveBeenCalled()
 })

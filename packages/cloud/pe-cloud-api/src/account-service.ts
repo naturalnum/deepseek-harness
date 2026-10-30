@@ -4,6 +4,7 @@ import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
+import type OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -14,6 +15,7 @@ import { CloudSkillService, type CloudSkillPreparation } from './cloud-skills.ts
 import { CloudModelKeyService, type CloudModelKeyPreparation } from './cloud-model-key.ts'
 import { CloudProjectsService, type CloudProjectsPreparation } from './cloud-projects.ts'
 import { createNativeWorkspaceFiles, type NativeWorkspaceFiles } from './native-files.ts'
+import { createNativeOffice, type NativeOffice } from './native-office.ts'
 import { createNativeUploads, type NativeUploads, type NativeUploadPreparation } from './native-uploads.ts'
 import { FILE_UPLOAD_PATH, type FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 import { prepareNativeFirstScreen, type FirstScreenNativeInput, type NativeFirstScreen } from './native-first-screen.ts'
@@ -104,6 +106,7 @@ export class CloudAccountApi extends Service {
   private readonly plugins: { control?: AccountPluginControl; native?: CloudPluginService } = {}
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
+  private readonly office: { native?: NativeOffice } = {}
   private readonly uploads: { native?: NativeUploads } = {}
   private readonly commands: { native?: NativeCommands } = {}
   private readonly goals: { native?: NativeGoals } = {}
@@ -244,6 +247,7 @@ export class CloudAccountApi extends Service {
     const plugins = this.plugins.native?.inspect()
     const projects = this.projects.native?.inspect()
     const files = this.files.native?.inspect()
+    const office = this.office.native?.inspect()
     const commands = this.commands.native?.inspect()
     const goals = this.goals.native?.inspect()
     const permissions = this.permissions.native?.inspect(), questions = this.questions.native?.inspect()
@@ -252,7 +256,7 @@ export class CloudAccountApi extends Service {
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
       rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
-        ...files?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [], ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
+        ...files?.rpcEndpoints ?? [], ...office?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [], ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
@@ -335,6 +339,11 @@ export class CloudAccountApi extends Service {
       this.messageFeedback.native.inspect()
     }
     if (endpoint.startsWith('workspaceFiles/')) this.assertWorkspaceFilesCurrent()
+    if (endpoint.startsWith('officeToPdf/')) {
+      this.assertWorkspaceFilesCurrent()
+      if (this.office.native === undefined) this.nativeUnavailable()
+      this.office.native.inspect()
+    }
     if (endpoint === 'cloudProjects/create') {
       if (this.projects.native === undefined) this.nativeUnavailable()
       this.projects.native.assertCurrent()
@@ -535,6 +544,23 @@ export class CloudAccountApi extends Service {
     const native = createNativeWorkspaceFiles(owner, this.binding, () => { this.assertInstalled(owner) }, maximum, nativeConfig)
     this.files.native = native
     owner.effect(() => () => { this.invalidate() }, 'pe-cloud-api: withdraw original WorkspaceFiles')
+    return native.value
+  }
+
+  /** Install the unchanged native Office renderer in this account graph.
+   * @param owner Original account Loader scope.
+   * @param nativeConfig Native bounded conversion configuration.
+   * @returns Original provider whose lifecycle remains in the account graph.
+   */
+  createOfficeToPdf(owner: Context, nativeConfig: ConstructorParameters<typeof OfficeToPdf>[1]): OfficeToPdf {
+    this.assertInstalled(owner)
+    if (this.office.native !== undefined) this.duplicateNative()
+    this.assertWorkspaceFilesCurrent()
+    const maximum = this.maxNativeInventoryEntries
+    if (maximum === undefined) this.nativeUnavailable()
+    const native = createNativeOffice(owner, this.binding, () => { this.assertInstalled(owner) }, maximum, nativeConfig)
+    this.office.native = native
+    owner.effect(() => () => { this.invalidate() }, 'pe-cloud-api: withdraw original Office provider')
     return native.value
   }
 

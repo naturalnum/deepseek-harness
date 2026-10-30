@@ -7,6 +7,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
+import OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
@@ -120,7 +121,7 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   permissions: 'pe-cloud-permissions', userQuestions: 'pe-cloud-user-questions',
   sessionFeedback: 'pe-cloud-session-feedback', messageFeedback: 'pe-cloud-message-feedback',
   commandFeedback: 'pe-cloud-command-feedback',
-  workspaceFiles: 'pe-cloud-workspace-files',
+  workspaceFiles: 'pe-cloud-workspace-files', officeToPdf: 'pe-cloud-office-to-pdf',
   attachments: 'pe-cloud-attachment-store', uploads: 'pe-cloud-file-uploads',
 })
 
@@ -220,6 +221,13 @@ export class AccountNativeIntegration {
           this.input.assertRootCurrent()
           businessCurrent(binding)
           const invocation = caller.invocation
+          if (invocation?.service === 'officeToPdf' || invocation?.request.namespace === 'officeToPdf') {
+            if (invocation.service !== 'officeToPdf' || invocation.request.namespace !== 'officeToPdf'
+              || invocation.request.method !== 'render') {
+              throw new CloudApiError('cloud/forbidden', 'The native Office file invocation is not selected.')
+            }
+            api.requireRpc('officeToPdf/render')
+          }
           if (invocation?.service === 'workspaceFiles' || invocation?.request.namespace === 'workspaceFiles') {
             if (invocation.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles') {
               throw new CloudApiError('cloud/forbidden', 'The native file invocation namespace is not selected.')
@@ -572,6 +580,12 @@ export class AccountNativeIntegration {
         inject: [...WorkspaceFiles.inject, 'peCloudApi'], Config: WorkspaceFiles.Config,
         apply(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]) {
           api.createWorkspaceFiles(owner, nativeConfig)
+        },
+      },
+      [ACCOUNT_NATIVE_ENTRIES.officeToPdf]: {
+        inject: ['peCloudApi', 'workspaceFiles', 'fs', 'typert'], Config: OfficeToPdf.Config,
+        apply(owner: Context, nativeConfig: ConstructorParameters<typeof OfficeToPdf>[1]) {
+          api.createOfficeToPdf(owner, nativeConfig)
         },
       },
       ...attachments === undefined || attachmentLimits === undefined ? {} : {

@@ -335,7 +335,8 @@ class AccountPolicy {
     const project = this.project(), { provider, model } = this.defaultModel()
     if (provider === undefined || model === undefined) modelDenied()
     const selection = { provider, model }
-    const filesSelected = this.exposure.manifest.rpcEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
+    const filesSelected = this.exposure.manifest.rpcEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/')
+      || row.endpoint === 'officeToPdf/render')
       || this.exposure.manifest.streamEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
     if (filesSelected) this.files.assertContentAvailable()
     this.handlers('native:sessionController')
@@ -725,7 +726,10 @@ class AccountPolicy {
         } }
     }
     const invocation = caller.invocation
-    if (invocation?.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles') refuse()
+    const workspaceFiles = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
+    const officeRender = invocation?.service === 'officeToPdf' && invocation.request.namespace === 'officeToPdf'
+      && invocation.request.method === 'render'
+    if (!workspaceFiles && !officeRender) refuse()
     const raw = invocation.request.args['workspaceFileScopeId']
     if (typeof raw !== 'string') refuse()
     const id = SessionId(raw), session = this.provider('sessions').get(id)
