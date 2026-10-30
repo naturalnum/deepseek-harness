@@ -166,3 +166,25 @@ it.each(['csv', 'tsv'] as const)('accepts a final record terminator at the exact
     expect(quoted.celldata![0]!.v!.v).toBe(`one${newline}two`)
   }
 })
+
+it.each(['csv', 'tsv'] as const)('retains mixed-line-ending data and quoted final fields in %s', async (format) => {
+  const sep = format === 'csv' ? ',' : '\t'
+  const crRows = (await convertExcel(encode(`first${sep}one\rsecond${sep}two\n`), format, limits)).sheets[0]!
+  expect(crRows.row).toBe(2)
+  expect(crRows.celldata!.find(cell => cell.r === 1 && cell.c === 1)!.v!.v).toBe('two\n')
+  const lfRows = (await convertExcel(encode(`first${sep}one\nsecond${sep}two\r`), format, limits)).sheets[0]!
+  expect(lfRows.row).toBe(2)
+  expect(lfRows.celldata!.find(cell => cell.r === 1 && cell.c === 1)!.v!.v).toBe('two\r')
+  const quoted = (await convertExcel(encode(`"one\nline"${sep}"two\rline"\r\n`), format, limits)).sheets[0]!
+  expect(quoted.row).toBe(1)
+  expect(quoted.celldata!.map(cell => cell.v!.v)).toEqual(['one\nline', 'two\rline'])
+  await expect(convertExcel(encode(`"unclosed${sep}value\n`), format, limits)).rejects.toMatchObject({ code: 'invalid' })
+  for (const input of ['', '""', '""\n']) {
+    const single = (await convertExcel(encode(input), format, limits)).sheets[0]!
+    expect(single.row).toBe(1)
+    if (input !== '') expect(single.celldata![0]!.v!.v).toBe('')
+  }
+  const blank = (await convertExcel(encode('one\n\n\n'), format, limits)).sheets[0]!
+  expect(blank.row).toBe(3)
+  expect(blank.celldata!.map(cell => cell.v!.v)).toEqual(['one', '', ''])
+})
