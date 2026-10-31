@@ -81,7 +81,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和固定 Preset 校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入/分叉身份仍被拒绝。下述可选原生 child 路径单独核验 subagent 身份。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
 
-在撤销账户 graph 前，账户 stop 关闭云端 Office 准入，等待所保留的原生转换，再销毁原 provider。既有 `stopTimeoutMs` 限制对此工作的观察时间；到期不会中止或释放所持有的真实关闭操作。转换临时目录、转换器销毁未确认或 provider 意外卸载会使 stop 拒绝，由现有 factory 将账户槽保留为 unknown。迟到完成不能恢复准入或释放该账户。配置空闲检查包含所保留的转换及未知 Office 清理。
+在撤销账户 graph 前，账户 stop 关闭云端 Office 准入并等待所保留的原生转换。随后由原账户 Context 统一销毁 provider，独立的原生观察器判断销毁是否已确认。既有 `stopTimeoutMs` 限制转换排空的观察时间，不释放迟到工作。临时目录、转换器销毁未确认或 provider 意外卸载会使账户保留为 unknown；迟到完成不能恢复准入。配置空闲检查包含所保留的转换及未知 Office 清理。
 
 账户关闭结果为 unknown 时，仅向 stderr 输出一次有界诊断，内容限于批准的错误 code 和名称。启动结算后仍可观察原生错误；原生销毁未知时附带其原有的有界错误/警告计数。不输出 message、参数、路径或凭据，诊断失败不改变所有权。
 

@@ -48,7 +48,7 @@ kind: "package-reference"
 
 可信账户装配可在 API 构造时保留私有 Office 生命周期能力。它安装原生 Office-to-PDF provider，并通过云端 `convert` 适配器接线，保留两个原生 Remote 方法、授权和版本复核。有界清单检查唯一的渲染器、账户文件系统和 WorkspaceFiles 注册；manifest 对 `officeToPdf/render` 选择 Session 准入，对 `officeToPdf/generation` 选择已认证账户准入。调用方取消只结束自身观察：适配器继续持有原生 reader，直至转换及临时目录清理结算，并继续占用原 reader 容量。清理结果未知时关闭转换准入并保留责任。部署必须提供匹配的引擎和字体，并将 Office 输入保持在云文件系统实际读取上限以内。
 
-Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root 状态数值，不依赖 graph 日志链的存活。此诊断不能授权释放或恢复准入。
+Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root 状态数值，不依赖 graph 日志链的存活。此诊断不能授权释放或恢复准入。 Provider 仍由原账户 Context 统一移除。私有 Office stop 只确认所保留的转换已结算；factory 必须另行确认原 Context 销毁及 files/execution 参与者清理，才能释放账户所有权。
 
 `CloudAccountApi.createWorkspaceFiles(owner, nativeConfig)` 在完整原生 inject 依赖就绪后，于实际 Loader fiber 构造唯一原生 WorkspaceFiles。它捕获原绑定及 fs、sandboxPolicy、sessions、typert 注册，并在清单审核及 workspaceFiles RPC/stream 准入时复核 value、fiber 和唯一性。清单由全部原生 Remote marker 及其 mode 推导，开放范围仍由 manifest 精确选择。原生类、DTO、lookup、文件 I/O 和流清理保持原义。部署必须保留要求可信 Agent 或原 Gateway invocation 的 Runtime resolver；本注册不授予路径权限，也不新增 watch 支持。
 

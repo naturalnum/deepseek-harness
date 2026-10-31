@@ -1,4 +1,4 @@
-/** Account-owned observation and shutdown of unchanged native Office work. */
+/** Account-owned observation and drain of unchanged native Office work. */
 import { OfficeToPdfError } from '@deepseek-ai/dsh-office-to-pdf'
 
 type FailurePhase = 'conversion' | 'classification' | 'owner-unloaded' | 'provider-close' | 'deadline' | 'close-observer' | 'provider-log'
@@ -27,7 +27,7 @@ export class OfficeWork {
   /**
    * @param maximum Original native reader capacity, also bounding retained calls.
    * @param admit Original account and provider checks before starting a call.
-   * @param dispose Actual provider fiber disposal, including error observation.
+   * @param dispose Preparation for original account-owned disposal after retained conversions settle.
    * @param knownFailure Whether a completed native call failed without uncertain cleanup.
    * @param report Independent fixed diagnostic when cleanup becomes uncertain.
    */
@@ -112,9 +112,9 @@ export class OfficeWork {
   }
 
   /**
-   * Stop admission, join actual calls, then dispose the original provider.
+   * Stop admission, join actual calls, then authorize original account-owned disposal.
    * @param deadlineAtMs Existing account shutdown deadline; expiry retains the actual close.
-   * @returns The same finite observation; a late settlement never reverses an unknown result.
+   * @returns The same finite conversion-drain observation; final provider disposal remains account-owned.
    */
   stop(deadlineAtMs: number): Promise<void> {
     if (this.closeObservation !== undefined) return this.closeObservation

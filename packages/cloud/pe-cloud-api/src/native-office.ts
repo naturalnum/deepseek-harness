@@ -14,9 +14,9 @@ export interface AccountOfficeLifecycle {
    * @param config Resolved native conversion limits.
    */
   install(owner: Context, config: NativeOfficeConfig): void
-  /** Close admission and finitely observe actual conversion and provider cleanup.
+  /** Close admission and finitely join conversions before original account disposal.
    * @param deadlineAtMs Existing account shutdown deadline.
-   * @returns Confirmation only after the original work and provider have settled without unknown cleanup.
+   * @returns Confirmation of retained conversions; the factory must still confirm original Context disposal.
    */
   stop(deadlineAtMs: number): Promise<void>
   /** @returns Whether the account owns no admitted conversion or unknown Office cleanup. */
@@ -71,13 +71,12 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
     || original(fs) !== original(ctx.root.get('fs')) || original(files) !== original(ctx.root.get('workspaceFiles'))) unavailable()
   const root = ctx.root, fiber = ctx.fiber
   let checkConversion: () => void = unavailable
-  const work = new OfficeWork(config.maxReaders, () => { checkConversion(); admit() }, async () => {
+  const work = new OfficeWork(config.maxReaders, () => { checkConversion(); admit() }, () => {
     if (fiber.state !== FiberState.ACTIVE || root.fiber.state !== FiberState.ACTIVE) {
       work.cleanupFailed(new Error('Office owner was withdrawn before ordered shutdown.'), 'owner-unloaded')
     }
-    await fiber.dispose()
-    if (root.fiber.state !== FiberState.ACTIVE) work.cleanupFailed(new Error('Office cleanup lost its account owner.'), 'owner-unloaded')
-    await removeObserver()
+    // The original account Context owns provider disposal and its independent error observation.
+    return Promise.resolve()
   }, knownConversionFailure, (phase) => {
     try {
       console.error(JSON.stringify({ event: 'cloud-office-cleanup-unconfirmed', phase,
