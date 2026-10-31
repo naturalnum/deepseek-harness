@@ -105,19 +105,13 @@ export class ConversionQueue {
     return promise
   }
 
-  /** Close admission synchronously, including cached replies, after an unconfirmed cleanup. */
-  failClosed(): void {
-    if (this.disposed) return
+  /** Cancel all readers and wait until actual reads, conversions, and scratch cleanup finish. */
+  async dispose(): Promise<void> {
     this.disposed = true
     for (const job of this.jobs) this.fail(job, this.unavailable())
     this.ready.clear()
     this.aliases.clear()
     this.cachedBytes = 0
-  }
-
-  /** Cancel all readers and wait until actual reads, conversions, and scratch cleanup finish. */
-  async dispose(): Promise<void> {
-    this.failClosed()
     await Promise.allSettled(this.tasks)
   }
 

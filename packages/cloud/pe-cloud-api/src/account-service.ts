@@ -4,7 +4,6 @@ import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
-import type OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -15,7 +14,7 @@ import { CloudSkillService, type CloudSkillPreparation } from './cloud-skills.ts
 import { CloudModelKeyService, type CloudModelKeyPreparation } from './cloud-model-key.ts'
 import { CloudProjectsService, type CloudProjectsPreparation } from './cloud-projects.ts'
 import { createNativeWorkspaceFiles, type NativeWorkspaceFiles } from './native-files.ts'
-import { createNativeOffice, type NativeOffice } from './native-office.ts'
+import { createNativeOffice, type NativeOffice, type AccountOfficeLifecycle } from './native-office.ts'
 import { createNativeUploads, type NativeUploads, type NativeUploadPreparation } from './native-uploads.ts'
 import { FILE_UPLOAD_PATH, type FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 import { prepareNativeFirstScreen, type FirstScreenNativeInput, type NativeFirstScreen } from './native-first-screen.ts'
@@ -64,6 +63,8 @@ export interface AccountApiPreparation {
   readonly assertReconfiguring?: () => void
   /** Private startup phase observation; exceptions never affect native auditing or publication. */
   readonly observeStartupPhase?: (phase: 'audit-provider' | 'bootstrap-policy' | 'nativeinventory') => void
+  /** Receive this graph's private Office installation/drain capability during factory assembly. */
+  readonly retainOfficeLifecycle?: (lifecycle: AccountOfficeLifecycle) => void
 }
 
 type NativeKey = 'sessionController' | 'agentLoop' | 'llm'
@@ -149,6 +150,11 @@ export class CloudAccountApi extends Service {
     this.providers = Object.freeze({ configEditor: installation.configEditor, credentials: installation.credentials,
       ...plugins === undefined ? {} : { pluginManager: plugins.provider } })
     this.assertInstalled()
+    input.retainOfficeLifecycle?.(Object.freeze({
+      install: (owner: Context, config: Parameters<AccountOfficeLifecycle['install']>[1]) => { this.installOffice(owner, config) },
+      stop: (deadline: number) => this.office.native?.stop(deadline) ?? Promise.resolve(),
+      isIdle: () => this.office.native?.isIdle() ?? true,
+    }))
   }
 
   /**
@@ -548,21 +554,16 @@ export class CloudAccountApi extends Service {
     return native.value
   }
 
-  /** Install the unchanged native Office renderer in this account graph.
-   * @param owner Original account Loader scope.
-   * @param nativeConfig Native bounded conversion configuration.
-   * @returns Original provider whose lifecycle remains in the account graph.
-   */
-  createOfficeToPdf(owner: Context, nativeConfig: ConstructorParameters<typeof OfficeToPdf>[1]): OfficeToPdf {
+  private installOffice(owner: Context, nativeConfig: Parameters<AccountOfficeLifecycle['install']>[1]): void {
     this.assertInstalled(owner)
     if (this.office.native !== undefined) this.duplicateNative()
     this.assertWorkspaceFilesCurrent()
     const maximum = this.maxNativeInventoryEntries
     if (maximum === undefined) this.nativeUnavailable()
-    const native = createNativeOffice(owner, this.binding, () => { this.assertInstalled(owner) }, maximum, nativeConfig)
+    const native = createNativeOffice(owner, this.binding, () => { this.assertInstalled(owner) }, maximum, nativeConfig,
+      () => { this.admit(); this.assertWorkspaceFilesCurrent() })
     this.office.native = native
     owner.effect(() => () => { this.invalidate() }, 'pe-cloud-api: withdraw original Office provider')
-    return native.value
   }
 
   /**
@@ -845,11 +846,6 @@ export class CloudAccountApi extends Service {
     await this.stopFirstScreenEvents()
     await this.installation.withdraw()
   }
-
-  /** Join the original Office owner before account graph withdrawal.
-   * @returns Its retained cleanup settlement; an unresolved scratch rejects the account drain.
-   */
-  async stopOffice(): Promise<void> { await this.office.native?.value.closeAndConfirm() }
 
   /** Bind a trusted request borrow to the existing native credential installation; registers no endpoint.
    * @param use Original runtime-issued AccountUse; its caller retains release ownership through settlement.

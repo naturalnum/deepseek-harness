@@ -1,16 +1,10 @@
 /** Disk output, resource bounds, and cancellation around the external kit. */
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import * as fs from 'node:fs/promises'
+import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Converter, ConverterOptions } from '@deepseek-ai/libreoffice-kit'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import OfficeToPdf, { Config, OfficeSourceKey, type OfficeToPdfRequest } from '../src/index.ts'
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const original = await importOriginal<typeof fs>()
-  return { ...original, rm: vi.fn(original.rm) }
-})
 
 const kit = vi.hoisted(() => ({ create: vi.fn<(options?: ConverterOptions) => Promise<Converter>>() }))
 vi.mock('@deepseek-ai/libreoffice-kit', () => ({ createConverter: kit.create }))
@@ -51,31 +45,6 @@ async function mount(config: Partial<Config> = {}): Promise<OfficeToPdf> {
   await ctx.plugin(OfficeToPdf, config)
   return ctx.officeToPdf
 }
-
-it('retains kit 0.1.5 cleanup failure, stops cached and new conversions, and reports the original error', async () => {
-  const provider = await mount({ maxConcurrentConversions: 1 })
-  await provider.convert(request)
-  const inner = Object.assign(new Error('inner rm failed'), { code: 'EACCES' })
-  const failure = new AggregateError([inner], 'LibreOffice conversion cleanup failed.')
-  vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
-  render.mockRejectedValueOnce(failure)
-  await expect(provider.convert(distinct(7))).rejects.toMatchObject({ code: 'unavailable' })
-  await expect(provider.convert(request)).rejects.toMatchObject({ code: 'unavailable' })
-  await expect(provider.convert(distinct(8))).rejects.toMatchObject({ code: 'unavailable' })
-  const closing = await provider.closeAndConfirm().catch((error: unknown) => error)
-  expect(closing).toBeInstanceOf(AggregateError)
-  expect((closing as AggregateError).errors).toContain(failure)
-  expect(failure.errors).toContain(inner)
-  expect(render).toHaveBeenCalledTimes(2)
-})
-
-it('allows later conversions after a normal invalid-document error', async () => {
-  const provider = await mount({ maxConcurrentConversions: 1 })
-  render.mockRejectedValueOnce(Object.assign(new Error('invalid doc'), { code: 'invalid-document' }))
-  await expect(provider.convert(request)).rejects.toMatchObject({ code: 'invalid-document' })
-  await expect(provider.convert(distinct(9))).resolves.toMatchObject({ pdf: Uint8Array.from(pdf) })
-  await expect(provider.closeAndConfirm()).resolves.toBeUndefined()
-})
 
 it('preserves the kit font defaults when font configuration is omitted', async () => {
   const provider = await mount()
@@ -303,44 +272,4 @@ it('joins every converter disposal before reporting an engine cleanup failure', 
     await cleanupEntered.promise
     expect(disposed).toBe(false)
   } finally { cleanupRelease.resolve(undefined); await closing }
-})
-
-
-it('retains an unconfirmed scratch cleanup, closes cached and new reads, and reports it on disposal', async () => {
-  const provider = await mount({ maxConcurrentConversions: 1 })
-  await provider.convert(request)
-  let scratch = ''
-  render.mockImplementationOnce(async ({ inputPath, outputPath }) => {
-    scratch = dirname(inputPath)
-    await writeFile(outputPath, pdf)
-    return { backend: 'wasm', missingFonts: [] }
-  })
-  const failure = Object.assign(new Error('scratch removal failed'), { code: 'EIO' })
-  const logged = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
-  vi.mocked(rm).mockRejectedValueOnce(failure)
-  await expect(provider.convert(distinct(11))).rejects.toMatchObject({ code: 'unavailable' })
-  expect(scratch).not.toBe('')
-  await expect(access(scratch)).resolves.toBeUndefined()
-  const originalFacts = await stat(scratch, { bigint: true })
-  expect(logged.mock.calls[0]?.[0]).toMatchObject({ cause: failure })
-  expect(String(logged.mock.calls[0]?.[0])).toContain(scratch)
-  expect(String(logged.mock.calls[0]?.[0])).toContain(`${originalFacts.dev}:${originalFacts.ino}`)
-  const original = scratch + '-retained-original'
-  await rename(scratch, original)
-  await mkdir(scratch)
-  await writeFile(scratch + '/replacement.txt', 'do not remove')
-  const calls = vi.mocked(rm).mock.calls.length
-  await expect(provider.convert(request)).rejects.toMatchObject({ code: 'unavailable' })
-  await expect(provider.convert(distinct(12))).rejects.toMatchObject({ code: 'unavailable' })
-  expect(logged).toHaveBeenCalled()
-  const settlement = provider.closeAndConfirm()
-  await expect(settlement).rejects.toBeInstanceOf(AggregateError)
-  expect(provider.closeAndConfirm()).toBe(settlement)
-  await ctx.fiber.dispose()
-  expect(vi.mocked(rm)).toHaveBeenCalledTimes(calls)
-  expect(logged).toHaveBeenCalled()
-  expect(await readFile(scratch + '/replacement.txt', 'utf8')).toBe('do not remove')
-  // This test owns the isolated fixtures and can remove them; the provider cannot retry the path.
-  await rm(scratch, { recursive: true, force: true })
-  await rm(original, { recursive: true, force: true })
 })

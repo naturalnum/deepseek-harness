@@ -1,10 +1,27 @@
 /** Native Office provider identity and bounded Remote declaration audit. */
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
-import OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
+import OfficeToPdf, { OfficeToPdfError, type Config as NativeOfficeConfig, type OfficeToPdfRequest, type OfficeToPdfResult } from '@deepseek-ai/dsh-office-to-pdf'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { CloudApiError } from './errors.ts'
 import type { ExposureInventory } from './types.ts'
+import { OfficeWork } from './office-work.ts'
+
+/** Private installation and drain capability handed to the account factory. */
+export interface AccountOfficeLifecycle {
+  /** Install the unchanged native renderer with account-owned call observation.
+   * @param owner Original account Loader scope.
+   * @param config Resolved native conversion limits.
+   */
+  install(owner: Context, config: NativeOfficeConfig): void
+  /** Close admission and finitely observe actual conversion and provider cleanup.
+   * @param deadlineAtMs Existing account shutdown deadline.
+   * @returns Confirmation only after the original work and provider have settled without unknown cleanup.
+   */
+  stop(deadlineAtMs: number): Promise<void>
+  /** @returns Whether the account owns no admitted conversion or unknown Office cleanup. */
+  isIdle(): boolean
+}
 
 /** Exact native provider and its original account-graph admission. */
 export interface NativeOffice {
@@ -14,6 +31,14 @@ export interface NativeOffice {
   assertCurrent(): void
   /** Audit the original Remote methods and admission declarations. */
   inspect(): ExposureInventory
+  /** @param deadlineAtMs Account shutdown deadline. @returns Retained shutdown observation. */
+  stop(deadlineAtMs: number): Promise<void>
+  /** @returns Whether Office has neither admitted work nor unknown cleanup. */
+  isIdle(): boolean
+}
+
+function knownConversionFailure(cause: unknown): boolean {
+  return cause instanceof OfficeToPdfError && cause.code !== 'failed' && cause.code !== 'unavailable'
 }
 
 function original(value: object | undefined): object | undefined {
@@ -32,10 +57,11 @@ function unavailable(): never {
  * @param current Existing unpublished and installed-graph guard.
  * @param maximum Bound for native registry inspection.
  * @param config Native provider configuration.
+ * @param admit Original business admission before a new conversion, separate from installation auditing.
  * @returns Original service and exact Remote inventory audit.
  */
 export function createNativeOffice(ctx: Context, binding: AccountBinding, current: () => void, maximum: number,
-  config: ConstructorParameters<typeof OfficeToPdf>[1]): NativeOffice {
+  config: NativeOfficeConfig, admit: () => void): NativeOffice {
   current()
   if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()
   if (ctx.get('peAccount') !== binding || ctx.root.get('peAccount') !== binding || binding.lifetime.aborted
@@ -43,7 +69,48 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   const fs = ctx.get('fs'), files = ctx.get('workspaceFiles')
   if (fs === undefined || files === undefined || ctx.root.get('fs') === undefined || ctx.root.get('workspaceFiles') === undefined
     || original(fs) !== original(ctx.root.get('fs')) || original(files) !== original(ctx.root.get('workspaceFiles'))) unavailable()
-  const value = new OfficeToPdf(ctx, config)
+  const root = ctx.root, fiber = ctx.fiber
+  let checkConversion: () => void = unavailable
+  const work = new OfficeWork(config.maxReaders, () => { checkConversion(); admit() }, async () => {
+    if (fiber.state !== FiberState.ACTIVE || root.fiber.state !== FiberState.ACTIVE) {
+      work.cleanupFailed(new Error('Office owner was withdrawn before ordered shutdown.'))
+    }
+    await fiber.dispose()
+    if (root.fiber.state !== FiberState.ACTIVE) work.cleanupFailed(new Error('Office cleanup lost its account owner.'))
+    await removeObserver()
+  }, knownConversionFailure, () => {
+    root.logger.error('Office cleanup is unconfirmed; conversion admission is closed and account resources remain retained.')
+  })
+  const removeObserver = root.logger.exporter({ levels: { default: 0 }, export: (message) => {
+    if (message.type === 'error' && message.fiber?.deref() === fiber) work.cleanupFailed(message)
+  } })
+  // Keep the real native reader until conversion and its finally cleanup settle.
+  class AccountOffice extends OfficeToPdf {
+    override convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult> {
+      let sourceFailure: { readonly cause: unknown } | undefined
+      const retained = { ...request, source: { ...request.source,
+        read: async (upstream: AbortSignal, bytes: number) => {
+          try { return await request.source.read(upstream, bytes) }
+          catch (cause) { sourceFailure = { cause }; throw cause }
+        } } }
+      const ownerActive = (): void => {
+        if (fiber.state !== FiberState.ACTIVE || root.fiber.state !== FiberState.ACTIVE) {
+          work.cleanupFailed(new Error('Office owner was unloaded during an admitted conversion.'))
+        }
+      }
+      return work.run(() => super.convert(retained).then((result) => { ownerActive(); return result }, (cause: unknown) => {
+        ownerActive(); throw cause
+      }), signal,
+      cause => sourceFailure !== undefined && cause === sourceFailure.cause || knownConversionFailure(cause))
+    }
+  }
+  let value: OfficeToPdf
+  try { value = new AccountOffice(ctx, config) }
+  catch (cause) {
+    void Promise.resolve(removeObserver()).catch((failure: unknown) => { work.cleanupFailed(failure) })
+    throw cause
+  }
+  ctx.effect(() => () => { work.ownerUnloaded() }, 'pe-cloud-api: Office owner withdrawal')
   const registrations = new Map<string, { value: object; fiber: Fiber }>()
   const scan = (): void => {
     let remaining = maximum
@@ -81,7 +148,8 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
       || original(ctx.root.get('workspaceFiles')) !== original(files)) unavailable()
     scan()
   }
-  return { value, assertCurrent, inspect(): ExposureInventory {
+  checkConversion = assertCurrent
+  return { value, assertCurrent, stop: deadline => work.stop(deadline), isIdle: () => work.isIdle(), inspect(): ExposureInventory {
     assertCurrent()
     const remote = value.typertRemote, markers = remoteMethods(value)
     if (remote.service !== value || remote.serviceKey !== 'officeToPdf' || remote.namespace !== 'officeToPdf'

@@ -5654,7 +5654,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountApiPreparation',
-    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n}',
+    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n    readonly retainOfficeLifecycle?: (lifecycle: AccountOfficeLifecycle) => void;\n}',
   },
   {
     name: 'AccountAttachmentBackend',
@@ -5699,6 +5699,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountLinks',
     declaration: 'export interface AccountLinks {\n    readonly usageUrl: string;\n    readonly topUpUrl: string;\n}',
+  },
+  {
+    name: 'AccountOfficeLifecycle',
+    declaration: 'export interface AccountOfficeLifecycle {\n    install(owner: Context, config: NativeOfficeConfig): void;\n    stop(deadlineAtMs: number): Promise<void>;\n    isIdle(): boolean;\n}',
   },
   {
     name: 'AccountPluginControl',

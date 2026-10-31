@@ -12,7 +12,8 @@ import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/typ
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
   type ExposureService, type ExactFetchExposure, type CloudModelKeyPreparation,
-  type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation } from '@deepseek-ai/dsh-pe-cloud-api'
+  type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation,
+  type AccountOfficeLifecycle } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -148,6 +149,7 @@ export class AccountNativeIntegration {
   private persistence: Context['sessionPersistence'] | undefined
   private nativeDrain: Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined
   private skills: CloudSkillService | undefined
+  private office: AccountOfficeLifecycle | undefined
 
   /**
    * @param input Actual Root resources; storage approval is independently required before production boot.
@@ -196,6 +198,10 @@ export class AccountNativeIntegration {
       assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
+      retainOfficeLifecycle: (office) => {
+        if (this.office !== undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Office lifecycle is already retained')
+        this.office = office
+      },
       ...this.input.inspectRootFetch === undefined ? {} : { inspectRootFetch: this.input.inspectRootFetch },
       assertUnpublished: unpublished,
       ...assertReconfiguring === undefined ? {} : { assertReconfiguring },
@@ -597,8 +603,9 @@ export class AccountNativeIntegration {
       },
       [ACCOUNT_NATIVE_ENTRIES.officeToPdf]: {
         inject: ['peCloudApi', 'workspaceFiles', 'fs', 'typert'], Config: OfficeToPdf.Config,
-        apply(owner: Context, nativeConfig: ConstructorParameters<typeof OfficeToPdf>[1]) {
-          api.createOfficeToPdf(owner, nativeConfig)
+        apply: (owner: Context, nativeConfig: ConstructorParameters<typeof OfficeToPdf>[1]) => {
+          if (this.office === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Office lifecycle is unavailable')
+          this.office.install(owner, nativeConfig)
         },
       },
       ...attachments === undefined || attachmentLimits === undefined ? {} : {
@@ -740,10 +747,11 @@ export class AccountNativeIntegration {
    * @returns True only for the live original owners with no actual work or unknown save outcome.
    */
   isQuiescent(): boolean {
-    if (this.stopping !== undefined || this.api === undefined || this.loop === undefined || this.persistence === undefined
+    if (this.stopping !== undefined || this.api === undefined || this.office === undefined
+      || this.loop === undefined || this.persistence === undefined
       || this.loopFiber?.state !== FiberState.ACTIVE || this.bootstrapping === undefined) return false
     const saves = this.api.inspectConfigurationSaves()
-    return saves.admission !== 'stopped' && saves.pending.length === 0 && saves.failures.length === 0
+    return saves.admission !== 'stopped' && saves.pending.length === 0 && saves.failures.length === 0 && this.office.isIdle()
       && this.loop.isQuiescent(this.input.maxNativeInventoryEntries)
       && this.persistence.isQuiescent(this.input.maxNativeInventoryEntries)
   }
@@ -805,7 +813,10 @@ export class AccountNativeIntegration {
         // The original audit may still own a native metadata read; joining is not a successful audit.
         try { await this.bootstrapping } catch (_cause) { /* factory retains the original assembly failure */ }
         await this.api?.stopFirstScreenEvents()
-        await this.api?.stopOffice()
+        if (this.api !== undefined && this.office === undefined) {
+          throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Office lifecycle is unavailable')
+        }
+        await this.office?.stop(Date.now() + this.input.stopTimeoutMs)
         await this.loop?.stop()
         if (this.agents !== undefined && this.agents.list().length !== 0) {
           throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Native Agent lifecycle work has not settled')

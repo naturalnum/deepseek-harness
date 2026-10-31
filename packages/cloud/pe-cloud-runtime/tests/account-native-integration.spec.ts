@@ -330,9 +330,11 @@ async function fixture(options: {
   }
   let context: Context | undefined
   let componentNative: NativeAccountBootHandle | undefined, integration: AccountNativeIntegration | undefined
+  let expectedOfficeUnconfirmed = false
   cleanups.push(async () => {
     try {
-      await integration?.stop()
+      if (expectedOfficeUnconfirmed) await expect(integration?.stop()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+      else await integration?.stop()
       await componentNative?.dispose()
       await factory.close()
       await context?.fiber.dispose()
@@ -372,6 +374,7 @@ async function fixture(options: {
     return outcome
   }
   return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime,
+    expectOfficeUnconfirmed: () => { expectedOfficeUnconfirmed = true },
     finishBootstrap: () => {
       if (integration === undefined) throw new Error('The original native component integration is absent')
       return integration.finishBootstrap()
@@ -1135,6 +1138,7 @@ it('retains the original account Session file authority for the native Office Re
   expect(fibers).toHaveLength(1)
   const provider = fibers[0]
   if (provider === undefined) throw new Error('Original Office provider absent')
+  f.expectOfficeUnconfirmed()
   await provider.dispose()
   expect(() => ctx.peCloudApi.requireRpc('officeToPdf/render')).toThrow()
 })
@@ -1163,6 +1167,7 @@ it('rejects unselected Office calls before reading the original project', async 
   expect(fibers).toHaveLength(1)
   const owner = fibers[0]
   if (owner === undefined) throw new Error('Original WorkspaceFiles fiber absent')
+  f.expectOfficeUnconfirmed()
   await owner.dispose()
   const metadata = vi.spyOn(ctx.sessionPersistence, 'stat')
   await expect(resolver.resolve(created.sessionId)).rejects.toBeInstanceOf(Error)
@@ -1173,12 +1178,16 @@ it('retains the factory account slot if the original Office owner cannot confirm
   const f = await fixture({ nativeFiles: true, installFileApi: true, office: true })
   const outcome = await f.start()
   if (outcome.status === 'failed') throw outcome.cause
-  const ctx = outcome.context, original: unknown = Reflect.get(ctx.officeToPdf, symbols.original) ?? ctx.officeToPdf
-  if (original === null || typeof original !== 'object' || !('closeAndConfirm' in original)) throw new Error('Office owner absent')
-  const office = ctx.officeToPdf, failure = new Error('Unconfirmed original scratch')
-  const stop = vi.spyOn(office, 'closeAndConfirm').mockRejectedValueOnce(failure)
-  await expect(f.factory.stopNative(outcome.binding.accountId)).resolves.toMatchObject({ status: 'unknown', cause: failure })
-  expect(stop).toHaveBeenCalledOnce()
+  const ctx = outcome.context, failure = new Error('Unconfirmed original scratch')
+  const fibers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
+    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.officeToPdf?.fiber === fiber)
+  expect(fibers).toHaveLength(1)
+  const provider = fibers[0]
+  if (provider === undefined) throw new Error('Original Office provider absent')
+  const disposed = vi.fn(async () => { throw failure })
+  provider.ctx.effect(() => disposed, 'test: original Office cleanup failure')
+  await expect(f.factory.stopNative(outcome.binding.accountId)).resolves.toMatchObject({ status: 'unknown' })
+  expect(disposed).toHaveBeenCalledOnce()
   expect(f.factory.inspect()).toMatchObject({ slots: 1, unknown: 1 })
   expect(ctx.fiber.state).toBe(FiberState.ACTIVE)
 })

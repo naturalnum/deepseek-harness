@@ -162,7 +162,7 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 | [expectation.ts](src/expectation.ts)、[generations.ts](src/generations.ts) | 原始出现值及有界 runtime 绑定 token。 |
 | [body-stream.ts](src/body-stream.ts)、[stream-capacity.ts](src/stream-capacity.ts) | 实际取消及原生流预留。 |
 
-批准配置的交接消费原 invocation Peer 及其实际持有的 AccountUse。本地操作在释放该 Use 前拒绝并行的非观察 carrier；原 registry 等待纯观察 Peer 结束，并且仅在同一原 root/epoch 恢复业务就绪后重新借用 Use。终止接收持有发起 carrier 的实际结算，完整 Peer 关闭在其 RPC 可以返回后才开始。该交接不证明 runtime idle，也不持有配置持久化。 观察 Peer 与发起者 mux 的关闭共用有限 `peerCloseTimeoutMs` 预算。到期返回 `cloud/stop-unconfirmed`，并永久撤销本次交接的写入/恢复检查资格；迟到清理仍由原 Entry/mux 持有，不伪造 Use 释放，也不延后继续写配置。
+批准配置的交接消费原 invocation Peer 及其实际持有的 AccountUse。本地操作在释放该 Use 前拒绝并行的非观察 carrier；原 registry 等待纯观察 Peer 结束，并且仅在同一原 root/epoch 恢复业务就绪后重新借用 Use。终止接收持有发起 carrier 的实际结算，包括响应传输及 AccountUse 释放，再进行完整 Peer 关闭。ingress 结算缺失或未确认时，不得授权终止交接。该交接不证明 runtime idle，也不持有配置持久化。 观察 Peer 与发起者 mux 的关闭共用有限 `peerCloseTimeoutMs` 预算。到期返回 `cloud/stop-unconfirmed`，并永久撤销本次交接的写入/恢复检查资格；迟到清理仍由原 Entry/mux 持有，不伪造 Use 释放，也不延后继续写配置。
 
 原 HTTP ingress 独立持有账户引用，直至准确且已认证的配置 Peer 接纳本地交接。仅服务器可访问的回调只释放当前请求自己的引用；原 Peer 任务及工厂操作继续保留实际工作，覆盖响应传输、取消和迟到完成。交接后的检查仍要求同一绑定处于业务可用状态。Peer busy 拒绝保留原 code 和 message，可在 `details.peerWork` 中附带当前账户相关 Peer 的计数：未就绪、准备中、认证复查中、清理异常、存在业务流或其他任务。每项计数均受原每账户 Peer 上限约束，不包含身份或请求正文。
 

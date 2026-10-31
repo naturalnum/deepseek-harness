@@ -46,7 +46,7 @@ kind: "package-reference"
 
 `CloudAccountApi.prepareCloudProjects(owner, { createProject })` 在清单审核前安装唯一、增量的 `cloudProjects/create` Remote。请求只有可选显示标题；显式空白或超过 256 UTF-8 字节的标题在分配前拒绝。可信回调捕获账户能力，经 files 分配并返回原生 `WorkspaceValue`。原生 `workspace/create(path)` 保留既有目录登记与幂等含义。取消仍等待实际回调结算，不承诺回滚；未知结果不得重放。精确开放行为 `cloudProjects/create`、`native:cloudProjects`、`authenticated-account`。
 
-`CloudAccountApi.createOfficeToPdf(owner, nativeConfig)` 可选地在同一账户 graph 中安装原生 Office-to-PDF provider。有界清单检查唯一的原生渲染器、账户文件系统和 WorkspaceFiles 注册；manifest 对 `officeToPdf/render` 选择 Session 准入，对 `officeToPdf/generation` 选择已认证账户准入。原生转换器继续负责授权、版本复核、取消和销毁。部署必须提供匹配的 Linux 引擎和字体，并将 Office 输入上限设置在云文件系统实际读取上限以内。
+可信账户装配可在 API 构造时保留私有 Office 生命周期能力。它安装原生 Office-to-PDF provider，并通过云端 `convert` 适配器接线，保留两个原生 Remote 方法、授权和版本复核。有界清单检查唯一的渲染器、账户文件系统和 WorkspaceFiles 注册；manifest 对 `officeToPdf/render` 选择 Session 准入，对 `officeToPdf/generation` 选择已认证账户准入。调用方取消只结束自身观察：适配器继续持有原生 reader，直至转换及临时目录清理结算，并继续占用原 reader 容量。清理结果未知时关闭转换准入并保留责任。部署必须提供匹配的引擎和字体，并将 Office 输入保持在云文件系统实际读取上限以内。
 
 `CloudAccountApi.createWorkspaceFiles(owner, nativeConfig)` 在完整原生 inject 依赖就绪后，于实际 Loader fiber 构造唯一原生 WorkspaceFiles。它捕获原绑定及 fs、sandboxPolicy、sessions、typert 注册，并在清单审核及 workspaceFiles RPC/stream 准入时复核 value、fiber 和唯一性。清单由全部原生 Remote marker 及其 mode 推导，开放范围仍由 manifest 精确选择。原生类、DTO、lookup、文件 I/O 和流清理保持原义。部署必须保留要求可信 Agent 或原 Gateway invocation 的 Runtime resolver；本注册不授予路径权限，也不新增 watch 支持。
 
@@ -62,7 +62,7 @@ kind: "package-reference"
 
 按[运行时 debug 观测约定](../pe-cloud-runtime/README.zh.md#understand-the-implementation)，原生 `session/follow` 仅在原守卫通过后、yield 前记录实际 opening snapshot。该元数据不证明浏览器已收到或呈现；取消和清理仍由原迭代器负责。
 
-根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt 和 fork 等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
+根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt、fork 和队列更新等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
 
 私有[账户暴露视图](src/account-exposure.ts) 从根的冻结 manifest 中选择同配方子集。RPC 与流类别、Fetch 方法/路径、handler、guard 和 settings 字段必须对应根的精确声明。每图拥有自己的 inventory 审核和销毁失效；A 的审核或失效不改变 B 或根。审核及操作准入核验实际安装的精确 AccountBinding 与可信 graph/mount-current 回调，允许在 ready 前受限挂载时审核，拒绝过期或关闭的图。现有 ExposurePolicy 消费者可直接接收该视图，不增加 Loader 服务或全局账户注册表。
 
