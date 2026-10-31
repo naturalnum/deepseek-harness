@@ -86,7 +86,7 @@ static napi_value project_skill_version(napi_env env, napi_callback_info info) {
   memset(frame,0,192); memcpy(frame,"DSP1",4); frame[4]=1;
   uint64_t device=0,inode=0,mount=0,metadata_device=0,metadata_inode=0,metadata_mount=0,start=0,expected_copy=0;
   uint32_t uid=0,gid=0,maximum=0,max_file=0,timeout=0,max_path=0,count=0;
-  int error=EINVAL,close_failed=0,changed=0,metadata=-1,skills=-1,version=-1,named=-1,reused=0;
+  int error=EINVAL,close_failed=0,changed=0,unknown=0,metadata=-1,skills=-1,version=-1,named=-1,reused=0;
   unsigned flags=0;
   char *path=NULL,*id=NULL; char temporary[48];
   struct stat root,meta,container,created,observed; struct statfs filesystem;
@@ -140,7 +140,7 @@ static napi_value project_skill_version(napi_env env, napi_callback_info info) {
   if (!reused && count>=maximum) { error=EFBIG; goto finished; }
   error=content_running(cancel_data,start+(uint64_t)timeout*1000000ULL); if (error) goto finished;
   if (skills<0) {
-    if (mkdirat(metadata,"skills",0700)) { error=errno; goto finished; } changed=1;
+    if (mkdirat(metadata,"skills",0700)) { error=errno; unknown=!definite_no_create(error); goto finished; } changed=1;
     skills=skill_open(metadata,"skills",O_RDONLY | O_DIRECTORY); if (skills<0) { error=errno; goto finished; }
   }
   error=project_skill_directory(skills,uid,gid,(dev_t)device,mount,&container); if (error) goto finished;
@@ -148,7 +148,7 @@ static napi_value project_skill_version(napi_env env, napi_callback_info info) {
   put64(frame+80,device); put64(frame+88,(uint64_t)container.st_ino); put64(frame+96,mount);
   if (!reused) {
     snprintf(temporary,sizeof(temporary),".pending-%s",id);
-    if (mkdirat(skills,temporary,0700)) { error=errno; goto finished; } changed=1;
+    if (mkdirat(skills,temporary,0700)) { error=errno; unknown=!definite_no_create(error); goto finished; } changed=1;
     version=skill_open(skills,temporary,O_RDONLY | O_DIRECTORY); if (version<0) { error=errno; goto finished; }
     error=project_skill_write(version,"SKILL.md",body,body_length,&close_failed); if (error || close_failed) goto finished;
     error=project_skill_write(version,"resource.bin",resource,resource_length,&close_failed); if (error || close_failed) goto finished;
@@ -195,7 +195,7 @@ finished:
   if (retire_close(&owned->anchor)) close_failed=1;
   owned->mount_id=0; free(path); free(id);
   if (close_failed) { if (!error) error=EIO; } else flags|=1;
-  frame[5]=error ? (changed || close_failed || (flags & 32) ? 3 : 2) : 1;
+  frame[5]=error ? (unknown || changed || close_failed || (flags & 32) ? 3 : 2) : 1;
   frame[6]=(unsigned char)flags; put32(frame+8,(uint32_t)error);
   return array;
 }

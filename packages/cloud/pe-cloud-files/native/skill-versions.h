@@ -130,7 +130,7 @@ static napi_value prepare_skill_version(napi_env env, napi_callback_info info) {
   memset(frame,0,128); memcpy(frame,"DSV1",4); frame[4]=1;
   uint64_t device=0,inode=0,mount=0,versions=0,total=0,start=0;
   uint32_t uid=0,gid=0,max_versions=0,max_bytes=0,max_inodes=0,max_file=0,timeout=0,max_path=0;
-  int error=EINVAL,close_failed=0,changed=0,skills=-1,version=-1,named=-1;
+  int error=EINVAL,close_failed=0,changed=0,unknown=0,skills=-1,version=-1,named=-1;
   unsigned flags=0;
   char *path=NULL,*id=NULL;
   char temporary[48];
@@ -184,7 +184,7 @@ static napi_value prepare_skill_version(napi_env env, napi_callback_info info) {
   /* Logical bounds above precede every directory/file mutation. Physical ext4 enforces other private writers. */
   error=content_running(cancel_data,start+(uint64_t)timeout*1000000ULL); if (error) goto finished;
   if (skills<0) {
-    if (mkdirat(owned->anchor,"skills",0700)) { error=errno; goto finished; }
+    if (mkdirat(owned->anchor,"skills",0700)) { error=errno; unknown=!definite_no_create(error); goto finished; }
     changed=1; flags|=SV_CONTAINER;
     skills=skill_open(owned->anchor,"skills",O_RDONLY | O_DIRECTORY);
     if (skills<0) { error=errno; goto finished; }
@@ -195,7 +195,7 @@ static napi_value prepare_skill_version(napi_env env, napi_callback_info info) {
     || (container.st_mode & 07777)!=0700) { error=EPERM; goto finished; }
   error=mount_identity(skills,mount); if (error) goto finished;
   snprintf(temporary,sizeof(temporary),".pending-%s",id);
-  if (mkdirat(skills,temporary,0700)) { error=errno; goto finished; }
+  if (mkdirat(skills,temporary,0700)) { error=errno; unknown=!definite_no_create(error); goto finished; }
   changed=1; flags|=SV_CREATED;
   version=skill_open(skills,temporary,O_RDONLY | O_DIRECTORY);
   if (version<0) { error=errno; goto finished; }
@@ -236,7 +236,7 @@ finished:
   free(path); free(id);
   if (close_failed) { if (!error) error=EIO; }
   else flags|=SV_CLOSED;
-  frame[5]=error ? (changed || close_failed ? 3 : 2) : 1;
+  frame[5]=error ? (unknown || changed || close_failed ? 3 : 2) : 1;
   frame[6]=(unsigned char)flags; put32(frame+8,(uint32_t)error);
   return array;
 }

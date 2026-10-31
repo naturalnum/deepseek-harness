@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -29,7 +30,30 @@ static long after_creation(long fd) {
   return fd;
 }
 
-#ifdef DSH_REVIEW_TEXT
+#ifdef DSH_REVIEW_SKILL
+#include <linux/magic.h>
+#include <sys/vfs.h>
+
+/* Qualification is explicitly emulated; this fixture makes no ext4/isolation claim. */
+static int review_fstatfs(int fd, struct statfs *facts) {
+  int result = fstatfs(fd, facts);
+  if (!result) facts->f_type = EXT4_SUPER_MAGIC;
+  return result;
+}
+
+static int review_mkdirat(int directory, const char *name, mode_t permissions) {
+  const char *target = getenv("DSH_FILES_CREATE_TARGET");
+  int inject = target && (!strcmp(target, "container") ? !strcmp(name, "skills") : !strncmp(name, ".pending-", 9));
+  if (inject && denied()) { errno = EACCES; return -1; }
+  int result = mkdirat(directory, name, permissions);
+  const char *mode = getenv("DSH_FILES_CREATE_FAILURE");
+  if (!result && inject && mode && !strcmp(mode, "after-effect")) { errno = EIO; return -1; }
+  return result;
+}
+#define fstatfs review_fstatfs
+#define mkdirat review_mkdirat
+#include "../../native/fd.c"
+#elif defined(DSH_REVIEW_TEXT)
 static int review_openat(int directory, const char *name, int flags, ...) {
   mode_t mode = 0;
   if (flags & O_CREAT) {

@@ -169,7 +169,7 @@ static napi_value skill_bundle_operation(napi_env env, napi_callback_info info) 
   uint64_t device=0,inode=0,mount=0,metadata_inode=0,expected_copy=0,start=0;
   uint32_t uid=0,gid=0,op=0,max_versions=0,max_bytes=0,max_inodes=0,max_file=0,max_entries=0,max_depth=0,max_path=0,
     max_catalog=0,timeout=0,files=0,dirs=0,keeps=0,versions=0,removed=0;
-  int error=EINVAL,changed=0,close_failed=0,skills=-1,metadata=-1,version=-1,named=-1,pointer=-1;
+  int error=EINVAL,changed=0,close_failed=0,unknown=0,skills=-1,metadata=-1,version=-1,named=-1,pointer=-1;
   unsigned flags=0; char *path=NULL,*id=NULL,*revision=NULL,temporary[48];
   bundle_member *members=NULL; char **directories=NULL,**retained=NULL;
   struct stat root,meta,container,created,observed; struct statfs filesystem;
@@ -302,12 +302,12 @@ static napi_value skill_bundle_operation(napi_env env, napi_callback_info info) 
       if (versions>=max_versions || scan.bytes+plan_bytes>max_bytes || scan.inodes+1+(uint64_t)files+dirs>max_inodes) { error=EFBIG; goto finished; }
       error=content_running(cancel,start+(uint64_t)timeout*1000000ULL); if (error) goto finished;
       if (skills<0) {
-        if (mkdirat(parent,"skills",0700)) { error=errno; goto finished; } changed=1;
+        if (mkdirat(parent,"skills",0700)) { error=errno; unknown=!definite_no_create(error); goto finished; } changed=1;
         skills=skill_open(parent,"skills",O_RDONLY | O_DIRECTORY); if (skills<0) { error=errno; goto finished; }
         if (fstat(skills,&container)) { error=errno; goto finished; }
       }
       snprintf(temporary,sizeof(temporary),".pending-%s",id);
-      if (mkdirat(skills,temporary,0700)) { error=errno; goto finished; } changed=1;
+      if (mkdirat(skills,temporary,0700)) { error=errno; unknown=!definite_no_create(error); goto finished; } changed=1;
       version=skill_open(skills,temporary,O_RDONLY | O_DIRECTORY); if (version<0) { error=errno; goto finished; }
       if (fstat(version,&created)) { error=errno; goto finished; }
       for (uint32_t i=0;i<dirs;i++) {
@@ -375,6 +375,6 @@ finished:
   if (retained) for (uint32_t i=0;i<keeps;i++) free(retained[i]);
   free(members); free(directories); free(retained); free(path); free(id); free(revision);
   if (close_failed) { if (!error) error=EIO; } else flags|=1;
-  frame[5]=error ? (changed || close_failed ? 3 : 2) : 1; frame[6]=(unsigned char)flags; put32(frame+8,(uint32_t)error);
+  frame[5]=error ? (unknown || changed || close_failed ? 3 : 2) : 1; frame[6]=(unsigned char)flags; put32(frame+8,(uint32_t)error);
   return array;
 }
