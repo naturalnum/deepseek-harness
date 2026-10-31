@@ -1107,11 +1107,11 @@ it('starts an entry whose missing dependency was installed after startup', async
   expect(f.trace).toEqual(['start:late'])
 })
 
-it('imports a failing replacement with a new configuration once', async () => {
+it.each([undefined, 'fast'])('imports a failing replacement once with mode %s', async (mode) => {
   const f = await fixture()
   const error = vi.spyOn(f.ctx.logger, 'error').mockImplementation(() => {})
   onTestFinished(() => { error.mockRestore() })
-  addon(f.dir, '2', plugin('2', 'missing-lib'), 'fast')
+  addon(f.dir, '2', plugin('2', 'missing-lib'), mode)
   await expect(f.reconcile()).rejects.toThrow('missing-lib')
   expect(error.mock.calls.filter(([value]) => String(value).includes('missing-lib'))).toHaveLength(1)
 })

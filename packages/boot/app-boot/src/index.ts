@@ -292,7 +292,8 @@ export interface ProfileRecomposition {
  * longer lists are removed first and their disposal finishes while their packages are still mapped; the latest
  * generation of an installed, recomputable resolution is published; the compatibility preflight reads the published
  * packages; the generation is applied to the root Include; entries that ran, and enabled entries whose import failed,
- * start afterwards when the update left them without a running fiber; and activation is judged. A failure before the generation applies,
+ * start afterwards only when the update did not touch them and left them without a running fiber; activation is judged.
+ * A failure before the generation applies,
  * including a publication the resolution rejects, which reports `package-moved`, puts the removed rows back at their
  * places, starting them again, and starts the entries that ran again. An entry waiting for a service is reported as a
  * warning unless it is required. Patches are copied with `structuredClone`, so they hold no functions.
@@ -391,12 +392,14 @@ async function recompose(
     const prepared = prepareProfilePatches(ctx, patches, parentURL, binName, base)
     applying = true
     const retried = [...new Set([...running, ...withResolution ? [...ctx.loader.entries()].filter(importFailed) : []])]
+      .map(entry => ({ entry, options: entry.options }))
     const updateGroup = entry.subtree.root
     try {
       await entry.update({ config: { ...includeConfig, patches: prepared } })
       await updateGroup.awaitUpdate()
     } finally {
-      await resume(ctx, retried)
+      // Updated rows own their activation result; only untouched entries still need resuming.
+      await resume(ctx, retried.filter(row => row.entry.options === row.options).map(row => row.entry))
     }
     const results = await Promise.allSettled(previousFibers.map(({ fiber }) => fiber.await()))
     await ctx.loader.await()

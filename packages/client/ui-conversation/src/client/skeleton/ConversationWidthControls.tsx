@@ -120,30 +120,34 @@ function WidthHandle(props: {
 
 /**
  * Install the main Conversation width axis and render its drag handles.
+ * Resize measures geometry using the last saved width; only mount and gestures read persistence.
  * @param props - Mounted Conversation body and current presentation phase.
  * @returns two active-phase width handles, or no controls outside the active phase.
  */
 export function ConversationWidthControls({ container, phase, readContentWidth, writeContentWidth }: ConversationWidthControlsProps) {
+  const savedWidth = useRef<number | null>(null)
   const publishWidths = useCallback((container: HTMLDivElement): void => {
     const target = container.parentElement ?? container
     const column = container.offsetWidth
     target.style.setProperty('--dsh-conversation-column-width', `${column}px`)
-    const preference = readContentWidth()
+    const preference = savedWidth.current
     if (preference === null) target.style.removeProperty('--dsh-chat-user-width')
     else target.style.setProperty('--dsh-chat-user-width', `${resolveContentWidth(column, preference)}px`)
-  }, [readContentWidth])
+  }, [])
 
   useLayoutEffect(() => {
     if (container === null) return
+    savedWidth.current = readContentWidth()
     const observer = new ResizeObserver(() => { publishWidths(container) })
     observer.observe(container)
     publishWidths(container)
     return () => { observer.disconnect() }
-  }, [container, publishWidths])
+  }, [container, publishWidths, readContentWidth])
 
   const onStart = useCallback((): number => {
     if (container === null) return 680
-    return resolveContentWidth(container.offsetWidth, readContentWidth())
+    savedWidth.current = readContentWidth()
+    return resolveContentWidth(container.offsetWidth, savedWidth.current)
   }, [container, readContentWidth])
   const onDrag = useCallback((width: number): void => {
     if (container === null) return
@@ -152,7 +156,9 @@ export function ConversationWidthControls({ container, phase, readContentWidth, 
   }, [container])
   const onCommit = useCallback((width: number): void => {
     if (container === null) return
-    writeContentWidth(resolveContentWidth(container.offsetWidth, width))
+    const saved = resolveContentWidth(container.offsetWidth, width)
+    writeContentWidth(saved)
+    savedWidth.current = saved
   }, [container, writeContentWidth])
   const onEnd = useCallback((): void => {
     if (container !== null) publishWidths(container)

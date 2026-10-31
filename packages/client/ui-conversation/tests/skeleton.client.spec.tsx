@@ -739,6 +739,30 @@ describe('ConversationRoot resident composer', () => {
     expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
   })
 
+  it('keeps resize geometry independent of a revoked persistence port', () => {
+    const key = 'dsh.conversation.contentWidth'
+    localStorage.setItem(key, '970')
+    const b = mount(sessionSnapshotOf())
+    const content = b.view.container.querySelector('[data-conversation-content]') as HTMLElement
+    const root = content.parentElement as HTMLElement
+    Object.defineProperty(content, 'offsetWidth', { value: 1200, configurable: true })
+    const getItem = Storage.prototype.getItem
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+      if (key === 'dsh.conversation.contentWidth') throw new Error('persistence revoked')
+      return getItem.call(this, key)
+    })
+    try {
+      expect(() => { act(() => { fireResize(content) }) }).not.toThrow()
+      expect(root.style.getPropertyValue('--dsh-conversation-column-width')).toBe('1200px')
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('970px')
+      expect(read).not.toHaveBeenCalled()
+      b.view.unmount()
+      expect(resizeObservers.every(entry => !entry.targets.includes(content))).toBe(true)
+    } finally {
+      read.mockRestore()
+    }
+  })
+
   it('drag → persist → window clamp round-trip on a width handle', () => {
     const b = mount(sessionSnapshotOf())
     const content = b.view.container.querySelector('[data-conversation-content]') as HTMLElement
