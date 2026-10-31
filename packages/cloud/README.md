@@ -38,6 +38,7 @@ The package references own configuration and activation requirements.
 ## Related documentation
 
 - [Cloud account reference](../../docs/subsystems/cloud.md) — shared account identities and lifecycle obligations.
+- [Native integration maintenance](native-patches.md) — patch ownership and upstream upgrade procedure.
 - [Native API packages](../api/README.md) — the controllers and transports used by cloud adapters.
 
 <a id="dev-note"></a>

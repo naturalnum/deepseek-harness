@@ -149,7 +149,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 ### Helper 行为
 
-可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为不可变原生条目列表并沿用原 Include patch 合成的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。Host helper 为 `Loader.withUpdateGuard(guard, operation, scope)` 提供新建的 Node `AsyncLocalStorage`，作为类型化的 `LoaderUpdateScope` 能力，并在 operation 实际结算后禁用它。通用 Loader 不导入 Node 异步作用域，普通浏览器更新不创建该能力；guarded 调用缺少显式作用域时拒绝。异步后代跨 await 保留 guard，并发未绑定变更与嵌套预留均被拒绝。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
+可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为不可变原生条目列表并沿用原 Include patch 合成的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。每个不透明计划私有持有自己的准备状态；复制公开字段不会保留计划身份。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。Host helper 为 `Loader.withUpdateGuard(guard, operation, scope)` 提供新建的 Node `AsyncLocalStorage`，作为类型化的 `LoaderUpdateScope` 能力，并在 operation 实际结算后禁用它。通用 Loader 不导入 Node 异步作用域，普通浏览器更新不创建该能力；guarded 调用缺少显式作用域时拒绝。异步后代跨 await 保留 guard，并发未绑定变更与嵌套预留均被拒绝。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
 
 `loadProfileDirectory` 接受显式 bundle 选择预览及禁止旧 bundle 清理写入的 `readOnly` 选项。`readProfilePatches` 使用只读 bundle 检查。`prepareProfileSelectionUpdate` 使用原组合器：默认模式将一个已存在叶子的变化交给有限原生计划器；显式 restart 模式捕获完整有限组合、在持久化前重读拟议层，并拒绝局部应用，由新的正常启动负责激活。
 

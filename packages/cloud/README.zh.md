@@ -38,6 +38,7 @@ kind: "package-group"
 ## 相关文档
 
 - [云端账户参考](../../docs/subsystems/cloud.zh.md) — 共享账户身份和生命周期要求。
+- [原生集成维护](native-patches.md)——补丁归属与上游升级步骤。
 - [原生 API 包](../api/README.zh.md) — 云端适配复用的控制器及传输。
 
 <a id="dev-note"></a>

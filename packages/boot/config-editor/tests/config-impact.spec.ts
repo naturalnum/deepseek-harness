@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import type { ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
+import { assertProfileConfigUpdate } from '@deepseek-ai/dsh-app-boot'
 import type { LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { configurationFixture } from '../../../settings/settings/tests/configuration-fixture.ts'
@@ -62,6 +63,21 @@ it('rejects ordinary config before any replacement, option mutation or fiber sto
   expect(entry.options).toEqual(options)
   expect(entry.fiber).toBe(fiber)
   expect(dispose).not.toHaveBeenCalled()
+})
+
+it('keeps preparation private and rejects copied or proxied profile decisions before a real save', async () => {
+  const { ctx, profile } = await configurationFixture({ hmr: false })
+  const fiber = first(ctx).fiber
+  onTestFinished(ctx.configEditor.registerImpactGuard({ check(plan) {
+    expect(Object.isFrozen(plan)).toBe(true)
+    expect(Reflect.ownKeys(plan).sort()).toEqual(['entries', 'impact'])
+    expect(() => { assertProfileConfigUpdate({ ...plan }) }).toThrow('unproven')
+    expect(() => { assertProfileConfigUpdate(new Proxy(plan, {})) }).toThrow('unproven')
+    assertProfileConfigUpdate(plan)
+  } }))
+  await ctx.settings.update('first', { count: 5 })
+  expect(first(ctx).fiber).toBe(fiber)
+  expect(readFileSync(profile.patchPath, 'utf8')).toContain('count: 5')
 })
 
 it('refuses potential effective ordinary drift without executing the extra resolver', async () => {

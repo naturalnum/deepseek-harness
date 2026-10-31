@@ -46,7 +46,25 @@ interface PlanState {
   profile: ProfileContext
 }
 
-const states = new WeakMap<ProfileConfigUpdatePlan, PlanState>()
+/** Own one opaque preparation; copying public decisions does not copy its identity. */
+class NativeProfilePlan implements ProfileConfigUpdatePlan {
+  readonly entries: ProfileConfigUpdatePlan['entries']
+  readonly impact: ProfileConfigUpdatePlan['impact']
+  declare readonly restart?: NonNullable<ProfileConfigUpdatePlan['restart']>
+  readonly #state: PlanState
+
+  constructor(fields: ProfileConfigUpdatePlan, state: PlanState) {
+    this.entries = fields.entries
+    this.impact = fields.impact
+    if (fields.restart !== undefined) this.restart = fields.restart
+    this.#state = state
+    Object.freeze(this)
+  }
+
+  static stateOf(plan: ProfileConfigUpdatePlan): PlanState | undefined {
+    return #state in plan ? plan.#state : undefined
+  }
+}
 
 /** Read the effective rows with the original registered Include base and its normal patch preparation.
  * @param ctx Original root or a consumer of that root.
@@ -94,7 +112,7 @@ export async function prepareProfilePluginUpdate(
 ): Promise<ProfileConfigUpdatePlan> {
   const plan = prepareProfileUpdate(ctx, target, before, after, maximum)
   if (target.fiber !== undefined || target.moduleNamespace !== undefined) return plan
-  const state = states.get(plan), next = state?.rows.find(row => row.id === target.options.id)
+  const state = NativeProfilePlan.stateOf(plan), next = state?.rows.find(row => row.id === target.options.id)
   if (next === undefined) throw new Error('Profile plugin target is unavailable')
   const cold = await target.prepareModuleOptionsUpdate(next, maximum)
   return prepareProfileUpdate(ctx, target, before, after, maximum, cold)
@@ -140,13 +158,12 @@ function prepareProfileRestartUpdate(ctx: Context, before: PatchOptions[], after
       || new Set(entries.map(row => row.id)).size !== entries.length) throw new Error('Profile restart composition is unproven')
   }
   const includeConfig = root.options.config as Include.Config
-  const plan: ProfileConfigUpdatePlan = Object.freeze({ entries: Object.freeze([]), impact: 'graph',
-    restart: Object.freeze({ before: structuredClone(previous), after: structuredClone(rows), baseUrl: include.ctx.baseUrl, entryPrefix: root.id + ':', active: structuredClone(include.root.data) }) })
-  states.set(plan, { ctx: ctx.root, root, include, profile, maximum, ...inspectAfter === undefined ? {} : { inspectAfter }, rootText: readFileSync(include.filename, 'utf8'),
+  return new NativeProfilePlan({ entries: Object.freeze([]), impact: 'graph',
+    restart: Object.freeze({ before: structuredClone(previous), after: structuredClone(rows), baseUrl: include.ctx.baseUrl, entryPrefix: root.id + ':', active: structuredClone(include.root.data) }) },
+  { ctx: ctx.root, root, include, profile, maximum, ...inspectAfter === undefined ? {} : { inspectAfter }, rootText: readFileSync(include.filename, 'utf8'),
     rootOptions: structuredClone(root.options), rootFiber: root.fiber,
     before: structuredClone(before), after: structuredClone(after), rows, previousRows: structuredClone(include.root.data),
     expectedRoot: { ...root.options, config: includeConfig } })
-  return plan
 }
 
 function prepareProfileUpdate(
@@ -192,14 +209,12 @@ function prepareProfileUpdate(
   const impact = plans.some(plan => plan.impact === 'unknown') ? 'unknown'
     : plans.some(plan => plan.impact === 'remount') ? 'remount'
       : plans.some(plan => plan.impact === 'live') ? 'live' : 'none'
-  const plan: ProfileConfigUpdatePlan = Object.freeze({ entries: Object.freeze(plans), impact })
-  states.set(plan, {
+  return new NativeProfilePlan({ entries: Object.freeze(plans), impact }, {
     ctx, root, include, profile, rootText, rootOptions: structuredClone(root.options), rootFiber: root.fiber,
     ...maximum === undefined ? {} : { maximum },
     before: structuredClone(before), after: structuredClone(after), rows, previousRows: structuredClone(include.root.data),
     expectedRoot: { ...root.options, config: { ...includeConfig, patches: preparedAfter } },
   })
-  return plan
 }
 
 /**
@@ -209,7 +224,7 @@ function prepareProfileUpdate(
  * @throws If the plan, effective config, saved profile or root identity drifted.
  */
 export function assertProfileConfigUpdate(plan: ProfileConfigUpdatePlan, written = false): void {
-  const state = states.get(plan)
+  const state = NativeProfilePlan.stateOf(plan)
   if (state === undefined || (plan.restart === undefined && plan.impact !== 'live' && plan.impact !== 'none'
     && !(state.maximum !== undefined && plan.impact === 'remount'
       && plan.entries.every(entry => entry.stopped !== undefined)))) throw new Error('Profile config impact is unproven')
@@ -241,7 +256,7 @@ export function assertProfileConfigUpdate(plan: ProfileConfigUpdatePlan, written
 export async function withProfileConfigUpdate<T>(plan: ProfileConfigUpdatePlan, operation: () => Promise<T>): Promise<T> {
   assertProfileConfigUpdate(plan)
   if (plan.restart !== undefined) throw new Error('A graph restart plan cannot apply to the current Loader')
-  const state = states.get(plan)
+  const state = NativeProfilePlan.stateOf(plan)
   if (state === undefined) throw new Error('Profile config plan is unavailable')
   let started = false
   let failure: Error | undefined
