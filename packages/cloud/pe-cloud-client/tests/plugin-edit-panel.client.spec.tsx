@@ -62,6 +62,8 @@ it('shows ordinary schema and omission limits without an unset or implicit Enter
   fireEvent.keyDown(screen.getByLabelText(en.literalValue), { key: 'Enter' })
   expect(editor.submit).not.toHaveBeenCalled()
   expect(screen.queryByRole('button', { name: /reset|restore/i })).toBeNull()
+  expect(screen.queryByRole('option', { name: en.missingValue })).toBeNull()
+  expect(screen.getByLabelText(en.literalValue).tagName).toBe('TEXTAREA')
 })
 it('conceals native secret schema defaults and closes nested volatile ordinary fields', () => {
   const secret = fixture({ fields: [{ path: ['auth'], schema: { type: 'string', default: 'never-render', 'x-cordis': { role: 'secret' } },

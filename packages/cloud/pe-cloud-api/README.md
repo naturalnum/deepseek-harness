@@ -56,6 +56,8 @@ Office cleanup failures emit only a fixed internal phase and numeric provider/ro
 
 The optional `approvedConfiguration.fields` rows select exact namespace/field pairs and optional finite scalar `values`. Root requires the same complete `allowedSettings` set and one original `settings/mutate` writer. Only active native top-level scalar Settings forms are supported; missing, structured or secret leaves reject. Trusted first-screen preparation retains the original login Peer/AccountUse through the native Controller result. A mutation requires a nonnegative safe-integer `expectedRevision` and unique approved single-leaf paths; alternate methods and unknown original JSON fields reject. The existing `locale/preference` policy still requires exactly `values:["zh","en"]` and permits only one matching `set`. The original Settings, ConfigEditor and account-save barrier own persistence and live application. Pre-replacement refusals settle without containment; post-replacement unknown outcomes remain retained and trigger original account containment. `hasDocument` remains false, and omission preserves readonly behavior.
 
+Ordinary plugin-field replacement policy belongs to this package. Its internal `ordinaryConfigPolicy` reads native schema metadata without evaluating builders or validators and refuses secret, live, recursive or unresolved fields. Native Settings retains its original live-field forms and secret redaction.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

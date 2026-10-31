@@ -205,7 +205,7 @@ describe('document toolbar', () => {
     fireEvent.click(view.container.querySelector('[data-textpreview-tool="reload"]')!)
     await settle()
     expect(read).toHaveBeenCalledTimes(3)
-    expect(read).toHaveBeenLastCalledWith(FILE, expect.any(AbortSignal))
+    expect(read).toHaveBeenLastCalledWith(FILE, expect.any(AbortSignal), binary.id)
     h.controller.abort()
   })
 

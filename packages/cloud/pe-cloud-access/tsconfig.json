@@ -58,6 +58,9 @@
     },
     {
       "path": "../../session-query/session-log-export/tsconfig.host.json"
+    },
+    {
+      "path": "../../host/frontend-static"
     }
   ]
 }

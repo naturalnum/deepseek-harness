@@ -14,8 +14,6 @@ import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema
 import type { SettingsNamespace } from './types.ts'
 
 export { redactSecrets } from './redact.ts'
-export { ordinaryConfigPolicy } from './schema.ts'
-export type { OrdinaryConfigPolicy } from './schema.ts'
 export type { ConfigSchemaNode, RedactedSecret, RedactedValue } from './redact.ts'
 export type { SettingsNamespace } from './types.ts'
 

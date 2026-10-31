@@ -52,7 +52,7 @@ The [form projection](src/schema.ts) strips runtime references and ordinary fiel
 
 Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Tuple positions use the same markers as arrays; a secret dictionary key makes the dictionary opaque so its key cannot leak through a marker path. Path edits preserve fields a client did not receive.
 
-Host configuration adapters can reuse `ordinaryConfigPolicy` to classify complete-field replacements without running validators or builders. Secret or volatile ancestors and descendants are read-only for that operation; ordinary child paths and pure ordinary containers remain eligible. Lazy, custom and recursive graphs remain unproven. This helper does not widen the live-only Settings service. The shared `applyConfigPathOp` path editor preserves untouched siblings and object defaults when a parent is absent or null; ConfigEditor remains responsible for validation and persistence.
+The shared `applyConfigPathOp` path editor preserves untouched siblings and object defaults when a parent is absent or null; ConfigEditor remains responsible for validation and persistence.
 
 </details>
 

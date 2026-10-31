@@ -52,7 +52,7 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 
 秘密角色会从值、继承值、配置覆盖和 schema 默认值中脱敏；客户端收到存在标记。元组位置与数组使用相同的标记；字典键为秘密时，整个字典保持不透明，避免键通过标记路径泄露。路径编辑会保留客户端未收到的字段。
 
-Host 配置适配器可复用 `ordinaryConfigPolicy`，在不运行校验器或构造函数的情况下判断整字段替换。秘密或 volatile 祖先与子项使该操作只读；普通子路径和纯普通容器仍可编辑。lazy、自定义及递归图仍未获证明。此 helper 不扩大 Settings 服务仅限实时字段的职责。 共用的 `applyConfigPathOp` 路径编辑函数在父项缺失或为 null 时保留未改动的兄弟项及对象默认值；验证与持久化仍由 ConfigEditor 负责。
+共用的 `applyConfigPathOp` 路径编辑函数在父项缺失或为 null 时保留未改动的兄弟项及对象默认值；验证与持久化仍由 ConfigEditor 负责。
 
 </details>
 

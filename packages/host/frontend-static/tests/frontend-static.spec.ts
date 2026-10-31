@@ -30,7 +30,7 @@ afterEach(async () => {
 })
 
 /** Write a dist fixture and the authenticated Web rows, then boot them through the real Loader. */
-async function loadComposition(indexAuth?: 'public', connectionEnabled = true): Promise<Context> {
+async function loadComposition(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -50,12 +50,11 @@ async function loadComposition(indexAuth?: 'public', connectionEnabled = true): 
     '  config:',
     "    host: '127.0.0.1'",
     '    port: 0',
-    ...indexAuth === undefined && connectionEnabled ? ["- name: '@deepseek-ai/dsh-client-connection'"] : [],
+    "- name: '@deepseek-ai/dsh-client-connection'",
     '- id: frontend',
     "  name: '@deepseek-ai/dsh-host-frontend-static'",
     '  config:',
     `    distIndex: '${distIndex}'`,
-    ...indexAuth === undefined ? [] : ['    indexAuth: public'],
     '',
   ].join('\n'))
 
@@ -100,47 +99,6 @@ async function request(
 }
 
 describe('real Loader composition', () => {
-  it('leaves the ordinary seat unclaimed until its actual Connection provider becomes available', async () => {
-    const loaded = await loadComposition(undefined, false)
-    expect((await request(loaded.webServer.port, '/')).status).toBe(404)
-    await loaded.loader.create({ name: '@deepseek-ai/dsh-client-connection' })
-    await loaded.loader.await()
-    await expect.poll(async () => (await request(loaded.webServer.port, '/')).status).toBe(401)
-    const entry = [...loaded.loader.entries()].find(row => row.options.name === '@deepseek-ai/dsh-client-connection')
-    await entry!.fiber?.dispose()
-    await expect.poll(async () => (await request(loaded.webServer.port, '/')).status).toBe(404)
-  })
-
-  it('serves a public login document without Connection while named business routes retain their responses', async () => {
-    const loaded = await loadComposition('public')
-    expect(loaded.get('connection')).toBeUndefined()
-    const remove = loaded.webServer.register({ kind: 'exact', path: '/cloud/bootstrap', handler: (_req, res) => {
-      res.writeHead(503)
-      res.end('unavailable')
-    } })
-    const index = await request(loaded.webServer.port, '/')
-    expect(index.status).toBe(200)
-    expect(index.body).toContain('shell')
-    expect((await request(loaded.webServer.port, '/index.html', { method: 'HEAD' })).status).toBe(200)
-    expect(await request(loaded.webServer.port, '/cloud/bootstrap')).toMatchObject({ status: 503, body: 'unavailable' })
-    expect((await request(loaded.webServer.port, '/api/session/list')).status).toBe(404)
-    const entry = [...loaded.loader.entries()].find(row => row.options.id === 'frontend')
-    await entry!.fiber?.dispose()
-    expect((await request(loaded.webServer.port, '/')).status).toBe(404)
-    expect((await request(loaded.webServer.port, '/cloud/bootstrap')).status).toBe(503)
-    remove()
-    expect(() => loaded.webServer.registerFallback(() => {})).not.toThrow()
-  })
-
-  it('withdraws the ordinary fallback when its Connection provider is disposed', async () => {
-    const loaded = await loadComposition()
-    expect((await request(loaded.webServer.port, '/')).status).toBe(401)
-    const connection = [...loaded.loader.entries()].find(row => row.options.name === '@deepseek-ai/dsh-client-connection')
-    await connection!.fiber?.dispose()
-    await expect.poll(async () => (await request(loaded.webServer.port, '/')).status).toBe(404)
-    expect(() => loaded.webServer.registerFallback(() => {})).not.toThrow()
-  })
-
   it('serves explicit index entries and files while preserving HTTP error semantics', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition()
     const unloaded = [...loaded.loader.entries()]

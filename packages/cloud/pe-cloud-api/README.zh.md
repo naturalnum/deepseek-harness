@@ -56,6 +56,8 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 可选的 `approvedConfiguration.fields` 行选择精确的命名空间／字段对及可选的有限标量 `values`。Root 要求相同的完整 `allowedSettings` 集合与唯一原生 `settings/mutate` writer。仅支持活动原生 Settings 表单的顶层标量字段；缺失、结构化或 secret 字段拒绝。可信首屏准备跨原 Controller 结果保留原登录 Peer/AccountUse。修改要求非负安全整数 `expectedRevision`，路径必须唯一且仅含获批的单个字段；其他方法及原 JSON 中的未知字段均拒绝。既有 `locale/preference` 策略仍要求精确的 `values:["zh","en"]`，且仅允许单条匹配的 `set`。原 Settings、ConfigEditor 和账户保存屏障负责持久化及 live 应用。替换前拒绝正常结算，不触发隔离；替换后的未知结果保留责任并触发原账户隔离。`hasDocument` 仍为 false，省略时保持只读。
 
+普通插件字段的替换策略由本包负责。内部 `ordinaryConfigPolicy` 只读取原生 schema 元数据，不运行构造函数或校验器，并拒绝秘密、实时、递归或无法确认的字段。原生 Settings 保留原有实时字段表单与秘密值脱敏。
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

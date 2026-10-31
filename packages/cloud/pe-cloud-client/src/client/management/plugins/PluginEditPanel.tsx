@@ -39,7 +39,8 @@ export function PluginEditPanel({ editor, t }: { readonly editor: AccountPluginE
       {field === undefined ? null : <>
         <ConfigField label={t('literalValue')} value={editor.valueText ?? ''} secret={policy?.secret === true} choices={[]}
           disabled={!editing || policy?.writable !== true} overridden={false} invalid={editor.invalid === true}
-          labels={{ reset: t('resetUnavailable'), inherited: t('missingValue'), invalid: t('invalidLiteral') }} onChange={editor.editValue}/>
+          labels={{ reset: t('resetUnavailable'), inherited: t('missingValue'), invalid: t('invalidLiteral') }} onChange={editor.editValue}
+          onReset={() => { throw new Error('Cloud plugin fields do not support reset') }}/>
         <p className={css.reason}>{t('singleFieldExplanation')}</p>
         <p className={css.reason}>{t('resetUnavailable')}</p>
         <p className={css.reason}>{t(field.acceptsMissing === true ? 'acceptsMissing' : field.acceptsMissing === false ? 'requiresValue' : 'missingRuntime')}</p>

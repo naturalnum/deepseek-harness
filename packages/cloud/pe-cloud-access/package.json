@@ -32,7 +32,11 @@
       "default": "./lib/types/types.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./frontend": {
+      "types": "./lib/types/frontend.d.ts",
+      "default": "./lib/frontend.js"
+    }
   },
   "files": [
     "lib/*.js",
@@ -42,7 +46,8 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:~",
     "better-auth": "1.7.10",
-    "pg": "8.16.3"
+    "pg": "8.16.3",
+    "@deepseek-ai/dsh-host-frontend-static": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

@@ -1,10 +1,11 @@
 /** Catalog-approved plugin selection/configuration through original native writers and the original account save owner. */
+import { ordinaryConfigPolicy } from './ordinary-config-policy.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync } from 'node:fs'
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import PluginManager from '@deepseek-ai/dsh-plugin-manager'
-import { applyConfigPathOp, ordinaryConfigPolicy, redactSecrets, type ConfigSchemaNode } from '@deepseek-ai/dsh-settings'
+import { applyConfigPathOp, redactSecrets, type ConfigSchemaNode } from '@deepseek-ai/dsh-settings'
 import type { PluginInfo, ChangeResult } from '@deepseek-ai/dsh-plugin-manager/types'
 import { createConfigProjector, prepareProfileSelectionUpdate, readProfilePatches, isNativeConfigSchema, LOADER_EXPRESSION_SCHEMA, PluginPackages, type ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'

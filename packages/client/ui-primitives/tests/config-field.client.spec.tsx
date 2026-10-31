@@ -31,13 +31,3 @@ it('shares controlled inputs and reset actions between generated and custom form
   view.rerender(<ConfigField {...props} secret disabled overridden={false} />)
   expect(screen.getByLabelText('Timeout').hasAttribute('disabled')).toBe(true)
 })
-
-it('omits reset and inherited-value actions when its owner has no unset operation', () => {
-  const change = vi.fn()
-  render(<ConfigField label="Mode" value="one" choices={['one', 'two']} secret={false} disabled={false}
-    overridden invalid={false} labels={{ reset: 'Reset', inherited: 'Inherited', invalid: 'Invalid' }} onChange={change}/>)
-  expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull()
-  expect(screen.queryByRole('option', { name: 'Inherited' })).toBeNull()
-  fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'two' } })
-  expect(change).toHaveBeenCalledExactlyOnceWith('two')
-})

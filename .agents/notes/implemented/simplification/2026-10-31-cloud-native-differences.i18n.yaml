@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-31-cloud-native-differences.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-10-31-cloud-native-differences.md
+/agent-note-keep-cloud-policy-in-the-existing-cloud-packages:
+  en: 5b454c5479cda053
+  zh: e3db7f12fe861951
+/agent-note-keep-cloud-policy-in-the-existing-cloud-packages/problem:
+  en: 66b9dad5fca347df
+  zh: 2b65be68b732321b
+/agent-note-keep-cloud-policy-in-the-existing-cloud-packages/decision:
+  en: c585e972ca3e3b96
+  zh: 39d2b5c06c11163f
+/agent-note-keep-cloud-policy-in-the-existing-cloud-packages/alternatives-considered:
+  en: bc84a64d201ed148
+  zh: c6e05e8d1215ee36
+/agent-note-keep-cloud-policy-in-the-existing-cloud-packages/consequences:
+  en: 674b813842ed0962
+  zh: 5d1a83c5f4103783

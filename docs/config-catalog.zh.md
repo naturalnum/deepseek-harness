@@ -1597,16 +1597,14 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-frontend-static`
 
-- `inject`: `webServer`
+- `inject`: `webServer` · `connection`
 - `source`: [`packages/host/frontend-static/src/index.ts:30`](../packages/host/frontend-static/src/index.ts)
 
 ```ts config-catalog
-/** Distribution anchor and index document authentication. */
+/** Plugin config: the dist anchor. */
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
-  /** Public mode serves a login document; named business routes retain their own authentication. */
-  indexAuth?: 'connection' | 'public'
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-frontend-static -->

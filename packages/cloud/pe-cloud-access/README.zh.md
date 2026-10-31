@@ -66,6 +66,8 @@ kind: "package-reference"
 
 远端 carrier 通过原 ingress operation 持有至实际运输及 Cookie 查询结算。登录撤销同步取消对应转发，不等待正在触发撤销的复查。成功写出 101 后停止 HTTP 握手超时，但仍持有隧道与复查。未知或可能已投递的失败会关闭并记录，不重放。在 auth／转发工作开始前登记原 `PeAuth.close`，先结算 ingress、运输、auth 与 Pool，再由 runtime 关闭 resolver 及后续原拥有者。
 
+`/frontend` Loader 入口复用原生 `frontend-static` 响应函数提供公开登录页和静态资源。对于自行声明 frontend 行而未挂载标准 Web bundle 的云端 profile，将其中的 `@deepseek-ai/dsh-host-frontend-static` 行替换为 `@deepseek-ai/dsh-pe-cloud-access/frontend`，保留原 id 和绝对路径 `distIndex`，删除 `indexAuth`；不要同时挂载两个 fallback 拥有者。制品目录及全部首页注入必须只包含公开资源；认证、bootstrap、API 和 WS 的命名路由保留原准入检查。普通原生 profile 仍使用 Connection 鉴权。
+
 ### 请求绑定
 
 向 `parseRequestExpectation` 提供载体字段的全部出现值；缺失、重复、空值、首尾空白或控制字符均以 HTTP 409 失败。真实认证后，先比较预期账户再查询 owner，取得当前图后再比较代际。纯比较通过不会授予 Peer、项目范围或业务权限；派发及每个 WS 逻辑流前仍须执行 `AccountUse.assertCurrent()`。
