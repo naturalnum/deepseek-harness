@@ -154,7 +154,7 @@ describe('runProfile with an application-owned profile', () => {
         await vi.advanceTimersByTimeAsync(114_999)
         expect(exit).not.toHaveBeenCalled()
         await vi.advanceTimersByTimeAsync(1)
-        expect(exit).toHaveBeenCalledWith(0)
+        expect(exit).toHaveBeenCalledWith(1)
         expect(settled).toBe(false)
         expect(disposeProxy).not.toHaveBeenCalled()
       } else if (outcome === 'second-signal') {
@@ -166,7 +166,7 @@ describe('runProfile with an application-owned profile', () => {
       held.resolve(undefined)
       await pending
       expect(exit).toHaveBeenCalledOnce()
-      expect(exit).toHaveBeenCalledWith(outcome === 'second-signal' ? 130 : 0)
+      expect(exit).toHaveBeenCalledWith(outcome === 'second-signal' ? 130 : outcome === 'timeout' ? 1 : 0)
       expect(disposeProxy).toHaveBeenCalledOnce()
       expect(settled).toBe(true)
     } finally {

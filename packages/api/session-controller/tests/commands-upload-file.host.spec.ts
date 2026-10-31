@@ -237,7 +237,9 @@ describe('Session file uploads', () => {
     saved.resolve({
       attachmentId: AttachmentId(`sha256:${'ab'.repeat(32)}`), name: 'late.bin', bytes: 3,
     })
-    await expect(uploading).rejects.toMatchObject({ code: 'session/not-found' })
+    await expect(uploading).rejects.toMatchObject({
+      name: 'FileUploadIntakeUnconfirmedError', cause: { code: 'session/not-found' },
+    })
   })
 
   it('resolves a cold ordinary Agent and releases the resolver registration', async () => {
