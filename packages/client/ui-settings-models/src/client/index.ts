@@ -18,9 +18,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
-import { IntegratedModels, IntegratedModelsOnboarding, type IntegratedModelsInjected, type IntegratedOnboardingInjected } from './IntegratedModels.tsx'
+import { IntegratedModels, type IntegratedModelsInjected } from './IntegratedModels.tsx'
 import type {} from './integration.ts'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
+import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
 import { WelcomeNotice } from './WelcomeNotice.tsx'
 import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { WelcomeNoticeStore } from './welcome-store.ts'
@@ -85,7 +86,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-models: copy dictionaries')
 
   const integration = ctx.get('modelsSettingsIntegration')
-  const onboarding = integration?.onboarding !== false
+  const onboarding = integration === undefined
   const credentialEditing = integration?.editing ?? Object.freeze({
     getSnapshot: () => undefined, subscribe: (_listener: () => void) => () => {},
   })
@@ -105,11 +106,11 @@ export function apply(ctx: ClientContext): void {
     schema,
     t,
   })
-  const deepSeekOnboardingInjected = (): IntegratedOnboardingInjected => ({
+  const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
     automatic: credentialOnboarding,
     track: (name, attributes) => ctx.get('productAnalytics')?.track(name, attributes),
     controller,
-    hooks: { models: controller.store, credentialEditing },
+    hooks: { models: controller.store },
     operations,
     schema,
     t,
@@ -168,5 +169,5 @@ export function apply(ctx: ClientContext): void {
     children: { 'settings.models.sign-in': { kind: 'single', scope: 'root' } },
     order: 0,
     inject: deepSeekOnboardingInjected,
-  }, integration === undefined ? DeepSeekOnboardingDialog : IntegratedModelsOnboarding))
+  }, DeepSeekOnboardingDialog))
 }

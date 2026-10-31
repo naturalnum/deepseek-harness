@@ -12,8 +12,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsRuntime, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelsSettingsState, ModelsSettingsStore } from './store.ts'
 import { onboardingReadiness } from './store.ts'
-import type { ModelsOperations, ModelsCredentialEditing } from './operations.ts'
-import { CredentialKeyActions } from './CredentialKeyActions.tsx'
+import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor } from './ProviderEditor.tsx'
 import type {} from './slot-contract.ts'
@@ -35,8 +34,6 @@ export interface DeepSeekOnboardingInjected {
   controller: ModelsSettingsStore
   /** The Host operations the reused Models credential editor writes through. */
   operations: ModelsOperations
-  /** Optional original page hook shared with Models; no hook preserves native onboarding. */
-  credentialEditing?: ModelsCredentialEditing | null
   /** Settings schema and immutable path callbacks. */
   schema: SettingsSchemaOperations
   /** Feature copy. */
@@ -69,30 +66,15 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
   }, [controller, state.status, automatic, explicit])
 
   useEffect(() => {
-    if (props.credentialEditing !== undefined) return
     if (
       (!automatic && !explicit)
       || readiness.kind === 'adapter-absent'
       || (!explicit && readiness.kind === 'provider-ready')
       || readiness.kind === 'unavailable'
     ) complete()
-  }, [complete, readiness.kind, explicit, automatic, props.credentialEditing])
+  }, [complete, readiness.kind, explicit, automatic])
 
   if (!automatic && !explicit) return null
-
-  if (props.credentialEditing !== undefined) {
-    const binding = props.credentialEditing
-    const target = state.rows.find(row => row.entry.provider === 'deepseek-official')
-    const ns = target === undefined ? undefined : state.namespaces.get(target.entry.settingsNs)
-    if (binding === null || binding.scope === null || target?.apiKeyEnv === undefined || ns === undefined
-      || state.status !== 'ready' || !explicit && target.credential?.configured === true) return null
-    return <OnboardingModal title={t('onboardingTitle')}>
-      <CredentialKeyActions key={binding.scope + ':' + target.apiKeyEnv} provider={target.entry.provider}
-        displayName={target.entry.displayName} namespace={ns} schema={schema} settingsPath={target.entry.settingsPath}
-        operations={operations} t={t} reference={target.apiKeyEnv} editing={binding}
-        configured={target.credential?.configured === true} onSaved={() => { void controller.load(); complete() }} />
-    </OnboardingModal>
-  }
 
   switch (readiness.kind) {
     case 'loading':

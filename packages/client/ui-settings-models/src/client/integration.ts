@@ -25,10 +25,10 @@ export interface ModelsSettingsReads {
   readonly credentials: (refs: readonly string[]) => Promise<Readonly<Record<string, CredentialInfo>>>
 }
 
-/** Prepared before Models activation; null closes Cloud editing while an omitted integration preserves native behavior. */
+/** Manual Models input prepared before activation; null closes editing and omission preserves native onboarding and reads. */
 export interface ModelsSettingsIntegration {
-  /** Omit both onboarding registrations when this page uses manual Models setup; omission preserves native behavior. */
-  readonly onboarding?: false
+  /** Manual Models setup omits both onboarding registrations, including while editing is unavailable or revoked. */
+  readonly onboarding: false
   readonly editing: ObservableSnapshot<ModelsCredentialEditing | null>
   readonly reads: ModelsSettingsReads
 }

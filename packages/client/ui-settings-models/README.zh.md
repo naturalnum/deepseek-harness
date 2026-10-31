@@ -97,7 +97,7 @@ Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepS
 
 内部 provider 编辑器可接收一次编辑专用的 `PreparedCredentialEdit`。拥有者须在挂载表单前准备回调，由闭包保留原版本而不交给组件解析。编辑器只捕获一次回调，后台凭据刷新不能替换它们；冲突后仍保留该版本，关闭并重开才开始另一轮编辑。省略该值保留原生写入，`null` 禁用尚未准备好的受保护表单。该扩展不替已发布页面绑定版本化 Remote，也不改变凭据存储。 已准备的仅凭据编辑意图可在任意可解析 namespace（包括保留的 provider entry id）渲染命名 Key 字段；一般 provider/model 编辑仍要求已识别的布局。两层凭据检查仍在写入前核对实际命名引用。
 
-公开 Models 与引导注入面的可选 `credentialEditing` 输入，在显示原表单前准备一次仅 Key 编辑或移除确认。页面级 `scope` 只是展示身份，不是 editToken；页面或图失效时应替换它或发布 null，`isCurrent` 则守卫调用与晚到观察。null 关闭受保护编辑，省略输入保留原生行为。scope 变化会卸载草稿，同 scope 的后台刷新保留已捕获回调。受保护动作不删除提供商、不写模型设置；拒绝或未确认的写入须先关闭本次意图才能再尝试。回调由原 slot 拥有者提供，UI 不因此启用账户端点。
+公开 Models 注入面的可选 `credentialEditing` 输入，在显示原表单前准备一次仅 Key 编辑或移除确认。页面级 `scope` 只是展示身份，不是 editToken；页面或图失效时应替换它或发布 null，`isCurrent` 则守卫调用与晚到观察。null 关闭受保护编辑，省略输入保留原生行为。scope 变化会卸载草稿，同 scope 的后台刷新保留已捕获回调。受保护动作不删除提供商、不写模型设置；拒绝或未确认的写入须先关闭本次意图才能再尝试。回调由原 slot 拥有者提供，UI 不因此启用账户端点。
 
 ### 引导协调器
 
@@ -122,7 +122,7 @@ Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepS
 
 `settings.models.sign-in` 插槽让账号登录在凭证编辑器之前提供选择；没有贡献者时直接显示编辑器。关闭账号选择弹窗会结束整个引导步骤。从账号菜单显式重新打开时，即使已有提供者配置，也会进入同一个编辑器。
 
-可在本插件激活前提供可选 `modelsSettingsIntegration`。其只读回调向原 `ModelsSettingsStore` 提供真实原生 provider、namespace/schema 与凭据视图；读取被拒绝时不选择未受限原生 API。Settings 可写性保留 Host 原值。原页面拥有稳定的编辑 observable，初始及撤销后为 `null`，既有 renderer 将其绑定给两个原生注册。后台元数据刷新不替换已打开编辑及其捕获版本。省略集成时保留原生注册与读取。 同一输入可设置 `onboarding: false`，跳过 Welcome 与凭据 onboarding 两项注册及 Welcome controller，保留手动 Settings/Models。省略该字段时保留原生 onboarding 选择，包括自动选项为 false 时仍可显式打开的原生凭据步骤。
+可在本插件激活前提供可选 `modelsSettingsIntegration`。其只读回调向原 `ModelsSettingsStore` 提供真实原生 provider、namespace/schema 与凭据视图；读取被拒绝时不选择未受限原生 API。Settings 可写性保留 Host 原值。原页面拥有稳定的编辑 observable，初始及撤销后为 `null`，既有 renderer 将其绑定给 Models 注册。后台元数据刷新不替换已打开编辑及其捕获版本。此手动 Models 输入要求 `onboarding: false`，跳过 Welcome 与凭据 onboarding 两项注册及 Welcome controller，包括编辑尚未准入及撤销后的状态。省略整个集成时保留原生注册与读取，包括自动选项为 false 时仍可显式打开的原生凭据步骤。
 
 <a id="model-experience"></a>
 ## 模型体验

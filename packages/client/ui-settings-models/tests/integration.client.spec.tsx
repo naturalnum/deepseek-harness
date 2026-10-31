@@ -35,7 +35,7 @@ function integration() {
   const editing=createSnapshotStore<ModelsCredentialEditing|null>(null)
   const reads={ isCurrent:()=>editing.getSnapshot()!==null,metadata:vi.fn(async()=>metadata()),
     credentials:vi.fn(async()=>({ [ref]:{ configured:true,writable:true,source:'file' as const } })) }
-  return { editing,reads } satisfies ModelsSettingsIntegration
+  return { onboarding:false,editing,reads } satisfies ModelsSettingsIntegration
 }
 function TestHost({ renderSlot }:PropsRenderSlots<'settings.section'|'settings.onboarding'>) { void renderSlot; return null }
 const denied=async ():Promise<never>=>{throw new Error('Native unrestricted read/write was reached')}
@@ -66,7 +66,7 @@ it('publishes original slot hooks, clears a draft on null and withdraws its sour
   await ctx.plugin({ inject:[...settingsInject],apply:settingsApply }).await()
   let listeners=0
   const subscribe=source.editing.subscribe.bind(source.editing)
-  ctx.provide('modelsSettingsIntegration',{ reads:source.reads,editing:{ getSnapshot:()=>source.editing.getSnapshot(),subscribe:(listener)=>{listeners++;const remove=subscribe(listener);return()=>{listeners--;remove()}} } })
+  ctx.provide('modelsSettingsIntegration',{ onboarding:false,reads:source.reads,editing:{ getSnapshot:()=>source.editing.getSnapshot(),subscribe:(listener)=>{listeners++;const remove=subscribe(listener);return()=>{listeners--;remove()}} } })
   const removeHost=ctx.slots.register({ name:'root',children:{ 'settings.section':{ kind:'list',scope:'root' },'settings.onboarding':{ kind:'list',scope:'root' } } },TestHost)
   const plugin=ctx.plugin({ inject:[...inject],apply });await plugin.await()
   expect(ctx.slots.entries('settings.section')).toHaveLength(1)
