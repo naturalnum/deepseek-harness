@@ -108,16 +108,25 @@ describe('reviewed exposure', () => {
 
   it('revokes a root policy when its fiber is disposed and refuses incomplete account mount', async () => {
     const ctx = new Context()
-    const input = manifest()
+    const input = { ...manifest(), rpcEndpoints: [...manifest().rpcEndpoints,
+      { endpoint: 'settings/mutate', handlerId: 'native:settingsController', guard: 'authenticated-account' as const }] }
     const fiber = await ctx.plugin(ExposureService, {
       recipeVersion: input.recipeVersion,
       rpcEndpoints: input.rpcEndpoints.map(row => ({ ...row })),
       streamEndpoints: input.streamEndpoints.map(row => ({ ...row })),
       exactFetchRoutes: input.exactFetchRoutes.map(row => ({ ...row })),
       allowedSettings: input.allowedSettings.map(row => ({ ...row, fields: [...row.fields] })),
+      approvedConfiguration: {
+        recipeVersion: input.recipeVersion, catalogVersion: 'exposure-disposal-component',
+        maxEntries: 4, maxStringBytes: 128, maxCatalogBytes: 4096,
+        plugins: [{ id: 'subagents', entryId: 'subagents', moduleName: '@deepseek-ai/dsh-subagent',
+          packageName: '@deepseek-ai/dsh-subagent', packageVersion: '0.2.1-rc.2', installable: false, toggleable: false }],
+        skills: { mode: 'closed' }, credentials: { mode: 'read-only' },
+        fields: input.allowedSettings.flatMap(row => row.fields.map(field => ({ namespace: row.namespace, field }))),
+      },
     })
     const policy = ctx.peExposure.policy
-    policy.audit(manifest())
+    policy.audit(input)
     await fiber.dispose()
     expect(() => policy.requireRpc('session/prompt')).toThrow()
     expect(() => { mountAccount(ctx, {}) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))

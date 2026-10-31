@@ -15,6 +15,7 @@ function manifest(): ExposureManifest {
     rpcEndpoints: [
       { endpoint: 'session/page', handlerId: 'native/session.page', guard: 'account-session' },
       { endpoint: 'session/prompt', handlerId: 'native/session.prompt', guard: 'account-session' },
+      { endpoint: 'settings/mutate', handlerId: 'native:settingsController', guard: 'authenticated-account' },
     ],
     streamEndpoints: [{ endpoint: 'session/follow', handlerId: 'native/session.follow', guard: 'account-session' }],
     exactFetchRoutes: [{ method: 'POST', path: '/api/session/uploadFileBinary', handlerId: 'native/file-upload', guard: 'account-session' }],
@@ -31,7 +32,15 @@ function simulatedInventory(input: ExposureManifest): ExposureInventory {
 
 function fixture() {
   const rootContext = new Context()
-  const root = new ExposureService(rootContext, manifest()).policy
+  const input = manifest()
+  const root = new ExposureService(rootContext, { ...input, approvedConfiguration: {
+    recipeVersion: input.recipeVersion, catalogVersion: 'exposure-policy-component',
+    maxEntries: 4, maxStringBytes: 128, maxCatalogBytes: 4096,
+    plugins: [{ id: 'subagents', entryId: 'subagents', moduleName: '@deepseek-ai/dsh-subagent',
+      packageName: '@deepseek-ai/dsh-subagent', packageVersion: '0.2.1-rc.2', installable: false, toggleable: false }],
+    skills: { mode: 'closed' }, credentials: { mode: 'read-only' },
+    fields: input.allowedSettings.flatMap(row => row.fields.map(field => ({ namespace: row.namespace, field }))),
+  } }).policy
   const graphs: Context[] = []
   onTestFinished(async () => {
     for (const graph of graphs) await graph.fiber.dispose()

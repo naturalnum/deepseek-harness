@@ -21,8 +21,9 @@ export const Config = AuthRootConfigSchema
  * Initialize authentication resources and optional shared-Web route ownership; the actual root seal gates admission.
  * @param ctx - Root Context with official credentials.
  * @param config - Explicit authentication/database budgets and optional finite ingress configuration.
- * @returns After library schema inspection; configured ingress waits for the original Web/runtime/exposure providers.
- * @throws AuthAccessError on failed or timed-out initialization; actual cleanup remains retained.
+ * @returns After direct initialization, or after registering provider-bound initialization when ingress is configured.
+ * Missing routing providers leave authentication unpublished; later initialization belongs to the injected fiber.
+ * @throws AuthAccessError on failed or timed-out direct initialization; injected failures remain on their owning fiber.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   if (config.ingress === undefined) await PeAuthService.mountRoot(ctx, config)

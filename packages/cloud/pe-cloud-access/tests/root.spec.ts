@@ -321,18 +321,21 @@ describe('root authentication resources remain closed on incomplete or failed in
     await expect(password()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
   })
 
-  it('does not bypass real schema inspection or claim ingress installation when optional routing dependencies are absent', async () => {
+  it('keeps initialization pending without allocating authentication resources when routing dependencies are absent', async () => {
     const { ctx } = await context()
+    const mount = vi.spyOn(PeAuthService, 'mountRoot')
     const inspect = vi.spyOn(BetterAuthAccess.prototype, 'planMigrations')
     const install = vi.spyOn(CloudIngress.prototype, 'install')
-    await expect(root.apply(ctx, { ...config(), ingress: ingressConfig() })).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
-    await ctx.peAuth.close()
-    expect(inspect).toHaveBeenCalledTimes(1)
+    await root.apply(ctx, { ...config(), ingress: ingressConfig() })
+    expect(ctx.get('peAuth')).toBeUndefined()
+    expect(mount).not.toHaveBeenCalled()
+    expect(inspect).not.toHaveBeenCalled()
     expect(install).not.toHaveBeenCalled()
-    expect(ctx.peAuth.observe()).toMatchObject({
-      phase: 'closed', poolAllocated: false,
-      ingress: { state: 'absent', current: false, registeredRoutes: 0, pendingOperations: 0 },
-    })
+    await ctx.fiber.dispose()
+    expect(ctx.get('peAuth')).toBeUndefined()
+    expect(mount).not.toHaveBeenCalled()
+    expect(inspect).not.toHaveBeenCalled()
+    expect(install).not.toHaveBeenCalled()
   })
 
   it('retains the real pool through late library creation and timed-out per-connection secret work', async () => {

@@ -28,7 +28,7 @@ kind: "package-reference"
 
 ### 配置
 
-所有配置均显式提供，示例不充当生产默认值。浏览器结构输入见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根要求 [root-config.ts](src/root-config.ts)、正式 `credentials` 及已部署的 Better Auth schema。省略 `ingress` 保留仅初始化资源的路径；配置后，会在原 Loader 的依赖作用域中等待 `webServer`、`peAccountRuntime` 和 `peExposure`，再初始化资源。缺失 provider 会使初始化失败。配置本身不授予业务准入。
+所有配置均显式提供，示例不充当生产默认值。浏览器结构输入见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根要求 [root-config.ts](src/root-config.ts)、正式 `credentials` 及已部署的 Better Auth schema。省略 `ingress` 保留仅初始化资源的路径；配置后，会在原 Loader 的依赖作用域中等待 `webServer`、`peAccountRuntime` 和 `peExposure`，再初始化资源。缺失 provider 时，该注入作用域保持等待，不分配认证资源。配置本身不授予业务准入。
 
 | 字段 | 要求 |
 | --- | --- |
@@ -56,7 +56,7 @@ kind: "package-reference"
 
 `PeAuthService.observe()` 暴露资源阶段/计数及 `requestAdmission: 'closed'`。配置 ingress 后，嵌套状态记录实际保留的注册、owner/Web 身份及未结算工作；观察从不递归调用 seal。`close()` 先关闭并撤回 ingress，等待实际 handler、正文取消及原生 Peer 清理，再等待认证/秘密工作，最后执行 `Pool.end()`。超时保留工作；未知清理保留所有权并报告 `cloud/stop-unconfirmed`。仅资源模式不注册路由；两种模式都不创建监听，也不代表账户 ready。
 
-根 `apply` 是返回 `Promise<void>` 的 async Loader effect；Loader 激活会等待认证初始化并观察其拒绝。通过 `ctx.get('peAuth')` 取得提供者，或在可信同进程装配中使用 `PeAuthService.mountRoot`。缺少秘密会使真实 Loader 入口失败并撤回提供者；原生 boot 的必需入口策略决定该入口失败是否拒绝应用启动。
+根 `apply` 返回 `Promise<void>`。未配置 ingress 时，它直接等待认证初始化；配置 ingress 时，它在注入 fiber 上注册依赖 provider 的初始化，返回的 Promise 本身不代表 provider 已可用。通过 `ctx.get('peAuth')` 取得初始化后的提供者，或在可信同进程装配中使用 `PeAuthService.mountRoot`。初始化失败保留在其所属 fiber 上并撤回提供者；原生 boot 的必需入口检查及真实 Root 审核决定应用是否就绪。
 
 `ingress.ownerForwarding` 使原 ingress 经固定 HTTPS 目标转发既有远端 ready owner。Root 显式配置有界受保护 PEM 路径、身份与 peer pin 集合、标记字节和原运输限制。准入前读取 CA／客户端证书／密钥；密钥必须是当前进程用户拥有的普通单链接文件，禁止组或其他用户权限。地址和服务身份仅来自该配置。runtime 的实际启动 id 与复查后的 PG 元数据只能选择已配置条目，PG 不能增加目标。每条实际连接发送头体前均核验 CA、hostname 和精确服务证书。
 

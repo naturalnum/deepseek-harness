@@ -114,7 +114,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     ...Persona,
     apply(owner: Context, options: Persona.Config) {
       Persona.apply(owner, options)
-      owner.inject([presetChildFiber === 'active' ? 'systemPrompt' : 'shell'], () => undefined)
+      owner.inject([presetChildFiber === 'active' ? 'systemPrompt' : 'm8zFixturePending'], () => undefined)
     },
   }
   const config: AccountPolicyConfig = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
@@ -124,7 +124,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 1, maxWaitersPerAccount: 2 })
   const shared = new Context()
   const bootstrapPackages = bootstrapCatalog === undefined ? undefined : new PluginPackages(shared)
-  const execution = bootstrapCatalog === undefined ? undefined : new ClosedExecutionOwner(shared, 2)
+  const execution = bootstrapCatalog === undefined && reserveChild === undefined ? undefined : new ClosedExecutionOwner(shared, 2)
   if (execution !== undefined) shared.effect(() => () => { execution.close() }, 'fixture: original closed execution owner')
   const manifest = { recipeVersion: 'm8z', rpcEndpoints: [...['create', 'prompt', 'cancel', 'page'].map(method => ({
     endpoint: 'session/' + method, handlerId: 'native:sessionController',
@@ -216,8 +216,10 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     } }
     const rows = [
       { id: 'dependencies', name: 'cordis:m8z-dependencies' },
-      ...bootstrapCatalog === undefined ? [] : [
+      ...execution === undefined ? [] : [
         { id: 'execution', name: 'cordis:m8z-bootstrap-execution', config: { mode: 'closed', requiredCapabilities: [] } },
+      ],
+      ...bootstrapCatalog === undefined ? [] : [
         { id: 'model-provider', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: {} },
       ],
       { id: 'editor', name: 'cordis:m8z-editor' },
@@ -256,7 +258,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16,
       prepare(owner, binding) {
         ctx = owner; barrier = saves.createAccount(binding)
-        if (execution !== undefined) {
+        if (bootstrapCatalog !== undefined) {
           const internal = owner.loader.internal
           if (internal === undefined) throw new Error('Native Loader import bridge absent')
           const nativeImport = internal.import
@@ -267,8 +269,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
             return namespace
           })
           owner.effect(() => () => { imported.mockRestore() }, 'fixture: restore original source namespace bridge')
-          installIssuedExecutionPort(owner, execution.bind(owner, binding, () => { actualGraph(binding) }))
         }
+        if (execution !== undefined) installIssuedExecutionPort(owner, execution.bind(owner, binding, () => { actualGraph(binding) }))
 
         api = new CloudAccountApi(owner, { binding, saves: barrier, selected: manifest, rootExposure: exposure,
           assertMountCurrent: actualGraph, assertBusinessCurrent: businessGraph,
