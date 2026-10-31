@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
 import type { OfficeToPdfKey } from '@deepseek-ai/dsh-office-to-pdf/types'
-import { OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
+import { OfficeSourceKey, type OfficeToPdfRequest } from '@deepseek-ai/dsh-office-to-pdf'
 import * as fs from 'node:fs/promises'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -1191,7 +1191,7 @@ it.each([false, true])('joins the cached native Office converter during factory 
   vi.spyOn(f.factory, 'assertBusinessCurrent').mockImplementation(() => {})
   vi.spyOn(f.root.peAccountRuntime, 'assertRecipeSealed').mockImplementation(() => {})
   const bytes = new Uint8Array([80, 75, 3, 4])
-  const request = { extension: 'docx', priority: 'foreground' as const, source: {
+  const request: OfficeToPdfRequest = { extension: 'docx', priority: 'foreground', source: {
     key: OfficeSourceKey('factory-close'), version: '1', bytes: bytes.length,
     read: async () => ({ bytes, version: '1' }),
   } }
