@@ -83,6 +83,8 @@ Business callbacks select an original Workspace from the same native Registry. `
 
 Before withdrawing an account graph, account stop closes cloud Office admission, joins retained native conversions and then disposes the original provider. The existing `stopTimeoutMs` bounds observation of that work; expiry does not abort or release the retained actual close. Unconfirmed conversion scratch, converter disposal or unexpected provider unloading makes stop reject, so the existing factory retains the account slot as unknown. Late completion cannot restore admission or release that account. Configuration idle checks include retained conversions and unknown Office cleanup.
 
+Each unknown account shutdown emits one bounded stderr diagnostic containing approved error codes and names. Native errors remain observable after startup settles; unknown native disposal includes its original bounded error/warning counts. Messages, arguments, paths and credentials are omitted, and diagnostic failure does not change ownership.
+
 The explicitly selected native `officeToPdf/render` invocation uses the same Session membership and project selection as `workspaceFiles`; it does not grant raw absolute-path authority. The account Office provider and both original Remote methods must pass the API inventory before publication.
 
 The account-owned `workspaceFileScope` lookup checks the original Session membership before reading a cold persisted header; unknown, foreign and orphan IDs are refused without that metadata read. The lookup uses the account lifetime and rechecks the original provider after observation.

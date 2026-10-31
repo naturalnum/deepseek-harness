@@ -73,12 +73,16 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   let checkConversion: () => void = unavailable
   const work = new OfficeWork(config.maxReaders, () => { checkConversion(); admit() }, async () => {
     if (fiber.state !== FiberState.ACTIVE || root.fiber.state !== FiberState.ACTIVE) {
-      work.cleanupFailed(new Error('Office owner was withdrawn before ordered shutdown.'))
+      work.cleanupFailed(new Error('Office owner was withdrawn before ordered shutdown.'), 'owner-unloaded')
     }
     await fiber.dispose()
-    if (root.fiber.state !== FiberState.ACTIVE) work.cleanupFailed(new Error('Office cleanup lost its account owner.'))
+    if (root.fiber.state !== FiberState.ACTIVE) work.cleanupFailed(new Error('Office cleanup lost its account owner.'), 'owner-unloaded')
     await removeObserver()
-  }, knownConversionFailure, () => {
+  }, knownConversionFailure, (phase) => {
+    try {
+      console.error(JSON.stringify({ event: 'cloud-office-cleanup-unconfirmed', phase,
+        providerState: fiber.state, accountRootState: root.fiber.state }))
+    } catch (_diagnosticFailure) { /* Closing diagnostics never change the retained failure. */ }
     root.logger.error('Office cleanup is unconfirmed; conversion admission is closed and account resources remain retained.')
   })
   const removeObserver = root.logger.exporter({ levels: { default: 0 }, export: (message) => {
@@ -95,7 +99,7 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
         } } }
       const ownerActive = (): void => {
         if (fiber.state !== FiberState.ACTIVE || root.fiber.state !== FiberState.ACTIVE) {
-          work.cleanupFailed(new Error('Office owner was unloaded during an admitted conversion.'))
+          work.cleanupFailed(new Error('Office owner was unloaded during an admitted conversion.'), 'owner-unloaded')
         }
       }
       return work.run(() => super.convert(retained).then((result) => { ownerActive(); return result }, (cause: unknown) => {

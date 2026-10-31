@@ -351,6 +351,49 @@ it('[observation] reads actual empty, pending, attached and disposed native obje
   expect(JSON.stringify(rows)).not.toContain(f.input.layout.privateRoot)
 })
 
+it('[observation] reports unknown native disposal once without messages or paths', async () => {
+  const output = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const { value } = factory(), f = fixture('unknown-disposal-diagnostic')
+    const recipe: AccountRecipe = { ...f.recipe, prepare: async (ctx, binding) => {
+      ctx.effect(() => () => { throw new Error('secret-message /secret/path') })
+      await f.recipe.prepare(ctx, binding)
+    } }
+    const actual = value.startNativeMount(f.input, recipe)
+    f.resume.resolve(undefined)
+    await actual
+    const close = value.stopNative(f.input.binding.accountId)
+    await expect(close).resolves.toMatchObject({ status: 'unknown', native: { status: 'unknown', errorEvents: 1 } })
+    await expect(value.stopNative(f.input.binding.accountId)).resolves.toMatchObject({ status: 'unknown' })
+    const lines = output.mock.calls.flat().filter((entry): entry is string => typeof entry === 'string')
+    const native = lines.filter(line => line.includes('cloud/native-disposal-unknown'))
+    const shutdown = lines.filter(line => line.includes('cloud/shutdown-unknown'))
+    expect(native).toHaveLength(1)
+    expect(native[0]).toContain('"errorEvents":1')
+    expect(shutdown).toHaveLength(1)
+    expect([...native, ...shutdown].join()).not.toContain('secret-message')
+    expect([...native, ...shutdown].join()).not.toContain('/secret/path')
+  } finally { output.mockRestore() }
+})
+
+it('[observation] retains native unknown even when the stderr diagnostic fails', async () => {
+  const { value } = factory(), f = fixture('broken-shutdown-diagnostic')
+  const recipe: AccountRecipe = { ...f.recipe, prepare: async (ctx, binding) => {
+    ctx.effect(() => () => { throw new Error('native disposal failed') })
+    await f.recipe.prepare(ctx, binding)
+  } }
+  const actual = value.startNativeMount(f.input, recipe)
+  f.resume.resolve(undefined)
+  await actual
+  const output = vi.spyOn(console, 'error').mockImplementation(() => { throw new Error('stderr failed') })
+  try {
+    await expect(value.stopNative(f.input.binding.accountId)).resolves.toMatchObject({
+      status: 'unknown', native: { status: 'unknown', errorEvents: 1 },
+    })
+    expect(value.inspect()).toMatchObject({ slots: 1, unknown: 1 })
+  } finally { output.mockRestore() }
+})
+
 it('[observation] contains a failed output callback while the same native mount and close settle', async () => {
   const capacity = new RuntimeCapacity({ maxMountedAccounts: 4, maxConcurrentMounts: 2, maxConcurrentDrains: 2 })
   const observed = vi.fn(() => { throw new Error('Synthetic unavailable log output') })

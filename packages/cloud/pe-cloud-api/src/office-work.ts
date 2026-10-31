@@ -1,6 +1,8 @@
 /** Account-owned observation and shutdown of unchanged native Office work. */
 import { OfficeToPdfError } from '@deepseek-ai/dsh-office-to-pdf'
 
+type FailurePhase = 'conversion' | 'classification' | 'owner-unloaded' | 'provider-close' | 'deadline' | 'close-observer' | 'provider-log'
+
 /** Cleanup could not be confirmed; the account must retain its original resources. */
 export class OfficeStopUnconfirmed extends Error {
   /** Existing account-drain failure classification. */
@@ -31,7 +33,7 @@ export class OfficeWork {
    */
   constructor(private readonly maximum: number, private readonly admit: () => void,
     private readonly dispose: () => Promise<void>, private readonly knownFailure: (cause: unknown) => boolean,
-    private readonly report: () => void) {}
+    private readonly report: (phase: FailurePhase) => void) {}
 
   /**
    * Retain the actual native reader; cancellation ends only this caller's wait.
@@ -60,8 +62,8 @@ export class OfficeWork {
       try {
         let known = false
         try { known = knownFailure(cause) }
-        catch (classificationFailure) { this.cleanupFailed(classificationFailure) }
-        if (!known) this.cleanupFailed(cause)
+        catch (classificationFailure) { this.cleanupFailed(classificationFailure, 'classification') }
+        if (!known) this.cleanupFailed(cause, 'conversion')
         result.reject(cause)
       } finally { finish() }
     }
@@ -94,17 +96,18 @@ export class OfficeWork {
 
   /** Record an unload that bypassed the account's ordered shutdown. */
   ownerUnloaded(): void {
-    if (!this.providerClosing) this.cleanupFailed(new Error('Office provider was unloaded outside its account shutdown.'))
+    if (!this.providerClosing) this.cleanupFailed(new Error('Office provider was unloaded outside its account shutdown.'), 'owner-unloaded')
   }
 
   /** Close conversion admission and retain the first unresolved cleanup failure.
    * @param cause Original failure; repeated failures cannot replace its identity.
+   * @param phase Fixed internal failure location; external text is never emitted.
    */
-  cleanupFailed(cause: unknown): void {
+  cleanupFailed(cause: unknown, phase: FailurePhase = 'provider-log'): void {
     this.accepting = false
     if (this.fault !== undefined) return
     this.fault = { cause }
-    try { this.report() }
+    try { this.report(phase) }
     catch (_reportFailure) { console.error('Office cleanup is unconfirmed; account resources remain retained.') }
   }
 
@@ -120,7 +123,7 @@ export class OfficeWork {
       await Promise.all([...this.tasks])
       this.providerClosing = true
       try { await this.dispose() }
-      catch (cause) { this.cleanupFailed(cause) }
+      catch (cause) { this.cleanupFailed(cause, 'provider-close') }
       if (this.fault !== undefined) throw new OfficeStopUnconfirmed(this.fault.cause)
     })()
     void this.actualClose.catch((_cause: unknown) => { /* Original close stays retained after observation expiry. */ })
@@ -128,7 +131,7 @@ export class OfficeWork {
     const expired = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         const failure = new OfficeStopUnconfirmed()
-        this.cleanupFailed(failure)
+        this.cleanupFailed(failure, 'deadline')
         reject(failure)
       }, Math.max(0, deadlineAtMs - Date.now()))
       timer.unref()
@@ -136,7 +139,7 @@ export class OfficeWork {
     this.closeObservation = Promise.race([this.actualClose, expired]).then(() => {
       if (this.fault !== undefined) throw new OfficeStopUnconfirmed(this.fault.cause)
     }, (cause: unknown) => {
-      this.cleanupFailed(cause)
+      this.cleanupFailed(cause, 'close-observer')
       throw cause
     }).finally(() => { clearTimeout(timer) })
     void this.closeObservation.catch((_cause: unknown) => { /* The original account drain observes this result. */ })

@@ -12,6 +12,7 @@ import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import { ConfigSaveCoordinator, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as AccountEntry from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { startNativeAccountBoot, type NativeAccountBootHandle, type NativeAccountBootInput } from '../src/native-boot.ts'
+import { startupFailureObserver } from '../src/startup-observation.ts'
 import type { AccountId, OwnerEpoch } from '../src/types.ts'
 import NativeAccountProbe from './fixtures/native-probe.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -113,6 +114,24 @@ function entry(ctx: Context, id: string) {
 }
 
 describe('private native account assembly', () => {
+  it('emits one sanitized native error after the startup observer has settled', async () => {
+    const output = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const startup = startupFailureObserver([]), handle = fixture('post-ready-error').start({ observeStartup: startup })
+      const ctx = await mounted(handle)
+      startup({ settled: true })
+      const failure = Object.assign(new Error('sensitive-message /secret/path'), { code: 'EACCES' })
+      ctx.logger.error(failure)
+      ctx.logger.error(new Error('second-sensitive-message'))
+      await expect(handle.dispose()).resolves.toMatchObject({ status: 'unknown', errorEvents: 2 })
+      const rows = output.mock.calls.flat().filter((entry): entry is string => typeof entry === 'string'
+        && entry.includes('cloud/native-error'))
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toContain('EACCES')
+      expect(rows[0]).not.toContain('sensitive-message')
+      expect(rows[0]).not.toContain('/secret/path')
+    } finally { output.mockRestore() }
+  })
   it('joins cancelled JSONL preparation and reports its close failure through native disposal', async () => {
     const f = fixture('jsonl-preparation'), read = Promise.withResolvers<undefined>(), releaseRead = Promise.withResolvers<undefined>()
     const close = Promise.withResolvers<undefined>(), releaseClose = Promise.withResolvers<undefined>()

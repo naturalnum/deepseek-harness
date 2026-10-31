@@ -1,7 +1,7 @@
 /** Real native Office provider, account adapter, Cordis fibers and logger; only the external kit is substituted. */
 import { chmod, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import OfficeToPdf, { Config, OfficeSourceKey, type OfficeToPdfRequest } from '@deepseek-ai/dsh-office-to-pdf'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -31,6 +31,7 @@ async function fixture(render: Render, dispose: () => Promise<void> = async () =
   ctx: Context
   native: NativeOffice
   close: () => Promise<void>
+  abortBinding: () => void
 }> {
   kit.create.mockReset().mockResolvedValue({ backend: 'wasm', render, dispose,
     renderImages: vi.fn<() => Promise<never>>(), convert: vi.fn<() => Promise<never>>(), recalculate: vi.fn<() => Promise<never>>() })
@@ -51,7 +52,7 @@ async function fixture(render: Render, dispose: () => Promise<void> = async () =
   if (native === undefined) throw new Error('Native Office fixture did not mount')
   const close = async (): Promise<void> => { lifetime.abort(); await ctx.fiber.dispose() }
   onTestFinished(close)
-  return { ctx, native, close }
+  return { ctx, native, close, abortBinding: () => { lifetime.abort() } }
 }
 
 it('keeps the native reader and scratch until conversion settles after observer cancellation', async () => {
@@ -136,5 +137,52 @@ it('retains original Office Remote implementations and exact account guards', as
     { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
     { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
   ]))
+  await expect(f.native.stop(Date.now() + 2_000)).resolves.toBeUndefined()
+})
+
+it('observes Office ordered stop when the parent account root is already disposing', async () => {
+  const f = await fixture(async ({ outputPath }) => {
+    await writeFile(outputPath, pdf)
+    return { backend: 'wasm', missingFonts: [] }
+  })
+  await expect(f.native.value.convert(request)).resolves.toMatchObject({ pdf: Uint8Array.from(pdf) })
+  const stop = Promise.withResolvers<{ status: 'confirmed' | 'unknown'; rootState: FiberState }>()
+  f.ctx.effect(() => async () => {
+    const rootState = f.ctx.fiber.state
+    try { await f.native.stop(Date.now() + 2_000); stop.resolve({ status: 'confirmed', rootState }) }
+    catch { stop.resolve({ status: 'unknown', rootState }) }
+  }, 'fixture: account ordered stop during parent disposal')
+  await f.ctx.fiber.dispose()
+  const result = await stop.promise
+  expect(result).toEqual({ status: 'unknown', rootState: FiberState.UNLOADING })
+})
+
+it('stops Office before disposing its separate account root when the application root shuts down', async () => {
+  const f = await fixture(async ({ outputPath }) => {
+    await writeFile(outputPath, pdf)
+    return { backend: 'wasm', missingFonts: [] }
+  })
+  await expect(f.native.value.convert(request)).resolves.toMatchObject({ pdf: Uint8Array.from(pdf) })
+  const application = new Context()
+  const stop = Promise.withResolvers<{ status: 'confirmed' | 'unknown'; accountState: FiberState }>()
+  await application.plugin({ apply(owner: Context) {
+    owner.effect(() => async () => {
+      const accountState = f.ctx.fiber.state
+      try { await f.native.stop(Date.now() + 2_000); stop.resolve({ status: 'confirmed', accountState }) }
+      catch { stop.resolve({ status: 'unknown', accountState }) }
+    })
+  } })
+  await application.fiber.dispose()
+  expect(await stop.promise).toEqual({ status: 'confirmed', accountState: FiberState.ACTIVE })
+})
+
+it('stops cleanly when the account binding is aborted before its still-active provider fiber', async () => {
+  const f = await fixture(async ({ outputPath }) => {
+    await writeFile(outputPath, pdf)
+    return { backend: 'wasm', missingFonts: [] }
+  })
+  await expect(f.native.value.convert(request)).resolves.toMatchObject({ pdf: Uint8Array.from(pdf) })
+  f.abortBinding()
+  expect(f.ctx.fiber.state).toBe(FiberState.ACTIVE)
   await expect(f.native.stop(Date.now() + 2_000)).resolves.toBeUndefined()
 })

@@ -4,6 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
 import type { OfficeToPdfKey } from '@deepseek-ai/dsh-office-to-pdf/types'
+import { OfficeSourceKey } from '@deepseek-ai/dsh-office-to-pdf'
 import * as fs from 'node:fs/promises'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -66,6 +67,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>()
   return { ...actual, rename: vi.fn(actual.rename) }
 })
+const officeKit = vi.hoisted(() => ({ create: vi.fn() }))
+vi.mock('../../../document/office-to-pdf/node_modules/@deepseek-ai/libreoffice-kit', () => ({ createConverter: officeKit.create }))
 beforeEach(async () => { vi.mocked(fs.rename).mockImplementation((await vi.importActual<typeof fs>('node:fs/promises')).rename) })
 
 class ExactQuery extends SessionQuery {
@@ -1172,6 +1175,38 @@ it('rejects unselected Office calls before reading the original project', async 
   const metadata = vi.spyOn(ctx.sessionPersistence, 'stat')
   await expect(resolver.resolve(created.sessionId)).rejects.toBeInstanceOf(Error)
   expect(metadata).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('joins the cached native Office converter during factory close; disposer failure=%s', async (failDispose) => {
+  const disposed = vi.fn(async () => { if (failDispose) throw new Error('original converter disposal failed') })
+  const render = vi.fn(async ({ outputPath }: { outputPath: string }) => {
+    await fs.writeFile(outputPath, Buffer.from('%PDF-1.7\nfixture\n%%EOF\n'))
+    return { backend: 'wasm', missingFonts: [] }
+  })
+  officeKit.create.mockReset().mockResolvedValue({ backend: 'wasm', render, dispose: disposed })
+  const f = await fixture({ nativeFiles: true, installFileApi: true, office: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  // Native-only fixture has no production ready claim; isolate just business admission.
+  vi.spyOn(f.factory, 'assertBusinessCurrent').mockImplementation(() => {})
+  vi.spyOn(f.root.peAccountRuntime, 'assertRecipeSealed').mockImplementation(() => {})
+  const bytes = new Uint8Array([80, 75, 3, 4])
+  const request = { extension: 'docx', priority: 'foreground' as const, source: {
+    key: OfficeSourceKey('factory-close'), version: '1', bytes: bytes.length,
+    read: async () => ({ bytes, version: '1' }),
+  } }
+  expect((await outcome.context.officeToPdf.convert(request)).pdf).toBeInstanceOf(Uint8Array)
+  expect((await outcome.context.officeToPdf.convert(request)).pdf).toBeInstanceOf(Uint8Array)
+  expect(render).toHaveBeenCalledOnce()
+  const [closed] = await f.factory.close()
+  expect(disposed).toHaveBeenCalledOnce()
+  if (failDispose) {
+    expect(closed).toMatchObject({ status: 'unknown' })
+    expect(f.factory.inspect()).toMatchObject({ slots: 1, unknown: 1 })
+  } else {
+    expect(closed).toMatchObject({ status: 'observed', native: { status: 'confirmed' } })
+    expect(f.factory.inspect()).toMatchObject({ unknown: 0 })
+  }
 })
 
 it('retains the factory account slot if the original Office owner cannot confirm shutdown', async () => {

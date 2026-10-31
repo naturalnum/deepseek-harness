@@ -68,6 +68,7 @@ interface Slot {
   claimAttempted: boolean
   state: State
   readonly startupDiagnostic: StartupObserver
+  readonly shutdownDiagnostic: StartupObserver
   binding?: AccountBinding
   context?: Context
   native?: NativeAccountBootHandle
@@ -387,6 +388,7 @@ export class AccountFactory {
         cause = cause === undefined ? quarantine : new AggregateError([cause, quarantine], 'Original account drain and quarantine are unconfirmed')
       }
     }
+    observeStartup(slot.shutdownDiagnostic, { failure: cause })
     return Object.freeze({ accountId: slot.accountId, status: 'unknown', ...cause === undefined ? {} : { cause } })
   }
 
@@ -779,6 +781,9 @@ export class AccountFactory {
         const native = await (initial ?? slot.native?.dispose())
         this.logContext(slot, 'native-disposal-observed', native?.status ?? 'not-started')
         if (native?.status === 'unknown') {
+          try { console.error(JSON.stringify({ kind: 'cloud/native-disposal-unknown', status: native.status,
+            errorEvents: native.errorEvents, warningEvents: native.warningEvents, overflow: native.overflow })) }
+          catch (_diagnosticFailure) { /* A diagnostic cannot change native ownership or close settlement. */ }
           slot.state = 'unknown'
           return Object.freeze({ ...await this.unknownClose(slot), native })
         }
@@ -872,6 +877,10 @@ export class AccountFactory {
     const slot: Slot = {
       accountId, recipe, reservation, result: Promise.withResolvers<NativeAccountBootOutcome>(),
       startupDiagnostic: startupFailureObserver(recipe.requiredEntryIds),
+      shutdownDiagnostic: startupFailureObserver([], (record) => {
+        const { causes } = JSON.parse(record) as { causes: unknown }
+        console.error(JSON.stringify({ kind: 'cloud/shutdown-unknown', causes }))
+      }),
       waiters: new Set(), state, claimAttempted: false, closeRequested: false, borrows: 0, releaseAfterClose: false,
     }
     this.slots.set(accountId, slot)

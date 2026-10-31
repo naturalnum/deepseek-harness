@@ -75,6 +75,10 @@ function validateLocations(input: NativeAccountBootInput): void {
  */
 export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAccountBootHandle {
   const diagnostic = input.observeStartup ?? startupFailureObserver(input.requiredEntryIds)
+  const nativeErrorDiagnostic = startupFailureObserver([], (record) => {
+    const { causes } = JSON.parse(record) as { causes: unknown }
+    console.error(JSON.stringify({ kind: 'cloud/native-error', causes }))
+  })
   observeStartup(diagnostic, { phase: 'prepare' })
   try { validateLocations(input) } catch (cause) { observeStartup(diagnostic, { failure: cause }); throw cause }
   if (input.binding.lifetime.aborted) {
@@ -122,6 +126,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
             const failure: unknown = message.args.slice(0, 3).find(value => value !== null
               && (typeof value === 'object' || typeof value === 'function'))
             observeStartup(diagnostic, { nativeError: failure })
+            observeStartup(nativeErrorDiagnostic, { nativeError: failure })
           } else warningEvents++
         } })
         if (disposeRequested) throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup was closed')
