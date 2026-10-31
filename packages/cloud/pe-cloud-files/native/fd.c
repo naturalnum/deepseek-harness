@@ -314,6 +314,12 @@ static napi_value probe_kernel(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static int definite_no_create(int error) {
+  /* Only the approved isolated local backend uses this syscall-result allowlist. */
+  return error == EPERM || error == EACCES || error == EEXIST || error == ENOTDIR || error == EINVAL
+    || error == ENOSPC || error == EROFS || error == ENAMETOOLONG || error == EDQUOT;
+}
+
 #ifdef DSH_FD_TEXT_ABI
 /* ABI7 is a separate build. ABI6 never exports mutation authority. */
 static const char *text_errno(int error) {
@@ -435,7 +441,7 @@ static napi_value write_text(napi_env env, napi_callback_info info) {
     before_available = before_size < (size_t)maximum && length < (size_t)maximum;
   }
   output = openat(parent, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-  if (output < 0) { error = errno; goto done; }
+  if (output < 0) { error = errno; if (!definite_no_create(error)) unknown = 1; goto done; }
   created = 1;
   if (fstat(output, &temp_identity) != 0) { error = errno; unknown = 1; goto done; }
   for (size_t written = 0; written < length;) {
@@ -575,12 +581,6 @@ static int leaf_parent(owned_fds *owned, const char *path, int *close_failed) {
   int closing = retire_close(&fd);
   if (closing != 0) { *close_failed = 1; return closing; }
   return error;
-}
-
-static int definite_no_create(int error) {
-  /* Only the approved isolated local backend uses this syscall-result allowlist. */
-  return error == EPERM || error == EACCES || error == EEXIST || error == ENOTDIR || error == EINVAL
-    || error == ENOSPC || error == EROFS || error == ENAMETOOLONG || error == EDQUOT;
 }
 
 static napi_value leaf_operation(napi_env env, napi_callback_info info, int removing, int durable) {

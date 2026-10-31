@@ -66,6 +66,12 @@ static int below(int dir, const char *name, int flags, mode_t mode) {
     .resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS };
   return (int)syscall(SYS_openat2, dir, name, &how, sizeof(how));
 }
+static int definite_no_create(int error) {
+  /* Only the approved isolated local backend uses this syscall-result allowlist. */
+  return error == EPERM || error == EACCES || error == EEXIST || error == ENOTDIR || error == EINVAL
+    || error == ENOSPC || error == EROFS || error == ENAMETOOLONG || error == EDQUOT;
+}
+
 static void close_fd(stage *s, int *fd) {
   if (*fd < 0) return;
   int value = *fd;
@@ -355,7 +361,11 @@ static napi_value begin(napi_env env, napi_callback_info info) {
     for (int i = 0; i < 16; i++) snprintf(s->temp + 7 + i * 2, 3, "%02x", random[i]);
     if (!strcmp(s->temp, s->name)) return failed(env, o, EINVAL);
     s->file = below(s->dirs[3], s->temp, O_RDWR | O_CREAT | O_EXCL, 0600);
-    if (s->file < 0) return failed(env, o, errno);
+    if (s->file < 0) {
+      error = errno;
+      if (!definite_no_create(error)) s->unknown = 1;
+      return failed(env, o, error);
+    }
     s->temporary = 1;
     if ((error = regular(s, s->file, &s->identity))) return failed(env, o, error);
   }
