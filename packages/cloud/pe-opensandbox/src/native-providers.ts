@@ -136,6 +136,14 @@ export class CloudShellExecutor extends ShellExecutor {
     this.config = Object.freeze({ ...config })
   }
 
+  /** Provider-local immutable limits; the account owner must verify this exact instance and lifetime first.
+   * @returns Limits enforced by this Shell executor.
+   */
+  terminalLimits(): Readonly<{ timeoutMs: number; maxTimeoutMs: number; maxOutputBytes: number }> {
+    const { timeoutMs, maxTimeoutMs, maxOutputBytes } = this.config
+    return Object.freeze({ timeoutMs, maxTimeoutMs, maxOutputBytes })
+  }
+
   override get sandboxMode(): SandboxMode | undefined {
     if (this.config.enforceSessionFilePolicy !== true) return undefined
     const policy = this.ctx.get('sandboxPolicy')

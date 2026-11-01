@@ -17,7 +17,7 @@ import { installAccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/src/bin
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { installAccountExecutionPort } from '../src/closed-owner.ts'
 import * as account from '../src/account.ts'
-import { assertClosedAccountExecution, withAccountApplicationService, accountServiceAvailability } from '../src/index.ts'
+import { assertClosedAccountExecution, withAccountApplicationService, accountServiceAvailability, accountTerminalLimits } from '../src/index.ts'
 import type { DevelopmentServiceId } from '../src/types.ts'
 import { ClosedShellExecutor } from '../src/closed-providers.ts'
 import { closedRoot, closedAccount, installedAccount } from './closed-fixture.ts'
@@ -58,6 +58,7 @@ it('routes a real native bash tool call to the closed provider and never execute
   onTestFinished(() => { resolve.mockRestore() })
   expect(() => { assertClosedAccountExecution(ctx) }).not.toThrow()
   expect(accountServiceAvailability(ctx)).toEqual({ developmentServices: false, servicePreview: false })
+  expect(accountTerminalLimits(ctx)).toBeUndefined()
   const marker = join(directory, 'must-not-exist')
   const result = await ctx.tools.execute({
     callId: ToolCallId('closed-bash'), name: 'bash', signal: new AbortController().signal,

@@ -68,7 +68,15 @@ export class CloudPluginService extends TypertRemoteService {
         if (use.binding !== this.api.binding || use.context.root !== this.ctx.root) unavailable()
         this.api.requireRpc('cloudPlugins/list')
       }
-      check(); return this.control.snapshot(check)
+      check()
+      const snapshot = await this.control.snapshot(check)
+      check()
+      const terminal = this.api.readTerminalLimits?.()
+      check()
+      const value = { ...snapshot, ...(terminal === undefined ? {} : { terminal }) }
+      firstScreenJsonBytes(value, this.control.input.limits.maxReplyBytes)
+      check()
+      return value
     })
   }
 

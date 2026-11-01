@@ -43,6 +43,8 @@ export interface PluginCurrentState {
 }
 /** Native account inventory plus the exact approved control identities. */
 export interface PluginManagerSnapshot {
+  /** Actual currently installed managed Shell limits; omitted when this graph has no managed Shell. */
+  readonly terminal?: Readonly<{ timeoutMs: number; maxTimeoutMs: number; maxOutputBytes: number }>
   readonly bundles: readonly BundleInfo[]
   readonly plugins: readonly PluginInfo[]
   readonly controls: readonly {

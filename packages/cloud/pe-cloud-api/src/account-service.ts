@@ -46,6 +46,8 @@ export interface AccountApiPreparation {
   readonly saves: ConfigSaveBarrier
   /** Explicit Root-approved optional native plugin control; absence grants no manager mutation. */
   readonly plugins?: CloudPluginPreparation
+  /** Read from this exact installed account's live managed Shell provider. */
+  readonly readTerminalLimits?: () => import('./plugin-types.ts').PluginManagerSnapshot['terminal']
   /** Require the exact installed preparation/current graph, independently of business publication. */
   readonly assertMountCurrent: (binding: AccountBinding) => void
   /** Require the original graph's actual business-ready publication on every dispatch. */
@@ -107,6 +109,8 @@ export class CloudAccountApi extends Service {
   private readonly modelKey: { native?: CloudModelKeyService } = {}
   private readonly skills: { native?: CloudSkillService } = {}
   private readonly plugins: { control?: AccountPluginControl; native?: CloudPluginService } = {}
+  /** Actual installed managed Shell limits, read through the account's original execution owner. */
+  readonly readTerminalLimits: AccountApiPreparation['readTerminalLimits']
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
   private readonly office: { native?: NativeOffice } = {}
@@ -138,6 +142,7 @@ export class CloudAccountApi extends Service {
     )
     super(ctx, 'peCloudApi')
     this.binding = input.binding
+    this.readTerminalLimits = input.readTerminalLimits
     this.mountCurrent = input.assertMountCurrent
     this.businessCurrent = input.assertBusinessCurrent
     this.rootFetch = input.inspectRootFetch

@@ -15,7 +15,7 @@ import { ManagedCoordinator, installManagedExecutionProviders } from '../src/man
 import type { ManagedCoordinatorConfig, ManagedExecutionDeployment } from '../src/managed-coordinator.ts'
 import type { NativeAccountExecutionAuthority } from '../src/coordinator.ts'
 import { assertAccountExecutionProviders, installIssuedExecutionPort, withAccountApplicationService,
-  accountServiceAvailability } from '../src/account-port.ts'
+  accountServiceAvailability, accountTerminalLimits } from '../src/account-port.ts'
 import type { AccountExecutionPort } from '../src/account-port.ts'
 import type { SandboxAllocation } from '../src/allocation-types.ts'
 import { allocationMigrationSql } from '../src/migrations/allocations.ts'
@@ -994,4 +994,20 @@ it('observes a cached Session after service settlement while application I/O sti
   expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
   // This fixture scripts allocation transport; it establishes the original command/request observation only.
   expect(work.lease.scope.binding).toBe(a.binding)
+})
+
+
+it('reads only the live account managed Shell limits and withdraws them on revocation', async () => {
+  const f = fixture(); await f.owner.start()
+  const a = f.bind(), b = f.bind('account-2')
+  for (const input of [a, b]) { installIssuedExecutionPort(input.ctx, input.port); installManagedExecutionProviders(input.ctx, input.port) }
+  expect(accountTerminalLimits(a.ctx)).toEqual({ timeoutMs: 20, maxTimeoutMs: 100, maxOutputBytes: 32 })
+  expect(accountTerminalLimits(b.ctx)).toEqual({ timeoutMs: 20, maxTimeoutMs: 100, maxOutputBytes: 32 })
+  const wrong = a.ctx.isolate('shell')
+  wrong.provide('shell', b.ctx.shell)
+  expect(() => accountTerminalLimits(wrong)).toThrow()
+  a.lifetime.abort()
+  expect(() => accountTerminalLimits(a.ctx)).toThrow()
+  expect(accountTerminalLimits(b.ctx)).toEqual({ timeoutMs: 20, maxTimeoutMs: 100, maxOutputBytes: 32 })
+  expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
 })

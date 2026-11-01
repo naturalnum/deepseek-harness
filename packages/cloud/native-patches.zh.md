@@ -20,6 +20,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | [Shell](../shell/shell/src/index.ts)、[Fs](../fs/fs/src/index.ts)、[Subprocess](../subprocess/subprocess/src/index.ts) | [pe-opensandbox providers](pe-opensandbox/src/native-providers.ts) 将原 Shell/Fs/Subprocess 消费接口接到同一 Session 环境，并拥有执行槽位。单有路径不能授权访问；释放未知不能归还槽位。 |
 | [Instruction injection](pe-account-instructions/src/session.ts) | pe-account-instructions 预留 files 拥有的有界读取，提供原生回合快照，不建立另一套 prompt 或 Session 历史。 |
 | [Client persistence](../client/store/src/index.ts)、[Web entry](../client/web/src/boot.ts) | [pe-cloud-client lifetime](pe-cloud-client/src/client/page-lifetime.ts) 在激活前提供账号、代际绑定的端口，在清理前撤销。复用原生 UI 和模块生命周期。 |
+| [终端设置](../client/ui-settings-shell/src/client/index.ts) | [受管终端](pe-cloud-client/src/client/management/plugins/managed-terminal.tsx) 通过有作用域的原生渲染服务复用 Shell 卡片，三个只读限制值来自当前账户的实际 Shell 执行器；本地原生表单行为保持不变。 |
 | [Web bootstrap](../../apps/web/src/cloud-web.ts) | 该模块加载前入口归 pe-cloud-client 集成负责，但保留为明确的应用补丁。迁入动态 client 入口需要另一条静态、动态构建路径；在原生提供等价 pre-boot 集成前保留当前启动方式。 |
 | [Frontend](pe-cloud-access/src/frontend.ts)、[field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud 公开页路由和普通字段可编辑策略位于现有 Cloud 包。原生 frontend 与 ConfigField 实现已恢复。Models 使用原生 onboarding；受保护的 Cloud 密钥使用独立手动集成。 |
 

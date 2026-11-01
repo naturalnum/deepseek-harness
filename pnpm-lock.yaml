@@ -7146,6 +7146,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-models':
         specifier: workspace:*
         version: link:../../client/ui-settings-models
+      '@deepseek-ai/dsh-client-ui-settings-shell':
+        specifier: workspace:*
+        version: link:../../client/ui-settings-shell
       '@deepseek-ai/dsh-client-ui-settings-subagent':
         specifier: workspace:*
         version: link:../../client/ui-settings-subagent

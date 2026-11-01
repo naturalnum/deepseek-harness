@@ -143,6 +143,10 @@ it('assembles original plugin controls and managed skills together with exact ge
       parameters: endpoint.endpoint === 'cloudPlugins/list' ? [] : [{ source: 'json', wire: 'request', codec: { mode: 'strict' } }],
       result: { mode: 'strict' } })
   }
+  const listDescriptor = ctx.typert.local.get('cloudPlugins/list')
+  if (listDescriptor?.result.mode !== 'strict') throw new Error('Original strict list codec absent')
+  const projected = { bundles: [], plugins: [], controls: [], terminal: { timeoutMs: 1234, maxTimeoutMs: 5678, maxOutputBytes: 91011 } }
+  expect(listDescriptor.result.create().parse(projected)).toEqual(projected)
   const installedApi = api
   expect(() => installedApi.requireRpc('cloudPlugins/current')).toThrow(CloudApiError)
   expect(barrier.snapshot().pending).toEqual([]); expect(barrier.snapshot().failures).toEqual([])

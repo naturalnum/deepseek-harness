@@ -6,6 +6,7 @@ import type { SettingsFormLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 export type ShellSettingsLocaleKey =
   | 'title' | 'description'
   | 'timeoutMs' | 'timeoutMsHint' | 'maxOutputBytes' | 'maxOutputBytesHint'
+  | 'maxTimeoutMs' | 'maxTimeoutMsHint' | 'managedOutputHint'
   | 'overridden' | 'reset' | 'readOnly' | 'unavailable'
   | 'save' | 'saving' | 'saveFailed' | 'invalidNumber'
 
@@ -17,6 +18,9 @@ export const en: Record<ShellSettingsLocaleKey, string> = {
   timeoutMsHint: 'How long one command may run before it is terminated.',
   maxOutputBytes: 'Output cap per stream (bytes)',
   maxOutputBytesHint: 'Output beyond this spills to a temporary file rather than being lost.',
+  maxTimeoutMs: 'Maximum command timeout (ms)',
+  maxTimeoutMsHint: 'The maximum timeout any command can request.',
+  managedOutputHint: 'Maximum output retained per stream by this managed executor.',
   overridden: 'Overridden',
   reset: 'Reset to default',
   readOnly: 'This deployment stores settings read-only.',
@@ -35,6 +39,9 @@ export const zh: Record<ShellSettingsLocaleKey, string> = {
   timeoutMsHint: '单条命令允许运行多久，超时即终止。',
   maxOutputBytes: '单流输出上限（字节）',
   maxOutputBytesHint: '超出部分会转存到临时文件，而不是被丢弃。',
+  maxTimeoutMs: '命令超时上限（毫秒）',
+  maxTimeoutMsHint: '单条命令可以请求的最大超时时间。',
+  managedOutputHint: '受管执行器为每个输出流保留的最大字节数。',
   overridden: '已覆盖',
   reset: '恢复默认',
   readOnly: '本部署的设置为只读。',

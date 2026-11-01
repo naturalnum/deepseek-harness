@@ -189,6 +189,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   agentPresetIntegration: 'client-side native preset read adapter — packages/client/ui-agent-preset/README.md owns the API',
   pluginManagerIntegration: 'client-side account plugin inventory and controls — packages/client/ui-plugin-manager/README.md owns the API',
   subagentSettingsIntegration: 'client-side namespace and field binding — packages/client/ui-settings-subagent/README.md owns the API',
+  shellSettingsCard: 'client-side scoped native Terminal component — packages/client/ui-settings-shell/README.md owns its read-only composition API',
   pluginInventory: 'original read-only Typert Remote gateway, outside the Service projection — packages/host/plugin-inventory/README.md owns the API',
   clientPersistence: 'client-side captured logical-key storage port — packages/client/store/README.md owns the API',
   peCloudPage: 'client-side pre-Cordis prepared page owner — packages/cloud/pe-cloud-client/README.md owns the lifecycle',

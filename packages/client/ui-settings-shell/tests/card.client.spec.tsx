@@ -123,3 +123,16 @@ describe('ShellCard', () => {
     expect(screen.getByLabelText(en.timeoutMs)).toHaveProperty('disabled', true)
   })
 })
+
+it('renders all managed limits in the native Terminal form as read-only values', () => {
+  const store = createSnapshotStore<ShellCardState>({ ...settled, writable: false, timeoutMs: field('1234'), maxOutputBytes: field('91011') })
+  const noop = () => {}
+  const props = { view: 'page', t, useShellCard: bindSnapshotSelector(store), edit: noop, resetField: noop,
+    save: noop, discard: noop, managedMaxTimeoutMs: 5678 } as ShellCardProps
+  render(<ShellCard {...props} />)
+  for (const [label, value] of [[en.timeoutMs, '1234'], [en.maxTimeoutMs, '5678'], [en.maxOutputBytes, '91011']]) {
+    const input = screen.getByLabelText(label!) as HTMLInputElement
+    expect(input.value).toBe(value)
+    expect(input.disabled).toBe(true)
+  }
+})

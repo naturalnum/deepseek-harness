@@ -8,6 +8,7 @@ import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, NS } from '../src/client/index.ts'
+import { ShellCard } from '../src/client/ShellCard.tsx'
 import type { ShellCardFace } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -49,6 +50,16 @@ function declareRoot(slots: SlotRegistry): () => void {
 describe('ui-settings-shell apply', () => {
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
+  })
+
+  it('publishes the original Shell card only while its native owner remains active', async () => {
+    const { ctx } = await bench([])
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(ctx.get('shellSettingsCard')).toBe(ShellCard)
+    await fiber.dispose()
+    expect(ctx.get('shellSettingsCard')).toBeUndefined()
+    await ctx.fiber.dispose()
   })
 
   it('declares the services it uses', () => {

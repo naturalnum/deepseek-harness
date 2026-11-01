@@ -17,9 +17,11 @@ export interface CloudNativePluginIntegration extends PluginManagerIntegration {
 /** Connect native display to the guarded Cloud manager without exposing native manager RPCs.
  * @param owner Original account page fiber.
  * @param page Original page and transport lifetime.
+ * @param onTerminal Withdraw or replace the original managed Shell card's actual read-only values.
  * @returns Source bound to that account and its exact approved controls.
  */
-export function createNativePluginManagerIntegration(owner: Context, page: PreparedCloudPage): CloudNativePluginIntegration {
+export function createNativePluginManagerIntegration(owner: Context, page: PreparedCloudPage,
+  onTerminal: (limits: PluginManagerSnapshot['terminal']) => void = () => {}): CloudNativePluginIntegration {
   let controls: PluginManagerSnapshot['controls'] = []
   let bundles: PluginManagerSnapshot['bundles'] = []
   const current = (): void => { page.assertAccountManagementCurrent(owner) }
@@ -62,10 +64,15 @@ export function createNativePluginManagerIntegration(owner: Context, page: Prepa
     },
     async read() {
       current()
-      controls = []; bundles = []
+      controls = []; bundles = []; onTerminal(undefined)
       const result = await owner.remote.cloudPlugins.list(page.lifetime.transport.signal)
       current()
       if (!result.ok) throw new ClientFailure('closed')
+      const limits = result.value.terminal
+      if (limits !== undefined && (![limits.timeoutMs, limits.maxTimeoutMs, limits.maxOutputBytes]
+        .every(value => Number.isSafeInteger(value) && value > 0)
+        || limits.timeoutMs > limits.maxTimeoutMs)) throw new ClientFailure('closed')
+      onTerminal(limits)
       controls = result.value.controls; bundles = result.value.bundles
       return { bundles: result.value.bundles, plugins: result.value.plugins }
     },

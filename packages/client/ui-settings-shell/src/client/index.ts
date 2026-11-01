@@ -1,9 +1,7 @@
 /**
- * The shell executor's settings page, browser half: the command timeout and
- * the per-stream output cap over the `shell` namespace the executor
- * registers. The page registers into the Plugins page's `plugins.item` slot
- * while the Host serves that namespace, so a deployment without a local shell
- * executor shows no trace of it.
+ * Local Shell settings register in `plugins.item` while their native namespace
+ * is served. The scoped `shellSettingsCard` provider also lets managed account
+ * owners reuse the original component with their actual read-only limits.
  */
 
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -22,6 +20,13 @@ import { en, zh, type ShellSettingsLocaleKey } from './locales.ts'
 export type { ShellCardProps } from './ShellCard.tsx'
 export type { ShellCardFace, ShellCardState, ShellSettings } from './shell-card-controller.ts'
 export type { ShellSettingsLocaleKey } from './locales.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Native Shell card for trusted compositions that supply their own actual read-only state. */
+    shellSettingsCard: typeof ShellCard
+  }
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -42,6 +47,7 @@ export const inject = ['slots', 'locale', 'configForms']
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
+  ctx.effect(() => ctx.reflect.provide('shellSettingsCard', ShellCard), 'ui-settings-shell: card renderer')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-shell: dictionaries')
   // The base bundle composes exactly one shell executor per platform; the page binds the served one.
   const bash = new ShellCardController(ctx.configForms.get(BASH_NS))

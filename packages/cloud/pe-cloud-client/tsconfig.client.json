@@ -78,6 +78,7 @@
     "src/client/management/plugins/current-card.ts",
     "src/client/management/plugins/catalog-reader.ts",
     "src/client/management/plugins/install.tsx",
+    "src/client/management/plugins/managed-terminal.tsx",
     "src/client/management/plugins/native-integration.ts",
     "src/client/management/plugins/NativePluginConfigurationSection.tsx",
     "src/client/management/plugins/PluginEditPanel.tsx",
@@ -158,6 +159,9 @@
     },
     {
       "path": "../../client/ui-settings-subagent"
+    },
+    {
+      "path": "../../client/ui-settings-shell"
     }
   ]
 }

@@ -13,6 +13,7 @@ import { registerCloudPluginManagement } from './register.ts'
 import { createPagePluginCatalog } from './catalog-reader.ts'
 import { createNativePluginManagerIntegration } from './native-integration.ts'
 import { NativePluginConfigurationSection } from './NativePluginConfigurationSection.tsx'
+import { managedTerminalCard } from './managed-terminal.tsx'
 import { PLUGIN_MANAGEMENT_NAMESPACE } from './locales.ts'
 
 // FiberState is a cross-package const enum and is not exported at runtime.
@@ -43,7 +44,23 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
           : owner.locale.resolveText(metadata.description) }
     }, report)
     const removers = new Set<() => void>()
-    const source = createNativePluginManagerIntegration(owner, page)
+    let terminal: ReturnType<typeof managedTerminalCard> | undefined
+    let terminalLimits: import('@deepseek-ai/dsh-pe-cloud-api/types').PluginManagerSnapshot['terminal']
+    const terminalOwner = owner.inject(['shellSettingsCard'], (scope) => {
+      if (closed()) return
+      const card = managedTerminalCard(scope, scope.shellSettingsCard)
+      terminal = card; card.update(terminalLimits)
+      return () => { if (terminal === card) terminal = undefined; card.dispose() }
+    })
+    const stopTerminal = (): void => { terminalLimits = undefined; terminal?.dispose(); terminal = undefined }
+    page.lifetime.transport.signal.addEventListener('abort', stopTerminal, { once: true })
+    removers.add(() => {
+      page.lifetime.transport.signal.removeEventListener('abort', stopTerminal); stopTerminal()
+      void observeCloudDisposal(terminalOwner.dispose).catch(() => { console.error('Native Terminal card withdrawal unconfirmed.') })
+    })
+    const source = createNativePluginManagerIntegration(owner, page, (limits) => {
+      if (!closed()) { terminalLimits = limits; terminal?.update(limits) }
+    })
     const unprovide = owner.reflect.provide('pluginManagerIntegration', source)
     removers.add(() => { void observeCloudDisposal(unprovide).catch(() => { console.error('Cloud plugin source withdrawal unconfirmed.') }) })
     let active = true

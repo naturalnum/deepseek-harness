@@ -2113,6 +2113,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\']',
+        description: 'Actual installed managed Shell limits, read through the account\'s original execution owner.',
+        parameters: [],
+      },
+      {
         signature: 'assertInstalled(owner: Context = this.ctx): void',
         description: 'Require this exact service and binding without granting business admission.',
         parameters: [{ name: 'owner', description: 'Native Loader scope; omitted checks the API owner\'s own scope.' }],
@@ -5706,7 +5711,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountApiPreparation',
-    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n    readonly retainOfficeLifecycle?: (lifecycle: AccountOfficeLifecycle) => void;\n}',
+    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly readTerminalLimits?: () => import(\'./plugin-types.ts\').PluginManagerSnapshot[\'terminal\'];\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n    readonly retainOfficeLifecycle?: (lifecycle: AccountOfficeLifecycle) => void;\n}',
   },
   {
     name: 'AccountAttachmentBackend',
@@ -6134,7 +6139,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>;\n    verifyApprovedPluginIntent(intent: PluginRebuildIntent, persisted: Plug /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
@@ -8070,7 +8075,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginManagerSnapshot',
-    declaration: 'export interface PluginManagerSnapshot {\n    readonly bundles: readonly BundleInfo[];\n    readonly plugins: readonly PluginInfo[];\n    readonly controls: readonly {\n        readonly id: string;\n        readonly selectionTarget: ApprovedPluginControl[\'selectionTarget\'];\n        readonly operations: ApprovedPluginControl[\'operations\'];\n    }[];\n}',
+    declaration: 'export interface PluginManagerSnapshot {\n    readonly terminal?: Readonly<{\n        timeoutMs: number;\n        maxTimeoutMs: number;\n        maxOutputBytes: number;\n    }>;\n    readonly bundles: readonly BundleInfo[];\n    readonly plugins: readonly PluginInfo[];\n    readonly controls: readonly {\n        readonly id: string;\n        readonly selectionTarget: ApprovedPluginControl[\'selectionTarget\'];\n        readonly operations: ApprovedPluginControl[\'operations\'];\n    }[];\n}',
   },
   {
     name: 'PluginOperation',

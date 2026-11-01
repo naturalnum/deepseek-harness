@@ -57,3 +57,23 @@ it('maps configuration only to the exact approved native bundle row', async () =
     moduleName: '@example/other', enabled: false } })).toBeUndefined()
   expect(f.source.configurationId({ kind: 'bundle', pkg })).toBeUndefined()
 })
+
+it('accepts only finite managed Shell limits and clears them before a failed refresh', async () => {
+  const abort = new AbortController(), changed = vi.fn()
+  const list = vi.fn().mockResolvedValueOnce({ ok: true, value: { bundles: [], plugins: [], controls: [],
+    terminal: { timeoutMs: 10, maxTimeoutMs: 20, maxOutputBytes: 30 } } })
+    .mockResolvedValueOnce({ ok: true, value: { bundles: [], plugins: [], controls: [],
+      terminal: { timeoutMs: 21, maxTimeoutMs: 20, maxOutputBytes: 30 } } })
+  const owner = { remote: { cloudPlugins: { list } } }, page = {
+    bootstrap: { capabilities: { configuration: { plugins: [] } } }, lifetime: { transport: { signal: abort.signal } },
+    assertAccountManagementCurrent: () => { abort.signal.throwIfAborted() },
+  }
+  const source = createNativePluginManagerIntegration(owner as never, page as never, changed)
+  await source.read()
+  expect(changed).toHaveBeenLastCalledWith({ timeoutMs: 10, maxTimeoutMs: 20, maxOutputBytes: 30 })
+  await expect(source.read()).rejects.toBeDefined()
+  expect(changed).toHaveBeenLastCalledWith(undefined)
+  abort.abort()
+  await expect(source.read()).rejects.toBeDefined()
+  expect(list).toHaveBeenCalledTimes(2)
+})
