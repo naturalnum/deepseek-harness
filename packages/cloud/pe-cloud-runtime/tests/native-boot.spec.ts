@@ -113,7 +113,119 @@ function entry(ctx: Context, id: string) {
   return result
 }
 
+function entrySnapshot(ctx: Context) {
+  return [...ctx.loader.entries()].filter(row => row.options.id !== 'include').map((row) => {
+    const config: unknown = row.options.config
+    return { id: row.options.id, name: row.options.name, config }
+  })
+}
+
 describe('private native account assembly', () => {
+  it('saves native settings for a base row alongside the private inserted profile', async () => {
+    const f = fixture('base-settings')
+    writeFileSync(f.input.configPath, JSON.stringify([{ id: 'probe', name: 'cordis:probe', config: { ordinary: 'base', count: 3 } }]))
+    writeFileSync(f.profile.patchPath, JSON.stringify([{ insert: [
+      { id: 'account', name: 'cordis:runtime-account' },
+      { id: 'config-editor', name: 'cordis:editor' },
+      { id: 'settings', name: 'cordis:settings' },
+    ] }]))
+    const ctx = await mounted(f.start())
+    await ctx.settings.update('probe', { count: 2 })
+    expect(ctx.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 2 })
+    expect(readFileSync(f.profile.patchPath, 'utf8')).toContain('count: 2')
+  })
+
+  it('rejects a duplicate private insert until its exact config is moved to a native override', async () => {
+    const f = fixture('duplicate-settings')
+    writeFileSync(f.input.configPath, JSON.stringify([{ id: 'probe', name: 'cordis:probe', config: { ordinary: 'base', count: 8 } }]))
+    const first = f.start(), ctx = await mounted(first)
+    expect(ctx.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 1 })
+    const originalEntries = entrySnapshot(ctx)
+    const before = readFileSync(f.profile.patchPath, 'utf8')
+    await expect(ctx.settings.update('probe', { count: 2 })).rejects.toThrow('overridden by a home patch or command-line overlay')
+    expect(readFileSync(f.profile.patchPath, 'utf8')).toBe(before)
+    await first.dispose()
+
+    // Migration is performed while stopped; preserve the exact prior row as a native patch.
+    const rows = JSON.parse(before) as Array<{ insert: Array<{ id: string; name: string; config?: unknown }> }>
+    const inserted = rows[0]?.insert
+    if (inserted === undefined) throw new Error('Private insert missing')
+    const index = inserted.findIndex(row => row.id === 'probe')
+    if (index < 0) throw new Error('Duplicate row missing')
+    const duplicate = inserted.splice(index, 1)[0]
+    if (duplicate === undefined) throw new Error('Duplicate row missing')
+    writeFileSync(f.profile.patchPath, JSON.stringify([...rows, duplicate]))
+    const second = f.start(), migrated = await mounted(second)
+    expect(entrySnapshot(migrated)).toEqual(originalEntries)
+    expect(migrated.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 1 })
+    await migrated.settings.update('probe', { count: 2 })
+    expect(migrated.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 2 })
+    await second.dispose()
+    const reopened = await mounted(f.start())
+    expect(reopened.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 2 })
+  })
+
+  it('can save a private duplicate after base removal but loses the shared row for another profile', async () => {
+    const b = fixture('base-removal-b'), a = fixture('base-removal-a')
+    const baseRows = [
+      { id: 'probe', name: 'cordis:probe', config: { ordinary: 'base', count: 8 } },
+      { id: 'base-only', name: 'cordis:base-only' },
+    ]
+    writeFileSync(b.input.configPath, JSON.stringify(baseRows))
+    writeFileSync(a.profile.patchPath, JSON.stringify([{ insert: [
+      { id: 'account', name: 'cordis:runtime-account' },
+      { id: 'config-editor', name: 'cordis:editor' },
+      { id: 'settings', name: 'cordis:settings' },
+    ] }]))
+    const prepareB: NativeAccountBootInput['prepare'] = async (ctx, binding) => {
+      await b.input.prepare(ctx, binding); ctx.loader.builtins['base-only'] = { apply() {} }
+    }
+    const prepareA: NativeAccountBootInput['prepare'] = async (ctx, binding) => {
+      await a.input.prepare(ctx, binding); ctx.loader.builtins['base-only'] = { apply() {} }
+    }
+    const firstB = b.start({ prepare: prepareB }), firstA = a.start({ configPath: b.input.configPath, prepare: prepareA })
+    const [ctxB, ctxA] = await Promise.all([mounted(firstB), mounted(firstA)])
+    const byId = (ctx: Context) => entrySnapshot(ctx).sort((left, right) => left.id.localeCompare(right.id))
+    const original = byId(ctxB), oldOrder = entrySnapshot(ctxB).map(row => row.id)
+    expect(ctxB.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 1 })
+    expect(ctxA.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 8 })
+    const privateBefore = readFileSync(b.profile.patchPath, 'utf8')
+    await firstB.dispose(); await firstA.dispose()
+
+    // A new common base omits the duplicate, leaving B's original private rows untouched.
+    writeFileSync(b.input.configPath, JSON.stringify(baseRows.slice(1)))
+    const secondB = b.start({ prepare: prepareB }), newB = await mounted(secondB)
+    expect(readFileSync(b.profile.patchPath, 'utf8')).toBe(privateBefore)
+    expect(byId(newB)).toEqual(original)
+    expect(entrySnapshot(newB).map(row => row.id)).not.toEqual(oldOrder)
+    await newB.settings.update('probe', { count: 2 })
+    expect(newB.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 2 })
+    await secondB.dispose()
+    const reopenedB = await mounted(b.start({ prepare: prepareB }))
+    expect(reopenedB.settings.describe().find(row => row.ns === 'probe')?.value).toEqual({ count: 2 })
+    const missing = await a.start({ configPath: b.input.configPath, prepare: prepareA }).result
+    expect(missing.status).toBe('failed')
+    if (missing.status !== 'failed') throw new Error('Missing shared base row was accepted')
+    expect(missing.cause).toMatchObject({ code: 'cloud/account-unavailable' })
+  })
+
+  it('still rejects a true home override and a revoked edit without changing the private profile', async () => {
+    const f = fixture('home-override')
+    writeFileSync(f.input.configPath, JSON.stringify([{ id: 'probe', name: 'cordis:probe', config: { ordinary: 'base', count: 8 } }]))
+    writeFileSync(f.profile.patchPath, JSON.stringify([{ insert: [
+      { id: 'account', name: 'cordis:runtime-account' },
+      { id: 'config-editor', name: 'cordis:editor' },
+      { id: 'settings', name: 'cordis:settings' },
+    ] }]))
+    writeFileSync(join(f.profile.home, 'cordis.patch.yml'), JSON.stringify([{ id: 'probe', config: { ordinary: 'home', count: 3 } }]))
+    const ctx = await mounted(f.start()), before = readFileSync(f.profile.patchPath, 'utf8')
+    await expect(ctx.settings.update('probe', { count: 2 })).rejects.toThrow('overridden by a home patch or command-line overlay')
+    expect(readFileSync(f.profile.patchPath, 'utf8')).toBe(before)
+    const revoked = new Error('Original caller revoked')
+    await expect(ctx.settings.update('probe', { count: 2 }, undefined, { assertCurrent() { throw revoked } })).rejects.toThrow(revoked)
+    expect(readFileSync(f.profile.patchPath, 'utf8')).toBe(before)
+  })
+
   it('emits one sanitized native error after the startup observer has settled', async () => {
     const output = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {

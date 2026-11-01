@@ -108,7 +108,7 @@ Cloud entry 仅在显式提供 `maxDownloadBytes` 且 bootstrap filePreview 为 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-本包将 bootstrap 请求结果和原生载体生命周期与权威账户、Session 状态分开。
+本包将 bootstrap 请求结果和原生载体生命周期与权威账户、Session 状态分开。原生 Agent 预设适配器通过已注入的 Remote 拥有者读取清单。依赖缺失或被替换时，适配器保持只读，并拒绝待完成的读取，直到当前拥有者可用。
 
 `/client` 为 Cordis 启动前的拥有者导出 `PreparedCloudPage`，以及它复用的既有 `CloudPageLifetime` 和 `CloudPagePersistence` 组件。准备流程调用 access 的正式 `decodeCloudBootstrap`，只创建一个固定生命周期和缓存端口，并提供包含必需端口、激活前 owner 绑定和销毁前同步撤销存储与 carrier 准入的原生选项。真实 Loader 的 `apply` 核验 owner 后，以捕获的 hooks 调用公开 `installConnection`；不写全局当前账户或全局 transport。
 

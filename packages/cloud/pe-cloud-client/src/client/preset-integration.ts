@@ -4,16 +4,30 @@ import type { AgentPresetIntegration } from '@deepseek-ai/dsh-client-ui-agent-pr
 import type { PreparedCloudPage } from './prepared-page.ts'
 import { ClientFailure } from './errors.ts'
 
-/** Install the original inventory projection for this page's lifetime.
+/** Install the read-only inventory projection; missing or replaced Remote dependencies reject reads.
  * @param ctx Original Cloud client scope.
  * @param page Original prepared account page.
  */
 export function installCloudPresetIntegration(ctx: Context, page: PreparedCloudPage): void {
-  const current = (): void => { page.assertAccountManagementCurrent(ctx) }
+  let dependency: { owner: Context; active: boolean } | undefined
+  ctx.inject(['remote', 'remote.pluginInventory'], (owner) => {
+    const captured = { owner, active: true }
+    dependency = captured
+    owner.effect(() => () => {
+      captured.active = false
+      if (dependency === captured) dependency = undefined
+    }, 'pe-cloud-client: withdraw preset inventory owner')
+  })
+  const current = (captured: NonNullable<typeof dependency>): void => {
+    if (!captured.active || dependency !== captured) throw new ClientFailure('closed')
+    page.assertAccountManagementCurrent(captured.owner)
+  }
   const snapshot = async () => {
-    current()
-    const result = await ctx.remote.pluginInventory.list()
-    current()
+    const captured = dependency
+    if (captured === undefined) throw new ClientFailure('closed')
+    current(captured)
+    const result = await captured.owner.remote.pluginInventory.list()
+    current(captured)
     if (!result.ok || result.value.agentPresets === undefined) throw new ClientFailure('closed')
     return result.value.agentPresets
   }

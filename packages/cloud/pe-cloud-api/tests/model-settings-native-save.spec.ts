@@ -14,6 +14,30 @@ beforeEach(async () => {
   vi.mocked(fs.rename).mockReset().mockImplementation(native.rename)
 })
 
+it('rejects an approved model save before writing when another base id is duplicated in the private insert', async () => {
+  const f = await localeFixture('model-duplicate-base', true, [{ namespace: 'model-provider', field: 'models' }], 'duplicate')
+  await f.ctx.plugin(AgentDefaultModel, { provider: 'deepseek-official', model: 'synthetic' }).await()
+  const before = readFileSync(f.profile.patchPath)
+  await expect(f.call([{ op: 'set', path: ['models'], value: [{ id: 'synthetic', name: 'QA' }] }],
+    f.revision('model-provider'), { ns: 'model-provider' })).rejects.toMatchObject({
+    code: 'settings/rejected', message: 'Profile config impact has an unproven entry set',
+  })
+  expect(readFileSync(f.profile.patchPath)).toEqual(before)
+  expect(f.barrier.snapshot().failures).toEqual([])
+})
+
+it('saves the approved model field after the same private row is a native override', async () => {
+  const f = await localeFixture('model-native-override', true, [{ namespace: 'model-provider', field: 'models' }], 'override')
+  await f.ctx.plugin(AgentDefaultModel, { provider: 'deepseek-official', model: 'synthetic' }).await()
+  const result = await f.call([{ op: 'set', path: ['models'], value: [{ id: 'synthetic', name: 'QA' }] }],
+    f.revision('model-provider'), { ns: 'model-provider' })
+  if (typeof result !== 'object' || result === null || !('value' in result)) throw new Error('Settings mutation returned no value')
+  expect(result.value).toEqual({ models: [{ id: 'synthetic', name: 'QA', inputModalities: ['text'] }] })
+  expect(f.barrier.snapshot().failures).toEqual([])
+  await expect(f.call([{ op: 'set', path: ['baseURL'], value: 'https://example.invalid' }],
+    f.revision('model-provider'), { ns: 'model-provider' })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+})
+
 it('saves one approved structured model list through the existing revisioned Settings writer', async () => {
   const fields = [{ namespace: 'model-provider', field: 'models' }]
   const f = await localeFixture('model-native-save', true, fields)

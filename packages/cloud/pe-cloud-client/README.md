@@ -108,7 +108,7 @@ Every submission requires an explicit `if-idle` or `stop-and-apply` choice. The 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The package keeps bootstrap request outcomes and native carrier lifetimes separate from authoritative account and Session state.
+The package keeps bootstrap request outcomes and native carrier lifetimes separate from authoritative account and Session state. The native Agent Presets adapter reads the inventory through its injected Remote owner. Missing or replaced dependencies keep that adapter read-only and reject pending reads until the current owner is available.
 
 `/client` exports `PreparedCloudPage` for the pre-Cordis owner, plus the existing `CloudPageLifetime` and `CloudPagePersistence` components it reuses. Preparation calls access's canonical `decodeCloudBootstrap`, creates exactly one fixed lifetime and cache port, and exposes native options containing the required port, pre-activation owner binding and synchronous pre-disposal storage and carrier admission revocation. The real Loader `apply` verifies that owner before invoking public `installConnection` with captured hooks; it never writes a global current account or global transport.
 

@@ -67,7 +67,8 @@ interface LocaleCallOptions {
   extraArgs?: Record<string, unknown>
 }
 
-export async function localeFixture(name = 'a', enabled = true, fields: readonly ApprovedConfigurationField[] = [{ namespace: 'locale', field: 'preference', values: ['zh', 'en'] }]) {
+export async function localeFixture(name = 'a', enabled = true, fields: readonly ApprovedConfigurationField[] = [{ namespace: 'locale', field: 'preference', values: ['zh', 'en'] }],
+  layout: 'normal' | 'duplicate' | 'override' = 'normal') {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'locale-field-'))), dir = join(home, 'profile')
   mkdirSync(dir); initProfile(dir, [])
   writeFileSync(join(home, 'package.json'), JSON.stringify({ name: 'locale-native-owned-fixture', private: true,
@@ -102,7 +103,7 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
     { id: 'skill-tool', name: '@deepseek-ai/dsh-tool-skill', config: { catalogDescriptionMaxLength: 500 } },
   ]
   writeFileSync(configPath, JSON.stringify(base) + '\n')
-  writeFileSync(profile.patchPath, JSON.stringify([{ insert: [
+  const privateRows = [
     { id: 'runtime-account', name: 'cordis:locale-account' },
     { id: 'dependencies', name: 'cordis:locale-dependencies' },
     { id: 'jsonl', name: 'cordis:locale-jsonl', config: { root: join(home, 'sessions'), compression: 'none' } },
@@ -117,7 +118,12 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
     { id: 'credentials', name: 'cordis:locale-credentials', config: { path: credentialPath, watch: false } },
     { id: 'model-provider', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { apiKeyEnv: APPROVED_MODEL_KEY.ref,
       models: [{ id: 'synthetic', maxOutputTokens: 128, contextSize: 4096, capabilities: [] }] } },
-  ] }]) + '\n')
+  ]
+  const repeated = base.find(row => row.id === 'skill-tool')
+  if (repeated === undefined) throw new Error('Expected fixture base row missing')
+  writeFileSync(profile.patchPath, JSON.stringify([{ insert: [
+    ...privateRows, ...layout === 'duplicate' ? [repeated] : [],
+  ] }, ...layout === 'override' ? [repeated] : []]) + '\n')
   const lifetime = new AbortController()
   let binding: AccountBinding = Object.freeze({ accountId: brandString<AccountBinding['accountId']>(name),
     epoch: brandString<AccountBinding['epoch']>('1'), recipeVersion: 'locale-component', lifetime: lifetime.signal })
