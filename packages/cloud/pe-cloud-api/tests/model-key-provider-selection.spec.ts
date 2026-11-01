@@ -138,7 +138,7 @@ it.each(['web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http'] as 
     const entry = [...f.ctx.loader.entries()].find(row => row.options.id === id)!
     f.ctx.loader.builtins['web-replaced-fixture'] = { apply() {} }
     await entry.fiber!.dispose()
-    entry.fiber = undefined
+    delete entry.fiber
     await entry.update({ name: 'cordis:web-replaced-fixture' })
     await expect(new ModelKeyProvider(f.ctx, f.policy, 32, true).audit())
       .rejects.toMatchObject({ code: 'cloud/account-unavailable' })
