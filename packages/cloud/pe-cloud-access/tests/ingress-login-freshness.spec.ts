@@ -157,9 +157,9 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
     const request = httpRequest({ host: '127.0.0.1', port: address.port, method: 'POST', path: '/api/workspaceFiles/read', agent: false,
       headers: { ...headers, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, (response) => {
       const parts: Buffer[] = []
-      response.on('data', (chunk) => { parts.push(Buffer.from(chunk)) })
+      response.on('data', (chunk: Buffer) => { parts.push(Buffer.from(chunk)) })
       response.on('error', reject)
-      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(parts).toString() }))
+      response.on('end', () => { resolve({ status: response.statusCode ?? 0, body: Buffer.concat(parts).toString() }) })
     })
     request.on('error', reject); request.end(body)
   })

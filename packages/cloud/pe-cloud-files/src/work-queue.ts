@@ -1,4 +1,5 @@
 /** Internal scheduling only: no path access, quota authority, worker provider, or account identity. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FilesLimits } from './types.ts'
@@ -273,11 +274,18 @@ export class FilesWorkQueue {
     owned?: RecordState['owned'], retention: RecordState['retention'] = 'result',
   ): Promise<ResidentResult<T>> {
     const canRun = this.running < this.limits.maxRunning && lane.running < this.limits.maxRunningPerLane
+    // A queued task may be started by another request's completion; keep only its original async context.
+    let captured: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined = AsyncLocalStorage.snapshot()
     return new Promise<ResidentResult<T>>((resolve, reject) => {
       const record: RecordState = {
         id: owned?.responsibility.id ?? randomUUID() as OperationId, lane, reservedBytes: bytes, retention,
         controller: new AbortController(),
-        work,
+        work: (control) => {
+          const run = captured
+          captured = undefined // A held result or lease must not retain the submitting context.
+          if (run === undefined) throw new Error('files work was already invoked')
+          return run(work, control)
+        },
         deliver: (value, release) => { resolve({ value: value as T, release }) },
         reject, cleanupWait: () => {}, phase: 'queued', abandoned: false, invoked: false,
         ...owned === undefined ? {} : { owned },

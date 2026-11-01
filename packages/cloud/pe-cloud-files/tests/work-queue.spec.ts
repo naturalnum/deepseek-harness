@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FilesWorkQueue } from '../src/work-queue.ts'
 import type { FilesLimits } from '../src/types.ts'
@@ -309,4 +310,57 @@ describe('files actual-work ownership', () => {
     expect(task).not.toHaveBeenCalled()
     queue.close()
   })
+})
+
+
+it('executes queued same-peer same-endpoint work in its own original occurrence context', async () => {
+  const context = new AsyncLocalStorage<{ peer: object; endpoint: string; occurrence: object }>()
+  const queue = new FilesWorkQueue({ ...limits, maxRunning: 1 }), lane = queue.openLane()
+  const peer = {}, firstCarrier = { peer, endpoint: 'workspaceFiles/readBytes', occurrence: {} }
+  const secondCarrier = { peer, endpoint: firstCarrier.endpoint, occurrence: {} }
+  const entered = deferred<null>(), release = deferred<null>()
+  const first = context.run(firstCarrier, () => lane.run(1, async () => {
+    expect(context.getStore()).toBe(firstCarrier); entered.resolve(null); await release.promise; return 'first'
+  }))
+  await entered.promise
+  const second = context.run(secondCarrier, () => lane.run(1, async () => context.getStore()))
+  expect(queue.inspect().queued).toBe(1)
+  release.resolve(null)
+  const [a, b] = await Promise.all([first, second])
+  try {
+    expect(b.value === firstCarrier).toBe(false)
+    expect(b.value === secondCarrier).toBe(true)
+  } finally { a.release(); b.release(); queue.close() }
+})
+
+it('does not inherit the preceding carrier for work submitted without a context', async () => {
+  const context = new AsyncLocalStorage<object>(), queue = new FilesWorkQueue({ ...limits, maxRunning: 1 })
+  const lane = queue.openLane(), entered = deferred<null>(), release = deferred<null>()
+  const first = context.run({}, () => lane.run(1, async () => { entered.resolve(null); await release.promise }))
+  await entered.promise
+  const second = lane.run(1, async () => context.getStore())
+  expect(queue.inspect().queued).toBe(1); release.resolve(null)
+  const [a, b] = await Promise.all([first, second])
+  try { expect(b.value).toBeUndefined() } finally { a.release(); b.release(); queue.close() }
+})
+
+
+it('preserves queued cancellation and actual failure accounting across captured contexts', async () => {
+  const context = new AsyncLocalStorage<object>(), queue = new FilesWorkQueue({ ...limits, maxRunning: 1 })
+  const lane = queue.openLane(), entered = deferred<null>(), release = deferred<null>()
+  const first = context.run({}, () => lane.run(1, async () => { entered.resolve(null); await release.promise }))
+  await entered.promise
+  const cancelled = new AbortController(), reason = new Error('queued cancelled'), never = vi.fn(async () => {})
+  const removed = context.run({}, () => lane.run(1, never, cancelled.signal))
+  const rejected = expect(removed).rejects.toBe(reason); cancelled.abort(reason); await rejected
+  expect(never).not.toHaveBeenCalled(); expect(queue.inspect().queued).toBe(0)
+  const scope = {}, failure = new Error('actual work failed')
+  const failed = context.run(scope, () => lane.run(1, async () => {
+    expect(context.getStore()).toBe(scope); throw failure
+  }))
+  const observed = expect(failed).rejects.toBe(failure)
+  expect(queue.inspect().queued).toBe(1); release.resolve(null)
+  const result = await first; result.release(); await observed
+  expect(queue.inspect()).toMatchObject({ running: 0, queued: 0, residentBytes: 0, pending: 0 })
+  lane.close(); queue.close()
 })

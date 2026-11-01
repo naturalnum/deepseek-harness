@@ -295,3 +295,12 @@ it('refuses a mismatched approved environment mask before reading or writing the
   expect(readFileSync(f.credentialPath, 'utf8')).toBe(before)
   expect(f.saves.snapshot().tracked).toBe(0)
 })
+
+
+it('maps invalid-skill-bundle without leaking its detail', async () => {
+  const f = await fixture()
+  Object.assign(f.use, { assertCurrent: () => { throw new CloudApiError('cloud/invalid-skill-bundle', 'sensitive fixture detail') } })
+  const result = await f.access().describe({ ref: REF }).catch((error: unknown) => error)
+  expect(result).toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(JSON.stringify(result)).not.toContain('sensitive fixture detail')
+})

@@ -746,10 +746,14 @@ describe('ConversationRoot resident composer', () => {
     const content = b.view.container.querySelector('[data-conversation-content]') as HTMLElement
     const root = content.parentElement as HTMLElement
     Object.defineProperty(content, 'offsetWidth', { value: 1200, configurable: true })
-    const getItem = Storage.prototype.getItem
+    const originalGetItem: unknown = Object.getOwnPropertyDescriptor(Storage.prototype, 'getItem')?.value
+    function isGetItem(value: unknown): value is (this: Storage, key: string) => string | null {
+      return typeof value === 'function'
+    }
+    if (!isGetItem(originalGetItem)) throw new Error('Expected Storage.getItem')
     const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
       if (key === 'dsh.conversation.contentWidth') throw new Error('persistence revoked')
-      return getItem.call(this, key)
+      return originalGetItem.call(this, key)
     })
     try {
       expect(() => { act(() => { fireResize(content) }) }).not.toThrow()

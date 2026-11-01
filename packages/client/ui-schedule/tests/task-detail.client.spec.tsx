@@ -628,15 +628,18 @@ describe('TaskDetail rule menus', () => {
     // Give the three zones one label so they render as one row, whose id
     // preserves the zone already stated by the rule regardless of ICU data.
     const zones = ['America/Detroit', 'America/New_York', 'America/Toronto']
-    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions
-    const formatToParts = Intl.DateTimeFormat.prototype.formatToParts
+    const originalParts: unknown = Object.getOwnPropertyDescriptor(Intl.DateTimeFormat.prototype, 'formatToParts')?.value
+    function isFormatToParts(value: unknown): value is (this: Intl.DateTimeFormat, date?: Date | number) => Intl.DateTimeFormatPart[] {
+      return typeof value === 'function'
+    }
+    if (!isFormatToParts(originalParts)) throw new Error('Expected DateTimeFormat.formatToParts')
     const restoreSystemZone = pinSystemZone('Asia/Shanghai')
     const inventory = vi.spyOn(Intl, 'supportedValuesOf')
       .mockReturnValue(zones)
     const parts = vi.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts')
       .mockImplementation(function (this: Intl.DateTimeFormat, date?: Date | number) {
-        const options = resolvedOptions.call(this)
-        const result = formatToParts.call(this, date)
+        const options = this.resolvedOptions()
+        const result = originalParts.call(this, date)
         if (!zones.includes(options.timeZone)) return result
         const name = options.timeZoneName === 'longOffset' ? 'GMT-04:00'
           : options.timeZoneName === 'longGeneric' ? 'Eastern Time' : undefined

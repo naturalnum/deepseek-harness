@@ -250,10 +250,12 @@ export class RootRecipeAudit {
     this.assertSealed(recipeVersion)
     const candidate = this.candidate
     if (candidate === undefined) this.fail()
+    // The recheck may synchronously revoke or replace the captured candidate.
+    const stillSealed = (): boolean => this.candidate === candidate && this.state.status === 'sealed'
     return () => {
       if (this.candidate !== candidate || this.state.status !== 'sealed' || this.state.recipeVersion !== recipeVersion) this.fail()
       this.recheck(false)
-      if (this.candidate !== candidate || this.state.status !== 'sealed') this.fail()
+      if (!stillSealed()) this.fail()
     }
   }
 

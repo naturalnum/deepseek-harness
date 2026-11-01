@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { FilesWorkQueue } from '../../pe-cloud-files/src/work-queue.ts'
 /** Original native Loader/Gateway/login registry/carrier handoff;
  * M1 database results and runtime Use issuance are explicit external fixtures. */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
@@ -359,7 +361,13 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
     issueUse: () => issueUse(binding), observe: () => ({ borrowed, released, inUse, calls }),
     setRead: (next: typeof read) => { read = next }, setDispatch: (next: typeof dispatchCheck) => { dispatchCheck = next },
     revokeReadRoot: () => { rootValid = false },
-    driftReadRoot: () => { rootEntry.options.config.value++ },
+    driftReadRoot: () => {
+      const config: unknown = rootEntry.options.config
+      if (typeof config !== 'object' || config === null || !('value' in config) || typeof config.value !== 'number') {
+        throw new Error('Root fixture config value missing')
+      }
+      config.value++
+    },
     readCounts: () => ({ fullChecks, retainedChecks, rootChecks }),
     setOperation: (next: ConfigurationPeerOperation<unknown>) => { consume = next },
     setOrdinary: (next: () => Promise<unknown>) => { ordinary = next },
@@ -1603,4 +1611,46 @@ it('real account exposure invalidated after a native read prevents any HTTP resu
   expect(call.result()).toBeUndefined()
   expect(call.output()).toEqual({ headers: 0, bytes: 0 })
   expect(checks).toBe(2)
+})
+
+
+it('keeps the original same-peer same-endpoint HTTP occurrence when real Files work queues', async () => {
+  const f = await fixture(1000, true), handle = await f.acquire('login=a')
+  const queue = new FilesWorkQueue({ maxLanes: 1, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 1,
+    maxQueuedPerLane: 1, maxResidentBytes: 8, maxResidentBytesPerLane: 8, waitTimeoutMs: 10000 })
+  const lane = queue.openLane(), firstEntered = Promise.withResolvers<undefined>(), secondQueued = Promise.withResolvers<undefined>()
+  const releaseFirst = Promise.withResolvers<undefined>()
+  const storage = Reflect.get(f.registry, 'requestCarrier') as AsyncLocalStorage<{ read?: object }>
+  let calls = 0, firstOccurrence: object | undefined, secondOccurrence: object | undefined, observed: object | undefined
+  let observedAdmission = false
+  f.setRead(async (peer, method) => {
+    expect(peer === handle.peer).toBe(true); expect(method).toBe('read')
+    const original = storage.getStore()?.read
+    if (original === undefined) throw new Error('Missing actual HTTP carrier')
+    if (++calls === 1) {
+      firstOccurrence = original
+      const result = await lane.run(1, async () => { firstEntered.resolve(undefined); await releaseFirst.promise; return 'first' })
+      result.release(); return 'first'
+    }
+    secondOccurrence = original
+    const waiting = lane.run(1, async () => {
+      observed = storage.getStore()?.read
+      observedAdmission = f.registry.readOperationCurrent(peer, f.binding, 'workspaceFiles/read', () => {})
+      return 'second'
+    })
+    expect(queue.inspect().queued).toBe(1); secondQueued.resolve(undefined)
+    const result = await waiting; result.release(); return 'second'
+  })
+  try {
+    const first = await f.http(handle, () => {}, 'if-idle', undefined, 'read')
+    await firstEntered.promise
+    const second = await f.http(handle, () => {}, 'if-idle', undefined, 'read')
+    await secondQueued.promise
+    releaseFirst.resolve(undefined)
+    await Promise.all([first.body, second.body])
+    expect(firstOccurrence === undefined).toBe(false); expect(secondOccurrence === undefined).toBe(false)
+    expect(firstOccurrence === secondOccurrence).toBe(false)
+    expect(observedAdmission).toBe(true)
+    expect(observed === firstOccurrence).toBe(false); expect(observed === secondOccurrence).toBe(true)
+  } finally { releaseFirst.resolve(undefined); lane.close(); queue.close() }
 })

@@ -125,7 +125,7 @@ describe('externally admitted native carriers through Loader composition', () =>
 
   it('refuses a response before any HTTP output when Loader options drift during the native handler', async () => {
     let check = (): void => {}
-    const host = await boot(() => {}, undefined, undefined, undefined, () => check())
+    const host = await boot(() => {}, undefined, undefined, undefined, () => { check() })
     const entry = [...host.ctx.loader.entries()].find(row => row.options.name === 'cordis:fixture')
     if (entry === undefined) throw new Error('real Loader fixture entry missing')
     const plan = entry.prepareConfigUpdate(entry.options.config)
@@ -137,10 +137,10 @@ describe('externally admitted native carriers through Loader composition', () =>
       method: 'POST', headers: { 'content-type': 'application/json' },
     }, (response) => {
       headers++
-      response.on('data', (chunk) => { bytes += chunk.length })
-      response.on('end', () => done.resolve(undefined))
+      response.on('data', (chunk: Buffer | string) => { bytes += chunk.length })
+      response.on('end', () => { done.resolve(undefined) })
     })
-    request.on('error', () => done.resolve(undefined))
+    request.on('error', () => { done.resolve(undefined) })
     request.end(JSON.stringify({ type: 'client-request', rpcId: 'late-drift', method: 'fixture/hold',
       payload: { args: { label: 'late-drift' } } }))
     try {

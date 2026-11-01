@@ -60,6 +60,7 @@ function safeFailure(error: unknown): CloudApiError {
       case 'cloud/account-unavailable':
       case 'cloud/invalid-config':
       case 'cloud/invalid-project-title':
+      case 'cloud/invalid-skill-bundle':
       case 'cloud/model-not-allowed':
         break
     }

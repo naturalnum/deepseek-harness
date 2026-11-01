@@ -25,14 +25,15 @@ describe('HTTP bridge abort', () => {
     const actual = bridge(request, response, {
       requestBodyMode: () => 'buffered', fetch: async () => new Response(body),
     }, PEER, 1024, () => { throw refusal })
-    const outcome = actual.then(() => undefined, error => error).finally(() => { settled = true })
+    const outcome = actual.then(() => undefined, (error: unknown) => error).finally(() => { settled = true })
     await cancelled.promise
     expect(settled).toBe(false)
     expect({ headers, writes, ended }).toEqual({ headers: 0, writes: 0, ended: false })
     cleanup.reject(fault)
     const error = await outcome
     expect(error).toBeInstanceOf(ResponseCleanupError)
-    expect((error as ResponseCleanupError).errors).toEqual([refusal, fault])
+    if (!(error instanceof ResponseCleanupError)) throw new Error('Expected response cleanup error', { cause: error })
+    expect(error.errors).toEqual([refusal, fault])
   })
 
   it('destroys a declared-oversize request instead of draining it', async () => {

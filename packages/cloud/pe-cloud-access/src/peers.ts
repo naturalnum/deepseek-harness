@@ -106,6 +106,17 @@ interface ReadCarrier {
   active: boolean
 }
 
+/** Read again after callbacks, which can synchronously close the original carrier or Peer. */
+function readCarrierCurrent(read: ReadCarrier): boolean {
+  return read.active && read.entry.phase === 'ready' && read.entry.handle === read.handle
+    && read.entry.use === read.use && !read.response.destroyed
+}
+
+/** Re-read response state after the original ingress checks, which can close it synchronously. */
+function responseOpen(response: ServerResponse): boolean {
+  return !response.destroyed && !response.writableEnded
+}
+
 /**
  * Internal registry for a verified login and one trusted native account epoch.
  * Preparing and uncertain cleanup retain Peer capacity. Every actual native cleanup remains observed.
@@ -267,7 +278,7 @@ export class LoginPeerRegistry {
     read.rootCurrent()
     current(handle)
     use.assertRetained()
-    if (!read.active || entry.phase !== 'ready' || entry.handle !== handle || entry.use !== use || read.response.destroyed) {
+    if (!readCarrierCurrent(read)) {
       throw new AuthAccessError('cloud/account-unavailable', id)
     }
     return true
@@ -475,7 +486,7 @@ export class LoginPeerRegistry {
           this.assertCurrent(handle, requestId)
           this.ports.beforeDispatch?.(request, selectedRead, handle)
           this.assertCurrent(handle, requestId)
-          if (response.destroyed || response.writableEnded) throw new AuthAccessError('cloud/account-unavailable', requestId)
+          if (!responseOpen(response)) throw new AuthAccessError('cloud/account-unavailable', requestId)
         })
       } catch (error) {
         if (error instanceof ResponseCleanupError) {

@@ -290,24 +290,27 @@ it('offline captured Root audit detects revoke and reseal and defers only plan d
   expect(audit.inspect().status).toBe('sealed')
   const current = audit.captureReadCurrent('m8m')
   const entry = f.entry('files'), guard = vi.spyOn(entry, 'assertConfigUpdatePlan')
+  const config: unknown = entry.options.config
+  if (typeof config !== 'object' || config === null || !('minimumHealthyWorkers' in config)
+    || typeof config.minimumHealthyWorkers !== 'number') throw new Error('Files fixture config missing')
   current(); expect(guard).not.toHaveBeenCalled()
-  entry.options.config.minimumHealthyWorkers++
+  config.minimumHealthyWorkers++
   current(); expect(guard).not.toHaveBeenCalled()
-  expect(() => audit.assertSealed('m8m')).toThrow()
-  expect(() => current()).toThrow()
-  entry.options.config.minimumHealthyWorkers--
+  expect(() => { audit.assertSealed('m8m') }).toThrow()
+  expect(() => { current() }).toThrow()
+  config.minimumHealthyWorkers--
   audit.seal(f.input)
   expect(audit.inspect().status).toBe('sealed')
-  expect(() => current()).toThrow()
+  expect(() => { current() }).toThrow()
   const replacement = audit.captureReadCurrent('m8m')
   const originalFiber = entry.fiber
   if (originalFiber === undefined) throw new Error('Original Files fiber fixture missing')
   try {
     delete entry.fiber
-    expect(() => replacement()).toThrow()
+    expect(() => { replacement() }).toThrow()
   } finally { entry.fiber = originalFiber }
   audit.seal(f.input)
   const afterReplacement = audit.captureReadCurrent('m8m')
   audit.revoke()
-  expect(() => afterReplacement()).toThrow()
+  expect(() => { afterReplacement() }).toThrow()
 })
