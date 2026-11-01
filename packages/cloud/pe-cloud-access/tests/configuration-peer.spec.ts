@@ -15,7 +15,7 @@ import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import { bindTypertRemote, Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { apply as connectionApply, inject as connectionInject, ResponseCleanupError } from '@deepseek-ai/dsh-client-connection'
+import { apply as connectionApply, inject as connectionInject, HostConnectionService, ResponseCleanupError } from '@deepseek-ai/dsh-client-connection'
 import type { AccountBinding, AccountId, AccountUse, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Auth } from 'better-auth'
 import pg from 'pg'
@@ -95,7 +95,7 @@ vi.mock('node:fs/promises', async (load) => {
   } }
 })
 
-declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service; workspaceFiles: Service } }
+declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service } }
 const requestId = brandString<Parameters<BetterAuthAccess['authenticate']>[1]>('configuration-peer-component')
 interface NativeWebSocket extends EventEmitter {
   readonly readyState: number
@@ -1478,7 +1478,9 @@ it('offline response cleanup failure retains the original Peer use and blocks cl
   const f = await fixture(), handle = await f.acquire('login=a')
   f.expectCleanupFailure()
   const failure = new ResponseCleanupError(new Error('admission'), new Error('body cleanup'))
-  vi.spyOn(f.ctx.connection, 'handleNodeRequest').mockRejectedValue(failure)
+  const connection = f.ctx.connection
+  if (!(connection instanceof HostConnectionService)) throw new Error('Original host connection fixture missing')
+  vi.spyOn(connection, 'handleNodeRequest').mockRejectedValue(failure)
   const call = await f.http(handle, () => {})
   await expect(call.actual).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed', cause: failure })
   await expect.poll(() => f.cleanupFailures.length).toBe(1)

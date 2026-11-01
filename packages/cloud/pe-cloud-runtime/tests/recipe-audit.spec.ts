@@ -301,9 +301,11 @@ it('offline captured Root audit detects revoke and reseal and defers only plan d
   expect(() => current()).toThrow()
   const replacement = audit.captureReadCurrent('m8m')
   const originalFiber = entry.fiber
-  entry.fiber = undefined
-  expect(() => replacement()).toThrow()
-  entry.fiber = originalFiber
+  if (originalFiber === undefined) throw new Error('Original Files fiber fixture missing')
+  try {
+    delete entry.fiber
+    expect(() => replacement()).toThrow()
+  } finally { entry.fiber = originalFiber }
   audit.seal(f.input)
   const afterReplacement = audit.captureReadCurrent('m8m')
   audit.revoke()
