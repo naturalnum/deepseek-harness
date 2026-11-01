@@ -227,7 +227,7 @@ async await()
 
 **返回**：进入稳定状态后的此 fiber。
 
-[源码](../../vendor/cordis/src/fiber.ts#L704)
+[源码](../../vendor/cordis/src/fiber.ts#L705)
 
 ### fiber.restart()
 
@@ -245,7 +245,7 @@ dispose 此插件，并立即使用其当前配置重新加载。
 
 **返回**一个在重新加载完成后兑现的 promise。
 
-[源码](../../vendor/cordis/src/fiber.ts#L718)
+[源码](../../vendor/cordis/src/fiber.ts#L719)
 
 ### fiber.update(config, noSave?)
 
@@ -273,7 +273,7 @@ update(config: any, noSave = false)
 
 **返回**无返回值；重启由 `internal/update` waterfall 执行。
 
-[源码](../../vendor/cordis/src/fiber.ts#L736)
+[源码](../../vendor/cordis/src/fiber.ts#L737)
 
 ## Effect
 
