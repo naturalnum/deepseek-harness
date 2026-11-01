@@ -5,6 +5,7 @@ import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import { AccountRuntimeError } from './errors.ts'
 import type { DrainParticipant, RootRecipeInput, RootRecipeIssue, RootRecipeObservation, RootRecipeRole } from './types.ts'
+import type { FileReadTiming } from './file-read-timing.ts'
 
 type Entry = NonNullable<Fiber['entry']>
 type Plan = ReturnType<Entry['prepareConfigUpdate']>
@@ -67,6 +68,7 @@ export class RootRecipeAudit {
     private readonly owner: Context,
     private readonly participants: () => readonly RegisteredRootParticipant[],
     private readonly control: () => Readonly<{ phase: string; recipeVersion: string | undefined; maximum: number | undefined }>,
+    private readonly fileReadTiming?: FileReadTiming,
   ) {
     owner.on('internal/plugin', () => { this.revoke('root-plugin') })
     owner.on('internal/service', () => { this.revoke('root-service') })
@@ -346,6 +348,14 @@ export class RootRecipeAudit {
   }
 
   private recheck(checkPlans = true): void {
+    if (this.fileReadTiming !== undefined) {
+      this.fileReadTiming.measure(checkPlans ? 'root-full' : 'root-captured', () => { this.recheckActual(checkPlans) })
+      return
+    }
+    this.recheckActual(checkPlans)
+  }
+
+  private recheckActual(checkPlans: boolean): void {
     const candidate = this.candidate
     if (candidate === undefined) return
     let reason: RevokeReason = 'entry-identity'
@@ -355,7 +365,22 @@ export class RootRecipeAudit {
         reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
         reason = 'entry-config-plan'
-        if (checkPlans) entry.assertConfigUpdatePlan(plan)
+        if (checkPlans) {
+          if (this.fileReadTiming === undefined) entry.assertConfigUpdatePlan(plan)
+          else {
+            let key: 'root-plan-api' | 'root-plan-runtime' | 'root-plan-access' | 'root-plan-files'
+              | 'root-plan-execution' | 'root-plan-other' = 'root-plan-other'
+            try {
+              const role = candidate.input.roots.find(row => row.module === module)?.role
+              if (role === 'api/root') key = 'root-plan-api'
+              else if (role === 'runtime/root') key = 'root-plan-runtime'
+              else if (role === 'access/root') key = 'root-plan-access'
+              else if (role === 'files/root') key = 'root-plan-files'
+              else if (role === 'opensandbox/root') key = 'root-plan-execution'
+            } catch (_error) { /* A diagnostic label cannot affect the original guard. */ }
+            this.fileReadTiming.measure(key, () => { entry.assertConfigUpdatePlan(plan) })
+          }
+        }
       }
       for (const { key, value, fiber } of candidate.providers) {
         reason = 'provider-identity'; provider = key
@@ -363,7 +388,12 @@ export class RootRecipeAudit {
         if (!object(now) || original(now) !== value || fiber.state !== FiberState.ACTIVE) throw new Error('changed')
         const fact = candidate.facts.find(row => descends(fiber, row.fiber))
         reason = 'provider-ownership-or-health'
-        if (fact === undefined || !this.healthy(key, value, fact.entry)) throw new Error('changed')
+        if (fact === undefined) throw new Error('changed')
+        const stage = key === 'peAuth' ? 'root-health-auth' : key === 'peFilesPool' ? 'root-health-files'
+          : key === 'peSandboxCoordinator' ? 'root-health-execution' : undefined
+        const healthy = this.fileReadTiming !== undefined && stage !== undefined
+          ? this.fileReadTiming.measure(stage, () => this.healthy(key, value, fact.entry)) : this.healthy(key, value, fact.entry)
+        if (!healthy) throw new Error('changed')
       }
       provider = undefined; reason = 'participants'
       const now = this.participants()

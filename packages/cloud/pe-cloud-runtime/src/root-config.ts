@@ -12,6 +12,8 @@ import type { OwnerRecoveryLimits, RecoveryVerifierId } from './owner-types.ts'
 
 /** Required deployment inputs for the actual root Loader; component capacities stay separate. */
 export interface RuntimeRootConfig extends RuntimeConfig {
+  /** Temporary numerical guard diagnostics; omitted or false leaves collection disabled. */
+  readonly fileReadTiming?: boolean
   /** Explicit maintenance-only authority; omission preserves ordinary runtime admission and closes recovery. */
   readonly recovery?: Readonly<{ readonly verifierId: RecoveryVerifierId; readonly limits: OwnerRecoveryLimits }>
   readonly recipeVersion: string
@@ -87,6 +89,7 @@ export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(acc
 
 /** Actual root deployment schema; no component configuration or absent field enables production. */
 export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
+  fileReadTiming: z.union([z.boolean()]),
   recovery: z.union([z.object({
     verifierId: z.const('local-original-process-and-provider-v1').required(),
     limits: z.object({

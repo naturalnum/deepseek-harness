@@ -38,6 +38,7 @@ function hasReadCarrier(value: unknown): value is {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'readOperationCurrent') === 'function'
 }
 import { createAccountPolicy } from './account-policy.ts'
+import { createFileReadTiming, type FileReadTiming } from './file-read-timing.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
 import type { AccountBinding, AccountId, AccountOwner, AccountOwnerResolver, AccountRecoveryRuntime, AccountRuntimeService, AccountUse, InstanceId, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootIngressCloseOwner, RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
@@ -84,6 +85,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
 
   private readonly participants = new Map<ParticipantId, RootParticipant>()
   private readonly recipe: RootRecipeAudit
+  private readonly fileReadTiming: FileReadTiming | undefined
   private readonly capacity: RuntimeCapacity
   private closed = false
   private control: RootControl | undefined
@@ -142,16 +144,29 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * Install one root with explicit limits; this does not acquire a PG owner or mark an account ready.
    * @param ctx Root plugin context.
    * @param config Required deployment capacities.
+   * @param enableFileReadTiming Trusted Root opt-in for numerical guard diagnostics; components default to disabled.
    */
-  constructor(ctx: Context, config: RuntimeConfig) {
+  constructor(ctx: Context, config: RuntimeConfig, enableFileReadTiming = false) {
     const resolved = RuntimeConfigSchema(config)
     const subagentCapacity = resolveSubagentCapacity(resolved.subagentCapacity)
     super(ctx, 'peAccountRuntime')
     this.capacity = new RuntimeCapacity(resolved, subagentCapacity)
+    let timing: FileReadTiming | undefined
+    if (enableFileReadTiming) {
+      try {
+        timing = createFileReadTiming((value) => { ctx.logger.warn('Cloud file timing aggregate: %j', value) })
+        const owned = timing
+        ctx.effect(() => () => { owned.close() }, 'pe-cloud-runtime: close temporary numerical timing')
+      } catch (_error) {
+        try { timing?.close() } catch (_ignored) { /* Diagnostics never change Root admission. */ }
+        timing = undefined
+      }
+    }
+    this.fileReadTiming = timing
     this.recipe = new RootRecipeAudit(ctx, () => [...this.participants.values()], () => ({
       phase: this.control?.phase ?? 'component', recipeVersion: this.control?.config.recipeVersion,
       maximum: this.control?.config.native.maxEntries,
-    }))
+    }), timing)
     const rootClose = ctx.root.effect(() => () => this.close(), 'pe-cloud-runtime: join actual control at root disposal')
     ctx.effect(() => async () => {
       try { await this.close() } finally { await rootClose() }
@@ -300,7 +315,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     validateRootLocations(resolved)
     const credentials = ctx.get('credentials')
     if (credentials === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Runtime root requires the formal credentials service')
-    const runtime = new PeAccountRuntime(ctx, resolved)
+    const runtime = new PeAccountRuntime(ctx, resolved, resolved.fileReadTiming === true)
     const actual = runtime.startControl(resolved, credentials)
     try {
       await observe(actual, resolved.startupTimeoutMs, 'Runtime root startup observation expired')
@@ -715,6 +730,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         maxPathBytes: config.paths.maxPathBytes,
         storage: Object.freeze({ owner: storage, files }),
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
+          ...this.fileReadTiming === undefined ? {} : { fileReadTiming: this.fileReadTiming },
           ...config.subagentCapacity === undefined ? {} : {
             reserveSubagent: (binding, depth) => control.factory.reserveSubagent(binding, depth),
           },
@@ -755,6 +771,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
               api.assertProvisionableModel(provider, model)
             },
             (current) => { this.assertRecipeSealed(config.recipeVersion); control.factory.assertBusinessCurrent(current) },
+            this.fileReadTiming,
           ),
           ...!hasReadCarrier(selectedAuth) ? {} : { readCurrent: (caller, binding, endpoint) => {
             const peer = caller.invocation?.peer

@@ -26,6 +26,7 @@ import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { assertAccountPermissionAncestry } from './account-permissions.ts'
+import type { FileReadTiming } from './file-read-timing.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from './types.ts'
 import { AccountAttachments, type AccountAttachmentLimits } from './account-attachments.ts'
@@ -76,6 +77,8 @@ export interface AccountNativeGuards {
 
 /** Actual Root resources, retained by the factory; none is installed as an account Root service. */
 export interface AccountNativePreparation {
+  /** Original Root's optional numerical timing; no account or RPC can supply it. */
+  readonly fileReadTiming?: FileReadTiming
   /** Original Root capacity closure; unknown must retain its slot and synchronously close original business admission.
    * Omission keeps child factory and native admission wiring closed. It is never provided by a Peer or Settings. */
   readonly reserveSubagent?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation
@@ -199,11 +202,15 @@ export class AccountNativeIntegration {
       references: [...new Set(modelKey.limits.bindings.map(binding => binding.ref))], maxReferences: modelKey.limits.bindings.length,
       maxReferenceBytes: Math.max(...modelKey.limits.bindings.map(binding => Buffer.byteLength(binding.ref))),
     }, mutable ? () => { containSaveFailure?.() } : undefined)
+    const fileReadTiming = this.input.fileReadTiming
     const api = new CloudAccountApi(ctx, {
       ...this.input.plugins === undefined ? {} : { plugins: this.input.plugins },
       readTerminalLimits: () => accountTerminalLimits(ctx),
       binding, saves: this.saves, rootExposure: this.input.exposure, selected: this.input.exposure.manifest,
       assertMountCurrent: mountCurrent,
+      ...fileReadTiming === undefined ? {} : {
+        timeFileInventory: (work: () => void) => { fileReadTiming.measure('file-inventory', work) },
+      },
       assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,

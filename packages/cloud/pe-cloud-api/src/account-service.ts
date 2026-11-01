@@ -52,6 +52,8 @@ export interface AccountApiPreparation {
   readonly assertMountCurrent: (binding: AccountBinding) => void
   /** Require the original graph's actual business-ready publication on every dispatch. */
   readonly assertBusinessCurrent: (binding: AccountBinding) => void
+  /** Optional original Root's numerical observation of the native files registry check. */
+  readonly timeFileInventory?: (work: () => void) => void
   /** Read the original shared project/Preset/default-model policy; absence keeps bootstrap assertions closed. */
   readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>
   /**
@@ -96,6 +98,7 @@ export class CloudAccountApi extends Service {
   private readonly saves: ConfigSaveBarrier
   private readonly mountCurrent: AccountApiPreparation['assertMountCurrent']
   private readonly businessCurrent: AccountApiPreparation['assertBusinessCurrent']
+  private readonly timeFileInventory: AccountApiPreparation['timeFileInventory']
   private readonly rootFetch: AccountApiPreparation['inspectRootFetch']
   private readonly bootstrapCurrent: AccountApiPreparation['assertBootstrapCurrent']
   private readonly maxNativeInventoryEntries: AccountApiPreparation['maxNativeInventoryEntries']
@@ -145,6 +148,7 @@ export class CloudAccountApi extends Service {
     this.readTerminalLimits = input.readTerminalLimits
     this.mountCurrent = input.assertMountCurrent
     this.businessCurrent = input.assertBusinessCurrent
+    this.timeFileInventory = input.timeFileInventory
     this.rootFetch = input.inspectRootFetch
     this.bootstrapCurrent = input.assertBootstrapCurrent
     this.maxNativeInventoryEntries = input.maxNativeInventoryEntries
@@ -969,8 +973,10 @@ export class CloudAccountApi extends Service {
   }
 
   private assertWorkspaceFilesCurrent(): void {
-    if (this.files.native === undefined) this.nativeUnavailable()
-    this.files.native.assertCurrent()
+    const native = this.files.native
+    if (native === undefined) this.nativeUnavailable()
+    if (this.timeFileInventory === undefined) native.assertCurrent()
+    else this.timeFileInventory(() => { native.assertCurrent() })
   }
 
   private inspectFetchRoutes(): { native: readonly ExactFetchExposure[]; root: readonly ExactFetchExposure[] } {

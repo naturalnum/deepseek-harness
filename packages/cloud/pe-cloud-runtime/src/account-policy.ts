@@ -25,6 +25,7 @@ import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type { AccountBinding } from './types.ts'
 import { ACCOUNT_NATIVE_ENTRIES, type AccountNativeGuards } from './account-native-integration.ts'
 import { createAccountFileMutationGuard } from './account-permissions.ts'
+import type { FileReadTiming } from './file-read-timing.ts'
 
 /** Explicit deployment selection for one fixed native preset and finite exact model routes. */
 export interface AccountPolicyConfig {
@@ -140,9 +141,18 @@ class AccountPolicy {
     private readonly config: AccountPolicyConfig, private readonly exposure: ExposureService['policy'], private readonly maxEntries: number,
     private readonly provisionableModel?: (provider: string, model: string) => void,
     private readonly assertBusinessCurrent?: (binding: AccountBinding) => void,
+    private readonly fileReadTiming?: FileReadTiming,
   ) {}
 
   current(): void {
+    if (this.fileReadTiming !== undefined) {
+      this.fileReadTiming.measure('account-current', () => { this.currentActual() })
+      return
+    }
+    this.currentActual()
+  }
+
+  private currentActual(): void {
     this.ctx.fiber.assertActive()
     if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding || this.ctx.root.get('peAccount') !== this.binding) {
       throw new CloudApiError('cloud/stale-generation', 'The account policy belongs to an ended graph.')
@@ -159,12 +169,18 @@ class AccountPolicy {
     for (const fact of this.facts ?? []) {
       if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
         || fact.entry.moduleNamespace !== fact.module) unavailable()
-      try { fact.entry.assertConfigUpdatePlan(fact.plan) }
+      try {
+        if (this.fileReadTiming === undefined) fact.entry.assertConfigUpdatePlan(fact.plan)
+        else this.fileReadTiming.measure('account-plan', () => { fact.entry.assertConfigUpdatePlan(fact.plan) })
+      }
       catch (_cause) {
         const update = this.loopUpdates.getStore()
         if (update?.fact !== fact) unavailable()
         const next = update.refresh()
-        try { next.entry.assertConfigUpdatePlan(next.plan) } catch (_invalid) { unavailable() }
+        try {
+          if (this.fileReadTiming === undefined) next.entry.assertConfigUpdatePlan(next.plan)
+          else this.fileReadTiming.measure('account-plan', () => { next.entry.assertConfigUpdatePlan(next.plan) })
+        } catch (_invalid) { unavailable() }
       }
     }
   }
@@ -942,6 +958,7 @@ class AccountPolicy {
  * @param maxEntries Existing deployment bound on native Loader and preset inventory rows.
  * @param provisionableModel Optional original audited provider check for first-key bootstrap; actual model dispatch is unchanged.
  * @param assertBusinessCurrent Original business admission check; required for children and rechecked after awaits.
+ * @param fileReadTiming Optional original Root's numerical guard observations.
  * @returns Shared concrete Controller/factory/LLM guards; no account, Session or ready identity is created here.
  */
 export function createAccountPolicy(
@@ -949,8 +966,10 @@ export function createAccountPolicy(
   exposure: ExposureService['policy'], maxEntries: number,
   provisionableModel?: (provider: string, model: string) => void,
   assertBusinessCurrent?: (binding: AccountBinding) => void,
+  fileReadTiming?: FileReadTiming,
 ): AccountNativeGuards {
-  const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries, provisionableModel, assertBusinessCurrent)
+  const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries,
+    provisionableModel, assertBusinessCurrent, fileReadTiming)
   return {
     beginSettingsUpdate: (namespace, ops, fields) => policy.beginSettingsUpdate(namespace, ops, fields),
     allowSettingsUnset: (namespace, field, values) => policy.allowSettingsUnset(namespace, field, values),
