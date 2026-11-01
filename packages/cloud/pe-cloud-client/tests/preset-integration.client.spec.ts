@@ -2,7 +2,36 @@
 import { Context } from '@deepseek-ai/cordis'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { readRoster } from '../../../client/ui-agent-preset/src/client/settings-store.ts'
 import { installCloudPresetIntegration } from '../src/client/preset-integration.ts'
+
+it('reports a failed native roster read during concurrent root disposal', async () => {
+  const ctx = new Context(), lifetime = new AbortController()
+  const nativeList = vi.fn(async () => { throw new Error('client api: agentPresets/list has no active Connection') })
+  const provider = ctx.plugin({ apply(scope: Context) {
+    new TestRemote(scope, { agentPresets: { list: nativeList }, pluginInventory: {
+      list: async () => ({ ok: true, value: { entries: [], agentPresets: [] } }),
+    } })
+  } })
+  await provider.await()
+  let uiScope: Context | undefined
+  const ui = ctx.plugin({ inject: ['remote', 'remote.agentPresets'], apply(scope: Context) { uiScope = scope } })
+  await ui.await()
+  const page = { lifetime: { transport: { signal: lifetime.signal } },
+    assertAccountManagementCurrent: (owner: Context) => { owner.fiber.assertActive(); lifetime.signal.throwIfAborted() } }
+  const plugin = ctx.plugin({ apply(scope: Context) { installCloudPresetIntegration(scope, page as never) } })
+  onTestFinished(async () => { lifetime.abort(); await ctx.fiber.dispose() })
+  await plugin.await()
+  if (uiScope === undefined) throw new Error('UI scope did not activate')
+  expect(uiScope.get('agentPresetIntegration')).toBeDefined()
+  lifetime.abort()
+  await plugin.dispose()
+  const stop = ctx.fiber.dispose()
+  const result = await readRoster(uiScope)
+  await stop
+  expect(nativeList).toHaveBeenCalledOnce()
+  expect(result).toEqual({ ok: false, error: 'client api: agentPresets/list has no active Connection' })
+})
 
 it('shows the real roster and composition without exposing configuration values', async () => {
   const ctx = new Context(), lifetime = new AbortController()

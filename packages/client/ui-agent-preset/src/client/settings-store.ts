@@ -75,7 +75,11 @@ export async function readRoster(ctx: ClientContext): Promise<RosterRead> {
     try { return { ok: true, value: await integration.list() } }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   }
-  const result = await ctx.remote.agentPresets.list()
+  let result
+  try { result = await ctx.remote.agentPresets.list() }
+  catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
   if (result.ok) return { ok: true, value: result.value }
   // Agent presets are optional: without that service every session uses the
   // Host composition, so callers receive the same empty roster as a mounted

@@ -183,6 +183,19 @@ describe('the agent-preset roster store', () => {
     expect(state.error).toBe('host down')
   })
 
+  it.each(['throw', 'reject'] as const)('shows an active direct Remote %s as an error', async (mode) => {
+    const failure = new Error(`actual ${mode} failure`)
+    const ctx = { remote: { agentPresets: { list: () => {
+      if (mode === 'throw') throw failure
+      return Promise.reject(failure)
+    } } } } as never
+    const controller = derivedController(ctx)
+
+    await controller.load()
+
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'error', error: failure.message, options: [] })
+  })
+
   it('ignores a load while one is already in flight', async () => {
     const writes: Recorded[] = []
     const controller = derivedController(fakeApi(
