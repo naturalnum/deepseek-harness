@@ -625,11 +625,23 @@ describe('TaskDetail rule menus', () => {
   })
 
   it('keeps a shared zone row’s own id when a query names several of its ids', () => {
-    // Three zones hold one label at any instant, so they render as one row, and
-    // the rule already states one of them, whose id that row preserves.
+    // Give the three zones one label so they render as one row, whose id
+    // preserves the zone already stated by the rule regardless of ICU data.
+    const zones = ['America/Detroit', 'America/New_York', 'America/Toronto']
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions
+    const formatToParts = Intl.DateTimeFormat.prototype.formatToParts
     const restoreSystemZone = pinSystemZone('Asia/Shanghai')
     const inventory = vi.spyOn(Intl, 'supportedValuesOf')
-      .mockReturnValue(['America/Detroit', 'America/New_York', 'America/Toronto'])
+      .mockReturnValue(zones)
+    const parts = vi.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts')
+      .mockImplementation(function (this: Intl.DateTimeFormat, date?: Date | number) {
+        const options = resolvedOptions.call(this)
+        const result = formatToParts.call(this, date)
+        if (!zones.includes(options.timeZone)) return result
+        const name = options.timeZoneName === 'longOffset' ? 'GMT-04:00'
+          : options.timeZoneName === 'longGeneric' ? 'Eastern Time' : undefined
+        return name === undefined ? result : result.map(part => part.type === 'timeZoneName' ? { ...part, value: name } : part)
+      })
     try {
       mount([{ ...daily, timeZone: 'America/Toronto' }])
       selectTask('Daily weather')
@@ -647,6 +659,7 @@ describe('TaskDetail rule menus', () => {
       expect(screen.queryByRole('menu')).toBeNull()
       expect(zoneButton().textContent).toContain(en['timing.zone'])
     } finally {
+      parts.mockRestore()
       inventory.mockRestore()
       restoreSystemZone()
     }
