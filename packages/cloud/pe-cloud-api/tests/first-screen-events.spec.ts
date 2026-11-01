@@ -49,8 +49,12 @@ async function fixture(schedule = false) {
   let context: Context | undefined, api: CloudAccountApi | undefined, barrier: ConfigSaveBarrier | undefined
   let capability: SkillsCapability | undefined, skillFiber: Fiber | undefined
   const registration: { events?: FirstScreenEvents } = {}
-  const controls: { pending: Promise<void> | undefined; expectedFailure: unknown; assertSession: ReturnType<typeof vi.fn> } = {
-    pending: undefined, expectedFailure: undefined, assertSession: vi.fn(),
+  const controls: {
+    pending: Promise<void> | undefined
+    expectedFailure: unknown
+    assertSession: ReturnType<typeof vi.fn<(id: SessionId) => void>>
+  } = {
+    pending: undefined, expectedFailure: undefined, assertSession: vi.fn<(id: SessionId) => void>(),
   }
   const streams: Array<{ abort: AbortController; iterator: AsyncIterator<unknown> }> = []
   onTestFinished(async () => {

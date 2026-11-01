@@ -7,6 +7,8 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
+  // The Cloud save integration checks this renderer-free controller leaf, not its Client plugin entry.
+  "files": ["packages/client/ui-settings-agent-loop/src/client/agent-loop-card-controller.ts"],
   "include": [
     "apps/web/tests/collapse-timing.e2e.ts",
     "apps/web/tests/notice-wake-tail.e2e.ts",

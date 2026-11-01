@@ -64,7 +64,7 @@ it('writes the bounded actual native loop, preserves policy and Session, reopens
       loopEntry.moduleNamespace = {}
       expect(() => first.guards.allowedModel('local-text', 'plain-text')).toThrow()
       loopEntry.moduleNamespace = originalModule
-      if (runtime === undefined) throw new Error('Original AgentLoop runtime is absent')
+      if (runtime === undefined || runtime === null) throw new Error('Original AgentLoop runtime is absent')
       Reflect.set(runtime, 'Config', {})
       expect(() => first.guards.allowedModel('local-text', 'plain-text')).toThrow()
       Reflect.set(runtime, 'Config', originalSchema)
@@ -75,7 +75,7 @@ it('writes the bounded actual native loop, preserves policy and Session, reopens
       loopEntry.options.config = originalLoop
       presetEntry.options.config = originalPreset
       loopEntry.moduleNamespace = originalModule
-      if (runtime !== undefined) Reflect.set(runtime, 'Config', originalSchema)
+      if (runtime !== undefined && runtime !== null) Reflect.set(runtime, 'Config', originalSchema)
       if (provider !== undefined) Reflect.set(provider, 'value', originalProvider)
     }
   })
