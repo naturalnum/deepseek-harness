@@ -62,6 +62,19 @@ export interface FirstScreenNativeInput {
     approve(plan: ProfileConfigUpdatePlan): void
     finish(): void
   }
+  /** Original account policy transaction for a reviewed native setting, if supplied by Runtime. */
+  readonly beginAccountSettingsUpdate?: (namespace: string, ops: readonly SettingsPathOpView[],
+    fields: readonly ApprovedConfigurationField[]) => {
+    check(): void
+    approve(plan: ProfileConfigUpdatePlan): void
+    finish(): void
+    publish(audit: () => void): void
+    abort(uncertain?: boolean): void
+    run<T>(operation: () => Promise<T>): Promise<T>
+  }
+  /** Permit only an account-policy-validated reset to an already approved inherited value. */
+  readonly allowAccountSettingsUnset?: (namespace: string, field: string,
+    values: readonly (string | number | boolean | null)[]) => boolean
   /** Own the original Settings write and its mandatory post-apply audit in the same serial turn. */
   readonly settingsSave: NativeConfigSaveHook
 }
@@ -77,6 +90,8 @@ export interface NativeFirstScreen {
   inspect(): ExposureInventory
   /** Check real Session metadata through the original shared policy. */
   assertSessionRead(id: SessionId): void
+  /** Hold event delivery while the current settings save still owns uncommitted native state. */
+  pendingSettingsSave(): Promise<void> | undefined
 }
 
 function unavailable(): never {
@@ -132,6 +147,7 @@ export function firstScreenNativeOwner(
  * @returns native constructors and live installation checks; no ready flag or complete account inventory.
  */
 export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeInput): NativeFirstScreen {
+  if (input.allowAccountSettingsUnset !== undefined && input.beginAccountSettingsUpdate === undefined) unavailable()
   for (const value of [input.maxInventoryEntries, input.maxCollectionItems, input.maxFrameBytes]) {
     if (!Number.isSafeInteger(value) || value < 1) unavailable()
   }
@@ -144,6 +160,8 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
   let provider: object | undefined
   let accessOwner: FirstScreenNativeOwner | undefined, localeFiber: Fiber | undefined
   let approved: ReturnType<FirstScreenNativeInput['project']> | undefined
+  let pendingSettingsSave: Promise<void> | undefined
+  const settingsResponses = new WeakMap<object, SettingsNamespaceView>()
 
   const graph = (owner: Context): void => {
     input.api.assertInstalled(owner)
@@ -332,14 +350,17 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       throw new CloudApiError('cloud/forbidden', 'Only an approved versioned native settings mutation is permitted.')
     }
     const selected = new Set<string>()
+    const resets: Array<{ field: string; values: readonly (string | number | boolean | null)[] }> = []
     for (const op of ops) {
       const name = op.path.length === 1 ? op.path[0] : undefined
       const field = fields.find(field => field.field === name)
       if (field === undefined || name === undefined || selected.has(name)
         || !['set', 'unset'].includes(op.op)
-        || field.values !== undefined && (op.op !== 'set' || !field.values.some(value => Object.is(value, op.value)))) {
+        || field.values !== undefined && (op.op === 'set' ? !field.values.some(value => Object.is(value, op.value))
+          : input.allowAccountSettingsUnset === undefined)) {
         throw new CloudApiError('cloud/forbidden', 'The native settings field or operation is not approved.')
       }
+      if (op.op === 'unset' && field.values !== undefined) resets.push({ field: name, values: field.values })
       selected.add(name)
     }
     return consumer.withModelKeyPeerUse(invocation.peer, async (use, peerCurrent) => {
@@ -351,32 +372,87 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
         input.assertSettingsFields(request.namespace, [...selected])
         current()
       }
-      const result = await input.settingsSave.admit('settings', async () => {
-        let modelUpdate: ReturnType<FirstScreenNativeInput['beginModelSettingsUpdate']>
-        try {
-          check()
-          // A native description proves that approved paths still resolve to supported schema leaves.
-          projectApprovedSettings(thisSettings(), fields, input.maxCollectionItems, input.maxInventoryEntries)
-          modelUpdate = input.beginModelSettingsUpdate(request.namespace, ops)
-        } catch (error) { return { ok: false as const, error } }
-        let value: Awaited<ReturnType<typeof apply>>
-        try {
-          value = await apply({ assertCurrent: () => { check(); modelUpdate.check() },
-            check: (plan) => { check(); modelUpdate.approve(plan) } })
-        } catch (error) {
-          // Native ConfigEditor joins this turn and retains unknown outcomes itself. Its
-          // controller wraps confirmed zero-write validation/conflict as these codes.
-          if (error instanceof RemoteError && (error.code === 'settings/conflict' || error.code === 'settings/rejected')) {
-            return { ok: false as const, error }
+      let accountUpdate: ReturnType<NonNullable<FirstScreenNativeInput['beginAccountSettingsUpdate']>> | undefined
+      let modelUpdate: ReturnType<FirstScreenNativeInput['beginModelSettingsUpdate']> | undefined
+      let settled: PromiseWithResolvers<void> | undefined
+      let confirmedRefusal = false
+      try {
+        const result = await input.settingsSave.admit('settings', async () => {
+          let model: ReturnType<FirstScreenNativeInput['beginModelSettingsUpdate']>
+          let transaction: ReturnType<NonNullable<FirstScreenNativeInput['beginAccountSettingsUpdate']>>
+          try {
+            check()
+            projectApprovedSettings(thisSettings(), fields, input.maxCollectionItems, input.maxInventoryEntries)
+            for (const reset of resets) if (input.allowAccountSettingsUnset?.(request.namespace, reset.field, reset.values) !== true) {
+              throw new CloudApiError('cloud/forbidden', 'The native settings reset is not approved.')
+            }
+            model = input.beginModelSettingsUpdate(request.namespace, ops)
+            transaction = input.beginAccountSettingsUpdate?.(request.namespace, ops, fields)
+              ?? { check() {}, approve() {}, finish() {}, publish: (audit) => { audit() }, abort() {}, run: operation => operation() }
+          } catch (error) { return { ok: false as const, error } }
+          if (pendingSettingsSave !== undefined) unavailable()
+          accountUpdate = transaction; modelUpdate = model
+          settled = Promise.withResolvers<void>()
+          void settled.promise.catch(() => {})
+          pendingSettingsSave = settled.promise
+          let prepared = false
+          let responseKey: object | undefined, approvedResponse: SettingsNamespaceView | undefined
+          const auditResponse = (projected: SettingsNamespaceView): void => {
+            const matches = thisSettings().namespaces.filter(view => view.ns === request.namespace)
+            const actual = matches[0]
+            if (matches.length !== 1 || actual === undefined) unavailable()
+            const { schema: _responseSchema, ...response } = projected
+            const { schema: _currentSchema, ...currentView } = actual
+            if (!isDeepStrictEqual(response, currentView)) unavailable()
+            bounded(projected)
           }
-          throw new ConfigSaveOutcomeUnknown({ cause: error })
+          input.settingsSave.commitSettingsPolicy(() => {
+            if (prepared) {
+              if (responseKey === undefined || approvedResponse === undefined) unavailable()
+              const key = responseKey, response = approvedResponse
+              settingsResponses.set(key, response)
+              try { transaction.publish(() => { check(); model.check(); auditResponse(response) }) }
+              catch (error) { settingsResponses.delete(key); throw error }
+            } else transaction.abort()
+            if (pendingSettingsSave === settled?.promise) pendingSettingsSave = undefined
+          })
+          return transaction.run(async () => {
+            let value: Awaited<ReturnType<typeof apply>>
+            try {
+              value = await apply({ assertCurrent: () => { check(); model.check(); transaction.check() },
+                check: (plan) => { check(); model.approve(plan); transaction.approve(plan) } })
+            } catch (error) {
+              if (error instanceof RemoteError && (error.code === 'settings/conflict' || error.code === 'settings/rejected')) {
+                return { ok: false as const, error }
+              }
+              throw new ConfigSaveOutcomeUnknown({ cause: error })
+            }
+            try {
+              transaction.finish(); check(); model.check(); model.finish(); check()
+              // This hook is installed only on SettingsController.mutate; its generic apply returns that native DTO.
+              const projected = projectApprovedSettingsNamespace(value as SettingsNamespaceView, fields,
+                input.maxCollectionItems, input.maxInventoryEntries)
+              if (value === null || typeof value !== 'object') unavailable()
+              auditResponse(projected); check()
+              responseKey = value; approvedResponse = structuredClone(projected); prepared = true
+            } catch (error) { throw new ConfigSaveOutcomeUnknown({ cause: error }) }
+            return { ok: true as const, value }
+          })
+        })
+        if (!result.ok) {
+          confirmedRefusal = true
+          accountUpdate?.abort(); settled?.resolve()
+          throw result.error
         }
-        try { check(); modelUpdate.check(); modelUpdate.finish(); check() }
-        catch (error) { throw new ConfigSaveOutcomeUnknown({ cause: error }) }
-        return { ok: true as const, value }
-      })
-      if (!result.ok) throw result.error
-      return result.value
+        if (accountUpdate === undefined || modelUpdate === undefined || settled === undefined) unavailable()
+        settled.resolve()
+        return result.value
+      } catch (error) {
+        accountUpdate?.abort(!confirmedRefusal); settled?.reject(error)
+        throw error
+      } finally {
+        if (settled !== undefined && pendingSettingsSave === settled.promise) pendingSettingsSave = undefined
+      }
     })
   }
   class AccountSettingsController extends SettingsController {
@@ -393,12 +469,10 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
     }
     override async mutate(ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined): Promise<SettingsNamespaceView> {
       const result = await super.mutate(ns, ops, expectedRevision)
-      current()
-      const fields = input.settingsWrites?.fields.filter(field => field.namespace === ns) ?? []
-      const projected = projectApprovedSettingsNamespace(result, fields, input.maxCollectionItems, input.maxInventoryEntries)
-      bounded(projected)
-      current()
-      return projected
+      const response = settingsResponses.get(result)
+      if (response === undefined) unavailable()
+      settingsResponses.delete(result)
+      return response
     }
     override describe(): SettingsDescribeValue {
       admit('settings/describe')
@@ -414,6 +488,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
   }
   return Object.freeze({
     binding: input.binding, workspaceController: AccountWorkspaceController, settingsController: AccountSettingsController,
+    pendingSettingsSave: () => pendingSettingsSave,
     assertCurrent: current,
     assertSessionRead(id: SessionId): void { current(); input.assertSessionRead(id); current() },
     inspect(): ExposureInventory {

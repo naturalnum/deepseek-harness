@@ -96,6 +96,8 @@ export interface NativeConfigSaveHook {
    * @returns the real result after all enrolled work; admission can throw synchronously with zero submit.
    */
   admit<T>(kind: ConfigSaveKind, submit: () => Promise<T>): Promise<T>
+  /** Register the sole native Settings policy commit on its original active settings turn. */
+  commitSettingsPolicy(commit: () => void): void
 }
 
 /** Runtime-owned control of one graph's configuration saves. */

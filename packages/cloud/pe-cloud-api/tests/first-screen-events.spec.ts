@@ -12,6 +12,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { CloudAccountApi } from '../src/account-service.ts'
 import { CloudApiError } from '../src/errors.ts'
@@ -48,15 +49,21 @@ async function fixture(schedule = false) {
   let context: Context | undefined, api: CloudAccountApi | undefined, barrier: ConfigSaveBarrier | undefined
   let capability: SkillsCapability | undefined, skillFiber: Fiber | undefined
   const registration: { events?: FirstScreenEvents } = {}
+  const controls: { pending: Promise<void> | undefined; expectedFailure: unknown; assertSession: ReturnType<typeof vi.fn> } = {
+    pending: undefined, expectedFailure: undefined, assertSession: vi.fn(),
+  }
   const streams: Array<{ abort: AbortController; iterator: AsyncIterator<unknown> }> = []
   onTestFinished(async () => {
     try {
       for (const stream of streams) { stream.abort.abort(); await stream.iterator.return?.() }
-      await registration.events?.dispose()
+      try { await registration.events?.dispose() } catch (error) {
+        if (error !== controls.expectedFailure) throw error
+      }
       if (api !== undefined && barrier !== undefined) {
         const receipt = await api.stopConfigSaves(Date.now() + 1000)
         expect(receipt.status).toBe('confirmed')
-        await api.withdraw(); saves.releaseAccount(barrier)
+        try { await api.withdraw() } catch (error) { if (error !== controls.expectedFailure) throw error }
+        saves.releaseAccount(barrier)
       }
       await context?.fiber.dispose(); saves.close()
     } finally { rmSync(home, { recursive: true, force: true }) }
@@ -83,7 +90,8 @@ async function fixture(schedule = false) {
   if (api === undefined || capability === undefined || skillFiber === undefined) throw new Error('Fixture services absent')
   const installedApi = api, installedSkillFiber = skillFiber
   const native: NativeFirstScreen = { binding, workspaceController: WorkspaceController, settingsController: SettingsController,
-    assertCurrent: () => { installedApi.assertInstalled(ctx) }, assertSessionRead: () => {},
+    pendingSettingsSave: () => controls.pending,
+    assertCurrent: () => { installedApi.assertInstalled(ctx) }, assertSessionRead: controls.assertSession,
     inspect: () => ({ recipeVersion: binding.recipeVersion, rpcEndpoints: [], streamEndpoints: [], exactFetchRoutes: [] }) }
   const scheduleAdmission = schedule ? vi.spyOn(api, 'requireRpc').mockReturnValue({ endpoint: 'schedule/catalog',
     handlerId: 'native:schedule', guard: 'authenticated-account' }) : undefined
@@ -91,7 +99,7 @@ async function fixture(schedule = false) {
     maxQueuedEvents: 8, maxQueuedBytes: 16384, maxFrameBytes: 4096,
     ...schedule ? { controls: { commands: false, goals: false, permissions: false, schedule: true } } : {} })
   registration.events = events
-  return { ctx, capability, events, scheduleAdmission,
+  return { ctx, capability, events, scheduleAdmission, controls,
     withdraw: () => installedSkillFiber.dispose(),
     async open() {
       const abort = new AbortController()
@@ -101,6 +109,65 @@ async function fixture(schedule = false) {
       const iterator = stream[Symbol.asyncIterator](); streams.push({ abort, iterator }); return iterator
     } }
 }
+
+it('does not deliver a buffered session event if its original guard is revoked before delivery', async () => {
+  const f = await fixture(), stream = await f.open()
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+  const pending = Promise.withResolvers<undefined>()
+  f.controls.pending = pending.promise
+  const denied = new CloudApiError('cloud/account-unavailable', 'Session was revoked while the save was pending.')
+  f.controls.assertSession.mockImplementation(() => { throw denied })
+  f.controls.expectedFailure = denied
+  const id = brandString<SessionId>('revoked-session')
+  f.ctx.emit('api-session/activity', id, 42)
+  expect(f.controls.assertSession).not.toHaveBeenCalled()
+  f.controls.pending = undefined
+  pending.resolve(undefined)
+  await expect(stream.next()).resolves.toMatchObject({ done: true })
+  expect(f.controls.assertSession).toHaveBeenCalledWith(id)
+  await expect(f.events.dispose()).rejects.toBe(denied)
+})
+
+it('keeps the original queue limit while settings remain pending', async () => {
+  const f = await fixture(), stream = await f.open()
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+  const pending = Promise.withResolvers<undefined>()
+  f.controls.pending = pending.promise
+  const ns = brandString<import('@deepseek-ai/dsh-settings/types').SettingsNamespace>('locale')
+  for (let revision = 0; revision < 9; revision++) f.ctx.emit('settings/document-updated', ns, revision)
+  await expect(stream.next()).resolves.toMatchObject({ done: true })
+  const failure: unknown = await f.events.dispose().then(() => undefined, (error: unknown) => error)
+  f.controls.expectedFailure = failure
+  expect(failure).toMatchObject({ code: 'cloud/account-unavailable' })
+  f.controls.pending = undefined
+  pending.resolve(undefined)
+})
+
+it('rechecks the original endpoint guard before delivering a pending control event', async () => {
+  const f = await fixture(true), stream = await f.open()
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+  const pending = Promise.withResolvers<undefined>()
+  f.controls.pending = pending.promise
+  f.ctx.emit('schedule/changed')
+  expect(f.scheduleAdmission).not.toHaveBeenCalled()
+  f.controls.pending = undefined
+  pending.resolve(undefined)
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'emit', event: 'schedule/changed' } })
+  expect(f.scheduleAdmission).toHaveBeenCalledWith('schedule/catalog')
+})
+
+it('buffers a skills notification and rechecks its original capability after settings settle', async () => {
+  const f = await fixture(), stream = await f.open()
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+  const pending = Promise.withResolvers<undefined>(), checks = f.capability.checks
+  f.controls.pending = pending.promise
+  f.ctx.emit('skills/change')
+  expect(f.capability.checks).toBe(checks)
+  f.controls.pending = undefined
+  pending.resolve(undefined)
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'emit', event: 'skills/change' } })
+  expect(f.capability.checks).toBeGreaterThan(checks)
+})
 
 it('forwards a selected Schedule invalidation only through the account event source and its catalog guard', async () => {
   const f = await fixture(true), stream = await f.open()

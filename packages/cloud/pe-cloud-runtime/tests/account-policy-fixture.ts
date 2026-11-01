@@ -83,7 +83,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   rootFetch?: { readonly selected: readonly ExactFetchExposure[]; readonly inspectRootFetch?: () => readonly ExactFetchExposure[] },
   bootstrapCatalog?: ApprovedConfigurationCatalog, settingsManifest?: Parameters<Typert['register']>[0],
   reserveChild?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation,
-  presetChildFiber?: 'active' | 'pending', extraStreams: readonly EndpointExposure[] = []) {
+  presetChildFiber?: 'active' | 'pending', extraStreams: readonly EndpointExposure[] = [],
+  preserveProfile = false, initialLoopLimit?: number) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -121,7 +122,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     models: [{ provider: 'local-text', model: 'plain-text' }], presetId: declaration.id, presetEntryId: 'cloud-preset',
     presetConfigSha256: accountPresetConfigDigest(declaration, 8192), maxPresetConfigBytes: 8192, agentLoopEntryId: 'agent-loop' })
   const saves = new ConfigSaveCoordinator({ maxAccounts: 2, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 1,
-    maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 1, maxWaitersPerAccount: 2 })
+    maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 16, maxWaitersPerAccount: 2 })
   const shared = new Context()
   const bootstrapPackages = bootstrapCatalog === undefined ? undefined : new PluginPackages(shared)
   const execution = bootstrapCatalog === undefined && reserveChild === undefined ? undefined : new ClosedExecutionOwner(shared, 2)
@@ -145,11 +146,17 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     bootstrapCatalog === undefined ? manifest : { ...manifest, approvedConfiguration: bootstrapCatalog })
   const exposure = exposureOwner.policy
   const graphs: { close(): Promise<void> }[] = []
+  let retainedFailure = false
   onTestFinished(async () => {
-    try { for (const graph of graphs.toReversed()) await graph.close(); saves.close(); await shared.fiber.dispose() }
+    try {
+      for (const graph of graphs.toReversed()) await graph.close()
+      if (!retainedFailure) saves.close()
+      await shared.fiber.dispose()
+    }
     finally { rmSync(home, { recursive: true, force: true }) }
   })
   const maxEntries = bootstrapCatalog?.maxEntries ?? 128
+  let profileWritten = false
   const start = async (epoch = '1', selected = config, bootstrapPolicy = true,
     bootstrapInventory: { maxNativeInventoryEntries?: number } = { maxNativeInventoryEntries: maxEntries }) => {
     const lifetime = new AbortController(), peerLifetime = new AbortController(), adapter = new TextAdapter()
@@ -235,7 +242,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         { id: 'subagents', name: 'cordis:b1-subagents' },
         { id: 'spawn', name: 'cordis:b1-spawn', config: { providerName: 'spawn' } },
       ],
-      { id: 'agent-loop', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop, config: { agents: [] } },
+      { id: 'agent-loop', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop,
+        config: { agents: [], ...initialLoopLimit === undefined ? {} : { maxParallelToolCalls: initialLoopLimit } } },
       { id: 'controller', name: 'cordis:m8z-controller', config: { nativeOpen: false } },
       ...[...extraRpc, ...extraStreams].some(row => row.endpoint.startsWith('userQuestions/')) ? [
         { id: 'user-questions', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.userQuestions },
@@ -247,7 +255,10 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         { id: 'first-screen-events', name: 'cordis:m8ax-events' },
       ],
     ]
-    writeFileSync(patchPath, JSON.stringify([{ insert: rows }]))
+    if (!preserveProfile || !profileWritten) {
+      writeFileSync(patchPath, JSON.stringify([{ insert: rows }]))
+      profileWritten = true
+    }
     const handle = startNativeAccountBoot({
       binding: { accountId: brandString<AccountId>(accountId), epoch: brandString<OwnerEpoch>(epoch),
         recipeVersion: 'm8z', lifetime: lifetime.signal },
@@ -321,6 +332,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
           } : undefined
           nativeFirstScreen = api.prepareFirstScreen(owner, { ...firstScreen, maxInventoryEntries: maxEntries,
             ...localeWrites === undefined ? {} : { settingsWrites: { ...localeWrites, fields: bootstrapCatalog?.fields ?? [] } },
+            beginAccountSettingsUpdate: (namespace, ops, fields) => requireGuards().beginSettingsUpdate(namespace, ops, fields),
+            allowAccountSettingsUnset: (namespace, field, values) =>
+              requireGuards().allowSettingsUnset?.(namespace, field, values) === true,
             assertWorkspace: (workspace) => { requireGuards().assertWorkspace(workspace) },
             project: () => {
               if (files === undefined) throw new Error('Original fixture files owner absent')
@@ -356,10 +370,20 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       },
     })
     let closing: Promise<void> | undefined, expectedEventFailure: { readonly error: unknown } | undefined
+    let expectedUnknown = false
     const close = (): Promise<void> => closing ??= (async () => {
       peerLifetime.abort()
       if (barrier !== undefined) {
         const stopped = await barrier.stopConfigSaves(Date.now() + 1000)
+        if (expectedUnknown) {
+          if (stopped.status !== 'unknown' || stopped.pendingOperationIds.length !== 0
+            || !stopped.failures.some(failure => failure.outcome === 'unknown')) throw new Error('Expected retained unknown save evidence')
+          // Test teardown only: preserve the unreleased save owner and never claim a confirmed receipt.
+          retainedFailure = true
+          lifetime.abort()
+          await handle.dispose()
+          return
+        }
         if (stopped.status !== 'confirmed') throw new Error('Component saves remain owned')
         try { await api?.withdraw() }
         catch (error) {
@@ -405,6 +429,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       closeBusiness: () => { businessOpen = false },
       observeNativeDisposal: () => handle.dispose(),
       directoryCalls, maxEntries, events, nativeFirstScreen, invokeSettings, saveBarrier: barrier, profileHome: privateRoot,
+      expectUnknownSave: () => { expectedUnknown = true },
       expectEventDisposalFailure: (error: unknown) => { expectedEventFailure = { error } },
       withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }
   }

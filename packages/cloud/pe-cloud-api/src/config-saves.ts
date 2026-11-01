@@ -43,6 +43,7 @@ interface Execution {
   unknown: boolean
   credentialEdit: { readonly ref: CredentialRef; observed: boolean; completed: boolean } | undefined
   commitCredentialVersion: (() => void) | undefined
+  commitSettingsPolicy: (() => void) | undefined
 }
 
 interface Waiter {
@@ -54,6 +55,7 @@ interface AccountControl {
   submit<T>(owner: AccountSaves, kind: ConfigSaveKind, submit: () => Promise<T>, admission?: ConfigSaveAdmission): Promise<T>
   assertOutsideSave(): void
   current(owner: AccountSaves): Execution | undefined
+  commitSettingsPolicy(owner: AccountSaves, commit: () => void): void
 }
 
 function failure(error: unknown): ConfigSaveFailure['outcome'] {
@@ -114,6 +116,13 @@ export class ConfigSaveCoordinator {
       current: (owner) => {
         const execution = this.current()
         return execution?.active === true && execution.operation.owner === owner ? execution : undefined
+      },
+      commitSettingsPolicy: (owner, commit) => {
+        const execution = this.current()
+        if (execution === undefined || !execution.active || execution.operation.owner !== owner
+          || execution.operation.kind !== 'settings' || execution.children.size !== 0
+          || execution.commitSettingsPolicy !== undefined) this.unavailable()
+        execution.commitSettingsPolicy = commit
       },
     }
     const account = new AccountSaves(control, binding, credentialPolicy, onFailure)
@@ -182,7 +191,7 @@ export class ConfigSaveCoordinator {
       operationId: brandString<OperationId>(randomUUID()), kind, owner, state: 'queued',
       start: () => {
         const execution: Execution = { operation, active: true, children: new Set(), failure: undefined, unknown: false,
-          credentialEdit: undefined, commitCredentialVersion: undefined }
+          credentialEdit: undefined, commitCredentialVersion: undefined, commitSettingsPolicy: undefined }
         void this.execute(execution, submit).then(
           (value) => { this.settle(operation); result.resolve(value) },
           (error: unknown) => {
@@ -241,6 +250,12 @@ export class ConfigSaveCoordinator {
     }
     while (execution.children.size !== 0) await Promise.all([...execution.children])
     execution.active = false
+    if (execution.failure === undefined && result !== undefined && execution.commitSettingsPolicy !== undefined) {
+      try {
+        if (execution.commitCredentialVersion !== undefined) this.unavailable()
+        this.execution.run(execution, execution.commitSettingsPolicy)
+      } catch (cause) { rememberFailure(execution, new ConfigSaveOutcomeUnknown({ cause })) }
+    }
     if (execution.failure !== undefined) throw execution.failure.error
     if (result === undefined) throw new Error('Configuration save completed without a result.')
     execution.commitCredentialVersion?.()  // After all required children, before this serial turn can release.
@@ -455,6 +470,8 @@ class AccountSaves implements ConfigSaveBarrier {
   admit<T>(kind: ConfigSaveKind, submit: () => Promise<T>): Promise<T> {
     return this.owner.submit(this, kind, submit)
   }
+
+  commitSettingsPolicy(commit: () => void): void { this.owner.commitSettingsPolicy(this, commit) }
 
   withPausedPluginChange<T>(submit: () => Promise<T>): Promise<T> {
     this.owner.assertOutsideSave()

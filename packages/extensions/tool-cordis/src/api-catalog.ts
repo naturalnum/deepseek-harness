@@ -6871,7 +6871,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenNativeInput',
-    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly settingsWrites?: NativeSettingsWritePolicy;\n    readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void;\n    readonly beginModelSettingsUpdate: (namespace: string, ops: readonly SettingsPathOpView[]) => {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n    };\n    readonly settingsSave: NativeConfigSaveHook;\n}',
+    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly settingsWrites?: NativeSettingsWritePolicy;\n    readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void;\n    readonly beginModelSettingsUpdate: (namespace: string, ops: readonly SettingsPathOpView[]) => {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n    };\n    readonly beginAccountSettingsUpdate?: (namespace: string, ops: readonly SettingsPathOpView[], fields: readonly ApprovedConfigurationField[]) => {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n        publish(audit: () => void): void;\n        abort(uncertain?: boolean): void;\n        run<T>(operation: () => Promise<T>): Promise<T>;\n    };\n    readonly allowAccountSettingsUnset?: (namespace: string, field: string, values: readonly (string | number | boolean | null)[]) => boolean;\n    readonly settingsSave: NativeConfigSaveHook;\n}',
   },
   {
     name: 'FixedRootReader',
@@ -7799,7 +7799,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativeConfigSaveHook',
-    declaration: 'export interface NativeConfigSaveHook {\n    admit<T>(kind: ConfigSaveKind, submit: () => Promise<T>): Promise<T>;\n}',
+    declaration: 'export interface NativeConfigSaveHook {\n    admit<T>(kind: ConfigSaveKind, submit: () => Promise<T>): Promise<T>;\n    commitSettingsPolicy(commit: () => void): void;\n}',
   },
   {
     name: 'NativeFileApplication',
@@ -7807,7 +7807,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativeFirstScreen',
-    declaration: 'export interface NativeFirstScreen {\n    readonly binding: AccountBinding;\n    readonly workspaceController: typeof WorkspaceController;\n    readonly settingsController: typeof SettingsController;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n    assertSessionRead(id: SessionId): void;\n}',
+    declaration: 'export interface NativeFirstScreen {\n    readonly binding: AccountBinding;\n    readonly workspaceController: typeof WorkspaceController;\n    readonly settingsController: typeof SettingsController;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n    assertSessionRead(id: SessionId): void;\n    pendingSettingsSave(): Promise<void> | undefined;\n}',
   },
   {
     name: 'NativeGoals',

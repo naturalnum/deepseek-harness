@@ -1,11 +1,14 @@
 /** One account's concrete project/model/Preset checks over original native services; this issues no ready state. */
 import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import AgentLoop, { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from '@deepseek-ai/dsh-agent-loop'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type {} from '@deepseek-ai/dsh-settings'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
@@ -128,6 +131,9 @@ class AccountPolicy {
   private modules: readonly string[] | undefined
   private readonly providers = new Map<string, object>()
   private readonly childPreparations = new Map<object, ChildPreparation>()
+  private readonly loopUpdates = new AsyncLocalStorage<{ readonly fact: EntryFact; refresh(): EntryFact }>()
+  private activeLoopUpdate: object | undefined
+  private unknownLoopUpdate = false
 
   constructor(
     private readonly ctx: Context, private readonly binding: AccountBinding, private readonly files: CloudAccountFiles,
@@ -141,6 +147,8 @@ class AccountPolicy {
     if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding || this.ctx.root.get('peAccount') !== this.binding) {
       throw new CloudApiError('cloud/stale-generation', 'The account policy belongs to an ended graph.')
     }
+    if (this.unknownLoopUpdate || (this.activeLoopUpdate !== undefined
+      && this.loopUpdates.getStore() !== this.activeLoopUpdate)) unavailable()
     this.files.assertInstalled(this.ctx)
     for (const [key, expected] of this.providers) {
       const actual: unknown = this.ctx.get(key)
@@ -152,7 +160,12 @@ class AccountPolicy {
       if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
         || fact.entry.moduleNamespace !== fact.module) unavailable()
       try { fact.entry.assertConfigUpdatePlan(fact.plan) }
-      catch (_cause) { unavailable() }
+      catch (_cause) {
+        const update = this.loopUpdates.getStore()
+        if (update?.fact !== fact) unavailable()
+        const next = update.refresh()
+        try { next.entry.assertConfigUpdatePlan(next.plan) } catch (_invalid) { unavailable() }
+      }
     }
   }
 
@@ -264,6 +277,135 @@ class AccountPolicy {
       || loop.fiber.store?.agentLoop?.fiber !== loop.fiber
       || !object(loop.fiber.store.agentLoop.value) || original(loop.fiber.store.agentLoop.value) !== original(nativeLoop)) unavailable()
     this.facts = [preset, loop]
+  }
+
+  /** Retain the policy pin across one bounded, original native settings transaction. */
+  private inheritedLoopLimit(): number {
+    const settings = this.ctx.get('settings')
+    if (settings === undefined) unavailable()
+    const matches = settings.describe({ redactSecrets: true }).filter(row => row.ns === this.config.agentLoopEntryId)
+    const base = matches[0]?.base
+    if (matches.length !== 1 || !object(base)) unavailable()
+    const value: unknown = Reflect.get(base, 'maxParallelToolCalls')
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1
+      || value > DEFAULT_MAX_PARALLEL_TOOL_CALLS) refuse()
+    return value
+  }
+
+  allowSettingsUnset(namespace: string, field: string, values: readonly (string | number | boolean | null)[]): boolean {
+    if (namespace !== this.config.agentLoopEntryId || field !== 'maxParallelToolCalls') return false
+    this.pin()
+    if (!this.exposure.manifest.allowedSettings.some(row => row.namespace === namespace && row.fields.includes(field))) return false
+    const inherited = this.inheritedLoopLimit()
+    return values.some(value => Object.is(value, inherited))
+  }
+
+  beginSettingsUpdate(
+    namespace: string, ops: Parameters<NonNullable<AccountNativeGuards['beginSettingsUpdate']>>[1],
+    fields: Parameters<NonNullable<AccountNativeGuards['beginSettingsUpdate']>>[2],
+  ): ReturnType<NonNullable<AccountNativeGuards['beginSettingsUpdate']>> {
+    if (this.activeLoopUpdate !== undefined) refuse()
+    if (namespace !== this.config.agentLoopEntryId) {
+      return { check() {}, approve() {}, finish() {}, publish: (audit) => { audit() }, abort() {}, run: operation => operation() }
+    }
+    this.pin()
+    if (!this.exposure.manifest.allowedSettings.some(row => row.namespace === namespace
+      && row.fields.includes('maxParallelToolCalls'))) refuse()
+    const op = ops[0]
+    if (ops.length !== 1 || op === undefined || op.path.length !== 1 || op.path[0] !== 'maxParallelToolCalls') refuse()
+    const value = op.op === 'unset' ? this.inheritedLoopLimit() : op.value
+    const approved = fields.filter(field => field.namespace === namespace && field.field === 'maxParallelToolCalls')
+    if (approved.length !== 1 || approved[0]?.values === undefined
+      || typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > DEFAULT_MAX_PARALLEL_TOOL_CALLS
+      || !approved[0].values.some(candidate => Object.is(candidate, value))) refuse()
+    const facts = this.facts, loop = facts?.find(fact => fact.entry.options.id === namespace)
+    if (facts === undefined || loop === undefined || !object(loop.entry.options.config)) unavailable()
+    const runtime = loop.fiber.runtime, schema = runtime?.Config, service = this.provider('agentLoop')
+    if (schema === undefined || !(service instanceof AgentLoop)) unavailable()
+    const serialize: unknown = Reflect.get(schema, 'toJSON')
+    if (typeof serialize !== 'function') unavailable()
+    const schemaBefore: unknown = structuredClone(Reflect.apply(serialize, schema, [])), serviceBefore = original(service)
+    const before = structuredClone(loop.entry.options.config) as Record<string, unknown>
+    const retained = (config: Record<string, unknown>): Record<string, unknown> =>
+      Object.fromEntries(Object.entries(config).filter(([key]) => key !== 'maxParallelToolCalls'))
+    let expected: unknown, updated: EntryFact | undefined, publishedFacts: readonly EntryFact[] | undefined
+    let active = false, used = false, prepared = false, published = false
+    const check = (): void => {
+      if (this.facts !== facts && this.facts !== publishedFacts) unavailable()
+      this.current()
+    }
+    const refresh = (): EntryFact => {
+      if (!active || this.loopUpdates.getStore()?.fact !== loop) unavailable()
+      this.ctx.fiber.assertActive()
+      if (this.binding.lifetime.aborted || this.facts !== facts || this.activeLoopUpdate !== token || this.ctx.get('peAccount') !== this.binding
+        || this.ctx.root.get('peAccount') !== this.binding || loop.entry.fiber !== loop.fiber
+        || loop.fiber.state !== FiberState.ACTIVE || loop.entry.moduleNamespace !== loop.module
+        || loop.fiber.runtime !== runtime || runtime?.Config !== schema || Reflect.get(schema, 'toJSON') !== serialize
+        || !isDeepStrictEqual(Reflect.apply(serialize, schema, []), schemaBefore)) unavailable()
+      const after: unknown = loop.entry.options.config
+      if (!object(after) || !isDeepStrictEqual(retained(before), retained(after as Record<string, unknown>))
+        || expected === undefined) unavailable()
+      const next = loop.entry.prepareConfigUpdate(after)
+      if (next.impact !== 'none' || !isDeepStrictEqual(loop.entry.snapshotConfigUpdatePlan(next), expected)) unavailable()
+      const agentLoop = this.ctx.get('agentLoop')
+      const installed = loop.fiber.store?.agentLoop
+      if (!(agentLoop instanceof AgentLoop) || original(agentLoop) !== serviceBefore
+        || installed?.fiber !== loop.fiber || !object(installed.value) || original(installed.value) !== serviceBefore
+        || agentLoop.config.maxParallelToolCalls.get() !== value) unavailable()
+      if (updated !== undefined) {
+        try { updated.entry.assertConfigUpdatePlan(updated.plan) } catch (_invalid) { unavailable() }
+      } else updated = { ...loop, plan: next }
+      return updated
+    }
+    const token = { fact: loop, refresh }
+    return {
+      check,
+      approve: (profile) => {
+        check()
+        const matches = profile.entries.filter(plan => plan.entry === loop.entry)
+        const plan = matches[0]
+        if (matches.length !== 1 || plan === undefined || (plan.impact !== 'live' && plan.impact !== 'none')) unavailable()
+        const candidate = loop.entry.snapshotConfigUpdatePlan(plan)
+        if (!object(candidate) || Reflect.get(candidate, 'maxParallelToolCalls') !== value) unavailable()
+        expected = candidate
+      },
+      finish: () => {
+        if (prepared || published) unavailable()
+        refresh(); this.current()
+        if (this.facts !== facts) unavailable()
+        prepared = true
+      },
+      publish: (audit) => { this.loopUpdates.run(token, () => {
+        try {
+          if (!prepared || published || !active || this.activeLoopUpdate !== token || this.facts !== facts) unavailable()
+          refresh(); this.current(); audit()
+          const next = refresh()
+          this.current()
+          if (this.facts !== facts || this.activeLoopUpdate !== token) unavailable()
+          publishedFacts = facts.map(fact => fact === loop ? next : fact)
+          this.facts = publishedFacts
+          published = true
+        } catch (error) { this.unknownLoopUpdate = true; throw error }
+        finally { active = false; if (this.activeLoopUpdate === token) this.activeLoopUpdate = undefined }
+      }) },
+      abort: (uncertain = false) => {
+        if (uncertain) this.unknownLoopUpdate = true
+        active = false
+        if (this.activeLoopUpdate === token) this.activeLoopUpdate = undefined
+      },
+      run: async (operation) => {
+        if (active || used || this.activeLoopUpdate !== undefined) unavailable()
+        used = true; active = true; this.activeLoopUpdate = token
+        try { return await this.loopUpdates.run(token, operation) }
+        catch (error) { this.unknownLoopUpdate = true; throw error }
+        finally {
+          if (!prepared) {
+            active = false
+            if (this.activeLoopUpdate === token) this.activeLoopUpdate = undefined
+          }
+        }
+      },
+    }
   }
 
   async preset(id: string | undefined, signal?: AbortSignal): Promise<void> {
@@ -810,6 +952,8 @@ export function createAccountPolicy(
 ): AccountNativeGuards {
   const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries, provisionableModel, assertBusinessCurrent)
   return {
+    beginSettingsUpdate: (namespace, ops, fields) => policy.beginSettingsUpdate(namespace, ops, fields),
+    allowSettingsUnset: (namespace, field, values) => policy.allowSettingsUnset(namespace, field, values),
     assertWorkspace: (workspace) => { policy.assertWorkspace(workspace) },
     projectForAgent: agent => policy.prepared(agent, true),
     projectForSession: session => policy.liveSessionProject(session),

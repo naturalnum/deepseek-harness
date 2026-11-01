@@ -43,6 +43,10 @@ import * as CommandFeedback from '@deepseek-ai/dsh-command-feedback'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
+  /** Original account policy transaction for an approved native settings write. */
+  readonly beginSettingsUpdate: NonNullable<Parameters<CloudAccountApi['prepareFirstScreen']>[1]['beginAccountSettingsUpdate']>
+  /** Permit a reset only after validating its native inherited value against the approved values. */
+  readonly allowSettingsUnset?: NonNullable<Parameters<CloudAccountApi['prepareFirstScreen']>[1]['allowAccountSettingsUnset']>
   /** Same native provider/parent/project/model/Preset checks used by the sole factory; absence closes child wiring. */
   readonly admitSubagent?: import('@deepseek-ai/dsh-subagent').SubagentAdmission
   /** Require the original native runtime and approved provider before selecting child wiring. */
@@ -423,6 +427,13 @@ export class AccountNativeIntegration {
     const firstScreenInput = input.firstScreen
     const firstScreen = firstScreenInput === undefined ? undefined : api.prepareFirstScreen(ctx, {
       ...input.settingsWrites === undefined ? {} : { settingsWrites: input.settingsWrites },
+      beginAccountSettingsUpdate: (namespace, ops, fields) => {
+        const begin = requireGuards(ctx).beginSettingsUpdate
+        if (typeof begin !== 'function') throw new AccountRuntimeError('cloud/account-unavailable', 'The original account settings policy is unavailable')
+        return begin(namespace, ops, fields)
+      },
+      allowAccountSettingsUnset: (namespace, field, values) =>
+        requireGuards(ctx).allowSettingsUnset?.(namespace, field, values) === true,
       project: () => project(ctx),
       assertWorkspace: (workspace) => { requireGuards(ctx).assertWorkspace(workspace) }, assertSessionRead: readSession,
       maxInventoryEntries: input.maxNativeInventoryEntries,

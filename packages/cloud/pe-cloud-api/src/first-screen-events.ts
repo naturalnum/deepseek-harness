@@ -83,11 +83,14 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
   const canonical = original.value
   if (!(canonical instanceof Gateway)) unavailable()
   const register: unknown = Reflect.get(canonical, 'registerRemoteEvents')
-  const queue = new Deque<{ readonly frame: TypertRemoteEventDispatch; readonly bytes: number }>()
+  type Guard = { readonly session?: SessionId
+    readonly endpoint?: 'commands/list' | 'goals/get'
+    | 'permissionPresets/catalog' | 'schedule/catalog' }
+  const queue = new Deque<{ readonly frame: TypertRemoteEventDispatch; readonly bytes: number; readonly guard?: Guard }>()
   const pendingQuestions = new Map<TypertRemoteEventInvocation, (reason: unknown) => void>()
   const removers: Array<() => void> = []
   let bytes = 0, retained = 0, closed = false, failure: { readonly error: unknown } | undefined
-  let wake: (() => void) | undefined, closing: Promise<void> | undefined
+  let wake: (() => void) | undefined, cancelPendingWait: (() => void) | undefined, closing: Promise<void> | undefined
   const graph = (): void => {
     input.api.assertInstalled(ctx)
     if (skills !== undefined) {
@@ -108,6 +111,9 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     failure ??= error
     if (closed) return
     closed = true
+    const cancelWait = cancelPendingWait
+    cancelPendingWait = undefined
+    cancelWait?.()
     input.api.invalidate()
     const reason = error?.error ?? new CloudApiError('cloud/account-unavailable', 'The account question source ended.')
     for (const reject of pendingQuestions.values()) {
@@ -121,34 +127,49 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     }
     notify()
   }
-  const push = (frame: TypertRemoteEventFrame): void => {
+  const validate = (guard?: Guard): void => {
+    graph()
+    if (guard?.endpoint !== undefined) input.api.requireRpc(guard.endpoint)
+    if (guard?.session !== undefined) input.native.assertSessionRead(guard.session)
+  }
+  const push = (frame: TypertRemoteEventFrame, guard?: Guard): void => {
     if (closed) return
     try {
-      graph()
       const size = firstScreenJsonBytes({ type: 'emit', event: frame.event, args: frame.args }, input.maxFrameBytes)
       if (!frame.args.every(value => isRemoteJsonValue(value))) unavailable()
       if (size > input.maxFrameBytes || retained >= input.maxQueuedEvents || size > input.maxQueuedBytes - bytes) unavailable()
-      queue.pushBack({ frame, bytes: size })
+      if (input.native.pendingSettingsSave() === undefined) validate(guard)
+      queue.pushBack({ frame: structuredClone(frame), bytes: size, ...guard === undefined ? {} : { guard } })
       bytes += size
       retained++
       notify()
     } catch (error) { stop({ error }) }
   }
-  const session = (frame: TypertRemoteEventFrame, id: Parameters<NativeFirstScreen['assertSessionRead']>[0]): void => {
-    if (closed) return
-    try { input.native.assertSessionRead(id); push(frame) } catch (error) { stop({ error }) }
+  const session = (frame: TypertRemoteEventFrame, id: SessionId, endpoint?: Guard['endpoint']): void => {
+    push(frame, { session: id, ...endpoint === undefined ? {} : { endpoint } })
+  }
+  const questionEndpoints = (): void => {
+    input.api.requireRpc('$events/result')
+    input.api.requireRpc('userQuestions/answer')
+  }
+  const questionSubject = (source: TypertRemoteEventInvocation) => {
+    const subject = source.context.subject, agent = ctx.get('agents')?.get(SessionId(source.context.agentId))
+    if (agent === undefined || agent !== subject || agent.ctx.root !== ctx.root
+      || agent.ctx.get('peAccount') !== input.api.binding) unavailable()
+    input.native.assertSessionRead(agent.id)
+    return subject
   }
   const question = (source: TypertRemoteEventInvocation): boolean => {
     let held: TypertRemoteEventInvocation | undefined
     try {
       if (closed) unavailable()
+      if (input.native.pendingSettingsSave() !== undefined) {
+        source.reject(new CloudApiError('cloud/account-unavailable', 'The account settings save is still in progress.'))
+        return true
+      }
       graph()
-      input.api.requireRpc('$events/result')
-      input.api.requireRpc('userQuestions/answer')
-      const subject = source.context.subject, agent = ctx.get('agents')?.get(SessionId(source.context.agentId))
-      if (agent === undefined || agent !== subject || agent.ctx.root !== ctx.root
-        || agent.ctx.get('peAccount') !== input.api.binding) unavailable()
-      input.native.assertSessionRead(agent.id)
+      questionEndpoints()
+      const subject = questionSubject(source)
       const projected = projectRemoteEventRequest(source.request, subject)
       projected.signal?.throwIfAborted()
       const size = firstScreenJsonBytes({ type: 'waterfall', event: source.event,
@@ -195,22 +216,16 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     )
     if (skills !== undefined) removers.push(ctx.on('skills/change', () => { push({ event: 'skills/change', args: [] }) }))
     if (input.controls?.commands === true) removers.push(ctx.on('commands/change', () => {
-      try { input.api.requireRpc('commands/list'); push({ event: 'commands/change', args: [] }) }
-      catch (error) { stop({ error }) }
+      push({ event: 'commands/change', args: [] }, { endpoint: 'commands/list' })
     }))
     if (input.controls?.goals === true) removers.push(ctx.on('goal/activation-changed', (event) => {
-      try {
-        input.api.requireRpc('goals/get')
-        session({ event: 'goal/activation-changed', args: [event] }, event.sessionId)
-      } catch (error) { stop({ error }) }
+      session({ event: 'goal/activation-changed', args: [event] }, event.sessionId, 'goals/get')
     }))
     if (input.controls?.permissions === true) removers.push(ctx.on('permission-presets/catalog-changed', () => {
-      try { input.api.requireRpc('permissionPresets/catalog'); push({ event: 'permission-presets/catalog-changed', args: [] }) }
-      catch (error) { stop({ error }) }
+      push({ event: 'permission-presets/catalog-changed', args: [] }, { endpoint: 'permissionPresets/catalog' })
     }))
     if (input.controls?.schedule === true) removers.push(ctx.on('schedule/changed', () => {
-      try { input.api.requireRpc('schedule/catalog'); push({ event: 'schedule/changed', args: [] }) }
-      catch (error) { stop({ error }) }
+      push({ event: 'schedule/changed', args: [] }, { endpoint: 'schedule/catalog' })
     }))
     if (input.controls?.questions === true) {
       removers.push(ctx.on('user-questions/request', createRemoteWaterfallListener('user-questions/request', { push: question }) as never))
@@ -221,6 +236,15 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     return (async function *(): AsyncIterable<TypertRemoteEventDispatch> {
       try {
         while (!closed) {
+          const pending = input.native.pendingSettingsSave()
+          if (pending !== undefined) {
+            const interrupted = Promise.withResolvers<undefined>()
+            const cancel = (): void => { interrupted.resolve(undefined) }
+            cancelPendingWait = cancel
+            try { await Promise.race([pending, interrupted.promise]) }
+            finally { if (cancelPendingWait === cancel) cancelPendingWait = undefined }
+            continue
+          }
           const next = queue.popFront()
           if (next !== undefined) {
             if ('context' in next.frame) {
@@ -229,7 +253,19 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
               bytes -= next.bytes
               retained--
             }
-            graph()
+            validate(next.guard)
+            if ('context' in next.frame) {
+              questionEndpoints()
+              try { questionSubject(next.frame) } catch (error) {
+                // A single obsolete question does not revoke the account's event source.
+                // Recheck the original account/owner and stream before isolating that rejection.
+                graph()
+                input.api.requireStream('$events')
+                questionEndpoints()
+                pendingQuestions.get(next.frame)?.(error)
+                continue
+              }
+            }
             yield next.frame
           } else await new Promise<void>((resolve) => { wake = resolve })
         }

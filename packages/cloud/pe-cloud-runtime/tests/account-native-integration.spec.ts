@@ -178,6 +178,8 @@ async function fixture(options: {
     if (options.instructionSources !== undefined) return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy, 128)
     const unavailable = (): never => { throw new AccountRuntimeError('cloud/account-unavailable', 'No fixture project/model/Preset approval') }
     return {
+      beginSettingsUpdate: () => ({ check() {}, approve() {}, finish() {}, publish: (audit) => { audit() },
+        abort() {}, run: operation => operation() }),
       assertWorkspace: unavailable, projectForAgent: unavailable, projectForSession: unavailable,
       projectForObservedHeader: unavailable, projectForDirectory: unavailable, getFileProject: async () => unavailable(),
       resolveFileScope: async () => unavailable(),

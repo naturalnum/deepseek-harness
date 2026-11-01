@@ -1,5 +1,7 @@
 /** Original account question service, bounded Remote source and HTTP result loop; no Target calls. */
-import { expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
+import { symbols } from '@deepseek-ai/cordis'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId, createToolResultMessage, type ToolSchema } from '@deepseek-ai/dsh-llm'
@@ -166,6 +168,77 @@ it('rejects an already delivered unanswered question when the original account s
   await f.events?.dispose()
   await rejected
   expect(() => f.events?.inspect()).toThrow()
+})
+
+it('rejects only a queued question whose original Agent is no longer registered', async () => {
+  const f = await fixture('stale-question-isolated'), client = await f.open()
+  const waiting = f.ask('stale-question')
+  const rejected = expect(waiting).rejects.toBeDefined()
+  expect(f.events?.inspect().queuedEvents).toBe(1)
+  const proxy = f.ctx.agents
+  const original: unknown = Reflect.get(proxy, symbols.original)
+  const registry = original instanceof AgentRegistry ? original : proxy
+  const get = vi.spyOn(registry, 'get').mockReturnValue(undefined)
+  try { await rejected } finally { get.mockRestore() }
+  expect(f.controls.at(-1)?.signal.aborted).toBe(false)
+  expect(f.events?.inspect()).toMatchObject({ endpoint: '$events', queuedEvents: 0, queuedBytes: 0 })
+  expect(f.api.requireStream('$events').guard).toBe('authenticated-account')
+  const followup = f.ask('after-stale-question')
+  const next = await f.nextQuestion(client.source)
+  await expect(f.result(client.clientId, text(next, 'eventId'), { kind: 'result', value: answer }))
+    .resolves.toMatchObject({ result: { ok: true } })
+  await expect(followup).resolves.toEqual(answer)
+})
+
+it('rejects only a queued question whose original Session is no longer readable', async () => {
+  const f = await fixture('stale-question-session')
+  const waiting = f.ask('stale-session')
+  const rejected = expect(waiting).rejects.toBeDefined()
+  expect(f.events?.inspect().queuedEvents).toBe(1)
+  const check = vi.spyOn(f.guards, 'assertSessionRead').mockImplementation(() => { throw new Error('Session is no longer readable') })
+  try { await rejected } finally { check.mockRestore() }
+  expect(f.controls.at(-1)?.signal.aborted).toBe(false)
+  expect(f.events?.inspect()).toMatchObject({ endpoint: '$events', queuedEvents: 0, queuedBytes: 0 })
+  expect(f.api.requireStream('$events').guard).toBe('authenticated-account')
+})
+
+it('still stops the account event source when business admission closes during question validation', async () => {
+  const f = await fixture('stale-question-owner-revoked')
+  const waiting = f.ask('question-owner-revoked')
+  const rejected = expect(waiting).rejects.toBeDefined()
+  expect(f.events?.inspect().queuedEvents).toBe(1)
+  const proxy = f.ctx.agents
+  const original: unknown = Reflect.get(proxy, symbols.original)
+  const registry = original instanceof AgentRegistry ? original : proxy
+  const get = vi.spyOn(registry, 'get').mockImplementation(() => { f.closeBusiness(); return undefined })
+  try { await rejected } finally { get.mockRestore() }
+  expect(() => f.events?.inspect()).toThrow()
+  const failure: unknown = await f.events!.dispose().then(() => undefined, (error: unknown) => error)
+  expect(failure).toBeDefined()
+  f.expectEventDisposalFailure(failure)
+})
+
+it.each(['$events/result', 'userQuestions/answer'])('stops the event source if global %s is revoked during question validation', async (endpoint) => {
+  const f = await fixture('stale-global-' + endpoint.replaceAll('/', '-'))
+  const waiting = f.ask('question-global-revoked')
+  const rejected = expect(waiting).rejects.toBeDefined()
+  expect(f.events?.inspect().queuedEvents).toBe(1)
+  const proxy = f.ctx.agents
+  const original: unknown = Reflect.get(proxy, symbols.original)
+  const registry = original instanceof AgentRegistry ? original : proxy
+  let revoked = false
+  const get = vi.spyOn(registry, 'get').mockImplementation(() => { revoked = true; return undefined })
+  const denied = new Error('The original global question endpoint was revoked')
+  const requireRpc = f.api.requireRpc.bind(f.api)
+  const rpc = vi.spyOn(f.api, 'requireRpc').mockImplementation((name) => {
+    if (revoked && name === endpoint) throw denied
+    return requireRpc(name)
+  })
+  try { await rejected } finally { get.mockRestore(); rpc.mockRestore() }
+  expect(() => f.events?.inspect()).toThrow()
+  const failure: unknown = await f.events!.dispose().then(() => undefined, (error: unknown) => error)
+  expect(failure).toBe(denied)
+  f.expectEventDisposalFailure(failure)
 })
 
 it.each(['next', 'rejected'] as const)('releases retained question capacity after the native Client sends %s', async (kind) => {

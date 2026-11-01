@@ -58,6 +58,8 @@ The optional `approvedConfiguration.fields` rows select exact namespace/field pa
 
 Ordinary plugin-field replacement policy belongs to this package. Its internal `ordinaryConfigPolicy` reads native schema metadata without evaluating builders or validators and refuses secret, live, recursive or unresolved fields. Native Settings retains its original live-field forms and secret redaction.
 
+A finite-value field normally rejects `unset`. A Runtime-owned settings transaction may permit one reset only after checking the original native inherited value against that field's approved values; it remains inside the original Peer, save and Loader plan checks. Missing Runtime policy keeps that reset closed. The original save owner commits the policy after all enrolled children settle; failed final checks retain an unknown save outcome. Its bounded event queue waits for the settings turn before delivery.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -58,6 +58,8 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 普通插件字段的替换策略由本包负责。内部 `ordinaryConfigPolicy` 只读取原生 schema 元数据，不运行构造函数或校验器，并拒绝秘密、实时、递归或无法确认的字段。原生 Settings 保留原有实时字段表单与秘密值脱敏。
 
+有限值字段通常拒绝 `unset`。Runtime 持有的设置事务只有在核实原生继承值属于该字段获批值后才可允许一次重置；重置仍受原 Peer、保存和 Loader plan 检查。缺少 Runtime 策略时重置保持关闭。原保存所有者在所有登记子任务结束后提交策略；最终检查失败时保留结果未知的保存记录。有界事件队列在设置事务结束后再投递。
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

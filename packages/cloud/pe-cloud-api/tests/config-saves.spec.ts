@@ -33,6 +33,40 @@ function binding(id = 'a', epoch = '1', lifetime = new AbortController()): Accou
 afterEach(() => { vi.useRealTimers() })
 
 describe('actual configuration submission responsibility', () => {
+  it('commits a settings policy only after every enrolled child has succeeded', async () => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding())
+    const child = deferred(), commit = vi.fn()
+    expect(() => { a.commitSettingsPolicy(commit) }).toThrow()
+    const save = a.admit('settings', async () => {
+      a.commitSettingsPolicy(commit)
+      expect(() => { a.commitSettingsPolicy(commit) }).toThrow()
+      void a.admit('config-editor', () => child.promise)
+      return 'saved'
+    })
+    await Promise.resolve()
+    expect(commit).not.toHaveBeenCalled()
+    expect(a.snapshot().pending).toHaveLength(1)
+    child.resolve()
+    await expect(save).resolves.toBe('saved')
+    expect(commit).toHaveBeenCalledOnce()
+  })
+
+  it('retains settings policy commit failure as unknown and never commits after a child failure', async () => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding()), b = root.createAccount(binding('b'))
+    const child = deferred(), commit = vi.fn()
+    const save = a.admit('settings', async () => {
+      a.commitSettingsPolicy(commit)
+      void a.admit('config-editor', () => child.promise).catch(() => {})
+    })
+    child.reject(new Error('child failed'))
+    await expect(save).rejects.toThrow('child failed')
+    expect(commit).not.toHaveBeenCalled()
+    await expect(b.admit('settings', async () => {
+      b.commitSettingsPolicy(() => { throw new Error('post-save audit failed') })
+    })).rejects.toBeInstanceOf(ConfigSaveOutcomeUnknown)
+    expect(b.snapshot().failures).toMatchObject([{ outcome: 'unknown' }])
+  })
+
   it('registers before submit, serializes queued saves, and retains capacity through mandatory apply', async () => {
     const root = new ConfigSaveCoordinator(limits)
     const a = root.createAccount(binding())
