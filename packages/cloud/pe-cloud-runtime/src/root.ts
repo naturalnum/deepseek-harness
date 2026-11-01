@@ -154,7 +154,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     let timing: FileReadTiming | undefined
     if (enableFileReadTiming) {
       try {
-        timing = createFileReadTiming((value) => { ctx.logger.warn('Cloud file timing aggregate: %j', value) })
+        timing = createFileReadTiming((value) => { console.warn('Cloud file timing aggregate: %j', value) })
         const owned = timing
         ctx.effect(() => () => { owned.close() }, 'pe-cloud-runtime: close temporary numerical timing')
       } catch (_error) {
