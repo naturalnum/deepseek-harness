@@ -106,7 +106,11 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
       ...(input.skillCopies === undefined ? {} : { skillCopies: input.skillCopies }),
       assertCurrent(): void {
         if (state.closing !== undefined) unavailable()
-        storageCurrent(); exports.assertCurrent()
+        // In shared-path mode the original exports current check invokes
+        // planCurrent, which already verifies both exact Root file leases.
+        // Legacy exports also depend on the keeper and keep their own checks.
+        if (input.schema === 'pe-opensandbox-root-deployment-v1') storageCurrent()
+        exports.assertCurrent()
       } })
     deployment.assertCurrent()
     return Object.freeze({ deployment, closeActual })
