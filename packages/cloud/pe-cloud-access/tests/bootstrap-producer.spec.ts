@@ -1,7 +1,8 @@
 import { modelKeyBinding } from '../../pe-cloud-api/tests/model-key-policy-data.ts'
 /** Producer contract tests on a native policy graph; execution/inventory/content stubs prove no product readiness or ABI8. */
 import { Context } from '@deepseek-ai/cordis'
-import { CloudApiError, ExposureService, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, APPROVED_PLUGIN_CONTROL, type ApprovedConfigurationCatalog, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, APPROVED_PLUGIN_CONTROL, createNativeSchedule, type NativeSchedule, type ApprovedConfigurationCatalog, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import ScheduleService from '../../../schedule/schedule/src/index.ts'
 import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
 import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -57,7 +58,7 @@ async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly 
   const produce = () => produceCloudBootstrap(graph.ctx, graph.binding, exposure, () => undefined,
     { id: graph.binding.accountId, displayName: 'Producer contract' }, 8192, graph.binding.lifetime,
     () => { graph.ctx.fiber.assertActive() }, () => 'producer-generation')
-  return { produce, graph, auditedRpc, auditedStream, auditedFetch, content }
+  return { produce, graph, exposure, auditedRpc, auditedStream, auditedFetch, content }
 }
 
 const upload: ExactFetchExposure = { method: 'POST', path: FILE_UPLOAD_PATH,
@@ -270,6 +271,81 @@ it('keeps unselected native Session controls absent from bootstrap owner reads',
   const f = await fixture()
   await f.produce()
   for (const row of nativeControlRpc) expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+const scheduleRpc: readonly EndpointExposure[] = [
+  { endpoint: 'schedule/catalog', handlerId: 'native:schedule', guard: 'authenticated-account' },
+  ...['list', 'history', 'delete', 'update'].map(method => ({
+    endpoint: 'schedule/' + method, handlerId: 'native:schedule', guard: 'account-session' as const,
+  })),
+]
+
+it('combines bootstrap with the original Schedule service inventory and detects its withdrawal', async () => {
+  const f = await fixture(scheduleRpc)
+  let native: NativeSchedule | undefined
+  const binding = f.graph.binding
+  const assertSessionRead = f.graph.guards.assertSessionRead
+  if (assertSessionRead === undefined) throw new Error('Original Session read guard missing')
+  const schedule = f.graph.ctx.plugin({ name: 'bootstrap-native-schedule', inject: ScheduleService.inject,
+    apply(owner: Context) {
+      native = createNativeSchedule(owner, binding, () => { binding.lifetime.throwIfAborted() }, f.exposure.policy,
+        { ...f.graph.guards.sessions, projectDirectory: { binding, prepare: async () => {} },
+          firstScreen: { ...bounds, assertSessionRead: (id) => { assertSessionRead(id) } } }, 512, {})
+    } })
+  await schedule.await()
+  if (native === undefined) throw new Error('Original Schedule service missing')
+  const originalSchedule = native, original = f.auditedRpc.getMockImplementation()
+  if (original === undefined) throw new Error('Original audit missing')
+  f.auditedRpc.mockImplementation((endpoint) => {
+    if (!endpoint.startsWith('schedule/')) return original(endpoint)
+    const row = originalSchedule.inspect().rpcEndpoints.find(item => item.endpoint === endpoint)
+    if (row === undefined) throw new Error('Original Schedule route absent')
+    return row
+  })
+  const result = await f.produce()
+  for (const row of scheduleRpc) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  result.assertCurrent()
+  await schedule.dispose()
+  expect(() => { result.assertCurrent() }).toThrow()
+})
+
+it('admits the five selected native Schedule routes and rechecks the original owner', async () => {
+  const f = await fixture(scheduleRpc), result = await f.produce()
+  for (const row of scheduleRpc) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  result.assertCurrent()
+  const original = f.auditedRpc.getMockImplementation()
+  if (original === undefined) throw new Error('Original audit missing')
+  f.auditedRpc.mockImplementation((endpoint) => {
+    if (endpoint === 'schedule/history') throw new CloudApiError('cloud/account-unavailable', 'Original Schedule withdrew')
+    return original(endpoint)
+  })
+  expect(result.assertCurrent).toThrow('Original Schedule withdrew')
+})
+
+it.each(scheduleRpc.flatMap(row => [
+  { ...row, handlerId: 'foreign:schedule' },
+  { ...row, guard: row.guard === 'account-session' ? 'authenticated-account' as const : 'account-session' as const },
+]))('rejects a Schedule declaration with the wrong handler or guard: %j', async (row) => {
+  const f = await fixture([row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it.each(['create', 'pause', 'resume', 'other'])('rejects the unapproved schedule/%s endpoint', async (method) => {
+  const row: EndpointExposure = { endpoint: 'schedule/' + method, handlerId: 'native:schedule', guard: 'account-session' }
+  const f = await fixture([row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it.each(scheduleRpc.flatMap(row => [
+  { row, actual: { ...row, handlerId: 'foreign:schedule' } },
+  { row, actual: { ...row, guard: row.guard === 'account-session' ? 'authenticated-account' as const : 'account-session' as const } },
+]))('refuses a changed actual Schedule owner or guard: %j', async ({ row, actual }) => {
+  const f = await fixture([row]), read = f.auditedRpc.getMockImplementation()
+  if (read === undefined) throw new Error('Original audit missing')
+  f.auditedRpc.mockImplementation(endpoint => endpoint === row.endpoint ? actual : read(endpoint))
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
 })
 
 it.each([
