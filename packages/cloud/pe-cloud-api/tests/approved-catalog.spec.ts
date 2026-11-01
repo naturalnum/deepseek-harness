@@ -234,3 +234,95 @@ it.each([
 ])('rejects ambiguous or unbounded generic approval rows', (...fields) => {
   expect(() => parseApprovedConfigurationCatalog({ ...catalog(), fields }, manifest.recipeVersion, false)).toThrow()
 })
+
+it('admits WebSearch only with fixed official endpoints, exact provider choices, and the account model key', async () => {
+  const webFields = [
+    { namespace: 'web', field: 'searchProvider', values: ['deepseek-official', 'deepseek-search-api'] },
+    { namespace: 'web', field: 'fetchProvider', values: ['http', 'deepseek-fetch-api'] },
+    { namespace: 'web-search-deepseek', field: 'baseURL', values: ['https://api.deepseek.com/anthropic/v1'] },
+    { namespace: 'web-search-deepseek', field: 'maxUses' },
+    { namespace: 'web-deepseek-api', field: 'baseURL', values: ['https://api.deepseek.com/v1/tools'] },
+    { namespace: 'web-deepseek-api', field: 'count' },
+  ]
+  const modelKey = { bindings: [modelKeyBinding('provider')], maxKeyBytes: 8192,
+    maxVersionBytes: 128, maxReplyBytes: 4096, maxMetadataBytes: 65536 }
+  const keyRows = ['metadata', 'describe', 'set', 'unset'].map(method =>
+    ({ endpoint: 'cloudModelKey/' + method, handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const }))
+  const mutate = { endpoint: 'settings/mutate', handlerId: 'native:settingsController', guard: 'authenticated-account' as const }
+  const ctx = new Context()
+  const build = (fields: typeof webFields, key: typeof modelKey | undefined = modelKey) => {
+    const allowedSettings = [...new Set(fields.map(field => field.namespace))].map(namespace => ({ namespace,
+      fields: fields.filter(field => field.namespace === namespace).map(field => field.field) }))
+    return new ExposureService(ctx, ExposureService.Config({ ...manifest, allowedSettings, rpcEndpoints: [mutate, ...keyRows],
+      approvedConfiguration: { ...catalog(), maxEntries: 32, fields, ...key === undefined ? {} : { modelKey: key } } }))
+  }
+  try {
+    expect(build(webFields).approvedConfiguration?.fields).toHaveLength(6)
+    for (const fields of [webFields.slice(1), webFields.map(field => field.field === 'baseURL'
+      ? { ...field, values: ['https://unapproved.example'] } : field), webFields.map(field =>
+      field.field === 'searchProvider' ? { ...field, values: ['deepseek-official', 'other'] } : field)]) {
+      expect(() => build(fields)).toThrow()
+    }
+    expect(() => build(webFields, { ...modelKey, bindings: [{ ...modelKey.bindings[0]!, ref: 'OTHER_KEY' }] } as never)).toThrow()
+  } finally { await ctx.fiber.dispose() }
+})
+
+it('admits unrelated Root-approved graph and bundle controls while protecting all four native Web entries', async () => {
+  const fields = [
+    { namespace: 'web', field: 'searchProvider', values: ['deepseek-official', 'deepseek-search-api'] },
+    { namespace: 'web', field: 'fetchProvider', values: ['http', 'deepseek-fetch-api'] },
+    { namespace: 'web-search-deepseek', field: 'baseURL', values: ['https://api.deepseek.com/anthropic/v1'] },
+    { namespace: 'web-search-deepseek', field: 'maxUses' },
+    { namespace: 'web-deepseek-api', field: 'baseURL', values: ['https://api.deepseek.com/v1/tools'] },
+    { namespace: 'web-deepseek-api', field: 'count' },
+  ]
+  const modelKey = { bindings: [modelKeyBinding('provider')], maxKeyBytes: 8192,
+    maxVersionBytes: 128, maxReplyBytes: 4096, maxMetadataBytes: 65536 }
+  const keyRows = ['metadata', 'describe', 'set', 'unset'].map(method =>
+    ({ endpoint: 'cloudModelKey/' + method, handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const }))
+  const pluginRows = ['current', 'change', 'list'].map(method =>
+    ({ endpoint: 'cloudPlugins/' + method, handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const }))
+  const mutate = { endpoint: 'settings/mutate', handlerId: 'native:settingsController', guard: 'authenticated-account' as const }
+  const allowedSettings = [...new Set(fields.map(field => field.namespace))].map(namespace => ({ namespace,
+    fields: fields.filter(field => field.namespace === namespace).map(field => field.field) }))
+  const version = '0.2.1-rc.2', otherPackage = '@deepseek-ai/dsh-unrelated-test'
+  const graphPlugin = { id: 'graph-test', entryId: 'include:graph-test', moduleName: otherPackage, packageName: otherPackage,
+    packageVersion: version, installable: false, toggleable: true,
+    control: { selectionTarget: { kind: 'entry', id: 'include:graph-test' }, operations: ['enabled'], maxImpact: 'graph', fields: [] } }
+  const sshBundle = '@deepseek-ai/dsh-ssh-command-bundle'
+  const bundle = { id: 'ssh-bundle', packageName: sshBundle, packageVersion: '0.1.3',
+    control: { selectionTarget: { kind: 'bundle', name: sshBundle }, operations: ['selected'], maxImpact: 'graph', fields: [] },
+    members: [{ entryId: 'include:ssh-command', moduleName: sshBundle, packageName: sshBundle, packageVersion: '0.1.3' }] }
+  const approved = { ...catalog(), maxEntries: 32, maxCatalogBytes: 32768, fields, modelKey,
+    plugins: [...catalog().plugins, graphPlugin], bundles: [bundle],
+    pluginControl: { maxProfileBytes: 65536, maxRequestBytes: 4096, maxReplyBytes: 65536, maxVersionBytes: 128 } }
+  const ctx = new Context()
+  const build = (input: unknown) => new ExposureService(ctx, ExposureService.Config({ ...manifest, allowedSettings,
+    rpcEndpoints: [mutate, ...keyRows, ...pluginRows], approvedConfiguration: input }))
+  try {
+    const result = build(approved).approvedConfiguration
+    expect(result?.plugins.find(row => row.id === 'graph-test')?.control?.maxImpact).toBe('graph')
+    expect(result?.bundles?.[0]?.members).toEqual(bundle.members)
+    for (const id of ['web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http']) {
+      for (const entryId of [id, 'include:' + id]) {
+        const forbidden = { ...graphPlugin, id: 'protected-test', entryId,
+          control: { ...graphPlugin.control, selectionTarget: { kind: 'entry', id: entryId } } }
+        expect(() => build({ ...approved, plugins: [...catalog().plugins, forbidden] }))
+          .toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+        const member = { ...bundle.members[0]!, entryId }
+        expect(() => build({ ...approved, bundles: [{ ...bundle, members: [member] }] }))
+          .toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+      }
+      const packageName = '@deepseek-ai/dsh-' + id
+      const alias = { ...bundle.members[0]!, moduleName: packageName, packageName }
+      expect(() => build({ ...approved, bundles: [{ ...bundle, members: [alias] }] }))
+        .toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+      const pluginAlias = { ...graphPlugin, moduleName: packageName, packageName }
+      expect(() => build({ ...approved, plugins: [...catalog().plugins, pluginAlias] }))
+        .toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+      expect(() => build({ ...approved, bundles: [{ ...bundle, packageName,
+        control: { ...bundle.control, selectionTarget: { kind: 'bundle', name: packageName } } }] }))
+        .toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+    }
+  } finally { await ctx.fiber.dispose() }
+})

@@ -490,7 +490,8 @@ export class CloudAccountApi extends Service {
   prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService {
     this.assertInstalled(owner)
     if (this.modelKey.native !== undefined) this.duplicateNative()
-    const native = new CloudModelKeyService(owner, this, input)
+    const webSearchSettings = this.installation.exposure.manifest.allowedSettings.some(row => row.namespace === 'web-search-deepseek')
+    const native = new CloudModelKeyService(owner, this, input, webSearchSettings)
     this.modelKey.native = native
     return native
   }

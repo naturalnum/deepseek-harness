@@ -38,8 +38,10 @@ export class ModelKeyProvider {
    * @param ctx Actual account Loader.
    * @param policy Root provider/reference selection and finite projection bounds.
    * @param maximum Original inventory budget.
+   * @param webSearchSettings Whether the approved account also exposes native web provider settings.
    */
-  constructor(private readonly ctx: Context, private readonly policy: ApprovedModelKeyConfiguration, private readonly maximum: number) {}
+  constructor(private readonly ctx: Context, private readonly policy: ApprovedModelKeyConfiguration, private readonly maximum: number,
+    private readonly webSearchSettings = false) {}
   /**
    * Pin actual Loader module/config/LLM/settings identities before readiness.
    * @returns Original module imports; missing or mismatched native facts reject.
@@ -116,9 +118,66 @@ export class ModelKeyProvider {
         } }
       })
     }
+    if (this.webSearchSettings) checks.push(await this.auditWebSearch())
     this.current = () => { for (const check of checks) check() }
     this.metadata()
   }
+  /** Pin the actual native search components and check their account-only credential binding. */
+  private async auditWebSearch(): Promise<() => void> {
+    if (!this.policy.bindings.some(binding => binding.provider === 'deepseek-official' && binding.ref === 'DEEPSEEK_API_KEY')) unavailable()
+    const rows = []
+    for (const entry of this.ctx.loader.entries()) { if (rows.length >= this.maximum) unavailable(); rows.push(entry) }
+    const expected = [
+      ['web', '@deepseek-ai/dsh-web'],
+      ['web-search-deepseek', '@deepseek-ai/dsh-web-search-deepseek'],
+      ['web-deepseek-api', '@deepseek-ai/dsh-web-deepseek-api'],
+      ['web-fetch-http', '@deepseek-ai/dsh-web-fetch-http'],
+    ] as const
+    const pinned: { entry: typeof rows[number]; fiber: NonNullable<typeof rows[number]['fiber']>; module: object; callback: unknown }[] = []
+    for (const [id, name] of expected) {
+      const matches = rows.filter(entry => entry.options.id === id), entry = matches[0], fiber = entry?.fiber
+      if (matches.length !== 1 || entry === undefined || entry.options.name !== name || entry.disabled
+        || fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace === undefined) unavailable()
+      const module = entry.moduleNamespace, imported: unknown = await entry.parent.tree.import(name)
+      if (module !== imported || !record(module)) unavailable()
+      const callback: unknown = id === 'web' ? module.default : module.apply
+      if (typeof callback !== 'function' || fiber.runtime?.callback !== callback) unavailable()
+      pinned.push({ entry, fiber, module, callback })
+    }
+    const webModule = pinned[0]?.module
+    if (!record(webModule) || typeof webModule.default !== 'function') unavailable()
+    const read = this.ctx.get.bind(this.ctx) as (key: string) => unknown
+    const web = read('web')
+    if (web === null || typeof web !== 'object' || !(original(web) instanceof (webModule.default as new (...args: never[]) => object))) unavailable()
+    const settings = this.ctx.get('settings')
+    if (settings === undefined) unavailable()
+    return () => {
+      this.ctx.fiber.assertActive()
+      const currentWeb = read('web'), currentSettings = this.ctx.get('settings')
+      if (currentWeb === null || typeof currentWeb !== 'object' || original(currentWeb) !== original(web)
+        || currentSettings === undefined || original(currentSettings) !== original(settings)) unavailable()
+      for (const row of pinned) if (row.entry.disabled || row.entry.fiber !== row.fiber || row.fiber.state !== FiberState.ACTIVE
+        || row.entry.moduleNamespace !== row.module || row.fiber.runtime?.callback !== row.callback) unavailable()
+      const views = settings.describe({ redactSecrets: true })
+      if (views.length > this.maximum) unavailable()
+      const section = (id: string) => {
+        const matches = views.filter(row => row.ns === id), view = matches[0]
+        if (matches.length !== 1 || view === undefined || !record(view.value)) unavailable()
+        return view
+      }
+      const selection = section('web').value
+      const messages = section('web-search-deepseek'), api = section('web-deepseek-api')
+      if (!record(selection) || !record(messages.value) || !record(api.value)) unavailable()
+      const selected = (selection.searchProvider === 'deepseek-official' && selection.fetchProvider === 'http')
+        || (selection.searchProvider === 'deepseek-search-api' && selection.fetchProvider === 'deepseek-fetch-api')
+      if (!selected || messages.value.apiKeyEnv !== 'DEEPSEEK_API_KEY' || api.value.apiKeyEnv !== 'DEEPSEEK_API_KEY'
+        || messages.value.baseURL !== 'https://api.deepseek.com/anthropic/v1'
+        || api.value.baseURL !== 'https://api.deepseek.com/v1/tools'
+        || [messages, api].some(view => view.secrets?.some(secret => secret.path.length === 1
+          && secret.path[0] === 'apiKey' && secret.set) !== false)) unavailable()
+    }
+  }
+
   /** Capture one approved native settings change before its original writer starts.
    * @param namespace Original provider settings namespace.
    * @param ops Approved native path operations.

@@ -16,6 +16,42 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Web settings can only name the two protected native providers and their official endpoints. */
+function validateWebSearchPolicy(approved: ApprovedConfigurationCatalog | undefined): boolean {
+  if (approved === undefined) return false
+  const sections = new Set(['web', 'web-search-deepseek', 'web-deepseek-api'])
+  const fields = approved.fields.filter(field => sections.has(field.namespace))
+  if (fields.length === 0) return false
+  const exact: Record<string, readonly (string | number | boolean | null)[] | undefined> = {
+    'web.searchProvider': ['deepseek-official', 'deepseek-search-api'],
+    'web.fetchProvider': ['http', 'deepseek-fetch-api'],
+    'web-search-deepseek.baseURL': ['https://api.deepseek.com/anthropic/v1'],
+    'web-search-deepseek.maxUses': undefined,
+    'web-deepseek-api.baseURL': ['https://api.deepseek.com/v1/tools'],
+    'web-deepseek-api.count': undefined,
+  }
+  const invalid = (): never => { throw new CloudApiError('cloud/invalid-config', 'Web search requires its exact protected account policy.') }
+  if (fields.length !== Object.keys(exact).length) invalid()
+  for (const field of fields) {
+    const key = field.namespace + '.' + field.field
+    if (!Object.hasOwn(exact, key)) invalid()
+    const values = exact[key]
+    if (values !== undefined && (field.values === undefined || field.values.length !== values.length
+      || values.some(value => !field.values?.includes(value)))) invalid()
+  }
+  if (!approved.modelKey?.bindings.some(binding => binding.provider === 'deepseek-official'
+    && binding.moduleName === '@deepseek-ai/dsh-llm-deepseek-api-key' && binding.ref === 'DEEPSEEK_API_KEY')) invalid()
+  const protectedEntries = new Set(['web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http'])
+  const protectedPackages = new Set(['@deepseek-ai/dsh-web', '@deepseek-ai/dsh-web-search-deepseek',
+    '@deepseek-ai/dsh-web-deepseek-api', '@deepseek-ai/dsh-web-fetch-http'])
+  const protectedMember = (row: { entryId: string; packageName: string }): boolean =>
+    protectedEntries.has(row.entryId.replace(/^include:/, '')) || protectedPackages.has(row.packageName)
+  if (approved.plugins.some(plugin => plugin.control !== undefined && protectedMember(plugin))
+    || approved.bundles?.some(bundle => protectedPackages.has(bundle.packageName)
+      || bundle.members.some(protectedMember)) === true) invalid()
+  return true
+}
+
 /** Root policy provider; registering it does not publish account readiness. */
 export class ExposureService extends Service {
   static Config: typeof ExposureRootConfigSchema = ExposureRootConfigSchema
@@ -32,6 +68,7 @@ export class ExposureService extends Service {
     const policy = new ExposurePolicy(config)
     const approved = parseApprovedConfigurationCatalog(config.approvedConfiguration, policy.manifest.recipeVersion,
       policy.manifest.allowedSettings.length === 0)
+    validateWebSearchPolicy(approved)
     const writableSettings = (approved?.fields.length ?? 0) !== 0
     const settings = policy.manifest.allowedSettings
     const writers = policy.manifest.rpcEndpoints.filter(row => row.endpoint.startsWith('settings/') && row.endpoint !== 'settings/describe')

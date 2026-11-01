@@ -218,3 +218,44 @@ it('rechecks observer cancellation before and after prepare while the original p
   expect(prepare).toHaveBeenCalledTimes(1)
   remove()
 })
+
+it('binds web-search credential edits to the original approved account and prepared model version', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare({
+    ...f.input, config: { ...config, modelSettingsRequestTimeoutMs: 1000 },
+  }, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page)
+  await page.start(graph.entry)
+  const credentials = vi.fn(async (refs: readonly string[]) =>
+    Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: true }])))
+  const store = vi.fn(async () => undefined), prepare = vi.fn(async (ref: string) => ({ ref, configured: false, store, remove: store }))
+  const unused = async (): Promise<never> => { throw new Error('unused') }
+  const remove = page.attachModels(graph.ctx, { metadata: unused, credentials, prepare })
+  const signal = new AbortController()
+  expect(page.webSearchSettingsIntegration.sharedModelCredential).toBe(true)
+  const edit = await page.webSearchSettingsIntegration.prepare(signal.signal)
+  expect(edit?.configured).toBe(false)
+  expect(credentials).not.toHaveBeenCalled()
+  expect(prepare).toHaveBeenCalledWith('DEEPSEEK_API_KEY', expect.any(AbortSignal))
+  expect(await edit?.store('test-account-secret')).toBe(true)
+  remove()
+  expect(await edit?.store('stale-secret')).toBe(false)
+  expect(store).toHaveBeenCalledTimes(1)
+})
+
+it('does not expose a web-search key editor when the account credential read fails or is not writable', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare({
+    ...f.input, config: { ...config, modelSettingsRequestTimeoutMs: 1000 },
+  }, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page)
+  await page.start(graph.entry)
+  const unused = async (): Promise<never> => { throw new Error('unavailable') }
+  const remove = page.attachModels(graph.ctx, { metadata: unused, credentials: unused, prepare: unused })
+  await expect(page.webSearchSettingsIntegration.prepare(new AbortController().signal)).rejects.toThrow('unavailable')
+  remove()
+  const prepare = vi.fn(async () => null)
+  page.attachModels(graph.ctx, { metadata: unused, credentials: unused, prepare })
+  expect(await page.webSearchSettingsIntegration.prepare(new AbortController().signal)).toBeNull()
+  expect(prepare).toHaveBeenCalledTimes(1)
+})

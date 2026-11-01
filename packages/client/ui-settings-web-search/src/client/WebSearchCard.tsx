@@ -6,6 +6,7 @@
  * so the literal never rides a response.
  */
 
+import { useEffect } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { SettingsForm, SettingsSecretField, SettingsValueField, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -27,6 +28,8 @@ export type WebSearchCardProps =
 export function WebSearchCard(props: WebSearchCardProps) {
   const { t } = props
   const state = props.useWebSearchCard(snapshot => snapshot)
+  const beginCredentialEdit = props.beginCredentialEdit
+  useEffect(() => props.view === 'page' ? beginCredentialEdit() : undefined, [props.view, beginCredentialEdit])
   if (props.view === 'summary') return t('description')
   const disabled = !state.writable || state.saving
   const searchApi = state.useSearchApi
@@ -57,9 +60,10 @@ export function WebSearchCard(props: WebSearchCardProps) {
         disabled={!state.apiKeyWritable}
         text={state.apiKey.text}
         configured={state.apiKeyConfigured}
-        stateLabel={state.apiKeyConfigured ? t('apiKeySet') : t('apiKeyUnset')}
+        stateLabel={!state.apiKeyKnown ? t('apiKeyUnavailable') : state.apiKeyConfigured ? t('apiKeySet') : t('apiKeyUnset')}
         onEdit={(text) => { props.edit('apiKey', text) }}
       />
+      {state.sharedModelCredential && <p className={styles.hint}>{t('sharedModelCredential')}</p>}
       <SettingsValueField
         id="plugin-config-web-search-endpoint"
         label={t(searchApi ? 'searchApiBaseUrl' : 'baseUrl')}

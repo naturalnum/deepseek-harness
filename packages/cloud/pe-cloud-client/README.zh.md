@@ -81,7 +81,7 @@ Subagent 卡片使用该命名空间及当前账户已声明的字段。读取�
 
 `modelSettingsRequestTimeoutMs` 是可选的原生模型设置 RPC 观察者期限，须为平台 timer 范围内的正整数；省略时保持该功能关闭。原 `PreparedCloudPage` 在 UI 激活前提供类型化 Models 集成。编辑源初始为 `null`，仅接收从原依赖 scope 捕获的回调，并在等待页面清理前同步撤销。页面、Connection 或依赖 fiber 替换时，await 前后均拒绝旧回调；撤回不表示已发保存已被取消。UI 身份使用原连接代际与依赖 fiber，不依赖元数据或编辑 token。
 
-显式配置 `client.modelSettingsRequestTimeoutMs` 后，原始 prepared page 才启用 Models 集成。现有生成 API contribution 只挂载一次；适配器使用其中实际的 `cloudModelKey.metadata/describe/set/unset` 命名空间。原生元数据输入原始 Models store。原生 Settings 策略批准 DeepSeek 模型目录时，原始提供商编辑器使用捕获的 revision 保存；凭据仍单独按版本管理，未确认的写入会阻止在当前草稿中重试。每次打开编辑意图只 describe 一次，set 或仅删除 key 的 unset 始终使用当时捕获的版本；后台读取不替换版本。只有原生校验通过的 `persisted: true` 回执确认保存。失败显示固定本地化文案。页面或依赖撤销时，先发布 null 并使旧回调失效，再等待异步清理。 Cloud 在 UI 激活前于此不可变页面输入中固定 `onboarding: false`，因此不注册 Welcome 或凭据 onboarding，编辑源为 null 或已撤销时亦然。密钥通过原生 Settings/Models 面板手动配置。
+显式配置 `client.modelSettingsRequestTimeoutMs` 后，原始 prepared page 才启用 Models 集成。现有生成 API contribution 只挂载一次；适配器使用其中实际的 `cloudModelKey.metadata/describe/set/unset` 命名空间。原生元数据输入原始 Models store。原生 Settings 策略批准 DeepSeek 模型目录时，原始提供商编辑器使用捕获的 revision 保存；凭据仍单独按版本管理，未确认的写入会阻止在当前草稿中重试。每次打开编辑意图只 describe 一次，set 或仅删除 key 的 unset 始终使用当时捕获的版本；后台读取不替换版本。只有原生校验通过的 `persisted: true` 回执确认保存。失败显示固定本地化文案。页面或依赖撤销时，先发布 null 并使旧回调失效，再等待异步清理。 Cloud 在 UI 激活前于此不可变页面输入中固定 `onboarding: false`，因此不注册 Welcome 或凭据 onboarding，编辑源为 null 或已撤销时亦然。密钥通过原生 Settings/Models 面板手动配置。原生网页搜索卡片可通过既有 Models 回调准备对同一个获批账户密钥的编辑；每个详情视图持有其捕获版本，失败或页面撤销时关闭输入，不回退到通用凭据接口。
 
 配置该期限时另声明原生 `ui-settings-models` 浏览器入口，并依赖部署已有的 `ui-settings` 基座。显式服务预览策略另声明 `ui-tool`，由它提供 tool-call 卡片及 keyed tool view。实际发布范围必须包含这些包并重建浏览器产物；仅声明不能证明浏览器已激活或面板已渲染。每个声明包仅保留一个供应方。general 包负责 Settings 面板；`ui-settings-shell` 是独立的 shell 偏好功能。
 

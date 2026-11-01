@@ -31,9 +31,14 @@ import { TYPERT } from '@deepseek-ai/dsh-api-settings-controller/typert'
 import { fileURLToPath } from 'node:url'
 import * as RuntimeAccount from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { startNativeAccountBoot, type NativeAccountBootHandle } from '@deepseek-ai/dsh-pe-cloud-runtime/src/native-boot.ts'
+import { webSearchResetAllowed, webSearchSelectionAllowed } from '../../pe-cloud-runtime/src/account-policy.ts'
 import { CloudAccountFiles, type SkillBundlePort, type SkillVersionPort } from '@deepseek-ai/dsh-pe-cloud-files'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import * as ModelProvider from '@deepseek-ai/dsh-llm-deepseek-api-key'
+import * as Web from '../../../web/web/src/index.ts'
+import * as WebMessages from '../../../web/web-search-deepseek/src/index.ts'
+import * as WebApi from '../../../web/web-deepseek-api/src/index.ts'
+import * as WebFetch from '../../../web/web-fetch-http/src/index.ts'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import Agents from '@deepseek-ai/dsh-agent'
 import Tools from '@deepseek-ai/dsh-tools'
@@ -103,6 +108,7 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
     { id: 'skill-tool', name: '@deepseek-ai/dsh-tool-skill', config: { catalogDescriptionMaxLength: 500 } },
   ]
   writeFileSync(configPath, JSON.stringify(base) + '\n')
+  const webSettings = fields.some(field => field.namespace === 'web-search-deepseek')
   const privateRows = [
     { id: 'runtime-account', name: 'cordis:locale-account' },
     { id: 'dependencies', name: 'cordis:locale-dependencies' },
@@ -116,6 +122,14 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
     { id: 'workspace-controller', name: 'cordis:locale-workspace-controller' },
     { id: 'settings-controller', name: 'cordis:locale-settings-controller' },
     { id: 'credentials', name: 'cordis:locale-credentials', config: { path: credentialPath, watch: false } },
+    ...webSettings ? [
+      { id: 'web', name: '@deepseek-ai/dsh-web', config: { searchProvider: 'deepseek-official', fetchProvider: 'http' } },
+      { id: 'web-search-deepseek', name: '@deepseek-ai/dsh-web-search-deepseek',
+        config: { apiKeyEnv: APPROVED_MODEL_KEY.ref, baseURL: 'https://api.deepseek.com/anthropic/v1' } },
+      { id: 'web-deepseek-api', name: '@deepseek-ai/dsh-web-deepseek-api',
+        config: { apiKeyEnv: APPROVED_MODEL_KEY.ref, baseURL: 'https://api.deepseek.com/v1/tools' } },
+      { id: 'web-fetch-http', name: '@deepseek-ai/dsh-web-fetch-http' },
+    ] : [],
     { id: 'model-provider', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { apiKeyEnv: APPROVED_MODEL_KEY.ref,
       models: [{ id: 'synthetic', maxOutputTokens: 128, contextSize: 4096, capabilities: [] }] } },
   ]
@@ -162,7 +176,8 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
   })
   nativeBoot.handle = startNativeAccountBoot({ binding, profile, configPath,
     bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
-    environment: new AccountModelKeyEnvironment(createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]), [APPROVED_MODEL_KEY.ref]),
+    environment: new AccountModelKeyEnvironment(createLaunchEnvironmentSnapshot([{ source: 'process',
+      values: webSettings ? { DEEPSEEK_API_KEY: 'synthetic-root-must-not-escape' } : {} }]), [APPROVED_MODEL_KEY.ref]),
     requiredEntryIds: ['include', ...base.map(row => row.id), 'runtime-account', 'editor', 'locale', 'settings-controller'],
     maxObservedEvents: 16, maxEntries: 64,
     prepare(owner, installedBinding) {
@@ -192,6 +207,18 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
         assertSessionRead: () => { throw new Error('No Session activation in this fixture') },
         maxInventoryEntries: 256, maxCollectionItems: 16, maxFrameBytes: 65536,
         ...enabled ? { settingsWrites: { ...consumer, fields } } : {},
+        ...webSettings ? {
+          allowAccountSettingsUnset: (namespace, field, values) => webSearchResetAllowed(owner.settings, namespace, field, values),
+          beginAccountSettingsUpdate: (namespace, ops) => {
+            if (namespace === 'web') {
+              const matches = owner.settings.describe({ redactSecrets: true }).filter(row => row.ns === namespace)
+              if (matches.length !== 1 || matches[0] === undefined || !webSearchSelectionAllowed(matches[0], ops)) {
+                throw new CloudApiError('cloud/forbidden', 'Unsupported web provider pair.')
+              }
+            }
+            return { check() {}, approve() {}, finish() {}, publish: (audit) => { audit() }, abort() {}, run: operation => operation() }
+          },
+        } : {},
       })
       const preparedApi = api, firstScreen = native
       const keyLimits = { bindings: [modelKeyBinding('model-provider')], maxKeyBytes: 64, maxVersionBytes: 128, maxReplyBytes: 4096, maxMetadataBytes: 65536 }
@@ -228,6 +255,10 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
         if (specifier === '@deepseek-ai/dsh-skill') return { default: SkillRegistry }
         if (specifier === '@deepseek-ai/dsh-tool-skill') return ToolSkill
         if (specifier === '@deepseek-ai/dsh-llm-deepseek-api-key') return ModelProvider
+        if (specifier === '@deepseek-ai/dsh-web') return Web
+        if (specifier === '@deepseek-ai/dsh-web-search-deepseek') return WebMessages
+        if (specifier === '@deepseek-ai/dsh-web-deepseek-api') return WebApi
+        if (specifier === '@deepseek-ai/dsh-web-fetch-http') return WebFetch
         const value: unknown = await Reflect.apply(nativeImport, internal, [specifier, ...args])
         return value
       }
@@ -285,7 +316,11 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
   const sourceBefore = readFileSync(skillPointer), keyBefore = readFileSync(credentialPath)
   const ownedApi = api, ownedBarrier = barrier, originalPeer = peer
   return { ctx, api: ownedApi, barrier: ownedBarrier, saves, profile, configPath, binding, lifetime,
-    credentialPath, skillPointer, sourceBefore, keyBefore, ref, keyState, keyStateBefore,
+    credentialPath, skillPointer, sourceBefore, keyBefore, ref, keyState, keyStateBefore, initialKey,
+    writeKey: (version: typeof keyStateBefore.version, value: string) => ctx.typertGateway.invoke({ namespace: 'cloudModelKey',
+      method: 'set', args: { request: { ref, value, version } }, peer: originalPeer }),
+    unsetKey: (version: typeof keyStateBefore.version) => ctx.typertGateway.invoke({ namespace: 'cloudModelKey',
+      method: 'unset', args: { request: { ref, version } }, peer: originalPeer }),
     modelMetadata: () => ctx.typertGateway.invoke({ namespace: 'cloudModelKey', method: 'metadata', args: {}, peer: originalPeer }),
     revision: (ns = 'locale') => ctx.settingsController.describe().namespaces.find(row => row.ns === ns)!.revision,
     call: (ops: unknown, revision: unknown, options: LocaleCallOptions = {}) =>

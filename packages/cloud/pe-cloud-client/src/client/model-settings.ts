@@ -100,7 +100,7 @@ export function createCloudModelSettingsCallbacks(remote: ModelRemote, input: Mo
       const answer = await request(observer => describe({ ref: reference }, observer), signal)
       if (!answer.ok || answer.value.ref !== ref || !answer.value.writable) return null
       const version = Object.freeze({ epoch: answer.value.version.epoch, editToken: answer.value.version.editToken })
-      return Object.freeze({ ref,
+      return Object.freeze({ ref, configured: answer.value.configured,
         store: (value: string) => save(observer => set({ ref: reference, value, version }, observer)),
         remove: () => save(observer => unset({ ref: reference, version }, observer)),
       })

@@ -16,6 +16,8 @@ The [Cloud page](../../../../packages/cloud/pe-cloud-client/README.md) prepares 
 
 Settings metadata remains readonly. Cloud omits automatic Welcome and credential onboarding so unavailable acknowledgement settings cannot block manual Models. An application omitting the optional integration retains native behavior. Required native UI modules have one supplier and actual published browser artifacts.
 
+The native Web search card also consumes a page-owned credential edit prepared from the same account key. Its detail view retains the captured version, discards its key draft on close, and keeps the input unavailable when preparation fails. The Cloud account audit pins the search providers to that reference and the approved official endpoints; generic credential writes remain closed.
+
 The account environment masks the approved model-key reference in ambient layers before boot. Removing the account's stored key therefore cannot select the shared process key. The native [credential precedence](2026-10-09-stored-credential-precedence.md), [credential boundaries](2026-07-30-credential-boundaries-and-atomic-registration.md) and [authorization records](2026-08-13-credential-records-and-authorization-flows.md) remain the general contracts; this account-specific integration adds no credential store or document format.
 
 ## Alternatives considered
@@ -28,4 +30,4 @@ The account environment masks the approved model-key reference in ambient layers
 
 ## Consequences
 
-Users edit or remove the approved key in manual Models. Provider selection, other Settings writes and automatic onboarding remain separate capabilities. A confirmed local save establishes persistence; a subsequent real native model request establishes usability. Component tests and generated contracts do not establish installed browser activation or deployment acceptance.
+Users edit or remove the approved key in manual Models and may edit the same key in Web search when that capability is approved. Provider selection, other Settings writes and automatic onboarding remain separate capabilities. A confirmed local save establishes persistence; a subsequent real native model request establishes usability. Component tests and generated contracts do not establish installed browser activation or deployment acceptance.

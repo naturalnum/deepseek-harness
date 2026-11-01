@@ -9,6 +9,7 @@ import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import AgentLoop, { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from '@deepseek-ai/dsh-agent-loop'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-settings'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
@@ -125,6 +126,41 @@ export function accountPresetConfigDigest(input: unknown, maxBytes: number): str
     if (stack.length > maxBytes) refuse()
   }
   return hash.digest('hex')
+}
+
+/**
+ * Check one native Web provider change against the two complete supported pairs.
+ * @param view Actual current and inherited native provider selections.
+ * @param ops Original native settings operations proposed for this selection.
+ * @returns Whether the complete effective selection is an approved provider pair.
+ */
+export function webSearchSelectionAllowed(view: { readonly value: unknown; readonly base?: unknown },
+  ops: readonly SettingsPathOpView[]): boolean {
+  if (!object(view.value) || !object(view.base)) return false
+  const selected: Record<string, unknown> = { searchProvider: Reflect.get(view.value, 'searchProvider'),
+    fetchProvider: Reflect.get(view.value, 'fetchProvider') }
+  for (const op of ops) {
+    const field = op.path[0]
+    if (op.path.length !== 1 || (field !== 'searchProvider' && field !== 'fetchProvider')) return false
+    selected[field] = op.op === 'set' ? op.value : Reflect.get(view.base, field)
+  }
+  return (selected.searchProvider === 'deepseek-official' && selected.fetchProvider === 'http')
+    || (selected.searchProvider === 'deepseek-search-api' && selected.fetchProvider === 'deepseek-fetch-api')
+}
+
+/**
+ * Compare a reset with the actual inherited native value and its finite approved domain.
+ * @param settings Original account settings registry.
+ * @param namespace Approved native settings namespace.
+ * @param field Field whose override is being cleared.
+ * @param values Root-approved finite values for the field.
+ * @returns Whether the inherited native value remains in the approved domain.
+ */
+export function webSearchResetAllowed(settings: Context['settings'], namespace: string, field: string,
+  values: readonly (string | number | boolean | null)[]): boolean {
+  const matches = settings.describe({ redactSecrets: true }).filter(row => row.ns === namespace), base = matches[0]?.base
+  if (matches.length !== 1 || !object(base)) return false
+  return values.some(value => Object.is(value, Reflect.get(base, field)))
 }
 
 class AccountPolicy {
@@ -309,6 +345,16 @@ class AccountPolicy {
   }
 
   allowSettingsUnset(namespace: string, field: string, values: readonly (string | number | boolean | null)[]): boolean {
+    const webFields: Record<string, readonly string[]> = { web: ['searchProvider', 'fetchProvider'],
+      'web-search-deepseek': ['baseURL'], 'web-deepseek-api': ['baseURL'] }
+    if (webFields[namespace]?.includes(field) === true
+      && this.exposure.manifest.allowedSettings.some(row => row.namespace === 'web-search-deepseek')) {
+      this.pin()
+      if (!this.exposure.manifest.allowedSettings.some(row => row.namespace === namespace && row.fields.includes(field))) return false
+      const settings = this.ctx.get('settings')
+      if (settings === undefined) unavailable()
+      return webSearchResetAllowed(settings, namespace, field, values)
+    }
     if (namespace !== this.config.agentLoopEntryId || field !== 'maxParallelToolCalls') return false
     this.pin()
     if (!this.exposure.manifest.allowedSettings.some(row => row.namespace === namespace && row.fields.includes(field))) return false
@@ -321,6 +367,14 @@ class AccountPolicy {
     fields: Parameters<NonNullable<AccountNativeGuards['beginSettingsUpdate']>>[2],
   ): ReturnType<NonNullable<AccountNativeGuards['beginSettingsUpdate']>> {
     if (this.activeLoopUpdate !== undefined) refuse()
+    if (namespace === 'web' && this.exposure.manifest.allowedSettings.some(row => row.namespace === 'web-search-deepseek')) {
+      this.current()
+      const settings = this.ctx.get('settings')
+      if (settings === undefined) unavailable()
+      const matches = settings.describe({ redactSecrets: true }).filter(row => row.ns === 'web'), view = matches[0]
+      if (matches.length !== 1 || view === undefined) unavailable()
+      if (!webSearchSelectionAllowed(view, ops)) refuse()
+    }
     if (namespace !== this.config.agentLoopEntryId) {
       return { check() {}, approve() {}, finish() {}, publish: (audit) => { audit() }, abort() {}, run: operation => operation() }
     }

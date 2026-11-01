@@ -1,5 +1,5 @@
 /** Source-native Loader/Settings/LLM metadata only; no external model success is simulated or claimed. */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished } from 'vitest'
@@ -29,13 +29,21 @@ const Declared = {
       settingsNs: ctx.fiber.entry!.options.id, settingsPath: [] }]))
   },
 }
-async function fixture(ref: string, second = false) {
+async function fixture(ref: string, second = false, web = false, endpoint = 'https://api.deepseek.com/anthropic/v1',
+  webRef = 'DEEPSEEK_API_KEY', literal?: string) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'model-key-native-metadata-'))), dir = join(home, 'profile')
   mkdirSync(dir); initProfile(dir, [])
+  if (web) symlinkSync(join(import.meta.dirname, '..', 'node_modules'), join(home, 'node_modules'), 'dir')
   const anchor = join(home, 'package.json'); writeFileSync(anchor, '{"name":"source-native-key-fixture","private":true}\n')
   const path = join(dir, 'cordis.yml'); writeFileSync(path, JSON.stringify([
     { id: 'editor', name: 'cordis:editor' }, { id: 'settings', name: 'cordis:settings' }, { id: 'llm', name: 'cordis:llm' },
     { id: 'official', name: 'cordis:official', config: { apiKeyEnv: ref, models: [{ id: 'declared-native-model' }] } },
+    ...web ? [
+      { id: 'web', name: '@deepseek-ai/dsh-web', config: { searchProvider: 'deepseek-official', fetchProvider: 'http' } },
+      { id: 'web-search-deepseek', name: '@deepseek-ai/dsh-web-search-deepseek', config: { apiKeyEnv: webRef, baseURL: endpoint, ...literal === undefined ? {} : { apiKey: literal } } },
+      { id: 'web-deepseek-api', name: '@deepseek-ai/dsh-web-deepseek-api', config: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com/v1/tools' } },
+      { id: 'web-fetch-http', name: '@deepseek-ai/dsh-web-fetch-http' },
+    ] : [],
     ...second ? [{ id: 'declared', name: 'cordis:declared', config: { apiKeyEnv: 'SECOND_DECLARED_KEY',
       models: [{ id: 'metadata-only' }], hidden: 'synthetic-must-be-redacted' } }] : [],
   ]))
@@ -94,3 +102,46 @@ it('refuses to renew a provider plan if an unapproved config field changes durin
     expect(() => provider.metadata()).toThrow()
   } finally { entry.options.config = before }
 })
+
+
+it('audits real Loader-mounted web providers and refuses an unapproved effective endpoint', async () => {
+  const f = await fixture('DEEPSEEK_API_KEY', false, true)
+  const provider = new ModelKeyProvider(f.ctx, f.policy, 32, true)
+  await provider.audit()
+  expect(() => provider.metadata()).not.toThrow()
+})
+
+it('rejects a real Loader-mounted search provider with an unapproved endpoint', async () => {
+  const f = await fixture('DEEPSEEK_API_KEY', false, true, 'https://unapproved.example')
+  await expect(new ModelKeyProvider(f.ctx, f.policy, 32, true).audit()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+
+it('rejects a real search provider with a different credential reference or a literal key', async () => {
+  for (const [reference, literal] of [['OTHER_KEY', undefined], ['DEEPSEEK_API_KEY', 'not-an-account-reference']] as const) {
+    const f = await fixture('DEEPSEEK_API_KEY', false, true, 'https://api.deepseek.com/anthropic/v1', reference, literal)
+    await expect(new ModelKeyProvider(f.ctx, f.policy, 32, true).audit()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  }
+})
+
+
+it('rejects WebSearch when the approved model key is not the same account reference', async () => {
+  const f = await fixture('OTHER_KEY', false, true)
+  await expect(new ModelKeyProvider(f.ctx, f.policy, 32, true).audit()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+it.each(['web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http'] as const)(
+  'rejects actual Loader replacement of protected %s when the provider is re-audited', async (id) => {
+    const f = await fixture('DEEPSEEK_API_KEY', false, true)
+    const provider = new ModelKeyProvider(f.ctx, f.policy, 32, true)
+    await provider.audit()
+    const entry = [...f.ctx.loader.entries()].find(row => row.options.id === id)!
+    f.ctx.loader.builtins['web-replaced-fixture'] = { apply() {} }
+    await entry.fiber!.dispose()
+    entry.fiber = undefined
+    await entry.update({ name: 'cordis:web-replaced-fixture' })
+    await expect(new ModelKeyProvider(f.ctx, f.policy, 32, true).audit())
+      .rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(() => provider.metadata()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  }, 15000,
+)

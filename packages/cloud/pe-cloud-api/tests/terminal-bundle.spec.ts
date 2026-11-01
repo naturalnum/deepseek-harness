@@ -1,12 +1,19 @@
 /** Real native bundle code, composer, Manager/Editor, stopped saves and replacement Loader graphs.
  * No PG/files/execution or production-ready evidence is fabricated by this component fixture. */
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { FiberState, type Context } from '@deepseek-ai/cordis'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { boot, initProfile, PluginPackages, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
+import Settings from '@deepseek-ai/dsh-settings'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
+import ExposureService from '../src/root.ts'
+import { ModelKeyProvider } from '../src/model-key-provider.ts'
+import { modelKeyBinding } from './model-key-policy-data.ts'
 import { expect, it, onTestFinished } from 'vitest'
 import { AccountPluginControl } from '../src/plugin-control.ts'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
@@ -23,11 +30,12 @@ const pluginLimits = { maxProfileBytes: 32768, maxRequestBytes: 2048, maxReplyBy
 const saveLimits = { maxAccounts: 2, maxRunning: 2, maxQueued: 4, maxQueuedPerAccount: 4,
   maxTrackedOperations: 16, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 8, maxWaitersPerAccount: 4 }
 
-async function fixture() {
+async function fixture(web = false) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'terminal-bundle-native-'))), dir = join(home, 'profile')
   mkdirSync(dir)
   const packageDir = (name: string) => { const path = join(home, 'node_modules', name); mkdirSync(path, { recursive: true }); return path }
-  const schema = new URL('../../../../vendor/schemastery/lib/index.mjs', import.meta.url).href
+  const resolve = createRequire(import.meta.url)
+  const schema = pathToFileURL(resolve.resolve('@deepseek-ai/schemastery')).href
   const pkg = (name: string, source: string) => {
     const path = packageDir(name)
     writeFileSync(join(path, 'package.json'), JSON.stringify({ name, version: '1.0.0', type: 'module', main: './index.mjs' }))
@@ -52,6 +60,14 @@ export function apply(ctx, config) { ctx.provide('terminalFixtureResult', ctx.ge
     { id: 'terminal-provider', name: provider, config: { message: 'native-string' } },
     { id: 'terminal-consumer', name: consumer, config: { suffix: '-consumer' } },
   ] }]))
+  if (web) {
+    // Resolve the declared package dependencies from this test's package, not the runner's cwd.
+    for (const name of ['dsh-web', 'dsh-web-search-deepseek', 'dsh-web-deepseek-api', 'dsh-web-fetch-http',
+      'dsh-llm-deepseek-api-key']) {
+      const source = dirname(resolve.resolve('@deepseek-ai/' + name + '/package.json'))
+      symlinkSync(source, join(home, 'node_modules', '@deepseek-ai', name), 'dir')
+    }
+  }
   const anchor = join(home, 'package.json')
   writeFileSync(anchor, JSON.stringify({ name: 'terminal-bundle-component', dependencies: { [bundleName]: '1.0.0', [provider]: '1.0.0', [consumer]: '1.0.0' } }))
   initProfile(dir, [])
@@ -59,15 +75,45 @@ export function apply(ctx, config) { ctx.provide('terminalFixtureResult', ctx.ge
     patchPath: join(dir, 'cordis.patch.yml'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
   writeFileSync(join(dir, 'cordis.yml'), JSON.stringify([
     { id: 'editor', name: 'cordis:editor' }, { id: 'manager', name: 'cordis:manager' },
+    ...web ? [
+      { id: 'settings', name: 'cordis:settings' }, { id: 'llm', name: 'cordis:llm' },
+      { id: 'model-provider', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { apiKeyEnv: 'DEEPSEEK_API_KEY', models: [{ id: 'fixture-model' }] } },
+      { id: 'web', name: '@deepseek-ai/dsh-web', config: { searchProvider: 'deepseek-official', fetchProvider: 'http' } },
+      { id: 'web-search-deepseek', name: '@deepseek-ai/dsh-web-search-deepseek', config: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com/anthropic/v1' } },
+      { id: 'web-deepseek-api', name: '@deepseek-ai/dsh-web-deepseek-api', config: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com/v1/tools' } },
+      { id: 'web-fetch-http', name: '@deepseek-ai/dsh-web-fetch-http' },
+    ] : [],
   ]))
   writeFileSync(profile.patchPath, '[]\n')
-  const catalog = parseApprovedConfigurationCatalog({ recipeVersion: 'terminal-component', catalogVersion: 'bundle-v1',
+  const fields = web ? [
+    { namespace: 'web', field: 'searchProvider', values: ['deepseek-official', 'deepseek-search-api'] },
+    { namespace: 'web', field: 'fetchProvider', values: ['http', 'deepseek-fetch-api'] },
+    { namespace: 'web-search-deepseek', field: 'baseURL', values: ['https://api.deepseek.com/anthropic/v1'] },
+    { namespace: 'web-search-deepseek', field: 'maxUses' },
+    { namespace: 'web-deepseek-api', field: 'baseURL', values: ['https://api.deepseek.com/v1/tools'] },
+    { namespace: 'web-deepseek-api', field: 'count' },
+  ] : []
+  const modelKey = { bindings: [modelKeyBinding('model-provider')], maxKeyBytes: 8192,
+    maxVersionBytes: 128, maxReplyBytes: 4096, maxMetadataBytes: 65536 }
+  const input = { recipeVersion: 'terminal-component', catalogVersion: 'bundle-v1',
     maxEntries: 16, maxStringBytes: 256, maxCatalogBytes: 8192, pluginControl: pluginLimits, plugins: [],
     bundles: [{ id: 'native-bundle', packageName: bundleName, packageVersion: '1.0.0',
       control: { selectionTarget: { kind: 'bundle', name: bundleName }, operations: ['selected'], maxImpact: 'graph', fields: [] },
       members: [{ entryId: 'include:terminal-provider', moduleName: provider, packageName: provider, packageVersion: '1.0.0' },
         { entryId: 'include:terminal-consumer', moduleName: consumer, packageName: consumer, packageVersion: '1.0.0' }] }],
-    fields: [], skills: { mode: 'closed' }, credentials: { mode: 'read-only' } }, 'terminal-component', true)!
+    fields, ...web ? { modelKey } : {}, skills: { mode: 'closed' }, credentials: { mode: 'read-only' } }
+  const exposureRoot = new Context()
+  const rpc = ['current', 'change', 'list'].map(method => ({ endpoint: 'cloudPlugins/' + method,
+    handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const }))
+  const keyRpc = ['metadata', 'describe', 'set', 'unset'].map(method => ({ endpoint: 'cloudModelKey/' + method,
+    handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const }))
+  const allowedSettings = [...new Set(fields.map(row => row.namespace))].map(namespace => ({ namespace,
+    fields: fields.filter(row => row.namespace === namespace).map(row => row.field) }))
+  const config = ExposureService.Config({ recipeVersion: 'terminal-component', streamEndpoints: [], exactFetchRoutes: [], allowedSettings,
+    rpcEndpoints: [...rpc, ...web ? [...keyRpc, { endpoint: 'settings/mutate', handlerId: 'native:settingsController',
+      guard: 'authenticated-account' as const }] : []], approvedConfiguration: input })
+  const catalog = web ? new ExposureService(exposureRoot, config).approvedConfiguration!
+    : parseApprovedConfigurationCatalog(input, 'terminal-component', true)!
   const coordinator = new ConfigSaveCoordinator(saveLimits)
   const graphs: Context[] = []
   let epoch = 0
@@ -80,23 +126,27 @@ export function apply(ctx, config) { ctx.provide('terminalFixtureResult', ctx.ge
       owner.provide('profileContext', profile); owner.provide('peAccount', binding)
       await owner.plugin(PluginPackages)
       control = new AccountPluginControl(owner, saves, { limits: pluginLimits, catalog, maxNativeInventoryEntries: 64,
-        requiredEntryIds: ['include:editor', 'include:manager'], resolvePackages: () => owner.get('pluginPackages'),
+        requiredEntryIds: ['include:editor', 'include:manager', ...web ? [
+          'include:settings', 'include:llm', 'include:model-provider', 'include:web', 'include:web-search-deepseek',
+          'include:web-deepseek-api', 'include:web-fetch-http'] : []], resolvePackages: () => owner.get('pluginPackages'),
         async withModelKeyPeerUse() { throw new Error('No production Peer in native component fixture') },
         async withConfigurationPeer() { throw new Error('No production Peer in native component fixture') },
         async withIdleConfiguration() { throw new Error('No production idle window in native component fixture') },
         scheduleRebuild() { throw new Error('No production Factory in native component fixture') },
       }, () => { owner.fiber.assertActive() })
       class Editor extends ConfigEditor { constructor(scope: Context) { super(scope); bindNativeConfigSaveHook(scope, saves, this) } }
-      Object.assign(owner.loader.builtins, { editor: Editor, manager: control.provider })
+      Object.assign(owner.loader.builtins, { editor: Editor, manager: control.provider, settings: Settings, llm: LlmRuntime })
     })
     graphs.push(ctx)
     if (control === undefined) throw new Error('Original native preparation did not run')
     const check = () => { ctx.fiber.assertActive() }
     await control.restore()
+    if (web) await new ModelKeyProvider(ctx, catalog.modelKey!, 64, true).audit()
     return { ctx, saves, control, binding, check }
   }
   onTestFinished(async () => {
     for (const graph of graphs.reverse()) await graph.fiber.dispose()
+    await exposureRoot.fiber.dispose()
     rmSync(home, { recursive: true, force: true })
   })
   const commit = async (graph: Awaited<ReturnType<typeof start>>, selected: boolean) => {
@@ -235,3 +285,43 @@ it('rechecks the fixed bundle version at the original terminal writer after earl
   expect(graph.ctx.get('terminalFixtureResult')).toBeUndefined()
   expect(graph.saves.snapshot().admission).toBe('stopped')
 })
+
+it('selects an unrelated Root-approved native bundle with Web enabled and re-audits the rebuilt Web providers', async () => {
+  const f = await fixture(true), first = await f.start()
+  expect((await first.control.current('native-bundle', first.check)).bundle?.enabled).toBe(false)
+  const originalWeb = ['web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http'].map((id) => {
+    const entry = [...first.ctx.loader.entries()].find(row => row.options.id === id)!
+    return { id, name: entry.options.name }
+  })
+  const enabled = await f.commit(first, true)
+  expect(enabled.persisted.native).toMatchObject({ changed: true, application: 'restart-required' })
+  await first.ctx.fiber.dispose(); f.coordinator.releaseAccount(first.saves)
+  const rebuilt = await f.start()
+  expect(rebuilt.binding.epoch).not.toBe(first.binding.epoch)
+  expect((await rebuilt.control.verifyRebuild(enabled.intent, enabled.persisted, rebuilt.check)).value.bundle?.enabled).toBe(true)
+  expect(rebuilt.ctx.get('terminalFixtureResult')).toBe('native-string-consumer')
+  for (const original of originalWeb) {
+    const entry = [...rebuilt.ctx.loader.entries()].find(row => row.options.id === original.id)
+    expect(entry?.options.name).toBe(original.name)
+    expect(entry?.fiber?.state).toBe(FiberState.ACTIVE)
+  }
+  await expect(new ModelKeyProvider(rebuilt.ctx, f.catalog.modelKey!, 64, true).audit()).resolves.toBeUndefined()
+})
+
+it.each(['web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http'] as const)(
+  'rejects an unrelated bundle that changes protected %s during the stopped C06 rebuild', async (id) => {
+    const f = await fixture(true), graph = await f.start()
+    const current = await graph.control.current('native-bundle', graph.check), before = f.manifest()
+    const prepared = await graph.control.prepareRebuild('native-bundle', current.version, { kind: 'selected', selected: true }, graph.check)
+    if (!prepared.accepted) throw prepared.error
+    writeFileSync(join(f.bundle, 'patch.yml'), JSON.stringify([{ id, disabled: true }, { insert: [
+      { id: 'terminal-provider', name: provider, config: { message: 'native-string' } },
+      { id: 'terminal-consumer', name: consumer, config: { suffix: '-consumer' } },
+    ] }]))
+    expect((await graph.saves.stopConfigSaves(Date.now() + 2000)).status).toBe('confirmed')
+    await expect(f.coordinator.commitStoppedConfiguration(graph.saves,
+      () => graph.control.applyRebuild(prepared.intent, graph.check))).rejects.toBeDefined()
+    expect(f.manifest()).toBe(before)
+    expect([...graph.ctx.loader.entries()].find(row => row.options.id === id)?.fiber?.state).toBe(FiberState.ACTIVE)
+  },
+)

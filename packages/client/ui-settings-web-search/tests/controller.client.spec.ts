@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { WebSearchSettingsIntegration } from '../src/client/integration.ts'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, stubConfigForm, type StubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import {
@@ -50,7 +51,7 @@ const SHIPPED_SELECTION = { searchProvider: 'deepseek-official', fetchProvider: 
  * @param options - whether each Host accepts writes, the credential answer, and the selection's composed layer.
  * @returns the scopes, the controller, its face, and a state reader.
  */
-function bench(options: { accept?: boolean; configured?: boolean; ctx?: never } = {}) {
+function bench(options: { accept?: boolean; configured?: boolean; ctx?: never; integration?: WebSearchSettingsIntegration } = {}) {
   const web = stubConfigForm<WebProviderSelection>()
   const messages = stubConfigForm<WebSearchSettings>()
   const api = stubConfigForm<WebApiSettings>()
@@ -61,7 +62,7 @@ function bench(options: { accept?: boolean; configured?: boolean; ctx?: never } 
   }
   const credentials = credentialsApi(options.configured ?? true)
   const controller = new WebSearchCardController(
-    { web: web.scope, messages: messages.scope, api: api.scope }, options.ctx ?? credentials.ctx,
+    { web: web.scope, messages: messages.scope, api: api.scope }, options.ctx ?? credentials.ctx, options.integration,
   )
   const face = controller.inject()
   return { web, messages, api, credentials, controller, face, state: () => face.hooks.webSearchCard.getSnapshot() }
@@ -90,6 +91,7 @@ describe('WebSearchCardController credential', () => {
   it('writes the staged key through the credentials domain, never a settings section', async () => {
     const b = bench({ configured: false })
     serve(b)
+    await vi.waitFor(() => { expect(b.state().apiKeyWritable).toBe(true) })
     b.face.edit('apiKey', ' ds-secret ')
     expect(b.state().dirty).toBe(true)
     expect(b.credentials.set).not.toHaveBeenCalled()
@@ -151,7 +153,7 @@ describe('WebSearchCardController credential', () => {
     b.controller.dispose()
   })
 
-  it('keeps the card usable when the credential read and write are refused', async () => {
+  it('keeps the key unavailable when the credential read is refused', async () => {
     const refusal = () => Promise.resolve({
       ok: false as const,
       error: new RemoteError('credential/rejected', 'offline', { ref: 'DEEPSEEK_API_KEY' }),
@@ -163,8 +165,9 @@ describe('WebSearchCardController credential', () => {
     serve(b)
     b.face.edit('apiKey', 'ds-secret')
     b.face.save()
-    await vi.waitFor(() => { expect(set).toHaveBeenCalled() })
-    expect(b.state()).toMatchObject({ available: true, apiKeyConfigured: false, baseURL: { text: '' } })
+    await vi.waitFor(() => { expect(b.state().failed).toBe(true) })
+    expect(set).not.toHaveBeenCalled()
+    expect(b.state()).toMatchObject({ available: true, apiKeyKnown: false, apiKeyWritable: false, baseURL: { text: '' } })
     b.controller.dispose()
   })
 
@@ -390,5 +393,84 @@ describe('WebSearchCardController API switch', () => {
     serve(b)
     b.controller.dispose()
     for (const host of [b.web, b.messages, b.api]) expect(host.listenerCount()).toBe(0)
+  })
+})
+
+
+describe('account-owned credential editing', () => {
+  it('keeps key status unknown and disables editing when preparation fails', async () => {
+    const prepare = vi.fn(async () => { throw new Error('unavailable') })
+    const b = bench({ integration: { prepare } })
+    serve(b)
+    const close = b.face.beginCredentialEdit()
+    await vi.waitFor(() => { expect(prepare).toHaveBeenCalled() })
+    expect(b.state()).toMatchObject({ apiKeyKnown: false, apiKeyWritable: false })
+    expect(b.credentials.describe).not.toHaveBeenCalled()
+    close(); b.controller.dispose()
+  })
+
+  it('uses the one captured edit version, retains a refused draft and never falls back', async () => {
+    const store = vi.fn(async () => false)
+    const prepare = vi.fn(async () => ({ configured: true, store }))
+    const b = bench({ integration: { prepare } })
+    serve(b)
+    const close = b.face.beginCredentialEdit()
+    await vi.waitFor(() => { expect(b.state()).toMatchObject({ apiKeyKnown: true, apiKeyWritable: true }) })
+    b.face.edit('apiKey', 'account-key')
+    b.controller.refreshCredential('DEEPSEEK_API_KEY')
+    b.face.save()
+    await vi.waitFor(() => { expect(b.state()).toMatchObject({ failed: true, dirty: true, apiKeyWritable: false }) })
+    expect(store).toHaveBeenCalledTimes(1)
+    expect(prepare).toHaveBeenCalledTimes(1)
+    expect(b.credentials.set).not.toHaveBeenCalled()
+    close(); b.controller.dispose()
+  })
+
+  it('keeps the captured detail-view version when another page changes the key before typing', async () => {
+    const store = vi.fn(async () => false)
+    const prepare = vi.fn(async () => ({ configured: true, store }))
+    const b = bench({ integration: { prepare } })
+    serve(b)
+    const close = b.face.beginCredentialEdit()
+    try {
+      await vi.waitFor(() => { expect(b.state().apiKeyWritable).toBe(true) })
+      b.controller.refreshCredential('DEEPSEEK_API_KEY')
+      expect(prepare).toHaveBeenCalledTimes(1)
+      b.face.edit('apiKey', 'later-draft')
+      b.face.save()
+      await vi.waitFor(() => { expect(b.state()).toMatchObject({ failed: true, dirty: true, apiKeyWritable: false }) })
+      expect(store).toHaveBeenCalledExactlyOnceWith('later-draft')
+      expect(b.credentials.set).not.toHaveBeenCalled()
+    } finally {
+      close(); b.controller.dispose()
+    }
+  })
+
+  it('clears a secret draft before preparing a new detail-view version', async () => {
+    const prepare = vi.fn(async () => ({ configured: false, store: async () => true }))
+    const b = bench({ integration: { prepare } })
+    serve(b)
+    const close = b.face.beginCredentialEdit()
+    await vi.waitFor(() => { expect(b.state().apiKeyWritable).toBe(true) })
+    b.face.edit('apiKey', 'old-draft')
+    close()
+    expect(b.state().apiKey.text).toBe('')
+    const closeAgain = b.face.beginCredentialEdit()
+    await vi.waitFor(() => { expect(b.state().apiKeyWritable).toBe(true) })
+    expect(b.state().apiKey.text).toBe('')
+    closeAgain(); b.controller.dispose()
+  })
+
+  it('does not publish a prepared credential after the detail view closes', async () => {
+    let finish!: (value: { configured: boolean; store: () => Promise<boolean> }) => void
+    const pending = new Promise<{ configured: boolean; store: () => Promise<boolean> }>((resolve) => { finish = resolve })
+    const b = bench({ integration: { prepare: () => pending } })
+    serve(b)
+    const close = b.face.beginCredentialEdit()
+    close()
+    finish({ configured: false, store: async () => true })
+    await pending
+    expect(b.state()).toMatchObject({ apiKeyKnown: false, apiKeyWritable: false })
+    b.controller.dispose()
   })
 })

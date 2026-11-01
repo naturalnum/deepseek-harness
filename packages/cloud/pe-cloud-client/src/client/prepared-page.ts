@@ -3,7 +3,8 @@ import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
-import type { ModelsCredentialEditing, ModelsOperations, ModelsSettingsIntegration, ModelsSettingsReads } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import type { ModelsCredentialEditing, ModelsOperations, ModelsSettingsIntegration, ModelsSettingsReads, PreparedCredentialEdit } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import type { WebSearchSettingsIntegration } from '@deepseek-ai/dsh-client-ui-settings-web-search/client'
 import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import { decodeCloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/schema'
@@ -40,7 +41,7 @@ export interface CloudPagePreparationInput {
 
 /** Apply-owned actual Remote callbacks; the original page supplies their currentness and observable admission. */
 export interface CloudModelSettingsCallbacks extends Omit<ModelsSettingsReads, 'isCurrent'> {
-  readonly prepare: ModelsCredentialEditing['prepare']
+  readonly prepare: (ref: string, signal: AbortSignal) => Promise<(PreparedCredentialEdit & { readonly configured?: boolean }) | null>
 }
 
 /** Native application owner supplies ordinary navigation and localized refusal feedback. */
@@ -106,6 +107,8 @@ export class PreparedCloudPage {
   readonly servicePreviewNavigation?: CloudServicePreviewNavigation
   /** Original page's optional Models integration; its source starts closed and is revoked before cleanup waits. */
   readonly modelsSettingsIntegration: ModelsSettingsIntegration
+  /** Account-bound credential seam for the original native web-search card. */
+  readonly webSearchSettingsIntegration: WebSearchSettingsIntegration
   /** Request the captured Web sign-out once from this page's active native scope. */
   readonly accountSignOut?: (owner: Context) => void
   private readonly modelsEditing = createSnapshotStore<ModelsCredentialEditing | null>(null)
@@ -179,6 +182,20 @@ export class PreparedCloudPage {
           ? Promise.resolve({ kind: 'refused' as const, message: '' }) : callbacks.writeSettings(ns, ops, revision)),
       }),
     })
+    this.webSearchSettingsIntegration = Object.freeze({ sharedModelCredential: true, prepare: async (signal: AbortSignal) => {
+      const ref = 'DEEPSEEK_API_KEY', binding = this.modelSettingsBinding
+      signal.throwIfAborted()
+      if (binding === undefined || !this.modelsCurrent(binding)) return null
+      const prepared = await binding.callbacks.prepare(ref, AbortSignal.any([signal, this.lifetime.transport.signal]))
+      signal.throwIfAborted()
+      if (prepared === null || prepared.ref !== ref || typeof prepared.configured !== 'boolean' || !this.modelsCurrent(binding)) return null
+      const isCurrent = (): boolean => !signal.aborted && this.modelsCurrent(binding)
+      return Object.freeze({ configured: prepared.configured, store: async (value: string) => {
+        if (!isCurrent()) return false
+        const failure = await prepared.store(value)
+        return isCurrent() && failure === undefined
+      } })
+    } })
     this.lifetime.transport.signal.addEventListener('abort', () => { this.revokeModels(); this.revokeSkillVersions() }, { once: true })
     this.nativeOptions = Object.freeze({
       ...this.lifetime.nativeOptions, prepareContext: (ctx: Context) => { this.bind(ctx) },
@@ -495,6 +512,7 @@ export class PreparedCloudPage {
     if (this.root !== undefined || ctx.get('peCloudPage', false) !== undefined) throw new Error('Cloud page owner is already bound')
     if (ctx.get('connection', false) !== undefined) throw new Error('Cloud page requires the sole native Connection installer')
     if (ctx.get('modelsSettingsIntegration', false) !== undefined) throw new Error('Cloud page Models integration is already bound')
+    if (ctx.get('webSearchSettingsIntegration', false) !== undefined) throw new Error('Cloud page Web search integration is already bound')
     if (ctx.get('sessionLogDownloadIntegration', false) !== undefined) throw new Error('Cloud page export carrier is already bound')
     if (ctx.get('fileUpload', false) !== undefined) throw new Error('Cloud page requires upload preparation before the native upload service')
     if (this.lifetime.getSnapshot().phase !== 'running'
@@ -513,6 +531,7 @@ export class PreparedCloudPage {
     this.root = ctx.root
     ctx.provide('peCloudPage', this)
     ctx.provide('modelsSettingsIntegration', this.modelsSettingsIntegration)
+    ctx.provide('webSearchSettingsIntegration', this.webSearchSettingsIntegration)
     if (this.config.nativeSessionControls?.includes('export')) {
       this.exportIntegration = Object.freeze({
         fetch: (input: string | URL, init?: RequestInit) => {
@@ -528,6 +547,7 @@ export class PreparedCloudPage {
   private assertCurrent(ctx: Context): void {
     if (this.root === undefined || ctx.root !== this.root || ctx.get('peCloudPage') !== this
       || ctx.get('modelsSettingsIntegration') !== this.modelsSettingsIntegration
+      || ctx.get('webSearchSettingsIntegration') !== this.webSearchSettingsIntegration
       || this.uploadHooks === undefined || ctx.get('fileUploadHooks') !== this.uploadHooks
       || this.exportIntegration !== undefined && ctx.get('sessionLogDownloadIntegration') !== this.exportIntegration
       || ctx.get('clientPersistence') !== this.nativeOptions.persistence

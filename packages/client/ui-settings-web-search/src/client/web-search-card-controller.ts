@@ -17,6 +17,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { PreparedWebSearchCredential, WebSearchSettingsIntegration } from './integration.ts'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   SettingsFormModel, settingsNumberField, settingsTextField,
@@ -101,8 +102,12 @@ export interface WebSearchCardState extends SettingsFormShell {
   apiKey: SettingsFieldState
   /** Whether the Host reports a credential configured for the referenced key. */
   apiKeyConfigured: boolean
+  /** Whether key state is known for the original account. */
+  apiKeyKnown: boolean
   /** Whether the credentials domain accepts a write for it; false disables the control. */
   apiKeyWritable: boolean
+  /** The page confirms that the key is shared with the model. */
+  sharedModelCredential?: boolean
 }
 
 /** The registration-side face the web-search page's slot entry injects. */
@@ -113,6 +118,8 @@ export interface WebSearchCardFace extends SettingsFormActions {
   }
   /** Stage the API switch: true selects the Search and Fetch APIs, false Messages search with local fetch. */
   setSearchApi: (enabled: boolean) => void
+  /** Bind one detail-view credential edit intent. */
+  beginCredentialEdit: () => () => void
 }
 
 /** Settings scopes for the namespaces the page edits. */
@@ -132,16 +139,24 @@ export class WebSearchCardController {
   private readonly api: SettingsFormModel<WebApiSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
   private readonly unsubscribe: (() => void)[]
-  private credential: CredentialState = { ref: '', configured: false, writable: true }
+  private credential: CredentialState = { ref: '', configured: false, writable: false }
+  private credentialKnown = false
+  private credentialRead = 0
+  private prepared: PreparedWebSearchCredential | undefined
+  private editAbort: AbortController | undefined
+  private editKnown = false
+  private preparation = 0
 
   /**
    * @param scopes - the bound settings scopes for the page's namespaces.
    * @param ctx - the page plugin's context, whose `remote.credentials` namespace
    * answers for the credential the selected section references.
+   * @param integration Optional original account's version-bound credential editor.
    */
   constructor(
     private readonly scopes: WebSearchCardScopes,
     private readonly ctx: ClientContext,
+    private readonly integration?: WebSearchSettingsIntegration,
   ) {
     this.selection = new SettingsFormModel(scopes.web, [
       settingsTextField('searchProvider'), settingsTextField('fetchProvider'),
@@ -171,7 +186,7 @@ export class WebSearchCardController {
       ...[this.selection, this.messages, this.api].map(form => form.bind(() => form.shell()).subscribe(publish)),
       ...[scopes.web, scopes.messages, scopes.api].map(scope => scope.subscribe(() => { void this.readCredential() })),
     ]
-    void this.readCredential()
+    if (integration === undefined) void this.readCredential()
   }
 
   /** Whether the Host serves both sections the switch needs. */
@@ -206,7 +221,9 @@ export class WebSearchCardController {
       count: this.api.field('count'),
       apiKey: this.selection.field(API_KEY_FIELD),
       apiKeyConfigured: this.credential.configured,
-      apiKeyWritable: this.credential.writable,
+      apiKeyKnown: this.integration === undefined ? this.credentialKnown : this.editKnown,
+      apiKeyWritable: this.integration === undefined ? this.credential.writable : this.prepared !== undefined,
+      sharedModelCredential: this.integration?.sharedModelCredential === true,
     }
   }
 
@@ -224,26 +241,20 @@ export class WebSearchCardController {
    * answers for the reference in force.
    */
   private async readCredential(): Promise<void> {
-    const ref = this.ref()
-    if (ref !== this.credential.ref) {
-      // A new reference knows nothing yet; keeping the old answer would claim
-      // the key is configured under a name nobody has checked.
-      this.credential = { ref, configured: false, writable: true }
-      this.store.set(this.projection())
-    }
-    const response = await this.ctx.remote.credentials.describe([ref])
-    if (!response.ok || ref !== this.ref()) return
-    const view = response.value[ref]
-    const next: CredentialState = {
-      ref,
-      configured: view?.configured ?? false,
-      // An unknown reference is treated as writable: the control stays usable
-      // and the Host is what refuses, rather than the page guessing a refusal.
-      writable: view?.writable ?? true,
-    }
-    if (next.configured === this.credential.configured && next.writable === this.credential.writable) return
-    this.credential = next
+    if (this.integration !== undefined) return
+    const ref = this.ref(), generation = ++this.credentialRead
+    this.credential = { ref, configured: false, writable: false }
+    this.credentialKnown = false
     this.store.set(this.projection())
+    try {
+      const response = await this.ctx.remote.credentials.describe([ref])
+      if (!response.ok || generation !== this.credentialRead || ref !== this.ref()) return
+      const view = response.value[ref]
+      if (view === undefined) return
+      this.credential = { ref, configured: view.configured, writable: view.writable }
+      this.credentialKnown = true
+      this.store.set(this.projection())
+    } catch (_error) { /* Refusal leaves the key status unknown and the editor closed. */ }
   }
 
   /**
@@ -255,6 +266,7 @@ export class WebSearchCardController {
    * @param ref - the reference the Host reports as changed.
    */
   refreshCredential(ref: string): void {
+    if (this.integration !== undefined) return
     if (ref !== this.credential.ref) return
     void this.readCredential()
   }
@@ -273,12 +285,14 @@ export class WebSearchCardController {
     }
     return {
       hooks: { webSearchCard: this.store },
+      beginCredentialEdit: this.beginCredentialEdit,
       edit: (field, text) => { formOf(field).actions().edit(field, text) },
       resetField: (field) => { formOf(field).actions().resetField(field) },
       setSearchApi: (enabled) => { this.select(enabled) },
       save: () => { void this.save() },
       discard: () => {
         for (const form of [this.selection, this.messages, this.api]) form.actions().discard()
+        if (this.editAbort !== undefined) this.prepareCredential(this.editAbort)
       },
     }
   }
@@ -322,15 +336,68 @@ export class WebSearchCardController {
    * @returns whether the Host reports a configured credential afterwards.
    */
   private async writeKey(value: string): Promise<boolean> {
+    if (this.integration !== undefined) {
+      const edit = this.prepared, abort = this.editAbort
+      if (edit === undefined || abort === undefined || abort.signal.aborted) return false
+      this.prepared = undefined
+      this.editKnown = false
+      this.store.set(this.projection())
+      const confirmed = await edit.store(value)
+      const current = this.editAbort === abort && !abort.signal.aborted
+      if (confirmed && current) this.prepareCredential(abort)
+      return confirmed && current
+    }
     // Refusals surface through the re-read below: the Host is the only
     // authority on whether the key now exists.
-    await this.ctx.remote.credentials.set(this.ref(), value)
+    if (!this.credentialKnown || !this.credential.writable || this.credential.ref !== this.ref()) return false
+    const response = await this.ctx.remote.credentials.set(this.ref(), value)
+    if (!response.ok) return false
     await this.readCredential()
-    return this.credential.configured
+    const state = this.store.getSnapshot()
+    return state.apiKeyKnown && state.apiKeyConfigured
+  }
+
+  /** Start and revoke a single detail-view credential intent. */
+  private readonly beginCredentialEdit = (): (() => void) => {
+    if (this.integration === undefined) return () => {}
+    this.editAbort?.abort()
+    const abort = new AbortController()
+    this.editAbort = abort
+    this.prepareCredential(abort)
+    return () => {
+      abort.abort()
+      if (this.editAbort !== abort) return
+      this.editAbort = undefined
+      this.prepared = undefined
+      this.editKnown = false
+      // Never carry a draft captured against an old version into a new detail view.
+      for (const form of [this.selection, this.messages, this.api]) form.actions().discard()
+      this.store.set(this.projection())
+    }
+  }
+
+  private prepareCredential(abort: AbortController): void {
+    const integration = this.integration
+    if (integration === undefined || abort.signal.aborted || this.editAbort !== abort) return
+    this.prepared = undefined
+    this.editKnown = false
+    const generation = ++this.preparation
+    this.store.set(this.projection())
+    void Promise.resolve().then(() => integration.prepare(abort.signal)).then((prepared) => {
+      if (abort.signal.aborted || this.editAbort !== abort || this.preparation !== generation || prepared === null) return
+      this.prepared = prepared
+      this.editKnown = true
+      this.credential = { ref: '', configured: prepared.configured, writable: true }
+      this.store.set(this.projection())
+    }).catch((_error: unknown) => { /* Unknown remains unavailable until the detail view is opened again. */ })
   }
 
   /** Release configuration subscriptions. */
   dispose(): void {
+    this.credentialRead++
+    this.editAbort?.abort()
+    this.editAbort = undefined
+    this.prepared = undefined
     for (const off of this.unsubscribe) off()
     for (const form of [this.selection, this.messages, this.api]) form.dispose()
   }

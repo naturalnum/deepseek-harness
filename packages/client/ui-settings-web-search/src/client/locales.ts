@@ -5,7 +5,8 @@ import type { SettingsFormLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 /** Locale keys the page renders. */
 export type WebSearchSettingsLocaleKey =
   | 'title' | 'description' | 'useSearchApi' | 'useSearchApiHint' | 'searchGuide' | 'searchGuideUrl'
-  | 'apiKey' | 'apiKeyHint' | 'apiKeySet' | 'apiKeyUnset'
+  | 'sharedModelCredential'
+  | 'apiKey' | 'apiKeyHint' | 'apiKeySet' | 'apiKeyUnset' | 'apiKeyUnavailable'
   | 'baseUrl' | 'baseUrlHint' | 'searchApiBaseUrl' | 'searchApiBaseUrlHint' | 'maxUses' | 'maxUsesHint' | 'count' | 'countHint'
   | 'overridden' | 'reset' | 'readOnly' | 'unavailable'
   | 'save' | 'saving' | 'saveFailed' | 'invalidNumber' | 'invalidCount'
@@ -19,8 +20,10 @@ export const en: Record<WebSearchSettingsLocaleKey, string> = {
   searchGuide: 'Search & Fetch guide',
   searchGuideUrl: 'https://api-docs.deepseek.com/guides/search',
   apiKey: 'API key',
+  sharedModelCredential: 'Shared with your model. Changing it here also changes the model key.',
   apiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
   apiKeySet: 'A key is configured.',
+  apiKeyUnavailable: 'Key status is unavailable.',
   apiKeyUnset: 'No key is configured; only conversations using a DeepSeek Account model can search, through the default endpoint.',
   baseUrl: 'Messages API base URL',
   baseUrlHint: 'Include the API prefix, such as https://api.deepseek.com/anthropic/v1. The provider appends /messages. Leave blank to restore the default.',
@@ -50,8 +53,10 @@ export const zh: Record<WebSearchSettingsLocaleKey, string> = {
   searchGuide: '网页搜索与抓取指南',
   searchGuideUrl: 'https://api-docs.deepseek.com/zh-cn/guides/search',
   apiKey: 'API Key',
+  sharedModelCredential: '与模型共用账号密钥，在此修改也会更新模型密钥。',
   apiKeyHint: '不写入设置文件。留空表示保持当前密钥。',
   apiKeySet: '已配置密钥。',
+  apiKeyUnavailable: '无法读取密钥状态。',
   apiKeyUnset: '未配置密钥；仅使用 DeepSeek 账号模型的对话可以通过默认接口地址搜索。',
   baseUrl: 'Messages API 基础地址',
   baseUrlHint: '填写含 API 前缀的地址，例如 https://api.deepseek.com/anthropic/v1；程序追加 /messages，留空恢复默认。',

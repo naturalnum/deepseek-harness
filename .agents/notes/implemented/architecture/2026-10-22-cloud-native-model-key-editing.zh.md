@@ -16,6 +16,8 @@ Status: implemented
 
 Settings 元数据保持只读。云端不注册自动 Welcome 和凭据 onboarding，避免不可用的确认设置挡住手动 Models。未提供可选集成的应用保留原生行为。必需原生 UI 模块各有唯一供应方及实际发布的浏览器产物。
 
+原生网页搜索卡片也使用页面所有者针对同一账户密钥准备的凭据编辑。详情视图保留捕获的版本，关闭时丢弃密钥草稿；准备失败时输入保持不可用。云端账户审核将搜索提供方固定到该引用及获批官方地址，通用凭据写入仍保持关闭。
+
 账户环境在启动前屏蔽环境各层中的批准模型密钥引用，因此移除账户已保存密钥不会选中共享进程的密钥。原生[凭据优先级](2026-10-09-stored-credential-precedence.zh.md)、[凭据边界](2026-07-30-credential-boundaries-and-atomic-registration.zh.md) 和[授权记录](2026-08-13-credential-records-and-authorization-flows.zh.md) 继续作为通用契约；此账户集成不增加凭据存储或文档格式。
 
 ## Alternatives considered
@@ -28,4 +30,4 @@ Settings 元数据保持只读。云端不注册自动 Welcome 和凭据 onboard
 
 ## Consequences
 
-用户通过手动 Models 编辑或移除批准密钥。提供商选择、其他 Settings 写入及自动 onboarding 属于独立能力。确认的本地保存证明持久化，随后真实原生模型请求证明可用性。组件测试和生成契约不能证明已安装浏览器模块激活或部署验收。
+用户通过手动 Models 编辑或移除批准密钥，也可在获批网页搜索时通过该页面编辑同一密钥。提供商选择、其他 Settings 写入及自动 onboarding 属于独立能力。确认的本地保存证明持久化，随后真实原生模型请求证明可用性。组件测试和生成契约不能证明已安装浏览器模块激活或部署验收。

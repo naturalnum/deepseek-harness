@@ -6182,7 +6182,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudModelKeyService',
-    declaration: 'export class CloudModelKeyService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation);\n    @Remote(\'metadata\')\n    metadata(signal: AbortSignal): Promise<ModelKeyMetadata>;\n    auditProvider(): Promise<void>;\n    beginSettingsUpdate(namespace: string, fields: readonly SettingsPathOpView[]): ReturnType<ModelKeyProvider[\'beginSettingsUpdate\']>;\n    assertProvisionableModel(provider: string, model: string): void;\n    @Remote(\'describe\')\n    describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>;\n    @Remote(\'set\')\n    set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>;\n    @Remote(\'unset\')\n    unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+    declaration: 'export class CloudModelKeyService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation, webSearchSettings = false);\n    @Remote(\'metadata\')\n    metadata(signal: AbortSignal): Promise<ModelKeyMetadata>;\n    auditProvider(): Promise<void>;\n    beginSettingsUpdate(namespace: string, fields: readonly SettingsPathOpView[]): ReturnType<ModelKeyProvider[\'beginSettingsUpdate\']>;\n    assertProvisionableModel(provider: string, model: string): void;\n    @Remote(\'describe\')\n    describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>;\n    @Remote(\'set\')\n    set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>;\n    @Remote(\'unset\')\n    unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'CloudPluginPreparation',
@@ -7738,7 +7738,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelKeyProvider',
-    declaration: 'export class ModelKeyProvider {\n    constructor(private readonly ctx: Context, private readonly policy: ApprovedModelKeyConfiguration, private readonly maximum: number);\n    async audit(): Promise<void>;\n    beginSettingsUpdate(namespace: string, ops: readonly SettingsPathOpView[]): {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n    };\n    metadata(): ModelKeyMetadata;\n    assertProvisionable(provider: string, model: string): void;\n}',
+    declaration: 'export class ModelKeyProvider {\n    constructor(private readonly ctx: Context, private readonly policy: ApprovedModelKeyConfiguration, private readonly maximum: number, private readonly webSearchSettings = false);\n    async audit(): Promise<void>;\n    beginSettingsUpdate(namespace: string, ops: readonly SettingsPathOpView[]): {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n    };\n    metadata(): ModelKeyMetadata;\n    assertProvisionable(provider: string, model: string): void;\n}',
   },
   {
     name: 'ModelKeyReference',

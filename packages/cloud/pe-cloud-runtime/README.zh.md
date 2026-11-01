@@ -81,7 +81,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 声明摘要使用 SHA-256、排序后的对象键和原数组顺序。函数、JS 表达式、非 JSON 对象和别名均拒绝。有界编码器在遍历期间拒绝超量输入。批准还要求原始 ACTIVE Loader 条目、未变化的原生配置 plan、实际 Preset inventory，以及 Agent 保留且无服务泄漏的组合。
 
-仅当明确批准 `agentLoopEntryId.maxParallelToolCalls` 时，账户策略才在原生串行保存过程中保留原 AgentLoop 策略 pin。策略只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。
+仅当明确批准 `agentLoopEntryId.maxParallelToolCalls` 时，账户策略才在原生串行保存过程中保留原 AgentLoop 策略 pin。策略只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。 获批网页搜索表单的受限字段只能重置为获批的原生继承值，提供方选择只能是两组受支持的搜索／抓取组合。
 
 业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和固定 Preset 校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入/分叉身份仍被拒绝。下述可选原生 child 路径单独核验 subagent 身份。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
 

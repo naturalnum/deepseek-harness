@@ -137,6 +137,9 @@
       "path": "../../client/ui-settings-models"
     },
     {
+      "path": "../../client/ui-settings-web-search"
+    },
+    {
       "path": "../../util/brand"
     },
     {

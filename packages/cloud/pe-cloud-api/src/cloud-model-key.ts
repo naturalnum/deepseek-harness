@@ -53,12 +53,14 @@ export class CloudModelKeyService extends TypertRemoteService {
    * @param ctx Actual original account Loader entry after the native Typert registry activates.
    * @param api Same graph's original API owner and audited exposure.
    * @param input Root's fixed bounds and original login registry callback.
+   * @param webSearchSettings Whether the approved account includes native web provider settings.
    */
-  constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation) {
+  constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation,
+    webSearchSettings = false) {
     api.assertInstalled(ctx)
     if (ctx.get('cloudModelKey') !== undefined || ctx.root.get('cloudModelKey') !== undefined) unavailable()
     super(ctx, 'cloudModelKey', { namespace: 'cloudModelKey' })
-    this.provider = new ModelKeyProvider(ctx, input.limits, input.maxNativeInventoryEntries)
+    this.provider = new ModelKeyProvider(ctx, input.limits, input.maxNativeInventoryEntries, webSearchSettings)
     this.owner = ctx
     this.codecs = modelKeyCodecs(input.limits, input.limits.bindings.map(binding => binding.ref))
     ctx.effect(() => () => { api.invalidate() }, 'pe-cloud-api: withdraw original model-key service')

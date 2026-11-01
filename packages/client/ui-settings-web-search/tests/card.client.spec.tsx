@@ -26,11 +26,12 @@ const endpoints = {
 }
 
 function cardActions() {
-  return { edit: vi.fn(), resetField: vi.fn(), setSearchApi: vi.fn(), save: vi.fn(), discard: vi.fn() }
+  return { edit: vi.fn(), resetField: vi.fn(), setSearchApi: vi.fn(), save: vi.fn(), discard: vi.fn(),
+    beginCredentialEdit: () => () => {} }
 }
 
 describe('WebSearchCard', () => {
-  function renderWebSearch(state: Partial<WebSearchCardState> = {}) {
+  function renderWebSearch(state: Partial<WebSearchCardState> = {}, locale: typeof en = en) {
     const store = createSnapshotStore<WebSearchCardState>({
       ...settled,
       apiSwitchAvailable: true,
@@ -39,11 +40,12 @@ describe('WebSearchCard', () => {
       count: field('10'),
       apiKey: field(''),
       apiKeyConfigured: false,
+      apiKeyKnown: true,
       apiKeyWritable: true,
       ...state,
     })
     const actions = cardActions()
-    const props = { ...actions, view: 'page', t, useWebSearchCard: bindSnapshotSelector(store) } as WebSearchCardProps
+    const props = { ...actions, view: 'page', t: (key: keyof typeof en) => locale[key], useWebSearchCard: bindSnapshotSelector(store) } as WebSearchCardProps
     render(<WebSearchCard {...props} />)
     return actions
   }
@@ -51,7 +53,7 @@ describe('WebSearchCard', () => {
   it('renders its one-liner alone in the summary view', () => {
     const store = createSnapshotStore<WebSearchCardState>({
       ...settled, baseURL: endpoints.messages, apiSwitchAvailable: true, apiSwitchBlocked: false, useSearchApi: false,
-      maxUses: field('5'), count: field('10'), apiKey: field(''), apiKeyConfigured: false, apiKeyWritable: true,
+      maxUses: field('5'), count: field('10'), apiKey: field(''), apiKeyConfigured: false, apiKeyKnown: true, apiKeyWritable: true,
     })
     const props = { ...cardActions(), view: 'summary', t, useWebSearchCard: bindSnapshotSelector(store) } as WebSearchCardProps
     render(<WebSearchCard {...props} />)
@@ -60,11 +62,24 @@ describe('WebSearchCard', () => {
     expect(screen.queryByLabelText(en.apiKey)).toBeNull()
   })
 
+  it.each([en, zh])('shows the localized shared model key notice only when the page confirms it', (locale) => {
+    renderWebSearch({ sharedModelCredential: true }, locale)
+    expect(screen.getByText(locale.sharedModelCredential)).toBeTruthy()
+  })
+
   it('reports whether a key is configured without ever showing one', () => {
     renderWebSearch({ apiKeyConfigured: true })
 
+    expect(screen.queryByText(en.sharedModelCredential)).toBeNull()
     expect(screen.getByText(en.apiKeySet)).toBeTruthy()
     expect(screen.getByLabelText(en.apiKey)).toHaveProperty('type', 'password')
+  })
+
+  it('shows unavailable rather than unconfigured while credential status is unknown', () => {
+    renderWebSearch({ apiKeyKnown: false, apiKeyWritable: false })
+    expect(screen.getByText(en.apiKeyUnavailable)).toBeTruthy()
+    expect(screen.queryByText(en.apiKeyUnset)).toBeNull()
+    expect(screen.getByLabelText(en.apiKey)).toHaveProperty('disabled', true)
   })
 
   it('keeps the key control usable while the settings document is read-only', () => {
