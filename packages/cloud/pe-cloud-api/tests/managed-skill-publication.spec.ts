@@ -1,5 +1,7 @@
 /** API coordination with the real Loader, native registry/parser and AccountSaves; files is an explicit in-memory port fixture. */
 import { createHash, randomUUID } from 'node:crypto'
+import { zipSync } from 'fflate'
+import { decodeBundle } from '../../pe-cloud-files/src/bundle-codec.ts'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -80,7 +82,10 @@ async function fixture() {
     async prepareBundle(input, control) {
       control.throwIfAborted(); prepares++
       if (preparationFailure !== undefined) throw preparationFailure
-      if (input.kind !== 'files') throw Error('This fixture does not implement the files owner ZIP parser')
+      if (input.kind === 'zip') {
+        await decodeBundle(input, bundleLimits, control)
+        throw Error('This fixture only decodes ZIPs rejected before preparation')
+      }
       const data = new Map(input.files.map(file => [file.relativePath, Uint8Array.from(Buffer.from(file.dataBase64, 'base64'))]))
       const files = [...data].map(([relativePath, value]) => ({ relativePath, bytes: value.byteLength, sha256: hash(value) }))
       const version: SkillBundleVersion = Object.freeze({ binding, id: brandString<SkillBundleVersion['id']>(randomUUID()),
@@ -551,4 +556,22 @@ it('prepared resident: validation failure waits for rejected provider cleanup be
     expect(f.preparedStats().active).toBe(0); expect(f.preparedStats().releases).toEqual([1])
     expect(f.saves.snapshot().failures).toEqual([])
   } finally { block.release(); spy.mockRestore() }
+})
+
+
+it('returns a definite invalid-bundle refusal after real ZIP decoding without changing the catalog or save owner', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('existing'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected original installation')
+  const before = await f.manager.installed({}, f.check, f.signal)
+  const archive = zipSync({ 'note.txt': new TextEncoder().encode('not a skill') })
+  const commits = f.stats().commits
+  await expect(f.manager.install(before.version, { kind: 'zip', dataBase64: Buffer.from(archive).toString('base64') }, f.check, f.signal))
+    .rejects.toMatchObject({ code: 'cloud/invalid-skill-bundle' })
+  expect(f.stats().commits).toBe(commits)
+  expect(f.saves.snapshot().failures).toEqual([])
+  const after = await f.manager.installed({}, f.check, f.signal)
+  expect(after.entries).toEqual(before.entries)
+  const valid = await f.manager.install(after.version, bundle('next'), f.check, f.signal)
+  expect(valid).toMatchObject({ persisted: true, applied: true })
 })

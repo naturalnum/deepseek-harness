@@ -55,6 +55,7 @@ function fixture(options: {
   manifest?: unknown
   nativeStop?: () => Promise<void>
   ordinaryConnection?: boolean
+  reload?: () => void
 } = {}) {
   const calls: string[] = [], events: string[] = []
   const fetcher = vi.fn<typeof globalThis.fetch>(options.fetch ?? (async (input) => {
@@ -98,7 +99,7 @@ function fixture(options: {
   const root = document.createElement('div')
   root.id = 'root'
   document.body.append(root)
-  const entry = new CloudWebEntry(root, options.manifest ?? manifest())
+  const entry = new CloudWebEntry(root, options.manifest ?? manifest(), options.reload)
   entries.push(entry)
   const state = () => document.querySelector('[data-state]')?.getAttribute('data-state')
   return { entry, root, target, create, fetcher, calls, events, mount, state, native: () => native }
@@ -324,15 +325,78 @@ describe('real source Cloud Web component', () => {
     await expect(f.entry.dispose()).rejects.toThrow('cleanup was not confirmed')
   })
 
-  it('observes a later canonical native stop without reopening login or replacing the account', async () => {
-    const f = fixture({ fetch: async () => Response.json(metadata()) })
+  it('returns to login after a later 401 and reloads only after an explicit accepted sign-in', async () => {
+    const reload = vi.fn()
+    const f = fixture({ fetch: async () => Response.json(metadata()), reload })
     await f.entry.run()
     const page = f.native()!.get('peCloudPage')!
     await page.lifetime.transport.close('unauthenticated')
-    await expect.poll(f.state).toBe('stopped')
+    await expect.poll(f.state).toBe('login')
     expect(f.fetcher).toHaveBeenCalledTimes(1)
     expect(f.create).toHaveBeenCalledTimes(1)
-    expect(document.querySelector<HTMLButtonElement>('button[type=submit]')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('button[type=submit]')!.hidden).toBe(false)
+    expect(reload).not.toHaveBeenCalled()
+    submit()
+    await expect.poll(() => reload.mock.calls.length).toBe(1)
+    expect(f.fetcher.mock.calls.map(([input]) => pathOf(input))).toEqual(['/cloud/bootstrap', '/cloud/auth/sign-in/email'])
+    expect(f.mount).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the original native boot page while canonical bootstrap is pending', async () => {
+    const held = Promise.withResolvers<Response>()
+    const f = fixture({ fetch: async () => held.promise })
+    const start = f.entry.run()
+    await expect.poll(() => f.fetcher.mock.calls.length).toBe(1)
+    expect(f.state()).toBe('checking')
+    expect(f.root.hidden).toBe(false)
+    expect(f.root.querySelector('[data-dsh-boot-spinner]')).not.toBeNull()
+    held.resolve(Response.json(metadata()))
+    await start
+    expect(f.state()).toBe('running')
+    expect(f.root.querySelector('[data-dsh-boot-spinner]')).toBeNull()
+  })
+
+  it.each(['en-US', 'zh-CN'])('offers an explicit native reload after the original page has actually stopped in %s', async (language) => {
+    vi.spyOn(window.navigator, 'language', 'get').mockReturnValue(language)
+    const release = Promise.withResolvers<undefined>(), reload = vi.fn()
+    const f = fixture({ nativeStop: () => release.promise, reload, fetch: async () => Response.json(metadata()) })
+    await f.entry.run()
+    const page = f.native()!.get('peCloudPage')!
+    void page.lifetime.transport.close('stale-generation')
+    await expect.poll(() => f.events.includes('native-stop')).toBe(true)
+    expect(f.state()).toBe('stopping')
+    expect(reload).not.toHaveBeenCalled()
+    release.resolve(undefined)
+    await expect.poll(f.state).toBe('stopped')
+    expect(page.getSnapshot().phase).toBe('stopped')
+    const button = document.querySelector<HTMLButtonElement>('form button[type=button]')!
+    expect(button.textContent).toBe(language === 'zh-CN' ? '重新连接' : 'Reconnect')
+    expect(button.hidden).toBe(false)
+    button.click()
+    await expect.poll(() => reload.mock.calls.length).toBe(1)
+    expect(f.fetcher.mock.calls.map(([input]) => pathOf(input))).toEqual(['/cloud/bootstrap'])
+    expect(f.mount).toHaveBeenCalledTimes(1)
+    await f.entry.dispose()
+    document.body.replaceChildren()
+    const next = fixture({ fetch: async () => Response.json({ ...metadata(), connectionGeneration: 'next-generation' }) })
+    await next.entry.run()
+    expect(next.state()).toBe('running')
+    expect(next.mount).toHaveBeenCalledTimes(1)
+    expect(next.native()!.get('peCloudPage')!.bootstrap.connectionGeneration).toBe('next-generation')
+  })
+
+  it('retains a failed native stop as unconfirmed and never requests an automatic reload', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reload = vi.fn()
+    const f = fixture({ reload, fetch: async () => Response.json(metadata()),
+      nativeStop: async () => { throw new Error('original native cleanup failed') } })
+    await f.entry.run()
+    void f.native()!.get('peCloudPage')!.lifetime.transport.close('stale-generation').catch(() => {})
+    await expect.poll(f.state).toBe('unconfirmed')
+    expect(reload).not.toHaveBeenCalled()
+    expect(f.fetcher).toHaveBeenCalledTimes(1)
+    expect(f.mount).toHaveBeenCalledTimes(1)
+    await expect(f.entry.dispose()).rejects.toThrow()
   })
 
   it.each([403, 409])('keeps sign-in HTTP %s in explicit recovery without another submit', async (status) => {
@@ -365,6 +429,18 @@ describe('real source Cloud Web component', () => {
     expect(f.fetcher).toHaveBeenCalledTimes(1)
     expect(f.mount).toHaveBeenCalledTimes(1)
     expect(document.querySelector<HTMLButtonElement>('header button')!.disabled).toBe(false)
+  })
+
+  it('keeps a BFCache document stopped when pagehide races an unauthorized cleanup', async () => {
+    const held = Promise.withResolvers<undefined>()
+    const f = fixture({ nativeStop: () => held.promise, fetch: async () => Response.json(metadata()) })
+    await f.entry.run()
+    void f.native()!.get('peCloudPage')!.lifetime.transport.close('unauthenticated')
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+    held.resolve(undefined)
+    await expect.poll(f.state).toBe('stopped')
+    expect(f.fetcher).toHaveBeenCalledTimes(1)
+    expect(f.mount).toHaveBeenCalledTimes(1)
   })
 
   it.each(['en-US', 'zh-CN'])('requires explicit sign-out after a confirmed stale-cookie refusal in %s', async (language) => {

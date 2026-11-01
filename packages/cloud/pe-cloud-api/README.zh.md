@@ -90,6 +90,8 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 固定可选首屏装配将 `session/list` 和 `session/control` 委派给原 SessionController，将 `workspace/follow` 委派给原 WorkspaceController，并保留原生、按 Peer 读取的 `remoteAccess/follow`。列表行与 control 帧共用原 AccountPolicy 的只读元数据检查；它可在 Workspace 关联前检查已发布 Session，不签发命令或历史权限。冷 id 只保留原批准 Workspace 的既有只读关系，原生列表行还核对实际项目、父关系和已有投影字段。Workspace 流通过共享项目守卫核验每个精确 Registry 对象，支持多个批准项目，并要求每个返回 Session 都具有唯一项目关系。原生 `workspace/create(path)` 仅复用已登记的批准项目；目录分配使用单独的云项目能力。集合数量及完整原生结果/帧字节都有显式有限上界。Reader 还必须提供 `maxQueuedEvents` 和 `maxQueuedBytes`；它验证并复制这些值及帧上界，通过 `controlBufferLimits()` 交给原生 control 队列。因此原生 baseline 检查可先于 Cloud 结果检查拒绝。这里不改变 Remote 参数，也不引入队列实现。原六个 Session 守卫继续保留。
 
+清单可通过 `account-session` 守卫选择 `session/rename` 及 `workspace/pinSession`、`unpinSession`、`archiveSession`、`unarchiveSession`。它们在检查 Session 归属后委派原生方法；Workspace 回包逐项验证 Session 的唯一当前 Workspace 关系及现有上限。准入关闭后，已受理操作仍遵循原生完成语义；响应丢失或后置检查失败时结果未知，必须先读回，再发起其他修改。原生 Session 重命名接受一条日志事件，本身不承诺持久化刷新。 选中的 `workspace/rename` 使用 `account-project`，跨原生命令队列保留已受理的原 Registry 与 Workspace，并限制完整 Workspace 回包。删除仍关闭，因为移除注册会撤销现有 Session 到项目的归属关系。
+
 `workspace/initializeDefault` 以拒绝目录解析器调用原 Registry helper，只能复用 files owner 持有的精确默认 Workspace。它不打开 Documents 回退、不创建目录，也不重开注册窗。`settings/describe` 与 `settings/mutate` 回包仅投影获批原生 schema 字段及其解析值／base／user 值，并保留原 revision 与 live 应用语义。没有可写字段时，describe 保留既有只读 `locale/preference` 视图；provider 或 locale fiber 缺失、替换均拒绝。默认 `writable=false` 和 `hasDocument=false` 描述此 Cloud API 可用的操作，不表示磁盘上不存在 settings 文档。未显式选择获批字段策略时，`allowedSettings` 保持为空。模型选择/目录及其他 Settings 方法保持关闭。
 
 [只读事件源](src/first-screen-events.ts) 通过原 Gateway 公开注册接口，订阅真实 Session added/removed/activity/status/error 通知和获批表单文档更新（默认仅只读 locale）。Gateway 生成 `$events` ready/client id 和传输帧，home 必须来自实际 `profileContext.home`，并与 runtime 预期精确一致。不准入 waterfall 或 `$events/result`。Home、事件数量、驻留字节及完整 emit 帧上界均须显式提供，没有部署默认值。源队列超限保留首个错误、撤销本账户审核、卸载监听并等待原注册 disposer；stop 与 withdrawal 等待同一缓存工作。同一显式队列/帧预算会传给原 Gateway 注册的每个 client 上界。下游 client 超限只使对应实际事件流失败；source、API 审核、健康 client 和后续 ready 代际继续可用。原生退队和关闭释放该队列的驻留字节；实际清理及资源结算仍归原迭代器/载体所有。
@@ -157,7 +159,7 @@ Commands 在附件准入之后、原生 handler 执行之前复核原账户及 A
 
 一个 files 所有的 `skills/current.json` 目录和一个 `AccountSaves` 编辑版本覆盖全部安装项。普通读取将 schema1 保留为旧 sample；首次 schema2 修改保留该项及其他不可变版本。`current` 在 sample 不存在时仍观察整个目录 revision；安装、替换、移除和旧 publish 都使旧编辑版本失效。sample 替换仍使用完整两文件 `publish`；通用 `update` 拒绝旧 sample。
 
-完整文件或 ZIP 输入交给 files，不访问宿主文件系统或执行资源。files 负责包、路径、类型、链接和展开量验证、原生 CAS、源句柄、完整 ZIP 导出、工作副本证明、计费及回收。发布前确认的技能包超限拒绝返回 `cloud/capacity`。下载先在原保存 turn 内核对当前安装项和内容版本，再进入原 files 导出借用。移除目录项拒绝后续加载，不终止脚本或删除已有可写项目副本。
+完整文件或 ZIP 输入交给 files，不访问宿主文件系统或执行资源。files 负责包、路径、类型、链接和展开量验证、原生 CAS、源句柄、完整 ZIP 导出、工作副本证明、计费及回收。发布前确认的技能包超限拒绝返回 `cloud/capacity`。包发布前已确认的输入校验拒绝返回 `cloud/invalid-skill-bundle`；准备或清理结果不确定时，仍保留原未知保存责任。下载先在原保存 turn 内核对当前安装项和内容版本，再进入原 files 导出借用。移除目录项拒绝后续加载，不终止脚本或删除已有可写项目副本。
 
 原生 parser 为每个安装包发现一个技能根；资源 Markdown 和嵌套 `SKILL.md` 仍是包数据。原生 `skills.inspect()` 提供生效与覆盖关系；API 只投影公开来源，省略 rank、locator 和私有路径。可选 Workspace 经原 registry 和归属守卫核验后提供 `cwd`，不伪造 Agent scope。管理列表包含目录安装项，不授予其他项目或运行时贡献的编辑、下载权限；这些来源的原发现、批准根及优先级仍由原生实现负责。
 

@@ -64,7 +64,7 @@ export function ManagedSkillEditor({ editor, report, t }: {
     setInvalid(false)
     const action = remove ? editor.uninstall : editor.publish
     const show = (outcome: ManagedSkillOutcome): void => {
-      report(remove ? 'remove' : selection === null ? 'install' : 'update', outcome.kind === 'persisted' ? 'confirmed' : outcome.kind)
+      report(remove ? 'remove' : selection === null ? 'install' : 'update', outcome.kind === 'persisted' ? 'confirmed' : outcome.kind === 'invalid-bundle' ? 'unavailable' : outcome.kind)
     }
     void action(control.signal).then(show, () => { if (alive(control)) setInvalid(true) })
   }
@@ -121,7 +121,7 @@ export function ManagedSkillEditor({ editor, report, t }: {
     {editor.outcome === undefined ? null : editor.outcome.kind === 'persisted'
       ? <p role="status">{t(editor.outcome.applied ? 'bundleApplied' : 'bundleSavedPending')}</p>
       : <p className={css.error} role="alert">{t(editor.outcome.kind === 'conflict' ? 'sampleConflict'
-        : editor.outcome.kind === 'unavailable' ? 'bundleCapacity' : 'sampleUnknown')}</p>}
+        : editor.outcome.kind === 'unavailable' ? 'bundleCapacity' : editor.outcome.kind === 'invalid-bundle' ? 'bundleMissingManifest' : 'sampleUnknown')}</p>}
     {invalid ? <p className={css.error} role="alert">{t('bundleInvalid')}</p> : null}
   </section>
 }

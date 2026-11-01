@@ -11,7 +11,7 @@ export type ManagedSkillBundle = { readonly kind: 'files'; readonly selection: S
 export interface ManagedSkillLimits extends SkillSelectionLimits { readonly maxArchiveBytes: number }
 /** Confirmed metadata and catalog application remain distinct from an uncertain write. */
 export type ManagedSkillOutcome = { readonly kind: 'persisted'; readonly applied: boolean; readonly item: SkillCard | null }
-  | { readonly kind: 'conflict' | 'unknown' | 'unavailable' }
+  | { readonly kind: 'conflict' | 'unknown' | 'unavailable' | 'invalid-bundle' }
 /** Native detail projection; file paths are relative display data, never private source paths. */
 export interface ManagedSkillDetail {
   readonly item: SkillCard

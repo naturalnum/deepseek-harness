@@ -6151,7 +6151,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudApiErrorCode',
-    declaration: 'export type CloudApiErrorCode = \'cloud/forbidden\' | \'cloud/invalid-config\' | \'cloud/account-unavailable\' | \'cloud/stale-generation\' | \'cloud/model-not-allowed\' | \'cloud/config-busy\' | \'cloud/config-conflict\' | \'cloud/capacity\' | \'cloud/invalid-project-title\';',
+    declaration: 'export type CloudApiErrorCode = \'cloud/forbidden\' | \'cloud/invalid-config\' | \'cloud/account-unavailable\' | \'cloud/stale-generation\' | \'cloud/model-not-allowed\' | \'cloud/config-busy\' | \'cloud/config-conflict\' | \'cloud/capacity\' | \'cloud/invalid-project-title\' | \'cloud/invalid-skill-bundle\';',
   },
   {
     name: 'CloudModelKeyPreparation',

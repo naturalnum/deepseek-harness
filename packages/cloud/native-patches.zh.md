@@ -21,6 +21,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | [Instruction injection](pe-account-instructions/src/session.ts) | pe-account-instructions 预留 files 拥有的有界读取，提供原生回合快照，不建立另一套 prompt 或 Session 历史。 |
 | [Client persistence](../client/store/src/index.ts)、[Web entry](../client/web/src/boot.ts) | [pe-cloud-client lifetime](pe-cloud-client/src/client/page-lifetime.ts) 在激活前提供账号、代际绑定的端口，在清理前撤销。复用原生 UI 和模块生命周期。 |
 | [终端设置](../client/ui-settings-shell/src/client/index.ts) | [受管终端](pe-cloud-client/src/client/management/plugins/managed-terminal.tsx) 通过有作用域的原生渲染服务复用 Shell 卡片，三个只读限制值来自当前账户的实际 Shell 执行器；本地原生表单行为保持不变。 |
+| [工作区操作](../client/ui-workspace/src/client/index.ts) | 可选删除禁用原因沿用原生菜单和确认框。[准备好的 Cloud 页面](pe-cloud-client/src/client/prepared-page.ts) 提供该值，因为 Cloud 未开放工作区删除；未提供时保留原生行为。 |
 | [Web bootstrap](../../apps/web/src/cloud-web.ts) | 该模块加载前入口归 pe-cloud-client 集成负责，但保留为明确的应用补丁。迁入动态 client 入口需要另一条静态、动态构建路径；在原生提供等价 pre-boot 集成前保留当前启动方式。 |
 | [Frontend](pe-cloud-access/src/frontend.ts)、[field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud 公开页路由和普通字段可编辑策略位于现有 Cloud 包。原生 frontend 与 ConfigField 实现已恢复。Models 使用原生 onboarding；受保护的 Cloud 密钥使用独立手动集成。 |
 

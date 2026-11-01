@@ -61,7 +61,7 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
               setInvalidZip(false)
               void importAction.run(async (signal) => {
                 const outcome = await managed.installZip(file, signal)
-                return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind
+                return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind === 'invalid-bundle' ? 'unavailable' : outcome.kind
               }).then((outcome) => { if (outcome !== undefined) props.report('install', outcome) })
             }}/>
           <button type="button" className={`${css.button} ${css.primary}`}
@@ -87,7 +87,7 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
         className={managed.outcome.kind === 'persisted' ? css.note : css.error}
         role={managed.outcome.kind === 'persisted' ? 'status' : 'alert'}>{t(managed.outcome.kind === 'persisted'
           ? managed.outcome.applied ? 'bundleApplied' : 'bundleSavedPending' : managed.outcome.kind === 'conflict' ? 'sampleConflict'
-            : managed.outcome.kind === 'unavailable' ? 'bundleCapacity' : 'sampleUnknown')}</p> : null}
+            : managed.outcome.kind === 'unavailable' ? 'bundleCapacity' : managed.outcome.kind === 'invalid-bundle' ? 'bundleMissingManifest' : 'sampleUnknown')}</p> : null}
       {managed === undefined || managed.selection === null ? null
         : <ManagedSkillEditor key={managed.editNumber} editor={managed} report={props.report} t={t}/> }
       {recommended.length > 0 ? <section aria-label={t('recommended')}>

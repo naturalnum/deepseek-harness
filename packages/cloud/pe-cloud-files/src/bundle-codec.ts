@@ -6,7 +6,7 @@ import * as archiveLibrary from 'yauzl'
 import type { Entry, ZipFile } from 'yauzl'
 import { Zip, ZipPassThrough } from 'fflate'
 import type { SkillBundleFile, SkillBundleInput, SkillBundleLimits } from './skill-bundles.ts'
-import { FdMutationFailure } from './worker-client.ts'
+import { FdMutationFailure, InvalidSkillBundleFailure } from './worker-client.ts'
 
 /** Expanded owned content; buffers remain under the original operation reservation. */
 export interface BundleTree {
@@ -255,18 +255,26 @@ async function expandZip(bytes: Uint8Array<ArrayBuffer>, limits: SkillBundleLimi
  */
 export async function decodeBundle(input: SkillBundleInput, limits: SkillBundleLimits, signal: AbortSignal): Promise<BundleTree> {
   signal.throwIfAborted()
-  if (input.kind === 'zip') {
-    if (Buffer.byteLength(input.dataBase64) + 64 > limits.maxInputBytes) rejectBundle(true)
-    return expandZip(decoded(input.dataBase64, limits.maxArchiveBytes), limits, signal)
+  try {
+    if (input.kind === 'zip') {
+      if (Buffer.byteLength(input.dataBase64) + 64 > limits.maxInputBytes) rejectBundle(true)
+      return await expandZip(decoded(input.dataBase64, limits.maxArchiveBytes), limits, signal)
+    }
+    if (input.files.length > limits.maxFiles) rejectBundle(true)
+    let inputBytes = 64
+    const files = input.files.map((file) => {
+      inputBytes += Buffer.byteLength(file.relativePath) + Buffer.byteLength(file.dataBase64) + 64
+      if (inputBytes > limits.maxInputBytes) rejectBundle(true)
+      return { relativePath: file.relativePath, data: decoded(file.dataBase64, limits.maxFileBytes) }
+    })
+    return validateBundleTree({ files, directories: [] }, limits)
+  } catch (error) {
+    // Only explicit input-validation denials in this pure decode become this result.
+    // Abort, size and unexpected ZIP/cleanup errors retain their original outcomes.
+    if (!signal.aborted && error instanceof FdMutationFailure && error.outcome === 'not-published'
+      && error.code === 'FS_PERMISSION_DENIED') throw new InvalidSkillBundleFailure()
+    throw error
   }
-  if (input.files.length > limits.maxFiles) rejectBundle(true)
-  let inputBytes = 64
-  const files = input.files.map((file) => {
-    inputBytes += Buffer.byteLength(file.relativePath) + Buffer.byteLength(file.dataBase64) + 64
-    if (inputBytes > limits.maxInputBytes) rejectBundle(true)
-    return { relativePath: file.relativePath, data: decoded(file.dataBase64, limits.maxFileBytes) }
-  })
-  return validateBundleTree({ files, directories: [] }, limits)
 }
 
 /**

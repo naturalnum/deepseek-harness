@@ -28,6 +28,7 @@ import Settings from '@deepseek-ai/dsh-settings'
 import * as Locale from '@deepseek-ai/dsh-client-locale'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Sessions from '@deepseek-ai/dsh-session'
+import SessionTitle from '@deepseek-ai/dsh-session-title'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SessionQuery from '@deepseek-ai/dsh-session-query'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -232,6 +233,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       { id: 'editor', name: 'cordis:m8z-editor' },
       { id: 'credentials', name: 'cordis:m8z-credentials', config: { path: credentials, watch: false } },
       { id: 'jsonl', name: 'cordis:m8z-jsonl', config: { root: join(privateRoot, 'sessions'), compression: 'none' } },
+      ...extraRpc.some(row => row.endpoint === 'session/rename') ? [
+        { id: 'title', name: 'cordis:m8z-title', config: { fallbackMaxWords: 12, fallbackMaxBytes: 256, maxTitleBytes: 512 } },
+      ] : [],
       { id: 'query', name: 'cordis:m8z-query' },
       { id: 'files', name: 'cordis:m8z-files' }, { id: 'llm', name: 'cordis:m8z-llm' },
       { id: 'working-directory', name: 'cordis:m8z-working-directory', config: { defaultDirectory: project } },
@@ -357,7 +361,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         Object.assign(owner.loader.builtins, {
           'b1-spawn': Spawn,
           'b1-subagents': SubagentRuntime, 'm8z-bootstrap-execution': ExecutionAccount, 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
-          'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-files': FilesAccount,
+          'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-title': SessionTitle, 'm8z-files': FilesAccount,
           'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': AgentPresets, 'm8z-preset': AgentPreset,
           'm8z-persona': persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
           [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller,

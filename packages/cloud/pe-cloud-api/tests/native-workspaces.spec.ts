@@ -1,5 +1,5 @@
 /** Real Loader/native Workspace feeds; Node fixture directories provide no Cloud storage authority. */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
@@ -7,7 +7,7 @@ import { boot, initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boo
 import { brandString } from '@deepseek-ai/dsh-brand'
 import Sessions from '@deepseek-ai/dsh-session'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
-import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
+import WorkspaceRegistry, { WorkspaceId, type Workspace } from '@deepseek-ai/dsh-workspace'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -17,7 +17,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import type { WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { CloudAccountApi } from '../src/account-service.ts'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
@@ -51,6 +51,7 @@ async function fixture(maxCollectionItems = 8) {
     rpcEndpoints: [
       { endpoint: 'workspace/initializeDefault', handlerId: 'native:workspaceController', guard: 'account-project' },
       { endpoint: 'workspace/create', handlerId: 'native:workspaceController', guard: 'account-project' },
+      { endpoint: 'workspace/rename', handlerId: 'native:workspaceController', guard: 'account-project' },
       { endpoint: 'settings/describe', handlerId: 'native:settingsController', guard: 'authenticated-account' },
     ], streamEndpoints: [
       { endpoint: 'workspace/follow', handlerId: 'native:workspaceController', guard: 'account-project' },
@@ -124,7 +125,7 @@ async function fixture(maxCollectionItems = 8) {
   })
   if (api === undefined || native === undefined) throw new Error('Fixture API not prepared')
   api.audit(native.inspect())
-  return { ctx, paths, approved, lifetime,
+  return { ctx, paths, approved, lifetime, home, api,
     follow() {
       const abort = new AbortController()
       const iterator = ctx.workspaceController.follow(abort.signal)[Symbol.asyncIterator]()
@@ -163,4 +164,123 @@ it('delegates existing project adoption to the native command and rejects an unr
 it('enforces the complete collection limit before returning a multi-Workspace frame', async () => {
   const f = await fixture(1)
   await expect(f.follow().next()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+it('renames the approved native Workspace, publishes an upsert and persists its title', async () => {
+  const f = await fixture(), workspace = f.ctx.workspaceRegistry.list()[1]!
+  const follow = f.follow()
+  expect((await follow.next()).value).toMatchObject({ type: 'baseline' })
+  expect(f.api.requireRpc('workspace/rename')).toMatchObject({ handlerId: 'native:workspaceController', guard: 'account-project' })
+  await expect(f.ctx.workspaceController.rename({ workspaceId: workspace.id, title: '  Renamed project  ' }))
+    .resolves.toMatchObject({ workspace: { workspaceId: workspace.id, path: workspace.path, title: 'Renamed project' } })
+  expect((await follow.next()).value).toMatchObject({ type: 'upsert', workspace: { workspaceId: workspace.id, title: 'Renamed project' } })
+  const disk = JSON.parse(readFileSync(join(f.home, 'storage', 'workspace.json'), 'utf8')) as { tables: { workspaces: Record<string, { title: string }> } }
+  expect(disk.tables.workspaces[workspace.id]?.title).toBe('Renamed project')
+})
+
+it('denies an unknown or unapproved Workspace before any native rename', async () => {
+  const f = await fixture(), foreign = await f.ctx.workspaceRegistry.create(f.paths[2]!)
+  const title = foreign.title
+  await expect(f.ctx.workspaceController.rename({ workspaceId: WorkspaceId('foreign-account-id'), title: 'stolen' }))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await expect(f.ctx.workspaceController.rename({ workspaceId: foreign.id, title: 'stolen' })).rejects.toThrow('Unapproved fixture Workspace')
+  expect(foreign.title).toBe(title)
+})
+
+it('preserves native validation, duplicate-name serialization and finite input limits', async () => {
+  const f = await fixture(), [first, second] = f.ctx.workspaceRegistry.list()
+  if (first === undefined || second === undefined) throw new Error('Fixture Workspaces absent')
+  await expect(f.ctx.workspaceController.rename({ workspaceId: first.id, title: '  ' })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+  await expect(f.ctx.workspaceController.rename({ workspaceId: first.id, title: '测'.repeat(22000) })).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  const results = await Promise.allSettled([
+    f.ctx.workspaceController.rename({ workspaceId: first.id, title: 'same' }),
+    f.ctx.workspaceController.rename({ workspaceId: second.id, title: 'same' }),
+  ])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.filter(result => result.status === 'rejected')).toMatchObject([{ reason: { code: 'workspace/name-conflict' } }])
+  expect(f.ctx.workspaceRegistry.list().filter(workspace => workspace.title === 'same')).toHaveLength(1)
+})
+
+it('joins an accepted queued rename on the original Workspace when later admission is lost', async () => {
+  const f = await fixture()
+  const first = f.ctx.workspaceRegistry.list().find(workspace => workspace.path === f.paths[0])
+  const second = f.ctx.workspaceRegistry.list().find(workspace => workspace.path === f.paths[1])
+  if (first === undefined || second === undefined) throw new Error('Fixture Workspaces absent')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const original = first.setTitle.bind(first)
+  const spy = vi.spyOn(first, 'setTitle').mockImplementation(async (title) => {
+    entered.resolve(undefined); await release.promise; await original(title)
+  })
+  try {
+    const one = f.ctx.workspaceController.rename({ workspaceId: first.id, title: 'first renamed' })
+    await entered.promise
+    const two = f.ctx.workspaceController.rename({ workspaceId: second.id, title: 'accepted while queued' })
+    const rejected = expect(two).rejects.toThrow('Unapproved fixture Workspace')
+    f.approved.delete(second)
+    release.resolve(undefined)
+    await one
+    await rejected
+    expect(f.ctx.workspaceRegistry.get(second.id)).toBe(second)
+    expect(second.title).toBe('accepted while queued')
+  } finally { release.resolve(undefined); spy.mockRestore() }
+})
+
+it('retains the original account record through the native table queue after admission is lost', async () => {
+  const f = await fixture(), other = await fixture()
+  const workspace = f.ctx.workspaceRegistry.list().find(item => item.path === f.paths[1])
+  const foreign = other.ctx.workspaceRegistry.list().find(item => item.path === other.paths[1])
+  if (workspace === undefined || foreign === undefined) throw new Error('Fixture Workspaces absent')
+  const table = Reflect.get(f.ctx.workspaceRegistry, 'table') as { update(id: Workspace['id'], edit: (record: unknown) => unknown): Promise<unknown> }
+  const unit = Reflect.get(Reflect.get(table, 'host'), 'unit') as { putRecord(name: string, key: string, value: unknown): Promise<void> }
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const original = unit.putRecord.bind(unit)
+  let held = false
+  const put = vi.spyOn(unit, 'putRecord').mockImplementation(async (name, key, value) => {
+    if (!held) { held = true; entered.resolve(undefined); await release.promise }
+    await original(name, key, value)
+  })
+  const update = vi.spyOn(table, 'update')
+  const foreignTitle = foreign.title
+  try {
+    const blocker = table.update(workspace.id, record => record)
+    await entered.promise
+    const rename = f.ctx.workspaceController.rename({ workspaceId: workspace.id, title: 'admitted before loss' })
+    const rejected = expect(rename).rejects.toThrow('Unapproved fixture Workspace')
+    await vi.waitFor(() => { expect(update).toHaveBeenCalledTimes(2) })
+    f.approved.delete(workspace)
+    release.resolve(undefined)
+    await blocker
+    await rejected
+    expect(f.ctx.workspaceRegistry.get(workspace.id)).toBe(workspace)
+    expect(workspace.title).toBe('admitted before loss')
+    expect(other.ctx.workspaceRegistry.get(foreign.id)).toBe(foreign)
+    expect(foreign.title).toBe(foreignTitle)
+  } finally { release.resolve(undefined); update.mockRestore(); put.mockRestore(); f.approved.add(workspace) }
+})
+
+it('refuses a replaced Workspace object before the native queued command can target it', async () => {
+  const f = await fixture(), other = await fixture()
+  const first = f.ctx.workspaceRegistry.list().find(workspace => workspace.path === f.paths[0])
+  const second = f.ctx.workspaceRegistry.list().find(workspace => workspace.path === f.paths[1])
+  const foreign = other.ctx.workspaceRegistry.list()[0]
+  if (first === undefined || second === undefined || foreign === undefined) throw new Error('Fixture Workspaces absent')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const originalSet = first.setTitle.bind(first)
+  const blocked = vi.spyOn(first, 'setTitle').mockImplementation(async (title) => {
+    entered.resolve(undefined); await release.promise; await originalSet(title)
+  })
+  const registry = f.ctx.workspaceRegistry, originalGet = registry.get.bind(registry)
+  const get = vi.spyOn(registry, 'get')
+  const foreignTitle = foreign.title, originalTitle = second.title
+  try {
+    const one = f.ctx.workspaceController.rename({ workspaceId: first.id, title: 'original project' })
+    await entered.promise
+    const two = f.ctx.workspaceController.rename({ workspaceId: second.id, title: 'wrong object' })
+    const rejected = expect(two).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    get.mockImplementation(id => id === second.id ? foreign : originalGet(id))
+    release.resolve(undefined)
+    await one; await rejected
+    expect(second.title).toBe(originalTitle)
+    expect(foreign.title).toBe(foreignTitle)
+  } finally { release.resolve(undefined); get.mockRestore(); blocked.mockRestore() }
 })

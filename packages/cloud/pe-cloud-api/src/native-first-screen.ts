@@ -12,7 +12,9 @@ import { isDeepStrictEqual } from 'node:util'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
 import type {
-  WorkspaceCreateRequest, WorkspaceCreateValue, WorkspaceFollowFrame, WorkspaceValue, WorkspaceView,
+  WorkspaceCreateRequest, WorkspaceCreateValue, WorkspaceFollowFrame, WorkspaceRenameRequest, WorkspaceValue, WorkspaceView,
+  WorkspaceArchiveSessionRequest, WorkspaceUnarchiveSessionRequest, WorkspaceArchiveValue,
+  WorkspacePinSessionRequest, WorkspaceUnpinSessionRequest, WorkspacePinValue,
 } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import SettingsController, { type SettingsControllerInternals } from '@deepseek-ai/dsh-api-settings-controller'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
@@ -153,6 +155,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
   }
   const api = original(input.api)
   const follow: unknown = Reflect.get(WorkspaceController.prototype, 'follow')
+  const rename: unknown = Reflect.get(WorkspaceController.prototype, 'rename')
   const describe: unknown = Reflect.get(SettingsController.prototype, 'describe')
   const remoteFollow: unknown = Reflect.get(RemoteAccess.prototype, 'follow')
   let workspaceOwner: FirstScreenNativeOwner | undefined, settingsOwner: FirstScreenNativeOwner | undefined
@@ -195,7 +198,8 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       && (providerOwner.value !== providerFact.value || providerOwner.fiber !== providerFact.fiber)) unavailable()
     providerOwner = providerFact
     if (workspaceOwner === undefined || settingsOwner === undefined
-      || WorkspaceController.prototype.follow !== follow || SettingsController.prototype.describe !== describe
+      || WorkspaceController.prototype.follow !== follow || WorkspaceController.prototype.rename !== rename
+      || SettingsController.prototype.describe !== describe
       || RemoteAccess.prototype.follow !== remoteFollow) unavailable()
     for (const [key, expected] of [['workspaceController', workspaceOwner], ['settingsController', settingsOwner],
       ['settings', providerOwner]] as const) {
@@ -259,10 +263,14 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
     }
     bounded(value)
   }
-  const admit = (endpoint: 'workspace/follow' | 'workspace/initializeDefault' | 'workspace/create' | 'settings/describe'): void => {
+  const admit = (endpoint: 'workspace/follow' | 'workspace/initializeDefault' | 'workspace/create' | 'workspace/rename' | 'settings/describe'
+    | 'workspace/pinSession' | 'workspace/unpinSession' | 'workspace/archiveSession' | 'workspace/unarchiveSession'): void => {
     current()
     const row = endpoint === 'workspace/follow' ? input.api.requireStream(endpoint) : input.api.requireRpc(endpoint)
-    if (row.guard !== (endpoint === 'settings/describe' ? 'authenticated-account' : 'account-project')) unavailable()
+    const guard = endpoint === 'settings/describe' ? 'authenticated-account'
+      : endpoint === 'workspace/follow' || endpoint === 'workspace/initializeDefault' || endpoint === 'workspace/create' || endpoint === 'workspace/rename'
+        ? 'account-project' : 'account-session'
+    if (row.guard !== guard) unavailable()
     current()
   }
 
@@ -274,6 +282,32 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       super(owner, config)
       workspaceOwner = { value: this, fiber: owner.fiber }
       owner.effect(() => () => { input.api.invalidate() })
+    }
+    private async sessionMetadata<T extends WorkspacePinValue | WorkspaceArchiveValue>(
+      endpoint: 'workspace/pinSession' | 'workspace/unpinSession' | 'workspace/archiveSession' | 'workspace/unarchiveSession',
+      sessionId: SessionId, operation: () => Promise<T>,
+    ): Promise<T> {
+      admit(endpoint)
+      sessions([sessionId])
+      admit(endpoint)
+      const value = await operation()
+      admit(endpoint)
+      sessions([sessionId])
+      sessions('pinnedSessionIds' in value ? value.pinnedSessionIds : value.archivedSessionIds)
+      bounded(value)
+      return value
+    }
+    override pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue> {
+      return this.sessionMetadata('workspace/pinSession', request.sessionId, () => super.pinSession(request))
+    }
+    override unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue> {
+      return this.sessionMetadata('workspace/unpinSession', request.sessionId, () => super.unpinSession(request))
+    }
+    override archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+      return this.sessionMetadata('workspace/archiveSession', request.sessionId, () => super.archiveSession(request))
+    }
+    override unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+      return this.sessionMetadata('workspace/unarchiveSession', request.sessionId, () => super.unarchiveSession(request))
     }
     override async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
       admit('workspace/create')
@@ -287,6 +321,41 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       const value = await super.create(request)
       admit('workspace/create')
       if (registry.get(workspace.id) !== workspace || value.workspace.workspaceId !== workspace.id) unavailable()
+      view(value.workspace)
+      bounded(value)
+      return value
+    }
+    override async rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
+      admit('workspace/rename')
+      const registry = this.ctx.workspaceRegistry
+      const id = request.workspaceId
+      const workspace = registry.get(id)
+      if (workspace === undefined) throw new CloudApiError('cloud/forbidden', 'The account Workspace is unavailable.')
+      bounded({ workspaceId: id, title: request.title })
+      const check = (): void => {
+        admit('workspace/rename')
+        if (registry.get(id) !== workspace) unavailable()
+        input.assertWorkspace(workspace)
+      }
+      check()
+      if (typeof request.title === 'string') {
+        const projected: WorkspaceView = { workspaceId: workspace.id, path: workspace.path, title: request.title.trim(),
+          sessionIds: [...workspace.sessionIds], createdAt: workspace.createdAt, updatedAt: workspace.updatedAt }
+        view(projected)
+        bounded({ workspace: projected })
+      }
+      // Native reads workspaceId in its own command queue. Retain the accepted
+      // original object and refuse a Registry replacement at that queue slot;
+      // a previously accepted write is still joined through its actual result.
+      const owner = this.ctx
+      const guarded: WorkspaceRenameRequest = { title: request.title, get workspaceId() {
+        const actual = owner.get('workspaceRegistry')
+        if (actual === undefined || original(actual) !== original(registry) || registry.get(id) !== workspace) unavailable()
+        return id
+      } }
+      const value = await super.rename(guarded)
+      check()
+      if (value.workspace.workspaceId !== id) unavailable()
       view(value.workspace)
       bounded(value)
       return value
@@ -495,7 +564,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       current()
       const rpc: ExposureInventory['rpcEndpoints'][number][] = [], streams: ExposureInventory['streamEndpoints'][number][] = []
       for (const [expected, key, namespace, selected, prototype] of [
-        [workspaceOwner, 'workspaceController', 'workspace', ['follow', 'initializeDefault', 'create'], AccountWorkspaceController.prototype],
+        [workspaceOwner, 'workspaceController', 'workspace', ['follow', 'initializeDefault', 'create', 'rename', 'pinSession', 'unpinSession', 'archiveSession', 'unarchiveSession'], AccountWorkspaceController.prototype],
         [settingsOwner, 'settingsController', 'settings', input.settingsWrites === undefined ? ['describe'] : ['describe', 'mutate'], AccountSettingsController.prototype],
         [accessOwner, 'remoteAccess', 'remoteAccess', ['follow'], RemoteAccess.prototype],
       ] as const) {
@@ -512,7 +581,10 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
           if (matches.length !== 1 || marker === undefined || (marker.exportName ?? method) !== method
             || (marker.mode ?? 'rpc') !== mode || Reflect.get(expected.value, method) !== Reflect.get(prototype, method)) unavailable()
           const row = { endpoint: `${namespace}/${method}`, handlerId: `native:${key}`,
-            guard: key === 'workspaceController' ? 'account-project' as const : 'authenticated-account' as const }
+            guard: key === 'workspaceController'
+              ? ['pinSession', 'unpinSession', 'archiveSession', 'unarchiveSession'].includes(method)
+                ? 'account-session' as const : 'account-project' as const
+              : 'authenticated-account' as const }
           if (mode === 'stream') streams.push(row)
           else rpc.push(row)
         }

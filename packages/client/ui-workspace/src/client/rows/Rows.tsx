@@ -216,7 +216,9 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, newShortcut, t }: {
+export function ProjectRowItem({
+  group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, newShortcut, deleteDisabledReason, t,
+}: {
   group: GroupNode
   newShortcut?: ShortcutCatalogEntry | undefined
   containsCurrentDescendant?: boolean
@@ -224,6 +226,8 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
+  /** Localized explanation when this deployment does not offer deletion. */
+  deleteDisabledReason?: string | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
@@ -237,7 +241,8 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
-    { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutlineRegular />, danger: true },
+    { id: 'delete', label: deleteDisabledReason === undefined ? t('delete.workspace') : `${t('delete.workspace')} — ${deleteDisabledReason}`,
+      icon: <IconTrashOutlineRegular />, danger: true, disabled: deleteDisabledReason !== undefined },
   ]
   const ownRow = (
     <div

@@ -127,6 +127,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   const query = vi.spyOn(pool, 'query')
   let borrowed = 0, released = 0, inUse = 0, calls = 0
   let consume: ConfigurationPeerOperation<unknown> = async () => { throw new Error('No admitted test operation') }
+  let ordinary: () => Promise<unknown> = async () => { throw new Error('No ordinary test operation') }
   onTestFinished(async () => {
     for (const finish of gates) await finish()
     try {
@@ -159,6 +160,8 @@ async function fixture(peerCloseTimeoutMs = 1000) {
       if (peer === undefined || registry === undefined) throw new Error('Original native Peer absent')
       return registry.withConfigurationPeer(peer, () => {}, async (...args) => { calls++; return consume(...args) }, mode)
     }
+    @Remote
+    ordinary(): Promise<unknown> { return ordinary() }
   }
   class NativeEditor extends ConfigEditor {
     constructor(owner: Context) { super(owner); bindNativeConfigSaveHook(owner, saves, this) }
@@ -219,7 +222,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   }
   // Loopback transports exercise Node's actual HTTP/WS sockets and close events.
   const http = async (handle: LoginPeer, releaseRequestUse: () => void,
-    mode: 'if-idle' | 'stop-and-apply' = 'if-idle', requestActual?: Promise<void>) => {
+    mode: 'if-idle' | 'stop-and-apply' = 'if-idle', requestActual?: Promise<void>, method = 'operate') => {
     const bridged = Promise.withResolvers<undefined>()
     void bridged.promise.catch((_cause: unknown) => {})
     const server = createServer((request, response) => {
@@ -233,7 +236,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('Owned HTTP listener unavailable')
     let answer: unknown
-    const request = httpRequest(`http://127.0.0.1:${String(address.port)}/api/configurationPeerOperation/operate`, {
+    const request = httpRequest(`http://127.0.0.1:${String(address.port)}/api/configurationPeerOperation/${method}`, {
       method: 'POST', headers: { cookie: handle.principal.authSessionId, origin: config.publicOrigin,
         host: new URL(config.publicOrigin).host, 'content-type': 'application/json', connection: 'close' },
     })
@@ -255,7 +258,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
       await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
     })
     request.end(JSON.stringify({ type: 'client-request', rpcId: '11111111-1111-4111-8111-111111111111',
-      method: 'configurationPeerOperation/operate', payload: { args: { mode } } }))
+      method: `configurationPeerOperation/${method}`, payload: { args: method === 'ordinary' ? {} : { mode } } }))
     const body = Promise.all([returned, bridged.promise]).then(() => {})
     void body.catch((_cause: unknown) => {})
     return { body, actual: bridged.promise, disconnect: () => { request.destroy() }, result: (): unknown => answer }
@@ -318,6 +321,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     writeNativeValue, patch: () => readFileSync(profile.patchPath, 'utf8'), saves,
     issueUse: () => issueUse(binding), observe: () => ({ borrowed, released, inUse, calls }),
     setOperation: (next: ConfigurationPeerOperation<unknown>) => { consume = next },
+    setOrdinary: (next: () => Promise<unknown>) => { ordinary = next },
     expectCleanupFailure: () => { expectedCleanupFailure = true } }
 }
 
@@ -1376,6 +1380,27 @@ it('joins a real native WebSocket observation before the same HTTP configuration
   } finally { ingressUse.release() }
 })
 
+
+it('holds the original ordinary HTTP Peer Use until native work settles after disconnect', async () => {
+  const f = await fixture(), peer = await f.acquire('login=ordinary-write-reply-loss')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  let finished = false
+  f.setOrdinary(async () => { entered.resolve(undefined); await release.promise; finished = true; return { settled: true } })
+  const request = await f.http(peer, () => { throw new Error('Ordinary RPC must not release the Use early') }, 'if-idle', undefined, 'ordinary')
+  try {
+    await entered.promise
+    expect(f.observe()).toMatchObject({ borrowed: 1, released: 0, inUse: 1 })
+    request.disconnect()
+    const closing = f.registry.closeActual()
+    await expect(request.body).rejects.toBeInstanceOf(Error)
+    expect(finished).toBe(false)
+    expect(f.observe()).toMatchObject({ borrowed: 1, released: 0, inUse: 1 })
+    release.resolve(undefined)
+    await Promise.allSettled([request.actual, closing])
+    expect(finished).toBe(true)
+    expect(f.observe()).toMatchObject({ borrowed: 1, released: 1, inUse: 0 })
+  } finally { release.resolve(undefined) }
+})
 
 it('retains an actual native write and its pending HTTP task after the response carrier is lost', async () => {
   const f = await fixture(), peer = await f.acquire('login=native-write-reply-loss')

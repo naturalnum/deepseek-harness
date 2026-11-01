@@ -39,6 +39,11 @@ export class FdMutationFailure extends FdWorkerFailure {
   }
 }
 
+/** Input validation refused the bundle before publishing its directory or catalog. */
+export class InvalidSkillBundleFailure extends FdMutationFailure {
+  constructor() { super('not-published', 'FS_PERMISSION_DENIED') }
+}
+
 /** Text publication retains its original error class and shared mutation disposition. */
 export class FdTextWriteFailure extends FdMutationFailure {}
 

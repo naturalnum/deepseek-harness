@@ -1,5 +1,5 @@
 /** Canonical bootstrap preparation and the page owner consumed by the real Cloud Loader entry. */
-import type { Context } from '@deepseek-ai/cordis'
+import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
@@ -20,6 +20,7 @@ import type { SkillManagementView } from './management/skills/types.ts'
 import { attachManagedSkillEditing, type ManagedSkillEditingInput } from './managed-skill-editing.ts'
 import { attachSkillVersionEditing } from './skill-version-editing.ts'
 import type { CloudPersistenceLimits, CloudPersistenceStorage } from './persistence.ts'
+import type { WorkspaceDeleteDisabledReason } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 /** Fixed page inputs supplied by the pre-Cordis application owner, never by bootstrap JSON. */
 export interface CloudPagePreparationInput {
@@ -109,6 +110,7 @@ export class PreparedCloudPage {
   readonly accountSignOut?: (owner: Context) => void
   private readonly modelsEditing = createSnapshotStore<ModelsCredentialEditing | null>(null)
   private readonly skillEditing = createSnapshotStore<SkillManagementView>(Object.freeze({ phase: 'unavailable', items: Object.freeze([]) }))
+  private readonly workspaceRestrictionSlots = new WeakSet<object>()
   private skillVersionBinding: { readonly owner: Context; withdraw?: () => void } | undefined
   private modelSettingsBinding: { readonly owner: Context; readonly callbacks: CloudModelSettingsCallbacks } | undefined
   private modelSettingsGeneration = 0
@@ -286,6 +288,17 @@ export class PreparedCloudPage {
     // The installer owns this provider while its Cloud Loader fiber is still activating.
     this.connection = ctx.get('connection', false) as ConnectionHandle
     this.activation = ctx
+    ctx.inject(['slots'], (scope) => {
+      this.assertCurrent(scope)
+      const slots = scope.root.slots
+      const original: unknown = Reflect.get(slots, symbols.original)
+      const identity = original !== null && typeof original === 'object' ? original : slots
+      if (this.workspaceRestrictionSlots.has(identity)) return
+      // The page root retains the restriction until the native graph ends,
+      // even if this Cloud Loader entry is withdrawn first.
+      slots.provideRoot({ props: { workspaceDeleteDisabledReason: 'unavailable' satisfies WorkspaceDeleteDisabledReason } })
+      this.workspaceRestrictionSlots.add(identity)
+    })
     ctx.effect(() => () => {
       // Awaiting disposal from its own child disposer would wait on this same graph.
       this.stopAfterFailure()

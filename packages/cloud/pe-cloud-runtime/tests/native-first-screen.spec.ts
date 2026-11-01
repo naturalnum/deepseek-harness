@@ -12,6 +12,24 @@ const bounds = { maxHomeBytes: 4096, maxCollectionItems: 16, maxFrameBytes: 6553
   maxQueuedEvents: 16, maxQueuedBytes: 131072 }
 type Graph = Awaited<ReturnType<ReturnType<typeof policyFixture>['start']>>
 
+it('routes Workspace rename through the audited native Gateway and rejects a foreign account id', async () => {
+  const row = { endpoint: 'workspace/rename', handlerId: 'native:workspaceController', guard: 'account-project' as const }
+  const a = await policyFixture([row], bounds, 'workspace-rename-a').start()
+  const b = await policyFixture([row], bounds, 'workspace-rename-b').start()
+  const makePeer = (graph: Graph): PeerScope => ({ id: brandString<PeerId>('workspace-rename-test'), ctx: graph.ctx,
+    principal: { kind: 'owner' }, interactions: 'answer', signal: graph.lifetime.signal, dispose: async () => {} })
+  const peer = makePeer(a), own = a.files.project().workspace, foreign = b.files.project().workspace
+  const before = foreign.title
+  expect(a.api.requireRpc('workspace/rename')).toMatchObject(row)
+  const invoke = (workspaceId: typeof own.id, title: string) => a.ctx.typertGateway.invoke({
+    namespace: 'workspace', method: 'rename', args: { request: { workspaceId, title } }, peer,
+  })
+  await expect(invoke(own.id, 'native gateway rename')).resolves.toMatchObject({ workspace: { workspaceId: own.id, title: 'native gateway rename' } })
+  await expect(invoke(foreign.id, 'wrong account')).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(b.ctx.workspaceRegistry.get(foreign.id)).toBe(foreign)
+  expect(foreign.title).toBe(before)
+})
+
 async function stream(graph: Graph, endpoint: string) {
   const control = new AbortController()
   const peer: PeerScope = { id: brandString<PeerId>('first-screen-component'), ctx: graph.ctx, principal: { kind: 'owner' },

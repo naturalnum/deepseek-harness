@@ -376,7 +376,7 @@ export class CloudAccountApi extends Service {
       if (this.projects.native === undefined) this.nativeUnavailable()
       this.projects.native.assertCurrent()
     }
-    if (endpoint === 'workspace/initializeDefault' || endpoint === 'settings/describe' || endpoint === 'settings/mutate') {
+    if (endpoint === 'workspace/initializeDefault' || endpoint === 'workspace/rename' || endpoint === 'settings/describe' || endpoint === 'settings/mutate') {
       if (this.firstScreen.native === undefined) this.nativeUnavailable()
       this.firstScreen.native.assertCurrent()
     }

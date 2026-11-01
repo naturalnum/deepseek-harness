@@ -121,3 +121,12 @@ it('downloads the exact immutable selector and releases its browser URL after re
     expect(document.querySelector('a[download]')).toBeNull()
   } finally { vi.unstubAllGlobals() }
 })
+
+
+it('distinguishes the dedicated invalid bundle refusal from uncertain outcomes without replay', async () => {
+  const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
+  f.install.mockResolvedValueOnce({ ok: false, error: new RemoteError('cloud/invalid-skill-bundle', 'fixed', {}) })
+  expect(await list.install?.(zip(), signal())).toEqual({ kind: 'invalid-bundle' })
+  await expect(list.install?.(zip(), signal())).rejects.toThrow()
+  expect(f.install).toHaveBeenCalledTimes(1)
+})

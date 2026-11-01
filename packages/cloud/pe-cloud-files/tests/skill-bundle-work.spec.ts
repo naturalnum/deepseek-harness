@@ -1,12 +1,13 @@
 /** Stateful original-lane executor tests. Worker/native facts are scripted; this is not Linux execution evidence. */
 import { createHash } from 'node:crypto'
+import { zipSync } from 'fflate'
 import { posix } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { FilesWorkQueue } from '../src/work-queue.ts'
-import { FdWorkerClient, FdMutationFailure } from '../src/worker-client.ts'
+import { FdWorkerClient, FdMutationFailure, InvalidSkillBundleFailure } from '../src/worker-client.ts'
 import { createSkillVersionWork, observeSkillCurrent } from '../src/skill-version-work.ts'
 import type { SkillVersionWork } from '../src/skill-version-work.ts'
 import type { SkillBundleSource, SkillBundleVersion } from '../src/skill-bundles.ts'
@@ -275,4 +276,22 @@ it('delivered prepare remains pinned after observer cancellation until its actua
   const after = await f.prepare('after')
   try { expect(f.nodes.has(`/private/skills/${prepared.value.id}`)).toBe(false) } finally { after.release() }
   expect(f.residents()).toBe(0)
+})
+
+
+it('rejects a ZIP without root SKILL.md in the original files lane without changing the installed catalog', async () => {
+  const f = await fixture(2000), before = await f.install('existing')
+  const previous = before.value.catalog.entries.map(entry => [entry.skillId, entry.version.id])
+  before.release()
+  const nativeCalls = f.native.mock.calls.filter(([request]) => request.kind === 'bundle-prepare').length
+  const archive = zipSync({ 'note.txt': text('not a skill') })
+  const failure: unknown = await f.bundles.prepareBundle({ kind: 'zip', dataBase64: Buffer.from(archive).toString('base64') }, signal())
+    .then(() => undefined, (error: unknown) => error)
+  expect(failure).toBeInstanceOf(InvalidSkillBundleFailure)
+  expect(failure).toMatchObject({ outcome: 'not-published', code: 'FS_PERMISSION_DENIED' })
+  const after = await f.observe()
+  try { expect(after.value.entries.map(entry => [entry.skillId, entry.version.id])).toEqual(previous) }
+  finally { after.release() }
+  expect(f.native.mock.calls.filter(([request]) => request.kind === 'bundle-prepare')).toHaveLength(nativeCalls)
+  await f.flush()
 })

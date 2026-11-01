@@ -253,7 +253,7 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
   'useSessionStatus' | 'startSession' | 'open'
-  | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
+  | 'insertWorkspaceBefore' | 't' | 'usePanelInfo' | 'workspaceDeleteDisabledReason'
 > & PropsRenderSlots<
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
@@ -322,7 +322,7 @@ function SessionTree({
   renderSlot,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
-  setSessionOrder, home, t,
+  setSessionOrder, home, t, workspaceDeleteDisabledReason,
   revealSessionId, onSessionRevealed, shortcuts,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
@@ -559,6 +559,7 @@ function SessionTree({
           group={group}
           containsCurrentDescendant={currentAncestors.has(group.key)}
           home={home}
+          deleteDisabledReason={workspaceDeleteDisabledReason === undefined ? undefined : t('delete.unavailable')}
           t={t}
           onToggle={() => {
             if (group.expanded) dropWatermarks(key => withinGroup(key, group.key))
@@ -908,6 +909,7 @@ export function WorkspaceBrowser({
   notifyArchivedNotOpenable,
   renameWorkspace,
   deleteWorkspace,
+  workspaceDeleteDisabledReason,
   insertWorkspaceBefore,
   unarchiveSession,
   createWorkspace,
@@ -1248,7 +1250,7 @@ export function WorkspaceBrowser({
   }
   const confirmDelete = () => {
     /* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
-    if (deleting || deleteTarget === null) return
+    if (deleting || deleteTarget === null || workspaceDeleteDisabledReason !== undefined) return
     setDeleting(true)
     setDeleteCommittedId(null)
     setDeleteError(null)
@@ -1461,6 +1463,7 @@ export function WorkspaceBrowser({
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
                 home={home}
+                workspaceDeleteDisabledReason={workspaceDeleteDisabledReason}
                 t={t}
                 onRenameRequest={(workspaceId, displayTitle) => {
                   setRenameTarget({
@@ -1471,6 +1474,7 @@ export function WorkspaceBrowser({
                   setRenameError(null)
                 }}
                 onDeleteRequest={(workspaceId, title) => {
+                  if (workspaceDeleteDisabledReason !== undefined) return
                   setDeleteTarget({ workspaceId, title })
                   setDeleteError(null)
                 }}
@@ -1527,7 +1531,7 @@ export function WorkspaceBrowser({
             <Button
               variant="outline"
               className={css.deleteAction}
-              disabled={deleting}
+              disabled={deleting || workspaceDeleteDisabledReason !== undefined}
               onClick={confirmDelete}
             >
               {t('delete.workspace')}
@@ -1536,6 +1540,7 @@ export function WorkspaceBrowser({
         )}
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
+        {workspaceDeleteDisabledReason !== undefined && <div role="status">{t('delete.unavailable')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
     </div>

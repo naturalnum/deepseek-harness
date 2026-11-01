@@ -215,3 +215,15 @@ it.each(['unknown', 'conflict'] as const)('keeps a %s write and draft visible af
   expect(f.details).toHaveBeenCalledTimes(3)
   expect(f.update).toHaveBeenCalledTimes(1)
 })
+
+
+it.each(['en', 'zh'] as const)('shows the confirmed missing SKILL.md refusal in %s without automatically retrying', async (locale) => {
+  const f = page(), copy = skillsManagementDictionaries[locale]
+  f.install.mockResolvedValueOnce({ kind: 'invalid-bundle' })
+  render(<SkillsPage {...f.props} t={makeTranslate(copy)}/>)
+  fireEvent.change(screen.getByLabelText(copy.chooseArchive), { target: { files: [new File(['zip'], 'missing.zip')] } })
+  await screen.findByText(copy.bundleMissingManifest)
+  expect(screen.queryByText(copy.sampleUnknown)).toBeNull()
+  expect(f.install).toHaveBeenCalledTimes(1)
+  expect(f.editor().draft).toBeDefined()
+})

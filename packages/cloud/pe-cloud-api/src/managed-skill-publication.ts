@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type SkillRegistry from '@deepseek-ai/dsh-skill'
 import type { SkillCandidate, SkillCatalogInspection, SkillDefinition, SkillProvider, SkillProviderControl,
   SkillProviderObservation, SkillViewOptions } from '@deepseek-ai/dsh-skill'
-import { FdMutationFailure, FilesFailure, type SkillBundleFile, type SkillBundlePort, type SkillBundleVersion,
+import { FdMutationFailure, FilesFailure, InvalidSkillBundleFailure, type SkillBundleFile, type SkillBundlePort, type SkillBundleVersion,
   type SkillCatalog, type SkillCatalogCommit, type SkillCatalogEntry, type SkillInstallationId,
   type SkillVersion, type SkillVersionPort } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
@@ -496,6 +496,8 @@ export class AccountManagedSkills implements SkillProvider {
   private persistenceFailure(error: unknown, committing: boolean): { readonly persisted: false; readonly error: CloudApiError } {
     if (error instanceof FilesFailure) return { persisted: false, error: new CloudApiError(error.code === 'cloud/capacity'
       ? 'cloud/capacity' : 'cloud/account-unavailable', 'The files operation was refused before native work started.') }
+    if (!committing && error instanceof InvalidSkillBundleFailure) return { persisted: false,
+      error: new CloudApiError('cloud/invalid-skill-bundle', 'The skill package is invalid; no skill directory was published.') }
     if (error instanceof FdMutationFailure && error.outcome === 'not-published') return { persisted: false,
       error: new CloudApiError(error.code === 'FS_STALE_VERSION' ? 'cloud/config-conflict'
         : error.code === 'FS_TOO_LARGE' ? 'cloud/capacity' : 'cloud/account-unavailable',

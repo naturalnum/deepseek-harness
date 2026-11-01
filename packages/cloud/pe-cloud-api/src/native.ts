@@ -6,6 +6,7 @@ import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
   SessionUpdateQueueRequest, SessionUpdateQueueValue,
+  SessionRenameRequest, SessionRenameValue,
   SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
   SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary,
   SkillListRequest, SkillListValue, ModelCatalog, ModelSelection, SessionSelectModelRequest, SessionSelectModelValue,
@@ -138,7 +139,7 @@ class NativeSessionAdmission {
     }
   }
 
-  async session(endpoint: 'session/prompt' | 'session/fork' | 'session/updateQueue', sessionId: SessionId): Promise<void> {
+  async session(endpoint: 'session/prompt' | 'session/fork' | 'session/updateQueue' | 'session/rename', sessionId: SessionId): Promise<void> {
     this.admit(endpoint, 'account-session')
     await this.guards.assertSessionProject(sessionId)
   }
@@ -423,6 +424,15 @@ class AccountSessionController extends SessionController {
     return super.updateQueue(request)
   }
 
+  override async rename(request: SessionRenameRequest): Promise<SessionRenameValue> {
+    await this.admission.session('session/rename', request.sessionId)
+    this.admission.admit('session/rename', 'account-session')
+    const value = await super.rename(request)
+    await this.admission.session('session/rename', request.sessionId)
+    this.admission.admit('session/rename', 'account-session')
+    return value
+  }
+
   override cancel(request: SessionCancelRequest): SessionCancelValue {
     this.admission.cancel(request.sessionId)
     return super.cancel(request)
@@ -563,7 +573,7 @@ export function inspectNativeController(
   const stream: ExposureInventory['streamEndpoints'][number][] = []
   for (const marker of methods) {
     const method = marker.method
-    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow', 'updateQueue'].includes(method)
+    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow', 'updateQueue', 'rename'].includes(method)
       && !(actual.hasFirstScreenReader() && ['list', 'control'].includes(method))
       && !(method === 'modelCatalog' && actual.hasModelSelection('session/modelCatalog'))
       && !(method === 'selectModel' && actual.hasModelSelection('session/selectModel'))) continue

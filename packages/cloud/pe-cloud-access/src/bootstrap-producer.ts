@@ -28,12 +28,16 @@ const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'g
   'officeToPdf/render': { handlerId: 'native:officeToPdf', guard: 'account-session' },
   'officeToPdf/generation': { handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
   'session/create': { handlerId: 'native:sessionController', guard: 'account-project' },
-  ...Object.fromEntries(['prompt', 'fork', 'cancel', 'page', 'list', 'selectModel', 'updateQueue'].map(method => [
+  ...Object.fromEntries(['prompt', 'fork', 'cancel', 'page', 'list', 'selectModel', 'updateQueue', 'rename'].map(method => [
     'session/' + method, { handlerId: 'native:sessionController', guard: 'account-session' as const },
   ])),
   'session/modelCatalog': { handlerId: 'native:sessionController', guard: 'authenticated-account' },
   'workspace/initializeDefault': { handlerId: 'native:workspaceController', guard: 'account-project' },
   'workspace/create': { handlerId: 'native:workspaceController', guard: 'account-project' },
+  'workspace/rename': { handlerId: 'native:workspaceController', guard: 'account-project' },
+  ...Object.fromEntries(['pinSession', 'unpinSession', 'archiveSession', 'unarchiveSession'].map(method => [
+    'workspace/' + method, { handlerId: 'native:workspaceController', guard: 'account-session' as const },
+  ])),
   'settings/describe': { handlerId: 'native:settingsController', guard: 'authenticated-account' },
   'cloudProjects/create': { handlerId: 'native:cloudProjects', guard: 'authenticated-account' },
   ...Object.fromEntries(fileRpcEndpoints.map(endpoint => [endpoint, { handlerId: 'native:workspaceFiles', guard: 'account-session' as const }])),

@@ -27,6 +27,7 @@ export class CloudWebEntry {
   private readonly root: HTMLElement
   private readonly input: unknown
   private readonly doc: Document
+  private readonly reload: () => void
   private readonly shell: HTMLDivElement
   private readonly brand: HTMLElement
   private readonly chrome: HTMLElement
@@ -52,6 +53,7 @@ export class CloudWebEntry {
   private modules: ClientModuleLoader | undefined
   private cloud: CloudModule | undefined
   private preparation: CloudPagePreparation | undefined
+  private loading: AppWebEntry | undefined
   private importWork: Promise<CloudModule> | undefined
   private authWork: Promise<AuthOutcome> | undefined
   private authAbort: AbortController | undefined
@@ -62,6 +64,8 @@ export class CloudWebEntry {
   private disposal: Promise<void> | undefined
   private stopping = false
   private disposed = false
+  private pageHidden = false
+  private reloadAfterSignIn = false
   private phase: Phase = 'checking'
   private issue: 'invalidCredentials' | 'requestTooLarge' | 'previewClosed' | 'previewDenied' | undefined
   private nativeLanguage = false
@@ -70,11 +74,13 @@ export class CloudWebEntry {
    * Draw the unauthenticated entry without starting native plugins or reading storage.
    * @param root - original native Web mount point.
    * @param input - the optional Host's public deployment injection.
+   * @param reload - document reload carrier used after explicit recovery or sign-in.
    */
-  constructor(root: HTMLElement, input: unknown) {
+  constructor(root: HTMLElement, input: unknown, reload: () => void = () => { root.ownerDocument.location.reload() }) {
     this.root = root
     this.input = input
     this.doc = root.ownerDocument
+    this.reload = reload
     const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
       const node = this.doc.createElement(tag)
       if (className !== undefined) node.className = className
@@ -130,6 +136,7 @@ export class CloudWebEntry {
       this.render()
     })
     this.localeObserver.observe(this.doc.documentElement, { attributes: true, attributeFilter: ['lang'] })
+    this.loading = new AppWebEntry(root)
     this.render()
   }
 
@@ -162,6 +169,8 @@ export class CloudWebEntry {
       this.cloud = await this.importWork
       if (!this.isStopping()) await this.prepareNative()
     } catch (_error: unknown) {
+      await this.loading?.dispose()
+      this.loading = undefined
       if (!this.isStopping()) this.setPhase('unavailable')
     }
   }
@@ -178,6 +187,8 @@ export class CloudWebEntry {
     const manifest = this.manifest, cloud = this.cloud, modules = this.modules
     if (manifest === undefined || cloud === undefined || modules === undefined || this.isStopping()) return
     this.setPhase('checking')
+    const loading = this.loading ?? new AppWebEntry(this.root)
+    this.loading = loading
     let page: PreparedCloudPage | undefined
     let preparation: CloudPagePreparation | undefined
     try {
@@ -203,16 +214,20 @@ export class CloudWebEntry {
       this.preparation = preparation
       page = await preparation.ready
       await preparation.settled
+      await loading.dispose()
+      if (this.loading === loading) this.loading = undefined
       if (this.isStopping()) return
       this.setPhase('starting')
       const beforeDispose = page.nativeOptions.beforeDispose
+      const activePage = page
       const entry = new AppWebEntry(this.root, {
         ...page.nativeOptions, modules,
         beforeDispose: () => {
+          const reason = this.phase === 'running' ? activePage.lifetime.transport.getSnapshot().reason : undefined
           try { beforeDispose() }
           finally {
             this.stopping = true
-            queueMicrotask(() => { this.observeNativeStop() })
+            queueMicrotask(() => { this.observeNativeStop(reason) })
           }
         },
       })
@@ -226,6 +241,9 @@ export class CloudWebEntry {
       if (page === undefined && error instanceof cloud.ClientFailure && error.code === 'unauthenticated') {
         this.setPhase('login')
       } else this.setPhase('unavailable')
+    } finally {
+      await loading.dispose()
+      if (this.loading === loading) this.loading = undefined
     }
   }
 
@@ -243,7 +261,10 @@ export class CloudWebEntry {
     try {
       const result = await this.authenticate('sign-in/email', body)
       if (this.stopping || this.disposed) return
-      if (result === 'accepted') await this.prepareNative()
+      if (result === 'accepted') {
+        if (this.reloadAfterSignIn) this.reload()
+        else await this.prepareNative()
+      }
       else if (result === 'login-active') this.setPhase('login-active')
       else if (result === 'denied' || result === 'request-too-large') {
         this.issue = result === 'denied' ? 'invalidCredentials' : 'requestTooLarge'
@@ -343,7 +364,7 @@ export class CloudWebEntry {
     this.lifetime.abort()
     this.authAbort?.abort()
     const stopping = this.preparation?.dispose()
-    const actual = Promise.allSettled([stopping, this.importWork, this.authWork]).then((results) => {
+    const actual = Promise.allSettled([stopping, this.loading?.dispose(), this.importWork, this.authWork]).then((results) => {
       const failures: unknown[] = []
       for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
       if (failures.length > 0) throw new AggregateError(failures, 'Cloud Web cleanup was not confirmed')
@@ -352,11 +373,17 @@ export class CloudWebEntry {
     return this.closing
   }
 
-  private observeNativeStop(): void {
+  private observeNativeStop(reason: ReturnType<PreparedCloudPage['lifetime']['transport']['getSnapshot']>['reason']): void {
     if (this.disposed || this.logoutWork !== undefined) return
     this.setPhase('stopping')
     void this.stopLocal().then(() => {
-      if (!this.disposed && this.logoutWork === undefined) this.setPhase('stopped')
+      if (this.disposed || this.logoutWork !== undefined || this.pageHidden) return
+      if (reason === 'unauthenticated') {
+        this.stopping = false
+        this.reloadAfterSignIn = true
+        this.issue = undefined
+        this.setPhase('login')
+      } else this.setPhase('stopped')
     }, (_error: unknown) => { this.setPhase('unconfirmed') })
   }
 
@@ -380,12 +407,13 @@ export class CloudWebEntry {
   private readonly onCheck = (): void => {
     if (this.authPending || this.phase === 'unconfirmed') return
     void this.stopLocal().then(() => {
-      if (!this.isDisposed()) this.doc.location.reload()
+      if (!this.isDisposed()) this.reload()
     }, (_error: unknown) => { this.setPhase('unconfirmed') })
   }
 
   private readonly onPageHide = (event: PageTransitionEvent): void => {
     if (!event.persisted) return
+    this.pageHidden = true
     this.setPhase('stopping')
     void this.stopLocal().then(() => { this.setPhase('stopped') }, (_error: unknown) => { this.setPhase('unconfirmed') })
   }
@@ -435,7 +463,7 @@ export class CloudWebEntry {
     const previewIssue = this.issue === 'previewClosed' || this.issue === 'previewDenied' ? this.issue : undefined
     this.previewNotice.hidden = previewIssue === undefined
     this.previewNotice.textContent = previewIssue === undefined ? '' : copy[previewIssue]
-    this.check.textContent = copy.check
+    this.check.textContent = this.phase === 'stopped' || this.phase === 'unavailable' ? copy.reconnect : copy.check
     this.emailField.hidden = !login
     this.passwordField.hidden = !login
     this.submit.hidden = !login
@@ -450,8 +478,8 @@ export class CloudWebEntry {
     this.description.hidden = !login
     this.check.hidden = login || pending || this.phase === 'running'
     this.check.disabled = this.authPending || this.phase === 'unconfirmed'
-    this.content.hidden = this.phase === 'running' || this.phase === 'starting'
-    this.root.hidden = this.phase !== 'running' && this.phase !== 'starting'
+    this.content.hidden = this.phase === 'running' || this.phase === 'starting' || this.phase === 'checking'
+    this.root.hidden = this.phase !== 'running' && this.phase !== 'starting' && this.phase !== 'checking'
     const messages: Partial<Record<Phase, string>> = {
       unavailable: copy.unavailable, stopped: copy.stopped, 'login-active': copy.loginActive, 'auth-unknown': copy.authUnknown,
       'logout-unknown': copy.logoutUnknown, unconfirmed: copy.unconfirmed,

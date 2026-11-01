@@ -241,6 +241,10 @@ it.each(['settings/mutate', 'settings/update'])('Root refuses %s before bootstra
 
 const nativeControlRpc: readonly EndpointExposure[] = [
   { endpoint: 'session/updateQueue', handlerId: 'native:sessionController', guard: 'account-session' },
+  { endpoint: 'session/rename', handlerId: 'native:sessionController', guard: 'account-session' },
+  ...['pinSession', 'unpinSession', 'archiveSession', 'unarchiveSession'].map(method => ({
+    endpoint: 'workspace/' + method, handlerId: 'native:workspaceController', guard: 'account-session' as const,
+  })),
   { endpoint: 'session/modelCatalog', handlerId: 'native:sessionController', guard: 'authenticated-account' },
   { endpoint: 'session/selectModel', handlerId: 'native:sessionController', guard: 'account-session' },
   ...['list', 'execute'].map(method => ({ endpoint: 'commands/' + method, handlerId: 'native:commands', guard: 'account-session' as const })),
@@ -349,6 +353,11 @@ it.each(scheduleRpc.flatMap(row => [
 })
 
 it.each([
+  { endpoint: 'session/rename', handlerId: 'native:sessionController', guard: 'authenticated-account' },
+  { endpoint: 'workspace/pinSession', handlerId: 'foreign:workspaceController', guard: 'account-session' },
+  { endpoint: 'workspace/archiveSession', handlerId: 'native:workspaceController', guard: 'account-project' },
+  { endpoint: 'workspace/rename', handlerId: 'foreign:workspaceController', guard: 'account-project' },
+  { endpoint: 'workspace/rename', handlerId: 'native:workspaceController', guard: 'authenticated-account' },
   { endpoint: 'session/updateQueue', handlerId: 'native:sessionController', guard: 'authenticated-account' },
   { endpoint: 'session/updateQueue', handlerId: 'foreign:sessionController', guard: 'account-session' },
   { endpoint: 'session/modelCatalog', handlerId: 'native:sessionController', guard: 'account-session' },
@@ -367,6 +376,13 @@ it.each([
   const f = await fixture([row])
   await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
   expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it('admits only the account-project native Workspace rename declaration', async () => {
+  const row: EndpointExposure = { endpoint: 'workspace/rename', handlerId: 'native:workspaceController', guard: 'account-project' }
+  const f = await fixture([row])
+  await f.produce()
+  expect(f.auditedRpc).toHaveBeenCalledWith('workspace/rename')
 })
 
 it.each([

@@ -18,7 +18,7 @@ import { createWorkspaceShortcutControls } from '../src/client/shortcuts.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -2416,6 +2416,59 @@ describe('WorkspaceBrowser', () => {
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('dialog', { name: '删除工作区' })).toBeNull()
+  })
+
+  it('disables Workspace deletion with a localized reason while leaving rename available', () => {
+    const deleteWorkspace = vi.fn(async () => {})
+    mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])),
+      workspaceDeleteDisabledReason: 'unavailable', deleteWorkspace,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
+    const disabled = screen.getByRole<HTMLButtonElement>('menuitem', { name: '删除工作区 — 此部署暂不支持删除工作区' })
+    expect(disabled.disabled).toBe(true)
+    disabled.focus()
+    expect(document.activeElement).not.toBe(disabled)
+    fireEvent.click(disabled)
+    fireEvent.keyDown(disabled, { key: 'Enter' })
+    expect(deleteWorkspace).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: '删除工作区' })).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    expect(screen.getByRole('dialog', { name: '重命名工作区' })).toBeTruthy()
+  })
+
+  it('blocks an already open delete confirmation if the deployment withdraws deletion', () => {
+    const deleteWorkspace = vi.fn(async () => {})
+    const browser = mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])), deleteWorkspace,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除工作区' }))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '删除工作区' }).disabled).toBe(false)
+    rerender(browser, { workspaceDeleteDisabledReason: 'unavailable' })
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '删除工作区' })
+    expect(confirm.disabled).toBe(true)
+    expect(screen.getByRole('status').textContent).toBe('此部署暂不支持删除工作区')
+    fireEvent.click(confirm)
+    fireEvent.keyDown(confirm, { key: 'Enter' })
+    expect(deleteWorkspace).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog', { name: '删除工作区' })).toBeNull()
+  })
+
+  it('uses the active English locale for the disabled Workspace action', () => {
+    const deleteWorkspace = vi.fn(async () => {})
+    mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])),
+      workspaceDeleteDisabledReason: 'unavailable', deleteWorkspace, t: makeTranslate(en, commonZh),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Workspace actions for Alpha' }))
+    const disabled = screen.getByRole<HTMLButtonElement>('menuitem', {
+      name: 'Delete workspace — Workspace deletion is unavailable in this deployment',
+    })
+    expect(disabled.disabled).toBe(true)
+    fireEvent.click(disabled)
+    expect(deleteWorkspace).not.toHaveBeenCalled()
   })
 
   it('Cancel, Escape, and Close dismiss deletion without calling the action', () => {

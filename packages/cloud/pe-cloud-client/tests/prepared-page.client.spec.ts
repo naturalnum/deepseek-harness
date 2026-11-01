@@ -82,7 +82,7 @@ function fixture(response = bootstrap()) {
 }
 
 /** The real Loader owns both modules; only immutable module arrival and a finite native consumer are fixtures. */
-function native(page: PreparedCloudPage, options: { bind?: boolean; config?: cloud.Config } = {}) {
+function native(page: PreparedCloudPage, options: { bind?: boolean; config?: cloud.Config; slotsFirst?: boolean } = {}) {
   const ctx = new Context(), events: string[] = []
   const consumer = {
     inject: ['connection'],
@@ -100,6 +100,7 @@ function native(page: PreparedCloudPage, options: { bind?: boolean; config?: clo
     async run() {
       ctx.provide('clientPersistence', page.nativeOptions.persistence)
       if (options.bind !== false) page.nativeOptions.prepareContext(ctx)
+      if (options.slotsFirst === true) await ctx.plugin(SlotRegistry).await()
       await ctx.plugin(Loader)
       Object.assign(ctx.loader.builtins, { cloud, 'native-consumer': consumer })
       // A dependent row starts first; the service dependency owns activation order.
@@ -136,6 +137,56 @@ it('uses canonical bootstrap then the real Cloud Loader entry before native cach
   expect(graph.ctx.get('connection')).toBeDefined()
   await preparation.dispose()
   expect(f.values.size).toBe(0)
+})
+
+it('retains the Workspace delete restriction through slot replacement and retracts it when the page root is disposed', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page)
+  await page.start(graph.entry)
+  const first = graph.ctx.plugin(SlotRegistry)
+  await first.await()
+  const original = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
+  expect(original.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  await first.dispose()
+  const second = graph.ctx.plugin(SlotRegistry)
+  await second.await()
+  const replacement = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
+  expect(replacement.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  await preparation.dispose()
+  expect(original.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
+  expect(replacement.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
+})
+
+it('installs the Workspace delete restriction when native slots started before the Cloud entry', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready, graph = native(page, { slotsFirst: true })
+  await page.start(graph.entry)
+  const source = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  await preparation.dispose()
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
+})
+
+it('keeps deletion disabled after Cloud entry withdrawal until the native page root actually closes', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const release = Promise.withResolvers<undefined>(), disposing = Promise.withResolvers<undefined>()
+  onTestFinished(async () => { release.resolve(undefined); await preparation.dispose() })
+  const page = await preparation.ready, graph = native(page), originalDispose = graph.entry.dispose.bind(graph.entry)
+  graph.entry.dispose = async () => { disposing.resolve(undefined); await release.promise; await originalDispose() }
+  await page.start(graph.entry)
+  await graph.ctx.plugin(SlotRegistry).await()
+  const source = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  const cloudEntry = [...graph.ctx.loader.entries()].find(entry => entry.options.name === 'cordis:cloud')
+  if (cloudEntry?.fiber === undefined) throw new Error('Original Cloud Loader entry absent')
+  await cloudEntry.fiber.dispose()
+  await disposing.promise
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  release.resolve(undefined)
+  await preparation.dispose()
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
 })
 
 it('installs the bootstrap account only in the native launcher, captures sign-out once and revokes old callbacks', async () => {
@@ -402,6 +453,20 @@ function actualNative(
   })
   return { entry, root: () => root, mounted: () => mounted, cleanup }
 }
+
+it('installs and withdraws the Workspace restriction on the actual AppWebEntry root', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const page = await preparation.ready, app = actualNative(page)
+  onTestFinished(async () => { await Promise.allSettled([preparation.dispose(), app.entry.dispose()]) })
+  await page.start(app.entry)
+  const root = app.root()
+  if (root === undefined) throw new Error('Original AppWebEntry root absent')
+  await root.plugin(SlotRegistry).await()
+  const source = Reflect.get(root.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  await preparation.dispose()
+  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
+})
 
 it.each(['page', 'native', 'cloud-entry'] as const)('joins actual AppWebEntry/Loader cleanup without a self-disposal cycle (%s first)', async (firstStop) => {
   const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)

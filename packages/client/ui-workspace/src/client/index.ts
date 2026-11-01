@@ -68,12 +68,17 @@ export type {
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
 
+/** Deployment-specific reason that Workspace removal is not available. */
+export type WorkspaceDeleteDisabledReason = 'unavailable'
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
     /** Selector hook over the pure Workspace Controller snapshot. */
     useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>
     /** Whether the current Peer may call `action` on one Workspace resource. */
     useWorkspaceAccess: (workspaceId: WorkspaceId, action: RemoteEndpoint) => boolean
+    /** An optional deployment restriction; absence preserves native Workspace deletion. */
+    workspaceDeleteDisabledReason?: WorkspaceDeleteDisabledReason | undefined
   }
 
   interface LocaleNamespaceMap {
