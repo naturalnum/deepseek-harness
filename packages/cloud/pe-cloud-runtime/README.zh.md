@@ -185,6 +185,8 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。 固定私有 `ACCOUNT_NATIVE_ENTRIES.workspaceFiles` builtin 只在配方显式安装该入口时激活。它保留原生 WorkspaceFiles 的 Config 和全部 inject，额外要求 `peCloudApi`，并经原 API owner 构造不变的原生服务。配方须安装真实 sandbox-policy provider，显式选择部署模式和 fallback root；该 fallback 不授予项目权限。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。受限 files lane 构造原始 `CloudAccountFiles`，其 `/account` 入口持有原生 Registry/default/FS 安装。API 业务准入后，目录准备从原始已登记 Workspace 派生 `projectFor(workspace)`，并在 await 后复核 binding、owner 和 Workspace；新派生能力 wrapper 不要求对象身份相同。指令准备先选择 Agent 的 Workspace，再保留完整 snapshot 预算，并在 reservation 内使用同步共享检查。原生依赖可能在 files 初始化期间激活，必需入口检查与业务准入仍阻止不完整发布。缺 files 或共享 guard 时保持关闭。
 
+对三个已准入的 WorkspaceFiles HTTP 读取，原生集成可复用原请求 carrier 和持有的 ready `AccountUse`，执行局部 Root、代际和 binding 检查。显式 Root 撤销或替换会使下一次检查拒绝。静默的 Loader plan 原地变更在读取内部可能暂未发现，但响应头发送前的完整 Root plan 检查会拒绝。其他操作和没有匹配 carrier 的请求保留完整准入。该机制不新增缓存、服务或生命周期 owner；参见 [Access](../pe-cloud-access/README.zh.md#understand-the-implementation)。
+
 原认证拥有者提供 Root Fetch 检查时，私有账户准备过程捕获该拥有者，只向 API 传入其只读注册回调。更换或撤回会拒绝下一次检查；账户图中不安装 Root 服务或 Context，此读取也不创建请求或分配。
 
 API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/module/ref bindings 在 boot 前屏蔽所有选中引用，将同一选择用于原凭据保存白名单，并捕获原认证 owner 的 `withModelKeyPeerUse` 回调。私有 `ACCOUNT_NATIVE_ENTRIES.modelKey` builtin 要求原生 Typert registry、credentials、Settings 和 LLM；配方须包含该入口及原生成 API Typert 贡献。只有 bootstrap 可在不发现凭据的情况下核验实际配置的批准 provider/ref/model，以便首次设置 Key；原生模型解析及分派仍检查凭据。保存结果未解决时同步关闭原槽并委派给 `stopNative`；drain 容量满仍保持准入关闭。原失败记录、图、保存 hook 及容量继续保留，不产生 clean 收据或释放 owner。

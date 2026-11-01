@@ -368,7 +368,7 @@ export class LinuxFilesPool implements DrainParticipant {
             assertCurrent: () => { this.requireStorageOwner().assertRootCurrent() } }, client, signal)
         }, true)
       },
-    })
+    }, config.skillProjection?.maxProjects)
   }
 
   /** Prebuild exactly the configured number of slots; any handshake failure stops the entire startup. */
@@ -413,13 +413,13 @@ export class LinuxFilesPool implements DrainParticipant {
    * @param assertCurrent Trusted factory's owner/admission check, invoked for every operation.
    * @param privateParent Optional verified private-files parent for instruction reads and environment banks;
    * omission leaves those operations unavailable.
-   * @param revalidation Optional single-record authority minted only by the original verified Root lease.
+   * @param revalidation Optional bounded record authorities minted only by the original verified Root lease.
    * @returns A fixed-root internal read port with no shared-pool close capability.
    */
   bind(
     binding: AccountBinding, root: FdRootIdentity, assertCurrent: () => void,
     privateParent?: FdRootIdentity & { readonly rootMountId: string },
-    revalidation?: SkillRecordRevalidation,
+    revalidation?: readonly SkillRecordRevalidation[],
   ): PoolReadPort {
     this.assertHealthy()
     if (root.rootPath.length > this.config.maxPathBytes || !isAbsolute(root.rootPath)

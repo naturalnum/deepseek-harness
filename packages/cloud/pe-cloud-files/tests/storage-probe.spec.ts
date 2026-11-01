@@ -4,7 +4,10 @@ import type { AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { accountEnvironmentBank, parseStaticStoragePlan, parseStorageProbeFrame, staticStorageReservation } from '../src/storage-probe.ts'
 import { RootStorageOwner, validateStorageView, type StaticAccountStorageLease, type StaticStorageDriver } from '../src/storage-owner.ts'
 import { storageRequest, createStorageWorker } from '../src/storage-worker.ts'
-import { skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
+import { skillRestartProof, skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
+import { createSkillProjectWork, type SkillProjectWork } from '../src/skill-project-work.ts'
+import type { FdWorkerClient } from '../src/worker-client.ts'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { StaticStorageConfig, StorageProbeFacts } from '../src/storage-types.ts'
 import type { PoolReadPort } from '../src/worker-pool.ts'
 
@@ -79,6 +82,13 @@ describe('static protected record parsing without storage authority', () => {
       { probeTimeoutMs: 2147483648 }, { planSha256: 'invalid' }, { probeHelperPath: '/tmp/../probe.node' }]) {
       expect(() => staticStorageReservation({ ...config, ...changed }, 1024, 2)).toThrow()
     }
+  })
+  it('reserves the original single bounded proof input once regardless of its record count', () => {
+    const selected = { ...config, skillRevalidation: { proofPath: '/deployment/proof.json', proofSha256: 'a'.repeat(64) } }
+    const required = 8 * selected.maxPlanBytes + 64 * selected.maxMountInfoBytes + 2 * selected.maxProbeAssetBytes * 2
+      + 8 * 1024 + 16384 + 16 * selected.maxPlanBytes
+    expect(staticStorageReservation({ ...selected, rootProbeReservationBytes: required }, 1024, 2)).toBe(required)
+    expect(() => staticStorageReservation({ ...selected, rootProbeReservationBytes: required - 1 }, 1024, 2)).toThrow()
   })
   it('parses finite v2 banks while rejecting missing, empty, duplicated and path-selected slots', () => {
     const parsed = parseStaticStoragePlan(encode(rawV2()), 1024)
@@ -170,7 +180,8 @@ describe('two retained static preparations with serial verification', () => {
     vi.unstubAllGlobals()
   })
 
-  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> = raw(), withSkillProof = false) {
+  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> = raw(), withSkillProof = false,
+    collection = false, normalRestart = false, recordSha256?: string) {
     record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = record.version === 2 ? '131072' : '65536'
     for (const row of record.accounts) {
       row.private.rootPath = `${row.accountRoot}/private`
@@ -203,7 +214,11 @@ describe('two retained static preparations with serial verification', () => {
     const mounts = ['1 0 8:0 / / ro - ext4 /dev/test-root ro', ...domains.map((domain, index) =>
       `${domain.rootMountId} 1 8:${index + 1} / ${domain.rootPath} rw - ext4 /dev/test-${index} rw`)].join('\n')
     const planSha256 = createHash('sha256').update(encoded).digest('hex')
-    const proofBytes = encode(skillRevalidationProof(plan.accounts[0]))
+    const makeProof = normalRestart ? skillRestartProof : skillRevalidationProof
+    const firstProof = { ...makeProof(plan.accounts[0]), ...recordSha256 === undefined ? {} : { recordSha256 } }
+    const proofBytes = encode(collection ? { schema: 2, records: [firstProof,
+      { ...firstProof, workspaceId: 'workspace-2', recordSha256: 'c'.repeat(64), recordRevision: '1:2:3:4:7' },
+      { ...makeProof(plan.accounts[1]), workspaceId: 'other-account-workspace' }] } : firstProof)
     const driver = {
       skillProof: vi.fn(async () => ({ bytes: proofBytes, process: { pid: process.pid, startTicks: '123' } })),
       record: vi.fn(async () => encoded), view: vi.fn(async () => view(mounts)),
@@ -216,7 +231,7 @@ describe('two retained static preparations with serial verification', () => {
       joinEpoch: vi.fn(async () => {}),
     } satisfies StaticStorageDriver
     const owner = new RootStorageOwner({ ...config, planSha256, ...withSkillProof ? { skillRevalidation: { proofPath: '/deployment/cold-skill.json',
-      proofSha256: createHash('sha256').update(proofBytes).digest('hex') } } : {} }, 1024, driver)
+      proofSha256: createHash('sha256').update(proofBytes).digest('hex') } } : {} }, 1024, driver, collection ? 2 : 1)
     owners.push(owner)
     await owner.initializeStatic()
     const probePaths = driver.probe.mock.calls.map(call => call[0])
@@ -225,7 +240,7 @@ describe('two retained static preparations with serial verification', () => {
     const inputs = plan.accounts.map((row, index): AccountMountInput => {
       const root = row.private.rootPath
       return Object.freeze({ binding: Object.freeze({ accountId: row.accountId,
-        epoch: (withSkillProof && index === 0 ? '2' : '1') as AccountMountInput['binding']['epoch'], recipeVersion: plan.recipeVersion, lifetime: controllers[index]!.signal }),
+        epoch: (withSkillProof && (index === 0 || collection) ? '2' : '1') as AccountMountInput['binding']['epoch'], recipeVersion: plan.recipeVersion, lifetime: controllers[index]!.signal }),
       instanceId: 'fixture-instance' as AccountMountInput['instanceId'],
       layout: Object.freeze({ storageKey: row.storageKey, accountRoot: row.accountRoot, privateRoot: root,
         profileRoot: `${root}/profile`, patchPath: `${root}/profile/cordis.patch.yml`, credentialsRoot: `${root}/credentials`,
@@ -283,7 +298,7 @@ describe('two retained static preparations with serial verification', () => {
     f.driver.bind.mockReturnValue(port)
     const resolveProject = async () => unused(), first = await f.prepare(original)
     first.bindInstalled(original.binding, () => {}, () => {}, resolveProject)
-    const qualification = f.driver.bind.mock.calls[0]?.[4]
+    const qualification = f.driver.bind.mock.calls[0]?.[4]?.[0]
     if (qualification === undefined) throw new Error('Expected the original Root qualification')
     expect(qualification.pending).toBe(true)
     expect(() => { qualification.assertRecord('1:2:3:4:6') }).toThrow('static storage lease')
@@ -299,10 +314,124 @@ describe('two retained static preparations with serial verification', () => {
       epoch: '3' as AccountMountInput['binding']['epoch'], lifetime: new AbortController().signal } }
     const second = await f.prepare(next)
     second.bindInstalled(next.binding, () => {}, () => {}, resolveProject)
-    const later = f.driver.bind.mock.calls[1]?.[4]
+    const later = f.driver.bind.mock.calls[1]?.[4]?.[0]
     expect(later?.pending).toBe(false)
     expect(() => { later?.assertRecord('1:2:3:4:5') }).toThrow('static storage lease')
     expect(() => { first.assertCurrent() }).toThrow('static storage lease')
+  })
+
+  it.each([false, true])('keeps Workspace qualifications independent for normal restart %s', async (normalRestart) => {
+    const f = await fixture(raw(), true, true, normalRestart)
+    const unused = (): never => { throw new Error('No native operation belongs to this owner-only fixture') }
+    const port: PoolReadPort = {
+      get reader() { return unused() }, get directory() { return unused() },
+      skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
+      prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
+      projectFor: unused, withInstructionReaders: unused, derivePreparedLeaf: unused, createWorkspaceRegistry: unused,
+      stat: unused, streamText: unused, readBytes: unused,
+    }
+    f.driver.bind.mockReturnValue(port)
+    const resolveProject = async () => unused(), first = await f.prepare(f.inputs[0]!)
+    first.bindInstalled(f.inputs[0]!.binding, () => {}, () => {}, resolveProject)
+    const [a, b] = f.driver.bind.mock.calls[0]?.[4] ?? []
+    if (a === undefined || b === undefined) throw new Error('Expected two account qualifications')
+    expect([a.workspaceId, b.workspaceId]).toEqual(['workspace', 'workspace-2'])
+    expect(() => { a.assertRecord('1:2:3:4:7') }).toThrow()
+    expect(a.pending).toBe(true); expect(b.pending).toBe(true)
+    b.assertRecord('1:2:3:4:7'); b.confirmRecord('1:2:3:4:7', '1:2:3:4:8')
+    expect(a.pending).toBe(true); expect(b.pending).toBe(false)
+    expect(() => { b.confirmRecord('1:2:3:4:7', '1:2:3:4:8') }).toThrow()
+    a.assertRecord('1:2:3:4:5'); a.confirmRecord('1:2:3:4:5', '1:2:3:4:6')
+    const other = await f.prepare(f.inputs[1]!)
+    other.bindInstalled(f.inputs[1]!.binding, () => {}, () => {}, resolveProject)
+    const supplied = f.driver.bind.mock.calls[1]?.[4]
+    expect(supplied?.map(entry => entry.workspaceId)).toEqual(['other-account-workspace'])
+    expect(supplied?.[0]?.pending).toBe(true)
+    await first.closeAfterActualDrain()
+    const next = { ...f.inputs[0]!, binding: { ...f.inputs[0]!.binding,
+      epoch: '3' as AccountMountInput['binding']['epoch'], lifetime: new AbortController().signal } }
+    const later = await f.prepare(next)
+    later.bindInstalled(next.binding, () => {}, () => {}, resolveProject)
+    expect(f.driver.bind.mock.calls[2]?.[4]?.map(entry => entry.pending)).toEqual([false, false])
+  })
+
+  it('reloads old proof in a fresh Root without forcing an identical record with a newer native revision', async () => {
+    // The Root owners and qualification closures are real; the OS probe and FD worker facts are controlled fixtures.
+    const accountRoot = raw().accounts[0]!.accountRoot
+    const root = { rootPath: `${accountRoot}/projects/project`, rootDevice: '4', rootInode: '15', rootMountId: '14' }
+    const directory = (inode: string) => ({ device: '4', inode, mountId: '14', uid: 1000, gid: 1000, mode: 0o40700 })
+    const context = { bootId: '11111111-1111-4111-8111-111111111111', mountNamespace: 'mnt:[123]' }
+    let currentContext = context
+    const record = { schema: 1, accountId: 'account-1', workspaceId: 'workspace', project: root, sourceContext: context,
+      metadata: directory('19'), skills: directory('55'), state: 'complete', pending: null, copies: [] }
+    let bytes = encode(record), revision = '1:2:3:4:5'
+    const original = bytes.slice(), hash = createHash('sha256').update(bytes).digest('hex')
+    const name = `project-${createHash('sha256').update('workspace').digest('hex')}.json`
+    const writes = vi.fn(async (_root: unknown, _name: string, text: string) => {
+      bytes = new TextEncoder().encode(text); const before = revision; revision = '1:2:3:4:6'
+      return { operation: 'update', version: revision, before, after: revision }
+    })
+    const client = {
+      skillSourceContext: async () => currentContext,
+      lstat: async (_root: unknown, path: string) => path === name
+        ? { type: 'file', identity: '3:99', version: revision, size: bytes.byteLength }
+        : { type: 'directory', identity: '4:55', version: 'directory' },
+      skillDirectory: async (_root: unknown, _uid: number, _gid: number, purpose: string) => ({ created: false,
+        directory: purpose === 'parent-verify' ? directory('55') : { ...directory('99'), device: '3', mountId: '13' } }),
+      list: async (selected: { rootPath: string }) => selected.rootPath.endsWith('skill-working-copies')
+        ? [{ name, type: 'file', identity: '3:99', version: revision, size: bytes.byteLength }] : [],
+      read: async () => bytes.slice(), writeText: writes,
+    } as unknown as FdWorkerClient
+    const workspace = { id: 'workspace', path: root.rootPath } as Workspace
+    const unused = (): never => { throw new Error('No other operation belongs to this fixture') }
+    const pool = { get reader() { return unused() }, get directory() { return unused() },
+      skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
+      prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
+      projectFor: unused, withInstructionReaders: unused, derivePreparedLeaf: unused, createWorkspaceRegistry: unused,
+      stat: unused, streamText: unused, readBytes: unused } satisfies PoolReadPort
+    const make = async (f: Awaited<ReturnType<typeof fixture>>) => {
+      f.driver.bind.mockReturnValue(pool)
+      const input = f.inputs[0]!, lease = await f.prepare(input)
+      lease.bindInstalled(input.binding, () => {}, () => {}, async () => unused())
+      const authority = f.driver.bind.mock.calls[0]?.[4]
+      if (authority?.[0] === undefined) throw new Error('Expected an actual Root qualification')
+      const work: SkillProjectWork = { binding: input.binding,
+        privateRoot: { rootPath: f.plan.accounts[0].private.rootPath, rootDevice: '3', rootInode: '2', rootMountId: '13' },
+        uid: 1000, gid: 1000, quota: f.plan.accounts[0].projects,
+        limits: { maxProjects: 2, maxCopiesPerProject: 2, maxCopiesPerOperation: 2, maxParentBorrows: 2,
+          maxOperationBorrows: 2, maxRecordBytes: 8192, maxMetadataBytes: 65536, maxMetadataInodes: 4, reservationBytes: 1048576 },
+        sourceLimits: { maxVersions: 4, maxFileBytes: 1024, maxTotalBytes: 8192, maxTotalInodes: 15, reservationBytes: 1048576 },
+        maxReadBytes: 8192, maxPathBytes: 1024, maxReplyBytes: 32768, revalidation: authority,
+        assertCurrent: () => { lease.assertCurrent() }, project: async () => root,
+        resolveSource: () => undefined, source: async () => unused(),
+        mutate: async (operation, control) => ({ value: await operation(client, control), release() {} }) }
+      return { lease, authority: authority[0], work, port: createSkillProjectWork(work) }
+    }
+    const firstRoot = await fixture(raw(), true, false, true, hash), first = await make(firstRoot)
+    const initial = await first.port.prepareProject(workspace, () => {}, new AbortController().signal)
+    expect(writes).toHaveBeenCalledTimes(1)
+    expect(bytes).toEqual(original)
+    expect(first.authority.pending).toBe(false)
+    initial.release(); await first.lease.closeAfterActualDrain()
+
+    const freshRoot = await fixture(raw(), true, false, true, hash)
+    expect(freshRoot.owner).not.toBe(firstRoot.owner)
+    expect(freshRoot.proofBytes).toEqual(firstRoot.proofBytes)
+    const fresh = await make(freshRoot)
+    expect(fresh.authority).not.toBe(first.authority)
+    expect(fresh.authority.pending).toBe(true)
+    expect(fresh.authority.recordRevision).toBe('1:2:3:4:5')
+    const normal = await fresh.port.prepareProject(workspace, () => {}, new AbortController().signal)
+    expect(writes).toHaveBeenCalledTimes(1)
+    expect(fresh.authority.pending).toBe(true)
+    normal.release()
+    const changedMount = createSkillProjectWork({ ...fresh.work, project: async () => ({ ...root, rootMountId: '15' }) })
+    await expect(changedMount.prepareProject(workspace, () => {}, new AbortController().signal)).rejects.toThrow('static storage lease')
+    currentContext = { ...context, mountNamespace: 'mnt:[124]' }
+    const changedScope = createSkillProjectWork(fresh.work)
+    await expect(changedScope.prepareProject(workspace, () => {}, new AbortController().signal)).rejects.toThrow('static storage lease')
+    expect(writes).toHaveBeenCalledTimes(1)
+    expect(fresh.authority.pending).toBe(true)
   })
 
   function pauseLastProbe(f: Awaited<ReturnType<typeof fixture>>) {

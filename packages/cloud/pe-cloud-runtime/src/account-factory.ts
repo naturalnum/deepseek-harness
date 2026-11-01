@@ -448,6 +448,13 @@ export class AccountFactory {
         if (released) throw new AccountRuntimeError('cloud/stale-generation', 'This account borrow has been released')
         this.assertBusinessCurrent(binding)
       },
+      assertRetained: () => {
+        if (released) throw new AccountRuntimeError('cloud/stale-generation', 'This account borrow has been released')
+        this.assertMountCurrent(binding)
+        if (this.slots.get(binding.accountId) !== slot || slot.state !== 'ready') {
+          throw new AccountRuntimeError('cloud/stale-generation', 'The borrowed account graph is no longer ready')
+        }
+      },
       release: () => {
         if (released) return
         released = true

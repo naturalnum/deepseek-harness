@@ -15,13 +15,14 @@ import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import { bindTypertRemote, Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { apply as connectionApply, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
+import { apply as connectionApply, inject as connectionInject, ResponseCleanupError } from '@deepseek-ai/dsh-client-connection'
 import type { AccountBinding, AccountId, AccountUse, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Auth } from 'better-auth'
 import pg from 'pg'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
-import { ConfigSaveCoordinator } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, ConfigSaveCoordinator } from '@deepseek-ai/dsh-pe-cloud-api'
+import { ExposurePolicy } from '../../pe-cloud-api/src/exposure.ts'
 import { bindNativeConfigSaveHook } from '../../pe-cloud-api/src/native-save-hook.ts'
 import z from '@deepseek-ai/schemastery'
 import { BetterAuthAccess } from '../src/auth.ts'
@@ -94,7 +95,7 @@ vi.mock('node:fs/promises', async (load) => {
   } }
 })
 
-declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service } }
+declare module '@deepseek-ai/cordis' { interface Context { configurationPeerOperation: Service; workspaceFiles: Service } }
 const requestId = brandString<Parameters<BetterAuthAccess['authenticate']>[1]>('configuration-peer-component')
 interface NativeWebSocket extends EventEmitter {
   readonly readyState: number
@@ -107,7 +108,7 @@ const NativeWebSocketClient = gatewayRequire('ws') as new (
   url: string, options: { headers: Record<string, string> }
 ) => NativeWebSocket
 
-async function fixture(peerCloseTimeoutMs = 1000) {
+async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'configuration-peer-'))), dir = join(home, 'profile')
   mkdirSync(dir); initProfile(dir, [])
   const anchor = join(home, 'package.json'); writeFileSync(anchor, '{"name":"configuration-peer-owned","dependencies":{}}')
@@ -128,6 +129,9 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   let borrowed = 0, released = 0, inUse = 0, calls = 0
   let consume: ConfigurationPeerOperation<unknown> = async () => { throw new Error('No admitted test operation') }
   let ordinary: () => Promise<unknown> = async () => { throw new Error('No ordinary test operation') }
+  let read: (peer: import('@deepseek-ai/dsh-typert-protocol').PeerScope, method: string) => Promise<unknown> = async () => 'unused'
+  let rootValid = true, fullChecks = 0, retainedChecks = 0, rootChecks = 0
+  let dispatchCheck: (dispatch: import('@deepseek-ai/dsh-client-connection').ConnectionDispatch) => void = () => {}
   onTestFinished(async () => {
     for (const finish of gates) await finish()
     try {
@@ -163,32 +167,61 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     @Remote
     ordinary(): Promise<unknown> { return ordinary() }
   }
+  class NativeRead extends Service {
+    readonly typertRemote = bindTypertRemote(this, 'workspaceFiles')
+    constructor(owner: Context) { super(owner, 'workspaceFiles') }
+    @Remote async read(): Promise<unknown> {
+      if (this.ctx.invocation === undefined) throw new Error('Gateway invocation absent')
+      return read(this.ctx.invocation.peer, 'read')
+    }
+    @Remote async stat(): Promise<unknown> {
+      if (this.ctx.invocation === undefined) throw new Error('Gateway invocation absent')
+      return read(this.ctx.invocation.peer, 'stat')
+    }
+    @Remote async write(): Promise<unknown> {
+      if (this.ctx.invocation === undefined) throw new Error('Gateway invocation absent')
+      return read(this.ctx.invocation.peer, 'write')
+    }
+  }
   class NativeEditor extends ConfigEditor {
     constructor(owner: Context) { super(owner); bindNativeConfigSaveHook(owner, saves, this) }
   }
   const configPath = join(dir, 'cordis.yml')
   writeFileSync(configPath, JSON.stringify([{ id: 'dependencies', name: 'cordis:dependencies' },
     { id: 'connection', name: 'cordis:connection' }, { id: 'operation', name: 'cordis:operation' },
+    ...testRead ? [{ id: 'file-read', name: 'cordis:file-read' }] : [],
     { id: 'editor', name: 'cordis:editor' }, { id: 'transport-probe', name: 'cordis:transport-probe', config: { value: 1 } }]))
   ctx = await boot('dsh', configPath, [], (owner) => {
     owner.provide('profileContext', profile); owner.provide('peAccount', binding)
     Object.assign(owner.loader.builtins, { dependencies: { async apply(scope: Context) {
       await scope.plugin(Typert); await scope.plugin(RemoteAccess); await scope.plugin(LocalCredentials, { path: join(home, 'credentials.json'), watch: false }); await scope.plugin(Gateway)
-    } }, connection: { apply: connectionApply, inject: [...connectionInject] }, operation: NativePeerOperation,
+    } }, connection: { apply: connectionApply, inject: [...connectionInject] }, operation: NativePeerOperation, 'file-read': NativeRead,
     editor: NativeEditor, 'transport-probe': { Config: z.object({ value: z.number().default(1).volatile() }), apply() {} } })
   })
   const native = ctx
+  const rootEntry = [...native.loader.entries()].find(entry => entry.options.id === 'transport-probe')
+  if (rootEntry === undefined) throw new Error('Fixture Loader entry missing')
+  const rootPlan = rootEntry.prepareConfigUpdate(rootEntry.options.config)
   const issueUse = (actual: AccountBinding): AccountUse => {
     if (actual !== binding) throw new Error('Fixture generation differs')
     borrowed++; inUse++
     let done = false
     return { binding, context: native, assertCurrent() {
       if (done) throw new Error('Actually released original fixture Use')
-      native.fiber.assertActive(); binding.lifetime.throwIfAborted()
+      if (testRead && !rootValid) throw new Error('Root revoked')
+      if (testRead) rootEntry.assertConfigUpdatePlan(rootPlan)
+      fullChecks++; native.fiber.assertActive(); binding.lifetime.throwIfAborted()
+    }, assertRetained() {
+      if (done) throw new Error('Actually released original fixture Use')
+      retainedChecks++; native.fiber.assertActive(); binding.lifetime.throwIfAborted()
     }, release() { if (!done) { done = true; released++; inUse-- } } }
   }
   registry = new LoginPeerRegistry({ ...config, sessionRecheckLeadMs: 0 }, originalAuth, {
-    borrow: async actual => issueUse(actual), beforeHttp() {}, beforeStream() {}, cleanupFailed(value) { cleanupFailures.push(value) },
+    borrow: async actual => issueUse(actual), beforeHttp() {}, beforeStream() {},
+    ...testRead ? { beforeDispatch(_request, dispatch) { dispatchCheck(dispatch) }, captureRead: () => {
+      if (!rootValid) throw new Error('Root revoked')
+      return () => { rootChecks++; if (!rootValid) throw new Error('Root revoked') }
+    } } : {}, cleanupFailed(value) { cleanupFailures.push(value) },
     streams: { maxFrameBytes: 16384, maxLogicalStreams: 8, maxLogicalStreamsPerAccount: 4, maxLogicalStreamsPerPeer: 2 },
   })
   const peers = registry
@@ -223,6 +256,7 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   // Loopback transports exercise Node's actual HTTP/WS sockets and close events.
   const http = async (handle: LoginPeer, releaseRequestUse: () => void,
     mode: 'if-idle' | 'stop-and-apply' = 'if-idle', requestActual?: Promise<void>, method = 'operate') => {
+    const fileMethod = method === 'read' || method === 'stat' || method === 'write' ? method : undefined
     const bridged = Promise.withResolvers<undefined>()
     void bridged.promise.catch((_cause: unknown) => {})
     const server = createServer((request, response) => {
@@ -235,15 +269,17 @@ async function fixture(peerCloseTimeoutMs = 1000) {
     })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('Owned HTTP listener unavailable')
-    let answer: unknown
-    const request = httpRequest(`http://127.0.0.1:${String(address.port)}/api/configurationPeerOperation/${method}`, {
+    let answer: unknown, responseHeaders = 0, responseBytes = 0
+    const endpoint = fileMethod === undefined ? `configurationPeerOperation/${method}` : `workspaceFiles/${fileMethod}`
+    const request = httpRequest(`http://127.0.0.1:${String(address.port)}/api/${endpoint}`, {
       method: 'POST', headers: { cookie: handle.principal.authSessionId, origin: config.publicOrigin,
         host: new URL(config.publicOrigin).host, 'content-type': 'application/json', connection: 'close' },
     })
     const returned = new Promise<void>((resolve, reject) => {
       request.once('response', (response) => {
+        responseHeaders++
         const chunks: Buffer[] = []
-        response.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        response.on('data', (chunk: Buffer) => { responseBytes += chunk.length; chunks.push(chunk) })
         response.on('end', () => {
           try { answer = JSON.parse(Buffer.concat(chunks).toString('utf8')); resolve() } catch (error: unknown) {
             reject(error instanceof Error ? error : new Error('Invalid native HTTP response', { cause: error }))
@@ -258,10 +294,11 @@ async function fixture(peerCloseTimeoutMs = 1000) {
       await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
     })
     request.end(JSON.stringify({ type: 'client-request', rpcId: '11111111-1111-4111-8111-111111111111',
-      method: `configurationPeerOperation/${method}`, payload: { args: method === 'ordinary' ? {} : { mode } } }))
+      method: endpoint, payload: { args: fileMethod === undefined && method !== 'ordinary' ? { mode } : {} } }))
     const body = Promise.all([returned, bridged.promise]).then(() => {})
     void body.catch((_cause: unknown) => {})
-    return { body, actual: bridged.promise, disconnect: () => { request.destroy() }, result: (): unknown => answer }
+    return { body, actual: bridged.promise, disconnect: () => { request.destroy() }, result: (): unknown => answer,
+      output: () => ({ headers: responseHeaders, bytes: responseBytes }) }
   }
   const websocket = async (handle: LoginPeer, endpoint = '$events', waitForReady = true) => {
     // External event producer is idle; ready, framing and close come from the original Gateway.
@@ -320,6 +357,10 @@ async function fixture(peerCloseTimeoutMs = 1000) {
   return { ctx: native, registry: peers, binding, acquire, run, http, websocket, query, cleanupFailures,
     writeNativeValue, patch: () => readFileSync(profile.patchPath, 'utf8'), saves,
     issueUse: () => issueUse(binding), observe: () => ({ borrowed, released, inUse, calls }),
+    setRead: (next: typeof read) => { read = next }, setDispatch: (next: typeof dispatchCheck) => { dispatchCheck = next },
+    revokeReadRoot: () => { rootValid = false },
+    driftReadRoot: () => { rootEntry.options.config.value++ },
+    readCounts: () => ({ fullChecks, retainedChecks, rootChecks }),
     setOperation: (next: ConfigurationPeerOperation<unknown>) => { consume = next },
     setOrdinary: (next: () => Promise<unknown>) => { ordinary = next },
     expectCleanupFailure: () => { expectedCleanupFailure = true } }
@@ -1431,4 +1472,133 @@ it('retains an actual native write and its pending HTTP task after the response 
     expect(f.patch()).toContain('value: 2')
     expect(f.saves.snapshot()).toMatchObject({ pending: [], failures: [] })
   } finally { finish.resolve(undefined); ingressUse.release() }
+})
+
+it('offline response cleanup failure retains the original Peer use and blocks closure', async () => {
+  const f = await fixture(), handle = await f.acquire('login=a')
+  f.expectCleanupFailure()
+  const failure = new ResponseCleanupError(new Error('admission'), new Error('body cleanup'))
+  vi.spyOn(f.ctx.connection, 'handleNodeRequest').mockRejectedValue(failure)
+  const call = await f.http(handle, () => {})
+  await expect(call.actual).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed', cause: failure })
+  await expect.poll(() => f.cleanupFailures.length).toBe(1)
+  expect(f.observe().inUse).toBe(1)
+  expect(f.registry.reservedPeers).toBe(1)
+})
+
+it('read carrier remains local to its real HTTP request, peer, endpoint and settlement', async () => {
+  const f = await fixture(1000, true), a = await f.acquire('login=a'), b = await f.acquire('login=b')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const tailRelease = Promise.withResolvers<undefined>()
+  const tail = Promise.withResolvers<boolean>()
+  f.setRead(async (peer, method) => {
+    const selected = `workspaceFiles/${method}`
+    expect(f.registry.readOperationCurrent(peer, f.binding, selected, () => {})).toBe(true)
+    expect(f.registry.readOperationCurrent(b.peer, f.binding, selected, () => {})).toBe(false)
+    expect(f.registry.readOperationCurrent(peer, f.binding, 'workspaceFiles/write', () => {})).toBe(false)
+    const foreign = Object.freeze({ ...f.binding, epoch: brandString<OwnerEpoch>('foreign') })
+    expect(f.registry.readOperationCurrent(peer, foreign, selected, () => {})).toBe(false)
+    void (async () => { await tailRelease.promise; tail.resolve(f.registry.readOperationCurrent(peer, f.binding, selected, () => {})) })()
+    entered.resolve(undefined); await release.promise
+    expect(f.registry.readOperationCurrent(peer, f.binding, selected, () => {})).toBe(true)
+    return 'original-read'
+  })
+  const aCall = await f.http(a, () => {}, 'if-idle', undefined, 'read')
+  await entered.promise
+  expect(f.registry.readOperationCurrent(a.peer, f.binding, 'workspaceFiles/read', () => {})).toBe(false)
+  release.resolve(undefined); await aCall.body
+  expect(f.readCounts().retainedChecks).toBeGreaterThanOrEqual(2)
+  expect(f.readCounts().rootChecks).toBeGreaterThanOrEqual(2)
+  tailRelease.resolve(undefined); expect(await tail.promise).toBe(false)
+})
+
+it('read carrier does not authorize a write endpoint', async () => {
+  const f = await fixture(1000, true), a = await f.acquire('login=a')
+  f.setRead(async (peer, method) => {
+    expect(f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})).toBe(false)
+    return 'write-unoptimized'
+  })
+  const call = await f.http(a, () => {}, 'if-idle', undefined, 'write')
+  await call.body
+  expect(f.readCounts().retainedChecks).toBe(0)
+})
+
+it('read carrier rejects explicit Root revocation after an await', async () => {
+  const f = await fixture(1000, true), a = await f.acquire('login=a')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  f.setRead(async (peer, method) => {
+    expect(f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})).toBe(true)
+    entered.resolve(undefined); await release.promise
+    f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})
+    return 'must-not-be-returned'
+  })
+  const call = await f.http(a, () => {}, 'if-idle', undefined, 'read')
+  await entered.promise; f.revokeReadRoot(); release.resolve(undefined)
+  await expect(call.actual).rejects.toThrow()
+  await expect(call.body).rejects.toThrow()
+})
+
+it('keeps concurrent read and stat requests on one Peer in their own carriers', async () => {
+  const f = await fixture(1000, true), a = await f.acquire('login=a')
+  const readEntered = Promise.withResolvers<undefined>(), statEntered = Promise.withResolvers<undefined>()
+  const finishRead = Promise.withResolvers<undefined>(), finishStat = Promise.withResolvers<undefined>()
+  f.setRead(async (peer, method) => {
+    const endpoint = `workspaceFiles/${method}`
+    expect(f.registry.readOperationCurrent(peer, f.binding, endpoint, () => {})).toBe(true)
+    expect(f.registry.readOperationCurrent(peer, f.binding,
+      method === 'read' ? 'workspaceFiles/stat' : 'workspaceFiles/read', () => {})).toBe(false)
+    if (method === 'read') { readEntered.resolve(undefined); await finishRead.promise }
+    else { statEntered.resolve(undefined); await finishStat.promise }
+    expect(f.registry.readOperationCurrent(peer, f.binding, endpoint, () => {})).toBe(true)
+    return method
+  })
+  const read = await f.http(a, () => {}, 'if-idle', undefined, 'read')
+  await readEntered.promise
+  const stat = await f.http(a, () => {}, 'if-idle', undefined, 'stat')
+  await statEntered.promise
+  finishStat.resolve(undefined); await stat.body
+  finishRead.resolve(undefined); await read.body
+  expect(f.readCounts().retainedChecks).toBeGreaterThanOrEqual(4)
+})
+
+it('silent Loader drift is delayed within the read but blocked before the HTTP response', async () => {
+  const f = await fixture(1000, true), a = await f.acquire('login=a')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  f.setRead(async (peer, method) => {
+    expect(f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})).toBe(true)
+    entered.resolve(undefined); await release.promise
+    expect(f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})).toBe(true)
+    return 'private-after-drift'
+  })
+  const call = await f.http(a, () => {}, 'if-idle', undefined, 'read')
+  await entered.promise; f.driftReadRoot(); release.resolve(undefined)
+  await expect(call.actual).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  await expect(call.body).rejects.toThrow()
+  expect(call.result()).toBeUndefined()
+})
+
+it('real account exposure invalidated after a native read prevents any HTTP result', async () => {
+  const f = await fixture(1000, true), a = await f.acquire('login=a')
+  const rpc = [{ endpoint: 'workspaceFiles/read', handlerId: 'native:workspaceFiles', guard: 'account-session' as const }]
+  const manifest = { recipeVersion: f.binding.recipeVersion, rpcEndpoints: rpc, streamEndpoints: [],
+    exactFetchRoutes: [], allowedSettings: [] }
+  const root = new ExposurePolicy(manifest)
+  const api = new CloudAccountApi(f.ctx, { binding: f.binding, rootExposure: root, selected: manifest, saves: f.saves,
+    assertMountCurrent: () => {}, assertBusinessCurrent: () => {} })
+  // Provider registration is a fixture; API exposure and invalidate are the real implementation.
+  const files = Reflect.get(api, 'files') as { native: { assertCurrent(): void; inspect(): void } }
+  files.native = { assertCurrent() {}, inspect() {} }
+  api.audit({ recipeVersion: f.binding.recipeVersion, rpcEndpoints: rpc, streamEndpoints: [], exactFetchRoutes: [] })
+  let checks = 0
+  f.setDispatch((dispatch) => {
+    checks++
+    if (dispatch.kind === 'rpc') { api.requireRpc(dispatch.endpoint); api.auditFileRead() }
+  })
+  f.setRead(async () => { api.invalidate(); return 'private-after-exposure-withdrawal' })
+  const call = await f.http(a, () => {}, 'if-idle', undefined, 'read')
+  await expect(call.actual).rejects.toThrow()
+  await expect(call.body).rejects.toThrow()
+  expect(call.result()).toBeUndefined()
+  expect(call.output()).toEqual({ headers: 0, bytes: 0 })
+  expect(checks).toBe(2)
 })

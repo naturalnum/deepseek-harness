@@ -12,7 +12,8 @@ import type { StaticStorageConfig } from '../src/storage-types.ts'
 
 let directory: string
 const here = fileURLToPath(new URL('.', import.meta.url))
-const repository = resolve(here, '../../../..'), proof = new TextEncoder().encode('{"exact":"worker proof fixture"}')
+const repository = resolve(here, '../../../..'), proof = new TextEncoder().encode(JSON.stringify({ schema: 2,
+  records: [{ fixture: 'first' }, { fixture: 'second' }] }))
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 let input: FdWorkerInput & { storageProbe: StaticStorageConfig }
 beforeAll(async () => {
@@ -69,6 +70,16 @@ it('retains the fixed proof across real workerData decoding and reads its exact 
   expect(result.process).toEqual({ pid: process.pid, startTicks: '12345' })
   expect(Array.from(f.reads)).toEqual([1, 1])
 })
+it('retains the legacy single-proof bytes through the unchanged protected worker transport', async () => {
+  const legacy = new TextEncoder().encode('{"schema":1,"fixture":"legacy"}')
+  await writeFile(resolve(directory, 'proof.json'), legacy)
+  try {
+    const f = start({ proofPath: resolve(directory, 'proof.json'), proofSha256: hash(legacy) })
+    await f.client.ready
+    expect((await f.client.storageSkillProof(2048, new AbortController().signal)).bytes).toEqual(legacy)
+    expect(Array.from(f.reads)).toEqual([0, 1])
+  } finally { await writeFile(resolve(directory, 'proof.json'), proof) }
+})
 it('retains ordinary storage without proof but refuses a proof read instead of falling back', async () => {
   const f = start(undefined, false)
   await f.client.ready
@@ -83,6 +94,17 @@ it('refuses a mismatched fixed proof hash after an actual bounded read', async (
   await expect(f.client.storageSkillProof(2048, new AbortController().signal)).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
   await f.client.exited
   expect(Array.from(f.reads)).toEqual([0, 1])
+})
+it('rejects a collection exceeding the original maxPlanBytes instead of enlarging the worker budget', async () => {
+  const tooLarge = new Uint8Array(2049).fill(65)
+  await writeFile(resolve(directory, 'proof.json'), tooLarge)
+  try {
+    const f = start({ proofPath: resolve(directory, 'proof.json'), proofSha256: hash(tooLarge) })
+    await f.client.ready
+    await expect(f.client.storageSkillProof(2048, new AbortController().signal)).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+    await f.client.exited
+    expect(Array.from(f.reads)).toEqual([0, 0])
+  } finally { await writeFile(resolve(directory, 'proof.json'), proof) }
 })
 it.each([null, { proofPath: '/fixture' }, { proofPath: '/fixture', proofSha256: '0'.repeat(64), approved: true }])(
   'refuses an incomplete or expanded optional proof object during worker startup', async (selected) => {

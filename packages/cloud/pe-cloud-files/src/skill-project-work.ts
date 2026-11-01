@@ -51,8 +51,8 @@ export interface SkillProjectWork {
   readonly maxReadBytes: number
   readonly maxPathBytes: number
   readonly maxReplyBytes: number
-  /** Single old-record authority from the original Root lease; absence preserves every ordinary scope/mount refusal. */
-  readonly revalidation?: SkillRecordRevalidation
+  /** Exact old-record authorities from the original Root lease; absence preserves every ordinary scope/mount refusal. */
+  readonly revalidation?: readonly SkillRecordRevalidation[]
   assertCurrent(): void
   project(client: FdWorkerClient, workspace: Workspace, control: AbortSignal): Promise<FdRootIdentity>
   resolveSource(source: LegacySource): SkillVersion | undefined
@@ -221,7 +221,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     const root = child(input.privateRoot, 'skill-working-copies', prepared.directory)
     const names = await client.list(root, '.', input.limits.maxProjects, input.maxReplyBytes, control)
     const rows = new Map<string, RecordRead>(); let total = 0
-    let revalidate: { readonly name: string; readonly row: RecordRead } | undefined
+    let revalidate: { readonly name: string; readonly row: RecordRead; readonly authority: SkillRecordRevalidation } | undefined
     for (const entry of names) {
       if (!/^project-[a-f0-9]{64}\.json$/.test(entry.name) || entry.type !== 'file') unknown()
       const before = await client.lstat(root, entry.name, control)
@@ -236,14 +236,15 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       // A cold record stays charged and unopened until its own Workspace is selected for Root-verified revalidation.
       const changedScope = value.sourceContext.bootId !== context.bootId || value.sourceContext.mountNamespace !== context.mountNamespace
       const selectedRecord = selected.workspaceId === value.workspaceId
-      const digest = createHash('sha256').update(bytes).digest('hex'), authority = input.revalidation
+      const digest = createHash('sha256').update(bytes).digest('hex')
+      const authority = selectedRecord ? input.revalidation?.find(entry => entry.workspaceId === value.workspaceId) : undefined
       const forced = selectedRecord && !parents.has(value.workspaceId) && authority?.workspaceId === value.workspaceId
-        && authority.pending && authority.recordSha256 === digest
+        && authority.pending && authority.recordSha256 === digest && authority.recordRevision === before.version
       if (selectedRecord && (changedScope || !sameRoot(value.project, selected.root) || forced)) {
         if (authority === undefined || authority.workspaceId !== value.workspaceId
           || authority.recordSha256 !== digest || revalidate !== undefined) denied('FS_STALE_VERSION')
         authority.assertRecord(before.version)
-        revalidate = { name: entry.name, row: { value, revision: before.version, bytes: bytes.byteLength } }
+        revalidate = { name: entry.name, row: { value, revision: before.version, bytes: bytes.byteLength }, authority }
       }
       total += bytes.byteLength
       rows.set(entry.name, { value, revision: before.version, bytes: bytes.byteLength })
@@ -251,15 +252,15 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     if (total + input.limits.maxRecordBytes > input.limits.maxMetadataBytes || rows.size
       + 2 > input.limits.maxMetadataInodes) denied('FS_TOO_LARGE')
     if (revalidate !== undefined) {
-      if (input.revalidation === undefined) denied('FS_STALE_VERSION')
+      const authority = revalidate.authority
       const previous = revalidate.row, value = await revalidateRecord(client, previous.value, selected.root, context, control)
       const bytes = Buffer.byteLength(JSON.stringify(value))
       if (total - previous.bytes + bytes + input.limits.maxRecordBytes > input.limits.maxMetadataBytes) denied('FS_TOO_LARGE')
       current(); selected.assertRegistered(); if (selected.workspaceId !== value.workspaceId) denied('FS_STALE_VERSION')
-      input.revalidation.assertRecord(previous.revision)
+      authority.assertRecord(previous.revision)
       control.throwIfAborted()
       const committed = await write(client, root, value, previous.revision, control)
-      input.revalidation.confirmRecord(previous.revision, committed.version)
+      authority.confirmRecord(previous.revision, committed.version)
       rows.set(revalidate.name, { value, revision: committed.version, bytes }); total += bytes - previous.bytes
     }
     return { root, rows, total, context }

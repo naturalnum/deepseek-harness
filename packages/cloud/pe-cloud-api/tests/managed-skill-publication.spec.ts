@@ -58,6 +58,7 @@ async function fixture() {
   let catalog: SkillCatalog = Object.freeze({ entries: [], revision: FsVersion('directory-0') })
   let preparationFailure: Error | undefined, commitFailure: Error | undefined, afterCommit: (() => void) | undefined
   let prepares = 0, commits = 0, sources = 0, exports = 0, borrows = 0, failApply = false, unknownCommit = false
+  let projectionFailure: Error | undefined
   let exportBlock: ReturnType<typeof deferred> | undefined, sourceBlock: ReturnType<typeof deferred> | undefined
   const prepared = new Map<SkillBundleVersion, number>(), releases = new Map<string, number>()
   const releaseWhilePending: boolean[] = [], sourcePreparedRefs: number[] = [], commitPreparedRefs: number[] = []
@@ -181,6 +182,7 @@ async function fixture() {
       if (options.scope !== ctx || !activeSourceLeases.has(version) || bytes.has(version)) throw Error('Exact active operation source lease required')
       materialized.push(version)
       expect(borrows).toBe(1)
+      if (projectionFailure !== undefined) throw projectionFailure
       return { resourceBase: { kind: 'directory' as const, path: `/test/project/.pe/skills/${version.id}/` } }
     },
   }
@@ -201,6 +203,7 @@ async function fixture() {
     materialize: resources.materialize.bind(resources), materialized: () => [...materialized],
     stats: () => ({ prepares, commits, sources, exports, borrows, providerListeners: getEventListeners(providerSignal, 'abort').length }), catalog: () => catalog,
     failPrepare: (error: Error) => { preparationFailure = error },
+    failProjection: (error: Error | undefined) => { projectionFailure = error },
     failApply: () => { failApply = true }, unknownCommit: () => { unknownCommit = true },
     blockExport() { exportBlock = deferred(); return exportBlock }, blockSource() { sourceBlock = deferred(); return sourceBlock } }
 }
@@ -226,9 +229,32 @@ it('installs two complete roots, exposes native selection and replaces the origi
   expect(loaded?.content).toContain('body'); expect(loaded?.resourceBase?.kind).toBe('directory')
   const updated = await f.manager.update(first.entry.skillId, details.version, bundle('first', 'new body'), f.check, f.signal)
   expect(updated.persisted).toBe(true)
+  if (updated.persisted !== true || updated.entry === null) throw Error('Expected confirmed update')
+  expect(updated.entry.contentVersion).not.toBe(first.entry.contentVersion)
+  expect((await f.manager.installed({}, f.check, f.signal)).entries.find(row => row.skillId === first.entry!.skillId)?.contentVersion)
+    .toBe(updated.entry.contentVersion)
   await expect(f.manager.download({ skillId: first.entry.skillId, contentVersion: first.entry.contentVersion }, f.check, f.signal))
     .rejects.toMatchObject({ code: 'cloud/config-conflict' })
-  expect((await f.ctx.skills.get('first', { scope: f.ctx }))?.content).toContain('new body')
+  const reloaded = await f.ctx.skills.get('first', { scope: f.ctx })
+  expect(reloaded?.content).toContain('new body')
+  expect(reloaded?.resourceBase).toEqual({ kind: 'directory', path: `/test/project/.pe/skills/${updated.entry.contentVersion}/` })
+})
+
+it('keeps the updated native catalog current when workspace projection rejects a stale record', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const old = await f.manager.install(initial.version, bundle('pdf', 'old body'), f.check, f.signal)
+  if (old.persisted !== true || old.entry === null) throw Error('Expected confirmed install')
+  expect((await f.ctx.skills.get('pdf', { scope: f.ctx }))?.content).toContain('old body')
+  const updated = await f.manager.update(old.entry.skillId, old.version, bundle('pdf', 'new body'), f.check, f.signal)
+  if (updated.persisted !== true || updated.entry === null) throw Error('Expected confirmed update')
+  f.failProjection(new FdMutationFailure('not-published', 'FS_STALE_VERSION'))
+  expect((await f.manager.installed({}, f.check, f.signal)).entries[0]?.contentVersion).toBe(updated.entry.contentVersion)
+  await expect(f.ctx.skills.get('pdf', { scope: f.ctx })).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  expect(f.materialized().at(-1)?.id).toBe(updated.entry.contentVersion)
+  f.failProjection(undefined)
+  const loaded = await f.ctx.skills.get('pdf', { scope: f.ctx })
+  expect(loaded?.content).toContain('new body')
+  expect(loaded?.resourceBase).toEqual({ kind: 'directory', path: `/test/project/.pe/skills/${updated.entry.contentVersion}/` })
 })
 
 it('retains an unknown save outcome when a committed catalog response omits its revision', async () => {

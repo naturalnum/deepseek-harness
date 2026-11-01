@@ -70,8 +70,8 @@ async function fixture(authorize = true, sameMount = false) {
     assertCurrent: () => { lifetime.signal.throwIfAborted() }, project: async () => root,
     source: sourceRead, resolveSource: supplied => supplied.id === version.id ? version : undefined,
     mutate: async (work, observer) => ({ value: await work(client, observer), release() {} }),
-    ...authorize ? { revalidation: { workspaceId: workspace.id, recordSha256: oldHash,
-      get pending() { return committedRevision === undefined }, assertRecord, confirmRecord } } : {},
+    ...authorize ? { revalidation: [{ workspaceId: workspace.id, recordSha256: oldHash, recordRevision: '1:2:3:4:5',
+      get pending() { return committedRevision === undefined }, assertRecord, confirmRecord }] } : {},
   }
   return { client, lstat, skillDirectory, list, read, port: createSkillProjectWork(input), input, workspace, binding, lifetime,
     original, version, projection, write,
@@ -133,6 +133,44 @@ it('keeps another workspace cold and charged without using its old namespace ide
   expect(f.write).not.toHaveBeenCalled()
   held.release()
 })
+
+it('revalidates two selected Workspaces independently and leaves the other qualification pending after a refusal', async () => {
+  const f = await fixture(), name = (id: string) => `project-${createHash('sha256').update(id).digest('hex')}.json`
+  const firstName = name(f.workspace.id), secondName = name('sibling')
+  const sibling = { ...f.original, workspaceId: 'sibling' }
+  let firstBytes = f.bytes(), secondBytes = encode(sibling), firstRevision = '1:2:3:4:5', secondRevision = '2:2:3:4:5'
+  const priorLstat = f.lstat.getMockImplementation()!, priorList = f.list.getMockImplementation()!
+  f.lstat.mockImplementation(async (...args) => args[1] === firstName || args[1] === secondName
+    ? { type: 'file', identity: '1794:99', version: args[1] === firstName ? firstRevision : secondRevision,
+      size: (args[1] === firstName ? firstBytes : secondBytes).byteLength } : priorLstat(...args))
+  f.read.mockImplementation(async (_root, entry) => (entry === firstName ? firstBytes : secondBytes).slice())
+  f.list.mockImplementation(async (...args) => args[0].rootPath.endsWith('skill-working-copies')
+    ? [firstName, secondName].map((entry, index) => ({ name: entry, type: 'file' as const, identity: `1794:${99 + index}`,
+      version: index ? secondRevision : firstRevision, size: (index ? secondBytes : firstBytes).byteLength })) : priorList(...args))
+  f.write.mockImplementation(async (_root, entry, text) => {
+    const before = entry === firstName ? firstRevision : secondRevision
+    if (entry === firstName) { firstBytes = new TextEncoder().encode(text); firstRevision = '1:2:3:4:6' }
+    else { secondBytes = new TextEncoder().encode(text); secondRevision = '2:2:3:4:6' }
+    return { operation: 'update', version: entry === firstName ? firstRevision : secondRevision, before,
+      after: entry === firstName ? firstRevision : secondRevision }
+  })
+  let secondPending = true
+  const second = { workspaceId: 'sibling', recordSha256: sha(secondBytes), recordRevision: '2:2:3:4:5', get pending() { return secondPending },
+    assertRecord(revision: string) { expect(revision).toBe('2:2:3:4:5') },
+    confirmRecord(before: string, after: string) { expect([before, after]).toEqual(['2:2:3:4:5', '2:2:3:4:6']); secondPending = false } }
+  const first = f.input.revalidation?.[0]
+  if (first === undefined) throw new Error('Fixture omitted first qualification')
+  const other = { ...f.workspace, id: brandString<Workspace['id']>('sibling') }, signalValue = signal()
+  const refused = createSkillProjectWork({ ...f.input, revalidation: [first, { ...second, recordSha256: 'f'.repeat(64) }] })
+  await expect(refused.prepareProject(other, () => {}, signalValue)).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  expect(first.pending).toBe(true); expect(second.pending).toBe(true); expect(f.write).not.toHaveBeenCalled()
+  const port = createSkillProjectWork({ ...f.input, revalidation: [second, first] })
+  const one = await port.prepareProject(f.workspace, () => {}, signalValue)
+  expect(first.pending).toBe(false); expect(second.pending).toBe(true)
+  const two = await port.prepareProject(other, () => {}, signalValue)
+  expect(second.pending).toBe(false); expect(f.write).toHaveBeenCalledTimes(2)
+  one.release(); two.release()
+})
 it('prepares a new workspace while preserving another workspace cold record', async () => {
   const f = await fixture(false, true)
   const cold = { ...f.original, workspaceId: 'cold', sourceContext: {
@@ -178,18 +216,22 @@ it('refuses pending associations and an actual copy identity mismatch before CAS
 })
 it('retains an unknown CAS and never issues a parent or replays publication', async () => {
   const f = await fixture(); f.write.mockRejectedValueOnce(new FdMutationFailure('unknown', 'FS_IO_ERROR'))
-  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ outcome: 'unknown' })
+  const untouched = { workspaceId: 'other', recordSha256: 'f'.repeat(64), recordRevision: '1:2:3:4:5', pending: true,
+    assertRecord() { throw Error('Unrelated proof must not be used') }, confirmRecord() { throw Error('Unrelated proof must not be used') } }
+  const port = createSkillProjectWork({ ...f.input, revalidation: [...(f.input.revalidation ?? []), untouched] })
+  await expect(port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ outcome: 'unknown' })
   expect(f.write).toHaveBeenCalledTimes(1)
   expect(f.bytes()).toEqual(encode(f.original))
   expect(f.confirmRecord).not.toHaveBeenCalled()
-  expect(f.input.revalidation?.pending).toBe(true)
+  expect(f.input.revalidation?.[0]?.pending).toBe(true)
+  expect(untouched.pending).toBe(true)
 })
 it('allows the next original epoch after a numeric-identical revalidation CAS changes only the native revision', async () => {
   const f = await fixture(true, true), first = await f.port.prepareProject(f.workspace, () => {}, signal())
   expect(f.bytes()).toEqual(encode(f.original))
   expect(f.write).toHaveBeenCalledTimes(1)
   expect(f.confirmRecord).toHaveBeenCalledExactlyOnceWith('1:2:3:4:5', '1:2:3:4:6')
-  expect(f.input.revalidation?.pending).toBe(false)
+  expect(f.input.revalidation?.[0]?.pending).toBe(false)
   first.release()
   const binding = { ...f.binding, epoch: brandString<AccountBinding['epoch']>('3'), lifetime: signal() }
   const next = createSkillProjectWork({ ...f.input, binding })

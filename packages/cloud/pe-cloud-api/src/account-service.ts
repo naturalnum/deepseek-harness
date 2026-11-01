@@ -393,6 +393,28 @@ export class CloudAccountApi extends Service {
   }
 
   /**
+   * Recheck the original file inventory for an already-admitted unary read.
+   * @param endpoint Exact native file-read method admitted on the original carrier.
+   * @returns The original current exposure after native inventory and installation checks.
+   */
+  requireAdmittedFileRead(endpoint: 'workspaceFiles/read' | 'workspaceFiles/stat' | 'workspaceFiles/readBytes'): EndpointExposure {
+    this.assertInstalled()
+    const row = this.installation.exposure.requireRpc(endpoint)
+    if (row.guard !== 'account-session' || row.handlerId !== 'native:workspaceFiles') this.nativeUnavailable()
+    this.assertWorkspaceFilesCurrent()
+    this.assertInstalled()
+    return row
+  }
+
+  /** Audit the original native file methods when admitting a unary read. */
+  auditFileRead(): void {
+    this.assertInstalled()
+    if (this.files.native === undefined) this.nativeUnavailable()
+    this.files.native.inspect()
+    this.assertInstalled()
+  }
+
+  /**
    * Require a reviewed native logical-stream endpoint after business admission.
    * @param endpoint Native logical-stream endpoint.
    * @returns Its audited declaration after business admission.

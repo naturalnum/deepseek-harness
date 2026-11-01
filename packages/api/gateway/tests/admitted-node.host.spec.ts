@@ -123,6 +123,36 @@ describe('externally admitted native carriers through Loader composition', () =>
     } finally { await dispose() }
   })
 
+  it('refuses a response before any HTTP output when Loader options drift during the native handler', async () => {
+    let check = (): void => {}
+    const host = await boot(() => {}, undefined, undefined, undefined, () => check())
+    const entry = [...host.ctx.loader.entries()].find(row => row.options.name === 'cordis:fixture')
+    if (entry === undefined) throw new Error('real Loader fixture entry missing')
+    const plan = entry.prepareConfigUpdate(entry.options.config)
+    expect(plan.impact).toBe('none')
+    check = () => { entry.assertConfigUpdatePlan(plan) }
+    let headers = 0, bytes = 0
+    const done = Promise.withResolvers<undefined>()
+    const request = httpRequest(`${host.origin}/api/fixture/hold`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+    }, (response) => {
+      headers++
+      response.on('data', (chunk) => { bytes += chunk.length })
+      response.on('end', () => done.resolve(undefined))
+    })
+    request.on('error', () => done.resolve(undefined))
+    request.end(JSON.stringify({ type: 'client-request', rpcId: 'late-drift', method: 'fixture/hold',
+      payload: { args: { label: 'late-drift' } } }))
+    try {
+      await vi.waitFor(() => { expect(host.fixture.holds.has('late-drift')).toBe(true) })
+      entry.options.config = { late: true }
+      host.fixture.holds.get('late-drift')?.()
+      await done.promise
+      expect(headers).toBe(0); expect(bytes).toBe(0)
+      expect(host.fixture.calls.get('late-drift')?.finished).toBe(true)
+    } finally { request.destroy() }
+  })
+
   it('validates the native envelope before invoking final admission', async () => {
     const guard = vi.fn()
     const host = await boot(() => {}, guard)
@@ -405,6 +435,7 @@ async function boot(
   beforeDispatch?: Connection.ConnectionDispatchGuard,
   incomingBody?: () => void,
   options?: NodeStreamTransportOptions,
+  beforeResponse?: () => void,
 ): Promise<Host> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-admitted-node-'))
   const configPath = join(root, 'cordis.yml')
@@ -430,7 +461,7 @@ async function boot(
     const transport = gateway(ctx).createNodeStreamTransport(peer, beforeOpen, options)
     server = createServer((request, response) => {
       if (incomingBody !== undefined) request.once('data', incomingBody)
-      void connection.handleNodeRequest(request, response, peer, 1024, beforeDispatch).catch((error: unknown) => {
+      void connection.handleNodeRequest(request, response, peer, 1024, beforeDispatch, beforeResponse).catch((error: unknown) => {
         if (error instanceof AdmissionRefusal) {
           response.writeHead(409)
           response.end(error.message)

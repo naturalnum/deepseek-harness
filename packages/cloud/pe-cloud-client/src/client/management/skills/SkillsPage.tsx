@@ -28,7 +28,7 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
   const [search, setSearch] = useState(''), [category, setCategory] = useState<SkillCategory | ''>('')
   const [installedOnly, setInstalledOnly] = useState(false), [selectedId, setSelectedId] = useState<string>()
   const [dialog, setDialog] = useState<'install' | 'import'>(), refresh = useSkillAction('read')
-  const importAction = useSkillAction('read'), picker = useRef<HTMLInputElement>(null)
+  const importAction = useSkillAction<'invalid-bundle'>('read'), picker = useRef<HTMLInputElement>(null)
   const [invalidZip, setInvalidZip] = useState(false)
   const query = search.trim().toLocaleLowerCase()
   const visible = view.items.filter(item => (!installedOnly || item.installed) && (!category || item.category === category)
@@ -61,8 +61,8 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
               setInvalidZip(false)
               void importAction.run(async (signal) => {
                 const outcome = await managed.installZip(file, signal)
-                return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind === 'invalid-bundle' ? 'unavailable' : outcome.kind
-              }).then((outcome) => { if (outcome !== undefined) props.report('install', outcome) })
+                return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind
+              }).then((outcome) => { if (outcome !== undefined && outcome !== 'invalid-bundle') props.report('install', outcome) })
             }}/>
           <button type="button" className={`${css.button} ${css.primary}`}
             disabled={managed.canInstall === false || refresh.state === 'pending' || importAction.state === 'pending'

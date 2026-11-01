@@ -8,7 +8,7 @@ import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { CloudAccountApi, CloudApiError, type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
-import type { AccountId, AccountOwner, AccountRuntimeService, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
 import { REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
@@ -153,11 +153,18 @@ export class CloudIngress {
         this.assertRequest(request, peer, id)
         this.requestStage(request, 'beforeDispatch.api')
         const api = this.accountApi(peer.peer.ctx, peer.binding)
-        if (dispatch.kind === 'rpc') api.requireRpc(dispatch.endpoint)
+        if (dispatch.kind === 'rpc') {
+          api.requireRpc(dispatch.endpoint)
+          if (dispatch.endpoint === 'workspaceFiles/read' || dispatch.endpoint === 'workspaceFiles/stat'
+            || dispatch.endpoint === 'workspaceFiles/readBytes') api.auditFileRead()
+        }
         else api.requireFetch(dispatch.method, dispatch.pathname)
         this.requestStage(request, 'beforeDispatch.peer-current')
         this.assertPeer(peer, id)
         this.requestStage(request, 'native.invoke-or-transfer')
+      },
+      ...dependencies.runtime.captureReadRecipeCurrent === undefined ? {} : {
+        captureRead: dependencies.runtime.captureReadRecipeCurrent.bind(dependencies.runtime),
       },
       beforeStream: (endpoint, peer) => {
         const id = this.requestId()
@@ -225,6 +232,25 @@ export class CloudIngress {
     const id = this.requestId()
     this.assertCurrent(id)
     return this.peers.withOriginalUse(peer, (handle) => { this.assertPeer(handle, id) }, consume)
+  }
+
+  /**
+   * Check a read only on its original active HTTP carrier.
+   * @param peer Exact original invocation Peer.
+   * @param binding Installed account binding retained by that Peer.
+   * @param endpoint Exact unary file-read endpoint admitted for this response.
+   * @returns Whether this read retains its original active carrier and authentication.
+   */
+  readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean {
+    return this.peers.readOperationCurrent(peer, binding, endpoint, (handle) => {
+      const id = this.requestId()
+      if (!this.observe().current) throw new AuthAccessError('cloud/account-unavailable', id)
+      this.ctx.fiber.assertActive()
+      this.dependencies.assertAuthenticationCurrent()
+      const generation = this.peerGenerations.get(handle)
+      if (generation === undefined) throw new RequestBindingError(id)
+      this.generations.assertRetained(binding, generation, id)
+    })
   }
 
   /** Use the original login owner for a factory-owned configuration handoff.

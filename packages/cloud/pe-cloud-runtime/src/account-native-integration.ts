@@ -109,6 +109,8 @@ export interface AccountNativePreparation {
   }
   /** Actual Root seal recheck for business dispatch and ready publication, independent of mounting. */
   readonly assertRootCurrent: () => void
+  /** Current original HTTP read, when this caller is inside an admitted read carrier. */
+  readonly readCurrent?: (caller: Context, binding: AccountBinding, endpoint: string) => boolean
   /** Original factory borrow for the installed ready graph; required only for selected cloud project creation. */
   readonly borrowAccount?: (binding: AccountBinding) => Promise<AccountUse>
   /** Existing restricted lane/grant issuer; absence cannot supply a native files owner. */
@@ -233,9 +235,16 @@ export class AccountNativeIntegration {
     if (this.input.files !== undefined) {
       const files = this.input.files(ctx, binding, async (caller, signal) => {
         const admit = (): void => {
-          this.input.assertRootCurrent()
-          businessCurrent(binding)
           const invocation = caller.invocation
+          const method = invocation?.request.method
+          const endpoint = `workspaceFiles/${method}`
+          const fileRead = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
+            && (method === 'read' || method === 'stat' || method === 'readBytes')
+            && this.input.readCurrent?.(caller, binding, endpoint) === true
+          if (!fileRead) {
+            this.input.assertRootCurrent()
+            businessCurrent(binding)
+          }
           if (invocation?.service === 'officeToPdf' || invocation?.request.namespace === 'officeToPdf') {
             if (invocation.service !== 'officeToPdf' || invocation.request.namespace !== 'officeToPdf'
               || invocation.request.method !== 'render') {
@@ -248,7 +257,9 @@ export class AccountNativeIntegration {
               throw new CloudApiError('cloud/forbidden', 'The native file invocation namespace is not selected.')
             }
             const endpoint = `workspaceFiles/${invocation.request.method}`, manifest = this.input.exposure.manifest
-            if (manifest.rpcEndpoints.some(row => row.endpoint === endpoint)) api.requireRpc(endpoint)
+            if (fileRead && (endpoint === 'workspaceFiles/read' || endpoint === 'workspaceFiles/stat' || endpoint === 'workspaceFiles/readBytes')) {
+              api.requireAdmittedFileRead(endpoint)
+            } else if (manifest.rpcEndpoints.some(row => row.endpoint === endpoint)) api.requireRpc(endpoint)
             else if (manifest.streamEndpoints.some(row => row.endpoint === endpoint)) api.requireStream(endpoint)
             else throw new CloudApiError('cloud/forbidden', 'The native file endpoint is not selected.')
           }

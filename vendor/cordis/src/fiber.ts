@@ -589,7 +589,8 @@ export class Fiber {
     if (oldState !== FiberState.ACTIVE && this.state !== FiberState.ACTIVE) return
     for (const key of Reflect.ownKeys(this.ctx.reflect.store)) {
       const impl = this.ctx.reflect.store[key as symbol]
-      if (impl.fiber !== this) continue
+      // A previous service notification may synchronously withdraw this key.
+      if (impl === undefined || impl.fiber !== this) continue
       this.ctx.reflect.notify([impl.name])
     }
   }

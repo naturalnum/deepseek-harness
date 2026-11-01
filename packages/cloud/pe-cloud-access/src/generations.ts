@@ -44,6 +44,19 @@ export class ConnectionGenerations {
     return record.value
   }
 
+  /**
+   * Require the existing exact generation without issuing another token.
+   * @param binding Original installed account binding.
+   * @param generation Existing token retained by the original Peer.
+   * @param requestId Safe identifier for a rejected request.
+   */
+  assertRetained(binding: AccountBinding, generation: Generation, requestId: Branded<'pe-request-id'>): void {
+    const record = this.records.get(binding.accountId)
+    if (this.closed || binding.lifetime.aborted || record === undefined || record.value !== generation
+      || record.binding.epoch !== binding.epoch || record.binding.recipeVersion !== binding.recipeVersion
+      || record.binding.lifetime !== binding.lifetime) throw new AuthAccessError('cloud/account-unavailable', requestId)
+  }
+
   /** Revoke retained tokens and remove observers after ingress and Peer work has stopped. */
   close(): void {
     this.closed = true

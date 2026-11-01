@@ -6,11 +6,14 @@ import { Worker } from 'node:worker_threads'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { FilesWorkQueue } from '../src/work-queue.ts'
 import { FdWorkerClient, FdMutationFailure, InvalidSkillBundleFailure } from '../src/worker-client.ts'
 import { createSkillVersionWork, observeSkillCurrent } from '../src/skill-version-work.ts'
+import { createSkillProjectWork } from '../src/skill-project-work.ts'
 import type { SkillVersionWork } from '../src/skill-version-work.ts'
 import type { SkillBundleSource, SkillBundleVersion } from '../src/skill-bundles.ts'
+import type { BundleTree } from '../src/bundle-codec.ts'
 import type { FdRootIdentity } from '../src/worker-protocol.ts'
 import type { ResidentResult } from '../src/work-queue.ts'
 import { limits, projectionLimits } from './fixtures/bundle-limits.ts'
@@ -55,7 +58,7 @@ async function fixture(queueWaitMs?: number) {
     if (node?.type !== 'file' || node.data.byteLength > maximum) throw new FdMutationFailure('not-published', 'FS_IO_ERROR')
     return node.data.slice()
   })
-  vi.spyOn(client, 'list').mockImplementation(async (r, name, maximum) => {
+  const list = vi.spyOn(client, 'list').mockImplementation(async (r, name, maximum) => {
     const directory = path(r, name), entries = [...nodes].filter(([key]) => key !== directory && posix.dirname(key) === directory)
     if (entries.length > maximum) throw new FdMutationFailure('not-published', 'FS_TOO_LARGE')
     return entries.map(([key, node]) => ({ name: posix.basename(key), type: node.type, identity: `1:${node.inode}`,
@@ -70,7 +73,7 @@ async function fixture(queueWaitMs?: number) {
     if (after === undefined) throw new Error('Fixture lost its own write')
     return { operation: before === undefined ? 'create' : 'update', version: after.version, before: before?.version ?? null, after: after.version }
   })
-  vi.spyOn(client, 'skillDirectory').mockImplementation(async (r, _uid, _gid, purpose) => {
+  const skillDirectory = vi.spyOn(client, 'skillDirectory').mockImplementation(async (r, _uid, _gid, purpose) => {
     if (purpose !== 'store-verify') throw new Error('This executor fixture never creates a real projection')
     const node = nodes.get(path(r, 'skill-working-copies'))
     if (node?.type !== 'directory') throw new Error('Fixture omitted its store')
@@ -118,11 +121,14 @@ async function fixture(queueWaitMs?: number) {
     })
   }
   let authorize: ((client: FdWorkerClient, version: SkillBundleVersion, control: AbortSignal) => Promise<void>) | undefined
+  let readBundle: ((client: FdWorkerClient, version: SkillBundleVersion, control: AbortSignal) => Promise<BundleTree>) | undefined
+  let resolveBundle: ((version: Omit<SkillBundleVersion, 'binding'>) => SkillBundleVersion) | undefined
   const work: SkillVersionWork = { binding, root, uid: 2000, gid: 2000, maxReadBytes: 65536,
     limits: { maxVersions: 8, maxTotalBytes: 1048576, maxTotalInodes: 256, maxFileBytes: 4096, reservationBytes: limits.reservationBytes },
     assertCurrent: () => { lifetime.signal.throwIfAborted() }, mutate: (_kind, callback, control) => run(callback, control), read: run,
     bundles: { limits, reclaim: { projectionLimits, maxPathBytes: 4096, maxReplyBytes: 65536 },
-      bind: (_read, _resolve, check) => { authorize = check }, materialize: async () => { throw new Error('No real project exists') } },
+      bind: (read, resolve, check) => { readBundle = read; resolveBundle = resolve; authorize = check },
+      materialize: async () => { throw new Error('No real project exists') } },
   }
   const port = createSkillVersionWork(work), bundles = port.bundles
   if (bundles === undefined) throw new Error('Fixture did not attach bundle capability')
@@ -146,7 +152,21 @@ async function fixture(queueWaitMs?: number) {
       sourceContext: { bootId: '11111111-1111-4111-8111-111111111111', mountNamespace: 'mnt:[123]' },
       metadata: directory('9'), skills: directory('10'), state: 'complete', pending: null, copies: [{ source, directory: directory('11') }] })))
   }
-  return { port, bundles, work, client, nodes, put, writes, native, prepare, observe, install, check, associate,
+  const resolveRetained = (version: Omit<SkillBundleVersion, 'binding'>) => {
+    if (resolveBundle === undefined) throw new Error('No bundle resolver')
+    return resolveBundle(version)
+  }
+  const readRetained = async (version: SkillBundleVersion) => {
+    if (readBundle === undefined) throw new Error('No bundle reader')
+    const read = readBundle, held = await work.read((c, s) => read(c, version, s), signal())
+    try { return held.value } finally { held.release() }
+  }
+  const readRetainedOnLane = (client: FdWorkerClient, version: SkillBundleVersion, control: AbortSignal) => {
+    if (readBundle === undefined) throw new Error('No bundle reader')
+    return readBundle(client, version, control)
+  }
+  return { port, bundles, work, client, nodes, put, writes, native, list, skillDirectory, prepare, observe, install, check, associate,
+    resolveRetained, readRetained, readRetainedOnLane,
     residents: () => queue?.inspect().pending ?? residents,
     afterActual: (notify: () => void) => { afterActual = notify },
     flush: async () => { const barrier = await run(async () => undefined, signal()); barrier.release() } }
@@ -196,6 +216,124 @@ it('denies new source loads after uninstall while the exact existing source leas
   const after = await f.prepare('after'); expect(f.nodes.has(`/private/skills/${entry.version.id}`)).toBe(false); after.release()
   expect(f.native.mock.calls.some(([r]) => r.kind === 'bundle-reclaim' && r.retained.includes(entry.version.id))).toBe(true)
   expect(f.residents()).toBe(0)
+})
+
+it('loads the newly published source after an update while retaining the older workspace copy source', async () => {
+  const f = await fixture(), installed = await f.install('old'), old = installed.value.entry
+  if (old === null) throw new Error('Fixture install omitted its entry')
+  f.associate(old.version)
+  const prepared = await f.prepare('new'), updated = await f.bundles.commitCatalog(installed.value.catalog,
+    { kind: 'update', skillId: old.skillId, bundle: prepared.value }, signal())
+  if (updated.value.entry === null) throw new Error('Fixture update omitted its entry')
+  const current = updated.value.entry.version
+  expect(current.id).not.toBe(old.version.id)
+  prepared.release(); installed.release(); updated.release()
+  const loaded = await f.bundles.withBundleSource(current, source => source.readText('SKILL.md'), signal())
+  expect(loaded.value).toContain('name: new')
+  loaded.release()
+  await expect(f.bundles.withBundleSource(old.version, async () => 'old', signal()))
+    .rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  const later = await f.prepare('next')
+  expect(f.nodes.has(`/private/skills/${old.version.id}`)).toBe(true)
+  later.release()
+  expect(f.residents()).toBe(0)
+})
+
+it('reissues a retained historical source from the protected association in a new issuer without making it current', async () => {
+  const f = await fixture(), installed = await f.install('old'), old = installed.value.entry
+  if (old === null) throw new Error('Fixture install omitted its entry')
+  f.associate(old.version)
+  const prepared = await f.prepare('new'), updated = await f.bundles.commitCatalog(installed.value.catalog,
+    { kind: 'update', skillId: old.skillId, bundle: prepared.value }, signal())
+  if (updated.value.entry === null) throw new Error('Fixture update omitted its entry')
+  const nextId = updated.value.entry.version.id
+  prepared.release(); installed.release(); updated.release()
+  const binding: AccountBinding = { ...f.work.binding, epoch: brandString<AccountBinding['epoch']>('2'),
+    lifetime: new AbortController().signal }
+  const successor = createSkillVersionWork({ ...f.work, binding }), bundles = successor.bundles
+  if (bundles === undefined) throw new Error('New issuer omitted bundle capability')
+  const current = await bundles.observeCatalog(signal())
+  expect(current.value.entries[0]?.version.id).toBe(nextId)
+  const record = f.nodes.get(`/private/skill-working-copies/project-${digest('workspace')}.json`)
+  if (record?.type !== 'file') throw new Error('Missing protected association fixture')
+  const persisted = JSON.parse(new TextDecoder().decode(record.data)) as { copies: Array<{ source: Omit<SkillBundleVersion, 'binding'> }> }
+  const retained = f.resolveRetained(persisted.copies[0]!.source)
+  expect(retained.id).toBe(old.version.id); expect(retained.binding).toBe(binding)
+  expect(new TextDecoder().decode((await f.readRetained(retained)).files[0]!.data)).toContain('name: old')
+  await expect(f.check(retained)).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  const active = await bundles.withBundleSource(current.value.entries[0]!.version, source => source.readText('SKILL.md'), signal())
+  expect(active.value).toContain('name: new'); active.release(); current.release()
+  f.put(`/private/skills/${retained.id}/tree/SKILL.md`, text('tampered'))
+  await expect(f.readRetained(retained)).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  expect(f.residents()).toBe(0)
+})
+
+it.each([false, true])('revalidates a retained old project copy after an update (source tampered: %s)', async (tampered) => {
+  const f = await fixture(), installed = await f.install('old'), old = installed.value.entry
+  if (old === null) throw new Error('Fixture install omitted its entry')
+  f.associate(old.version)
+  const prepared = await f.prepare('new'), updated = await f.bundles.commitCatalog(installed.value.catalog,
+    { kind: 'update', skillId: old.skillId, bundle: prepared.value }, signal())
+  if (updated.value.entry === null) throw new Error('Fixture update omitted its entry')
+  const activeId = updated.value.entry.version.id
+  installed.release(); prepared.release(); updated.release()
+  const binding: AccountBinding = { ...f.work.binding, epoch: brandString<AccountBinding['epoch']>('2'),
+    lifetime: new AbortController().signal }
+  const successor = createSkillVersionWork({ ...f.work, binding }), bundles = successor.bundles
+  if (bundles === undefined) throw new Error('New issuer omitted bundle capability')
+  const current = await bundles.observeCatalog(signal())
+  expect(current.value.entries[0]?.version.id).toBe(activeId); current.release()
+  const recordPath = `/private/skill-working-copies/project-${digest('workspace')}.json`, record = f.nodes.get(recordPath)
+  if (record?.type !== 'file') throw new Error('Fixture association missing')
+  const recordSha256 = createHash('sha256').update(record.data).digest('hex'), recordRevision = record.version
+  if (tampered) f.put(`/private/skills/${old.version.id}/tree/SKILL.md`, text('tampered'))
+  const root = { rootPath: '/project', rootDevice: '2', rootInode: '8', rootMountId: '23' }
+  const directory = (inode: string) => ({ device: '2', inode, mountId: '23', uid: 2000, gid: 2000, mode: 0o40700 })
+  const existingDirectory = f.skillDirectory.getMockImplementation()!
+  f.skillDirectory.mockImplementation(async (...args) => args[3] === 'parent-verify'
+    ? { created: false, directory: directory('10') } : existingDirectory(...args))
+  const existingList = f.list.getMockImplementation()!
+  f.list.mockImplementation(async (...args) => args[0].rootPath === '/project/.pe/skills'
+    ? [{ name: old.version.id, type: 'directory', identity: '2:11', version: 'copy' }] : existingList(...args))
+  vi.spyOn(f.client, 'skillSourceContext').mockResolvedValue({
+    bootId: '11111111-1111-4111-8111-111111111111', mountNamespace: 'mnt:[124]' })
+  f.native.mockClear()
+  f.native.mockImplementation(async (request) => {
+    if (request.kind !== 'bundle-project') throw new Error('Only original copy verification belongs here')
+    expect(request.version).toBe(old.version.id); expect(request.expectedCopyInode).toBe('11')
+    expect(new TextDecoder().decode(request.tree.files.find(file => file.relativePath === 'SKILL.md')?.data)).toContain('name: old')
+    return { outcome: 'complete', closed: true, reused: true, errno: 0, versions: 1, chargedBytes: 0,
+      chargedInodes: 1, removed: 0, directory: directory('11') }
+  })
+  let consumed = false
+  const workspace: Workspace = { id: brandString<Workspace['id']>('workspace'), path: '/project', title: 'fixture',
+    createdAt: '', updatedAt: '', sessionIds: [], setTitle: async () => { throw Error('unused') },
+    attachSession: async () => { throw Error('unused') }, insertSessionBefore: async () => { throw Error('unused') },
+    detachSession: async () => { throw Error('unused') }, status: async () => 'ok' }
+  const port = createSkillProjectWork({ binding, privateRoot: f.work.root, uid: 2000, gid: 2000,
+    quota: { ...root, rootPath: '/', minimumBytes: '1048576', maximumBytes: '1048576', minimumInodes: '128',
+      maximumInodes: '128', backing: { path: '/backing', device: '1', inode: '2', bytes: '1048576' } },
+    limits: projectionLimits, sourceLimits: f.work.limits, bundleLimits: limits, maxReadBytes: 65536,
+    maxPathBytes: 4096, maxReplyBytes: 65536, assertCurrent: () => { f.work.assertCurrent() },
+    project: async () => root, resolveSource: () => undefined, source: async () => { throw Error('unused') },
+    bundleSource: f.readRetainedOnLane, resolveBundle: f.resolveRetained,
+    revalidation: [{ workspaceId: workspace.id, recordSha256, recordRevision, get pending() { return !consumed },
+      assertRecord: (actual) => { expect(actual).toBe(recordRevision) }, confirmRecord: (before) => {
+        expect(before).toBe(recordRevision); consumed = true } }],
+    mutate: (callback, control) => f.work.mutate('prepare', callback, control),
+  })
+  if (tampered) {
+    await expect(port.prepareProject(workspace, () => {}, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+    expect(consumed).toBe(false); expect(f.native).not.toHaveBeenCalled()
+    expect(f.nodes.get(recordPath)).toEqual(record); expect(f.residents()).toBe(0)
+    return
+  }
+  const parent = await port.prepareProject(workspace, () => {}, signal())
+  expect(consumed).toBe(true); expect(f.native).toHaveBeenCalledOnce()
+  expect(f.nodes.has(`/private/skills/${old.version.id}/tree/SKILL.md`)).toBe(true)
+  const after = await bundles.observeCatalog(signal())
+  expect(after.value.entries[0]?.version.id).toBe(activeId)
+  after.release(); parent.release(); expect(f.residents()).toBe(0)
 })
 
 it('retains uninstalled source dependencies from durable full-tree copy records and rejects forged catalog objects', async () => {

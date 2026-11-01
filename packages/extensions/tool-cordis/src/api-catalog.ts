@@ -2048,6 +2048,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'binding', description: 'Original installed graph binding whose ready publication and current recipe seal must hold.' }],
       },
       {
+        signature: 'captureReadRecipeCurrent?(): () => void',
+        description: 'Capture the current Root audit for a request already admitted by the original carrier.',
+        parameters: [],
+        returns: 'A synchronous current check tied to the original sealed Root candidate.',
+      },
+      {
         signature: 'inspectControl(): RuntimeControlObservation',
         description: 'Return safe retained control counts without credentials or paths.',
         parameters: [],
@@ -2082,6 +2088,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delegate one native model-key invocation through the original login registry.',
         parameters: [{ name: 'peer', description: 'Exact Gateway invocation Peer, never a client identity.' }, { name: 'consume', description: 'Actual native work using the original retained Use and current checks.' }],
         returns: 'Actual operation settlement; this service issues no additional borrow.',
+      },
+      {
+        signature: 'readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean',
+        description: 'Check only the original active HTTP read carrier, if any.',
+        parameters: [{ name: 'peer', description: 'Exact original invocation Peer.' }, { name: 'binding', description: 'Installed account generation retained by that carrier.' }, { name: 'endpoint', description: 'Exact unary file-read endpoint admitted for this response.' }],
+        returns: 'Whether this operation belongs to the still-current original read carrier.',
       },
       {
         signature: 'withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: \'if-idle\' | \'stop-and-apply\' = \'if-idle\'): Promise<T>',
@@ -2157,6 +2169,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Require a reviewed native unary endpoint after business admission.',
         parameters: [{ name: 'endpoint', description: 'Native unary URL endpoint.' }],
         returns: 'The audited declaration after business admission.',
+      },
+      {
+        signature: 'requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure',
+        description: 'Recheck the original file inventory for an already-admitted unary read.',
+        parameters: [{ name: 'endpoint', description: 'Exact native file-read method admitted on the original carrier.' }],
+        returns: 'The original current exposure after native inventory and installation checks.',
+      },
+      {
+        signature: 'auditFileRead(): void',
+        description: 'Audit the original native file methods when admitting a unary read.',
+        parameters: [],
       },
       {
         signature: 'requireStream(endpoint: string): EndpointExposure',
@@ -6139,7 +6162,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',

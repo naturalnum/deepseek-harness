@@ -101,6 +101,8 @@ export interface AccountUse {
   readonly context: Context
   /** Reject stale or closed admission immediately before invoking native business work. */
   assertCurrent(): void
+  /** Check this retained borrow and its original ready graph without repeating Root plan validation. */
+  assertRetained?(): void
   /** Idempotently release only this borrow. */
   release(): void
 }
@@ -422,6 +424,11 @@ export interface AccountRuntimeService {
    * @param binding Original installed graph binding whose ready publication and current recipe seal must hold.
    */
   assertBusinessCurrent(binding: AccountBinding): void
+  /**
+   * Capture the current Root audit for a request already admitted by the original carrier.
+   * @returns A synchronous current check tied to the original sealed Root candidate.
+   */
+  captureReadRecipeCurrent?(): () => void
   /**
    * Return safe retained control counts without credentials or paths.
    * @returns Frozen control phase, bounded counts and failure presence; these observations do not grant readiness.

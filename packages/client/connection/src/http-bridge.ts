@@ -14,6 +14,13 @@ import type { ConnectionFetchHandler } from './rpc.ts'
  * each body in memory, so this cap is also the per-request resident bound. */
 export const DEFAULT_MAX_REQUEST_BODY_BYTES = 300 * 1024 * 1024
 
+/** The response could not be admitted and its native body cleanup is unconfirmed. */
+export class ResponseCleanupError extends AggregateError {
+  constructor(admission: unknown, cleanup: unknown) {
+    super([admission, cleanup], 'Response admission and body cleanup failed')
+  }
+}
+
 interface BridgeServerResponse {
   readonly destroyed: boolean
   readonly writableEnded: boolean
@@ -33,6 +40,7 @@ interface BridgeServerResponse {
  * @param apiHandler - fetch-shaped API carrier the request is dispatched to.
  * @param peer - Peer the carrier admitted the request as.
  * @param maxRequestBodyBytes - maximum bytes buffered for a buffered route.
+ * @param beforeResponse - optional synchronous admission immediately before response headers.
  */
 export async function bridge(
   req: IncomingMessage,
@@ -40,6 +48,7 @@ export async function bridge(
   apiHandler: ConnectionFetchHandler,
   peer: PeerScope,
   maxRequestBodyBytes = DEFAULT_MAX_REQUEST_BODY_BYTES,
+  beforeResponse?: () => void,
 ): Promise<void> {
   const abort = new AbortController()
   // Client-disconnect detection MUST hang off the response, not the request:
@@ -95,6 +104,19 @@ export async function bridge(
     } as RequestInit & { duplex: 'half' })
   }
   const response = await apiHandler.fetch(request, peer)
+  if (beforeResponse !== undefined) {
+    try { beforeResponse() } catch (error) {
+      abort.abort(error)
+      try {
+        await response.body?.cancel(error)
+      } catch (cleanup) {
+        throw new ResponseCleanupError(error, cleanup)
+      } finally {
+        if (bodyMode === 'streaming' && !req.readableEnded) req.destroy()
+      }
+      throw error
+    }
+  }
   const requestUnread = bodyMode === 'streaming' && !req.readableEnded
   const responseHeaders = Object.fromEntries(response.headers.entries())
   res.writeHead(response.status, requestUnread ? { ...responseHeaders, connection: 'close' } : responseHeaders)

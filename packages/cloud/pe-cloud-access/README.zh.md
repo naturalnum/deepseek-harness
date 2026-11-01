@@ -144,6 +144,8 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 
 内部 `LoginPeerRegistry` 按已验证登录、账户及 epoch 合并创建，独立借用生命周期 `AccountUse`，固定首次 principal/cookie。准备中和清理未知的记录均占 Peer 名额；单个调用者超时或退出只结束自身等待。原生 HTTP bridge 和 WS mux 复用同一个真实 `Peer`；socket 断开保留 Peer 及借用。watcher 按配置复查，任意拒绝均关闭精确登录；派发及每个逻辑流前同步检查原登录、账户借用和传入的端点守卫。
 
+只有已准入的 `workspaceFiles/read`、`stat` 和 `readBytes` HTTP 请求可以使用请求局部 read carrier；它绑定原 Peer、binding、endpoint 和 Peer 持有的 `AccountUse`，不匹配时使用普通检查。Ingress 在分派前执行完整准入，并在响应头发送前复核原请求、Peer、exposure 和文件清单。carrier 保持有效直至 HTTP 响应结算。响应清理无法确认时，保留原 ingress 操作、Peer Use 和容量；参见 [Connection](../../client/connection/README.zh.md#browser-authentication-and-request-trust)。
+
 可信 `PeAuthService.withModelKeyPeerUse` 经当前 ingress 委派给 `LoginPeerRegistry.withOriginalUse`。精确原 Peer 身份选择已有 Entry 和 AccountUse；复制 id 及其他图的 Peer 均拒绝。Entry 在可重入 callback 前登记实际 task，在原生保存回合内重复原登录/代际/Use 检查，失效后仍保留 Use 到实际结算。不增加借用、释放 owner、账户表或保存队列。
 
 撤销或 lifetime 结束先停止准入并销毁载体，再共同等待原生 mux/Peer 及实际 HTTP 操作清理，最后释放借用。M1 失效回调只等待原生载体/Peer 关闭，不等待可能触发删除 hook 的准备、复查或载体认证。完整关闭另行等待载体实际结算及晚到借用后，才释放 Use。`cloud/stop-unconfirmed` 表示清理失败或清理等待超时；失败保留名额和借用并通知必填诊断回调，超时不代表已释放。有界标志通过公共 Cordis 日志观察 Peer 子树的错误事件；原生 disposer 兑现本身不能证明清理成功。该类及借用回调均只供同包装配，不增加 SDK、客户端授权字段或监听器。

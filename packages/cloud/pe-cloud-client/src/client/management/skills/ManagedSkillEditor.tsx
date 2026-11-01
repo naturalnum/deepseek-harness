@@ -64,7 +64,8 @@ export function ManagedSkillEditor({ editor, report, t }: {
     setInvalid(false)
     const action = remove ? editor.uninstall : editor.publish
     const show = (outcome: ManagedSkillOutcome): void => {
-      report(remove ? 'remove' : selection === null ? 'install' : 'update', outcome.kind === 'persisted' ? 'confirmed' : outcome.kind === 'invalid-bundle' ? 'unavailable' : outcome.kind)
+      if (outcome.kind === 'invalid-bundle') return
+      report(remove ? 'remove' : selection === null ? 'install' : 'update', outcome.kind === 'persisted' ? 'confirmed' : outcome.kind)
     }
     void action(control.signal).then(show, () => { if (alive(control)) setInvalid(true) })
   }

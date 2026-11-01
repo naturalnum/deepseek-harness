@@ -11,7 +11,7 @@ import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
 import { CloudIngress } from './ingress.ts'
 import { OwnerRouting } from './owner-routing.ts'
 import type { IngressObservation } from './types.ts'
-import type { AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { ConfigurationPeerOperation } from './peers.ts'
@@ -118,6 +118,18 @@ export class PeAuthService extends Service {
   withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
     if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
     return this.ingress.withModelKeyPeerUse(peer, consume)
+  }
+
+  /**
+   * Check only the original active HTTP read carrier, if any.
+   * @param peer Exact original invocation Peer.
+   * @param binding Installed account generation retained by that carrier.
+   * @param endpoint Exact unary file-read endpoint admitted for this response.
+   * @returns Whether this operation belongs to the still-current original read carrier.
+   */
+  readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean {
+    if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+    return this.ingress.readOperationCurrent(peer, binding, endpoint)
   }
 
   /** Delegate a guarded configuration handoff to the same original login/Peer owner.

@@ -3,8 +3,8 @@ import { expect, it } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { StaticStorageAccount } from '../src/storage-types.ts'
-import { parseRootSkillRevalidation, assertRootSkillRevalidation } from '../src/skill-revalidation.ts'
-import { skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
+import { parseRootSkillRevalidation, parseRootSkillRevalidations, assertRootSkillRevalidation } from '../src/skill-revalidation.ts'
+import { skillRestartProof, skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
 
 const accountId = brandString<AccountMountInput['binding']['accountId']>('account')
 const storageKey = brandString<AccountMountInput['layout']['storageKey']>('v1-' + '1'.repeat(64))
@@ -58,4 +58,67 @@ it('refuses the prior actual process, malformed measured identity, changed linea
       projects: { ...original.lineage.after.projects, mountId: '615' } } } },
     { ...original, approved: true },
   ]) expect(() => parseRootSkillRevalidation(encode(changed), observed, hash)).toThrow()
+})
+
+it('accepts the legacy proof and an account-scoped bounded collection without duplicate Workspaces', () => {
+  const first = skillRevalidationProof(account), second = { ...first, workspaceId: 'workspace-2', recordSha256: 'b'.repeat(64) }
+  const legacy = parseRootSkillRevalidations(encode(first), observed, hash, [account], 2)
+  const result = parseRootSkillRevalidations(encode({ schema: 2, records: [first, second] }), observed, hash, [account], 2)
+  expect(legacy).toHaveLength(1); expect(result.map(row => row.workspaceId)).toEqual(['workspace', 'workspace-2'])
+  expect(parseRootSkillRevalidations(encode(first), observed, hash, [account], undefined)).toHaveLength(1)
+  expect(() => parseRootSkillRevalidations(encode({ schema: 2, records: [first] }), observed, hash, [account], undefined)).toThrow()
+  expect(Object.isFrozen(result)).toBe(true)
+  for (const bad of [
+    { schema: 2, records: [] },
+    { schema: 2, records: [first, first] },
+    { schema: 2, records: [first, second, { ...second, workspaceId: 'third' }] },
+    { schema: 2, records: [first, { ...second, accountId: 'other' }] },
+    { schema: 2, records: [first, { ...second, retirement: null }] },
+    { schema: 2, records: [first], approved: true },
+  ]) expect(() => parseRootSkillRevalidations(encode(bad), observed, hash, [account], 2)).toThrow()
+})
+
+it('matches each proof to a known account and enforces the project limit per account', () => {
+  const other = { ...account, accountId: brandString<typeof accountId>('other'),
+    storageKey: brandString<typeof storageKey>('v1-' + '2'.repeat(64)) }
+  const first = skillRevalidationProof(account), second = skillRevalidationProof(other)
+  const both = { schema: 2, records: [first, second] }
+  expect(parseRootSkillRevalidations(encode(both), observed, hash, [account, other], 1)).toHaveLength(2)
+  expect(() => parseRootSkillRevalidations(encode(both), observed, hash, [account], 1)).toThrow()
+  expect(() => parseRootSkillRevalidations(encode({ schema: 2, records: [first, { ...first, workspaceId: 'other' }, second] }),
+    observed, hash, [account, other], 1)).toThrow()
+})
+
+it('accepts normal restart continuity without inventing archive lineage, alone or in a bounded mixed collection', () => {
+  const normal = skillRestartProof(account), legacy = skillRevalidationProof(account)
+  const parsed = parseRootSkillRevalidation(encode(normal), observed, hash)
+  expect(() => { assertRootSkillRevalidation(parsed, input(), account) }).not.toThrow()
+  const collection = { schema: 2, records: [normal, { ...legacy, workspaceId: 'legacy-workspace' }] }
+  expect(parseRootSkillRevalidations(encode(collection), observed, hash, [account], 2).map(row => row.workspaceId))
+    .toEqual(['workspace', 'legacy-workspace'])
+})
+
+it('rejects incomplete normal restart or changed controller, physical volume and termination evidence', () => {
+  const original = skillRestartProof(account), lineage = original.lineage, retirement = original.retirement
+  for (const changed of [
+    { ...original, retirement: { ...retirement, filesTerminal: { ...retirement.filesTerminal, kind: 'lane-joined' } } },
+    { ...original, retirement: { ...retirement, processExit: { ...retirement.processExit, exitCode: 1 } } },
+    { ...original, retirement: { ...retirement, filesTerminal: { ...retirement.filesTerminal, pendingOperationIds: ['unknown'] } } },
+    { ...original, retirement: { ...retirement, writersTerminal: { ...retirement.writersTerminal, kind: 'unknown' } } },
+    { ...original, retirement: { ...retirement, ownerRecoverySha256: '' } },
+    { ...original, lineage: { ...lineage, kind: 'archive' } },
+    { ...original, lineage: { ...lineage, beforeReceiptSha256: 'unknown' } },
+    { ...original, lineage: { ...lineage, oldArchiveSha256: 'a'.repeat(64) } },
+    { ...original, lineage: { ...lineage, after: { ...lineage.after,
+      controller: { ...lineage.after.controller, process: { pid: 1, startTicks: '100' } } } } },
+    { ...original, lineage: { ...lineage, after: { ...lineage.after,
+      controller: { ...lineage.after.controller, mountNamespace: 'mnt:[124]' } } } },
+    { ...original, lineage: { ...lineage, after: { ...lineage.after,
+      projects: { ...lineage.after.projects, mountId: '615' } } } },
+    { ...original, lineage: { ...lineage, after: { ...lineage.after,
+      private: { ...lineage.after.private, backing: { ...lineage.after.private.backing, inode: '7' } } } } },
+  ]) expect(() => parseRootSkillRevalidation(encode(changed), observed, hash)).toThrow()
+  const proof = parseRootSkillRevalidation(encode(original), observed, hash)
+  expect(() => { assertRootSkillRevalidation(proof, input(), { ...account,
+    projects: { ...account.projects, backing: { ...account.projects.backing, inode: '7' } } }) }).toThrow()
 })

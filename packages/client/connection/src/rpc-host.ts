@@ -86,13 +86,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @param peer - fixed live Peer selected by the external carrier.
    * @param maxRequestBodyBytes - byte limit for buffered request bodies.
    * @param beforeDispatch - optional caller admission after actual route/envelope selection; omission retains native behavior.
+   * @param beforeResponse - optional synchronous admission before response headers or body.
    * @returns completion of response transfer and request-body cleanup.
    */
   handleNodeRequest(
     request: IncomingMessage, response: ServerResponse, peer: PeerScope, maxRequestBodyBytes: number,
-    beforeDispatch?: ConnectionDispatchGuard,
+    beforeDispatch?: ConnectionDispatchGuard, beforeResponse?: () => void,
   ): Promise<void> {
-    return bridge(request, response, this.createSharedFetchHandler(API_PATH, beforeDispatch), peer, maxRequestBodyBytes)
+    return bridge(request, response, this.createSharedFetchHandler(API_PATH, beforeDispatch), peer, maxRequestBodyBytes, beforeResponse)
   }
 
   readonly allowsRemoteAuthorities: boolean

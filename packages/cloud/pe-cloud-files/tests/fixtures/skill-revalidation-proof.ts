@@ -20,3 +20,14 @@ export function skillRevalidationProof(account: StaticStorageAccount) {
       newJournalSha256: '9'.repeat(64), newManifestSha256: 'a'.repeat(64), before, after: structuredClone(before) },
   }
 }
+
+export function skillRestartProof(account: StaticStorageAccount) {
+  const original = skillRevalidationProof(account)
+  const controller = { bootId: '11111111-1111-4111-8111-111111111111', mountNamespace: 'mnt:[123]',
+    process: { pid: 1, startTicks: '99' } }
+  const before = { controller, ...original.lineage.before }
+  return { ...original, schema: 3,
+    retirement: { ...original.retirement, filesTerminal: { ...original.retirement.filesTerminal, kind: 'physical-terminal' } },
+    lineage: { kind: 'normal-restart', beforeReceiptSha256: '6'.repeat(64), afterReceiptSha256: '7'.repeat(64),
+      before, after: structuredClone(before) } }
+}

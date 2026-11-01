@@ -225,7 +225,7 @@ Wait for current lifecycle work and rethrow startup errors.
 
 **Returns** this fiber, once it has settled into a stable state.
 
-[Source](../../vendor/cordis/src/fiber.ts#L704)
+[Source](../../vendor/cordis/src/fiber.ts#L705)
 
 ### fiber.restart()
 
@@ -243,7 +243,7 @@ Dispose and immediately reload this plugin with its current config.
 
 **Returns** a promise resolving once the reload settled.
 
-[Source](../../vendor/cordis/src/fiber.ts#L718)
+[Source](../../vendor/cordis/src/fiber.ts#L719)
 
 ### fiber.update(config, noSave?)
 
@@ -271,7 +271,7 @@ Runs the `internal/update` waterfall first, so update hooks (and HMR) can veto o
 
 **Returns** nothing; the restart runs behind the `internal/update` waterfall.
 
-[Source](../../vendor/cordis/src/fiber.ts#L736)
+[Source](../../vendor/cordis/src/fiber.ts#L737)
 
 ## Effect
 

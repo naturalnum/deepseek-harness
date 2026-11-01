@@ -241,6 +241,22 @@ export class RootRecipeAudit {
     if (this.state.status !== 'sealed') this.fail()
   }
 
+  /**
+   * Capture the exact sealed audit for a single already-admitted read.
+   * @param recipeVersion Original deployment version admitted for this request.
+   * @returns A synchronous check retaining that exact sealed candidate; it grants no new admission.
+   */
+  captureReadCurrent(recipeVersion: string): () => void {
+    this.assertSealed(recipeVersion)
+    const candidate = this.candidate
+    if (candidate === undefined) this.fail()
+    return () => {
+      if (this.candidate !== candidate || this.state.status !== 'sealed' || this.state.recipeVersion !== recipeVersion) this.fail()
+      this.recheck(false)
+      if (this.candidate !== candidate || this.state.status !== 'sealed') this.fail()
+    }
+  }
+
   /** Revoke retained facts, observing only the first transition with fixed reason/provider labels.
    * @param reason Internal fixed call site; omission denotes explicit administrative revocation.
    * @param provider Provider whose original identity or health check refused, if applicable.
@@ -327,7 +343,7 @@ export class RootRecipeAudit {
     this.seal({ recipeVersion, entrypoints: ROLES, roots, providers, manifest: exposure.policy.manifest })
   }
 
-  private recheck(): void {
+  private recheck(checkPlans = true): void {
     const candidate = this.candidate
     if (candidate === undefined) return
     let reason: RevokeReason = 'entry-identity'
@@ -337,7 +353,7 @@ export class RootRecipeAudit {
         reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
         reason = 'entry-config-plan'
-        entry.assertConfigUpdatePlan(plan)
+        if (checkPlans) entry.assertConfigUpdatePlan(plan)
       }
       for (const { key, value, fiber } of candidate.providers) {
         reason = 'provider-identity'; provider = key

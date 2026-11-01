@@ -54,6 +54,8 @@ Only API callers use `GET /connect?token=...&interactions=answer|none`: it immed
 
 An externally admitted carrier may pass `beforeDispatch` to `HostConnectionService.handleNodeRequest` or `createSharedFetchHandler`. The native selector reports the actual `ConnectionDispatch`: either the exact Fetch method/path or the RPC endpoint after JSON and envelope validation. The synchronous guard runs immediately before that handler; a throw propagates to the outer carrier for its safe response mapping. It can recheck authority after body transfer and cannot approve a shadowed RPC instead of the selected Fetch route. Omission preserves ordinary native dispatch.
 
+A Node carrier may also pass a synchronous `beforeResponse` to `handleNodeRequest`. The bridge calls it after the handler returns and immediately before response headers; omission leaves the ordinary path unchanged. If it throws, the bridge aborts the request and awaits cancellation of the response body before propagating the refusal. If cancellation rejects, the exported `ResponseCleanupError` retains both failures; pending cancellation keeps the bridge pending. The carrier owns safe error mapping and any retained resources.
+
 Authenticated shared HTTP requests pass through the `connection/request` waterfall before body transfer. A listener may refuse new requests or await `next()` through response completion; removing its owning fiber removes admission behavior. Desktop uses this hook to lock new API work during an approved installation without canceling already-admitted work. Client disconnection aborts the handler signal; the bridge stops socket writes and drains any remaining response chunks. WebSocket stream ownership remains with API Gateway.
 
 <a id="connection-generation"></a>

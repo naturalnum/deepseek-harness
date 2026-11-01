@@ -54,6 +54,8 @@ HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 host
 
 外部已准入的 carrier 可向 `HostConnectionService.handleNodeRequest` 或 `createSharedFetchHandler` 传入 `beforeDispatch`。原生选择器报告实际的 `ConnectionDispatch`：exact Fetch 的 method/path，或完成 JSON 与 envelope 校验后的 RPC endpoint。同步 guard 紧靠真实 handler 调用前执行；抛错交回外层 carrier 安全映射响应。它可在正文传输后重查权限，不能用被遮盖的 RPC 名称批准实际 Fetch。省略时保留普通原生分派。
 
+Node carrier 也可向 `handleNodeRequest` 传入同步的 `beforeResponse`。bridge 在 handler 返回后、发送响应头前调用它；省略时保持普通路径。若回调抛错，bridge 中止请求并等待响应体取消后再传播拒绝。若取消失败，已导出的 `ResponseCleanupError` 保留两个失败；取消未结算时 bridge 继续等待。carrier 负责安全错误映射和所持资源。
+
 通过认证的共享 HTTP 请求在传输请求体之前经过 `connection/request` waterfall。监听器可以拒绝新请求，或等待 `next()` 直到响应完成；释放所属 fiber 会移除准入行为。Desktop 使用此扩展点，在已批准的安装期间锁住新的 API 工作，而不取消已接纳的工作。客户端断开会中止处理函数的信号；桥接器停止写入 socket，并排空剩余响应块。WebSocket 流仍由 API Gateway 负责。
 
 <a id="connection-generation"></a>

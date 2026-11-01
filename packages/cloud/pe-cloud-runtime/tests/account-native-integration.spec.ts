@@ -102,10 +102,12 @@ async function fixture(options: {
   instructionSources?: InstructionSourceFixture
   nativeFiles?: boolean
   auditedFileCalls?: boolean
+  auditedFileBytes?: boolean
   installFileApi?: boolean
   office?: boolean
   officeUnselected?: boolean
   beforeBootstrap?: (ctx: Context) => void
+  readCurrent?: (caller: Context, binding: AccountBinding, endpoint: string) => boolean
   verifyBootstrap?: (api: CloudAccountApi) => Promise<void>
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8s-native-integration-')))
@@ -121,7 +123,7 @@ async function fixture(options: {
     { id: 'exposure', name: 'cordis:exposure', config: { recipeVersion: 'm8s',
       rpcEndpoints: options.instructionSources === undefined ? [] : ['create', 'prompt', 'cancel', 'page'].map(method => ({
         endpoint: 'session/' + method, handlerId: 'native:sessionController', guard: method === 'create' ? 'account-project' : 'account-session',
-      })).concat(options.auditedFileCalls ? ['read', 'stat'].map(method => ({ endpoint: `workspaceFiles/${method}`,
+      })).concat(options.auditedFileCalls ? ['read', 'stat', ...options.auditedFileBytes ? ['readBytes'] : []].map(method => ({ endpoint: `workspaceFiles/${method}`,
         handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []).concat(options.office && !options.officeUnselected ? [
         { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
         { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
@@ -259,6 +261,7 @@ async function fixture(options: {
       } } : {},
       ...options.firstScreen ? { firstScreen: { home: layout.privateRoot, maxHomeBytes: 4096,
         maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 16, maxQueuedBytes: 131072 } } : {},
+      ...options.readCurrent === undefined ? {} : { readCurrent: options.readCurrent },
       assertRootCurrent: () => {
         if (options.instructionSources === undefined) { root.peAccountRuntime.assertRecipeSealed('m8s'); return }
         root.fiber.assertActive()
@@ -1227,4 +1230,37 @@ it('retains the factory account slot if the original Office owner cannot confirm
   expect(disposed).toHaveBeenCalledOnce()
   expect(f.factory.inspect()).toMatchObject({ slots: 1, unknown: 1 })
   expect(ctx.fiber.state).toBe(FiberState.ACTIVE)
+})
+
+it('an admitted file read retains the native Session and provider checks while avoiding repeated Root checks', async () => {
+  let admitted = true, localChecks = 0
+  const f = await fixture({ instructionSources: instructionSourceFixture(),
+    nativeFiles: true, auditedFileCalls: true, auditedFileBytes: true,
+    readCurrent: (_caller, _binding, endpoint) => { localChecks++; return admitted && ['workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/readBytes'].includes(endpoint) },
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'candidate-read.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  const native = f.recipe.native
+  if (native === undefined) throw new Error('Native preparation absent')
+  const full = vi.spyOn(native, 'assertRootCurrent')
+  const peer = { id: brandString<PeerId>('read-boundary-component'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const read = (id: SessionId) => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read',
+    args: { workspaceFileScopeId: id, path: 'candidate-read.txt', range: {} }, peer })
+  await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data' })
+  expect(localChecks).toBeGreaterThan(0)
+  const admittedRootChecks = full.mock.calls.length
+  await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'stat',
+    args: { workspaceFileScopeId: own.sessionId, path: 'candidate-read.txt' }, peer })).resolves.toMatchObject({ bytes: 10 })
+  await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'readBytes',
+    args: { workspaceFileScopeId: own.sessionId, path: 'candidate-read.txt', options: {} }, peer }))
+    .resolves.toMatchObject({ data: Buffer.from('owned data') })
+  await expect(read(SessionId('foreign-read-session'))).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  admitted = false; full.mockClear()
+  await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data' })
+  expect(full.mock.calls.length).toBeGreaterThan(admittedRootChecks)
+  process.stdout.write(`OFFLINE_NATIVE_FILE_READ ${JSON.stringify({ localChecks, admittedRootChecks, fallbackRootChecks: full.mock.calls.length })}\n`)
 })

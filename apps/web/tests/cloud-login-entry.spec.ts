@@ -7,7 +7,7 @@ import * as connection from '@deepseek-ai/dsh-client-connection/client'
 import * as cloud from '@deepseek-ai/dsh-pe-cloud-client/client'
 import type { CloudWebManifest } from '@deepseek-ai/dsh-pe-cloud-client/types'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { CloudWebEntry } from '../src/cloud-web.ts'
 
 const entries: CloudWebEntry[] = []
@@ -574,4 +574,47 @@ describe('real source Cloud Web component', () => {
     expect(f.fetcher).toHaveBeenCalledTimes(2)
     expect(f.mount).not.toHaveBeenCalled()
   })
+})
+
+it.each(['withdraw', 'replace'] as const)('completes stale-page cleanup when a native service notification can %s another service', async (action) => {
+  const release = Promise.withResolvers<undefined>(), reload = vi.fn()
+  const f = fixture({ nativeStop: () => release.promise, reload,
+    fetch: async input => pathOf(input).endsWith('/api/cloudPlugins/list')
+      ? Response.json({ code: 'cloud/stale-generation' }, { status: 409 }) : Response.json(metadata()) })
+  onTestFinished(() => { release.resolve(undefined) })
+  await f.entry.run()
+  const native = f.native()!
+  const page = native.get('peCloudPage')!
+  native.reflect.provide('cleanupFirst', {})
+  const withdrawSecond = native.reflect.provide('cleanupSecond', {})
+  native.reflect.provide('cleanupThird', {})
+  let withdrawn = false, notifiedThird = false, secondNotifications = 0
+  native.on('internal/service', (name) => {
+    if (name === 'cleanupThird' && page.getSnapshot().phase === 'stopping') notifiedThird = true
+    if (name === 'cleanupSecond' && page.getSnapshot().phase === 'stopping') secondNotifications++
+    if (name !== 'cleanupFirst' || page.getSnapshot().phase !== 'stopping' || withdrawn) return
+    withdrawn = true
+    void withdrawSecond()
+    if (action === 'replace') native.root.reflect.provide('cleanupSecond', {})
+  })
+  await page.lifetime.transport.hooks.fetch!('api/cloudPlugins/list', { method: 'POST' }).catch(() => {})
+  await vi.waitFor(() => { expect(f.events).toContain('native-stop') })
+  expect(f.state()).toBe('stopping')
+  expect(withdrawn).toBe(true)
+  expect(notifiedThird).toBe(true)
+  expect(secondNotifications).toBe(action === 'replace' ? 2 : 1)
+  expect(() => page.lifetime.persistence.port.getItem('late')).toThrow()
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(f.state()).toBe('stopped') })
+  expect(page.getSnapshot().phase).toBe('stopped')
+  const reconnect = document.querySelector<HTMLButtonElement>('form button[type=button]')!
+  expect(reconnect.hidden).toBe(false)
+  reconnect.click()
+  await expect.poll(() => reload.mock.calls.length).toBe(1)
+  await f.entry.dispose()
+  document.body.replaceChildren()
+  const next = fixture({ fetch: async () => Response.json({ ...metadata(), connectionGeneration: 'next-generation' }) })
+  await next.entry.run()
+  expect(next.state()).toBe('running')
+  expect(next.native()!.get('peCloudPage')!.bootstrap.connectionGeneration).toBe('next-generation')
 })

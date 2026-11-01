@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import z from '@deepseek-ai/schemastery'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PeAccountRuntime } from '../src/root.ts'
@@ -271,4 +272,40 @@ it('keeps the original revocation when writing its observation fails', async () 
   f.closeFiles()
   expect(f.runtime.inspectRecipe().status).toBe('revoked')
   expect(() => { f.runtime.assertRecipeSealed('m8m') }).toThrow('not sealed')
+})
+
+it('offline captured Root audit detects revoke and reseal and defers only plan drift', async () => {
+  const f = await fixture()
+  // Component substitute: no claim of Linux storage verification or production readiness.
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const participants = [
+    { participant: f.files, fiber: f.entry('files').fiber! },
+    { participant: f.execution, fiber: f.entry('execution').fiber! },
+  ]
+  const audit = new RootRecipeAudit(f.ctx, () => participants,
+    () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  audit.seal(f.input)
+  expect(audit.inspect().status).toBe('sealed')
+  const current = audit.captureReadCurrent('m8m')
+  const entry = f.entry('files'), guard = vi.spyOn(entry, 'assertConfigUpdatePlan')
+  current(); expect(guard).not.toHaveBeenCalled()
+  entry.options.config.minimumHealthyWorkers++
+  current(); expect(guard).not.toHaveBeenCalled()
+  expect(() => audit.assertSealed('m8m')).toThrow()
+  expect(() => current()).toThrow()
+  entry.options.config.minimumHealthyWorkers--
+  audit.seal(f.input)
+  expect(audit.inspect().status).toBe('sealed')
+  expect(() => current()).toThrow()
+  const replacement = audit.captureReadCurrent('m8m')
+  const originalFiber = entry.fiber
+  entry.fiber = undefined
+  expect(() => replacement()).toThrow()
+  entry.fiber = originalFiber
+  audit.seal(f.input)
+  const afterReplacement = audit.captureReadCurrent('m8m')
+  audit.revoke()
+  expect(() => afterReplacement()).toThrow()
 })

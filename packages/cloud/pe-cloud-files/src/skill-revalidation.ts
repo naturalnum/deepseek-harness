@@ -1,4 +1,4 @@
-/** Bounded Root attestations for one old complete record; facts alone never constitute an account capability. */
+/** Bounded Root attestations for old complete records; facts alone never constitute an account capability. */
 import { isDeepStrictEqual } from 'node:util'
 import type { AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { StaticStorageAccount, StaticStorageDomain, StorageProcessIdentity } from './storage-types.ts'
@@ -21,6 +21,7 @@ type Volume = {
 export interface SkillRecordRevalidation {
   readonly workspaceId: string
   readonly recordSha256: string
+  readonly recordRevision: string
   /** False only after this original Root has observed the exact revalidation CAS commit. */
   readonly pending: boolean
   /** @param revision Current native version read beside the exact old protected association bytes. */
@@ -76,6 +77,14 @@ function volume(value: unknown): Volume {
     backing: Object.freeze({ path: text(b.path), device: decimal(b.device), inode: decimal(b.inode), bytes: decimal(b.bytes) }) })
 }
 
+function controller(value: unknown) {
+  const v = object(value, ['bootId', 'mountNamespace', 'process'])
+  const bootId = text(v.bootId), mountNamespace = text(v.mountNamespace)
+  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(bootId)
+    || !/^mnt:\[[1-9][0-9]{0,19}\]$/.test(mountNamespace)) reject()
+  return Object.freeze({ bootId, mountNamespace, process: processIdentity(v.process) })
+}
+
 /**
  * Decode only bytes already read through the original worker's protected, hash-pinned Root carrier.
  * @param bytes Complete finite proof; the Root publisher binds its original evidence receipts to these bytes.
@@ -87,9 +96,13 @@ export function parseRootSkillRevalidation(bytes: Uint8Array, observed: StorageP
   planSha256: string): RootSkillRevalidationProof {
   let raw: unknown
   try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch (_invalid) { reject() }
+  return parseProof(raw, observed, planSha256)
+}
+
+function parseProof(raw: unknown, observed: StorageProcessIdentity, planSha256: string): RootSkillRevalidationProof {
   const v = object(raw, ['schema', 'accountId', 'storageKey', 'workspaceId', 'recordSha256', 'recordRevision',
     'previous', 'retirement', 'lineage'])
-  if (v.schema !== 1) reject()
+  if (v.schema !== 1 && v.schema !== 3) reject()
   const previous = generation(v.previous)
   const recipient = Object.freeze({ process: processIdentity(observed), planSha256: digest(planSha256) })
   if (isDeepStrictEqual(previous.process, recipient.process)) reject()
@@ -98,27 +111,75 @@ export function parseRootSkillRevalidation(bytes: Uint8Array, observed: StorageP
   if (exit.kind !== 'normal-exit' || exit.exitCode !== 0 || !isDeepStrictEqual(processIdentity(exit.process), previous.process)) reject()
   digest(exit.receiptSha256); digest(retirement.ownerRecoverySha256)
   const files = object(retirement.filesTerminal, ['kind', 'instanceId', 'epoch', 'pendingOperationIds', 'receiptSha256'])
-  if ((files.kind !== 'lane-joined' && files.kind !== 'physical-terminal') || files.instanceId !== previous.instanceId
+  if ((v.schema === 3 ? files.kind !== 'physical-terminal' : files.kind !== 'lane-joined' && files.kind !== 'physical-terminal')
+    || files.instanceId !== previous.instanceId
     || files.epoch !== previous.epoch || !Array.isArray(files.pendingOperationIds) || files.pendingOperationIds.length !== 0) reject()
   digest(files.receiptSha256)
   const writers = object(retirement.writersTerminal, ['kind', 'process', 'receiptSha256'])
   if (writers.kind !== 'complete-scope-terminal' || !isDeepStrictEqual(processIdentity(writers.process), previous.process)) reject()
   digest(writers.receiptSha256)
-  const lineage = object(v.lineage, ['oldArchiveSha256', 'oldRetirementSha256', 'oldJournalSha256',
-    'newJournalSha256', 'newManifestSha256', 'before', 'after'])
-  for (const name of ['oldArchiveSha256', 'oldRetirementSha256', 'oldJournalSha256', 'newJournalSha256', 'newManifestSha256']) {
-    digest(lineage[name])
+  let volumes: RootSkillRevalidationProof['volumes']
+  if (v.schema === 1) {
+    const lineage = object(v.lineage, ['oldArchiveSha256', 'oldRetirementSha256', 'oldJournalSha256',
+      'newJournalSha256', 'newManifestSha256', 'before', 'after'])
+    for (const name of ['oldArchiveSha256', 'oldRetirementSha256', 'oldJournalSha256', 'newJournalSha256', 'newManifestSha256']) {
+      digest(lineage[name])
+    }
+    const before = object(lineage.before, ['private', 'projects']), after = object(lineage.after, ['private', 'projects'])
+    volumes = Object.freeze({ private: volume(after.private), projects: volume(after.projects) })
+    if (!isDeepStrictEqual(volume(before.private), volumes.private)
+      || !isDeepStrictEqual(volume(before.projects), volumes.projects)) reject()
+  } else {
+    const lineage = object(v.lineage, ['kind', 'beforeReceiptSha256', 'afterReceiptSha256', 'before', 'after'])
+    if (lineage.kind !== 'normal-restart') reject()
+    digest(lineage.beforeReceiptSha256); digest(lineage.afterReceiptSha256)
+    const before = object(lineage.before, ['controller', 'private', 'projects'])
+    const after = object(lineage.after, ['controller', 'private', 'projects'])
+    volumes = Object.freeze({ private: volume(after.private), projects: volume(after.projects) })
+    if (!isDeepStrictEqual(controller(before.controller), controller(after.controller))
+      || !isDeepStrictEqual(volume(before.private), volumes.private)
+      || !isDeepStrictEqual(volume(before.projects), volumes.projects)) reject()
   }
-  const before = object(lineage.before, ['private', 'projects']), after = object(lineage.after, ['private', 'projects'])
-  const volumes = Object.freeze({ private: volume(after.private), projects: volume(after.projects) })
-  if (!isDeepStrictEqual(volume(before.private), volumes.private)
-    || !isDeepStrictEqual(volume(before.projects), volumes.projects)) reject()
   const recordRevision = text(v.recordRevision)
   if (!/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(recordRevision)) reject()
   const storageKey = text(v.storageKey)
   if (!/^v1-[a-f0-9]{64}$/.test(storageKey)) reject()
   return Object.freeze({ accountId: text(v.accountId), storageKey, workspaceId: text(v.workspaceId),
     recordSha256: digest(v.recordSha256), recordRevision, previous, recipient, volumes })
+}
+
+/**
+ * Decode one proof or a bounded collection from the same protected byte allowance.
+ * @param bytes Original hash-pinned complete proof input.
+ * @param observed Actual receiving worker process.
+ * @param planSha256 Original verified plan digest.
+ * @param accounts Actual verified account assignments.
+ * @param maxProjects Original per-account project bound; omission admits only one proof.
+ * @returns One detached qualification per distinct account and Workspace.
+ */
+export function parseRootSkillRevalidations(bytes: Uint8Array, observed: StorageProcessIdentity, planSha256: string,
+  accounts: readonly StaticStorageAccount[], maxProjects: number | undefined): readonly RootSkillRevalidationProof[] {
+  if (maxProjects !== undefined && (!Number.isSafeInteger(maxProjects) || maxProjects < 1) || accounts.length < 1) reject()
+  let raw: unknown
+  try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch (_invalid) { reject() }
+  let entries: readonly unknown[]
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw) && Reflect.get(raw, 'schema') === 2) {
+    const collection = object(raw, ['schema', 'records'])
+    if (maxProjects === undefined || !Array.isArray(collection.records) || collection.records.length < 1
+      || collection.records.length > maxProjects * accounts.length) reject()
+    entries = collection.records
+  } else entries = [raw]
+  const counts = new Map<string, number>(), seen = new Set<string>(), result: RootSkillRevalidationProof[] = []
+  for (const entry of entries) {
+    const proof = parseProof(entry, observed, planSha256)
+    const account = accounts.find(value => value.accountId === proof.accountId && value.storageKey === proof.storageKey)
+    if (account === undefined) reject()
+    const count = (counts.get(proof.accountId) ?? 0) + 1
+    const key = `${proof.accountId}\0${proof.storageKey}\0${proof.workspaceId}`
+    if (count > (maxProjects ?? 1) || seen.has(key)) reject()
+    counts.set(proof.accountId, count); seen.add(key); result.push(proof)
+  }
+  return Object.freeze(result)
 }
 
 /**

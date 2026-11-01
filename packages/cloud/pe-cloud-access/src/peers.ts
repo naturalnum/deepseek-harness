@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { Peer, HostConnectionService, type ConnectionDispatch } from '@deepseek-ai/dsh-client-connection'
+import { Peer, HostConnectionService, ResponseCleanupError, type ConnectionDispatch } from '@deepseek-ai/dsh-client-connection'
 import { TypertGatewayService, type NodeStreamTransport } from '@deepseek-ai/dsh-api-gateway'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -55,6 +55,7 @@ export interface LoginPeerPorts {
   readonly borrow: (binding: AccountBinding) => Promise<AccountUse>
   readonly beforeHttp: (request: IncomingMessage, peer: LoginPeer) => void
   readonly beforeDispatch?: (request: IncomingMessage, dispatch: ConnectionDispatch, peer: LoginPeer) => void
+  readonly captureRead?: () => () => void
   readonly beforeStream: (endpoint: string, peer: LoginPeer) => void
   readonly streams?: Pick<AuthIngressConfig,
     'maxFrameBytes' | 'maxLogicalStreams' | 'maxLogicalStreamsPerAccount' | 'maxLogicalStreamsPerPeer'>
@@ -95,6 +96,16 @@ interface Entry {
   businessStreamCount: number
 }
 
+interface ReadCarrier {
+  readonly entry: Entry
+  readonly handle: LoginPeer
+  readonly use: AccountUse
+  readonly endpoint: string
+  readonly response: ServerResponse
+  readonly rootCurrent: () => void
+  active: boolean
+}
+
 /**
  * Internal registry for a verified login and one trusted native account epoch.
  * Preparing and uncertain cleanup retain Peer capacity. Every actual native cleanup remains observed.
@@ -103,6 +114,7 @@ interface Entry {
 export class LoginPeerRegistry {
   private readonly requestCarrier = new AsyncLocalStorage<{
     readonly entry: Entry
+    read?: ReadCarrier
     settlement?: Promise<unknown>
     readonly releaseRequestUse?: () => void
     readonly requestActual?: Promise<void>
@@ -226,6 +238,39 @@ export class LoginPeerRegistry {
       else void this.startClose(entry, requestId)
       throw this.safe(error, requestId)
     }
+  }
+
+  /**
+   * Check an admitted read on its original carrier; other callers retain full admission.
+   * @param peer Exact original invocation Peer.
+   * @param binding Account binding retained by the existing request Use.
+   * @param endpoint Exact unary file-read endpoint admitted for this response.
+   * @param current Original ingress check for retained authentication and generation.
+   * @returns Whether this operation belongs to the still-current original read carrier.
+   */
+  readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, current: (handle: LoginPeer) => void): boolean {
+    const read = this.requestCarrier.getStore()?.read
+    if (read === undefined || !read.active || read.handle.peer !== peer || read.use.binding !== binding
+      || read.endpoint !== endpoint) return false
+    const { entry, handle, use } = read
+    if (entry.phase !== 'ready' || entry.handle !== handle || entry.use !== use || read.response.destroyed || use.assertRetained === undefined) {
+      throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+    }
+    const id = this.requestId()
+    try { this.auth.assertLoginCurrent(entry.principal, id) }
+    catch (error) {
+      if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') void this.beginRecheck(entry)
+      else void this.startClose(entry, id)
+      throw this.safe(error, id)
+    }
+    use.assertRetained()
+    read.rootCurrent()
+    current(handle)
+    use.assertRetained()
+    if (!read.active || entry.phase !== 'ready' || entry.handle !== handle || entry.use !== use || read.response.destroyed) {
+      throw new AuthAccessError('cloud/account-unavailable', id)
+    }
+    return true
   }
 
   /**
@@ -399,6 +444,7 @@ export class LoginPeerRegistry {
     entry.carriers.set(response, 'http')
     const carrier: {
       readonly entry: Entry
+      read?: ReadCarrier
       settlement?: Promise<unknown>
       readonly releaseRequestUse?: () => void
       readonly requestActual?: Promise<void>
@@ -410,11 +456,37 @@ export class LoginPeerRegistry {
       this.assertCurrent(handle, requestId)
       const connection = entry.connection
       if (connection === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
-      await connection.handleNodeRequest(request, response, handle.peer, maxRequestBodyBytes, (dispatch) => {
-        this.assertCurrent(handle, requestId)
-        this.ports.beforeDispatch?.(request, dispatch, handle)
-        this.assertCurrent(handle, requestId)
-      })
+      let selectedRead: ConnectionDispatch | undefined
+      try {
+        await connection.handleNodeRequest(request, response, handle.peer, maxRequestBodyBytes, (dispatch) => {
+          this.assertCurrent(handle, requestId)
+          this.ports.beforeDispatch?.(request, dispatch, handle)
+          this.assertCurrent(handle, requestId)
+          selectedRead = dispatch.kind === 'rpc' && ['workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/readBytes'].includes(dispatch.endpoint)
+            ? dispatch : undefined
+          if (selectedRead !== undefined && dispatch.kind === 'rpc' && entry.use?.assertRetained !== undefined && this.ports.beforeDispatch !== undefined
+            && this.ports.captureRead !== undefined) {
+            carrier.read = { entry, handle, use: entry.use, endpoint: dispatch.endpoint, response,
+              rootCurrent: this.ports.captureRead(), active: true }
+          }
+        }, () => {
+          if (selectedRead === undefined) return
+          if (response.destroyed || response.writableEnded) throw new AuthAccessError('cloud/account-unavailable', requestId)
+          this.assertCurrent(handle, requestId)
+          this.ports.beforeDispatch?.(request, selectedRead, handle)
+          this.assertCurrent(handle, requestId)
+          if (response.destroyed || response.writableEnded) throw new AuthAccessError('cloud/account-unavailable', requestId)
+        })
+      } catch (error) {
+        if (error instanceof ResponseCleanupError) {
+          entry.cleanupFault = true
+          void this.startClose(entry, requestId)
+          throw new AuthAccessError('cloud/stop-unconfirmed', requestId, { cause: error })
+        }
+        throw error
+      } finally {
+        if (carrier.read !== undefined) carrier.read.active = false
+      }
     })
     const tracked = this.trackCarrier(entry, task, () => {
       entry.carriers.delete(request)

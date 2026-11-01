@@ -52,6 +52,8 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 `CloudAccountApi.createWorkspaceFiles(owner, nativeConfig)` 在完整原生 inject 依赖就绪后，于实际 Loader fiber 构造唯一原生 WorkspaceFiles。它捕获原绑定及 fs、sandboxPolicy、sessions、typert 注册，并在清单审核及 workspaceFiles RPC/stream 准入时复核 value、fiber 和唯一性。清单由全部原生 Remote marker 及其 mode 推导，开放范围仍由 manifest 精确选择。原生类、DTO、lookup、文件 I/O 和流清理保持原义。部署必须保留要求可信 Agent 或原 Gateway invocation 的 Runtime resolver；本注册不授予路径权限，也不新增 watch 支持。
 
+对原 HTTP carrier 上已准入的 `workspaceFiles/read`、`stat` 或 `readBytes`，API 在文件准入时复核所选 account-session exposure 和原 WorkspaceFiles 注册。Ingress 在分派时及响应头发送前还会审核原生文件清单；这些检查不授予文件或路径权限。
+
 -----
 
 可选的 `approvedConfiguration.fields` 行选择精确的命名空间／字段对及可选的有限标量 `values`。Root 要求相同的完整 `allowedSettings` 集合与唯一原生 `settings/mutate` writer。仅支持明确批准的原生 Settings 顶层字段。结构化 schema 必须在原生清单预算内，且不能包含 secret、credential-ref 或不可检查的子项；有限 `values` 仍仅支持标量。可信首屏准备跨原 Controller 结果保留原登录 Peer/AccountUse。修改要求非负安全整数 `expectedRevision`，路径必须唯一且仅含获批的单个字段；其他方法及原 JSON 中的未知字段均拒绝。既有 `locale/preference` 策略仍要求精确的 `values:["zh","en"]`，且仅允许单条匹配的 `set`。原 Settings、ConfigEditor 和账户保存屏障负责持久化及 live 应用。替换前拒绝正常结算，不触发隔离；替换后的未知结果保留责任并触发原账户隔离。`hasDocument` 仍为 false，省略时保持只读。

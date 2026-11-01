@@ -11,7 +11,7 @@ import { createSkillProjectWork } from '../src/skill-project-work.ts'
 import { FdWorkerClient } from '../src/worker-client.ts'
 import { limits, projectionLimits } from './fixtures/bundle-limits.ts'
 
-async function fixture(authorizeActive = false) {
+async function fixture(authorizeActive = false, revalidate = true) {
   const worker = new Worker(new URL('./fixtures/skill-exit-worker.mjs', import.meta.url)), client = new FdWorkerClient(worker)
   onTestFinished(async () => { await client.close(); await client.exited; await worker.terminate() }); await client.ready
   const lifetime = new AbortController(), binding: AccountBinding = { accountId: brandString<AccountBinding['accountId']>('A'),
@@ -65,8 +65,8 @@ async function fixture(authorizeActive = false) {
     resolveSource: () => undefined, source: async () => { throw new Error('Full trees cannot use the two-file reader') },
     resolveBundle: (supplied) => { expect(supplied.treeSha256).toBe(version.treeSha256); return version },
     bundleSource: sourceRead, bundleAuthorize: authorize,
-    revalidation: { workspaceId: workspace.id, recordSha256: hash, pending: true,
-      assertRecord: (supplied) => { expect(supplied).toBe('1:2:3:4:5') }, confirmRecord: confirm },
+    ...revalidate ? { revalidation: [{ workspaceId: workspace.id, recordSha256: hash, recordRevision: '1:2:3:4:5', pending: true,
+      assertRecord: (supplied: string) => { expect(supplied).toBe('1:2:3:4:5') }, confirmRecord: confirm }] } : {},
     mutate: async (work, signal) => ({ value: await work(client, signal), release() {} }),
   })
   return { port, workspace, native, legacy, writes, authorize, confirm, sourceRead, tree, version,
@@ -91,6 +91,17 @@ it('rejects an incomplete persisted tree before source/native checks or any cold
   const f = await fixture(); f.corrupt()
   await expect(f.port.prepareProject(f.workspace, () => {}, new AbortController().signal)).rejects.toThrow()
   expect(f.native).not.toHaveBeenCalled(); expect(f.sourceRead).not.toHaveBeenCalled(); expect(f.writes).not.toHaveBeenCalled()
+})
+
+it('rejects a retained full-tree workspace in a new mount without a Root proof before materializing any version', async () => {
+  const f = await fixture(true, false)
+  await expect(f.port.prepareProject(f.workspace, () => {}, new AbortController().signal))
+    .rejects.toMatchObject({ outcome: 'not-published', code: 'FS_STALE_VERSION' })
+  expect(f.native).not.toHaveBeenCalled()
+  expect(f.sourceRead).not.toHaveBeenCalled()
+  expect(f.authorize).not.toHaveBeenCalled()
+  expect(f.writes).not.toHaveBeenCalled()
+  expect(f.confirm).not.toHaveBeenCalled()
 })
 
 it('canonicalizes an authorized source lease before issuing and borrowing an existing copy', async () => {

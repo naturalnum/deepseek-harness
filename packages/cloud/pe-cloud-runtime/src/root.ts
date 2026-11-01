@@ -21,6 +21,7 @@ import { resolveSubagentCapacity } from './subagent-capacity-schema.ts'
 import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
 import { recipeObservation } from './recipe-observation.ts'
 import type { OwnerRecoveryExpectation, OwnerRecoveryProof } from './owner-types.ts'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 
 function hasModelKeyPeerConsumer(value: unknown): value is ModelKeyPeerConsumer {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'withModelKeyPeerUse') === 'function'
@@ -30,6 +31,11 @@ function hasConfigurationPeerConsumer(value: unknown): value is ConfigurationPee
 }
 function hasRootFetch(value: unknown): value is { inspectRootFetch(): readonly ExactFetchExposure[] } {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'inspectRootFetch') === 'function'
+}
+function hasReadCarrier(value: unknown): value is {
+  readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean
+} {
+  return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'readOperationCurrent') === 'function'
 }
 import { createAccountPolicy } from './account-policy.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -226,6 +232,18 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     this.assertOpen()
     if (this.control !== undefined) this.assertBusinessMode(this.control)
     this.recipe.assertSealed(recipeVersion)
+  }
+
+  /** Retain the exact current Root audit only for an already-admitted read. */
+  captureReadRecipeCurrent(): () => void {
+    const control = this.activeControl()
+    this.assertBusinessMode(control)
+    const current = this.recipe.captureReadCurrent(control.config.recipeVersion)
+    return () => {
+      if (this.activeControl() !== control) throw new AccountRuntimeError('cloud/stale-generation', 'The original Root control changed')
+      this.assertBusinessMode(control)
+      current()
+    }
   }
 
   /** Revoke root admission before replacing or reloading the recipe. */
@@ -738,6 +756,14 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
             },
             (current) => { this.assertRecipeSealed(config.recipeVersion); control.factory.assertBusinessCurrent(current) },
           ),
+          ...!hasReadCarrier(selectedAuth) ? {} : { readCurrent: (caller, binding, endpoint) => {
+            const peer = caller.invocation?.peer
+            if (peer === undefined) return false
+            const current: unknown = this.ctx.root.get('peAuth')
+            if (!hasReadCarrier(current) || (Reflect.get(current, symbols.original) ?? current)
+              !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) throw new AccountMountPrerequisiteError()
+            return selectedAuth.readOperationCurrent(peer, binding, endpoint)
+          } },
           assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },
         prepare: (_ctx, binding) => {
           storage.assertRootCurrent()

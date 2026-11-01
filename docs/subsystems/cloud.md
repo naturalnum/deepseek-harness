@@ -520,6 +520,12 @@ assertMountCurrent(binding: AccountBinding): void
 assertBusinessCurrent(binding: AccountBinding): void
 
 /**
+ * Capture the current Root audit for a request already admitted by the original carrier.
+ * @returns A synchronous current check tied to the original sealed Root candidate.
+ */
+captureReadRecipeCurrent?(): () => void
+
+/**
  * Return safe retained control counts without credentials or paths.
  * @returns Frozen control phase, bounded counts and failure presence; these observations do not grant readiness.
  */
@@ -559,6 +565,15 @@ inspectRootFetch(): readonly ExactFetchExposure[]
  * @returns Actual operation settlement; this service issues no additional borrow.
  */
 withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>
+
+/**
+ * Check only the original active HTTP read carrier, if any.
+ * @param peer Exact original invocation Peer.
+ * @param binding Installed account generation retained by that carrier.
+ * @param endpoint Exact unary file-read endpoint admitted for this response.
+ * @returns Whether this operation belongs to the still-current original read carrier.
+ */
+readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean
 
 /** Delegate a guarded configuration handoff to the same original login/Peer owner.
  * @param peer Exact native invocation Peer.
@@ -637,6 +652,16 @@ invalidate(): void
  * @returns The audited declaration after business admission.
  */
 requireRpc(endpoint: string): EndpointExposure
+
+/**
+ * Recheck the original file inventory for an already-admitted unary read.
+ * @param endpoint Exact native file-read method admitted on the original carrier.
+ * @returns The original current exposure after native inventory and installation checks.
+ */
+requireAdmittedFileRead(endpoint: 'workspaceFiles/read' | 'workspaceFiles/stat' | 'workspaceFiles/readBytes'): EndpointExposure
+
+/** Audit the original native file methods when admitting a unary read. */
+auditFileRead(): void
 
 /**
  * Require a reviewed native logical-stream endpoint after business admission.

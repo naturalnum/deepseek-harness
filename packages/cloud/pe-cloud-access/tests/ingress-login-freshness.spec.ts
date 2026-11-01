@@ -2,9 +2,10 @@
 import { once } from 'node:events'
 import { createServer, request as httpRequest } from 'node:http'
 import type { Socket } from 'node:net'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
+import { bindTypertRemote, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
-import { HostConnectionService, apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
+import { HostConnectionService, ResponseCleanupError, apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import { REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
 import pg from 'pg'
@@ -20,10 +21,24 @@ import { accessConfig, ingressConfig } from './ingress-fixture.ts'
 
 type Phase = 'locate' | 'acquire' | 'peer' | 'consume'
 
-async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | 'aborted' = 'none') {
+async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | 'aborted' = 'none', fileTimeout = false, cleanupFailure = false) {
   const native = policyFixture([], { maxHomeBytes: 4096, maxCollectionItems: 512, maxFrameBytes: 262144,
       maxQueuedEvents: 128, maxQueuedBytes: 4194304 }), graph = await native.start()
   await graph.ctx.plugin({ inject: connectionInject, apply: applyConnection })
+  const fileStarted = Promise.withResolvers<undefined>(), finishFile = Promise.withResolvers<undefined>()
+  if (fileTimeout) {
+    class DelayedFile extends Service {
+      readonly typertRemote = bindTypertRemote(this, 'workspaceFiles')
+      constructor(ctx: Context) { super(ctx, 'workspaceFiles') }
+      @Remote async read(): Promise<string> {
+        fileStarted.resolve(undefined); await finishFile.promise
+        return 'private-delayed-file-bytes'
+      }
+    }
+    await graph.ctx.plugin(DelayedFile)
+    vi.spyOn(graph.api, 'requireRpc').mockImplementation(endpoint => ({ endpoint, handlerId: 'native:workspaceFiles', guard: 'account-session' }))
+    vi.spyOn(graph.api, 'auditFileRead').mockImplementation(() => {})
+  }
   const root = new Context(), sockets = new Set<Socket>(), clients = new Set<WebSocket>()
   const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'unused', database: 'unused', max: 1, connectionTimeoutMillis: 10 })
   vi.spyOn(pool, 'connect').mockImplementation(() => { throw new Error('Physical SQL is forbidden in this component fixture') })
@@ -83,14 +98,18 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
   const web = new WebServer(root, { host: '127.0.0.1', port: 0 }), httpRoutes = vi.spyOn(web, 'register')
   const upgradeRoutes = vi.spyOn(web, 'registerUpgrade'), authenticated = vi.spyOn(auth, 'authenticate')
   const rechecks = vi.spyOn(auth, 'recheckLogin'), dispatches = vi.spyOn(HostConnectionService.prototype, 'handleNodeRequest')
-  const ingress = new CloudIngress(root, config, { ...ingressConfig(), requestTimeoutMs: 2000, sessionRecheckLeadMs: 1000,
+  if (cleanupFailure) dispatches.mockRejectedValue(new ResponseCleanupError(new Error('response refused'), new Error('cleanup failed')))
+  const ingress = new CloudIngress(root, config, { ...ingressConfig(),
+    requestTimeoutMs: fileTimeout ? 500 : 2000, sessionRecheckLeadMs: 1000,
     maxRequestBodyBytes: 262144, maxFrameBytes: 262144 }, auth,
   { web, runtime, recipeVersion: graph.binding.recipeVersion, assertAuthenticationCurrent() {} })
   const ownedIngress = ingress, pending: Promise<void>[] = []
   const server = createServer((request, response) => {
     const route = httpRoutes.mock.calls.find(([value]) => value.path === '/api')?.[0]
     if (route === undefined) throw new Error('Original native route absent')
-    pending.push(Promise.resolve(route.handler(request, response)))
+    const actual = Promise.resolve(route.handler(request, response))
+    void actual.catch(() => {})
+    pending.push(actual)
   })
   server.on('connection', (socket) => {
     sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => { sockets.delete(socket) })
@@ -101,8 +120,13 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
     pending.push(Promise.resolve(route.handler(request, socket, head)))
   })
   onTestFinished(async () => {
+    finishFile.resolve(undefined)
     for (const client of clients) client.terminate()
-    try { await ownedIngress.closeActual(); await Promise.all(pending); await auth.close(); await pool.end(); await root.fiber.dispose() }
+    try {
+      if (cleanupFailure) { await ownedIngress.closeActual().catch(() => {}); await Promise.allSettled(pending) }
+      else { await ownedIngress.closeActual(); await Promise.all(pending) }
+      await auth.close(); await pool.end(); await root.fiber.dispose()
+    }
     finally {
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
@@ -128,6 +152,17 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
     })
     request.on('error', reject); request.end(body)
   })
+  const httpFile = (): Promise<{ status: number; body: string }> => new Promise((resolve, reject) => {
+    const body = JSON.stringify({ type: 'client-request', rpcId: 'timeout-file', method: 'workspaceFiles/read', payload: { args: {} } })
+    const request = httpRequest({ host: '127.0.0.1', port: address.port, method: 'POST', path: '/api/workspaceFiles/read', agent: false,
+      headers: { ...headers, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, (response) => {
+      const parts: Buffer[] = []
+      response.on('data', (chunk) => { parts.push(Buffer.from(chunk)) })
+      response.on('error', reject)
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(parts).toString() }))
+    })
+    request.on('error', reject); request.end(body)
+  })
   const upgrade = async (): Promise<{ status: number; client: WebSocket }> => {
     const url = new URL(`ws://127.0.0.1:${address.port}${REMOTE_STREAM_MUX_PATH}`)
     url.searchParams.set('peAccount', graph.binding.accountId); url.searchParams.set('peGeneration', generation)
@@ -144,7 +179,8 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
     armed = false; expect(await http()).toBe(200); await Promise.all(pending)
     armed = true; rechecks.mockClear(); sessions.mockClear(); authenticated.mockClear(); dispatches.mockClear()
   }
-  return { http, upgrade, warm, ingress, ingressHttp, auth, clock, rechecks, sessions, authenticated, dispatches, crossed, pending, release,
+  return { http, httpFile, fileStarted, finishFile, upgrade, warm, ingress, ingressHttp, auth, clock, rechecks, sessions,
+    authenticated, dispatches, crossed, pending, release,
     canonical: () => canonical }
 }
 
@@ -195,3 +231,23 @@ for (const transport of ['http', 'upgrade'] as const) {
     })
   }
 }
+
+it('the real ingress timeout sends no file result while the native handler is still settling', async () => {
+  const f = await fixture('consume', 'none', true)
+  const response = f.httpFile()
+  await f.fileStarted.promise
+  const result = await response
+  expect(result.status).toBe(503)
+  expect(result.body).not.toContain('private-delayed-file-bytes')
+  expect(f.ingress.observe().pendingOperations).toBe(1)
+  f.finishFile.resolve(undefined)
+  await vi.waitFor(() => { expect(f.ingress.observe().pendingOperations).toBe(0) })
+})
+
+it('unconfirmed response cleanup retains the ingress operation and its original borrow', async () => {
+  const f = await fixture('consume', 'none', true, true)
+  await f.httpFile().catch(() => undefined)
+  await vi.waitFor(() => { expect(f.ingress.observe().state).toBe('unknown') })
+  expect(f.ingress.observe().pendingOperations).toBe(1)
+  expect(f.release).not.toHaveBeenCalled()
+})

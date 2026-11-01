@@ -10,7 +10,7 @@ import type { StaticStorageAccount, StaticStorageConfig, StaticStorageDomain, St
 import { accountEnvironmentBank, parseStaticStoragePlan } from './storage-probe.ts'
 import { FilesFailure } from './error.ts'
 import type { ResolveAccountFileProject } from './text-project.ts'
-import { parseRootSkillRevalidation, assertRootSkillRevalidation } from './skill-revalidation.ts'
+import { parseRootSkillRevalidations, assertRootSkillRevalidation } from './skill-revalidation.ts'
 import type { RootSkillRevalidationProof, SkillRecordRevalidation } from './skill-revalidation.ts'
 import type { ProtectedSkillProof } from './storage-types.ts'
 
@@ -30,7 +30,7 @@ export interface StaticStorageDriver {
   bind(
     binding: AccountBinding, root: FdRootIdentity, current: () => void,
     privateParent?: FdRootIdentity & { readonly rootMountId: string },
-    revalidation?: SkillRecordRevalidation,
+    revalidation?: readonly SkillRecordRevalidation[],
   ): PoolReadPort
   joinEpoch(binding: AccountBinding): Promise<void>
   /** Omission conservatively retains every old original; actual root pool supplies this only for its configured native capability. */
@@ -110,7 +110,7 @@ export class RootStorageOwner {
   private state: 'new' | 'checking' | 'open' | 'closed' | 'failed' = 'new'
   private initialization?: Promise<void>
   private plan?: StaticStoragePlan
-  private skillProof?: SkillRevalidationQualification
+  private skillProofs: readonly SkillRevalidationQualification[] = []
   private preparationTail: Promise<void> = Promise.resolve()
   private readonly leases: Array<{ input: AccountMountInput; result: Promise<StaticAccountStorageLease> }> = []
 
@@ -118,9 +118,11 @@ export class RootStorageOwner {
    * @param config Explicit root parser and resident bounds.
    * @param maxPathBytes Original pool path bound.
    * @param driver Original pool's operations; never installed in an account graph.
+   * @param maxSkillProjects Original per-account projection bound; omission allows only one proof.
    */
   constructor(
     private readonly config: StaticStorageConfig, private readonly maxPathBytes: number, private readonly driver: StaticStorageDriver,
+    private readonly maxSkillProjects?: number,
   ) {}
 
   /**
@@ -139,10 +141,9 @@ export class RootStorageOwner {
           const protectedProof = await this.driver.skillProof()
           if (protectedProof.bytes.byteLength > this.config.maxPlanBytes || createHash('sha256').update(protectedProof.bytes).digest('hex')
             !== this.config.skillRevalidation.proofSha256) failure()
-          const proof = parseRootSkillRevalidation(protectedProof.bytes, protectedProof.process, this.config.planSha256)
-          if (!this.plan.accounts.some(account => account.accountId === proof.accountId
-            && account.storageKey === proof.storageKey)) failure()
-          this.skillProof = { proof }
+          const proofs = parseRootSkillRevalidations(protectedProof.bytes, protectedProof.process, this.config.planSha256,
+            this.plan.accounts, this.maxSkillProjects)
+          this.skillProofs = proofs.map(proof => ({ proof }))
         }
         this.finishInitialization()
       } catch (error) { this.failedInitialization(); throw error }
@@ -175,7 +176,8 @@ export class RootStorageOwner {
     if (plan === undefined) failure()
     const account = plan.accounts.find(row => row.accountId === input.binding.accountId && row.storageKey === input.layout.storageKey)
     if (account === undefined || input.binding.recipeVersion !== plan.recipeVersion || input.binding.lifetime.aborted) failure()
-    const skillProof = this.skillProof?.proof.accountId === account.accountId ? this.skillProof : undefined
+    const skillProofs = this.skillProofs.filter(row => row.proof.accountId === account.accountId
+      && row.proof.storageKey === account.storageKey)
     const existing = this.leases.find(row => row.input.binding.accountId === input.binding.accountId)
     if (existing !== undefined) {
       if (existing.input.binding !== input.binding || existing.input.layout !== input.layout
@@ -196,7 +198,7 @@ export class RootStorageOwner {
         const lease = new StaticAccountStorageLease(this, account, input, plan, this.driver, () => {
           const index = this.leases.indexOf(entry)
           if (index >= 0) this.leases.splice(index, 1)
-        }, skillProof)
+        }, skillProofs)
         lease.assertLayout()
         return lease
       }),
@@ -333,12 +335,12 @@ export class StaticAccountStorageLease {
    * @param plan Original protected deployment record.
    * @param driver Original shared-pool operations.
    * @param release Remove only this actual runtime lease after its files lane has ended.
-   * @param skillProof Optional Root qualification for one exact old association; ordinary account admission is unchanged.
+   * @param skillProofs Original Root qualifications for this account; ordinary account admission is unchanged.
    */
   constructor(private readonly owner: RootStorageOwner, private readonly account: StaticStorageAccount,
     private readonly input: AccountMountInput, private readonly plan: StaticStoragePlan,
     private readonly driver: StaticStorageDriver, private readonly release: () => void,
-    private readonly skillProof?: SkillRevalidationQualification) {}
+    private readonly skillProofs: readonly SkillRevalidationQualification[] = []) {}
 
   /** Require current root and original graph lifetime without granting business readiness. */
   assertCurrent(): void {
@@ -398,22 +400,24 @@ export class StaticAccountStorageLease {
       rootInode: this.account.projects.rootInode, rootMountId: this.account.projects.rootMountId })
     const privateParent = Object.freeze({ rootPath: this.account.private.rootPath, rootDevice: this.account.private.rootDevice,
       rootInode: this.account.private.rootInode, rootMountId: this.account.private.rootMountId })
-    const qualification = this.skillProof, proof = qualification?.proof
-    const revalidation: SkillRecordRevalidation | undefined = proof === undefined || qualification === undefined
-      ? undefined : Object.freeze({
-        workspaceId: proof.workspaceId, recordSha256: proof.recordSha256,
-        get pending() { return qualification.committedRevision === undefined },
-        assertRecord: (revision: string) => {
-          current()
-          if (this.installed?.binding !== binding || qualification.committedRevision !== undefined
-            || revision !== proof.recordRevision) stale()
-          assertRootSkillRevalidation(proof, this.input, this.account)
-        },
-        confirmRecord: (previousRevision: string, committedRevision: string) => {
-          if (previousRevision !== proof.recordRevision || qualification.committedRevision !== undefined) stale()
-          qualification.committedRevision = committedRevision
-        },
-      })
+    const revalidation: readonly SkillRecordRevalidation[] | undefined = this.skillProofs.length === 0 ? undefined
+      : Object.freeze(this.skillProofs.map((qualification) => {
+        const proof = qualification.proof
+        return Object.freeze({
+          workspaceId: proof.workspaceId, recordSha256: proof.recordSha256, recordRevision: proof.recordRevision,
+          get pending() { return qualification.committedRevision === undefined },
+          assertRecord: (revision: string) => {
+            current()
+            if (this.installed?.binding !== binding || qualification.committedRevision !== undefined
+              || revision !== proof.recordRevision) stale()
+            assertRootSkillRevalidation(proof, this.input, this.account)
+          },
+          confirmRecord: (previousRevision: string, committedRevision: string) => {
+            if (previousRevision !== proof.recordRevision || qualification.committedRevision !== undefined) stale()
+            qualification.committedRevision = committedRevision
+          },
+        })
+      }))
     const port = this.driver.bind(binding, parent, current, privateParent, revalidation)
     const bank = accountEnvironmentBank(this.account)
     const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
