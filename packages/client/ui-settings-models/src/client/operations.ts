@@ -20,6 +20,8 @@ export type SettingsWriteOutcome =
    * The message stays for callers that report the Host diagnostic as it is.
    */
   | { readonly kind: 'conflict'; readonly message: string }
+  /** A submitted write may have committed; callers must not automatically retry. */
+  | { readonly kind: 'unknown'; readonly message: string }
   /** Any other refusal, with the Host's own diagnostic. */
   | { readonly kind: 'refused'; readonly message: string }
 

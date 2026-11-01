@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { TEST_PLUGIN_ID, pluginFixture } from './plugin-fixtures.client.ts'
+import { remoteFixture } from './fixtures/managed-remote.client.ts'
 /** Original Cordis page, namespace and shared navigation; scripted replies never publish backend configuration. */
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
@@ -76,9 +77,10 @@ async function fixture(skills: boolean, connect: boolean, toggleable = true) {
   const current = vi.fn<CloudPluginRemote['current']>(async () => ({ ok: true, value: facts }))
   const change = vi.fn<CloudPluginRemote['change']>(async (): Promise<never> => { throw new Error('No write belongs to registration verification') })
   const skillUnused = vi.fn(async (): Promise<never> => { throw new Error('No skill RPC belongs to plugin registration') })
+  const skillCatalog = remoteFixture()
   const connectRemote = (): void => { new TestRemote(ctx, {
     cloudPlugins: { current, change } satisfies CloudPluginRemote,
-    cloudSkills: { current: skillUnused, publish: skillUnused, installed: skillUnused, details: skillUnused,
+    cloudSkills: { current: skillUnused, publish: skillUnused, installed: skillCatalog.installed, details: skillUnused,
       install: skillUnused, update: skillUnused, uninstall: skillUnused, download: skillUnused },
   }) }
   if (connect) connectRemote()
@@ -105,11 +107,27 @@ async function fixture(skills: boolean, connect: boolean, toggleable = true) {
     return injected as ManagementActionToastInjected
   }
   return {
-    page, slots, locale, panelInfo, current, change, skillUnused, face, toast, declare,
+    page, slots, locale, panelInfo, current, change, skillUnused, skillCatalog, face, toast, declare,
     withdrawDeclaration, connectRemote, installManagement,
     management: () => { if (management === undefined) throw new Error('Missing management owner'); return management },
     hold: () => { holdCleanup = true }, release: () => { cleanup.resolve(undefined) } }
 }
+it('loads real managed metadata when the skills panel opens and retains confirmed rows on refresh', async () => {
+  const f = await fixture(true, true)
+  expect(f.skillCatalog.installed).not.toHaveBeenCalled()
+  const panel = brandString<MainPanelId>('power-evolve-skills')
+  f.panelInfo.set({ activePanelId: panel })
+  const source = f.page.skillVersionEditing
+  await vi.waitFor(() => { expect(source.getSnapshot().phase).toBe('ready') })
+  expect(source.getSnapshot().items).toMatchObject([{ id: f.skillCatalog.entry.skillId, name: 'one', installed: true }])
+  expect(f.skillCatalog.installed).toHaveBeenCalledOnce()
+  f.panelInfo.set({ activePanelId: panel })
+  expect(f.skillCatalog.installed).toHaveBeenCalledOnce()
+  f.panelInfo.set({ activePanelId: null }); f.panelInfo.set({ activePanelId: panel })
+  await vi.waitFor(() => { expect(f.skillCatalog.installed).toHaveBeenCalledTimes(2) })
+  expect(source.getSnapshot().items).toHaveLength(1)
+  expect(f.skillUnused).not.toHaveBeenCalled()
+})
 it('loads the approved account catalog when its panel is selected, without reading on startup or retrying while selected', async () => {
   const f = await fixture(false, true), source = f.face().hooks.accountPluginCatalog
   expect(source.getSnapshot().phase).toBe('unread')

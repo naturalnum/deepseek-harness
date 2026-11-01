@@ -41,6 +41,16 @@ export interface PluginCurrentState {
   readonly configuration: Readonly<{ fields: readonly PluginConfigurationField[] }>
   readonly version: PluginEditVersion
 }
+/** Native account inventory plus the exact approved control identities. */
+export interface PluginManagerSnapshot {
+  readonly bundles: readonly BundleInfo[]
+  readonly plugins: readonly PluginInfo[]
+  readonly controls: readonly {
+    readonly id: string
+    readonly selectionTarget: ApprovedPluginControl['selectionTarget']
+    readonly operations: ApprovedPluginControl['operations']
+  }[]
+}
 /** One selection or approved ordinary-field edit; module specifiers and profile filenames are never supplied. */
 export type PluginOperation = Readonly<{ kind: 'enabled'; enabled: boolean }>
   | Readonly<{ kind: 'selected'; selected: boolean }>

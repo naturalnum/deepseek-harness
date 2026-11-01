@@ -11,5 +11,9 @@
         sandbox: workspace-write
         approval: never
         name: 工作区内修改
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+        name: 沙盒内完整访问
 - id: commands
   name: cordis:permission-command-registry

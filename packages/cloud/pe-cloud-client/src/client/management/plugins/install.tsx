@@ -11,6 +11,9 @@ import type { PreparedCloudPage } from '../../prepared-page.ts'
 import { CLOUD_MANAGEMENT_NAMESPACE } from '../locales.ts'
 import { registerCloudPluginManagement } from './register.ts'
 import { createPagePluginCatalog } from './catalog-reader.ts'
+import { createNativePluginManagerIntegration } from './native-integration.ts'
+import { NativePluginConfigurationSection } from './NativePluginConfigurationSection.tsx'
+import { PLUGIN_MANAGEMENT_NAMESPACE } from './locales.ts'
 
 // FiberState is a cross-package const enum and is not exported at runtime.
 const FIBER_ACTIVE: FiberState.ACTIVE = 2
@@ -40,6 +43,9 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
           : owner.locale.resolveText(metadata.description) }
     }, report)
     const removers = new Set<() => void>()
+    const source = createNativePluginManagerIntegration(owner, page)
+    const unprovide = owner.reflect.provide('pluginManagerIntegration', source)
+    removers.add(() => { void observeCloudDisposal(unprovide).catch(() => { console.error('Cloud plugin source withdrawal unconfirmed.') }) })
     let active = true
     const retire = (): void => {
       if (!active) return
@@ -53,12 +59,18 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
     owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) retire() })
     owner.effect(() => retire, 'pe-cloud-client: withdraw plugin catalog')
     removers.add(registerCloudPluginManagement(owner, 'power-evolve-plugins', () => reader.injected))
+    const stopNativeConfig = owner.slots.inject('plugins.detail.section', () => owner.slots.register({
+      name: 'plugins.detail.section', id: 'cloud-approved-plugin-config', locale: PLUGIN_MANAGEMENT_NAMESPACE,
+      inject: () => ({ ...reader.injected, configurationId: (subject: import('@deepseek-ai/dsh-client-ui-plugin-manager/client').PluginsSubject) => source.configurationId(subject) }),
+    }, NativePluginConfigurationSection))
+    removers.add(stopNativeConfig)
     const panelWait = owner.inject(['layout'], (scope) => {
       const panelInfo = scope.layout.panelInfo
       let selected = false
       const update = (): void => {
         if (!active) return
-        const next = panelInfo.getSnapshot().activePanelId === 'power-evolve-plugins'
+        const panel = panelInfo.getSnapshot().activePanelId
+        const next = panel === 'power-evolve-plugins' || panel === 'plugins'
         const opened = next && !selected
         selected = next
         if (opened) reader.injected.refreshPluginCatalog?.()
@@ -72,15 +84,24 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
     removers.add(() => {
       void observeCloudDisposal(panelWait.dispose).catch(() => { console.error('Cloud plugin panel observation withdrawal unconfirmed.') })
     })
-    let removeSidebar: (() => void) | undefined
-    const stopSidebar = owner.slots.inject('sidebar.panellist', () => {
-      if (!active) return () => {}
-      const remove = owner.slots.register({ name: 'sidebar.panellist', id: 'power-evolve-plugins',
+    let removeSidebar: (() => void) | undefined, nativeAvailable = false, sidebarReady = false
+    const syncSidebar = (): void => {
+      if (!active || nativeAvailable || !sidebarReady) { removeSidebar?.(); removeSidebar = undefined; return }
+      if (removeSidebar === undefined) removeSidebar = owner.slots.register({ name: 'sidebar.panellist', id: 'power-evolve-plugins',
         locale: CLOUD_MANAGEMENT_NAMESPACE, label: () => t('plugins') }, PluginPanelIcon)
-      removeSidebar = remove
-      return () => { if (removeSidebar === remove) removeSidebar = undefined; remove() }
+    }
+    const stopSidebar = owner.slots.inject('sidebar.panellist', () => {
+      sidebarReady = true; syncSidebar()
+      return () => { sidebarReady = false; syncSidebar() }
     })
-    removers.add(() => { removeSidebar?.(); removeSidebar = undefined; stopSidebar() })
+    removers.add(() => { sidebarReady = false; syncSidebar(); stopSidebar() })
+    const nativeWait = owner.inject(['pluginNavigation'], () => {
+      nativeAvailable = true; syncSidebar()
+      return () => { nativeAvailable = false; syncSidebar() }
+    })
+    removers.add(() => {
+      void observeCloudDisposal(nativeWait.dispose).catch(() => { console.error('Native plugin observation withdrawal unconfirmed.') })
+    })
     if (closed()) retire()
   })
   return () => {

@@ -17,7 +17,7 @@ BWRAP_HASH = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 
 def world_argv(project, mode='workspace-write'):
     project_path(project)  # Root startup only, never an operation-selected mount.
-    if mode not in ['read-only', 'workspace-write']:
+    if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
     writable_bind = '--ro-bind' if mode == 'read-only' else '--bind'
     return ['/trusted/bwrap', '--unshare-user', '--uid', '0', '--gid', '0',
@@ -73,7 +73,7 @@ class Owner:
         assert (self.skill_parent is None) == (working_copies is None)
         fixed = None if working_copies is None else skill_world(working_copies)
         assert fixed is None or {k: fixed[k] for k in ['metadata', 'skills', 'maxCopies']} == self.skill_parent
-        assert file_policy is None or type(file_policy) is dict and set(file_policy) == {'mode'} and file_policy['mode'] in ['read-only', 'workspace-write']
+        assert file_policy is None or type(file_policy) is dict and set(file_policy) == {'mode'} and file_policy['mode'] in ['read-only', 'workspace-write', 'danger-full-access']
         op = Operation(self, identity, argv, cwd, stdin_mode, batch, role, fixed, file_policy)
         self.slots[identity] = op  # Slot/intent retained before any FD or process; never reused.
         return op

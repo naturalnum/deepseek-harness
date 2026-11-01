@@ -360,6 +360,20 @@ export class Entry {
     }
   }
 
+  /** Read a detached effective candidate from this entry's current proven plan.
+   * This is a Host-side inspection primitive; callers must not publish private configuration.
+   * @param plan Original plan prepared by this entry.
+   * @returns A detached snapshot of the candidate checked by Loader.
+   */
+  snapshotConfigUpdatePlan(plan: EntryConfigUpdatePlan): unknown {
+    this.assertConfigUpdatePlan(plan)
+    const state = this.configPlans.get(plan)
+    if (state === undefined || state.kind === 'passive' || state.effective === undefined) {
+      throw new Error('Loader config plan has no inspectable effective configuration')
+    }
+    return structuredClone(state.effective)
+  }
+
   /** Snapshot the actual registry and reject a leaf whose stop could affect another fiber.
    * @param maximum Explicit registry visit bound.
    * @returns Original fiber/dependency identities; no caller-supplied stop list is trusted.

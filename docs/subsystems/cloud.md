@@ -125,6 +125,13 @@ One independent capability; original native persistence, ordering and failure re
  */
 auditProvider(): Promise<void>
 
+/** Capture the provider's current plan before an approved original Settings write.
+ * @param namespace Original provider settings namespace.
+ * @param fields Approved native path operations.
+ * @returns Checks bound to this provider and its actual native update plan.
+ */
+beginSettingsUpdate(namespace: string, fields: readonly SettingsPathOpView[]): ReturnType<ModelKeyProvider['beginSettingsUpdate']>
+
 /**
  * Require the audited configured bootstrap route.
  * @param provider Root provider.
@@ -166,7 +173,7 @@ assertCurrent(): void
 inspect(): ExposureInventory
 ```
 
-Types: [ModelKeyMetadata](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyReference](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeySaved](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeySet](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyState](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyUnset](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
+Types: [ModelKeyMetadata](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyProvider](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyReference](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeySaved](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeySet](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyState](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [ModelKeyUnset](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [SettingsPathOpView](settings.md)
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-model-key.ts`](../../packages/cloud/pe-cloud-api/src/cloud-model-key.ts)
 
@@ -184,6 +191,12 @@ Unary controls for finite approved preinstalled plugins; no installer or raw man
  */
 @Remote('current') current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>
 
+/** List the account's actual native bundle and plugin facts under the current login.
+ * @param signal Original observer cancellation.
+ * @returns The native roster and exact approved controls.
+ */
+@Remote('list') list(signal: AbortSignal): Promise<PluginManagerSnapshot>
+
 /** Edit through the original actual idle window, or explicitly schedule its complete terminal drain and new claim.
  * @param request Approved id, exact operation, original edit and explicit application mode.
  * @param signal Observer cancellation before admission; admitted native work retains its actual settlement.
@@ -200,7 +213,7 @@ assertCurrent(): void
 inspect(): ExposureInventory
 ```
 
-Types: [PluginChangeRequest](cloud.md#approved-plugin-controls) · [PluginChangeResult](cloud.md#approved-plugin-controls) · [PluginCurrentRequest](cloud.md#approved-plugin-controls) · [PluginCurrentState](cloud.md#approved-plugin-controls)
+Types: [PluginChangeRequest](cloud.md#approved-plugin-controls) · [PluginChangeResult](cloud.md#approved-plugin-controls) · [PluginCurrentRequest](cloud.md#approved-plugin-controls) · [PluginCurrentState](cloud.md#approved-plugin-controls) · [PluginManagerSnapshot](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-plugins.ts`](../../packages/cloud/pe-cloud-api/src/cloud-plugins.ts)
 
@@ -646,7 +659,7 @@ requireFetch(method: string, pathname: string): ExactFetchExposure
  * @param input Actual files-owned project, shared Session metadata check and explicit native limits.
  * @returns Original constructor installation, with no readiness publication or directory creation.
  */
-prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding' | 'assertSettingsFields'>): NativeFirstScreen
+prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding' | 'assertSettingsFields' | 'beginModelSettingsUpdate' | 'settingsSave'>): NativeFirstScreen
 
 /**
  * Register one key service in its Loader fiber.
@@ -769,6 +782,13 @@ createGoals( owner: Context, guards: NativeSessionGuards, config: Parameters<typ
  */
 createSessionExport( owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSessionExport>[6], ): void
 
+/** Install the original read-only inventory under existing account admission.
+ * @param owner Actual account Loader entry.
+ * @param maxFrameBytes Existing result limit.
+ * @returns Guarded native inventory service.
+ */
+createPluginInventory(owner: Context, maxFrameBytes: number): NativePluginInventory['value']
+
 /**
  * Install native permission controls over the actual enforcing providers.
  * @param owner Actual account Loader entry.
@@ -787,6 +807,22 @@ createPermissions( owner: Context, config: Parameters<typeof createNativePermiss
  * @returns The native question service.
  */
 createUserQuestions(owner: Context, guards: NativeSessionGuards): NativeUserQuestions['value']
+
+/** Install the original Schedule service under this account's Session admission.
+ * @param owner Actual account Loader entry.
+ * @param guards Shared native Session/project admission.
+ * @param config Original native Schedule settings.
+ * @returns The original guarded Schedule service.
+ */
+createSchedule(owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSchedule>[6]): NativeSchedule['value']
+
+/** Ask the installed native scheduler to reconsider obligations after the account is ready. */
+async resumeScheduleAfterReady(): Promise<void>
+
+/** Read the installed scheduler's original settlement state.
+ * @returns Whether the original optional Schedule owner has no in-flight dispatch work.
+ */
+isScheduleIdle(): boolean
 
 /**
  * Install the original per-Session feedback recorder.
@@ -872,7 +908,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
+Types: [AgentLoop](core.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 

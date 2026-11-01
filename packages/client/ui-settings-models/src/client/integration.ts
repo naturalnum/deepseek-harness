@@ -2,7 +2,7 @@
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { CredentialInfo, LlmConfigurableProvider, LlmProviderInfo } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsDescribeView } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { ModelsCredentialEditing } from './operations.ts'
+import type { ModelsCredentialEditing, ModelsOperations } from './operations.ts'
 
 /** Original native provider and settings views, supplied by an admitted readonly reader. */
 export interface ModelsSettingsMetadata {
@@ -23,6 +23,8 @@ export interface ModelsSettingsReads {
    * @returns Native redacted facts for admitted references.
    */
   readonly credentials: (refs: readonly string[]) => Promise<Readonly<Record<string, CredentialInfo>>>
+  /** Original page-owned versioned settings writer; omission keeps configuration editing closed. */
+  readonly writeSettings?: ModelsOperations['writeSettings']
 }
 
 /** Manual Models input prepared before activation; null closes editing and omission preserves native onboarding and reads. */

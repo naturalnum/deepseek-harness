@@ -138,7 +138,7 @@ def open_skill_world(project, expected_root, value, owned_fds):
 
 def skill_world_argv(base, project, opened, mode='workspace-write'):
     """Bind pinned copies under a readonly private scaffold, leaving all other .pe readonly."""
-    if mode not in ['read-only', 'workspace-write']:
+    if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
     bind_fd = '--ro-bind-fd' if mode == 'read-only' else '--bind-fd'
     suffix = ['--ro-bind', project + '/.pe', project + '/.pe', '--chdir', project]
@@ -156,7 +156,7 @@ def skill_world_argv(base, project, opened, mode='workspace-write'):
 def verify_file_policy(project, mode):
     """Before PREPARED, verify actual mount flags on every account-writable root."""
     project_path(project)
-    if mode not in ['read-only', 'workspace-write']:
+    if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
     readonly = mode == 'read-only'
     for path in [project, ENV_ROOT + '/home', ENV_ROOT + '/venv', ENV_ROOT + '/tmp', '/tmp']:
@@ -166,7 +166,7 @@ def verify_file_policy(project, mode):
 
 def verify_skill_world(project, expected_root, value, mode='workspace-write'):
     from wire import skill_world
-    if mode not in ['read-only', 'workspace-write']:
+    if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
     fixed = skill_world(value)
     grant = {'metadata': [int(fixed['metadata'][k]) for k in ['device','inode']],

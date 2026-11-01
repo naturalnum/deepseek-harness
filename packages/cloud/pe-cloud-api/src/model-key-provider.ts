@@ -3,9 +3,13 @@ import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type { ApprovedModelKeyConfiguration, ModelKeyMetadata } from './types.ts'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
+import { isDeepStrictEqual } from 'node:util'
+import type { ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The original approved model provider is unavailable or changed.') }
 function original(value: object): object {
@@ -25,6 +29,11 @@ function profileAt(value: unknown, path: readonly string[]): Record<string, unkn
 /** Pinned native installations; owns no credentials, catalog, queue or lifecycle. */
 export class ModelKeyProvider {
   private current: (() => void) | undefined
+  private readonly updates = new Map<string, (ops: readonly SettingsPathOpView[]) => {
+    check(): void
+    approve(plan: ProfileConfigUpdatePlan): void
+    finish(): void
+  }>()
   /**
    * @param ctx Actual account Loader.
    * @param policy Root provider/reference selection and finite projection bounds.
@@ -46,7 +55,7 @@ export class ModelKeyProvider {
       if (matches.length !== 1 || entry === undefined || entry.disabled || entry.fiber?.state !== FiberState.ACTIVE
         || entry.options.name !== binding.moduleName || entry.moduleNamespace === undefined) unavailable()
       const fiber = entry.fiber, namespace = entry.moduleNamespace, callback = fiber.runtime?.callback
-      const plan = entry.prepareConfigUpdate(entry.options.config)
+      let plan = entry.prepareConfigUpdate(entry.options.config)
       if (plan.impact !== 'none' || callback === undefined) unavailable()
       const check = (): void => {
         this.ctx.fiber.assertActive()
@@ -63,13 +72,68 @@ export class ModelKeyProvider {
       for (const previous of checks) previous()
       if (imported !== namespace) unavailable()
       checks.push(check)
+      this.updates.set(binding.providerEntryId, (ops) => {
+        check()
+        const modelChange = ops.find(op => op.path.length === 1 && op.path[0] === 'models')
+        const checkDefault = (): void => { if (modelChange !== undefined) {
+          const current = this.ctx.get('agentDefaultModel')?.currentSelection()
+          if (current === undefined) unavailable()
+        } }
+        checkDefault()
+        const originalConfig: unknown = entry.options.config
+        const before = structuredClone(originalConfig)
+        if (!record(before) || ops.length === 0) unavailable()
+        const names = new Set(ops.map(op => op.path[0]))
+        let expected: unknown
+        return { check: checkDefault, approve: (profile: ProfileConfigUpdatePlan) => {
+          checkDefault()
+          const matches = profile.entries.filter(candidate => candidate.entry === entry)
+          if (matches.length !== 1 || matches[0] === undefined) unavailable()
+          const candidate = entry.snapshotConfigUpdatePlan(matches[0])
+          if (!record(candidate)) unavailable()
+          const current = this.ctx.get('agentDefaultModel')?.currentSelection()
+          if (modelChange !== undefined && current?.provider === binding.provider
+            && (!Array.isArray(candidate.models) || !candidate.models.some(item => record(item) && item.id === current.model))) {
+            throw new CloudApiError('cloud/forbidden', 'The current default model must remain in the provider catalog.')
+          }
+          expected = candidate
+        }, finish: () => {
+          const after: unknown = entry.options.config
+          if (!record(after)) unavailable()
+          const retained = (value: Record<string, unknown>): Record<string, unknown> =>
+            Object.fromEntries(Object.entries(value).filter(([key]) => !names.has(key)))
+          if (!isDeepStrictEqual(retained(before), retained(after))) unavailable()
+          const next = entry.prepareConfigUpdate(after)
+          if (next.impact !== 'none') unavailable()
+          if (expected === undefined || !isDeepStrictEqual(entry.snapshotConfigUpdatePlan(next), expected)) unavailable()
+          const current = this.ctx.get('agentDefaultModel')?.currentSelection()
+          if (modelChange !== undefined && current?.provider === binding.provider
+            && (!record(expected) || !Array.isArray(expected.models)
+              || !expected.models.some(item => record(item) && item.id === current.model))) unavailable()
+          const previous = plan
+          plan = next
+          try { check(); this.metadata() } catch (error) { plan = previous; throw error }
+        } }
+      })
     }
     this.current = () => { for (const check of checks) check() }
     this.metadata()
   }
+  /** Capture one approved native settings change before its original writer starts.
+   * @param namespace Original provider settings namespace.
+   * @param ops Approved native path operations.
+   * @returns Checks retained through native planning and write settlement.
+   */
+  beginSettingsUpdate(namespace: string, ops: readonly SettingsPathOpView[]): {
+    check(): void
+    approve(plan: ProfileConfigUpdatePlan): void
+    finish(): void
+  } {
+    return this.updates.get(namespace)?.(ops) ?? { check() {}, approve() {}, finish() {} }
+  }
   /**
    * Read approved native providers and original redacted settings; schema/reference mappings must match.
-   * @returns Bounded native metadata with settings writes closed; no secret values or replacement catalog.
+   * @returns Bounded native metadata; settings authority is supplied separately by the account policy.
    */
   metadata(): ModelKeyMetadata {
     if (this.current === undefined) unavailable()

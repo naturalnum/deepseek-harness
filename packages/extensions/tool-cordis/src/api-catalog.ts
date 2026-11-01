@@ -672,6 +672,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Actual native module import settlement.',
       },
       {
+        signature: 'beginSettingsUpdate(namespace: string, fields: readonly SettingsPathOpView[]): ReturnType<ModelKeyProvider[\'beginSettingsUpdate\']>',
+        description: 'Capture the provider\'s current plan before an approved original Settings write.',
+        parameters: [{ name: 'namespace', description: 'Original provider settings namespace.' }, { name: 'fields', description: 'Approved native path operations.' }],
+        returns: 'Checks bound to this provider and its actual native update plan.',
+      },
+      {
         signature: 'assertProvisionableModel(provider: string, model: string): void',
         description: 'Require the audited configured bootstrap route.',
         parameters: [{ name: 'provider', description: 'Root provider.' }, { name: 'model', description: 'Root model.' }],
@@ -717,6 +723,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read actual approved native inventory and an epoch-bound original save-owner version.',
         parameters: [{ name: 'request', description: 'Approved catalog id.' }, { name: 'signal', description: 'Original observer cancellation.' }],
         returns: 'Original native PluginInfo, approved native Config fields and opaque version; no profile bytes or digest.',
+      },
+      {
+        signature: '@Remote(\'list\') list(signal: AbortSignal): Promise<PluginManagerSnapshot>',
+        description: 'List the account\'s actual native bundle and plugin facts under the current login.',
+        parameters: [{ name: 'signal', description: 'Original observer cancellation.' }],
+        returns: 'The native roster and exact approved controls.',
       },
       {
         signature: '@Remote(\'change\') change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>',
@@ -2154,7 +2166,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Its exact audited declaration after business admission.',
       },
       {
-        signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\'>): NativeFirstScreen',
+        signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen',
         description: 'Prepare fixed readonly native constructors; original Loader activation and complete auditing still follow.',
         parameters: [{ name: 'owner', description: 'Independent graph\'s prepare scope.' }, { name: 'input', description: 'Actual files-owned project, shared Session metadata check and explicit native limits.' }],
         returns: 'Original constructor installation, with no readiness publication or directory creation.',
@@ -2254,6 +2266,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'owner', description: 'Actual native Loader entry with archive dependencies ready.' }, { name: 'guards', description: 'Same Session/project admission used by native history reads.' }, { name: 'config', description: 'Original archive compression configuration.' }],
       },
       {
+        signature: 'createPluginInventory(owner: Context, maxFrameBytes: number): NativePluginInventory[\'value\']',
+        description: 'Install the original read-only inventory under existing account admission.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'maxFrameBytes', description: 'Existing result limit.' }],
+        returns: 'Guarded native inventory service.',
+      },
+      {
         signature: 'createPermissions( owner: Context, config: Parameters<typeof createNativePermissions>[5], maxFrameBytes: number, assertEnforcement: () => void, assertCanSwitch: Parameters<typeof createNativePermissions>[8], ): NativePermissions[\'value\']',
         description: 'Install native permission controls over the actual enforcing providers.',
         parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'config', description: 'Native two-mode preset table.' }, { name: 'maxFrameBytes', description: 'Existing complete native result limit.' }, { name: 'assertEnforcement', description: 'Recheck the original issued execution and Files policy enforcement.' }, { name: 'assertCanSwitch', description: 'Refuse a policy change while original execution work remains.' }],
@@ -2264,6 +2282,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Install original question replies and timed-wait claims.',
         parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Shared native active-Agent/project admission.' }],
         returns: 'The native question service.',
+      },
+      {
+        signature: 'createSchedule(owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSchedule>[6]): NativeSchedule[\'value\']',
+        description: 'Install the original Schedule service under this account\'s Session admission.',
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Shared native Session/project admission.' }, { name: 'config', description: 'Original native Schedule settings.' }],
+        returns: 'The original guarded Schedule service.',
+      },
+      {
+        signature: 'async resumeScheduleAfterReady(): Promise<void>',
+        description: 'Ask the installed native scheduler to reconsider obligations after the account is ready.',
+        parameters: [],
+      },
+      {
+        signature: 'isScheduleIdle(): boolean',
+        description: 'Read the installed scheduler\'s original settlement state.',
+        parameters: [],
+        returns: 'Whether the original optional Schedule owner has no in-flight dispatch work.',
       },
       {
         signature: 'createSessionFeedback(owner: Context, guards: NativeSessionGuards): ReturnType<typeof createNativeSessionFeedback>[\'value\']',
@@ -2971,6 +3006,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Shared management service; reads, deletion, and timing edits never activate a Session.',
     description: 'Shared management service; reads, deletion, and timing edits never activate a Session.\n\n`sessionPersistence` is a load-order requirement rather than a directly called service: a delivery commits only when `ctx.sessions.flush()` reports that a `session/flush` listener participated, and the persistence backend providing this service is the plugin that registers that listener.',
     methods: [
+      {
+        signature: 'async resumeDispatch(): Promise<void>',
+        description: 'Reconsider stored obligations after the owning Host becomes able to resume Sessions.',
+        parameters: [],
+        returns: 'Once the original timer owner has been asked to recompute; delivery remains separately owned.',
+      },
+      {
+        signature: 'installDispatchAdmission(admission: ScheduleDispatchAdmission): void',
+        description: 'Install one owning Host\'s internal delivery admission before dispatch begins.',
+        parameters: [{ name: 'admission', description: 'Original Host checks around Session resolution and delivery.' }],
+      },
+      {
+        signature: 'isDispatchIdle(): boolean',
+        description: 'Inspect original dispatch and management work without starting delivery.',
+        parameters: [],
+        returns: 'Whether original scheduler work is settled and its owner remains active.',
+      },
       {
         signature: 'async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord>',
         description: 'Create a reminder bound to the caller-selected Session without activating it.\n\nThe request must supply a title; a missing, blank-after-trim, or over-long title rejects with `invalid_prompt` instead of deriving one from the prompt. A Session a delegated child owns rejects with `subagent_session`, because delivery can never reach it: the child is one whose delegation depth is above zero. The record is built from the clock reading taken before the request joins the serialized queue, so a create that waits behind a longer operation keeps its request-time anchor and may already be due when the queue reaches it.',
@@ -5706,7 +5758,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountPluginControl',
-    declaration: 'export class AccountPluginControl {\n    readonly provider: typeof PluginManager;\n    readonly requests: ReturnType<typeof pluginRequests>;\n    constructor(private readonly owner: Context, private readonly saves: ConfigSaveBarrier, readonly input: CloudPluginPreparation, private readonly installed: () => void);\n    async restore(): Promise<void>;\n    async current(id: string, check: () => void): Promise<PluginCurrentState>;\n    change(id: string, version: PluginEditVersion, operation: PluginOperation, check: () => void): Promise<PluginEditCommit<{\n        readonly value: PluginCurrentState;\n        readonly native?: ChangeResult;\n    }>>;\n    async prepareRebuild(id: string, version: PluginEditVersion, operation: PluginOperation, check: () => void): Promise<Readonly<{\n        accepted: true;\n        intent: PluginRebuildIntent;\n    }> | Readonly<{\n        accepted: false;\n        error: CloudApiError;\n    }>>;\n    async applyRebuild(intent: PluginRebuildIntent, check: () => void): Promise<PluginRebuildPersistence>;\n    async verifyRebuild(intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, check: () => void): Promise<PluginRebuildVerification>;\n    assertCurrent(): void;\n}',
+    declaration: 'export class AccountPluginControl {\n    readonly provider: typeof PluginManager;\n    readonly requests: ReturnType<typeof pluginRequests>;\n    constructor(private readonly owner: Context, private readonly saves: ConfigSaveBarrier, readonly input: CloudPluginPreparation, private readonly installed: () => void);\n    async restore(): Promise<void>;\n    async snapshot(check: () => void): Promise<PluginManagerSnapshot>;\n    async current(id: string, check: () => void): Promise<PluginCurrentState>;\n    change(id: string, version: PluginEditVersion, operation: PluginOperation, check: () => void): Promise<PluginEditCommit<{\n        readonly value: PluginCurrentState;\n        readonly native?: ChangeResult;\n    }>>;\n    async prepareRebuild(id: string, version: PluginEditVersion, operation: PluginOperation, check: () => void): Promise<Readonly<{\n        accepted: true;\n        intent: PluginRebuildIntent;\n    }> | Readonly<{\n        accepted: false;\n        error: CloudApiError;\n    }>>;\n    async applyRebuild(intent: PluginRebuildIntent, check: () => void): Promise<PluginRebuildPersistence>;\n    async verifyRebuild(intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, check: () => void): Promise<PluginRebuildVerification>;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'AccountProfile',
@@ -5783,6 +5835,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentPresetInspection',
     declaration: 'export interface AgentPresetInspection {\n    readonly id: string;\n    readonly modules: readonly {\n        readonly moduleName: string;\n        readonly baseUrl?: string;\n        readonly useHostBase: boolean;\n    }[];\n    readonly leakedServices: readonly string[];\n}',
+  },
+  {
+    name: 'AgentPresetPluginGroup',
+    declaration: 'export interface AgentPresetPluginGroup {\n    readonly id: string;\n    readonly name?: string;\n    readonly isDefault: boolean;\n    readonly broken?: string;\n    readonly rows: readonly AgentPresetPluginRow[];\n}',
+  },
+  {
+    name: 'AgentPresetPluginRow',
+    declaration: 'export interface AgentPresetPluginRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly meta?: PluginLocalizedMeta;\n    readonly enabled: PresetPluginEnablement;\n    readonly condition?: string;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
     name: 'AgentPresetRoster',
@@ -6074,7 +6134,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>;\n    verifyApprovedPluginIntent(intent: PluginRebuildIntent, persisted: PluginRebuildPersistence, current: () => void): Pr /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService;\n    restoreApprovedPlugins(): Promise<void>;\n    applyApprovedPluginIntent(intent: PluginRebuildIntent, current: () => void): Promise<PluginRebuildPersistence>;\n    verifyApprovedPluginIntent(intent: PluginRebuildIntent, persisted: Plug /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
@@ -6094,7 +6154,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudModelKeyService',
-    declaration: 'export class CloudModelKeyService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation);\n    @Remote(\'metadata\')\n    metadata(signal: AbortSignal): Promise<ModelKeyMetadata>;\n    auditProvider(): Promise<void>;\n    assertProvisionableModel(provider: string, model: string): void;\n    @Remote(\'describe\')\n    describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>;\n    @Remote(\'set\')\n    set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>;\n    @Remote(\'unset\')\n    unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+    declaration: 'export class CloudModelKeyService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudModelKeyPreparation);\n    @Remote(\'metadata\')\n    metadata(signal: AbortSignal): Promise<ModelKeyMetadata>;\n    auditProvider(): Promise<void>;\n    beginSettingsUpdate(namespace: string, fields: readonly SettingsPathOpView[]): ReturnType<ModelKeyProvider[\'beginSettingsUpdate\']>;\n    assertProvisionableModel(provider: string, model: string): void;\n    @Remote(\'describe\')\n    describe(request: ModelKeyReference, signal: AbortSignal): Promise<ModelKeyState>;\n    @Remote(\'set\')\n    set(request: ModelKeySet, signal: AbortSignal): Promise<ModelKeySaved>;\n    @Remote(\'unset\')\n    unset(request: ModelKeyUnset, signal: AbortSignal): Promise<ModelKeySaved>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'CloudPluginPreparation',
@@ -6102,7 +6162,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudPluginService',
-    declaration: 'export class CloudPluginService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly control: AccountPluginControl);\n    @Remote(\'current\')\n    current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>;\n    @Remote(\'change\')\n    change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+    declaration: 'export class CloudPluginService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly control: AccountPluginControl);\n    @Remote(\'current\')\n    current(request: PluginCurrentRequest, signal: AbortSignal): Promise<PluginCurrentState>;\n    @Remote(\'list\')\n    list(signal: AbortSignal): Promise<PluginManagerSnapshot>;\n    @Remote(\'change\')\n    change(request: PluginChangeRequest, signal: AbortSignal): Promise<PluginChangeResult>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'CloudProjectCreateRequest',
@@ -6798,7 +6858,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenEventInput',
-    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n    readonly controls?: Readonly<{\n        commands: boolean;\n        goals: boolean;\n        permissions: boolean;\n        questions?: boolean;\n    }>;\n}',
+    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n    readonly controls?: Readonly<{\n        commands: boolean;\n        goals: boolean;\n        permissions: boolean;\n        questions?: boolean;\n        schedule?: boolean;\n    }>;\n}',
   },
   {
     name: 'FirstScreenEvents',
@@ -6806,7 +6866,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenNativeInput',
-    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly settingsWrites?: NativeSettingsWritePolicy;\n    readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void;\n}',
+    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertWorkspace: (workspace: Workspace) => void;\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly settingsWrites?: NativeSettingsWritePolicy;\n    readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void;\n    readonly beginModelSettingsUpdate: (namespace: string, ops: readonly SettingsPathOpView[]) => {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n    };\n    readonly settingsSave: NativeConfigSaveHook;\n}',
   },
   {
     name: 'FixedRootReader',
@@ -7649,6 +7709,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelKeyPeerConsumer {\n    withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'ModelKeyProvider',
+    declaration: 'export class ModelKeyProvider {\n    constructor(private readonly ctx: Context, private readonly policy: ApprovedModelKeyConfiguration, private readonly maximum: number);\n    async audit(): Promise<void>;\n    beginSettingsUpdate(namespace: string, ops: readonly SettingsPathOpView[]): {\n        check(): void;\n        approve(plan: ProfileConfigUpdatePlan): void;\n        finish(): void;\n    };\n    metadata(): ModelKeyMetadata;\n    assertProvisionable(provider: string, model: string): void;\n}',
+  },
+  {
     name: 'ModelKeyReference',
     declaration: 'export interface ModelKeyReference {\n    readonly ref: CredentialRef;\n}',
   },
@@ -7751,6 +7815,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'NativePermissions',
     declaration: 'export interface NativePermissions {\n    readonly value: PermissionPresetService;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'NativePluginInventory',
+    declaration: 'export interface NativePluginInventory {\n    readonly value: PluginInventoryGateway;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'NativeSchedule',
+    declaration: 'export interface NativeSchedule {\n    readonly value: ScheduleService;\n    resumeAfterReady(): Promise<void>;\n    isIdle(): boolean;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'NativeSessionDirectory',
@@ -7981,12 +8053,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly meta?: PluginLocalizedMeta;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
+    name: 'PluginInventoryGateway',
+    declaration: 'export class PluginInventoryGateway extends TypertRemoteService {\n    static inject;\n    constructor(ctx: Context);\n    @Remote(\'list\')\n    async list(): Promise<PluginInventorySnapshot>;\n}',
+  },
+  {
+    name: 'PluginInventorySnapshot',
+    declaration: 'export interface PluginInventorySnapshot {\n    readonly managementAvailable?: boolean;\n    readonly entries: readonly PluginInventoryEntry[];\n    readonly agentPresets?: readonly AgentPresetPluginGroup[];\n}',
+  },
+  {
     name: 'PluginLocalizedMeta',
     declaration: 'export interface PluginLocalizedMeta {\n    readonly title?: LocalizedText;\n    readonly description?: LocalizedText;\n    readonly icon?: string;\n    readonly error?: string;\n}',
   },
   {
     name: 'PluginManager',
     declaration: 'export class PluginManager extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>;\n    registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>;\n    changeFailureOutcome(result: ChangeResult): \'not-published\' | \'unknown\' | undefined;\n    @Remote\n    listVersionExemptions(): {\n        exemptions: Record<string, string[]>;\n        warnings: string[];\n    };\n    @Remote\n    setVersionExemption(packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk?: boolean): Promise<ChangeResult>;\n    @Remote\n    async listPlugins(): Promise<PluginInfo[]>;\n    @Remote\n    listBundles(): Promise<BundleInfo[]>;\n    @Remote\n    async registries(): Promise<PluginRegistries>;\n    @Remote\n    async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>;\n    @Remote\n    setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>;\n    @Remote\n    async waitForInstall(requestId: PluginInstallRequestId): Promise<ChangeResult | null>;\n    @Remote\n    async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>;\n    @Remote\n    removeBundle(name: str /* …truncated — full shape in source */',
+  },
+  {
+    name: 'PluginManagerSnapshot',
+    declaration: 'export interface PluginManagerSnapshot {\n    readonly bundles: readonly BundleInfo[];\n    readonly plugins: readonly PluginInfo[];\n    readonly controls: readonly {\n        readonly id: string;\n        readonly selectionTarget: ApprovedPluginControl[\'selectionTarget\'];\n        readonly operations: ApprovedPluginControl[\'operations\'];\n    }[];\n}',
   },
   {
     name: 'PluginOperation',
@@ -8087,6 +8171,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PresetOption',
     declaration: 'export interface PresetOption {\n    value: string;\n    name: string;\n    description?: string;\n}',
+  },
+  {
+    name: 'PresetPluginEnablement',
+    declaration: 'export type PresetPluginEnablement = boolean | \'conditional\';',
   },
   {
     name: 'PresetSpec',
@@ -8549,6 +8637,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ScheduleDeliveryRecord extends ScheduleDeliveryReceipt {\n    readonly prompt?: string;\n}',
   },
   {
+    name: 'ScheduleDispatchAdmission',
+    declaration: 'export type ScheduleDispatchAdmission = (sessionId: SessionId) => Promise<() => void>;',
+  },
+  {
     name: 'ScheduledToolDispatch',
     declaration: 'export type ScheduledToolDispatch = {\n    kind: \'post-result\';\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    result: ToolExecutionResult;\n};',
   },
@@ -8567,6 +8659,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScheduleRecord',
     declaration: 'export type ScheduleRecord = OneShotScheduleRecord | RecurringScheduleRecord;',
+  },
+  {
+    name: 'ScheduleService',
+    declaration: 'export class ScheduleService extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    async [Service.init](): Promise<void>;\n    async resumeDispatch(): Promise<void>;\n    installDispatchAdmission(admission: ScheduleDispatchAdmission): void;\n    isDispatchIdle(): boolean;\n    async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord>;\n    @Remote(\'list\')\n    async list(request: ScheduleListRequest): Promise<ScheduleRecord[]>;\n    @Remote(\'catalog\')\n    async catalog(): Promise<ScheduleCatalogEntry[]>;\n    @Remote(\'history\')\n    async history(request: ScheduleDeliveryHistoryRequest): Promise<ScheduleDeliveryHistoryResult>;\n    @Remote(\'delete\')\n    async delete(request: ScheduleDeleteRequest, signal?: AbortSignal): Promise<ScheduleDeleteResult>;\n    @Remote(\'update\')\n    async update(request: ScheduleUpdateRequest, signal?: AbortSignal): Promise<ScheduleUpdateResult>;\n}',
   },
   {
     name: 'ScheduleTimingChange',

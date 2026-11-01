@@ -365,6 +365,23 @@ it('gives more than two Sessions distinct child roots in two fixed pools without
   expect(Atomics.load(f.counters, 5)).toBe(5)
 })
 
+it('holds two Session grants together in one fixed pool and shares only their Workspace project', async () => {
+  const f = await fixture('normal', 1, true)
+  const [first, second] = await Promise.all([f.prepare('session-A'), f.prepare('session-B')])
+  try {
+    expect(first.value.environment.rootPath).not.toBe(second.value.environment.rootPath)
+    expect(first.value.environment.slotId).toBe(second.value.environment.slotId)
+    expect(first.value.environment.quota).toEqual(second.value.environment.quota)
+    expect(first.value.project.rootPath).toBe(second.value.project.rootPath)
+    writeFileSync(join(first.value.project.rootPath, 'shared.txt'), 'same workspace')
+    expect(readFileSync(join(second.value.project.rootPath, 'shared.txt'), 'utf8')).toBe('same workspace')
+    writeFileSync(join(first.value.environment.rootPath, 'home', 'identity'), 'A')
+    writeFileSync(join(second.value.environment.rootPath, 'home', 'identity'), 'B')
+    expect(readFileSync(join(first.value.environment.rootPath, 'home', 'identity'), 'utf8')).toBe('A')
+    expect(readFileSync(join(second.value.environment.rootPath, 'home', 'identity'), 'utf8')).toBe('B')
+  } finally { first.release(); second.release() }
+})
+
 it('rechecks the same schema-two inode across a confirmed pool rebuild without allocating another directory', async () => {
   const f = await fixture('normal', 2, true), first = await f.prepare(), original = first.value.environment
   writeFileSync(join(original.rootPath, 'venv', 'pyvenv.cfg'), 'original venv')

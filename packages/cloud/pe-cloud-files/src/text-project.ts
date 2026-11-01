@@ -95,6 +95,8 @@ interface IssuedTarget {
   readonly relative: string
   readonly key: FsTargetKey
   readonly entryOnly: boolean
+  /** Existing same-reader grant, only when its actual path equals the canonical issued path. */
+  readonly readerTarget?: FsTarget
   readonly preparation?: DirectoryPreparationState
 }
 
@@ -169,12 +171,12 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
 
     private issue(
       scope: AccountFileSelection, backend: TextProjectBackend, relative: string, entryOnly = false,
-      preparation?: DirectoryPreparationState,
+      preparation?: DirectoryPreparationState, readerTarget?: FsTarget,
     ): FsTarget {
       const key = FsTargetKey(`${prefix}:${scope.workspace.id}:${relative}`)
       const target = Object.freeze({ targetKey: key, displayPath: relative })
       this.targets.set(target, { scope, backend, relative, key, entryOnly,
-        ...preparation === undefined ? {} : { preparation } })
+        ...preparation === undefined ? {} : { preparation }, ...readerTarget === undefined ? {} : { readerTarget } })
       return target
     }
 
@@ -316,7 +318,7 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         check()
         const issuedPath = this.relative(backend, canonical)
         if (preparation !== undefined && canonical !== scope.workspace.path) throw this.preparationDenied(preparation)
-        const issued = this.issue(scope, backend, issuedPath, false, preparation)
+        const issued = this.issue(scope, backend, issuedPath, false, preparation, relative === issuedPath ? target : undefined)
         if (preparation !== undefined) {
           preparation.readerTarget = target
           preparation.target = issued
@@ -375,8 +377,9 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
             return info === undefined ? undefined : { version: FsVersion(info.version), type: 'other' }
           } finally { result.release() }
         }
-        const value = await record.backend.reader.stat(await record.backend.reader.resolve(record.relative,
-          signal === undefined ? undefined : { signal }), signal)
+        const readerTarget = record.readerTarget ?? await record.backend.reader.resolve(record.relative,
+          signal === undefined ? undefined : { signal })
+        const value = await record.backend.reader.stat(readerTarget, signal)
         check()
         return value
       } catch (error) {
@@ -395,8 +398,9 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
     override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
       const { record, check } = await this.selectedTarget(target, signal)
       this.content(record)
-      const stream = await record.backend.reader.streamText(await record.backend.reader.resolve(record.relative,
-        signal === undefined ? undefined : { signal }), signal)
+      const readerTarget = record.readerTarget ?? await record.backend.reader.resolve(record.relative,
+        signal === undefined ? undefined : { signal })
+      const stream = await record.backend.reader.streamText(readerTarget, signal)
       check()
       return (async function* () {
         check()

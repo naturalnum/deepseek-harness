@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
-import type { ModelsCredentialEditing, ModelsSettingsIntegration, ModelsSettingsReads } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import type { ModelsCredentialEditing, ModelsOperations, ModelsSettingsIntegration, ModelsSettingsReads } from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import { decodeCloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/schema'
@@ -111,6 +111,7 @@ export class PreparedCloudPage {
   private readonly skillEditing = createSnapshotStore<SkillManagementView>(Object.freeze({ phase: 'unavailable', items: Object.freeze([]) }))
   private skillVersionBinding: { readonly owner: Context; withdraw?: () => void } | undefined
   private modelSettingsBinding: { readonly owner: Context; readonly callbacks: CloudModelSettingsCallbacks } | undefined
+  private modelSettingsGeneration = 0
   private root: Context | undefined
   private activation: Context | undefined
   private connection: ConnectionHandle | undefined
@@ -172,6 +173,8 @@ export class PreparedCloudPage {
         isCurrent: () => this.modelSettingsBinding !== undefined && this.modelsCurrent(this.modelSettingsBinding),
         metadata: () => read(callbacks => callbacks.metadata()),
         credentials: (refs: readonly string[]) => read(callbacks => callbacks.credentials(refs)),
+        writeSettings: (...[ns, ops, revision]: Parameters<ModelsOperations['writeSettings']>) => read(callbacks => callbacks.writeSettings === undefined
+          ? Promise.resolve({ kind: 'refused' as const, message: '' }) : callbacks.writeSettings(ns, ops, revision)),
       }),
     })
     this.lifetime.transport.signal.addEventListener('abort', () => { this.revokeModels(); this.revokeSkillVersions() }, { once: true })
@@ -338,10 +341,11 @@ export class PreparedCloudPage {
       throw new ClientFailure('closed')
     }
     const binding = Object.freeze({ owner, callbacks: Object.freeze({ metadata: callbacks.metadata,
-      credentials: callbacks.credentials, prepare: callbacks.prepare }) })
+      credentials: callbacks.credentials, prepare: callbacks.prepare,
+      ...callbacks.writeSettings === undefined ? {} : { writeSettings: callbacks.writeSettings } }) })
     this.modelSettingsBinding = binding
     const isCurrent = (): boolean => this.modelsCurrent(binding)
-    this.modelsEditing.set(Object.freeze({ scope: this.bootstrap.connectionGeneration + ':' + String(owner.fiber.uid), isCurrent,
+    this.modelsEditing.set(Object.freeze({ scope: this.bootstrap.connectionGeneration + ':' + String(owner.fiber.uid) + ':' + String(++this.modelSettingsGeneration), isCurrent,
       prepare: async (ref: string, signal: AbortSignal) => {
         const current = (): boolean => isCurrent() && !signal.aborted
         if (!current()) return null
@@ -366,6 +370,9 @@ export class PreparedCloudPage {
    * @returns Explicit per-RPC deadline, or undefined while model settings remain unconfigured.
    */
   get modelSettingsRequestTimeoutMs(): number | undefined { return this.config.modelSettingsRequestTimeoutMs }
+
+  /** Deployment-owned native settings entry ID; the bootstrap and C04 remain authoritative for field access. */
+  get nativeSubagentSettingsNamespace(): string | undefined { return this.config.nativeSubagentSettingsNamespace }
 
   /** Original page's stable observable; only this page's captured native adapter may publish updates.
    * @returns The same read-only source throughout this page's lifetime, including unresolved drafts after revocation.

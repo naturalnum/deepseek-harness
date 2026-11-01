@@ -280,6 +280,7 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
   const ownedApi = api, ownedBarrier = barrier, originalPeer = peer
   return { ctx, api: ownedApi, barrier: ownedBarrier, saves, profile, configPath, binding, lifetime,
     credentialPath, skillPointer, sourceBefore, keyBefore, ref, keyState, keyStateBefore,
+    modelMetadata: () => ctx.typertGateway.invoke({ namespace: 'cloudModelKey', method: 'metadata', args: {}, peer: originalPeer }),
     revision: (ns = 'locale') => ctx.settingsController.describe().namespaces.find(row => row.ns === ns)!.revision,
     call: (ops: unknown, revision: unknown, options: LocaleCallOptions = {}) =>
       ctx.typertGateway.invoke({ namespace: 'settings', method: options.method ?? 'mutate',

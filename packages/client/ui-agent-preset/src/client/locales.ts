@@ -11,8 +11,10 @@ export type AgentPresetSettingsKey =
   | 'headerHint'
   | 'nav'
   | 'sectionIntro'
+  | 'readOnly'
   | 'setDefault'
   | 'view'
+  | 'viewComposition'
   | 'presetStandardName'
   | 'presetStandardDescription'
   | 'presetPtcName'
@@ -38,6 +40,7 @@ export type AgentPresetSettingsKey =
 export const en: Record<AgentPresetSettingsKey, string> = {
   ...guideEn,
   builtInGroup: 'Built-in', customGroup: 'Custom',
+  readOnly: 'Preset selection is unavailable for this account.',
   sectionIntro: 'Choose the agent’s tools and how it works. Use Standard mode for everyday tasks, or Creator mode to add capabilities to DSH.',
 
   seatHint: 'Choose the agent preset for your new task',
@@ -46,6 +49,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
 
   setDefault: 'Set as new task default',
   view: 'View configuration',
+  viewComposition: 'View composition',
 
   presetStandardName: 'Standard mode',
   presetStandardDescription:
@@ -83,6 +87,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
 export const zh: Record<AgentPresetSettingsKey, string> = {
   ...guideZh,
   builtInGroup: '内置', customGroup: '自定义',
+  readOnly: '当前账户仅可查看预设，暂不支持切换。',
   sectionIntro: '选择 Agent 的工具和工作方式。日常任务用「标准模式」，扩展 DSH 的能力用「创造模式」。',
 
   seatHint: '选择新任务使用的 Agent 预设',
@@ -91,6 +96,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
 
   setDefault: '设为新任务默认',
   view: '查看配置',
+  viewComposition: '查看组成',
 
   presetStandardName: '标准模式',
   presetStandardDescription: '处理代码、文件和资料，适合大多数任务。Agent 会按需使用检索、编辑和终端等工具。',

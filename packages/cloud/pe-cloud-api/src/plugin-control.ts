@@ -20,7 +20,7 @@ import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
 import type { ApprovedConfigurationBundle, ApprovedConfigurationCatalog, ApprovedConfigurationPlugin, ApprovedPluginControl } from './types.ts'
 import type { ConfigurationPeerConsumer, PluginControlLimits, PluginCurrentState, PluginFactoryControl,
-  PluginOperation, PluginPeerHandoff, PluginRebuildIntent, PluginRebuildPersistence, PluginRebuildVerification } from './plugin-types.ts'
+  PluginOperation, PluginPeerHandoff, PluginRebuildIntent, PluginRebuildPersistence, PluginRebuildVerification, PluginManagerSnapshot } from './plugin-types.ts'
 
 /** Trusted original Root callbacks; none can be populated through Loader JSON or a public request. */
 export interface CloudPluginPreparation extends ModelKeyPeerConsumer, ConfigurationPeerConsumer, PluginFactoryControl {
@@ -143,6 +143,35 @@ export class AccountPluginControl {
     for (const approved of this.input.catalog.plugins) if (approved.control !== undefined) {
       await this.observe(this.approved(approved.id), () => { this.assertCurrent() })
     }
+  }
+
+  /** Read the actual native manager roster without enabling its raw writer RPCs.
+   * @param check Current account and request admission.
+   * @returns Actual bundle/entry facts and the finite control mapping.
+   */
+  async snapshot(check: () => void): Promise<PluginManagerSnapshot> {
+    check(); this.assertCurrent()
+    const manager = this.manager
+    if (manager === undefined) unavailable()
+    const [bundles, plugins] = await Promise.all([manager.listBundles(), manager.listPlugins()])
+    check(); this.assertCurrent()
+    if (bundles.length > this.input.maxNativeInventoryEntries || plugins.length > this.input.maxNativeInventoryEntries) unavailable()
+    const controls = [
+      ...this.input.catalog.plugins.flatMap(item => item.control === undefined ? [] : [{
+        id: item.id, selectionTarget: item.control.selectionTarget, operations: item.control.operations,
+      }]),
+      ...(this.input.catalog.bundles ?? []).map(item => ({
+        id: item.id, selectionTarget: item.control.selectionTarget, operations: item.control.operations,
+      })),
+    ]
+    // Profile paths and raw diagnostics are not part of the browser management facts.
+    const safeBundles = bundles.map(({ source: _source, error, ...bundle }) => ({ ...bundle,
+      ...error === undefined ? {} : { error: { code: error.code } },
+    }))
+    const result: PluginManagerSnapshot = { bundles: safeBundles, plugins, controls }
+    firstScreenJsonBytes(result, this.limits.maxReplyBytes)
+    check(); this.assertCurrent()
+    return result
   }
 
   /** Read native inventory and issue a version from the original serial save owner.

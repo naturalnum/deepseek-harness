@@ -9,15 +9,28 @@ it('binds the real Python parser/hash to Root policy and chooses read-only mount
   const directory = fileURLToPath(new URL('../runtime/agent', import.meta.url))
   const spec = { argv: ['/bin/cat', 'file'], cwd: '/srv/project', stdin: { mode: 'ignore' as const } }
   const prepared = makePrepared('1'.repeat(64), 'readonly', spec, undefined, { mode: 'read-only' })
-  const request = createForegroundIssuer('2'.repeat(64), '1'.repeat(64), () => {})(prepared)
+  const issue = createForegroundIssuer('2'.repeat(64), '1'.repeat(64), () => {})
+  const request = issue(prepared)
+  const fullRequest = issue(makePrepared('1'.repeat(64), 'full-access', spec, undefined, { mode: 'danger-full-access' }))
   const program = String.raw`
 import ast, json, pathlib, sys, stat, types
 root=pathlib.Path(sys.argv[1]);sys.path.insert(0,str(root))
 from wire import canonical, prepared_digest, request, Refused, verify_role
-value=json.loads(sys.stdin.read())
+items=json.loads(sys.stdin.read());value=items['readonly'];full_value=items['full']
+fullbody={**full_value['ref'],'spec':full_value['spec'],'filePolicy':full_value['filePolicy']}
+request('/prepare',fullbody,'1'*64);verify_role(fullbody,'2'*64)
+assert prepared_digest(full_value['spec'],None,{'mode':'danger-full-access'})==full_value['ref']['specHash']
 body={**value['ref'],'spec':value['spec'],'filePolicy':value['filePolicy']}
 request('/prepare',body,'1'*64);verify_role(body,'2'*64)
 assert prepared_digest(value['spec'],None,{'mode':'read-only'})==value['ref']['specHash']
+assert prepared_digest(value['spec'],None,{'mode':'danger-full-access'}) != value['ref']['specHash']
+fullbody={**body,'filePolicy':{'mode':'danger-full-access'}}
+try:
+ request('/prepare',fullbody,'1'*64)
+except Refused as error:
+ assert error.code=='spec_hash_mismatch'
+else:
+ raise AssertionError('full-access policy tamper was accepted')
 bad={**body,'filePolicy':{'mode':'workspace-write'}}
 try:
  request('/prepare',bad,'1'*64)
@@ -33,6 +46,9 @@ exec(compile(ast.Module(body=[function],type_ignores=[]),str(root/'launcher.py')
 ro=scope['world_argv']('/srv/project','read-only');rw=scope['world_argv']('/srv/project','workspace-write')
 assert '--bind' not in ro
 assert rw.count('--bind')==5
+full=scope['world_argv']('/srv/project','danger-full-access')
+assert full==rw # Outer account mounts and readonly trusted world remain unchanged.
+assert full[full.index('--ro-bind')+1:full.index('--ro-bind')+3]==['/','/']
 for path in ['/srv/project','/opt/session-env/home','/opt/session-env/venv','/opt/session-env/tmp','/tmp']:
  matches=[i for i,x in enumerate(ro) if x==path and i>=2 and ro[i-2] in ['--bind','--ro-bind']]
  assert matches and all(ro[i-2]=='--ro-bind' for i in matches)
@@ -40,6 +56,7 @@ from paths import skill_world_argv
 opened={'metadataFd':10,'copies':[{'fd':11,'version':'12345678-1234-4123-8123-123456789012'}]}
 ro_skills=skill_world_argv(ro,'/srv/project',opened,'read-only')
 rw_skills=skill_world_argv(rw,'/srv/project',opened,'workspace-write')
+assert skill_world_argv(full,'/srv/project',opened,'danger-full-access')==rw_skills
 assert '--bind-fd' not in ro_skills and ro_skills.count('--ro-bind-fd')==2
 assert rw_skills.count('--bind-fd')==1
 # Execute the actual pure verification functions against explicit synthetic statvfs facts.
@@ -53,7 +70,7 @@ fake_os=types.SimpleNamespace(ST_RDONLY=1,statvfs=lambda path:types.SimpleNamesp
 verification={'project_path':lambda path:path,'ENV_ROOT':'/opt/session-env','os':fake_os,'stat':stat}
 exec(compile(ast.Module(body=checks,type_ignores=[]),str(root/'paths.py'),'exec'),verification)
 writable=[project,'/opt/session-env/home','/opt/session-env/venv','/opt/session-env/tmp','/tmp']
-for mode,flag in [('read-only',1),('workspace-write',0)]:
+for mode,flag in [('read-only',1),('workspace-write',0),('danger-full-access',0)]:
  flags.update({path:flag for path in writable})
  verification['verify_file_policy'](project,mode)
  for path in writable:
@@ -72,7 +89,7 @@ for mode,flag in [('read-only',1),('workspace-write',0)]:
 print(json.dumps({'hash':value['ref']['specHash'],'readonlyArgv':ro,'writableArgv':rw,'tamperDenied':True,'skillReadonly':True,'syntheticMountMismatchDenied':True,'kernelExecuted':False}))
 `
   const raw = execFileSync('python3', ['-I', '-S', '-B', '-c', program, directory], {
-    input: JSON.stringify(request), encoding: 'utf8', timeout: 10000,
+    input: JSON.stringify({ readonly: request, full: fullRequest }), encoding: 'utf8', timeout: 10000,
   })
   const result = JSON.parse(raw) as {
     hash: string

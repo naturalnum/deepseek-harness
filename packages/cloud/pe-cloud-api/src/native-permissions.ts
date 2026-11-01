@@ -18,25 +18,25 @@ export interface NativePermissions {
   inspect(): ExposureInventory
 }
 
-const MODES = ['read-only', 'workspace-write'] as const
+const MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const
 type Mode = typeof MODES[number]
 
 function unavailable(): never {
   throw new CloudApiError('cloud/account-unavailable', 'The original account permission service is unavailable.')
 }
 
-function supported(value: string): value is Mode { return value === 'read-only' || value === 'workspace-write' }
+function supported(value: string): value is Mode { return MODES.some(mode => mode === value) }
 
 /**
  * Construct native permission controls only over the original enforcing provider pair.
- * The fixed table permits read-only and workspace-write, both with native approval disabled;
- * unknown and full-access selections never weaken the outer account sandbox or bypass its quota.
+ * All three original modes use native approval never. Full access is confined to the
+ * account execution world and does not weaken its mounts or quota.
  * @param ctx Original account Loader fiber.
  * @param binding Exact installed generation.
  * @param assertCurrent Original account business admission check.
  * @param policy Exact audited account exposure.
  * @param maximum Existing native registry inventory bound.
- * @param config Explicit native two-preset configuration, including its native volatile default.
+ * @param config Explicit native three-preset configuration, including its native volatile default.
  * @param maxFrameBytes Existing native first-screen result bound.
  * @param assertEnforcement Recheck the actual issued execution port and Files enforcement from the same flag.
  * @param assertCanSwitch Refuse changes while original command/service/descendant work still owns prior permissions.

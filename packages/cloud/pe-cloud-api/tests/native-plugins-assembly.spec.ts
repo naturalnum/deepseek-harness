@@ -49,7 +49,7 @@ it('assembles original plugin controls and managed skills together with exact ge
     maxTrackedOperations: 8, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 8, maxWaitersPerAccount: 2 })
   const skillMethods = ['current','publish','installed','details','install','update','uninstall','download']
   const barrier = saves.createAccount(binding), policy = new ExposurePolicy({ recipeVersion: binding.recipeVersion,
-    rpcEndpoints: [...['cloudPlugins/current', 'cloudPlugins/change'].map(endpoint => ({ endpoint,
+    rpcEndpoints: [...['cloudPlugins/current', 'cloudPlugins/change', 'cloudPlugins/list'].map(endpoint => ({ endpoint,
       handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const })), ...skillMethods.map(method => ({ endpoint: 'cloudSkills/'+method,
       handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const }))], streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [] })
   let ctx: Context | undefined = undefined, api: CloudAccountApi | undefined
@@ -133,14 +133,15 @@ it('assembles original plugin controls and managed skills together with exact ge
   if (api === undefined) throw new Error('Original native API preparation absent')
   await api.restoreApprovedPlugins(); await ctx.cloudSkills.restore()
   const inventory = ctx.cloudPlugins.inspect()
-  expect(inventory.rpcEndpoints.map(row => row.endpoint)).toEqual(['cloudPlugins/current', 'cloudPlugins/change'])
+  expect(inventory.rpcEndpoints.map(row => row.endpoint)).toEqual(['cloudPlugins/current', 'cloudPlugins/change', 'cloudPlugins/list'])
   const skills = ctx.cloudSkills.inspect()
   expect(skills.rpcEndpoints.map(row => row.endpoint)).toEqual(skillMethods.map(method => 'cloudSkills/'+method))
   expect(saves.snapshot()).toMatchObject({ accounts: 1, tracked: 0 })
   for (const endpoint of [...inventory.rpcEndpoints, ...skills.rpcEndpoints]) {
     const descriptor = ctx.typert.local.get(endpoint.endpoint)
     expect(descriptor).toMatchObject({ service: endpoint.endpoint.split('/')[0], invocation: { kind: 'direct' },
-      parameters: [{ source: 'json', wire: 'request', codec: { mode: 'strict' } }], result: { mode: 'strict' } })
+      parameters: endpoint.endpoint === 'cloudPlugins/list' ? [] : [{ source: 'json', wire: 'request', codec: { mode: 'strict' } }],
+      result: { mode: 'strict' } })
   }
   const installedApi = api
   expect(() => installedApi.requireRpc('cloudPlugins/current')).toThrow(CloudApiError)

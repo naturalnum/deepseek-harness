@@ -264,13 +264,14 @@ function RowSwitch({ row, title, t, busy, onChange }: {
   readonly busy: boolean
   readonly onChange: (enabled: boolean) => void
 }): ReactNode {
-  const locked = row.readOnlyReason !== undefined || row.entryId === undefined
+  const locked = row.readOnlyReason !== undefined || row.entryId === undefined || row.toggleAllowed === false
   return (
     <Switch
       checked={row.enabled}
       label={t('partToggle', { name: title })}
       disabled={busy || locked}
-      {...row.readOnlyReason === undefined ? {} : { title: managementText({ code: row.readOnlyReason }, t) }}
+      {...row.toggleAllowed === false ? { title: t('actionRestricted') }
+        : row.readOnlyReason === undefined ? {} : { title: managementText({ code: row.readOnlyReason }, t) }}
       onChange={onChange}
     />
   )
@@ -429,8 +430,9 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
     <Switch
       checked={pkg.enabled}
       label={t('enableToggle', { name: title })}
-      disabled={busy || pkg.readOnlyReason !== undefined || (!pkg.enabled && pkg.error !== undefined && !(pkg.availability === 'missing' && pkg.installTarget !== undefined))}
-      {...pkg.readOnlyReason === undefined ? {} : { title: managementText({ code: pkg.readOnlyReason }, t) }}
+      disabled={busy || pkg.toggleAllowed === false || pkg.readOnlyReason !== undefined || (!pkg.enabled && pkg.error !== undefined && !(pkg.availability === 'missing' && pkg.installTarget !== undefined))}
+      {...pkg.toggleAllowed === false ? { title: t('actionRestricted') }
+        : pkg.readOnlyReason === undefined ? {} : { title: managementText({ code: pkg.readOnlyReason }, t) }}
       onChange={onSetEnabled}
     />
   )
@@ -699,7 +701,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
  */
 function PackageDetail({
   pkg, t, resolveText, busy, rowBusy, configured, configure, renderSlot, inMore,
-  onBack, onSetEnabled, onUninstall, onUpdate, onSetRowEnabled,
+  onBack, onSetEnabled, onUninstall, onUpdate, onSetRowEnabled, allowInstall,
 }: {
   readonly pkg: PackageView
   readonly t: Translate
@@ -712,6 +714,7 @@ function PackageDetail({
   readonly configure: RowConfigure
   readonly renderSlot: RenderConfig
   readonly inMore: boolean
+  readonly allowInstall: boolean
   readonly onBack: () => void
   readonly onSetEnabled: (enabled: boolean) => void
   readonly onUninstall: () => void
@@ -733,7 +736,7 @@ function PackageDetail({
         actions={(
           <div className={css.detailActions}>
             {renderSlot('plugins.detail.actions', { subject })}
-            {updateAvailable(pkg) ? (
+            {allowInstall && updateAvailable(pkg) ? (
               <Button variant="outline" size="sm" icon={<IconRefreshOutlineRegular size={13} />}
                 disabled={busy} aria-label={t('updateLabel', { name: title })} onClick={onUpdate}>
                 {t('update')}
@@ -747,7 +750,7 @@ function PackageDetail({
                   className={css.danger}
                   icon={<IconTrashOutlineRegular size={13} />}
                   aria-label={t('uninstallLabel', { name: title })}
-                  disabled={busy || !pkg.removable || pkg.readOnlyReason !== undefined}
+                  disabled={busy || !allowInstall || !pkg.removable || pkg.readOnlyReason !== undefined}
                   onClick={onUninstall}
                 >
                   {t('uninstall')}
@@ -1632,8 +1635,9 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
                 </button>
               </Tooltip>
               {state.install.requestId === undefined
-                ? <AddPluginMenu t={t} disabled={!loaded} openInstall={props.openInstall} renderSlot={renderSlot} />
-                : <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>
+                ? <AddPluginMenu t={t} disabled={!loaded || props.canInstall?.() === false}
+                  openInstall={props.openInstall} renderSlot={renderSlot} />
+                : <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded || props.canInstall?.() === false} onClick={props.openInstall}>
                   {t('installViewTask')}
                 </Button>}
             </div>
@@ -1722,6 +1726,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         ? (
           <PackageDetail
             pkg={openPkg}
+            allowInstall={props.canInstall?.() !== false}
             t={t}
             resolveText={resolveText}
             busy={packageBusy(openPkg)}

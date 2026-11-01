@@ -12,6 +12,17 @@ const zip = () => ({ kind: 'zip' as const, file: Object.assign(new File(['zip'],
   arrayBuffer: async () => new TextEncoder().encode('zip').buffer,
 }) })
 
+it('keeps confirmed installation separate from selection awaiting native inspection', async () => {
+  const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input)
+  f.install.mockResolvedValueOnce({ ok: true, value: { persisted: true, applied: true,
+    version: directoryVersion('installed'), entry: { ...f.entry, selection: { kind: 'incomplete' } } } })
+  const list = await api.installed(signal()), outcome = await list.install?.(zip(), signal())
+  expect(outcome).toMatchObject({ kind: 'persisted', applied: true, item: { installed: true, status: 'published' } })
+  if (outcome?.kind !== 'persisted') throw new Error('Expected confirmed native installation')
+  expect(outcome.item?.shadowed).toBeUndefined()
+  expect(outcome.item?.shadowedBy).toBeUndefined()
+})
+
 it('reads only on gesture and uses the exact details-issued directory edit after a later list refresh', async () => {
   const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input)
   expect(f.installed).not.toHaveBeenCalled()

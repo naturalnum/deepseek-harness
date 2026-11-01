@@ -322,9 +322,10 @@ class AccountPolicy {
     const inherited = policy.resolve({ session: parent.session }), selected = policy.resolve({ session: child.session })
     if (inherited.sessionId !== parent.id || selected.sessionId !== child.id
       || inherited.workspaceRoot !== selected.workspaceRoot
-      || !['read-only', 'workspace-write'].includes(inherited.mode)
-      || !['read-only', 'workspace-write'].includes(selected.mode)
-      || inherited.mode === 'read-only' && selected.mode !== 'read-only') {
+      || !['read-only', 'workspace-write', 'danger-full-access'].includes(inherited.mode)
+      || !['read-only', 'workspace-write', 'danger-full-access'].includes(selected.mode)
+      || ['read-only', 'workspace-write', 'danger-full-access'].indexOf(selected.mode)
+        > ['read-only', 'workspace-write', 'danger-full-access'].indexOf(inherited.mode)) {
       throw new CloudApiError('cloud/forbidden', 'A child Agent cannot widen its parent\'s current file permissions.')
     }
   }

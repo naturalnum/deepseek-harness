@@ -14,6 +14,9 @@ export interface SubagentLimitsSettings {
 
 /** Effective values and drafts presented by the limits card. */
 export interface SubagentLimitsCardState extends SettingsFormShell {
+  /** Whether the native account policy supplies each field. */
+  allowMaxDepth?: boolean
+  allowMaxActiveSubagents?: boolean
   maxDepth: SettingsFieldState
   maxActiveSubagents: SettingsFieldState
 }
@@ -40,17 +43,27 @@ function limitField(field: keyof SubagentLimitsSettings, minimum: number): Setti
 
 /** Bind two independently resettable limits to one staged settings form. */
 export class SubagentLimitsCardController {
+  private active = true
   private readonly form: SettingsFormModel<SubagentLimitsSettings>
   private readonly store: SnapshotStore<SubagentLimitsCardState>
 
   /** @param scope - The Host's `subagent` settings section. */
-  constructor(scope: SettingsFormScope<SubagentLimitsSettings>) {
+  constructor(private readonly scope: SettingsFormScope<SubagentLimitsSettings>, private readonly fields?: readonly string[]) {
     this.form = new SettingsFormModel(scope, [limitField('maxDepth', 0), limitField('maxActiveSubagents', 1)])
     this.store = this.form.bind(() => ({
       ...this.form.shell(),
+      allowMaxDepth: this.allowed('maxDepth'),
+      allowMaxActiveSubagents: this.allowed('maxActiveSubagents'),
       maxDepth: this.form.field('maxDepth'),
       maxActiveSubagents: this.form.field('maxActiveSubagents'),
     }))
+  }
+
+  private allowed(field: string): boolean {
+    if (!this.active) return false
+    if (this.fields === undefined) return true
+    const value = this.scope.getSnapshot().value
+    return this.fields.includes(field) && value !== undefined && Object.hasOwn(value, field)
   }
 
   /**
@@ -58,9 +71,13 @@ export class SubagentLimitsCardController {
    * @returns The limits snapshot and staged write actions.
    */
   inject(): SubagentLimitsCardFace {
-    return { hooks: { subagentLimitsCard: this.store }, ...this.form.actions() }
+    const actions = this.form.actions()
+    return { hooks: { subagentLimitsCard: this.store }, ...actions,
+      edit: (field, text) => { if (this.allowed(field)) actions.edit(field, text) },
+      resetField: (field) => { if (this.allowed(field)) actions.resetField(field) },
+      save: () => { if (this.active && (this.fields === undefined || this.fields.every(field => this.allowed(field)))) actions.save() } }
   }
   /** Release accepted-value subscriptions. */
-  dispose(): void { this.form.dispose() }
+  dispose(): void { this.active = false; this.form.dispose() }
 
 }

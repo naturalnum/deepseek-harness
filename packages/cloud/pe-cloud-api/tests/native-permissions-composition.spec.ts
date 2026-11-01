@@ -109,8 +109,8 @@ it('pins initial native defaults using installation checks before business-ready
 
 it('uses the original catalog and /permission handler with durable Session state and the same guarded registry', async () => {
   const f = await fixture('catalog')
-  expect(await f.catalog()).toEqual({ options: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' })],
-    defaultOptions: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' })], defaultPreset: 'workspace-write' })
+  expect(await f.catalog()).toEqual({ options: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' }), expect.objectContaining({ value: 'danger-full-access' })],
+    defaultOptions: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' }), expect.objectContaining({ value: 'danger-full-access' })], defaultPreset: 'workspace-write' })
   expect(f.service.inspect().rpcEndpoints).toEqual([{ endpoint: 'permissionPresets/catalog', handlerId: 'native:permissionPresets', guard: 'authenticated-account' }])
   expect(f.service.value.current(f.agent.session)).toBe('workspace-write')
   const before = f.assertSwitch.mock.calls.length
@@ -141,10 +141,10 @@ it.each([false, true])('runs the same synchronous guard before fresh or partial 
   expect(permissionEvents(f.events)).toHaveLength(before)
 })
 
-it('rejects foreign Session objects, automatic/full access and unknown selections without durable changes', async () => {
+it('rejects foreign Session objects, automatic and unknown selections without durable changes', async () => {
   const a = await fixture('a'), b = await fixture('b'), beforeA = permissionEvents(a.events).length, beforeB = permissionEvents(b.events).length
   expect(() =>{  a.service.value.set(b.agent.session, 'read-only') }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
-  for (const name of ['danger-full-access', 'auto', 'custom', 'other']) {
+  for (const name of ['auto', 'custom', 'other']) {
     expect(() =>{  a.service.value.set(a.agent.session, name) }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
     expect(await a.execute('/permission ' + name)).toMatchObject({ result: { kind: 'error' } })
   }
@@ -162,4 +162,12 @@ it.each(['lifetime', 'admission', 'enforcement', 'exposure'] as const)('keeps %s
   await expect(f.catalog()).rejects.toBeDefined()
   expect(() =>{  f.service.value.set(f.agent.session, 'read-only') }).toThrow()
   expect(permissionEvents(f.events)).toHaveLength(before)
+})
+
+it('selects full access through the original command and persists the native Session mode', async () => {
+  const f = await fixture('full-access')
+  expect(await f.execute('/permission danger-full-access')).toMatchObject({ result: { kind: 'success' } })
+  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'permissions')).toMatchObject({
+    preset: 'danger-full-access', sandbox: 'danger-full-access', approval: 'never',
+  })
 })

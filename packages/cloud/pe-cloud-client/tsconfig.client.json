@@ -10,6 +10,8 @@
     "src/config.ts",
     "src/schema.ts",
     "src/client/index.ts",
+    "src/client/preset-integration.ts",
+    "src/client/subagent-settings.ts",
     "src/client/sidebar-account.ts",
     "src/client/CloudAccountMenu.tsx",
     "src/client/account-locales.ts",
@@ -60,6 +62,7 @@
     "src/client/management/ManagementActionToast.tsx",
     "src/client/management/register.tsx",
     "src/client/management/skills/selected-bundle.ts",
+    "src/client/management/skills/catalog-observation.ts",
     "src/client/managed-skill-editing.ts",
     "src/client/management/skills/ManagedSkillEditor.tsx",
     "src/client/managed-skill-files.ts",
@@ -75,6 +78,8 @@
     "src/client/management/plugins/current-card.ts",
     "src/client/management/plugins/catalog-reader.ts",
     "src/client/management/plugins/install.tsx",
+    "src/client/management/plugins/native-integration.ts",
+    "src/client/management/plugins/NativePluginConfigurationSection.tsx",
     "src/client/management/plugins/PluginEditPanel.tsx",
     "src/client/management/plugins/plugin-schema.ts"
   ],
@@ -144,6 +149,15 @@
     },
     {
       "path": "../../session-query/session-log-export/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-plugin-manager/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-agent-preset"
+    },
+    {
+      "path": "../../client/ui-settings-subagent"
     }
   ]
 }

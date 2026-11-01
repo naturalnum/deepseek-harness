@@ -231,7 +231,7 @@ it('admits exact catalog controls as immutable data in the original Root catalog
   }
   const { Context } = await import('@deepseek-ai/cordis'), ctx = new Context()
   const policy = { recipeVersion: 'plugin-policy', approvedConfiguration: input, allowedSettings: [], exactFetchRoutes: [], streamEndpoints: [],
-    rpcEndpoints: ['cloudPlugins/current', 'cloudPlugins/change'].map(endpoint => ({ endpoint, handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const })) }
+    rpcEndpoints: ['cloudPlugins/current', 'cloudPlugins/change', 'cloudPlugins/list'].map(endpoint => ({ endpoint, handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const })) }
   try {
     expect(() => new ExposureService(ctx, ExposureService.Config({ ...policy, rpcEndpoints: policy.rpcEndpoints.slice(1) }))).toThrow()
     expect(() => new ExposureService(ctx, ExposureService.Config({ ...policy,
@@ -434,4 +434,14 @@ it('preserves secret and live siblings from omitted or null object defaults when
     expect(row.root ? raw : (raw as { mixed: unknown }).mixed).toEqual({ ordinary: 3, token: 'protected-ancestor-default', live: 2 })
     expect(f.barrier.snapshot().failures).toEqual([])
   }
+})
+
+
+it('returns the actual native account roster and only the approved control mapping', async () => {
+  const f = await fixture()
+  const snapshot = await f.control.snapshot(f.check)
+  expect(snapshot.plugins.some(row => row.moduleName === fixed.moduleName)).toBe(true)
+  expect(snapshot.plugins.some(row => row.moduleName === 'cordis:empty')).toBe(true)
+  expect(snapshot.controls.some(row => row.id === fixed.id)).toBe(true)
+  expect(snapshot.controls.some(row => row.id === 'include:unchanged')).toBe(false)
 })

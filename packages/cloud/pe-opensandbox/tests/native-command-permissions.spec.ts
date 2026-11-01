@@ -178,3 +178,14 @@ it('includes a retained original service record before a process starts, and rel
     expect(() =>{  f.commands.assertSessionFilePolicyChange(f.session) }).not.toThrow()
   }, 'dev_service')
 })
+
+it('forwards full access from the original Session to the signed command preparation', async () => {
+  const f = await fixture()
+  setSandboxMode(f.session, 'danger-full-access')
+  await f.run(async () => {
+    const handle = await f.shell.execute(f.shell.resolve({ command: 'printf ready' }))
+    await handle.result()
+  })
+  expect(f.prepare).toHaveBeenCalledWith(expect.objectContaining({ argv: ['/bin/bash', '--noprofile', '--norc', '-c', 'printf ready'] }),
+    { mode: 'danger-full-access' })
+})

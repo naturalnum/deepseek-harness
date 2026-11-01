@@ -49,6 +49,8 @@ export type AccountPluginMode = Parameters<PreparedAccountPluginEdit['submit']>[
 export type AccountPluginField = AccountPluginEditState['configuration']['fields'][number]
 /** One view-only interaction; the original edit closure and version remain private to its account owner. */
 export interface AccountPluginEditor {
+  /** Approved identity of the entry being edited. */
+  readonly id?: AccountPluginId
   readonly phase: 'opening' | 'editing' | 'submitting' | 'result'
   readonly action: 'enabled' | 'selected' | 'configure'
   readonly enabled?: boolean

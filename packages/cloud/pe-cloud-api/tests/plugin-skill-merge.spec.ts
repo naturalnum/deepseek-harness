@@ -147,7 +147,7 @@ it('requires both complete native groups while preserving managed DTO configurat
     credentials: { mode: 'read-only' }, fields: [] }
   const skillRows = ['current','publish','installed','details','install','update','uninstall','download'].map(method => ({
     endpoint: 'cloudSkills/'+method, handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const }))
-  const pluginRows = ['current','change'].map(method => ({ endpoint: 'cloudPlugins/'+method,
+  const pluginRows = ['list','current','change'].map(method => ({ endpoint: 'cloudPlugins/'+method,
     handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const }))
   const manifest = { recipeVersion: input.recipeVersion, rpcEndpoints: [...skillRows, ...pluginRows],
     streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [], approvedConfiguration: input }

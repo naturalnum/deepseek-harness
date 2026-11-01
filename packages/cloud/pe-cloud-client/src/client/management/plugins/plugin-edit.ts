@@ -6,7 +6,7 @@ import { ClientFailure } from '../../errors.ts'
 import { pluginLiteralDraft, pluginFieldPolicy, samePluginPath } from './plugin-schema.ts'
 
 /** The actual approved namespace, without raw native PluginManager methods. */
-export type CloudPluginRemote = TypertClientRemote['cloudPlugins']
+export type CloudPluginRemote = Pick<TypertClientRemote['cloudPlugins'], 'current' | 'change'>
 type Current = Extract<Awaited<ReturnType<CloudPluginRemote['current']>>, { ok: true }>['value']
 type ChangeRequest = Parameters<CloudPluginRemote['change']>[0]
 type ChangeResult = Extract<Awaited<ReturnType<CloudPluginRemote['change']>>, { ok: true }>['value']

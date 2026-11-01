@@ -47,6 +47,7 @@ declare module '@deepseek-ai/cordis' {
 export type { PluginManagerPageProps } from './PluginManagerPage.tsx'
 export type { ConfigLedger, OfficialItem } from './config-ledger.ts'
 export type { PluginManagerFace } from './manager-store.ts'
+export type { PluginManagerIntegration } from './integration.ts'
 export type { PluginManagerLocaleKey } from './locales.ts'
 export type {
   ConfigPageForm, PluginActivationOwnerProps, PluginAddActionsProps, PluginTabInstall, PluginTabProps,

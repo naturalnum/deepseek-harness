@@ -2393,7 +2393,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-pe-cloud-client`
 
 - `refs`: `BindingFieldNames` (`@deepseek-ai/dsh-pe-cloud-access/types`) · `BootstrapDecodeLimits` (`@deepseek-ai/dsh-pe-cloud-access/types`)
-- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:39`](../packages/cloud/pe-cloud-client/src/index.ts)
+- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:48`](../packages/cloud/pe-cloud-client/src/index.ts)
 
 ```ts config-catalog
 /** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
@@ -2447,6 +2447,10 @@ export interface CloudClientConfig {
   skillSettings?: Readonly<CloudSkillSettingsConfig>
   /** Original browser control groups; omission preserves the existing first-screen roster. */
   nativeSessionControls?: readonly CloudNativeSessionControl[]
+  /** Original native management page groups; omission leaves them unregistered. */
+  nativeManagement?: readonly CloudNativeManagement[]
+  /** Actual deployment-owned native Subagent Settings entry ID; display binding only, not authorization. */
+  nativeSubagentSettingsNamespace?: string
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
 }
@@ -2475,6 +2479,9 @@ export interface CloudSkillSettingsConfig {
 
 /** Explicit original browser controls supplied by the cloud deployment; selection grants no server capability. */
 export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments'
+
+/** Explicit native management page groups; selection grants no account authority. */
+export type CloudNativeManagement = 'plugins' | 'presets' | 'automations'
 
 /** Root-owned public inputs for one exact GET preview entry; no account identity or application target. */
 export interface CloudServicePreviewPolicy {

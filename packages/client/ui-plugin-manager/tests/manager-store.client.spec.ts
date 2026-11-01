@@ -10,6 +10,7 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginTab } from '../src/client/tab-ledger.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { offeredRegistries, packageView, PluginManagerController, rowKey, sortPackages } from '../src/client/manager-store.ts'
+import type { PluginManagerIntegration } from '../src/client/integration.ts'
 
 const INCOMPATIBLE = { name: 'dsh-late', version: '2.0.0', runtimeVersion: '0.1.0', requirements: { '@deepseek-ai/dsh': '^0.2.0' } }
 const ROW_ENTRY = 'include:sidebar' as PluginEntryId
@@ -77,7 +78,7 @@ const NO_CONFIG: HostObservable<ConfigLedger> = {
 
 const NO_TABS: HostObservable<readonly PluginTab[]> = { getSnapshot: () => [], subscribe: () => () => {} }
 
-function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}, enabled = true) {
+function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}, enabled = true, integration?: PluginManagerIntegration) {
   const inventory = { list: overrides.inventory ?? vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: true }))) }
   const plugins = {
     listBundles: vi.fn<() => Promise<ReturnType<typeof ok<BundleInfo[]>> | ReturnType<typeof refused>>>(
@@ -97,7 +98,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   const probe = { fastest: overrides.fastest ?? vi.fn(() => Promise.resolve(ok(null))) }
   const track = vi.fn()
   const ctx = {
-    get: (name: string) => name === 'clientPersistence' ? undefined : { enabled, track },
+    get: (name: string) => name === 'pluginManagerIntegration' ? integration : name === 'clientPersistence' ? undefined : { enabled, track },
     configForms: { describe: () => ({ getSnapshot: () => ({ view: { namespaces: [] } }), subscribe: () => () => {} }), get: vi.fn((id: string) => `form:${id}`) },
     remote: { pluginManager: plugins, pluginInventory: inventory, pluginRegistryProbe: probe },
   } as never
@@ -2047,4 +2048,24 @@ it('deselects a source bundle whose target is unavailable without starting insta
   face.setEnabled(entry.name, false)
   await vi.waitFor(() => { expect(plugins.setBundleEnabled).toHaveBeenCalledWith(entry.name, false) })
   expect(plugins.installBundle).not.toHaveBeenCalled()
+})
+
+it('uses the admitted integration roster and only permits its advertised actions', async () => {
+  const setBundle = vi.fn(async () => {}), setEntry = vi.fn(async () => {})
+  const source: PluginManagerIntegration = { install: false, read: vi.fn(async () => ({ bundles: [BUNDLE], plugins: PLUGINS })),
+    canSetBundle: () => false, canSetEntry: id => id === ROW_ENTRY, setBundle, setEntry }
+  const b = bench({}, true, source)
+  await b.controller.load()
+  expect(b.state().packages[0]).toMatchObject({ name: BUNDLE.name, toggleAllowed: false,
+    rows: [{ entryId: ROW_ENTRY, toggleAllowed: true }, { toggleAllowed: false }] })
+  expect(b.plugins.listBundles).not.toHaveBeenCalled()
+  expect(b.inventory.list).not.toHaveBeenCalled()
+  expect(b.face.canInstall?.()).toBe(false)
+  b.face.openInstall()
+  expect(b.state().install.open).toBe(false)
+  b.face.setEnabled(BUNDLE.name, true)
+  expect(setBundle).not.toHaveBeenCalled()
+  b.face.setRowEnabled(ROW_ENTRY, false)
+  await vi.waitFor(() => { expect(setEntry).toHaveBeenCalledWith(ROW_ENTRY, false) })
+  expect(b.plugins.setPluginEnabled).not.toHaveBeenCalled()
 })

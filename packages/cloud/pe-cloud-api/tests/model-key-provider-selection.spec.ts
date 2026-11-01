@@ -80,3 +80,17 @@ it.each(['reference', 'module', 'provider'] as const)('rejects a Root binding wh
     ...kind === 'reference' ? { ref: credentialRef('OTHER_KEY') } : kind === 'module' ? { moduleName: 'cordis:declared' } : { provider: 'other-provider' } }] }
   await expect(new ModelKeyProvider(f.ctx, policy, 32).audit()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
 })
+
+it('refuses to renew a provider plan if an unapproved config field changes during the write', async () => {
+  const f = await fixture('TRIAL_DEEPSEEK_KEY'), provider = new ModelKeyProvider(f.ctx, f.policy, 32)
+  await provider.audit()
+  const finish = provider.beginSettingsUpdate('official', [{ op: 'set', path: ['baseURL'], value: 'test' }])
+  const entry = [...f.ctx.loader.entries()].find(row => row.options.id === 'official')!
+  const before: unknown = entry.options.config
+  if (before === null || typeof before !== 'object' || Array.isArray(before)) throw new Error('Expected provider config object')
+  entry.options.config = { ...before, apiKeyEnv: 'UNAPPROVED_KEY', models: [{ id: 'new' }] }
+  try {
+    expect(() =>{  finish.finish() }).toThrow()
+    expect(() => provider.metadata()).toThrow()
+  } finally { entry.options.config = before }
+})

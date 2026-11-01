@@ -1,10 +1,11 @@
 /** Browser-safe validation of public limits and the relative bootstrap entry. */
 import z from '@deepseek-ai/schemastery'
-import type { CloudClientConfig, CloudNativeSessionControl, CloudWebManifest } from './types.ts'
+import type { CloudClientConfig, CloudNativeManagement, CloudNativeSessionControl, CloudWebManifest } from './types.ts'
 import { parseServicePreviewPolicy } from './preview-policy.ts'
 
 const MAX_TIMER_MS = 2_147_483_647
 const NATIVE_CONTROLS = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'] as const
+const NATIVE_MANAGEMENT = ['plugins', 'presets', 'automations'] as const
 const COMMAND_CONTROLS: readonly CloudNativeSessionControl[] = ['models', 'permissions', 'plan', 'feedback', 'export']
 
 /** Limits have no production defaults; the reviewed browser manifest supplies them. */
@@ -19,6 +20,8 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
   modelSettingsRequestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS),
   maxDownloadBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
   nativeSessionControls: z.array(z.union([...NATIVE_CONTROLS])) as z<readonly CloudNativeSessionControl[]>,
+  nativeManagement: z.array(z.union([...NATIVE_MANAGEMENT])) as z<readonly CloudNativeManagement[]>,
+  nativeSubagentSettingsNamespace: z.string().min(1).max(128).pattern(/^[A-Za-z0-9_$-][A-Za-z0-9_$.-]*$/),
   skillSettings: z.union([z.object({
     requestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
     maxFileBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
@@ -40,7 +43,15 @@ const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapRespo
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls'])
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls', 'nativeManagement', 'nativeSubagentSettingsNamespace'])
+  let subagentNamespace: string | undefined
+  if (Object.hasOwn(value, 'nativeSubagentSettingsNamespace')) {
+    const candidate = value['nativeSubagentSettingsNamespace']
+    if (typeof candidate !== 'string' || !/^[A-Za-z0-9_$-][A-Za-z0-9_$.-]{0,127}$/.test(candidate)) {
+      throw new TypeError('nativeSubagentSettingsNamespace requires a canonical namespace ID of at most 128 characters')
+    }
+    subagentNamespace = candidate
+  }
   let controls: CloudClientConfig['nativeSessionControls']
   if (Object.hasOwn(value, 'nativeSessionControls')) {
     const selected = value['nativeSessionControls']
@@ -54,6 +65,17 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
       throw new TypeError('nativeSessionControls requires commands with model, permission, plan, feedback or export controls')
     }
     controls = Object.freeze([...checked])
+  }
+  let management: CloudClientConfig['nativeManagement']
+  if (Object.hasOwn(value, 'nativeManagement')) {
+    const selected = value['nativeManagement']
+    if (!Array.isArray(selected) || selected.length > NATIVE_MANAGEMENT.length
+      || selected.some(item => typeof item !== 'string' || !NATIVE_MANAGEMENT.some(name => name === item))
+      || new Set(selected).size !== selected.length) {
+      throw new TypeError('nativeManagement requires distinct reviewed native management groups')
+    }
+    const checked = selected as CloudNativeManagement[]
+    management = Object.freeze([...checked])
   }
   const preview = Object.hasOwn(value, 'servicePreview') ? parseServicePreviewPolicy(value.servicePreview) : undefined
   let skills: CloudClientConfig['skillSettings']
@@ -88,11 +110,15 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
   delete config.skillSettings
   delete config.servicePreview
   delete config.nativeSessionControls
+  delete config.nativeManagement
+  delete config.nativeSubagentSettingsNamespace
   if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(config.bootstrapPath)) {
     throw new Error('cloud client bootstrapPath must be a document-relative route without query or fragment')
   }
   return { ...config,
     ...controls === undefined ? {} : { nativeSessionControls: controls },
+    ...management === undefined ? {} : { nativeManagement: management },
+    ...subagentNamespace === undefined ? {} : { nativeSubagentSettingsNamespace: subagentNamespace },
     ...modelDeadline === undefined ? {} : { modelSettingsRequestTimeoutMs: modelDeadline },
     ...limit === undefined ? {} : { maxDownloadBytes: limit },
     ...preview === undefined ? {} : { servicePreview: preview },

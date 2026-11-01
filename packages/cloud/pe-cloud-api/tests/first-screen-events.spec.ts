@@ -12,7 +12,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { CloudAccountApi } from '../src/account-service.ts'
 import { CloudApiError } from '../src/errors.ts'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
@@ -32,7 +32,7 @@ class SkillsCapability extends Service {
   }
 }
 
-async function fixture() {
+async function fixture(schedule = false) {
   const home = mkdtempSync(join(tmpdir(), 'cloud-first-screen-events-')), profileDir = join(home, 'profile')
   mkdirSync(profileDir); initProfile(profileDir, [])
   const configPath = join(profileDir, 'cordis.yml')
@@ -85,10 +85,13 @@ async function fixture() {
   const native: NativeFirstScreen = { binding, workspaceController: WorkspaceController, settingsController: SettingsController,
     assertCurrent: () => { installedApi.assertInstalled(ctx) }, assertSessionRead: () => {},
     inspect: () => ({ recipeVersion: binding.recipeVersion, rpcEndpoints: [], streamEndpoints: [], exactFetchRoutes: [] }) }
+  const scheduleAdmission = schedule ? vi.spyOn(api, 'requireRpc').mockReturnValue({ endpoint: 'schedule/catalog',
+    handlerId: 'native:schedule', guard: 'authenticated-account' }) : undefined
   const events = registerFirstScreenEvents(ctx, { api, native, settingsNamespaces: ['locale', 'subagent'], home, maxHomeBytes: 4096, maxInventoryEntries: 512,
-    maxQueuedEvents: 8, maxQueuedBytes: 16384, maxFrameBytes: 4096 })
+    maxQueuedEvents: 8, maxQueuedBytes: 16384, maxFrameBytes: 4096,
+    ...schedule ? { controls: { commands: false, goals: false, permissions: false, schedule: true } } : {} })
   registration.events = events
-  return { ctx, capability, events,
+  return { ctx, capability, events, scheduleAdmission,
     withdraw: () => installedSkillFiber.dispose(),
     async open() {
       const abort = new AbortController()
@@ -98,6 +101,14 @@ async function fixture() {
       const iterator = stream[Symbol.asyncIterator](); streams.push({ abort, iterator }); return iterator
     } }
 }
+
+it('forwards a selected Schedule invalidation only through the account event source and its catalog guard', async () => {
+  const f = await fixture(true), stream = await f.open()
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+  f.ctx.emit('schedule/changed')
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'emit', event: 'schedule/changed', args: [] } })
+  expect(f.scheduleAdmission).toHaveBeenCalledWith('schedule/catalog')
+})
 
 it('registers, inspects and forwards skills/change through distinct Cordis proxies for the same skill owner', async () => {
   const f = await fixture(), one = f.ctx.get('cloudSkills'), two = f.ctx.get('cloudSkills')

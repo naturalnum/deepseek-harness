@@ -29,6 +29,21 @@ function raw(ctx: Context): Record<string, unknown> {
   return first(ctx).options.config as Record<string, unknown>
 }
 
+it('only exposes detached effective snapshots of the same current Loader plan', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const entry = first(ctx)
+  const plan = entry.prepareConfigUpdate({ ...raw(ctx), count: 5 })
+  const candidate = entry.snapshotConfigUpdatePlan(plan) as Record<string, unknown>
+  expect(candidate.count).toBe(5)
+  candidate.count = 999
+  expect(entry.snapshotConfigUpdatePlan(plan)).toMatchObject({ count: 5 })
+  expect(() => entry.snapshotConfigUpdatePlan({ ...plan })).toThrow('unproven')
+  const foreign = await configurationFixture({ hmr: false })
+  expect(() => first(foreign.ctx).snapshotConfigUpdatePlan(plan)).toThrow('unproven')
+  await ctx.settings.update('first', { count: 7 })
+  expect(() => entry.snapshotConfigUpdatePlan(plan)).toThrow('stale')
+})
+
 it('commits pure volatile edits through the actual Loader update with the same fiber and references', async () => {
   const dispose = vi.fn()
   const { ctx, profile } = await configurationFixture({ hmr: false, apply(scope) { scope.effect(() => dispose) } })

@@ -62,6 +62,10 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 | `modelSettingsRequestTimeoutMs` | 无默认值 | 可选的有限正数原生模型设置 RPC 观察期限；省略时关闭此集成。 |
 | `skillSettings` | 无默认值 | 可选 `{ requestTimeoutMs, maxFileBytes }`；两项均须为正安全整数，截止时间在平台定时器范围内。省略时不启用技能管理。 |
 | `nativeSessionControls` | 无默认值 | 可选且不重复的 `commands`、`models`、`permissions`、`goals`、`plan`、`feedback`、`export` 和 `attachments` 分组；省略时不增加控件。 |
+| `nativeManagement` | 无默认值 | 可选且不重复的 `plugins`、`presets`、`automations`；供应原生管理模块，不授予 Host 操作权限。 |
+| `nativeSubagentSettingsNamespace` | 无默认值 | 可选的 Subagent Settings 实际入口 ID，长度为 1–128 个 ASCII 命名空间字符；仅绑定原生卡片，不授予字段访问权限。 |
+
+Subagent 卡片使用该命名空间及当前账户已声明的字段。读取与写入仍由原生 Settings 和 C04 授权；省略的字段保持隐藏。页面绑定撤销时，卡片的账户专属订阅也随之撤回。
 
 ### 原生会话控件
 
@@ -73,19 +77,19 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 
 `modelSettingsRequestTimeoutMs` 是可选的原生模型设置 RPC 观察者期限，须为平台 timer 范围内的正整数；省略时保持该功能关闭。原 `PreparedCloudPage` 在 UI 激活前提供类型化 Models 集成。编辑源初始为 `null`，仅接收从原依赖 scope 捕获的回调，并在等待页面清理前同步撤销。页面、Connection 或依赖 fiber 替换时，await 前后均拒绝旧回调；撤回不表示已发保存已被取消。UI 身份使用原连接代际与依赖 fiber，不依赖元数据或编辑 token。
 
-显式配置 `client.modelSettingsRequestTimeoutMs` 后，原始 prepared page 才启用 Models 集成。现有生成 API contribution 只挂载一次；适配器使用其中实际的 `cloudModelKey.metadata/describe/set/unset` 命名空间。只读元数据输入原始 Models store。每次打开编辑意图只 describe 一次，set 或仅删除 key 的 unset 始终使用当时捕获的版本；后台读取不替换版本。只有原生校验通过的 `persisted: true` 回执确认保存。失败显示固定本地化文案。页面或依赖撤销时，先发布 null 并使旧回调失效，再等待异步清理。 Cloud 在 UI 激活前于此不可变页面输入中固定 `onboarding: false`，因此不注册 Welcome 或凭据 onboarding，编辑源为 null 或已撤销时亦然。密钥通过原生 Settings/Models 面板手动配置。
+显式配置 `client.modelSettingsRequestTimeoutMs` 后，原始 prepared page 才启用 Models 集成。现有生成 API contribution 只挂载一次；适配器使用其中实际的 `cloudModelKey.metadata/describe/set/unset` 命名空间。原生元数据输入原始 Models store。原生 Settings 策略批准 DeepSeek 模型目录时，原始提供商编辑器使用捕获的 revision 保存；凭据仍单独按版本管理，未确认的写入会阻止在当前草稿中重试。每次打开编辑意图只 describe 一次，set 或仅删除 key 的 unset 始终使用当时捕获的版本；后台读取不替换版本。只有原生校验通过的 `persisted: true` 回执确认保存。失败显示固定本地化文案。页面或依赖撤销时，先发布 null 并使旧回调失效，再等待异步清理。 Cloud 在 UI 激活前于此不可变页面输入中固定 `onboarding: false`，因此不注册 Welcome 或凭据 onboarding，编辑源为 null 或已撤销时亦然。密钥通过原生 Settings/Models 面板手动配置。
 
 配置该期限时另声明原生 `ui-settings-models` 浏览器入口，并依赖部署已有的 `ui-settings` 基座。显式服务预览策略另声明 `ui-tool`，由它提供 tool-call 卡片及 keyed tool view。实际发布范围必须包含这些包并重建浏览器产物；仅声明不能证明浏览器已激活或面板已渲染。每个声明包仅保留一个供应方。general 包负责 Settings 面板；`ui-settings-shell` 是独立的 shell 偏好功能。
 
 ### 原生技能管理
 
-`client.skillSettings` 与 bootstrap 的 `configuration.skills.manage` 启用原 `power-evolve-skills` 面板及原生侧栏，注册时不发起 RPC。显式刷新通过 `cloudSkills.installed` 读取完整有界清单并投影到 `PreparedCloudPage.skillVersionEditing`；生成命名空间依赖、原生槽位、语言字典及共享反馈宿主仍由原拥有者持有。限额取自实际账户答复，浏览器不设默认值。行内容报告实际安装版本及原生来源/覆盖观察，不把获批目录猜成已安装，也不由客户端计算优先级。变更确认后，其他行的覆盖观察失效并提示显式刷新，不重算优先级或续期已打开的编辑。
+`client.skillSettings` 与 bootstrap 的 `configuration.skills.manage` 启用原 `power-evolve-skills` 面板及原生侧栏，注册时不发起 RPC。选择或重新打开技能面板时，通过 `cloudSkills.installed` 读取完整有界清单并投影到 `PreparedCloudPage.skillVersionEditing`；若数据源在选择后才接入，接入时读取一次。显式刷新可再次读取；读取失败后只在再次选择或刷新时重试。生成命名空间依赖、原生槽位、语言字典及共享反馈宿主仍由原拥有者持有。限额取自实际账户答复，浏览器不设默认值。行内容报告实际安装版本及原生来源/覆盖观察，不把获批目录猜成已安装，也不由客户端计算优先级。变更确认后，其他行的覆盖观察失效并提示显式刷新，不重算优先级或续期已打开的编辑。
 
 打开安装项时只读取一次 `details`，并捕获当时的目录编辑版本。安装、完整更新及卸载均只使用该版本尝试一次，刷新清单不续期已打开的编辑。详情包含完整文件元数据，不包含已发布说明正文；面板如实报告这一限制，不伪造文档。ZIP 导出读取所选的确切内容版本。安装标识与原生技能名保持区分，不透明版本仅保留在捕获的回调中。
 
 安装按钮直接打开 ZIP 文件选择器，选定后读取当前目录版本并提交一次。更新已有安装项时，可选择完整目录、完整文件集或 ZIP/.skill 技能包。浏览器检查有限的路径、文件、目录与字节上限，并严格解码所选根 `SKILL.md`，不解析技能元数据或解包。原浏览器 File 保持不变，说明正文使用独立可编辑文本。提交读取全部所选资源，仅将根说明替换为编辑后的字节，从不执行脚本。实际解码、路径/链接/类型和展开量检查、不可变版本签发及资源生命周期均由 files/account 持有。移除会停止后续发现与加载，不承诺擦除历史、删除已有项目副本或停止脚本。
 
-已确认持久化与原生应用分别呈现。开始新编辑时会清除先前已确认的成功提示；安装源读取失败与 ZIP 无效分别提示。已确认的容量拒绝显示为尚未安装；冲突、结果未确认和撤销会保留本地草稿并消耗写入尝试。不自动重放变更、提示词、替换令牌或读取。草稿只可留在同一账户/页面/依赖作用域；不同作用域会清空通用与兼容编辑的所选内容，迟到读写不能更新新作用域。取消只结束浏览器观察，不确认服务端回滚或结算。
+已确认持久化与原生应用分别呈现。开始新编辑时会清除先前已确认的成功提示；安装源读取失败与 ZIP 无效分别提示。已确认的容量拒绝显示为尚未安装；冲突、结果未确认和撤销会保留本地草稿并消耗写入尝试。不自动重放变更、提示词、替换令牌或失败的读取。草稿只可留在同一账户/页面/依赖作用域；不同作用域会清空通用与兼容编辑的所选内容，迟到读写不能更新新作用域。取消只结束浏览器观察，不确认服务端回滚或结算。
 
 下载使用完整有界 ZIP 答复及临时浏览器 Blob URL；请求浏览器下载后，适配器释放锚点和 URL。下载失败与本地技能包校验分别提示。界面只确认浏览器发起下载，不确认操作系统已保存文件。答复检查发生在原生传输接收有界 JSON 后，不构成流式分配上限。后端授权、源完整性及驻留计费仍保持权威。
 

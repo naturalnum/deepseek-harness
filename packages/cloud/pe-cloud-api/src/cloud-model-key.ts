@@ -1,5 +1,6 @@
 /** Account-owned model-key Remote; the original Peer Use and save barrier retain all work. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { Remote, remoteMethods, TypertRemoteService, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { CloudAccountApi } from './account-service.ts'
@@ -9,6 +10,7 @@ import { modelKeyCodecs, type ModelKeyReference,
 import { CloudApiError } from './errors.ts'
 import { ModelKeyProvider } from './model-key-provider.ts'
 import type { ApprovedModelKeyConfiguration, ExposureInventory, ModelKeyMetadata } from './types.ts'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 
 /** Original login registry callback; it borrows nothing and never releases the retained AccountUse. */
 export interface ModelKeyPeerConsumer {
@@ -81,6 +83,21 @@ export class CloudModelKeyService extends TypertRemoteService {
       }
       check()
       const metadata = this.provider.metadata()
+      let writableSettings = false
+      try { this.api.requireRpc('settings/mutate'); writableSettings = true }
+      catch (error) {
+        if (!(error instanceof CloudApiError) || error.code !== 'cloud/forbidden') throw error
+      }
+      const settings = writableSettings ? this.owner.get('settingsController')?.describe() : undefined
+      if (settings?.writable === true && this.input.limits.bindings.every((binding) => {
+        if (binding.provider !== 'deepseek-official'
+          || binding.moduleName !== '@deepseek-ai/dsh-llm-deepseek-api-key') return false
+        const view = settings.namespaces.find(row => row.ns === binding.providerEntryId)
+        const schema = view?.schema
+        if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+        const form = new z(schema)
+        return form.type === 'object' && form.dict !== undefined && Object.hasOwn(form.dict, 'models')
+      })) metadata.settings.writable = true
       check(); resolve(metadata)
     }))
   }
@@ -89,6 +106,15 @@ export class CloudModelKeyService extends TypertRemoteService {
    * @returns Actual native module import settlement.
    */
   auditProvider(): Promise<void> { this.assertCurrent(); return this.provider.audit() }
+  /** Capture the provider's current plan before an approved original Settings write.
+   * @param namespace Original provider settings namespace.
+   * @param fields Approved native path operations.
+   * @returns Checks bound to this provider and its actual native update plan.
+   */
+  beginSettingsUpdate(namespace: string, fields: readonly SettingsPathOpView[]): ReturnType<ModelKeyProvider['beginSettingsUpdate']> {
+    this.assertCurrent()
+    return this.provider.beginSettingsUpdate(namespace, fields)
+  }
   /**
    * Require the audited configured bootstrap route.
    * @param provider Root provider.

@@ -31,6 +31,8 @@ kind: "package-reference"
 
 一次**保存**通过各自的命名空间写入两个部分，每次写入都以其草稿读取时的修订号作栅栏。两次写入相互独立：Host 拒绝的部分保留草稿并报告失败，另一部分照常落地；被更新的 Host 修订号超越的模型草稿会以冲突形式报告并要求放弃，而不是覆盖较新的路由。离开页面即丢弃所有草稿。
 
+部署可以将运行限制卡片绑定到另一个实际存在的 Settings 命名空间。此时卡片只显示账户已声明且当前原生 Settings 值中存在的字段；每次写入仍由 Host 授权。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -40,6 +42,8 @@ kind: "package-reference"
 <summary>实现细节——点击展开</summary>
 
 宿主半侧是一个空的 `apply`，只为让本包占一条 Loader 行，客户端模块系统据此送出浏览器半侧。浏览器半侧通过 `ctx.configForms.get` 分别绑定两个命名空间：`SubagentLimitsCardController` 用 `ui-primitives` 的共享 `SettingsFormModel` 暂存运行限制，字段规格只接受不低于各自下限的安全整数；`SubagentModelSelectionCardController` 自己维护草稿，因为它的两个字段要作为一次带修订栅栏的 `mutate` 保存，它把已存储的路由与 `remote.session.modelCatalog()` 合并，在 `llm/adapters-updated` 与 `settings/document-updated` 时重读目录，连接重置时丢弃草稿。`subagentCardFace` 把两者合成 `SubagentCard` 在共享 `SettingsForm` 里渲染的一个 face，保存时校验两部分并写入有改动的那些。页面通过 `ctx.configForms.whileServed` 监视两个命名空间，注册进插件页的 `plugins.item` slot。
+
+可选的 `subagentSettingsIntegration` 提供运行限制实际使用的命名空间和已声明字段。它接入或撤销时会替换卡片注册并关闭先前的运行限制订阅；`get` 与 `whileServed` 使用同一个命名空间。排队的运行限制保存会在发送前及结果返回后复核该绑定；撤销不取消已经发送的写入。未提供时页面使用 `subagent`。
 
 </details>
 

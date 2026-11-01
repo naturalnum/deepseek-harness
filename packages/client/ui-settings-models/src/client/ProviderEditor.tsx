@@ -93,6 +93,8 @@ export interface ProviderEditorProps {
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
   readOnly: boolean
+  /** Restrict this card to the model catalog when its owner handles credentials and endpoint configuration separately. */
+  modelCatalogOnly?: boolean
   /** Render only the credential field and actions, without provider settings. */
   credentialOnly?: boolean
   /** Require a newly entered credential before this editor can submit. */
@@ -158,9 +160,10 @@ export function pathOps(
 }
 
 /** The editor layout the owning namespace selects. */
-function layoutOf(ns: string): EditorLayout {
+function layoutOf(ns: string, provider: string, protectedSettings: boolean): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
+  if (protectedSettings && provider === 'deepseek-official') return 'deepseek'
   return 'unknown'
 }
 
@@ -207,7 +210,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const node = useMemo(() => schema.nodeAtPath(root, settingsPath), [root, schema, settingsPath])
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy || credentialEdit === null || credentialBlocked
-  const layout = layoutOf(namespace.ns)
+  const layout = layoutOf(namespace.ns, props.provider, props.modelCatalogOnly === true)
   const preparedCredentialOnly = props.credentialOnly === true && credentialEdit !== undefined && credentialEdit !== null
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
@@ -313,12 +316,13 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         : pathOps(settingsPath, committedOriginal, next)
     if (ops.length > 0) {
       const written = await operations.writeSettings(ns, ops, expectedRevision)
+      if (written.kind === 'unknown') setCredentialBlocked(true)
       if (written.kind !== 'written') return written.kind === 'conflict' ? t('conflict') : written.message
       setCommittedOriginal(schema.getPath(written.view.user, settingsPath))
       setExpectedRevision(written.view.revision)
       setDraft(next)
     }
-    if (keyValue.length > 0) {
+    if (props.modelCatalogOnly !== true && keyValue.length > 0) {
       const stored = credentialEdit === undefined
         ? await operations.storeCredential(keyRef, keyValue)
         : await credentialEdit.store(keyValue)
@@ -340,7 +344,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       }
       props.onClose(true)
     } catch (error) {
-      if (credentialEdit === undefined) throw error
+      if (credentialEdit === undefined && props.modelCatalogOnly !== true) throw error
       setCredentialBlocked(true)
       setFailure(t('keyEditUnavailable'))
     } finally {
@@ -464,7 +468,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
     return (
       <>
-        {renderKey()}
+        {props.modelCatalogOnly === true ? null : renderKey()}
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>
@@ -495,7 +499,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            <div className={styles['field']}>
+            {props.modelCatalogOnly === true ? null : <div className={styles['field']}>
               <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
               <input
                 className={styles['input']}
@@ -513,7 +517,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 }}
               />
               {endpointHint === undefined ? null : <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{endpointHint}</span>}
-            </div>
+            </div>}
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
             {ownsIdentity

@@ -121,4 +121,19 @@ it('checks live runtime owners through every ancestor before a child can become 
     .toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
   setSandboxMode(child.session, 'workspace-write')
   expect(() => { assertAccountPermissionAncestry(ctx, grandchild.session, 'workspace-write') }).not.toThrow()
+  expect(() => { assertAccountPermissionAncestry(ctx, grandchild.session, 'danger-full-access') }).toThrow()
+  setSandboxMode(root.session, 'danger-full-access')
+  expect(() => { assertAccountPermissionAncestry(ctx, grandchild.session, 'danger-full-access') }).toThrow()
+  setSandboxMode(child.session, 'danger-full-access')
+  expect(() => { assertAccountPermissionAncestry(ctx, grandchild.session, 'danger-full-access') }).not.toThrow()
+})
+
+it('permits account-scoped full access writes but rejects widening an ordinary Session override', async () => {
+  const f = await fixture()
+  const full = { mode: 'danger-full-access' as const, sessionId: f.first.id, workspaceRoot: '/projects/first' }
+  expect(() => { f.guard(full) }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
+  setSandboxMode(f.first, 'danger-full-access')
+  expect(() => { f.guard() }).not.toThrow()
+  expect(() => { f.guard(full) }).not.toThrow()
+  expect(() => { f.guard({ ...full, mode: 'workspace-write' }) }).not.toThrow()
 })

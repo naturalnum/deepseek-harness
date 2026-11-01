@@ -3,7 +3,7 @@ import { LocalRefusal } from './errors.ts'
 
 /** The fixed cloud workload supports these modes inside its existing account mounts. */
 export interface NativeFilePolicy {
-  readonly mode: 'read-only' | 'workspace-write'
+  readonly mode: 'read-only' | 'workspace-write' | 'danger-full-access'
 }
 
 /**
@@ -16,6 +16,6 @@ export function filePolicy(value: unknown): NativeFilePolicy {
   if (value === null || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'mode')) throw new LocalRefusal('invalid_file_policy')
   const mode: unknown = Reflect.get(value, 'mode')
-  if (mode !== 'read-only' && mode !== 'workspace-write') throw new LocalRefusal('invalid_file_policy')
+  if (mode !== 'read-only' && mode !== 'workspace-write' && mode !== 'danger-full-access') throw new LocalRefusal('invalid_file_policy')
   return Object.freeze({ mode })
 }

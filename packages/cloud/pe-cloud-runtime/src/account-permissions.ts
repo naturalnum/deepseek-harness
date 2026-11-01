@@ -1,10 +1,12 @@
 /** Original per-Session file policy at the cloud provider's mutation call. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { FsError } from '@deepseek-ai/dsh-fs'
-import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
+
+const MODE_RANK: Record<SandboxMode, number> = { 'read-only': 0, 'workspace-write': 1, 'danger-full-access': 2 }
 
 function denied(): never {
   throw new FsError('The current Session file policy does not permit this mutation.', 'FS_SANDBOX_DENIED')
@@ -34,10 +36,10 @@ export function createAccountFileMutationGuard(
     if (!(current instanceof SandboxPolicyService) || (Reflect.get(current, symbols.original) ?? current) !== original) denied()
     const standing = current.resolve({ session })
     assertCurrent()
-    if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id || standing.mode !== 'workspace-write') denied()
+    if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id || (!Object.hasOwn(MODE_RANK, standing.mode) || standing.mode === 'read-only')) denied()
     const selected = override ?? standing
     if (selected.workspaceRoot !== workspaceRoot || selected.sessionId !== session.id
-      || selected.mode !== 'workspace-write') denied()
+      || !Object.hasOwn(MODE_RANK, selected.mode) || selected.mode === 'read-only' || MODE_RANK[selected.mode] > MODE_RANK[standing.mode]) denied()
   }
 }
 
@@ -48,9 +50,9 @@ export function createAccountFileMutationGuard(
  * @param mode Requested file mode; readonly changes cannot broaden an ancestor.
  */
 export function assertAccountPermissionAncestry(
-  ctx: Context, session: Session, mode: 'read-only' | 'workspace-write',
+  ctx: Context, session: Session, mode: SandboxMode,
 ): void {
-  if (mode !== 'workspace-write') return
+  if (mode === 'read-only') return
   const agents = ctx.get('agents'), policy = ctx.get('sandboxPolicy')
   if (agents === undefined || !(policy instanceof SandboxPolicyService)) denied()
   const initial = agents.get(session.id)
@@ -61,7 +63,7 @@ export function assertAccountPermissionAncestry(
     const childId = child.id
     const parent = live.find(candidate => agents.isOwnedBy(childId, candidate))
     if (parent === undefined) return
-    if (visited.has(parent.id) || policy.resolve({ session: parent.session }).mode !== 'workspace-write') denied()
+    if (visited.has(parent.id) || MODE_RANK[policy.resolve({ session: parent.session }).mode] < MODE_RANK[mode]) denied()
     visited.add(parent.id)
     child = parent
   }

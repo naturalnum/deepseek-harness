@@ -125,7 +125,7 @@ export function createPagePluginCatalog(owner: Context, page: PreparedCloudPage,
       || action === 'selected' && (row.selectionTarget?.kind !== 'bundle' || row.selected == null || value === undefined)
       || action === 'enabled' && (row.selectionTarget?.kind === 'bundle' || row.enabled === null || value === undefined)) return
     const operation: Active = { controller: new AbortController(), kind: 'edit', prepared: undefined }; active = operation
-    const editor: AccountPluginEditor = Object.freeze({ phase: 'opening', action,
+    const editor: AccountPluginEditor = Object.freeze({ id, phase: 'opening', action,
       ...action === 'enabled' && value !== undefined ? { enabled: value } : {},
       ...action === 'selected' && value !== undefined ? { selected: value } : {},
       chooseField: (path: readonly string[]) => { if (active !== operation) throw new ClientFailure('closed'); chooseField(path) },

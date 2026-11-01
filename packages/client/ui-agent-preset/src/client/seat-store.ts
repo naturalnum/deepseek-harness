@@ -20,6 +20,7 @@ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { presetOptions, readRoster } from './settings-store.ts'
 import type { AgentPresetOption } from './settings-store.ts'
+import { presetIntegrationOf } from './integration.ts'
 
 /** Hero-chip snapshot. */
 export interface AgentPresetSeatState {
@@ -30,6 +31,8 @@ export interface AgentPresetSeatState {
   /** An error message; explicit selection failures also carry the preset for a Toast. */
   error: string | { readonly preset: AgentPresetOption; readonly reason: string } | null
   busy: boolean
+  /** The deployment exposes the roster without preset selection. */
+  readOnly?: boolean
   /**
    * One-shot cue that the chip should introduce itself (the creator-draft
    * entry staged the pick from another screen, so the user never touched the
@@ -103,7 +106,8 @@ export class AgentPresetSeatController {
     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
     const session = this.currentSession()
     this.set({
-      options: presetOptions(presets),
+      options: presetOptions(presetIntegrationOf(this.ctx) === undefined ? presets : presets.filter(row => row.isDefault)),
+      readOnly: presetIntegrationOf(this.ctx) !== undefined,
       // Staged pick first, then the composition the current session
       // already carries, then the Host-effective default. The middle term is
       // what keeps a late-landing load from regressing the display after
@@ -127,6 +131,7 @@ export class AgentPresetSeatController {
    * @returns the refusal text, or undefined once the pick settled.
    */
   async select(id: string): Promise<string | undefined> {
+    if (presetIntegrationOf(this.ctx) !== undefined) return 'Preset selection is unavailable for this account.'
     if (this.store.getSnapshot().busy) return undefined
     this.stage(id)
     return await this.apply()
@@ -144,6 +149,7 @@ export class AgentPresetSeatController {
    * chip should announce itself on the session it lands on.
    */
   stage(id: string, introduce = false): void {
+    if (presetIntegrationOf(this.ctx) !== undefined) return
     this.staged.id = id
     this.staged.introduce = introduce
     this.set({ current: id, error: null, introduce })
@@ -201,6 +207,7 @@ export class AgentPresetSeatController {
    * @returns this attempt's Host refusal, or undefined when successful or no switch starts.
    */
   async apply(): Promise<string | undefined> {
+    if (presetIntegrationOf(this.ctx) !== undefined) { this.clearStage(); return }
     if (this.store.getSnapshot().busy) return
     const staged = this.staged.id
     const session = this.currentSession()

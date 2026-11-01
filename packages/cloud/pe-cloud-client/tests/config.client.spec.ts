@@ -125,3 +125,28 @@ it.each([undefined, null, true, 'commands', ['models'], ['permissions'], ['plan'
     expect(() => parseCloudWebManifest({ ...web, client: { ...valid, nativeSessionControls } })).toThrow()
   },
 )
+
+it('detaches only the selected native management page groups', () => {
+  const groups = ['plugins', 'presets', 'automations'], parsed = parseCloudClientConfig({ ...valid, nativeManagement: groups })
+  expect(parsed.nativeManagement).toEqual(groups)
+  expect(parsed.nativeManagement).not.toBe(groups)
+  expect(Object.isFrozen(parsed.nativeManagement)).toBe(true)
+  groups.length = 0
+  expect(parsed.nativeManagement).toEqual(['plugins', 'presets', 'automations'])
+  expect(Object.hasOwn(parseCloudClientConfig(valid), 'nativeManagement')).toBe(false)
+})
+
+it.each([undefined, null, true, 'plugins', ['plugins', 'plugins'], ['plugins', 'unknown']])(
+  'rejects an invalid native management group selection: %j', (nativeManagement) => {
+    expect(() => parseCloudClientConfig({ ...valid, nativeManagement })).toThrow()
+  },
+)
+
+it('accepts only an explicit bounded native Subagent namespace hint', () => {
+  expect(parseCloudClientConfig({ ...valid, nativeSubagentSettingsNamespace: 'native-subagents' }).nativeSubagentSettingsNamespace)
+    .toBe('native-subagents')
+  expect(Object.hasOwn(parseCloudClientConfig(valid), 'nativeSubagentSettingsNamespace')).toBe(false)
+  for (const value of ['', '../subagent', '/absolute', 'has space', 'x'.repeat(129), 7]) {
+    expect(() => parseCloudClientConfig({ ...valid, nativeSubagentSettingsNamespace: value })).toThrow()
+  }
+})

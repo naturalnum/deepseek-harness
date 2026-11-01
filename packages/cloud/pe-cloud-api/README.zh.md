@@ -54,7 +54,7 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 -----
 
-可选的 `approvedConfiguration.fields` 行选择精确的命名空间／字段对及可选的有限标量 `values`。Root 要求相同的完整 `allowedSettings` 集合与唯一原生 `settings/mutate` writer。仅支持活动原生 Settings 表单的顶层标量字段；缺失、结构化或 secret 字段拒绝。可信首屏准备跨原 Controller 结果保留原登录 Peer/AccountUse。修改要求非负安全整数 `expectedRevision`，路径必须唯一且仅含获批的单个字段；其他方法及原 JSON 中的未知字段均拒绝。既有 `locale/preference` 策略仍要求精确的 `values:["zh","en"]`，且仅允许单条匹配的 `set`。原 Settings、ConfigEditor 和账户保存屏障负责持久化及 live 应用。替换前拒绝正常结算，不触发隔离；替换后的未知结果保留责任并触发原账户隔离。`hasDocument` 仍为 false，省略时保持只读。
+可选的 `approvedConfiguration.fields` 行选择精确的命名空间／字段对及可选的有限标量 `values`。Root 要求相同的完整 `allowedSettings` 集合与唯一原生 `settings/mutate` writer。仅支持明确批准的原生 Settings 顶层字段。结构化 schema 必须在原生清单预算内，且不能包含 secret、credential-ref 或不可检查的子项；有限 `values` 仍仅支持标量。可信首屏准备跨原 Controller 结果保留原登录 Peer/AccountUse。修改要求非负安全整数 `expectedRevision`，路径必须唯一且仅含获批的单个字段；其他方法及原 JSON 中的未知字段均拒绝。既有 `locale/preference` 策略仍要求精确的 `values:["zh","en"]`，且仅允许单条匹配的 `set`。原 Settings、ConfigEditor 和账户保存屏障负责持久化及 live 应用。替换前拒绝正常结算，不触发隔离；替换后的未知结果保留责任并触发原账户隔离。`hasDocument` 仍为 false，省略时保持只读。
 
 普通插件字段的替换策略由本包负责。内部 `ordinaryConfigPolicy` 只读取原生 schema 元数据，不运行构造函数或校验器，并拒绝秘密、实时、递归或无法确认的字段。原生 Settings 保留原有实时字段表单与秘密值脱敏。
 
@@ -122,9 +122,9 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 生产 ingress 将原请求/Peer 的只读 current 检查作为 `CloudAccountApi.modelKeyAccess` 第三个参数。适配在准入前后及原凭据保存回合内重复检查；排队期间登录关闭的请求不提交原生写入。回调不增加借用或释放拥有者，也不取消已提交工作。省略时保留可信进程内行为，不授予登录载体准入。原生持久化后的拒绝不会撤销保存，也不得触发自动重放。
 
-显式 `approvedConfiguration.modelKey.bindings` 选择有限非空的 `{ provider, providerEntryId, moduleName, ref }` 列表。目录的条目、字符串和完整字节上限适用于这些数据；provider id 唯一。同一选择驱动 codec、环境屏蔽、原生 provider 元数据及保存白名单。每项原模块 import、活跃 fiber、可配置 provider 的 namespace/path、原生 `credential-ref` schema role 及实际 `apiKeyEnv` 值必须匹配。元数据保留原生脱敏 schema、模型配置、分层值和 revision，设置写入仍关闭。Key 策略另要求正数有限的 `maxKeyBytes`、`maxVersionBytes`、`maxReplyBytes` 和 `maxMetadataBytes`。可信准备安装唯一 `cloudModelKey` 服务，包含 `metadata`、`describe`、`set`、`unset` RPC，handler 为 `native:cloudModelKey`，guard 为 `authenticated-account`。准备期审核要求原 marker 及生成的严格 Typert descriptor。服务在保存前检查原 invocation JSON，生成的对象投影不能放行额外字段。原生 credentials/set 和 credentials/unset 保持关闭；settings/mutate 必须另有精确的获批原生字段策略。
+显式 `approvedConfiguration.modelKey.bindings` 选择有限非空的 `{ provider, providerEntryId, moduleName, ref }` 列表。目录的条目、字符串和完整字节上限适用于这些数据；provider id 唯一。同一选择驱动 codec、环境屏蔽、原生 provider 元数据及保存白名单。每项原模块 import、活跃 fiber、可配置 provider 的 namespace/path、原生 `credential-ref` schema role 及实际 `apiKeyEnv` 值必须匹配。元数据保留原生脱敏 schema、模型配置、分层值和 revision；获批模型目录写入使用独立的原生 Settings 策略。Key 策略另要求正数有限的 `maxKeyBytes`、`maxVersionBytes`、`maxReplyBytes` 和 `maxMetadataBytes`。可信准备安装唯一 `cloudModelKey` 服务，包含 `metadata`、`describe`、`set`、`unset` RPC，handler 为 `native:cloudModelKey`，guard 为 `authenticated-account`。准备期审核要求原 marker 及生成的严格 Typert descriptor。服务在保存前检查原 invocation JSON，生成的对象投影不能放行额外字段。原生 credentials/set 和 credentials/unset 保持关闭；settings/mutate 必须另有精确的获批原生字段策略。
 
-`cloudModelKey/metadata` 从实际批准 providers 及原生 Settings descriptors 返回 `ModelKeyMetadata`。它投影每个 Root 选中 binding 的实际 provider/配置路由，以及原生脱敏 Settings schema、已解析模型配置、base/user 分层值、revision 和 secret 存在性元数据；设置写入保持关闭，省略凭据编辑版本。支持范围为使用 `apiKeyEnv` 凭据引用与 `models` 声明的原生 Models 配置路由；未扩展 OAuth/record 凭据。模块、配置或服务事实缺失、变化、撤销均拒绝。Root 在原生挂载前屏蔽全部选中引用，并把它们交给既有保存 owner。原生持久化及后续模型请求继续由原 owner 持有，不增加验证请求、自动重试或跨存储事务。认证 PostgreSQL/ready-Use 及浏览器验收仍为独立集成要求。
+`cloudModelKey/metadata` 从实际批准 providers 及原生 Settings descriptors 返回 `ModelKeyMetadata`。它投影每个 Root 选中 binding 的实际 provider/配置路由，以及原生脱敏 Settings schema、已解析模型配置、base/user 分层值、revision 和 secret 存在性元数据；省略凭据编辑版本。只有原生 Settings 策略批准 DeepSeek 模型目录时才开放设置写入，且当前默认模型必须保留在目录内。支持范围为使用 `apiKeyEnv` 凭据引用与 `models` 声明的原生 Models 配置路由；未扩展 OAuth/record 凭据。模块、配置或服务事实缺失、变化、撤销均拒绝。Root 在原生挂载前屏蔽全部选中引用，并把它们交给既有保存 owner。原生持久化及后续模型请求继续由原 owner 持有，不增加验证请求、自动重试或跨存储事务。认证 PostgreSQL/ready-Use 及浏览器验收仍为独立集成要求。
 
 显式 `approvedConfiguration.pluginControl` 启用有限批准目录的通用 `cloudPlugins/current` 和 `cloudPlugins/change` unary 组，均由 `native:cloudPlugins` 持有。每个受控项固定 id、原生 entry、确切 module/package/version、entry 或 bundle `selectionTarget`、操作许可、影响上界及普通 Config 路径。reminder 元组仅作为示例数据。`current` 通过公开的原生 `createConfigProjector` 投影各批准普通路径；`configure` 在一个批准路径接收字面量 JSON 值。volatile 字段继续走独立的 Settings live-only 路径。原生 schema 和影响检查仍决定实际变化是否受支持；目录批准不证明依赖或生命周期安全性。完整 profile、请求、响应及版本字节仍有上限；不接受包安装、模块说明符、profile 文件名或原始 manager RPC。
 
@@ -140,7 +140,7 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 Commands 在附件准入之后、原生 handler 执行之前复核原账户及 Agent。原生问答 waterfall 复用 Remote 投影器及结果协议；已交付但未回答的问答仍占用同一事件条数与完整帧字节预算，直到结算。销毁及请求取消会拒绝未决问答。反馈沿用原生排队 JSONL 写入和账户范围的匿名展示身份；已经开始的写入在准入关闭后仍保留原有 flush/close 责任。
 
-权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。仅支持 read-only、workspace-write，两者 approval 都为 never；保留的命令/服务或实时子 Agent 会阻止切换，子级不能扩大只读祖先的权限。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
+权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。支持原生 read-only、workspace-write、danger-full-access 三档，approval 均为 never，并受账户沙盒约束；保留的命令/服务或实时子 Agent 会阻止切换，子级不得超过祖先模式。完整访问不授予宿主路径、其他账户、可信运行文件的写权限或更大配额。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
 
 </details>
 

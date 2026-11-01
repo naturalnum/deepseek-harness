@@ -6,10 +6,10 @@ export const BOOTSTRAP_PINS = {
   },
   'loader.py': {
     bytes: 1205,
-    sha256: 'a304b3d75848070a7dc5595aaa1ecef1404584e2fcd7c389cc91fde87d13f059',
+    sha256: 'ed9ee198601788ef28d30cac1eb848c13a023fbc863e4365c794324d489fcdcd',
   },
   'publisher.py': {
     bytes: 6697,
-    sha256: '118497790dc08378c194e3ec668163e94a59cee19e580990bed9bdb94b1b0221',
+    sha256: 'c3f275813beb37d578d7c3eeaa15a8660fcebf1d6f7ceabee9f45c683a8ad40c',
   },
 } as const

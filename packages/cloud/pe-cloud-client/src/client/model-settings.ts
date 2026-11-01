@@ -9,10 +9,12 @@ import type {} from '@deepseek-ai/dsh-pe-cloud-api'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PreparedCloudPage, CloudModelSettingsCallbacks } from './prepared-page.ts'
+import type { ModelsOperations } from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import { ClientFailure } from './errors.ts'
 import { MODEL_SETTINGS_NAMESPACE, modelSettingsDictionaries, type ModelSettingsKey } from './model-settings-locales.ts'
 
 type ModelRemote = TypertClientRemote['cloudModelKey']
+type SettingsRemote = TypertClientRemote['settings']
 type NativeReference = Parameters<ModelRemote['describe']>[0]['ref']
 type SaveAnswer = Awaited<ReturnType<ModelRemote['set']>>
 
@@ -31,9 +33,11 @@ export interface ModelSettingsCallInput {
  * Bind the actual generated namespace once; metadata never replaces an opened intent's version or callbacks.
  * @param remote Original native namespace after its generated contribution mounts.
  * @param input Original page/dependency checks, lifetime, finite deadline and typed localized feedback.
+ * @param settings Original revisioned writer when the account approves model-list settings.
  * @returns Public native Models read/prepare callbacks; the original page owns their publication and revocation.
  */
-export function createCloudModelSettingsCallbacks(remote: ModelRemote, input: ModelSettingsCallInput): CloudModelSettingsCallbacks {
+export function createCloudModelSettingsCallbacks(remote: ModelRemote, input: ModelSettingsCallInput,
+  settings?: Pick<SettingsRemote, 'mutate'>): CloudModelSettingsCallbacks {
   const metadata = remote.metadata.bind(remote), describe = remote.describe.bind(remote)
   const set = remote.set.bind(remote), unset = remote.unset.bind(remote)
   const request = async <T>(send: (signal: AbortSignal) => Promise<T>, observer?: AbortSignal): Promise<T> => {
@@ -53,6 +57,27 @@ export function createCloudModelSettingsCallbacks(remote: ModelRemote, input: Mo
       if (!answer.ok) return input.t(answer.error.code === 'cloud/config-conflict' ? 'conflict' : 'unavailable')
       return confirmsPersistence(answer.value.persisted) ? undefined : input.t('unavailable')
     } catch { return input.t('unavailable') }
+  }
+  const writeSettings: ModelsOperations['writeSettings'] = async (ns, ops, revision) => {
+    if (settings === undefined || revision === undefined || input.signal.aborted) {
+      return { kind: 'refused', message: input.t('unavailable') }
+    }
+    const deadline = new AbortController()
+    const timer = setTimeout(() => { deadline.abort() }, input.timeoutMs)
+    const signal = AbortSignal.any([input.signal, deadline.signal])
+    const aborted = Promise.withResolvers<never>()
+    const reject = (): void => { aborted.reject(new ClientFailure('closed')) }
+    signal.addEventListener('abort', reject, { once: true })
+    try {
+      input.assertCurrent(); signal.throwIfAborted()
+      const answer = await Promise.race([settings.mutate(ns, ops, revision), aborted.promise])
+      signal.throwIfAborted(); input.assertCurrent()
+      if (answer.ok) return { kind: 'written', view: answer.value }
+      return answer.error.code === 'settings/conflict'
+        ? { kind: 'conflict', message: input.t('conflict') }
+        : { kind: 'unknown', message: input.t('unavailable') }
+    } catch { return { kind: 'unknown', message: input.t('unavailable') } }
+    finally { clearTimeout(timer); signal.removeEventListener('abort', reject) }
   }
   return Object.freeze({
     metadata: async () => {
@@ -80,6 +105,7 @@ export function createCloudModelSettingsCallbacks(remote: ModelRemote, input: Mo
         remove: () => save(observer => unset({ ref: reference, version }, observer)),
       })
     },
+    ...(settings === undefined ? {} : { writeSettings }),
   })
 }
 
@@ -93,13 +119,15 @@ export function installCloudModelSettings(ctx: Context, page: PreparedCloudPage)
   const isAborted = (): boolean => signal.aborted
   if (timeoutMs === undefined || isAborted()) return
   // Projects owns the package's single generated contribution mount; this dependency consumes that same namespace.
-  const dependency = ctx.inject(['remote', 'remote.cloudModelKey', 'locale'], (scope) => {
+  const dependency = ctx.inject(['remote', 'remote.cloudModelKey', 'remote.settings', 'locale'], (scope) => {
     signal.throwIfAborted()
+    let active = true
+    scope.effect(() => () => { active = false }, 'pe-cloud-client: retire captured model settings dependencies')
     scope.effect(() => scope.locale.register(MODEL_SETTINGS_NAMESPACE, modelSettingsDictionaries), 'pe-cloud-client: model settings dictionaries')
     const callbacks = createCloudModelSettingsCallbacks(scope.remote.cloudModelKey, { signal, timeoutMs,
       t: scope.locale.bind(MODEL_SETTINGS_NAMESPACE),
-      assertCurrent: () => { scope.fiber.assertActive(); signal.throwIfAborted() },
-    })
+      assertCurrent: () => { if (!active) throw new ClientFailure('closed'); scope.fiber.assertActive(); signal.throwIfAborted() },
+    }, scope.remote.settings)
     scope.effect(() => page.attachModels(scope, callbacks), 'pe-cloud-client: captured model settings binding')
   })
   const stop = (): void => {

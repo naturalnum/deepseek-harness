@@ -1,4 +1,4 @@
-/** Shared bounded approval projection for original native scalar Settings forms. */
+/** Shared bounded approval projection for original native Settings forms. */
 import z from '@deepseek-ai/schemastery'
 import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SettingsDescribeValue, SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
@@ -45,27 +45,44 @@ function scalar(schema: z<unknown>, maximum: number): void {
   }
 }
 
+/** Admit finite native data schemas while refusing concealed secret or executable fields. */
+function ordinary(schema: z<unknown>, maximum: number): void {
+  const pending = [schema], seen = new Set<z<unknown>>()
+  let visited = 0
+  while (pending.length > 0) {
+    const next = pending.pop()
+    if (next === undefined || seen.has(next) || ++visited > maximum
+      || next.meta.role === 'secret' || next.meta.role === 'credential-ref') unavailable()
+    seen.add(next)
+    if (!['string', 'number', 'boolean', 'const', 'object', 'array', 'dict', 'tuple', 'union', 'intersect'].includes(next.type)) unavailable()
+    if (next.type === 'const' && next.value !== null && typeof next.value === 'object') unavailable()
+    pending.push(...Object.values(next.dict ?? {}), ...next.inner === undefined ? [] : [next.inner],
+      ...next.sKey === undefined ? [] : [next.sKey], ...next.list ?? [])
+  }
+}
+
 function pick(value: JsonValue | undefined, fields: readonly ApprovedConfigurationField[]): JsonValue | undefined {
   if (value === undefined) return undefined
   if (value === null || typeof value !== 'object' || Array.isArray(value)) unavailable()
   return Object.fromEntries(fields.flatMap((field) => {
     if (!Object.hasOwn(value, field.field)) return []
     const selected = value[field.field]
-    if (selected === undefined || selected !== null && typeof selected === 'object') unavailable()
+    if (selected === undefined || !isJsonValue(selected)) unavailable()
     return [[field.field, selected]]
   }))
 }
 
 /** Project one original redacted form without disclosing unrelated schema references or values.
- * Only top-level scalar leaves are supported; unknown, structured and secret schemas stay closed.
+ * Only explicitly approved top-level native fields are supported; secret, credential-reference and opaque schemas stay closed.
  * @param view Original SettingsController view under native redaction.
  * @param fields The exact approved leaves in this namespace.
  * @param maximum Existing first-screen collection bound.
+ * @param schemaMaximum Existing bound on schema traversal.
  * @returns Original revision and approved schema/value/base/user facts only.
- * @throws CloudApiError if an approved leaf is missing, secret, structured or outside the native schema.
+ * @throws CloudApiError if an approved field is missing, secret, opaque or outside the native schema.
  */
 export function projectApprovedSettingsNamespace(
-  view: SettingsNamespaceView, fields: readonly ApprovedConfigurationField[], maximum: number,
+  view: SettingsNamespaceView, fields: readonly ApprovedConfigurationField[], maximum: number, schemaMaximum = maximum,
 ): SettingsNamespaceView {
   if (fields.length === 0 || fields.length > maximum || fields.some(field => field.namespace !== view.ns)) unavailable()
   // Native Settings owns this Schemastery.toJSON() envelope; it is not caller-supplied schema.
@@ -76,9 +93,9 @@ export function projectApprovedSettingsNamespace(
   for (const field of fields) {
     const native = Object.hasOwn(form.dict, field.field) ? form.dict[field.field] : undefined
     if (native === undefined) unavailable()
-    scalar(native, maximum)
-    if (field.values === undefined) selected[field.field] = native
+    if (field.values === undefined) { ordinary(native, schemaMaximum); selected[field.field] = native }
     else {
+      scalar(native, maximum)
       for (const value of field.values) {
         try { if (!Object.is(native(value), value)) unavailable() }
         catch (_invalidNativeValue) { unavailable() }
@@ -102,17 +119,18 @@ export function projectApprovedSettingsNamespace(
  * @param value Original redacted SettingsController description.
  * @param fields Frozen approval rows.
  * @param maximum Existing collection bound.
+ * @param schemaMaximum Existing bound on schema traversal.
  * @returns A bounded approved form view; document access stays closed.
  * @throws CloudApiError if namespaces are missing, ambiguous, unsupported or exceed the finite bound.
  */
 export function projectApprovedSettings(
-  value: SettingsDescribeValue, fields: readonly ApprovedConfigurationField[], maximum: number,
+  value: SettingsDescribeValue, fields: readonly ApprovedConfigurationField[], maximum: number, schemaMaximum = maximum,
 ): SettingsDescribeValue {
   if (value.namespaces.length > maximum || fields.length > maximum) unavailable()
   const namespaces = [...new Set(fields.map(field => field.namespace))]
   return { writable: value.writable, hasDocument: false, namespaces: namespaces.map((ns) => {
     const matches = value.namespaces.filter(view => view.ns === ns), view = matches[0]
     if (matches.length !== 1 || view === undefined) unavailable()
-    return projectApprovedSettingsNamespace(view, fields.filter(field => field.namespace === ns), maximum)
+    return projectApprovedSettingsNamespace(view, fields.filter(field => field.namespace === ns), maximum, schemaMaximum)
   }) }
 }

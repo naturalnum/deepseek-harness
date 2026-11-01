@@ -27,7 +27,9 @@ import { createNativeCommands, type NativeCommands } from './native-commands.ts'
 import { createNativeGoals, type NativeGoals } from './native-goals.ts'
 import { createNativeSessionExport, type NativeSessionExport } from './native-session-export.ts'
 import { createNativePermissions, type NativePermissions } from './native-permissions.ts'
+import { createNativePluginInventory, type NativePluginInventory } from './native-plugin-inventory.ts'
 import { createNativeUserQuestions, type NativeUserQuestions } from './native-user-questions.ts'
+import { createNativeSchedule, type NativeSchedule } from './native-schedule.ts'
 import { createNativeSessionFeedback, createNativeMessageFeedback, createNativeFeedbackIdentity } from './native-feedback.ts'
 import { AccountPluginControl, type CloudPluginPreparation } from './plugin-control.ts'
 import { CloudPluginService } from './cloud-plugins.ts'
@@ -113,7 +115,9 @@ export class CloudAccountApi extends Service {
   private readonly goals: { native?: NativeGoals } = {}
   private readonly sessionExport: { native?: NativeSessionExport } = {}
   private readonly permissions: { native?: NativePermissions } = {}
+  private readonly pluginInventory: { native?: NativePluginInventory } = {}
   private readonly questions: { native?: NativeUserQuestions } = {}
+  private readonly schedule: { native?: NativeSchedule } = {}
   private readonly sessionFeedback: { native?: ReturnType<typeof createNativeSessionFeedback> } = {}
   private readonly messageFeedback: { native?: ReturnType<typeof createNativeMessageFeedback> } = {}
   // Cordis traces services through caller-scoped proxies; their object identities differ.
@@ -257,6 +261,8 @@ export class CloudAccountApi extends Service {
     const commands = this.commands.native?.inspect()
     const goals = this.goals.native?.inspect()
     const permissions = this.permissions.native?.inspect(), questions = this.questions.native?.inspect()
+    const pluginInventory = this.pluginInventory.native?.inspect()
+    const schedule = this.schedule.native?.inspect()
     const sessionFeedback = this.sessionFeedback.native?.inspect(), messageFeedback = this.messageFeedback.native?.inspect()
     const fetch = this.inspectFetchRoutes()
     const inventory: ExposureInventory = {
@@ -265,7 +271,9 @@ export class CloudAccountApi extends Service {
         ...files?.rpcEndpoints ?? [], ...office?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [],
         ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
-        ...questions?.rpcEndpoints ?? [], ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
+        ...pluginInventory?.rpcEndpoints ?? [],
+        ...questions?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
+        ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [], ...questions?.streamEndpoints ?? [],
@@ -329,6 +337,10 @@ export class CloudAccountApi extends Service {
       if (this.goals.native === undefined) this.nativeUnavailable()
       this.goals.native.inspect()
     }
+    if (endpoint === 'pluginInventory/list') {
+      if (this.pluginInventory.native === undefined) this.nativeUnavailable()
+      this.pluginInventory.native.inspect()
+    }
     if (endpoint === 'permissionPresets/catalog') {
       if (this.permissions.native === undefined) this.nativeUnavailable()
       this.permissions.native.inspect()
@@ -336,6 +348,10 @@ export class CloudAccountApi extends Service {
     if (endpoint === 'userQuestions/answer') {
       if (this.questions.native === undefined) this.nativeUnavailable()
       this.questions.native.inspect()
+    }
+    if (endpoint.startsWith('schedule/')) {
+      if (this.schedule.native === undefined) this.nativeUnavailable()
+      this.schedule.native.inspect()
     }
     if (endpoint.startsWith('sessionFeedback/')) {
       if (this.sessionFeedback.native === undefined) this.nativeUnavailable()
@@ -414,7 +430,7 @@ export class CloudAccountApi extends Service {
    * @param input Actual files-owned project, shared Session metadata check and explicit native limits.
    * @returns Original constructor installation, with no readiness publication or directory creation.
    */
-  prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding' | 'assertSettingsFields'>): NativeFirstScreen {
+  prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding' | 'assertSettingsFields' | 'beginModelSettingsUpdate' | 'settingsSave'>): NativeFirstScreen {
     this.assertInstalled(owner)
     if (this.firstScreen.native !== undefined) this.duplicateNative()
     const fields = this.installation.exposure.manifest.allowedSettings
@@ -422,6 +438,9 @@ export class CloudAccountApi extends Service {
       throw new CloudApiError('cloud/invalid-config', 'The first-screen API requires its exact approved native settings policy.')
     }
     const native = prepareNativeFirstScreen(owner, { ...input, api: this, binding: this.binding,
+      settingsSave: this.saves,
+      beginModelSettingsUpdate: (namespace, fields) => this.modelKey.native?.beginSettingsUpdate(namespace, fields)
+        ?? { check() {}, approve() {}, finish() {} },
       assertSettingsFields: (namespace, fields) => {
         this.admit()
         this.installation.exposure.assertSettingsFields(namespace, fields)
@@ -583,7 +602,7 @@ export class CloudAccountApi extends Service {
     const selected = (endpoint: string): boolean => endpoints.some(row => row.endpoint === endpoint)
     const events = registerFirstScreenEvents(owner, { ...input, api: this, native, settingsNamespaces,
       controls: { commands: selected('commands/list'), goals: selected('goals/get'), permissions: selected('permissionPresets/catalog'),
-        questions: selected('userQuestions/answer') },
+        questions: selected('userQuestions/answer'), schedule: selected('schedule/catalog') },
     })
     this.firstScreen.events = events
     return events
@@ -675,6 +694,20 @@ export class CloudAccountApi extends Service {
       this.installation.exposure, guards, this.maxNativeInventoryEntries, config)
   }
 
+  /** Install the original read-only inventory under existing account admission.
+   * @param owner Actual account Loader entry.
+   * @param maxFrameBytes Existing result limit.
+   * @returns Guarded native inventory service.
+   */
+  createPluginInventory(owner: Context, maxFrameBytes: number): NativePluginInventory['value'] {
+    this.assertInstalled(owner)
+    if (this.pluginInventory.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativePluginInventory(owner, this.binding, this.businessCurrent, this.installation.exposure,
+      this.maxNativeInventoryEntries, maxFrameBytes)
+    this.pluginInventory.native = native
+    return native.value
+  }
+
   /**
    * Install native permission controls over the actual enforcing providers.
    * @param owner Actual account Loader entry.
@@ -709,6 +742,38 @@ export class CloudAccountApi extends Service {
       this.installation.exposure, guards, this.maxNativeInventoryEntries)
     this.questions.native = native
     return native.value
+  }
+
+  /** Install the original Schedule service under this account's Session admission.
+   * @param owner Actual account Loader entry.
+   * @param guards Shared native Session/project admission.
+   * @param config Original native Schedule settings.
+   * @returns The original guarded Schedule service.
+   */
+  createSchedule(owner: Context, guards: NativeSessionGuards,
+    config: Parameters<typeof createNativeSchedule>[6]): NativeSchedule['value'] {
+    this.assertInstalled(owner)
+    if (this.schedule.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeSchedule(owner, this.binding, this.businessCurrent,
+      this.installation.exposure, guards, this.maxNativeInventoryEntries, config)
+    this.schedule.native = native
+    return native.value
+  }
+
+  /** Ask the installed native scheduler to reconsider obligations after the account is ready. */
+  async resumeScheduleAfterReady(): Promise<void> {
+    if (this.schedule.native === undefined) return
+    this.admit()
+    await this.schedule.native.resumeAfterReady()
+    this.admit()
+  }
+
+  /** Read the installed scheduler's original settlement state.
+   * @returns Whether the original optional Schedule owner has no in-flight dispatch work.
+   */
+  isScheduleIdle(): boolean {
+    this.assertInstalled()
+    return this.schedule.native?.isIdle() ?? true
   }
 
   /**
@@ -961,7 +1026,9 @@ export class CloudAccountApi extends Service {
     this.commands.native?.inspect()
     this.goals.native?.inspect()
     this.permissions.native?.inspect()
+    this.pluginInventory.native?.inspect()
     this.questions.native?.inspect()
+    this.schedule.native?.inspect()
     this.sessionFeedback.native?.inspect()
     this.messageFeedback.native?.inspect()
     if (!audited) return

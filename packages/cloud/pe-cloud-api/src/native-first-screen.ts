@@ -20,7 +20,7 @@ import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
 import Settings from '@deepseek-ai/dsh-settings'
 import type { SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 import * as Locale from '@deepseek-ai/dsh-client-locale'
-import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { CloudAccountApi } from './account-service.ts'
@@ -28,6 +28,9 @@ import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
 import type { ExposureInventory } from './types.ts'
 import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
+import type { NativeConfigSaveHook } from './save-hooks.ts'
+import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
+import type { ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 
 /** Original service and its actual registration fiber, not a readiness or authorization certificate. */
 export interface FirstScreenNativeOwner { readonly value: object; readonly fiber: Fiber }
@@ -53,6 +56,14 @@ export interface FirstScreenNativeInput {
   readonly settingsWrites?: NativeSettingsWritePolicy
   /** Account-owned C04 field check captured by the API preparation. */
   readonly assertSettingsFields: (namespace: string, fields: readonly string[]) => void
+  /** Bind an approved write to the existing model-provider audit, if one is installed. */
+  readonly beginModelSettingsUpdate: (namespace: string, ops: readonly SettingsPathOpView[]) => {
+    check(): void
+    approve(plan: ProfileConfigUpdatePlan): void
+    finish(): void
+  }
+  /** Own the original Settings write and its mandatory post-apply audit in the same serial turn. */
+  readonly settingsSave: NativeConfigSaveHook
 }
 
 /** Fixed constructors and actual facts for later assembly into the API owner's complete inventory. */
@@ -90,7 +101,7 @@ export function firstScreenNativeOwner(
   ctx: Context,
   key: 'workspaceRegistry' | 'settings' | 'remoteAccess' | 'typertGateway' | 'workspaceController' | 'settingsController'
     | 'sessionSkillCatalog' | 'commands' | 'goals' | 'connection' | 'sessionFeedback' | 'messageFeedback'
-    | 'permissionPresets' | 'userQuestions',
+    | 'permissionPresets' | 'userQuestions' | 'pluginInventory' | 'schedule',
   value: object, maximum: number,
 ): FirstScreenNativeOwner {
   if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()
@@ -315,6 +326,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       throw new CloudApiError('cloud/forbidden', 'The original settings mutation request is not approved.')
     }
     const fields = consumer.fields.filter(field => field.namespace === request.namespace)
+    firstScreenJsonBytes(ops, input.maxFrameBytes)
     if (request.mode !== 'mutate' || !Array.isArray(ops) || ops.length === 0 || ops.length > fields.length
       || !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision === undefined || request.expectedRevision < 0) {
       throw new CloudApiError('cloud/forbidden', 'Only an approved versioned native settings mutation is permitted.')
@@ -339,12 +351,32 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
         input.assertSettingsFields(request.namespace, [...selected])
         current()
       }
-      check()
-      // A native description proves that approved paths still resolve to supported schema leaves.
-      projectApprovedSettings(thisSettings(), fields, input.maxCollectionItems)
-      const value = await apply({ assertCurrent: check })
-      check()
-      return value
+      const result = await input.settingsSave.admit('settings', async () => {
+        let modelUpdate: ReturnType<FirstScreenNativeInput['beginModelSettingsUpdate']>
+        try {
+          check()
+          // A native description proves that approved paths still resolve to supported schema leaves.
+          projectApprovedSettings(thisSettings(), fields, input.maxCollectionItems, input.maxInventoryEntries)
+          modelUpdate = input.beginModelSettingsUpdate(request.namespace, ops)
+        } catch (error) { return { ok: false as const, error } }
+        let value: Awaited<ReturnType<typeof apply>>
+        try {
+          value = await apply({ assertCurrent: () => { check(); modelUpdate.check() },
+            check: (plan) => { check(); modelUpdate.approve(plan) } })
+        } catch (error) {
+          // Native ConfigEditor joins this turn and retains unknown outcomes itself. Its
+          // controller wraps confirmed zero-write validation/conflict as these codes.
+          if (error instanceof RemoteError && (error.code === 'settings/conflict' || error.code === 'settings/rejected')) {
+            return { ok: false as const, error }
+          }
+          throw new ConfigSaveOutcomeUnknown({ cause: error })
+        }
+        try { check(); modelUpdate.check(); modelUpdate.finish(); check() }
+        catch (error) { throw new ConfigSaveOutcomeUnknown({ cause: error }) }
+        return { ok: true as const, value }
+      })
+      if (!result.ok) throw result.error
+      return result.value
     })
   }
   class AccountSettingsController extends SettingsController {
@@ -363,7 +395,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       const result = await super.mutate(ns, ops, expectedRevision)
       current()
       const fields = input.settingsWrites?.fields.filter(field => field.namespace === ns) ?? []
-      const projected = projectApprovedSettingsNamespace(result, fields, input.maxCollectionItems)
+      const projected = projectApprovedSettingsNamespace(result, fields, input.maxCollectionItems, input.maxInventoryEntries)
       bounded(projected)
       current()
       return projected
@@ -373,7 +405,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       const result = super.describe()
       if (result.namespaces.length > input.maxCollectionItems) unavailable()
       const fields = input.settingsWrites?.fields ?? [{ namespace: 'locale', field: 'preference' }]
-      const projected = projectApprovedSettings(result, fields, input.maxCollectionItems)
+      const projected = projectApprovedSettings(result, fields, input.maxCollectionItems, input.maxInventoryEntries)
       projected.writable = input.settingsWrites !== undefined && result.writable
       bounded(projected)
       admit('settings/describe')

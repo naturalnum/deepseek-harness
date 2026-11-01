@@ -6,6 +6,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { ExecutionStateError } from './errors.ts'
 import type { NativeFilePolicy } from './agent-data/file-policy.ts'
 
+const MODE_RANK = { 'read-only': 0, 'workspace-write': 1, 'danger-full-access': 2 } as const
+
 function denied(): never {
   throw new ExecutionStateError('cloud/execution-unavailable', 'The requested Session file policy is unavailable in this sandbox.')
 }
@@ -18,7 +20,7 @@ function denied(): never {
  * @param session Actual registered native Session from the retained execution scope.
  * @param workspaceRoot Original approved project path in the execution world.
  * @param override Optional native per-call policy; no model or HTTP field supplies it.
- * @returns The two-valued policy that must be covered by the original Root operation signature.
+ * @returns The original three-valued policy that must be covered by the original Root operation signature.
  * @throws ExecutionStateError if native policy is absent or selects an unsupported scope/mode.
  */
 export function selectNativeFilePolicy(
@@ -28,10 +30,9 @@ export function selectNativeFilePolicy(
   if (!(provider instanceof SandboxPolicyService)) denied()
   const standing = provider.resolve({ session })
   if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id
-    || standing.mode !== 'read-only' && standing.mode !== 'workspace-write') denied()
+    || !Object.hasOwn(MODE_RANK, standing.mode)) denied()
   const selected = override ?? standing
   if (selected.workspaceRoot !== workspaceRoot || selected.sessionId !== session.id
-    || selected.mode !== 'read-only' && selected.mode !== 'workspace-write'
-    || standing.mode === 'read-only' && selected.mode !== 'read-only') denied()
+    || !Object.hasOwn(MODE_RANK, selected.mode) || MODE_RANK[selected.mode] > MODE_RANK[standing.mode]) denied()
   return Object.freeze({ mode: selected.mode })
 }

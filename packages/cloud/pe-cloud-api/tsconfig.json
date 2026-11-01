@@ -141,7 +141,13 @@
       "path": "../../interaction/user-questions"
     },
     {
+      "path": "../../schedule/schedule"
+    },
+    {
       "path": "../../api/remotes/tsconfig.host.json"
+    },
+    {
+      "path": "../../host/plugin-inventory"
     }
   ]
 }

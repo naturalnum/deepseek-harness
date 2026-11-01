@@ -103,7 +103,7 @@ export interface ApprovedModelKeyConfiguration {
   readonly maxMetadataBytes: number
 }
 
-/** One approved native top-level scalar field; native schema and save planning remain authoritative. */
+/** One approved native top-level field; native schema and save planning remain authoritative. */
 export interface ApprovedConfigurationField {
   readonly namespace: string
   readonly field: string

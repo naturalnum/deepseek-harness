@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/cloud-permission-presets/guide.md
+/:
+  en: f9f0f8c0405bbfb5
+  zh: f63d2a26bfb23a5b
+/cloud-permission-profiles-require-three-presets:
+  en: cf5d52927b876470
+  zh: 231115f7ca18fcd4
+/cloud-permission-profiles-require-three-presets/change:
+  en: 9b741f9ba17dbc97
+  zh: a1d7e084b45fc670
+/cloud-permission-profiles-require-three-presets/migration:
+  en: 8f720cb3029bcf31
+  zh: 2ec36d7f7e0ef5b8

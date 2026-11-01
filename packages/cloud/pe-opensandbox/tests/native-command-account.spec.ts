@@ -15,6 +15,7 @@ import { SessionAllocationOwner } from '../src/allocation-owner.ts'
 import type { PostgresAllocationStore } from '../src/allocation-store.ts'
 import type { AllocationCreateIntent, AllocationExpectation, AllocationChange, SandboxAllocation } from '../src/allocation-types.ts'
 import { NativeCommandAccount, type NativeCommandRoot } from '../src/native-command-account.ts'
+import { guardianEncodedBudget, guardianWorkingCopiesBudget } from '../src/agent-data/encoded-budget.ts'
 
 const result: ToolExecutionResult = { isError: false, value: null, content: [] }
 const initial = (): CommandSnapshot => ({ prepared: true, submitted: false, commitClosed: false,
@@ -29,7 +30,7 @@ const cancelled = (): CommandSnapshot => ({ ...initial(), commitClosed: true, ra
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 
-function fixture() {
+function fixture(options: { enforceSessionFilePolicy?: boolean; maxSkillCopiesPerOperation?: number } = {}) {
   const ctx = new Context(), generation = new AbortController(), close = Promise.withResolvers<undefined>()
   const binding: AccountBinding = Object.freeze({ accountId: 'command-account' as AccountBinding['accountId'],
     epoch: '1' as AccountBinding['epoch'], recipeVersion: 'synthetic-source-component', lifetime: generation.signal })
@@ -61,7 +62,7 @@ function fixture() {
     const value = { releaseActive: vi.fn<() => void>(), releaseResident: vi.fn<() => void>() }
     reservations.push(value); return value
   }), close: vi.fn(() => close.promise) } satisfies NativeCommandRoot
-  const owner = new NativeCommandAccount(ctx, binding, authority, { allowedTools: ['bash'], maxScopes: 4,
+  const owner = new NativeCommandAccount(ctx, binding, authority, { allowedTools: ['bash'], maxScopes: 4, ...options,
     commandLimits: { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512, maxStdinBytes: 4096,
       maxTailBytes: 32, maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2, maxLifetimeMs: 10000, stopWaitMs: 1000 } }, root)
   const spec: SubprocessSpawnSpec = { argv: ['/bin/bash', '-c', 'literal'], cwd: '/project', graceMs: 100,
@@ -92,6 +93,25 @@ it('rejects unsupported native input, outside cwd and the complete encoded frame
       expect(() => f.create(spec)).toThrow()
     }
     expect(f.root.reserve).not.toHaveBeenCalled(); expect(f.root.acquire).not.toHaveBeenCalled()
+    return result
+  })
+  f.owner.calls.release(call.token)
+})
+
+it.each([undefined, 2])('reserves the longest Session policy frame before Root allocation (skill copies %s)', async (copies) => {
+  const f = fixture({ enforceSessionFilePolicy: true, ...(copies === undefined ? {} : { maxSkillCopiesPerOperation: copies }) })
+  const call = f.exec(), base = { argv: ['/bin/bash', '-c', ''], cwd: '/project', stdin: { mode: 'ignore' as const } }
+  const oldMode = { mode: 'workspace-write' as const }
+  const baseBytes = copies === undefined ? guardianEncodedBudget('/project', base, undefined, oldMode)
+    : guardianWorkingCopiesBudget('/project', base, copies, oldMode)
+  const argv = ['/bin/bash', '-c', 'x'.repeat(4096 - baseBytes)]
+  const candidate = { ...base, argv }
+  expect(copies === undefined ? guardianEncodedBudget('/project', candidate, undefined, oldMode)
+    : guardianWorkingCopiesBudget('/project', candidate, copies, oldMode)).toBe(4096)
+  await f.owner.calls.run(call, async () => {
+    expect(() => f.create({ ...f.spec, argv })).toThrow('guardian_config_budget')
+    expect(f.root.reserve).not.toHaveBeenCalled()
+    expect(f.root.acquire).not.toHaveBeenCalled()
     return result
   })
   f.owner.calls.release(call.token)

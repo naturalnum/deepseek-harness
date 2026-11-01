@@ -454,6 +454,21 @@ Shared management service; reads, deletion, and timing edits never activate a Se
 `sessionPersistence` is a load-order requirement rather than a directly called service: a delivery commits only when `ctx.sessions.flush()` reports that a `session/flush` listener participated, and the persistence backend providing this service is the plugin that registers that listener.
 
 ```ts cordis-catalog
+/** Reconsider stored obligations after the owning Host becomes able to resume Sessions.
+ * @returns Once the original timer owner has been asked to recompute; delivery remains separately owned.
+ */
+async resumeDispatch(): Promise<void>
+
+/** Install one owning Host's internal delivery admission before dispatch begins.
+ * @param admission Original Host checks around Session resolution and delivery.
+ */
+installDispatchAdmission(admission: ScheduleDispatchAdmission): void
+
+/** Inspect original dispatch and management work without starting delivery.
+ * @returns Whether original scheduler work is settled and its owner remains active.
+ */
+isDispatchIdle(): boolean
+
 /**
  * Create a reminder bound to the caller-selected Session without activating it.
  *
@@ -525,7 +540,7 @@ async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: Abor
 @Remote('update') async update(request: ScheduleUpdateRequest, signal?: AbortSignal): Promise<ScheduleUpdateResult>
 ```
 
-Types: [SessionId](core.md)
+Types: [ScheduleDispatchAdmission](../../packages/schedule/schedule/README.md#understand-the-implementation) · [SessionId](core.md)
 
 Source: [`packages/schedule/schedule/src/index.ts`](../../packages/schedule/schedule/src/index.ts)
 

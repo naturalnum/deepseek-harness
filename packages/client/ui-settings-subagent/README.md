@@ -31,6 +31,8 @@ Open **Plugins** in the sidebar and select **Subagent** in the Official group to
 
 One **Save** writes both sections through their own namespaces, each fenced by the revision its draft read. The writes are independent: a section the Host refuses keeps its draft with the failure reported while the other lands, and a model draft a newer Host revision superseded is reported as a conflict to discard rather than overwriting the newer routes. Leaving the page drops every draft.
 
+A deployment may bind the limits card to another actual Settings namespace. In that case the card shows only fields both advertised for the account and present in the current native Settings value; the Host still authorizes every write.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -40,6 +42,8 @@ One **Save** writes both sections through their own namespaces, each fenced by t
 <summary>Implementation internals — click to expand</summary>
 
 The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for. The browser half binds each namespace through `ctx.configForms.get`: `SubagentLimitsCardController` stages the limits over the shared `SettingsFormModel` of `ui-primitives`, with a field spec that admits safe whole numbers at or above each field's floor; `SubagentModelSelectionCardController` keeps its own draft because its two fields save as one revision-fenced `mutate`, joins the stored routes with `remote.session.modelCatalog()`, and re-reads the catalogue on `llm/adapters-updated` and `settings/document-updated` while a connection reset drops its draft. `subagentCardFace` composes the two into the one face `SubagentCard` renders inside the shared `SettingsForm`, whose save validates both and writes the dirty ones. The page registers into the Plugins page's `plugins.item` slot through `ctx.configForms.whileServed` over both namespaces.
+
+The optional `subagentSettingsIntegration` supplies the actual limits namespace and advertised fields. Its arrival or withdrawal replaces the card registration and closes the prior limits subscription; both `get` and `whileServed` use that same namespace. A queued limits save rechecks that binding before dispatch and after settlement; withdrawal does not cancel a write already sent. Without the integration, the page uses `subagent`.
 
 </details>
 

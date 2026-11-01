@@ -115,7 +115,7 @@ def authorization(value):
 
 def file_policy(value):
     keys(value, ['mode'])
-    require(value['mode'] in ['read-only', 'workspace-write'], 'invalid_file_policy')
+    require(value['mode'] in ['read-only', 'workspace-write', 'danger-full-access'], 'invalid_file_policy')
     return dict(value)
 
 

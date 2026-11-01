@@ -13,6 +13,12 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+it('hides a field absent from the account approval', () => {
+  renderSubagent({ allowMaxDepth: false, allowMaxActiveSubagents: true })
+  expect(screen.queryByLabelText(en.subagentMaxDepth)).toBeNull()
+  expect(screen.getByLabelText(en.subagentMaxActive)).toBeTruthy()
+})
+
 const t = (key: keyof typeof en) => en[key]
 
 const settled: SettingsFormShell = {

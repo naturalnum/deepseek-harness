@@ -6,7 +6,7 @@ import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { expect, it, onTestFinished } from 'vitest'
 import { selectNativeFilePolicy } from '../src/native-file-policy.ts'
 
-async function fixture(mode: 'read-only' | 'workspace-write' = 'workspace-write') {
+async function fixture(mode: 'read-only' | 'workspace-write' | 'danger-full-access' = 'workspace-write') {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(Projections)
@@ -39,10 +39,10 @@ it('does not let a direct per-call override widen a read-only Session in the nev
   })).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
 })
 
-it.each(['root', 'session', 'unsupported-mode', 'no-session'] as const)('refuses %s before any range can be signed', async (changed) => {
+it.each(['root', 'session', 'no-session'] as const)('refuses %s before any range can be signed', async (changed) => {
   const f = await fixture()
   expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project', {
-    mode: changed === 'unsupported-mode' ? 'danger-full-access' : 'workspace-write',
+    mode: 'workspace-write',
     workspaceRoot: changed === 'root' ? '/other' : '/project',
     ...changed === 'no-session' ? {} : { sessionId: changed === 'session' ? SessionId('other') : f.session.id },
   })).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
@@ -52,4 +52,12 @@ it('rejects a missing native policy rather than falling back to writable mounts'
   const f = await fixture()
   await f.policyFiber.dispose()
   expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project')).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+})
+
+it('captures full access and prevents a workspace-write Session from widening per call', async () => {
+  const f = await fixture('danger-full-access')
+  expect(selectNativeFilePolicy(f.ctx, f.session, '/project')).toEqual({ mode: 'danger-full-access' })
+  expect(selectNativeFilePolicy(f.ctx, f.session, '/project', { mode: 'workspace-write', workspaceRoot: '/project', sessionId: f.session.id })).toEqual({ mode: 'workspace-write' })
+  setSandboxMode(f.session, 'workspace-write')
+  expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project', { mode: 'danger-full-access', workspaceRoot: '/project', sessionId: f.session.id })).toThrow()
 })

@@ -121,7 +121,7 @@ interface CatalogDraft {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose'
+  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'modelCatalogOnly'
 > {
   target: EditorTarget
   row: ProviderRow
@@ -254,11 +254,20 @@ export function ModelsSection(props: ModelsSectionProps): ReactNode {
 }
 
 function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
-  const { controller, operations, schema, t, credentialEditing } = injected
+  const { controller, schema, t, credentialEditing } = injected
+  const operations = credentialEditing == null ? injected.operations : { ...injected.operations,
+    writeSettings: async (...args: Parameters<ModelsOperations['writeSettings']>) => {
+      if (!credentialEditing.isCurrent()) return { kind: 'unknown' as const, message: t('keyEditUnavailable') }
+      const result = await injected.operations.writeSettings(...args)
+      return credentialEditing.isCurrent() ? result : { kind: 'unknown' as const, message: t('keyEditUnavailable') }
+    },
+  }
   const protectedKeys = credentialEditing !== undefined
   const snapshot = injected.useSnapshot(value => value)
   const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
     ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }
+  const protectedSettings = credentialEditing !== undefined && credentialEditing !== null
+    && credentialEditing.scope !== null && state.writable
   /** A new or failed surface waits for a current snapshot; background refreshes preserve its drafts. */
   const [hasReadySnapshot, setHasReadySnapshot] = useState(state.status === 'ready')
   if (state.status === 'ready' && !hasReadySnapshot) setHasReadySnapshot(true)
@@ -512,7 +521,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 </span>
                 <span className={styles['rowActions']}>
                   {/* The account catalog comes from the account listing; its model overrides live in cordis.patch.yml. */}
-                  {row.entry.provider === 'deepseek-account' || protectedKeys
+                  {row.entry.provider === 'deepseek-account' || protectedKeys && !protectedSettings
                     ? null
                     : (
                       <button
@@ -567,7 +576,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   configured={row.credential?.configured === true} editing={credentialEditing}
                   onSaved={() => { announceSaved(target) }} />
                 : null}
-              {open && !protectedKeys
+              {open && (!protectedKeys || protectedSettings)
                 ? renderProviderEditor({
                   target,
                   row,
@@ -576,6 +585,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   operations,
                   t,
                   readOnly: !state.writable,
+                  ...(protectedKeys ? { modelCatalogOnly: true } : {}),
                   onClose: (changed) => { closeEditor(changed, target) },
                 })
                 : null}

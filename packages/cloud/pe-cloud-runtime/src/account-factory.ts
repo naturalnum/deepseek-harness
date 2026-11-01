@@ -556,6 +556,7 @@ export class AccountFactory {
         configurationCurrent()
         integration.resumeConfiguration()
         slot.state = 'ready'
+        await this.resumeScheduleAfterReady(slot, binding)
         return value
       } catch (cause) {
         if (!progress.nativeStarted && (!progress.metadataSubmitted || progress.transitioned)
@@ -573,6 +574,7 @@ export class AccountFactory {
             current()
             integration.resumeConfiguration()
             slot.state = 'ready'
+            await this.resumeScheduleAfterReady(slot, binding)
           } catch (_restoreFailure) {
             slot.state = 'unknown'
             slot.closeRequested = true
@@ -640,6 +642,7 @@ export class AccountFactory {
         if (!prepared.accepted) {
           await integration.auditReconfigured(context)
           current(); integration.resumeConfiguration(); slot.state = 'ready'
+          await this.resumeScheduleAfterReady(slot, binding)
           throw prepared.error
         }
         current()
@@ -683,6 +686,7 @@ export class AccountFactory {
             const saves = await integration.pauseConfiguration()
             if (saves.status !== 'confirmed') throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original save ownership is unconfirmed')
             integration.resumeConfiguration(); slot.state = 'ready'
+            await this.resumeScheduleAfterReady(slot, binding)
           } catch (_restoreFailure) { slot.state = 'unknown'; slot.closeRequested = true }
         } else if (replacement !== undefined) { replacement.state = 'unknown'; replacement.closeRequested = true }
         try { control.failed(operationId, cause) } catch (_observerFailure) { /* the original slot still retains failure */ }
@@ -1045,10 +1049,23 @@ export class AccountFactory {
       request.recipe.native?.assertRootCurrent()
       this.assertMountCurrent(outcome.binding)
       slot.state = 'ready'
+      await this.resumeScheduleAfterReady(slot, outcome.binding)
       observeStartup(diagnostic, { settled: true })
       return outcome
     } catch (cause) {
       observeStartup(diagnostic, { failure: cause })
+      throw cause
+    }
+  }
+
+  private async resumeScheduleAfterReady(slot: Slot, binding: AccountBinding): Promise<void> {
+    try {
+      if (slot.integration === undefined) throw new AccountMountPrerequisiteError()
+      await slot.integration.resumeScheduleAfterReady()
+      this.assertBusinessCurrent(binding)
+    } catch (cause) {
+      slot.state = 'unknown'
+      slot.closeRequested = true
       throw cause
     }
   }

@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-modules'
 import { CloudWebManifestSchema, parseCloudWebManifest } from './config.ts'
-import type { CloudNativeSessionControl, CloudWebManifest } from './types.ts'
+import type { CloudNativeManagement, CloudNativeSessionControl, CloudWebManifest } from './types.ts'
 
 const CLOUD_WEB_CLIENT_PACKAGES = [
   '@deepseek-ai/dsh-api-gateway',
@@ -29,6 +29,15 @@ const NATIVE_SESSION_CLIENT_PACKAGES: Readonly<Record<CloudNativeSessionControl,
   feedback: ['@deepseek-ai/dsh-client-ui-message-feedback'],
   export: ['@deepseek-ai/dsh-session-log-export'],
   attachments: ['@deepseek-ai/dsh-client-ui-attachment', '@deepseek-ai/dsh-client-ui-trajectory', '@deepseek-ai/dsh-client-ui-tool'],
+}
+
+const NATIVE_MANAGEMENT_CLIENT_PACKAGES: Readonly<Record<CloudNativeManagement, readonly string[]>> = {
+  plugins: ['@deepseek-ai/dsh-client-ui-plugin-manager', '@deepseek-ai/dsh-client-ui-settings-plugins',
+    '@deepseek-ai/dsh-client-ui-settings-plugin-inventory', '@deepseek-ai/dsh-client-ui-agent-preset',
+    '@deepseek-ai/dsh-client-ui-settings-subagent', '@deepseek-ai/dsh-client-ui-settings-web-search',
+    '@deepseek-ai/dsh-client-ui-settings-agent-loop', '@deepseek-ai/dsh-client-ui-settings-shell'],
+  presets: ['@deepseek-ai/dsh-client-ui-agent-preset'],
+  automations: ['@deepseek-ai/dsh-client-ui-schedule', '@deepseek-ai/dsh-client-ui-tool'],
 }
 
 /** Stable declaration-half plugin name; this is not an account or root service. */
@@ -68,6 +77,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ...manifest.client.modelSettingsRequestTimeoutMs === undefined ? [] : MODEL_SETTINGS_CLIENT_PACKAGES,
         ...manifest.client.servicePreview === undefined ? [] : SERVICE_PREVIEW_CLIENT_PACKAGES,
         ...(manifest.client.nativeSessionControls ?? []).flatMap(group => NATIVE_SESSION_CLIENT_PACKAGES[group]),
+        ...(manifest.client.nativeManagement ?? []).flatMap(group => NATIVE_MANAGEMENT_CLIENT_PACKAGES[group]),
       ])], baseUrl, { activate: true },
     ), 'pe-cloud-client: browser BFF services')
     owner.on('webserver/index-inject', (rows) => {

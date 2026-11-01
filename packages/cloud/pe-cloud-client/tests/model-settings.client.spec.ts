@@ -151,6 +151,24 @@ it('revokes original prepared callbacks and source synchronously before native c
   expect(prepare).toHaveBeenCalledTimes(1)
 })
 
+it('gives successive model bindings distinct editor identities even for the same owner fiber', async () => {
+  const f=fixture(), preparation=PreparedCloudPage.prepare({
+    ...f.input,config:{ ...config,modelSettingsRequestTimeoutMs:1000 },
+  },new AbortController().signal)
+  onTestFinished(()=>preparation.dispose())
+  const page=await preparation.ready, graph=native(page);await page.start(graph.entry)
+  const unused=async ():Promise<never>=>{throw new Error('unused')}
+  const callbacks={ metadata:unused,credentials:unused,prepare:unused }
+  const remove=page.attachModels(graph.ctx,callbacks)
+  const first=page.modelsSettingsIntegration.editing.getSnapshot()!
+  remove()
+  page.attachModels(graph.ctx,callbacks)
+  const second=page.modelsSettingsIntegration.editing.getSnapshot()!
+  expect(first.scope).not.toBe(second.scope)
+  expect(first.isCurrent()).toBe(false)
+  expect(second.isCurrent()).toBe(true)
+})
+
 it('withdraws the original dependency binding and never lets a late prepare publish an editor', async () => {
   const f=fixture(), preparation=PreparedCloudPage.prepare({
     ...f.input,config:{ ...config,modelSettingsRequestTimeoutMs:1000 },

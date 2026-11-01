@@ -424,3 +424,25 @@ it.each([
   await fiber?.dispose()
   expect(withdrawn).toHaveLength(supplied.length)
 })
+
+it('supplies original plugin, preset, automation and served settings modules only when management is selected', async () => {
+  const ctx = await composition(), base = manifest(), supplied: string[][] = []
+  await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+  vi.spyOn(ctx.clientModules, 'registerClientPackages').mockImplementation((packages) => {
+    supplied.push([...packages])
+    return async () => {}
+  })
+  const web = { ...base, client: { ...base.client, nativeManagement: ['plugins', 'presets', 'automations'] } }
+  await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web } })
+  await ctx.loader.await()
+  const fiber = ctx.loader.resolve('cloud').fiber
+  await fiber?.await()
+  expect(fiber?.state).toBe(FiberState.ACTIVE)
+  const actual = supplied.flat()
+  const expected = ['ui-plugin-manager', 'ui-settings-plugins', 'ui-settings-plugin-inventory', 'ui-agent-preset',
+    'ui-settings-subagent', 'ui-settings-web-search', 'ui-settings-agent-loop', 'ui-settings-shell', 'ui-schedule', 'ui-tool']
+    .map(name => '@deepseek-ai/dsh-client-' + name)
+  expect(actual).toEqual(expect.arrayContaining(expected))
+  expect(new Set(actual).size).toBe(actual.length)
+  await fiber?.dispose()
+})

@@ -17,6 +17,7 @@ import { SKILLS_MANAGEMENT_NAMESPACE, skillsManagementDictionaries } from './ski
 import { ManagementActionToast, type ManagementNotice } from './ManagementActionToast.tsx'
 import { CLOUD_MANAGEMENT_NAMESPACE, cloudManagementDictionaries } from './locales.ts'
 import { installCloudPluginCatalog } from './plugins/install.tsx'
+import { observeSkillCatalog } from './skills/catalog-observation.ts'
 
 const SKILLS_PANEL = 'power-evolve-skills'
 // FiberState is a cross-package const enum and is not exported at runtime.
@@ -84,6 +85,7 @@ export function installCloudManagement(ctx: Context, page: PreparedCloudPage): v
       }) }, SkillsPage))
     if (skills) contribute('sidebar.panellist', () => owner.slots.register({ name: 'sidebar.panellist', id: SKILLS_PANEL,
       locale: CLOUD_MANAGEMENT_NAMESPACE, label: () => owner.locale.bind(CLOUD_MANAGEMENT_NAMESPACE)('skills') }, SkillsPanelIcon))
+    if (skills) track(observeSkillCatalog(owner, page.skillVersionEditing, SKILLS_PANEL, () => { report('refresh', 'unavailable') }))
     if (plugins) track(installCloudPluginCatalog(owner, page, report))
   })
   const stop = (): void => {

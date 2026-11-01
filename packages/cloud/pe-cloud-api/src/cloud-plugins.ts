@@ -4,13 +4,13 @@ import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typ
 import type { CloudAccountApi } from './account-service.ts'
 import type { AccountPluginControl } from './plugin-control.ts'
 import type { ExposureInventory } from './types.ts'
-import type { PluginChangeRequest, PluginChangeResult, PluginCurrentRequest, PluginCurrentState } from './plugin-types.ts'
+import type { PluginChangeRequest, PluginChangeResult, PluginCurrentRequest, PluginCurrentState, PluginManagerSnapshot } from './plugin-types.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
 import type { pluginRequests } from './plugin-json.ts'
 import { CloudApiError } from './errors.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { cloudPlugins: CloudPluginService } }
-const methods = ['current', 'change'] as const
+const methods = ['current', 'change', 'list'] as const
 function original(value: object): object {
   const target: unknown = Reflect.get(value, symbols.original)
   return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
@@ -49,6 +49,26 @@ export class CloudPluginService extends TypertRemoteService {
       const value = await this.control.current(input.id, check)
       check(); firstScreenJsonBytes(value, this.control.input.limits.maxReplyBytes)
       return value
+    })
+  }
+
+  /** List the account's actual native bundle and plugin facts under the current login.
+   * @param signal Original observer cancellation.
+   * @returns The native roster and exact approved controls.
+   */
+  @Remote('list')
+  list(signal: AbortSignal): Promise<PluginManagerSnapshot> {
+    signal.throwIfAborted(); this.inspect(); this.api.requireRpc('cloudPlugins/list')
+    const invocation = this.ctx.invocation
+    if (invocation?.service !== 'cloudPlugins' || invocation.request.namespace !== 'cloudPlugins'
+      || invocation.request.method !== 'list' || Object.keys(invocation.request.args).length !== 0) unavailable()
+    return this.control.input.withModelKeyPeerUse(invocation.peer, async (use, current) => {
+      const check = (): void => {
+        signal.throwIfAborted(); current(); use.assertCurrent(); this.assertCurrent()
+        if (use.binding !== this.api.binding || use.context.root !== this.ctx.root) unavailable()
+        this.api.requireRpc('cloudPlugins/list')
+      }
+      check(); return this.control.snapshot(check)
     })
   }
 
@@ -111,9 +131,9 @@ export class CloudPluginService extends TypertRemoteService {
         || Reflect.get(original(this), method) !== CloudPluginService.prototype[method]
         || descriptor === undefined || descriptor.service !== 'cloudPlugins' || descriptor.namespace !== 'cloudPlugins'
         || descriptor.method !== method || (descriptor.implementation ?? method) !== method || (descriptor.mode ?? 'rpc') !== 'rpc'
-        || descriptor.invocation.kind !== 'direct' || descriptor.parameters.length !== 1
-        || descriptor.parameters[0]?.wire !== 'request' || descriptor.parameters[0].source !== 'json'
-        || descriptor.parameters[0].codec.mode !== 'strict' || descriptor.result.mode !== 'strict'
+        || descriptor.invocation.kind !== 'direct' || descriptor.parameters.length !== (method === 'list' ? 0 : 1)
+        || method !== 'list' && (descriptor.parameters[0]?.wire !== 'request' || descriptor.parameters[0].source !== 'json'
+          || descriptor.parameters[0].codec.mode !== 'strict') || descriptor.result.mode !== 'strict'
         || descriptor.cancellation?.parameter !== 'signal') unavailable()
     }
     return { recipeVersion: this.api.binding.recipeVersion, rpcEndpoints: methods.map(method => ({

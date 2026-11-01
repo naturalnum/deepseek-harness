@@ -1,3 +1,4 @@
+import type {} from './integration.ts'
 import { sanitizeInstallInput } from './sanitize-install-input.ts'
 /**
  * The plugin manager's state: the Host's bundles joined with its plugin
@@ -77,6 +78,8 @@ export interface PackageRow {
   readonly phase: PluginInfo['fiberPhase']
   /** Why the Host refuses to switch the row, when it does. */
   readonly readOnlyReason?: ReadOnlyReason
+  /** False when the current integration does not admit a change. */
+  readonly toggleAllowed?: boolean
 }
 
 /** One bundle as the page shows it: the Host's bundle joined with the entries its rows run as. */
@@ -107,6 +110,8 @@ export interface PackageView {
   /** Why the Host cannot read the bundle, when it cannot. */
   readonly error?: ManagementError
   readonly rows: readonly PackageRow[]
+  /** False when the current integration does not admit a change. */
+  readonly toggleAllowed?: boolean
 }
 
 /** The typed spec as the Host read it, on the installing, installed, and failed screens. */
@@ -322,6 +327,8 @@ export interface PluginManagerState {
 
 /** The registration-side face the tab's slot entry injects. */
 export interface PluginManagerFace {
+  /** Whether installation and removal are available for the current source. */
+  canInstall?: () => boolean
   /** Resolve local package text in the current Client locale at render time. */
   resolveText: (text: LocalizedText) => string
   /** Resolve a configuration form by the Host entry id. */
@@ -609,16 +616,19 @@ export class PluginManagerController {
     configLedger: HostObservable<ConfigLedger>, pluginTabs: HostObservable<readonly PluginTab[]>, resolveText: PluginManagerFace['resolveText'],
   ): PluginManagerFace {
     return {
+      canInstall: () => this.ctx.get('pluginManagerIntegration')?.install ?? true,
       resolveText,
       hooks: { pluginManager: this.store, configLedger, pluginTabs, configurations: this.ctx.configForms.describe() },
       configForm: id => this.ctx.configForms.get(id),
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.refresh() },
       openInstall: () => {
+        if (this.ctx.get('pluginManagerIntegration')?.install === false) return
         this.ctx.get('productAnalytics')?.track('plugin_add_button_click', {})
         this.openDialog()
       },
       installFrom: ({ spec, registry, title, version }) => {
+        if (this.ctx.get('pluginManagerIntegration')?.install === false) return
         // A hidden installation reopens as it is; only one installation runs at a time.
         if (!this.openDialog()) return
         this.transientRegistry = registry !== undefined
@@ -672,21 +682,30 @@ export class PluginManagerController {
       cancelInstall: () => { void this.cancelInstall() },
       reconcileInstall: () => { void this.reconcileInstall() },
       toggleInstallDetails: () => { this.patchInstall({ detailsOpen: !this.getSnapshot().install.detailsOpen }) },
-      enableInstalled: () => { void this.enableInstalled() },
+      enableInstalled: () => { if (this.ctx.get('pluginManagerIntegration')?.install !== false) void this.enableInstalled() },
       clearHighlight: () => { if (this.getSnapshot().highlight !== null) this.patch({ highlight: null }) },
       setEnabled: (packageName, enabled) => {
+        const currentIntegration = this.ctx.get('pluginManagerIntegration')
+        if (currentIntegration !== undefined && !currentIntegration.canSetBundle(packageName)) return
         const pkg = this.getSnapshot().packages.find(pkg => pkg.name === packageName)
         if (enabled && pkg?.availability === 'missing' && pkg.installTarget !== undefined) {
           this.openCatalogInstall(pkg, pkg.installTarget, true)
           return
         }
         void this.run(packageName, { packageName, action: enabled ? 'enable' : 'disable' }, async () => {
+          const integration = this.ctx.get('pluginManagerIntegration')
+          if (integration !== undefined) {
+            if (!integration.canSetBundle(packageName)) throw new Error('Plugin change is unavailable for this account.')
+            await integration.setBundle(packageName, enabled)
+            return
+          }
           const result = await this.ctx.remote.pluginManager.setBundleEnabled(packageName, enabled)
           this.applied(result, packageName)
           if (result.ok && (result.value.application === 'applied' || result.value.application === 'restart-required')) this.trackToggle(packageName, enabled)
         })
       },
       update: (packageName) => {
+        if (this.ctx.get('pluginManagerIntegration')?.install === false) return
         const pkg = this.getSnapshot().packages.find(pkg => pkg.name === packageName)
         const target = pkg?.installTarget
         if (pkg === undefined || target === undefined || pkg.availability === 'installation') return
@@ -708,6 +727,7 @@ export class PluginManagerController {
         })
       },
       uninstall: (packageName) => {
+        if (this.ctx.get('pluginManagerIntegration')?.install === false) return
         this.pendingConfirm = () => this.run(packageName, { packageName, action: 'uninstall' }, async () => {
           this.ctx.get('productAnalytics')?.track('confirm_uninstall_plugin', { plugin_name: packageName })
           this.applied(await this.ctx.remote.pluginManager.removeBundle(packageName), packageName)
@@ -718,6 +738,12 @@ export class PluginManagerController {
       cancelConfirm: () => { this.pendingConfirm = undefined; this.patch({ confirm: null }) },
       setRowEnabled: (entryId, enabled) => {
         void this.run(rowKey(entryId), { packageName: entryId, action: enabled ? 'rowEnable' : 'rowDisable' }, async () => {
+          const integration = this.ctx.get('pluginManagerIntegration')
+          if (integration !== undefined) {
+            if (!integration.canSetEntry(entryId)) throw new Error('Plugin change is unavailable for this account.')
+            await integration.setEntry(entryId, enabled)
+            return
+          }
           const result = await this.ctx.remote.pluginManager.setPluginEnabled(entryId, enabled)
           this.applied(result, entryId)
           if (result.ok && (result.value.application === 'applied' || result.value.application === 'restart-required')) this.trackToggle(entryId, enabled, true)
@@ -823,7 +849,7 @@ export class PluginManagerController {
    */
   load(): Promise<void> {
     if (this.disposed) return Promise.resolve()
-    void this.reconcileInstall()
+    if (this.ctx.get('pluginManagerIntegration')?.install !== false) void this.reconcileInstall()
     if (this.inFlight !== undefined) {
       this.rerun = true
       return this.inFlight
@@ -871,6 +897,19 @@ export class PluginManagerController {
         if (this.getSnapshot().status === 'idle') this.patch({ status: 'loading' })
         // The manager Remote is mounted whether or not the Host manages a
         // profile; the inventory says whether it does.
+        const integration = this.ctx.get('pluginManagerIntegration')
+        if (integration !== undefined) {
+          const snapshot = await integration.read()
+          if (generation !== this.generation) return
+          this.hasCachedInventory = true
+          this.patch({ status: 'ready', refreshStatus: this.getSnapshot().refreshStatus === 'refreshing' ? 'refreshing' : 'idle',
+            packages: sortPackages(snapshot.bundles.map((bundle) => {
+              const view = packageView(bundle, snapshot.plugins)
+              return { ...view, toggleAllowed: integration.canSetBundle(view.name),
+                rows: view.rows.map(row => ({ ...row, toggleAllowed: row.entryId !== undefined && integration.canSetEntry(row.entryId) })) }
+            })) })
+          continue
+        }
         const inventory = await this.ctx.remote.pluginInventory.list()
         if (generation !== this.generation) return
         if (!inventory.ok) {
@@ -898,6 +937,8 @@ export class PluginManagerController {
           packages: sortPackages(bundles.value.map(bundle => packageView(bundle, plugins.value))),
         })
       } while (this.shouldRerun())
+    } catch (_error) {
+      this.patch({ status: 'error' })
     } finally {
       this.inFlight = undefined
     }

@@ -28,6 +28,8 @@ async function fixture(enabled = true) {
   const writes = vi.fn<TextProjectBackend['writeText']>(async (_path, content) => ({
     value: { operation: 'create', version: FsVersion('after'), before: null, after: content }, release() {},
   }))
+  const readStats = vi.fn(async () => ({ value: undefined, release() {} }))
+  const readStreams = vi.fn(async () => (async function* () { yield 'original' })())
   const owned: { graph?: Context } = {}
   let selected: ReturnType<Context['sessions']['create']> | undefined, missingGuard = false
   onTestFinished(async () => {
@@ -54,8 +56,7 @@ async function fixture(enabled = true) {
         async apply(ctx: Context) {
           const workspace = await ctx.workspaceRegistry.create(project)
           const reader = createFixedRootReader(project, {
-            maxPathBytes: 1024, assertCurrent() {}, stat: async () => ({ value: undefined, release() {} }),
-            streamText: async () => (async function* () { yield 'original' })(),
+            maxPathBytes: 1024, assertCurrent() {}, stat: readStats, streamText: readStreams,
           })
           const backend: TextProjectBackend = {
             binding, workspace, reader, maxPathBytes: 1024, assertCurrent() {}, assertInstalled() {},
@@ -83,9 +84,22 @@ async function fixture(enabled = true) {
   const first = graph.sessions.create(SessionId('first'), { meta: { cwd: project } })
   const second = graph.sessions.create(SessionId('second'), { meta: { cwd: project } })
   selected = first
-  return { graph, first, second, writes, project,
+  return { graph, first, second, writes, project, readStats, readStreams,
     select: (session: typeof first) => { selected = session }, omitGuard: () => { missingGuard = true } }
 }
+
+it('reuses the same canonical reader grant while stat and stream still perform fresh backend work', async () => {
+  const f = await fixture(), target = await f.graph.fs.resolve('hello.py')
+  expect(f.readStats).toHaveBeenCalledTimes(1)
+  await f.graph.fs.stat(target)
+  expect(f.readStats).toHaveBeenCalledTimes(2)
+  let text = ''
+  for await (const chunk of await f.graph.fs.streamText(target)) text += chunk
+  expect(text).toBe('original')
+  expect(f.readStats).toHaveBeenCalledTimes(2)
+  expect(f.readStreams).toHaveBeenCalledTimes(1)
+  await expect(f.graph.fs.stat({ ...target })).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+})
 
 it('enforces read-only inside the native write method before dispatching any worker mutation', async () => {
   const f = await fixture(), target = await f.graph.fs.resolve('hello.py')

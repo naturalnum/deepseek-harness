@@ -15,7 +15,7 @@ export function managedFixture() {
   const update = vi.fn<NonNullable<ManagedSkillDetail['update']>>(async () => ({ kind: 'persisted', applied: false, item: card('first', 'v2') }))
   const uninstall = vi.fn<NonNullable<ManagedSkillDetail['uninstall']>>(async () => ({ kind: 'persisted', applied: true, item: null }))
   const download = vi.fn<NonNullable<ManagedSkillDetail['download']>>(async () => {})
-  const installed = vi.fn(async (): Promise<ManagedSkillList> => ({ items: [card('first'), card('second')], limits: selectionLimits, install }))
+  const installed = vi.fn(async (_signal: AbortSignal): Promise<ManagedSkillList> => ({ items: [card('first'), card('second')], limits: selectionLimits, install }))
   const details = vi.fn(async (id: string): Promise<ManagedSkillDetail> => ({ item: card(id),
     files: [{ path: 'SKILL.md', bytes: 20 }, { path: 'references/guide.md', bytes: 20 }], update, uninstall, download }))
   const parent = new AbortController()

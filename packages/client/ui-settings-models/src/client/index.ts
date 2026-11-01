@@ -93,7 +93,12 @@ export function apply(ctx: ClientContext): void {
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
   // Bound once here, where the Remote namespaces are declared in this plugin's
   // own `inject`; the cards receive callbacks and never a context.
-  const operations = createModelsOperations(ctx)
+  const originalOperations = createModelsOperations(ctx)
+  const operations = integration === undefined ? originalOperations : {
+    ...originalOperations,
+    writeSettings: integration.reads.writeSettings ?? (() => Promise.resolve({ kind: 'refused' as const,
+      message: ctx.locale.bind(NS)('keyEditUnavailable') })),
+  }
   const controller = new ModelsSettingsStore(ctx, schema, ctx.configForms.describe(),
     integration === undefined ? undefined : { reads: integration.reads, unavailable: () => ctx.locale.bind(NS)('keyEditUnavailable') })
   // Registration-time text (the nav label thunk) and the inject faces share

@@ -15,7 +15,7 @@ export const APPROVED_PLUGIN_CONTROL = Object.freeze({ id: 'repeat-tool-reminder
     operations: Object.freeze(['enabled', 'configure'] as const), maxImpact: 'local' as const,
     fields: Object.freeze([Object.freeze(['thresholds'])]) }) })
 /** Exact authenticated unary RPC group; native manager/package writers remain closed. */
-export const PLUGIN_RPC_ENDPOINTS: readonly string[] = Object.freeze(['cloudPlugins/current', 'cloudPlugins/change'])
+export const PLUGIN_RPC_ENDPOINTS: readonly string[] = Object.freeze(['cloudPlugins/current', 'cloudPlugins/change', 'cloudPlugins/list'])
 function invalid(): never { throw new CloudApiError('cloud/forbidden', 'The approved plugin request has invalid or excessive fields.') }
 function record(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)

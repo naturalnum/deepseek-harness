@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-skill/types'
 import type {} from '@deepseek-ai/dsh-goal/types'
 import type {} from '@deepseek-ai/dsh-commands/types'
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-schedule/client'
 import type { CloudAccountApi } from './account-service.ts'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
@@ -34,7 +35,7 @@ export interface FirstScreenEventInput {
   /** Complete encoded emit-frame bound, including event name and envelope. */
   readonly maxFrameBytes: number
   /** Selected native controls; every notification still requires its audited endpoint. */
-  readonly controls?: Readonly<{ commands: boolean; goals: boolean; permissions: boolean; questions?: boolean }>
+  readonly controls?: Readonly<{ commands: boolean; goals: boolean; permissions: boolean; questions?: boolean; schedule?: boolean }>
 }
 
 /** Real registration facts; Root must still connect and audit the original external C04/Peer guard. */
@@ -205,6 +206,10 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     }))
     if (input.controls?.permissions === true) removers.push(ctx.on('permission-presets/catalog-changed', () => {
       try { input.api.requireRpc('permissionPresets/catalog'); push({ event: 'permission-presets/catalog-changed', args: [] }) }
+      catch (error) { stop({ error }) }
+    }))
+    if (input.controls?.schedule === true) removers.push(ctx.on('schedule/changed', () => {
+      try { input.api.requireRpc('schedule/catalog'); push({ event: 'schedule/changed', args: [] }) }
       catch (error) { stop({ error }) }
     }))
     if (input.controls?.questions === true) {

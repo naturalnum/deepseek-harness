@@ -44,6 +44,7 @@ const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'g
     'goals/' + method, { handlerId: 'native:goals', guard: 'account-session' as const },
   ])),
   'permissionPresets/catalog': { handlerId: 'native:permissionPresets', guard: 'authenticated-account' },
+  'pluginInventory/list': { handlerId: 'native:pluginInventory', guard: 'authenticated-account' },
   ...Object.fromEntries(['list', 'put', 'delete'].map(method => [
     'messageFeedback/' + method, { handlerId: 'native:messageFeedback', guard: 'account-session' as const },
   ])),

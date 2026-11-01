@@ -1,7 +1,15 @@
 /** Protected deployment selection parsing; synthetic inputs create no files or remote resources. */
 import { expect, it } from 'vitest'
 import { parseRootDeploymentInput, SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
+import { SOURCE_DIGEST } from '../src/bootstrap/asset-manifest.ts'
 import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/root-deployment.ts'
+
+it('accepts the refreshed source digest and rejects the prior runtime digest', () => {
+  const value = sharedPathDeploymentFixture()
+  expect(parseRootDeploymentInput(value).lifecycle.payloadSha256).toBe(SOURCE_DIGEST)
+  value.lifecycle.payloadSha256 = 'd2d3e62db5f958a8305b7405d8d72db6d20bd7a0c0b7082955f25f5762bb728d'
+  expect(() => parseRootDeploymentInput(value)).toThrow('lifecycle.fixedSelection')
+})
 
 it('keeps legacy v1 keeper input distinct from explicit shared-path v2', () => {
   const legacy = parseRootDeploymentInput(rootDeploymentFixture()), shared = parseRootDeploymentInput(sharedPathDeploymentFixture())

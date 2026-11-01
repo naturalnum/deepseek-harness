@@ -139,7 +139,7 @@ export class CloudShellExecutor extends ShellExecutor {
   override get sandboxMode(): SandboxMode | undefined {
     if (this.config.enforceSessionFilePolicy !== true) return undefined
     const policy = this.ctx.get('sandboxPolicy')
-    if (policy === undefined || policy.defaultMode === 'danger-full-access') {
+    if (policy === undefined) {
       throw new ExecutionStateError('cloud/execution-unavailable', 'The original Session file-policy provider is unavailable.')
     }
     return policy.defaultMode

@@ -6,6 +6,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import * as Registry from '@deepseek-ai/dsh-typert-registry/client'
 import * as Gateway from '@deepseek-ai/dsh-api-gateway/client'
+import * as Remotes from '@deepseek-ai/dsh-api-remotes/client'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-pe-cloud-api/remote'
 import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
@@ -54,7 +55,8 @@ it('uses the single real generated namespace for metadata, captured edits and ke
     records.push({ method:body.method,payload:body.payload,headers:new Headers(init.headers) })
     const result=body.method==='cloudModelKey/metadata'?{ ok:true,value:metadata }
       :body.method==='cloudModelKey/describe'?{ ok:true,value:{ ref:'DEEPSEEK_API_KEY',configured:true,writable:true,source:'file',version:{ epoch:'native-E',editToken:token } } }
-        :scriptedSave
+        :body.method==='settings/mutate'?{ ok:true,value:metadata.settings.namespaces[0] }
+          :scriptedSave
     return Response.json({ type:'server-response',rpcId:body.rpcId,result })
   }
   const prepared=PreparedCloudPage.prepare({ baseUrl:'https://example.test/app/',config:{ bootstrapPath:'cloud/bootstrap',bootstrapTimeoutMs:1000,
@@ -70,8 +72,8 @@ it('uses the single real generated namespace for metadata, captured edits and ke
   const entry={ run:async()=>{
     root.provide('clientPersistence',page.nativeOptions.persistence);page.nativeOptions.prepareContext(root)
     await root.plugin(Loader)
-    Object.assign(root.loader.builtins,{ cloud,registry:Registry,gateway:Gateway,slots:SlotRegistry,locale:{ apply(owner:Context){const locale=new LocaleRuntime(owner);locale.setLocale('en');owner.provide('locale',locale)} } })
-    await Promise.all(['cloud','registry','gateway','slots','locale'].map(name=>root.loader.create({ name:'cordis:'+name })))
+    Object.assign(root.loader.builtins,{ cloud,registry:Registry,gateway:Gateway,remotes:Remotes,slots:SlotRegistry,locale:{ apply(owner:Context){const locale=new LocaleRuntime(owner);locale.setLocale('en');owner.provide('locale',locale)} } })
+    await Promise.all(['cloud','registry','gateway','remotes','slots','locale'].map(name=>root.loader.create({ name:'cordis:'+name })))
     await root.loader.await()
     expect([...root.loader.entries()].every(row=>row.fiber?.state===FiberState.ACTIVE)).toBe(true)
   },dispose:async()=>{
@@ -87,6 +89,9 @@ it('uses the single real generated namespace for metadata, captured edits and ke
   const facts=await page.modelsSettingsIntegration.reads.credentials(['DEEPSEEK_API_KEY'])
   expect(facts).toEqual({ DEEPSEEK_API_KEY:{ configured:true,writable:true,source:'file' } })
   expect(JSON.stringify(facts)).not.toContain('opened-token')
+  const saved = await page.modelsSettingsIntegration.reads.writeSettings!('model-provider',
+    [{ op:'set',path:['models'],value:[] }],1)
+  expect(saved.kind).toBe('written')
   const editing=page.modelsSettingsIntegration.editing.getSnapshot()
   if(editing===null)throw new Error('Actual model namespace was not attached')
   const edit=await editing.prepare('DEEPSEEK_API_KEY',new AbortController().signal)
@@ -99,7 +104,7 @@ it('uses the single real generated namespace for metadata, captured edits and ke
   if(removal===null)throw new Error('New removal did not prepare')
   expect(await removal.remove()).toBeUndefined()
   expect(records.find(row=>row.method==='cloudModelKey/unset')?.payload).toEqual({ args:{ request:{ ref:'DEEPSEEK_API_KEY',version:{ epoch:'native-E',editToken:'background-token' } } } })
-  expect(records.every(row=>row.method.startsWith('cloudModelKey/'))).toBe(true)
+  expect(records.every(row=>row.method.startsWith('cloudModelKey/') || row.method==='settings/mutate')).toBe(true)
   expect(records.every(row=>row.headers.get('x-account')==='A'&&row.headers.get('x-generation')==='native-G')).toBe(true)
   for(const persisted of [false,'true']){
     scriptedSave={ ok:true,value:{ persisted,version:{ epoch:'native-E',editToken:'invalid' } } }

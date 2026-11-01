@@ -20,7 +20,7 @@ export function SubagentLimitsFields(props: SubagentLimitsFieldsProps) {
   return (
     <>
       <div className={css.limits}>
-        <div className={css.limit}>
+        {state.allowMaxDepth === false ? null : <div className={css.limit}>
           <SettingsValueField id="plugin-config-subagent-depth" label={t('subagentMaxDepth')}
             help={{ label: t('subagentDepthHelpLabel'), content: (
               <>
@@ -43,14 +43,14 @@ export function SubagentLimitsFields(props: SubagentLimitsFieldsProps) {
             resetLabel={t('reset')} invalidLabel={t('subagentDepthInvalid')}
             numeric disabled={!state.writable || state.saving} {...state.maxDepth}
             onEdit={(text) => { props.edit('maxDepth', text) }} onReset={() => { props.resetField('maxDepth') }} />
-        </div>
-        <div className={css.limit}>
+        </div>}
+        {state.allowMaxActiveSubagents === false ? null : <div className={css.limit}>
           <SettingsValueField id="plugin-config-subagent-capacity" label={t('subagentMaxActive')}
             help={{ label: t('subagentCapacityHelpLabel'), content: <p>{t('subagentCapacityHelp')}</p> }} overriddenLabel={t('overridden')}
             resetLabel={t('reset')} invalidLabel={t('subagentCapacityInvalid')}
             numeric disabled={!state.writable || state.saving} {...state.maxActiveSubagents}
             onEdit={(text) => { props.edit('maxActiveSubagents', text) }} onReset={() => { props.resetField('maxActiveSubagents') }} />
-        </div>
+        </div>}
       </div>
     </>
   )

@@ -7,7 +7,7 @@ import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
-import { ScheduleRuntime } from './runtime.ts'
+import { ScheduleRuntime, type ScheduleDispatchAdmission } from './runtime.ts'
 import { scheduleDomain } from './storage.ts'
 import { deliveryHistoryPage } from './delivery-history.ts'
 import { resolveScheduleUpdate } from './update.ts'
@@ -109,8 +109,10 @@ export class ScheduleService extends TypertRemoteService {
   private readonly ready: Promise<Domain<typeof scheduleDomain>>
   private readonly initialized: PromiseLike<unknown>
   private chain: Promise<unknown> = Promise.resolve()
+  private pendingSerial = 0
   private runtime: ScheduleRuntime | undefined
   private stopping = false
+  private dispatchAdmission: ScheduleDispatchAdmission | undefined
 
   /**
    * @param ctx - Host services owning storage, dispatch, and Session restoration.
@@ -159,7 +161,7 @@ export class ScheduleService extends TypertRemoteService {
           await tasks.put(task.record.id, task)
           this.emitChanged()
         },
-        this.retention)
+        this.retention, () => this.dispatchAdmission)
       this.runtime.requestDrive()
       return cleanup
     })
@@ -209,6 +211,30 @@ export class ScheduleService extends TypertRemoteService {
   async [Service.init](): Promise<void> {
     await this.initialized
   }
+
+  /** Reconsider stored obligations after the owning Host becomes able to resume Sessions.
+   * @returns Once the original timer owner has been asked to recompute; delivery remains separately owned.
+   */
+  async resumeDispatch(): Promise<void> {
+    await this.initialized
+    if (this.stopping || this.runtime === undefined) throw new Error('Schedule service is stopping')
+    this.runtime.requestDrive()
+  }
+
+  /** Install one owning Host's internal delivery admission before dispatch begins.
+   * @param admission Original Host checks around Session resolution and delivery.
+   */
+  installDispatchAdmission(admission: ScheduleDispatchAdmission): void {
+    if (this.stopping || this.runtime !== undefined || this.dispatchAdmission !== undefined) {
+      throw new Error('Schedule delivery admission is unavailable')
+    }
+    this.dispatchAdmission = admission
+  }
+
+  /** Inspect original dispatch and management work without starting delivery.
+   * @returns Whether original scheduler work is settled and its owner remains active.
+   */
+  isDispatchIdle(): boolean { return !this.stopping && this.pendingSerial === 0 && this.runtime?.isIdle() === true }
 
   /**
    * Create a reminder bound to the caller-selected Session without activating it.
@@ -462,8 +488,10 @@ export class ScheduleService extends TypertRemoteService {
 
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     if (this.stopping) return Promise.reject(new Error('Schedule service is stopping'))
+    this.pendingSerial++
     const pending = this.chain.then(work)
-    this.chain = pending.catch(() => undefined) // Preserve FIFO progress after the caller receives the failure.
+    // Actual storage/dispatch work retains its idle responsibility until settlement.
+    this.chain = pending.then(() => { this.pendingSerial-- }, () => { this.pendingSerial-- })
     return pending
   }
 }

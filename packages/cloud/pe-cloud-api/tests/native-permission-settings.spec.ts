@@ -27,6 +27,7 @@ async function fixture(id: string) {
     defaultPreset: 'workspace-write', presets: {
       'read-only': { sandbox: 'read-only', approval: 'never' },
       'workspace-write': { sandbox: 'workspace-write', approval: 'never' },
+      'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' },
     },
   } }] }]) + '\n')
   const roots: Context[] = []

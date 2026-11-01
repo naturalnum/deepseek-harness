@@ -37,6 +37,7 @@ import GoalService from '@deepseek-ai/dsh-goal'
 import * as SessionLogExport from '@deepseek-ai/dsh-session-log-export'
 import PermissionPresetService from '@deepseek-ai/dsh-permission-presets'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
+import ScheduleService from '@deepseek-ai/dsh-schedule'
 import MessageFeedbackService from '@deepseek-ai/dsh-message-feedback'
 import * as CommandFeedback from '@deepseek-ai/dsh-command-feedback'
 
@@ -121,7 +122,8 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   commands: 'pe-cloud-commands',
   goals: 'pe-cloud-goals',
   sessionExport: 'pe-cloud-session-export',
-  permissions: 'pe-cloud-permissions', userQuestions: 'pe-cloud-user-questions',
+  permissions: 'pe-cloud-permissions', userQuestions: 'pe-cloud-user-questions', schedule: 'pe-cloud-schedule',
+  pluginInventory: 'pe-cloud-plugin-inventory',
   sessionFeedback: 'pe-cloud-session-feedback', messageFeedback: 'pe-cloud-message-feedback',
   commandFeedback: 'pe-cloud-command-feedback',
   workspaceFiles: 'pe-cloud-workspace-files', officeToPdf: 'pe-cloud-office-to-pdf',
@@ -496,6 +498,12 @@ export class AccountNativeIntegration {
       inject: ['peCloudApi', 'agents', 'sessionProjections'], Config: UserQuestions.Config,
       apply(owner: Context) { api.createUserQuestions(owner, sessionGuards(owner)) },
     }
+    const schedule = {
+      inject: [...ScheduleService.inject, 'peCloudApi'], Config: ScheduleService.Config,
+      apply(owner: Context, config: ConstructorParameters<typeof ScheduleService>[1]) {
+        api.createSchedule(owner, sessionGuards(owner), config)
+      },
+    }
     const sessionFeedback = {
       inject: [...CommandFeedback.SessionFeedbackService.inject, 'peCloudApi'],
       apply(owner: Context) { api.createSessionFeedback(owner, sessionGuards(owner)) },
@@ -579,7 +587,15 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.goals]: goals,
       [ACCOUNT_NATIVE_ENTRIES.sessionExport]: sessionExport,
       [ACCOUNT_NATIVE_ENTRIES.permissions]: permissions,
+      [ACCOUNT_NATIVE_ENTRIES.pluginInventory]: {
+        inject: ['loader', 'peCloudApi', 'peAccount'],
+        apply(owner: Context) {
+          if (firstScreenInput === undefined) throw new CloudApiError('cloud/invalid-config', 'Plugin inventory requires native read limits.')
+          api.createPluginInventory(owner, firstScreenInput.maxFrameBytes)
+        },
+      },
       [ACCOUNT_NATIVE_ENTRIES.userQuestions]: userQuestions,
+      [ACCOUNT_NATIVE_ENTRIES.schedule]: schedule,
       [ACCOUNT_NATIVE_ENTRIES.sessionFeedback]: sessionFeedback,
       [ACCOUNT_NATIVE_ENTRIES.messageFeedback]: messageFeedback,
       [ACCOUNT_NATIVE_ENTRIES.commandFeedback]: commandFeedback,
@@ -743,6 +759,14 @@ export class AccountNativeIntegration {
    */
   observeNativeDrain(): Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined { return this.nativeDrain }
 
+  /** Reconsider native scheduled obligations after the factory has committed account readiness. */
+  async resumeScheduleAfterReady(): Promise<void> {
+    if (this.api === undefined || this.stopping !== undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Original native API owner is absent or stopping')
+    }
+    await this.api.resumeScheduleAfterReady()
+  }
+
   /** Observe original native phase/inbox/startup work, persistence I/O and configuration responsibility.
    * @returns True only for the live original owners with no actual work or unknown save outcome.
    */
@@ -752,6 +776,7 @@ export class AccountNativeIntegration {
       || this.loopFiber?.state !== FiberState.ACTIVE || this.bootstrapping === undefined) return false
     const saves = this.api.inspectConfigurationSaves()
     return saves.admission !== 'stopped' && saves.pending.length === 0 && saves.failures.length === 0 && this.office.isIdle()
+      && this.api.isScheduleIdle()
       && this.loop.isQuiescent(this.input.maxNativeInventoryEntries)
       && this.persistence.isQuiescent(this.input.maxNativeInventoryEntries)
   }

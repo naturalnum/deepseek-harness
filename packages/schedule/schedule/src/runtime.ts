@@ -11,7 +11,11 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
 import type { DeliveryRetentionBounds, RecurringScheduleRecord } from './types.ts'
 import type { ScheduleTask } from './storage.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { appendDelivery } from './delivery-history.ts'
+
+/** Host-owned admission for one original delivery; the returned check is synchronous. */
+export type ScheduleDispatchAdmission = (sessionId: SessionId) => Promise<() => void>
 
 /** Largest delay Node timers represent without clamping. */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647
@@ -35,6 +39,7 @@ export class ScheduleRuntime {
     private readonly transact: (work: () => Promise<void>) => Promise<void>,
     private readonly commit: (task: ScheduleTask) => Promise<void>,
     private readonly retention: DeliveryRetentionBounds,
+    private readonly admission?: () => ScheduleDispatchAdmission | undefined,
   ) {}
 
   /**
@@ -77,6 +82,11 @@ export class ScheduleRuntime {
     await this.running?.catch(() => undefined)
   }
 
+  /** Inspect the original timer-drive owner without changing it.
+   * @returns Whether no original timer-drive work remains in flight.
+   */
+  isIdle(): boolean { return !this.stopping && this.running === undefined && !this.requested }
+
   private clearTimer(): void {
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
@@ -98,10 +108,14 @@ export class ScheduleRuntime {
       let admitted = group
       const committed = new Set<ScheduleTask['record']['id']>()
       try {
+        const admit = this.admission?.()
+        const assertAdmitted = admit === undefined ? undefined : await admit(task.sessionId)
+        assertAdmitted?.()
         const resolved = await this.ctx.sessionController.resolveAgent(task.sessionId)
         if ('error' in resolved) throw resolved.error
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- Disposal can run while Session restoration is awaited.
         if (this.stopping) return
+        assertAdmitted?.()
         const now = Date.now()
         // Session restoration can span a wall-clock rollback; future members keep their timer obligation.
         admitted = group.filter(member => Date.parse(member.record.scheduledAt) <= now)
@@ -120,6 +134,7 @@ export class ScheduleRuntime {
           content: [{ type: 'text', text }], source: { kind: 'schedule' },
         })
         // followup synchronously appends the inbox splice before flush observes the Session.
+        assertAdmitted?.()
         resolved.agent.followup(message)
         const flushed = await this.ctx.sessions.flush(resolved.agent.session)
         if (!flushed) throw new Error('Session persistence did not acknowledge the reminder')
