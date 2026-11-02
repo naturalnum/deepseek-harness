@@ -73,6 +73,7 @@ interface Slot {
   context?: Context
   native?: NativeAccountBootHandle
   integration?: AccountNativeIntegration
+  nativeRoot?: Readonly<{ preparation: NonNullable<AccountRecipe['native']>; current: () => void }>
   storageOwner?: RootStorageOwner
   storageParticipant?: DrainParticipant
   storagePreparation?: Promise<StaticAccountStorageLease>
@@ -296,15 +297,31 @@ export class AccountFactory {
   /**
    * Check graph business admission without capturing an HTTP or Peer borrow.
    * @param binding Exact installed generation; mounting and unpublished graphs reject.
+   * @param requireNative Require the original production native Root check for Root business admission.
    */
-  assertBusinessCurrent(binding: AccountBinding): void {
+  assertBusinessCurrent(binding: AccountBinding, requireNative = false): void {
     this.assertMountCurrent(binding)
     const slot = this.slots.get(binding.accountId)
     if (slot?.state !== 'ready') {
       throw new AccountRuntimeError('cloud/account-unavailable', 'The account graph has not passed production readiness')
     }
-    slot.recipe.native?.assertRootCurrent()
+    const nativeRoot = slot.nativeRoot, integration = slot.integration
+    if (requireNative && (integration === undefined || nativeRoot === undefined)) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'The original native Root check is unavailable')
+    }
+    if (integration !== undefined) {
+      if (nativeRoot === undefined || slot.recipe.native !== nativeRoot.preparation
+        || nativeRoot.preparation.assertRootCurrent !== nativeRoot.current) {
+        throw new AccountRuntimeError('cloud/stale-generation', 'The original native Root check was replaced')
+      }
+      nativeRoot.current.call(nativeRoot.preparation)
+    } else slot.recipe.native?.assertRootCurrent()
     this.assertMountCurrent(binding)
+    if (this.slots.get(binding.accountId) !== slot || Reflect.get(slot, 'state') !== 'ready' || slot.integration !== integration
+      || (nativeRoot !== undefined && (slot.recipe.native !== nativeRoot.preparation
+        || nativeRoot.preparation.assertRootCurrent !== nativeRoot.current))) {
+      throw new AccountRuntimeError('cloud/stale-generation', 'The original ready native Root check changed')
+    }
   }
 
   /**
@@ -944,6 +961,7 @@ export class AccountFactory {
           }
           if (slot.recipe.native !== undefined) {
             const preparation = slot.recipe.native, lease = slot.storageLease
+            slot.nativeRoot = Object.freeze({ preparation, current: preparation.assertRootCurrent })
             slot.integration = new AccountNativeIntegration({ ...preparation,
               borrowAccount: (current: AccountBinding) => this.borrowCurrent(current),
               ...lease === undefined ? {} : {

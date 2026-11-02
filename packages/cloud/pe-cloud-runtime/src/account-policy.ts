@@ -256,6 +256,11 @@ class AccountPolicy {
 
   private member(id: SessionId): Workspace | undefined {
     this.current()
+    return this.memberCurrent(id)
+  }
+
+  /** Resolve membership only after this same synchronous call has checked account current. */
+  private memberCurrent(id: SessionId): Workspace | undefined {
     const matches = this.provider('workspaceRegistry').list().filter(workspace => workspace.sessionIds.includes(id))
     if (matches.length > 1) refuse()
     const workspace = matches[0]
@@ -265,11 +270,12 @@ class AccountPolicy {
 
   observedProject(id: SessionId, header: SessionHeader): Workspace {
     this.current()
-    const workspace = this.member(id)
+    const workspace = this.memberCurrent(id)
     if (workspace === undefined || header.id !== id || header.agentPreset !== this.config.presetId) refuse()
     this.sessionHeader(header, workspace.path)
     if (header.origin === 'subagent') { this.spawn(); if (header.parentSession === id) refuse() }
-    this.pin()
+    // Once pinned, assertWorkspace performs the same current check that pin would repeat.
+    if (this.facts === undefined) this.pin()
     this.assertWorkspace(workspace)
     return workspace
   }
@@ -960,7 +966,6 @@ class AccountPolicy {
     if (session !== undefined) {
       const workspace = this.liveSessionProject(session)
       return { workspace, assertCurrent: () => {
-        this.current()
         if (this.liveSessionProject(session) !== workspace) refuse()
       } }
     }

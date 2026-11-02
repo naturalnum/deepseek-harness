@@ -100,6 +100,7 @@ async function fixture(options: {
   verifyDirectory?: (ctx: Context) => Promise<void>
   controllerEntered?: (ctx: Context) => void
   instructionSources?: InstructionSourceFixture
+  factoryComponent?: boolean
   nativeFiles?: boolean
   auditedFileCalls?: boolean
   auditedFileBytes?: boolean
@@ -162,7 +163,7 @@ async function fixture(options: {
       : createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }]) }
   let componentGraph: { ctx: Context; binding: AccountBinding } | undefined
   const assertCurrent = (current: AccountBinding): void => {
-    if (options.instructionSources === undefined) { factory.assertMountCurrent(current); return }
+    if (options.instructionSources === undefined || options.factoryComponent) { factory.assertMountCurrent(current); return }
     if (componentGraph?.binding !== current || componentGraph.ctx.get('peAccount') !== current || current.lifetime.aborted) {
       throw new AccountRuntimeError('cloud/stale-generation', 'The instruction component graph has ended')
     }
@@ -263,7 +264,7 @@ async function fixture(options: {
         maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 16, maxQueuedBytes: 131072 } } : {},
       ...options.readCurrent === undefined ? {} : { readCurrent: options.readCurrent },
       assertRootCurrent: () => {
-        if (options.instructionSources === undefined) { root.peAccountRuntime.assertRecipeSealed('m8s'); return }
+        if (options.instructionSources === undefined || options.factoryComponent) { root.peAccountRuntime.assertRecipeSealed('m8s'); return }
         root.fiber.assertActive()
         if (componentGraph === undefined) throw new Error('The instruction component graph is absent')
         assertCurrent(componentGraph.binding)
@@ -357,7 +358,7 @@ async function fixture(options: {
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
   const start = async () => {
-    if (options.instructionSources !== undefined) {
+    if (options.instructionSources !== undefined && !options.factoryComponent) {
       const native = recipe.native
       if (native === undefined) throw new Error('The instruction component requires actual native integration')
       // This component supplies graph-liveness admission to the real integration, without a Root seal or factory ready publication.
@@ -366,7 +367,8 @@ async function fixture(options: {
         componentGraph = { ctx, binding: installed }
         integration = new AccountNativeIntegration(native)
         try {
-          integration.prepare(ctx, installed, assertCurrent, assertCurrent, () => { assertCurrent(installed) })
+          integration.prepare(ctx, installed, assertCurrent, (current) => { native.assertRootCurrent(); assertCurrent(current) },
+            () => { assertCurrent(installed) })
           await recipe.prepare(ctx, installed)
         } catch (error) { await integration.stop(); throw error }
       } })
@@ -378,7 +380,17 @@ async function fixture(options: {
       return outcome
     }
     const outcome = await factory.startNativeMount(input, recipe)
-    if (outcome.status === 'mounted') context = outcome.context
+    if (outcome.status === 'mounted') {
+      context = outcome.context
+      if (options.factoryComponent) {
+        options.beforeBootstrap?.(outcome.context)
+        const slots: unknown = Reflect.get(factory, 'slots')
+        const slot: unknown = slots instanceof Map ? slots.get(outcome.binding.accountId) : undefined
+        const actual: unknown = typeof slot === 'object' && slot !== null ? Reflect.get(slot, 'integration') : undefined
+        if (!(actual instanceof AccountNativeIntegration)) throw new Error('Original factory integration missing')
+        await actual.finishBootstrap(options.verifyBootstrap)
+      }
+    }
     return outcome
   }
   return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime,
@@ -1263,4 +1275,187 @@ it('an admitted file read retains the native Session and provider checks while a
   await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data' })
   expect(full.mock.calls.length).toBeGreaterThan(admittedRootChecks)
   process.stdout.write(`OFFLINE_NATIVE_FILE_READ ${JSON.stringify({ localChecks, admittedRootChecks, fallbackRootChecks: full.mock.calls.length })}\n`)
+})
+
+it('checks account plans and provider after the cold-read stat await without repeating nested checks', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(),
+    nativeFiles: true, auditedFileCalls: true, auditedFileBytes: true,
+    readCurrent: (_caller, _binding, endpoint) => ['workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/readBytes'].includes(endpoint),
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'candidate-read.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  const peer = { id: brandString<PeerId>('read-plan-control'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const read = () => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read',
+    args: { workspaceFileScopeId: own.sessionId, path: 'candidate-read.txt', range: {} }, peer })
+  const rows = [...ctx.loader.entries()]
+  const preset = rows.find(entry => entry.options.id === 'instruction-preset')!
+  const loop = rows.find(entry => entry.options.id === 'loop')!
+  const calls = [vi.spyOn(preset, 'assertConfigUpdatePlan'), vi.spyOn(loop, 'assertConfigUpdatePlan')]
+  await expect(read()).resolves.toMatchObject({ text: 'owned data' })
+  for (const spy of calls) {
+    expect(spy.mock.calls.length).toBeGreaterThan(0)
+    expect(spy.mock.calls.length).toBeLessThan(100)
+  }
+  const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+  const originalConfig: unknown = preset.options.config
+  const patched = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
+    const result = await stat(...args)
+    preset.options.config = { ...originalConfig as object, id: 'replaced-preset' }
+    return result
+  })
+  try {
+    await expect(read()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(patched).toHaveBeenCalledOnce()
+  } finally { preset.options.config = originalConfig; patched.mockRestore() }
+  const implementation = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
+    .map(fiber => fiber.store?.sessions).find(value => value !== undefined)
+  if (implementation === undefined) throw new Error('Original session provider missing')
+  const originalSessions: unknown = implementation.value
+  const swapped = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
+    const result = await stat(...args)
+    expect(Reflect.set(implementation, 'value', {})).toBe(true)
+    return result
+  })
+  try {
+    await expect(read()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(swapped).toHaveBeenCalledOnce()
+  } finally { Reflect.set(implementation, 'value', originalSessions); swapped.mockRestore() }
+  await expect(read()).resolves.toMatchObject({ text: 'owned data' })
+})
+
+it('uses one pinned Root check in factory business admission and rejects synchronous replacement', async () => {
+  const f = await fixture()
+  vi.spyOn(f.root.peAccountRuntime, 'assertRecipeSealed').mockImplementation(() => {})
+  const native = f.recipe.native
+  if (native === undefined) throw new Error('Original native preparation missing')
+  const originalRoot = native.assertRootCurrent, root = vi.fn(originalRoot)
+  if (!Reflect.set(native, 'assertRootCurrent', root)) throw new Error('Root fixture callback could not be installed')
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  // This native-only factory fixture cannot establish production readiness; model the ready slot locally.
+  const slots: unknown = Reflect.get(f.factory, 'slots')
+  if (!(slots instanceof Map)) throw new Error('Original factory slots missing')
+  const slot: unknown = slots.get(outcome.binding.accountId)
+  if (typeof slot !== 'object' || slot === null) throw new Error('Original factory slot missing')
+  const state: unknown = Reflect.get(slot, 'state')
+  if (!Reflect.set(slot, 'state', 'ready')) throw new Error('Fixture ready state unavailable')
+  const pinned: unknown = Reflect.get(slot, 'nativeRoot'), integration: unknown = Reflect.get(slot, 'integration')
+  try {
+    root.mockClear()
+    expect(() => { f.factory.assertBusinessCurrent(outcome.binding) }).not.toThrow()
+    expect(root).toHaveBeenCalledOnce()
+    const owner = new Context(), runtime = new PeAccountRuntime(owner,
+      { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+    const control = { phase: 'active', config: { recipeVersion: outcome.binding.recipeVersion }, factory: f.factory }
+    vi.spyOn(runtime, 'assertRecipeSealed').mockImplementation(() => { root() })
+    Reflect.set(runtime, 'control', control)
+    try {
+      root.mockClear()
+      expect(() => { runtime.assertBusinessCurrent(outcome.binding) }).not.toThrow()
+      expect(root).toHaveBeenCalledOnce()
+      const wrong = { ...outcome.binding, recipeVersion: 'different-recipe' }
+      expect(() => { runtime.assertBusinessCurrent(wrong) }).toThrow()
+      Reflect.set(control.config, 'recovery', {})
+      expect(() => { runtime.assertBusinessCurrent(outcome.binding) }).toThrow('Maintenance recovery')
+      Reflect.deleteProperty(control.config, 'recovery')
+      root.mockImplementationOnce(() => { Reflect.set(runtime, 'control', { ...control }) })
+      expect(() => { runtime.assertBusinessCurrent(outcome.binding) }).toThrow('original Root control changed')
+      Reflect.set(runtime, 'control', control)
+    } finally {
+      Reflect.set(runtime, 'control', undefined)
+      await owner.fiber.dispose()
+    }
+    Reflect.deleteProperty(slot, 'nativeRoot')
+    expect(() => { f.factory.assertBusinessCurrent(outcome.binding, true) }).toThrow('Root check is unavailable')
+    Reflect.set(slot, 'nativeRoot', pinned)
+    Reflect.deleteProperty(f.recipe, 'native')
+    expect(() => { f.factory.assertBusinessCurrent(outcome.binding, true) }).toThrow('original native Root check')
+    Reflect.set(f.recipe, 'native', native)
+    Reflect.deleteProperty(slot, 'integration')
+    expect(() => { f.factory.assertBusinessCurrent(outcome.binding, true) }).toThrow('Root check is unavailable')
+    Reflect.set(slot, 'integration', integration)
+    expect(Reflect.set(native, 'assertRootCurrent', () => {})).toBe(true)
+    expect(() => { f.factory.assertBusinessCurrent(outcome.binding) }).toThrow('original native Root check')
+    expect(Reflect.set(native, 'assertRootCurrent', root)).toBe(true)
+    root.mockImplementationOnce(() => { Reflect.set(native, 'assertRootCurrent', () => {}) })
+    expect(() => { f.factory.assertBusinessCurrent(outcome.binding) }).toThrow('native Root check changed')
+  } finally {
+    Reflect.set(native, 'assertRootCurrent', root)
+    Reflect.set(f.recipe, 'native', native)
+    Reflect.set(slot, 'nativeRoot', pinned)
+    Reflect.set(slot, 'integration', integration)
+    Reflect.set(slot, 'state', state)
+  }
+})
+
+it('rechecks the original Root plan after the cold file scope stat awaits', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+    readCurrent: (_caller, _binding, endpoint) => endpoint === 'workspaceFiles/read',
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'root-plan-read.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  const native = f.recipe.native, entry = [...f.root.loader.entries()].find(row => row.options.id === 'runtime')
+  if (native === undefined || entry === undefined) throw new Error('Original Root preparation or entry missing')
+  const originalConfig: unknown = entry.options.config, plan = entry.prepareConfigUpdate(originalConfig)
+  vi.spyOn(native, 'assertRootCurrent').mockImplementation(() => { entry.assertConfigUpdatePlan(plan) })
+  const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+  const changed = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
+    const value = await stat(...args)
+    entry.options.config = { ...originalConfig as object, maxMountedAccounts: 999 }
+    return value
+  })
+  const peer = { id: brandString<PeerId>('read-root-plan-after-await'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  try {
+    await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read', peer,
+      args: { workspaceFileScopeId: own.sessionId, path: 'root-plan-read.txt', range: {} } })).rejects.toThrow()
+    expect(changed).toHaveBeenCalledOnce()
+  } finally { entry.options.config = originalConfig }
+})
+
+it('uses the actual factory callback to reject Root revocation after a file scope await', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), factoryComponent: true,
+    nativeFiles: true, auditedFileCalls: true, readCurrent: (_caller, _binding, endpoint) => endpoint === 'workspaceFiles/read',
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  let rootCurrent = true
+  const root = vi.spyOn(f.root.peAccountRuntime, 'assertRecipeSealed').mockImplementation(() => {
+    if (!rootCurrent) throw new Error('Original Root revoked during file lookup')
+  })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const slots: unknown = Reflect.get(f.factory, 'slots')
+  const slot: unknown = slots instanceof Map ? slots.get(outcome.binding.accountId) : undefined
+  if (typeof slot !== 'object' || slot === null) throw new Error('Original factory slot missing')
+  const originalState: unknown = Reflect.get(slot, 'state')
+  Reflect.set(slot, 'state', 'ready') // The component owns no PG readiness publication.
+  try {
+    const ctx = outcome.context, own = await ctx.sessionController.create({})
+    writeFileSync(join(f.project, 'factory-root-read.txt'), 'owned data')
+    await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+    const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+    const changed = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
+      const value = await stat(...args)
+      rootCurrent = false
+      return value
+    })
+    const peer = { id: brandString<PeerId>('factory-root-after-await'), ctx, principal: { kind: 'owner' as const },
+      interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+    root.mockClear()
+    await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read', peer,
+      args: { workspaceFileScopeId: own.sessionId, path: 'factory-root-read.txt', range: {} } }))
+      .rejects.toMatchObject({ code: 'gateway/lookup-failed' })
+    expect(changed).toHaveBeenCalledOnce()
+    expect(root.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(root.mock.results.some(result => result.type === 'throw')).toBe(true)
+  } finally {
+    rootCurrent = true
+    Reflect.set(slot, 'state', originalState)
+  }
 })

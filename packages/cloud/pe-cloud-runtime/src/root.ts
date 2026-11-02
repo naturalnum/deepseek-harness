@@ -449,9 +449,15 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * @param binding Original installed graph binding; unpublished, stale and closed graphs reject.
    */
   assertBusinessCurrent(binding: AccountBinding): void {
-    this.assertBusinessMode(this.activeControl())
-    this.assertRecipeSealed(binding.recipeVersion)
-    this.activeControl().factory.assertBusinessCurrent(binding)
+    const control = this.activeControl()
+    this.assertBusinessMode(control)
+    if (binding.recipeVersion !== control.config.recipeVersion) {
+      this.assertRecipeSealed(binding.recipeVersion)
+      throw new AccountRuntimeError('cloud/stale-generation', 'The account recipe does not match the current Root')
+    }
+    control.factory.assertBusinessCurrent(binding, true)
+    if (this.activeControl() !== control) throw new AccountRuntimeError('cloud/stale-generation', 'The original Root control changed')
+    this.assertBusinessMode(control)
   }
 
   /**
@@ -770,7 +776,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
               if (api === undefined) throw new AccountMountPrerequisiteError()
               api.assertProvisionableModel(provider, model)
             },
-            (current) => { this.assertRecipeSealed(config.recipeVersion); control.factory.assertBusinessCurrent(current) },
+            (current) => { this.assertBusinessCurrent(current) },
             this.fileReadTiming,
           ),
           ...!hasReadCarrier(selectedAuth) ? {} : { readCurrent: (caller, binding, endpoint) => {

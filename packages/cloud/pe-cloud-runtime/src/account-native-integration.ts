@@ -177,14 +177,14 @@ export class AccountNativeIntegration {
    * @param ctx Independent native prepare scope, never the shared Root context.
    * @param binding Exact runtime-installed generation.
    * @param mountCurrent Factory's preparation/current check.
-   * @param businessCurrent Factory's separate ready-publication check.
+   * @param rootBusinessCurrent Factory's current ready binding and original Root seal check.
    * @param unpublished Factory's actual mounting-only registration window.
    * @param containSaveFailure Original synchronous factory closure; required for selected mutable capabilities and never throws.
    * @param assertReconfiguring Original factory check for its same-generation exclusive configuration window.
    */
   prepare(
     ctx: Context, binding: AccountBinding,
-    mountCurrent: (binding: AccountBinding) => void, businessCurrent: (binding: AccountBinding) => void,
+    mountCurrent: (binding: AccountBinding) => void, rootBusinessCurrent: (binding: AccountBinding) => void,
     unpublished: () => void, containSaveFailure?: () => void, assertReconfiguring?: () => void,
   ): void {
     if (this.prepared || this.stopping !== undefined) {
@@ -211,7 +211,7 @@ export class AccountNativeIntegration {
       ...fileReadTiming === undefined ? {} : {
         timeFileInventory: (work: () => void) => { fileReadTiming.measure('file-inventory', work) },
       },
-      assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
+      assertBusinessCurrent: (current) => { rootBusinessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
       retainOfficeLifecycle: (office) => {
@@ -225,7 +225,7 @@ export class AccountNativeIntegration {
     })
     this.api = api
     this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) }, {
-      assertBusinessCurrent: () => { this.input.assertRootCurrent(); businessCurrent(binding) },
+      assertBusinessCurrent: () => { rootBusinessCurrent(binding) },
       getAgent: id => ctx.get('agents')?.get(id),
       projectForAgent: agent => requireGuards(ctx).projectForAgent(agent),
       projectForSession: session => requireGuards(ctx).projectForSession(session),
@@ -237,7 +237,7 @@ export class AccountNativeIntegration {
     const attachments = attachmentLimits === undefined ? undefined : new AccountAttachments(
       ctx, binding, attachmentLimits,
       () => requireFiles(ctx), agent => requireGuards(agent.ctx).projectForAgent(agent),
-      (caller) => { api.assertInstalled(caller); this.input.assertRootCurrent(); businessCurrent(binding) },
+      (caller) => { api.assertInstalled(caller); this.input.assertRootCurrent(); rootBusinessCurrent(binding) },
     )
     if (this.input.files !== undefined) {
       const files = this.input.files(ctx, binding, async (caller, signal) => {
@@ -248,10 +248,7 @@ export class AccountNativeIntegration {
           const fileRead = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
             && (method === 'read' || method === 'stat' || method === 'readBytes')
             && this.input.readCurrent?.(caller, binding, endpoint) === true
-          if (!fileRead) {
-            this.input.assertRootCurrent()
-            businessCurrent(binding)
-          }
+          if (!fileRead) rootBusinessCurrent(binding)
           if (invocation?.service === 'officeToPdf' || invocation?.request.namespace === 'officeToPdf') {
             if (invocation.service !== 'officeToPdf' || invocation.request.namespace !== 'officeToPdf'
               || invocation.request.method !== 'render') {
@@ -344,7 +341,7 @@ export class AccountNativeIntegration {
       }
       api.prepareCloudProjects(ctx, { createProject: async (title, signal) => {
         this.input.assertRootCurrent()
-        businessCurrent(binding)
+        rootBusinessCurrent(binding)
         signal.throwIfAborted()
         const use = await borrow(binding)
         try {
@@ -357,7 +354,7 @@ export class AccountNativeIntegration {
           requireGuards(ctx).assertWorkspace(workspace)
           use.assertCurrent()
           this.input.assertRootCurrent()
-          businessCurrent(binding)
+          rootBusinessCurrent(binding)
           return { workspace: { workspaceId: workspace.id, path: workspace.path, title: workspace.title,
             sessionIds: [...workspace.sessionIds], createdAt: workspace.createdAt, updatedAt: workspace.updatedAt } }
         } finally { use.release() }
@@ -367,20 +364,20 @@ export class AccountNativeIntegration {
     // API business admission precedes this fixed-binding projection; construction never reads a partial project.
     const projectDirectory = Object.freeze({ binding, prepare: async (cwd: string) => {
       this.input.assertRootCurrent()
-      businessCurrent(binding)
+      rootBusinessCurrent(binding)
       const approved = requireGuards(ctx), workspace = approved.projectForDirectory(cwd)
       const source = requireFiles(ctx)
       const installed = await source.projectFor(workspace, binding.lifetime)
       this.input.assertRootCurrent()
-      businessCurrent(binding)
+      rootBusinessCurrent(binding)
       approved.assertWorkspace(workspace)
       await installed.projectDirectory.prepare(cwd)
       this.input.assertRootCurrent()
-      businessCurrent(binding)
+      rootBusinessCurrent(binding)
       approved.assertWorkspace(workspace)
       const checked = await requireFiles(ctx).projectFor(workspace, binding.lifetime)
       this.input.assertRootCurrent()
-      businessCurrent(binding)
+      rootBusinessCurrent(binding)
       approved.assertWorkspace(workspace)
       if (checked.binding !== binding || checked.workspace !== workspace || checked.projectDirectory.binding !== binding) {
         throw new AccountRuntimeError('cloud/stale-generation', 'The account files project changed during directory preparation')
@@ -390,7 +387,7 @@ export class AccountNativeIntegration {
       const sources = filesOwner
       const active = (agent: Parameters<AccountNativeGuards['sessions']['assertActiveScope']>[0]): void => {
         this.input.assertRootCurrent()
-        businessCurrent(binding)
+        rootBusinessCurrent(binding)
         sources.assertInstalled(agent.ctx)
         requireGuards(agent.ctx).sessions.assertActiveScope(agent)
       }
@@ -573,7 +570,6 @@ export class AccountNativeIntegration {
         api.installLlmGuard(owner, approved.allowedModel)
       },
     }
-    const assertRootCurrent = (): void => { this.input.assertRootCurrent() }
     const builtins = ctx.loader.builtins
     const pluginManager = api.providers.pluginManager
     const entries = {
@@ -590,11 +586,11 @@ export class AccountNativeIntegration {
             throw new AccountRuntimeError('cloud/account-unavailable', 'The selected account skill preparation is unavailable')
           }
           const resources = prepareAccountSkillResources(ctx, binding, requireFiles, requireGuards, (caller) => {
-            this.input.assertRootCurrent(); businessCurrent(binding); api.assertInstalled(caller)
+            this.input.assertRootCurrent(); rootBusinessCurrent(binding); api.assertInstalled(caller)
           })
           this.skills = api.prepareCloudSkills(owner, { ...input.skills, files: filesOwner, resources,
             managed: { ...input.skills.managed, resources, assertWorkspace: (workspace) => {
-              api.assertInstalled(owner); this.input.assertRootCurrent(); businessCurrent(binding)
+              api.assertInstalled(owner); this.input.assertRootCurrent(); rootBusinessCurrent(binding)
               requireGuards(owner).assertWorkspace(workspace)
             } },
           })
@@ -636,12 +632,10 @@ export class AccountNativeIntegration {
         apply(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]) {
           api.createWorkspaceFiles(owner, nativeConfig)
           ctx.typert.lookups.configure('workspaceFileScope', async (id) => {
-            assertRootCurrent()
-            businessCurrent(binding)
+            rootBusinessCurrent(binding)
             api.assertInstalled(owner)
             const selected = await requireGuards(owner).resolveFileScope(id)
-            assertRootCurrent()
-            businessCurrent(binding)
+            rootBusinessCurrent(binding)
             api.assertInstalled(owner)
             return selected
           })

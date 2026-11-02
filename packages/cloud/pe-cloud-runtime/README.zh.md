@@ -60,6 +60,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 `inspectRecipe()` 返回冻结的计数和有限问题标识，不暴露路径、凭据或 provider 对象。Loader 变化、provider 替换或关闭、参与者移除、显式 `revokeRecipe()` 及 runtime 关闭都会使保留的审核失效。`assertRecipeSealed()` 要求完整审核及原始 files pool/storage owner 持续有效。缺少实际存储仍以 `storage-root-capability-missing` 拒绝。既有 AppReady 回调在原生启动成功后尝试完整审核；该通知自身不授予准入。
 
+Factory 业务准入保留原生准备对象和原 Root 回调，每次同步准入只检查该 Root 一次。Integration 要求此合并的 Root/ready 检查；文件 scope lookup 在 await 前后保留该检查。完整 Root 检查先观察 provider 健康和存储，再核验原生 Loader plan，最后检查原登记身份和撤销状态。获批 Host 回调不得在 Loader 验证 plan 时修改其他条目；此机制不隔离任意 Host JavaScript。既有捕获式读取检查仍将 plan 验证留给完整准入和响应检查。
+
 AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写入原审核的状态、计数及固定问题码。首次转为 revoked 时，还记录固定事件、进程 id、先前状态及内部原因；provider 身份或健康检查拒绝时，只附带固定 provider key。不记录配方配置、版本、错误或路径。日志失败不改变原封口、启动或拒绝结果。
 
 有界 `ordinary-profile-ready` info 事件仅在原 `onReady` 回调成功完成配方封口后产生，只证明普通 Root 启动，不宣称所有账户均已 ready，且不含 Key 或数据体。

@@ -30,7 +30,7 @@ interface EntryFact { readonly entry: Entry; readonly fiber: Fiber; readonly pla
 interface Candidate {
   readonly input: RootRecipeInput
   readonly facts: readonly EntryFact[]
-  readonly providers: readonly { key: string; value: object; fiber: Fiber }[]
+  readonly providers: readonly { key: string; value: object; fiber: Fiber; record: object; registered: unknown }[]
   readonly participants: readonly RegisteredRootParticipant[]
   readonly manifest: object | undefined
   readonly storage?: Readonly<{ pool: object; owner: RootStorageOwner }>
@@ -154,7 +154,7 @@ export class RootRecipeAudit {
       }
     }
     const providers: Candidate['providers'][number][] = []
-    const implementations = new Map<string, { fiber: Fiber; value: unknown } | null>()
+    const implementations = new Map<string, { fiber: Fiber; value: unknown; record: object } | null>()
     for (const runtime of root.registry.values()) {
       consume()
       for (const fiber of runtime.fibers) {
@@ -163,7 +163,8 @@ export class RootRecipeAudit {
         for (const expected of input.providers) {
           const implementation = fiber.store?.[expected.key]
           if (implementation === undefined || implementation.fiber !== fiber) continue
-          implementations.set(expected.key, implementations.has(expected.key) ? null : { fiber, value: implementation.value })
+          implementations.set(expected.key, implementations.has(expected.key) ? null
+            : { fiber, value: implementation.value, record: implementation })
         }
       }
     }
@@ -187,7 +188,8 @@ export class RootRecipeAudit {
       const plan = entry.prepareConfigUpdate(entry.options.config)
       if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
       facts.set(entry, { entry, fiber: entry.fiber, plan, module: entry.moduleNamespace })
-      providers.push({ key: expected.key, value: original(value), fiber: implementation.fiber })
+      providers.push({ key: expected.key, value: original(value), fiber: implementation.fiber,
+        record: implementation.record, registered: implementation.value })
     }
     const registered = this.participants()
     for (const [id, key, role] of [['files', 'peFilesPool', 'files/root'], ['execution', 'peSandboxCoordinator', 'opensandbox/root']] as const) {
@@ -358,29 +360,13 @@ export class RootRecipeAudit {
   private recheckActual(checkPlans: boolean): void {
     const candidate = this.candidate
     if (candidate === undefined) return
+    const observedState = this.state
     let reason: RevokeReason = 'entry-identity'
     let provider: string | undefined
     try {
-      for (const { entry, fiber, plan, module } of candidate.facts) {
+      for (const { entry, fiber, module } of candidate.facts) {
         reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
-        reason = 'entry-config-plan'
-        if (checkPlans) {
-          if (this.fileReadTiming === undefined) entry.assertConfigUpdatePlan(plan)
-          else {
-            let key: 'root-plan-api' | 'root-plan-runtime' | 'root-plan-access' | 'root-plan-files'
-              | 'root-plan-execution' | 'root-plan-other' = 'root-plan-other'
-            try {
-              const role = candidate.input.roots.find(row => row.module === module)?.role
-              if (role === 'api/root') key = 'root-plan-api'
-              else if (role === 'runtime/root') key = 'root-plan-runtime'
-              else if (role === 'access/root') key = 'root-plan-access'
-              else if (role === 'files/root') key = 'root-plan-files'
-              else if (role === 'opensandbox/root') key = 'root-plan-execution'
-            } catch (_error) { /* A diagnostic label cannot affect the original guard. */ }
-            this.fileReadTiming.measure(key, () => { entry.assertConfigUpdatePlan(plan) })
-          }
-        }
       }
       for (const { key, value, fiber } of candidate.providers) {
         reason = 'provider-identity'; provider = key
@@ -409,6 +395,47 @@ export class RootRecipeAudit {
         reason = 'storage-current'
         candidate.storage.owner.assertRootCurrent()
       }
+      for (const { entry, fiber, plan, module } of candidate.facts) {
+        reason = 'entry-identity'
+        if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        reason = 'entry-config-plan'
+        if (checkPlans) {
+          if (this.fileReadTiming === undefined) entry.assertConfigUpdatePlan(plan)
+          else {
+            let key: 'root-plan-api' | 'root-plan-runtime' | 'root-plan-access' | 'root-plan-files'
+              | 'root-plan-execution' | 'root-plan-other' = 'root-plan-other'
+            try {
+              const role = candidate.input.roots.find(row => row.module === module)?.role
+              if (role === 'api/root') key = 'root-plan-api'
+              else if (role === 'runtime/root') key = 'root-plan-runtime'
+              else if (role === 'access/root') key = 'root-plan-access'
+              else if (role === 'files/root') key = 'root-plan-files'
+              else if (role === 'opensandbox/root') key = 'root-plan-execution'
+            } catch (_error) { /* A diagnostic label cannot affect the original guard. */ }
+            this.fileReadTiming.measure(key, () => { entry.assertConfigUpdatePlan(plan) })
+          }
+        }
+      }
+      // Plan validation may synchronously change a provider or withdraw the original seal.
+      // Finish with identities only; do not call the provider health/storage callbacks again.
+      const root = this.owner.root
+      for (const { key, fiber, record, registered } of candidate.providers) {
+        reason = 'provider-identity'; provider = key
+        const label = root[symbols.isolate][key]
+        const installed = label === undefined ? undefined : root.reflect.store[label]
+        if (installed === undefined || installed !== record || installed !== fiber.store?.[key] || installed.value !== registered
+          || fiber.state !== FiberState.ACTIVE) throw new Error('changed')
+      }
+      provider = undefined; reason = 'manifest'
+      const exposureLabel = root[symbols.isolate].peExposure
+      const exposure: unknown = exposureLabel === undefined ? undefined : root.reflect.store[exposureLabel]?.value
+      if (candidate.manifest !== undefined && (!(exposure instanceof ExposureService)
+        || exposure.policy.manifest !== candidate.manifest)) throw new Error('changed')
+      for (const { entry, fiber, module } of candidate.facts) {
+        reason = 'entry-identity'
+        if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+      }
+      if (this.candidate !== candidate || this.state !== observedState) throw new Error('changed')
     } catch (_cause) { this.revoke(reason, provider) }
   }
 
