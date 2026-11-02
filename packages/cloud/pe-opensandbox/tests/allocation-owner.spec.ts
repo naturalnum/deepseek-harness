@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { SessionAllocationOwner, type AllocationBackend, type NativeAllocationRequest } from '../src/allocation-owner.ts'
 import { AllocationQueryNotSubmittedError } from '../src/allocation-store.ts'
@@ -100,6 +102,35 @@ function fixture() {
 }
 
 describe('Root actual Session allocation ownership', () => {
+  it('retires the original allocation after its native Agent handle disposes the Session', async () => {
+    const f = fixture(), ctx = new Context()
+    await mountAgentLoopTestDependencies(ctx)
+    await mountAgentLoopTestHarness(ctx)
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    const handles = await Promise.all(['a', 'b', 'c'].map(id =>
+      ctx.agents.create({ sessionId: SessionId(id), meta: { cwd: '/project' } })))
+    const requestFor = (index: number): NativeAllocationRequest<{ readonly marker: string }> => {
+      const session = handles[index]!.agent.session, base = f.request(session.id)
+      const current = (): void => { if (ctx.sessions.get(session.id) !== session) throw new Error('Original Session was disposed') }
+      return { ...base, assertCurrent: current, prepareMount: async () => ({ ...await base.prepareMount(), assertCurrent: current }) }
+    }
+    f.backend.create.mockImplementation(async intent => ({ sandboxId: `sandbox-${intent.sessionId}` }))
+    f.stopped.resolve()
+    const a = requestFor(0), b = requestFor(1), c = requestFor(2)
+    const readyA = await f.owner.prepare(a)
+    await f.owner.prepare(b)
+    expect(f.owner.inspect().allocations).toBe(2)
+    await handles[0]!.dispose()
+    expect(ctx.sessions.get(a.sessionId)).toBeUndefined()
+    await expect(f.owner.prepare(a)).rejects.toThrow('Original Session was disposed')
+    expect(f.owner.preparedForRetirement(a)).toBe(readyA)
+    await f.owner.stop(a)
+    expect(f.owner.inspect().allocations).toBe(1)
+    await expect(f.owner.prepare(c)).resolves.toMatchObject({ sandboxId: 'sandbox-c' })
+    expect(f.owner.inspect().allocations).toBe(2)
+    await f.owner.close()
+  })
+
   it('observes only the original settled ready handle for idle retirement without preparing or stopping it', async () => {
     const f = fixture(), request = f.request()
     expect(f.owner.preparedForRetirement(request)).toBeUndefined()

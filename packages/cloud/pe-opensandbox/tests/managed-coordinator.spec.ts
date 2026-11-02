@@ -18,6 +18,7 @@ import { assertAccountExecutionProviders, installIssuedExecutionPort, withAccoun
   accountServiceAvailability, accountTerminalLimits } from '../src/account-port.ts'
 import type { AccountExecutionPort } from '../src/account-port.ts'
 import type { SandboxAllocation } from '../src/allocation-types.ts'
+import { PostgresAllocationStore } from '../src/allocation-store.ts'
 import { allocationMigrationSql } from '../src/migrations/allocations.ts'
 import { SdkAllocationBackend } from '../src/sdk-lifecycle.ts'
 import type { OwnedSdkTransport, SdkLifecycleConfig } from '../src/lifecycle-types.ts'
@@ -439,12 +440,14 @@ async function applicationFixture(options: {
     for (const channel of channels) channel.empty()
   })
   let serial = 0
-  const account = async (id: string, sessions = 2) => {
+  const account = async (id: string, sessions = 2, ownedHandles = false) => {
     const a = f.bind(id)
     await mountAgentLoopTestDependencies(a.ctx, { tools: { mode: 'native' } })
     provideWorkingDirectoryFixture(a.ctx, '/project')
     const harness = await mountAgentLoopTestHarness(a.ctx)
-    const agents = await Promise.all(Array.from({ length: sessions }, (_, i) =>
+    const handles = ownedHandles ? await Promise.all(Array.from({ length: sessions }, (_, i) =>
+      a.ctx.agents.create({ sessionId: SessionId(`${id}-${i + 1}`), meta: { cwd: '/project' } }))) : []
+    const agents = ownedHandles ? handles.map(handle => handle.agent) : await Promise.all(Array.from({ length: sessions }, (_, i) =>
       harness.create(SessionId(`${id}-${i + 1}`), {}, { cwd: '/project' })))
     const workspace: Workspace = { id: brandString<Workspace['id']>(`${id}-project`), path: '/project',
       sessionIds: agents.map(agent => agent.session.id), title: 'component', createdAt: '2026-10-21T00:00:00Z', updatedAt: '2026-10-21T00:00:00Z',
@@ -469,7 +472,7 @@ async function applicationFixture(options: {
           { method: 'GET', resourcePath: '/', headers: [] },
           { maxBodyBytes: 64, maxChunkBytes: 16, maxChunks: 4, maxHeaderCount: 8, maxHeaderBytes: 512 },
           new AbortController().signal, async () => {})))
-    return { ...a, agents, start, borrow }
+    return { ...a, agents, handles, workspace, start, borrow }
   }
   return { ...f, prepare, service, application, attempts, account,
     emptyChannels: () => { for (const channel of channels) channel.empty() } }
@@ -664,8 +667,8 @@ it.each([true, false])('uses original NativeBoot and account entry with service 
 
 
 /** Actual Tools/Agent/subprocess/coordinator path; the existing allocation and carrier frontiers are scripted. */
-async function continuationFixture(sessions = 2) {
-  const f = await applicationFixture(), a = await f.account('continuation', sessions), counts = new Map<string, number>()
+async function continuationFixture(sessions = 2, ownedHandles = false) {
+  const f = await applicationFixture(), a = await f.account('continuation', sessions, ownedHandles), counts = new Map<string, number>()
   let generation = 0, serial = 0
   f.prepare.mockImplementation(async () => ({ sandboxId: `compute-${generation}`, runtimeIdentity: String(generation).padStart(64, '1'),
     protocolVersion: 'scripted-original-frontier', capabilities: ['argv-collect'] }))
@@ -699,8 +702,8 @@ async function continuationFixture(sessions = 2) {
 }
 
 /** Exercises original coordinator/native ownership; external ready/stop frontiers are scripted, never deployment evidence. */
-async function idleComputeFixture() {
-  const f = await continuationFixture(4), prepared = new Map<object, PreparedSandbox>()
+async function idleComputeFixture(ownedHandles = false) {
+  const f = await continuationFixture(4, ownedHandles), prepared = new Map<object, PreparedSandbox>()
   let serial = 0
   f.prepare.mockImplementation(async (request) => {
     let value = prepared.get(request)
@@ -730,6 +733,91 @@ it('reuses the fixed two compute slots across four idle Sessions only after orig
   expect(f.stop.mock.invocationCallOrder[0]).toBeLessThan(f.retire.mock.invocationCallOrder[0]!)
   expect(f.retire.mock.invocationCallOrder[0]).toBeLessThan(f.prepare.mock.invocationCallOrder[2]!)
   expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+})
+
+it.each(['third', 'same-id', 'same-id-cancel', 'uncertain'] as const)('reclaims a disposed native Session through the original allocation owner; case=%s', async (scenario) => {
+  // The Agent handles, coordinator and allocation owner are real; SQL, mounts and SDK are controlled substitutes.
+  const realPrepare = SessionAllocationOwner.prototype.prepare
+  const realStop = SessionAllocationOwner.prototype.stop
+  const realSelect = SessionAllocationOwner.prototype.preparedForRetirement
+  const f = await idleComputeFixture(true)
+  const rows = new Map<string, SandboxAllocation>()
+  const resources: unknown = Reflect.get(f.owner, 'resources')
+  if (resources === null || typeof resources !== 'object') throw new Error('Original allocation owner absent')
+  const store: unknown = Reflect.get(resources, 'store')
+  if (!(store instanceof PostgresAllocationStore)) throw new Error('Original allocation store absent')
+  vi.spyOn(store, 'begin').mockImplementation(async (intent) => {
+    const row: SandboxAllocation = { ...intent, state: 'creating', sandboxId: null,
+      lastActivityAt: intent.requestedAt, lastCheckedAt: intent.requestedAt, runtimeIdentity: null,
+      executionProtocolVersion: null, executionCapabilities: [], failureCode: null }
+    rows.set(row.allocationId, row)
+    return { allocation: row, inserted: true }
+  })
+  vi.spyOn(store, 'transition').mockImplementation(async (expected, change) => {
+    const row = rows.get(expected.allocationId)
+    if (row === undefined || row.state !== expected.state) throw new Error('Original allocation changed')
+    const next: SandboxAllocation = { ...row, state: change.to, sandboxId: change.sandboxId ?? row.sandboxId,
+      ...(change.to === 'ready' ? { runtimeIdentity: change.runtimeIdentity,
+        executionProtocolVersion: change.executionProtocolVersion, executionCapabilities: change.executionCapabilities } : {}) }
+    rows.set(next.allocationId, next)
+    return next
+  })
+  vi.spyOn(store, 'releaseStopped').mockImplementation(async (expected) => {
+    const row = rows.get(expected.allocationId)
+    if (row?.state !== 'stopping') throw new Error('Original allocation has not stopped')
+    const next: SandboxAllocation = { ...row, state: 'released' }
+    rows.set(next.allocationId, next)
+    return next
+  })
+  const releaseStop = Promise.withResolvers<undefined>()
+  onTestFinished(() => { releaseStop.resolve(undefined) })
+  const physicalStop = vi.fn(async () => {
+    if (scenario === 'uncertain') throw new Error('Original physical stop is uncertain')
+    if (scenario === 'same-id-cancel') await releaseStop.promise
+  })
+  const allocationOwner = new SessionAllocationOwner(store, {
+    create: async intent => ({ sandboxId: `sandbox-${intent.sessionId}` }),
+    prepare: async created => ({ ...created, runtimeIdentity: '1'.repeat(64), protocolVersion: 'fixture', capabilities: ['argv-collect'] }),
+    stop: physicalStop,
+  }, { ...config.allocations, maxAllocations: 2, maxAllocationsPerAccount: 2 })
+  Reflect.set(resources, 'allocations', allocationOwner)
+  f.a.authority.projectForSession.mockImplementation((session) => {
+    if (f.a.ctx.sessions.get(session.id) !== session) throw new Error('Original Session was disposed')
+    return f.a.workspace
+  })
+  f.prepare.mockImplementation(async (request, signal) => {
+    Reflect.set(request, 'prepareMount', async () => ({ value: {}, projectMountVersion: 'mount-v1',
+      assertCurrent: () => { request.assertCurrent() }, release: () => {} }))
+    return await Reflect.apply(realPrepare, allocationOwner, [request, signal]) as PreparedSandbox
+  })
+  f.stop.mockImplementation(async (request) => { await Reflect.apply(realStop, allocationOwner, [request]) })
+  f.observe.mockImplementation(request => Reflect.apply(realSelect, allocationOwner, [request]) as PreparedSandbox | undefined)
+  f.retire.mockImplementation(() => {})
+  expect((await f.runSession(0)).isError).toBe(false)
+  expect((await f.runSession(1)).isError).toBe(false)
+  await f.a.handles[0]!.dispose()
+  expect(f.a.ctx.sessions.get(f.a.agents[0]!.session.id)).toBeUndefined()
+  if (scenario === 'same-id' || scenario === 'same-id-cancel') {
+    const restored = await f.a.ctx.agents.create({ sessionId: f.a.agents[0]!.session.id, meta: { cwd: '/project' } })
+    f.a.agents[0] = restored.agent
+  }
+  const index = scenario === 'same-id' || scenario === 'same-id-cancel' ? 0 : 2
+  if (scenario === 'same-id-cancel') {
+    const cancel = new AbortController(), pending = f.runSession(index, cancel.signal)
+    await vi.waitFor(() => { expect(physicalStop).toHaveBeenCalledOnce() })
+    cancel.abort(); releaseStop.resolve(undefined)
+    expect((await pending).isError).toBe(true)
+    await vi.waitFor(() => { expect(allocationOwner.inspect().allocations).toBe(1) })
+    expect((await f.runSession(index)).isError).toBe(false)
+  } else expect((await f.runSession(index)).isError).toBe(scenario === 'uncertain')
+  expect(physicalStop).toHaveBeenCalledOnce()
+  expect(allocationOwner.inspect().allocations).toBe(2)
+  expect([...rows.values()].filter(row => row.state === 'released')).toHaveLength(scenario === 'uncertain' ? 0 : 1)
+  if (scenario === 'uncertain') {
+    expect((await f.runSession(2)).isError).toBe(true)
+    expect(physicalStop).toHaveBeenCalledOnce()
+    expect(rows.size).toBe(2)
+  }
 })
 
 it.each([0, 3])('shares a pending idle retirement with Session index %i without closing unrelated work', async (waitingSession) => {

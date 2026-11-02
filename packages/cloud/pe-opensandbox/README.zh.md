@@ -75,7 +75,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 尚未提交的前台命令可在原有四记录或300秒驻留上限处更换已完全停稳的计算资源。Root 先等待原物理停止、released 元数据及挂载释放完成，再为同一 Session 环境取得新的 files 授权并启动新运行时。活跃服务、运行范围、应用 I/O 及未知引用都会阻止更换。已确认停止的 SDK、bootstrap 和运行时记录可被回收，原 intent 对象保持撤销；未解决记录继续占用容量。
 
-并发计算容量满时，新 Session 可淘汰一个没有在途调用、保留输出、服务或应用 I/O 的 ready 空闲计算资源。Root 只关闭被淘汰 Session 的新准入，等待原 allocation 停止和 SDK/运行时退账完成，再删除缓存选择并准入替代资源。并发调用共享同一退账操作，失败或未知责任继续保留。持久环境数据及原 allocation、记录和作用域配额均不变，空闲历史 Session 不再长期占满计算容量。共享路径的环境布局仍须使用经过审查且显式固定的 Native 守卫。
+并发计算容量满时，新 Session 可淘汰一个没有在途调用、保留输出、服务或应用 I/O 的 ready 空闲计算资源。Root 只关闭被淘汰 Session 的新准入，等待原 allocation 停止和 SDK/运行时退账完成，再删除缓存选择并准入替代资源。即使原 Session 已销毁，清理仍使用原先保留的 allocation；新业务仍要求当前 Session 和 Workspace。同一 ID 的 Session 重新打开时，先退役原计算资源，再创建新的 allocation。并发调用共享同一退账操作，失败或未知责任继续保留。持久环境数据及原 allocation、记录和作用域配额均不变，空闲历史 Session 不再长期占满计算容量。共享路径的环境布局仍须使用经过审查且显式固定的 Native 守卫。
 
 私有的[旧分配恢复 helper](src/allocation-recovery.ts)有界枚举并冻结精确旧账户/epoch 的全部非终态记录。Root 的可信 verifier 必须证明旧进程/writer 已失效且永久失去迟到启动能力。已接受创建须有精确物理销毁证明，sandbox id 为空时还须独立创建绑定，随后调用原有 stopping/released CAS。严格 v2 见证另只允许 provider 创建前已完成的 `fixed-ttl-bounds` 或 `host-bind-bounds` 拒绝：精确 intent 及拒绝/请求完成/未创建/迟到启动撤销四项引用，只授权原 `failNotCreated` CAS 写入固定 failed/null-id 终态。HTTP500 或空列表本身不能取得资格。未知写入只读对账原捕获 postimage，不重放；未解决责任仍阻止恢复。helper 只向 runtime 独立恢复 CAS 返回覆盖引用，不授予 provider 权限。实际维护、PostgreSQL 与后端验收仍须分别完成。
 

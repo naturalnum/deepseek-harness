@@ -215,6 +215,20 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   }
 
   /**
+   * Require the acquiring call to be the sole remaining owner of a replaced Session identity.
+   * @param scope Original foreground acquisition that has not obtained its new channel.
+   * @throws When current admission, another invocation or a retained command prevents retirement.
+   */
+  assertReopenedSessionRetirement(scope: ExecutionScope<Workspace>): void {
+    this.assertContinuation(scope)
+    if (this.calls.hasOtherSessionCall(scope.sessionId, scope)) throw this.failure()
+    const current = this.active.get(scope.sessionId)?.foreground
+    for (const row of this.records.values()) {
+      if (row !== current && row.scope.sessionId === scope.sessionId) throw this.failure()
+    }
+  }
+
+  /**
    * Revoke completed old handles after original physical stop, terminal metadata and mount release.
    * @param scope The same original foreground acquisition that has not yet obtained its new channel.
    */

@@ -62,6 +62,20 @@ it('keeps concurrent native invocations separate across awaits and retains them 
   expect(f.released).toHaveBeenCalledTimes(2)
 })
 
+it('distinguishes the reopening invocation from another retained call in the same Session', async () => {
+  const f = fixture(), first = f.exec('A'), second = f.exec('A')
+  await f.calls.run(first, async () => {
+    const scope = f.calls.capture(f.ctx).scope
+    expect(f.calls.hasOtherSessionCall(SessionId('A'), scope)).toBe(false)
+    await f.calls.run(second, async () => result)
+    expect(f.calls.hasOtherSessionCall(SessionId('A'), scope)).toBe(true)
+    f.calls.release(second.token)
+    expect(f.calls.hasOtherSessionCall(SessionId('A'), scope)).toBe(false)
+    return result
+  })
+  f.calls.release(first.token)
+})
+
 it('separates operation cancellation from the output-owner lifetime and uses the current native fused signal', async () => {
   const f = fixture(), exec = f.exec(), caller = new AbortController()
   await f.calls.run(exec, async () => {

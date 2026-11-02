@@ -273,8 +273,9 @@ export class SessionAllocationOwner<Mount> {
   /**
    * Observe the original ready result before a Root-owned idle-compute retirement.
    * @param request Exact retained request; copied selections grant no retirement input.
-   * @returns The original prepared object only while ready, current and free of pending allocation work.
-   * This does not fence the Session, stop a backend, renew a lease or prepare another resource.
+   * @returns The original retained prepared object only while ready and free of pending allocation work.
+   * The selection authorizes cleanup only, so a disposed Session or stale mount does not block the original owner
+   * from stopping its own allocation. This does not admit business work, fence the Session, or release resources.
    */
   preparedForRetirement(request: NativeAllocationRequest<Mount>): PreparedSandbox | undefined {
     const work = this.work.get(this.key(request))
@@ -283,8 +284,6 @@ export class SessionAllocationOwner<Mount> {
       || work.released || work.backendStopped || work.waiters.size !== 0 || work.settlement?.ok !== true
       || work.prepared === undefined || work.settlement.value !== work.prepared || work.created === undefined
       || work.created.sandboxId !== work.prepared.sandboxId || work.row?.state !== 'ready' || work.mount === undefined) return undefined
-    request.assertCurrent()
-    work.mount.assertCurrent()
     return work.prepared
   }
 

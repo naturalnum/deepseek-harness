@@ -226,6 +226,17 @@ export class NativeExecutionCalls<Project> {
     return false
   }
 
+  /**
+   * Detect another original invocation before retiring a replaced Session's compute.
+   * @param sessionId Original Session identity whose compute is being considered.
+   * @param scope The acquiring invocation that must remain the sole owner.
+   * @returns Whether another retained invocation still uses this Session identity.
+   */
+  hasOtherSessionCall(sessionId: SessionId, scope: ExecutionScope<Project>): boolean {
+    for (const call of this.calls.values()) if (call.scope.sessionId === sessionId && call.scope !== scope) return true
+    return false
+  }
+
   /** Observe this original invocation issuer without acquiring business admission.
    * @returns True only while its admission is open and every issued invocation has released.
    */

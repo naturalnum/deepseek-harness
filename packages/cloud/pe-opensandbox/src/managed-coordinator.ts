@@ -70,10 +70,13 @@ export interface ManagedExecutionDeployment {
 interface EpochObserver { settle(value: ParticipantReceipt): void }
 
 interface SessionRetirement {
-  readonly request: NativeAllocationRequest<VerifiedExecutionMount>
+  readonly request: ManagedSessionRequest
   readonly prepared: PreparedSandbox
   readonly actual: Promise<void>
+  readonly reopening?: ExecutionScope<Workspace>
 }
+
+type ManagedSessionRequest = NativeAllocationRequest<VerifiedExecutionMount> & { readonly session: Session }
 
 /** Files refused environment preparation before an allocation intent or SDK request existed. */
 class SessionEnvironmentCapacityError extends ExecutionStateError {
@@ -105,7 +108,7 @@ interface AccountWork {
   readonly assertMountCurrent: () => void
   readonly authority: NativeAccountExecutionAuthority
   readonly stopId: OperationId
-  readonly sessions: Map<SessionId, NativeAllocationRequest<VerifiedExecutionMount>>
+  readonly sessions: Map<SessionId, ManagedSessionRequest>
   readonly observers: Set<EpochObserver>
   readonly capacity: { active: number; resident: number; bytes: number; requests: number }
   readonly detach: () => void
@@ -574,19 +577,24 @@ export class ManagedCoordinator extends SandboxCoordinator {
       const retiring = work.retiring
       if (retiring?.request.sessionId === scope.sessionId) { await retiring.actual; continue }
       const existing = work.sessions.get(scope.sessionId)
-      if (existing !== undefined) {
+      if (existing !== undefined && existing.session === scope.agent.session) {
         if (existing.workspaceId !== scope.project.id) this.stale()
         existing.assertCurrent()
         return existing
       }
       if (work.privateFailure !== undefined) this.unavailable()
-      if (work.sessions.size < this.config.allocations.maxAllocationsPerAccount
+      if (existing === undefined && work.sessions.size < this.config.allocations.maxAllocationsPerAccount
         && this.allocations.inspect().allocations < this.config.allocations.maxAllocations) break
       if (retiring !== undefined) { await retiring.actual; continue }
       const commands = work.providers?.commands
       if (commands === undefined) this.unavailable()
-      let selected: Pick<SessionRetirement, 'request' | 'prepared'> | undefined
-      for (const request of work.sessions.values()) {
+      let selected: Pick<SessionRetirement, 'request' | 'prepared' | 'reopening'> | undefined
+      if (existing !== undefined) {
+        if (existing.workspaceId !== scope.project.id) this.stale()
+        commands.assertReopenedSessionRetirement(scope)
+        const prepared = this.allocations.preparedForRetirement(existing)
+        if (prepared !== undefined) selected = { request: existing, prepared, reopening: scope }
+      } else for (const request of work.sessions.values()) {
         if (!commands.isSessionQuiescent(request.sessionId)) continue
         const prepared = this.allocations.preparedForRetirement(request)
         if (prepared !== undefined) { selected = { request, prepared }; break }
@@ -612,7 +620,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
       if (!work.open || work.binding.lifetime.aborted || work.authority.projectForSession(session) !== workspace
         || !workspace.sessionIds.includes(scope.sessionId)) this.stale()
     }
-    const request: NativeAllocationRequest<VerifiedExecutionMount> = { binding: work.binding, sessionId: scope.sessionId,
+    const request: ManagedSessionRequest = { binding: work.binding, session, sessionId: scope.sessionId,
       workspaceId: workspace.id, assertCurrent: current,
       prepareMount: async () => {
         let stage: PreparationFailureStage = 'mount-current'
@@ -669,8 +677,11 @@ export class ManagedCoordinator extends SandboxCoordinator {
    */
   private async retireSession(work: AccountWork, original: SessionRetirement): Promise<void> {
     if (work.retiring !== original || work.sessions.get(original.request.sessionId) !== original.request
-      || work.providers?.commands.isSessionQuiescent(original.request.sessionId) !== true
+      || work.providers?.commands === undefined
       || this.allocations.preparedForRetirement(original.request) !== original.prepared) this.unavailable()
+    if (original.reopening === undefined) {
+      if (!work.providers.commands.isSessionQuiescent(original.request.sessionId)) this.unavailable()
+    } else work.providers.commands.assertReopenedSessionRetirement(original.reopening)
     await this.allocations.stop(original.request)
     this.deployment.backend.retireStopped(original.prepared, (selection) => {
       this.deployment.runtimes.retireStopped(original.prepared, selection)
