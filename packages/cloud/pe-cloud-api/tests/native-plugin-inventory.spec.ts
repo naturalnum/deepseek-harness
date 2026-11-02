@@ -11,7 +11,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import PluginInventoryGateway from '@deepseek-ai/dsh-host-plugin-inventory'
+import PluginInventoryGateway, { pluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { createNativePluginInventory, type NativePluginInventory } from '../src/native-plugin-inventory.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 
@@ -85,7 +85,7 @@ it('retains native localized text while withholding metadata icons and private d
   const meta = { title: { zh: '原生标题', en: 'Native title' }, description: { zh: '原生描述', en: 'Native description' },
     error: '/private/account/plugin/locale.json', icon: 'data:image/png;base64,QUJD' }
   const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockResolvedValue({
-    entries: [{ entryId: brandString('row'), moduleName: 'package', enabled: true, fiberPhase: 'active', meta }],
+    entries: [{ entryId: pluginEntryId('row'), moduleName: 'package', enabled: true, fiberPhase: 'active', meta }],
     agentPresets: [{ id: 'cloud-text', isDefault: true, rows: [{ entryId: 'entry', moduleName: 'package',
       enabled: true, fiberPhase: null, meta }] }],
   })
@@ -107,8 +107,8 @@ it.each(['ready', 'binding', 'exposure'])('does not publish pending metadata aft
   if (reason === 'ready') f.revoke()
   else if (reason === 'binding') f.end()
   else f.policy.invalidate()
-  settled.resolve({ entries: [{ entryId: brandString('entry'), moduleName: 'package', enabled: true,
-    fiberPhase: 'active', meta: { title: { zh: '本地标题' } } }] })
+  settled.resolve({ entries: [{ entryId: pluginEntryId('entry'), moduleName: 'package', enabled: true,
+    fiberPhase: 'active', meta: { title: { en: 'Native title', zh: '本地标题' } } }] })
   await expect(result).rejects.toBeDefined()
 })
 
@@ -121,8 +121,8 @@ it('does not publish pending metadata after the inventory provider is disposed',
   const row = [...f.graph.loader.entries()].find(entry => entry.options.id === 'inventory')
   if (row?.fiber === undefined) throw new Error('inventory owner missing')
   await row.fiber.dispose()
-  settled.resolve({ entries: [{ entryId: brandString('entry'), moduleName: 'package', enabled: true,
-    fiberPhase: 'active', meta: { title: { zh: '本地标题' } } }] })
+  settled.resolve({ entries: [{ entryId: pluginEntryId('entry'), moduleName: 'package', enabled: true,
+    fiberPhase: 'active', meta: { title: { en: 'Native title', zh: '本地标题' } } }] })
   await expect(result).rejects.toBeDefined()
 })
 
@@ -139,7 +139,7 @@ it('refuses an over-limit native inventory before publishing any partial list', 
 it('applies the existing complete frame limit to localized metadata', async () => {
   const f = await fixture()
   const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockResolvedValue({ entries: [{
-    entryId: brandString('row'), moduleName: 'package', enabled: true, fiberPhase: 'active',
+    entryId: pluginEntryId('row'), moduleName: 'package', enabled: true, fiberPhase: 'active',
     meta: { description: { en: 'x'.repeat(65536) } },
   }] })
   onTestFinished(() => { spy.mockRestore() })

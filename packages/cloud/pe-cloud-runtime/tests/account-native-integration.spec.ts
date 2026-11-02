@@ -23,7 +23,7 @@ import type { NativeTextFileSystemConstructor } from '@deepseek-ai/dsh-pe-cloud-
 import { tmpdir } from 'node:os'
 import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
 import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
-import { brandString } from '@deepseek-ai/dsh-brand'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, AccountModelKeyEnvironment, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -79,7 +79,7 @@ import type { FileReadTiming } from '../src/file-read-timing.ts'
 /** Real Node HTTP parser and bridge over an in-process socket pair; no listener or network. */
 class ReadFixtureSocket extends Socket {
   other?: ReadFixtureSocket
-  override get remoteAddress(): string { return '127.0.0.1' }
+  override readonly remoteAddress = '127.0.0.1'
   override _read(): void {}
   override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     if (this.other === undefined || this.other.destroyed) { callback(new Error('fixture socket closed')); return }
@@ -1807,7 +1807,7 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
         full('use')
         if (revokePeerDuringUse && dispatches === 1 && access.ingress !== undefined) {
           revokePeerDuringUse = false
-          void access.ingress.invalidateLogin(brandString<'pe-auth-session-id'>('fixture-login')).catch(() => {})
+          void access.ingress.invalidateLogin(brandString<Branded<'pe-auth-session-id'>>('fixture-login')).catch(() => {})
         }
       },
       assertRetained() { if (released) throw new Error('Use released'); binding.lifetime.throwIfAborted() },
@@ -1868,8 +1868,8 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
   await ingress.install()
   const route = register.mock.calls.map(([row]) => row).find(row => row.path === '/api')
   if (route === undefined) throw new Error('Original Access API route missing')
-  const generations = Reflect.get(ingress, 'generations') as { current(value: AccountBinding, id: ReturnType<typeof brandString<'pe-request-id'>>): string }
-  const generation = generations.current(binding, brandString<'pe-request-id'>('fixture-generation'))
+  const generations = Reflect.get(ingress, 'generations') as { current(value: AccountBinding, id: Branded<'pe-request-id'>): string }
+  const generation = generations.current(binding, brandString<Branded<'pe-request-id'>>('fixture-generation'))
   const originalLogin = auth.assertLoginCurrent.bind(auth)
   vi.spyOn(auth, 'assertLoginCurrent').mockImplementation((principal, id) => {
     originalLogin(principal, id)
