@@ -109,13 +109,13 @@ describe('Root actual Session allocation ownership', () => {
     onTestFinished(async () => { await ctx.fiber.dispose() })
     const handles = await Promise.all(['a', 'b', 'c'].map(id =>
       ctx.agents.create({ sessionId: SessionId(id), meta: { cwd: '/project' } })))
-    const requestFor = (index: number): NativeAllocationRequest<{ readonly marker: string }> => {
+    const requestFor = (index: number): ReturnType<typeof f.request> => {
       const session = handles[index]!.agent.session, base = f.request(session.id)
       const current = (): void => { if (ctx.sessions.get(session.id) !== session) throw new Error('Original Session was disposed') }
       return { ...base, assertCurrent: current, prepareMount: async () => ({ ...await base.prepareMount(), assertCurrent: current }) }
     }
     f.backend.create.mockImplementation(async intent => ({ sandboxId: `sandbox-${intent.sessionId}` }))
-    f.stopped.resolve()
+    f.stopped.resolve(undefined)
     const a = requestFor(0), b = requestFor(1), c = requestFor(2)
     const readyA = await f.owner.prepare(a)
     await f.owner.prepare(b)
