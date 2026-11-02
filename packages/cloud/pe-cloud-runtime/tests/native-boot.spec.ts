@@ -548,8 +548,8 @@ describe('private native account assembly', () => {
   it.each(['abort', 'dispose'])('skips account preparation after %s while PluginPackages is settling', async (action) => {
     const f = fixture(`packages-${action}`)
     const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
-    const prepare = vi.fn(f.input.prepare)
-    const original = RegistryService.prototype.plugin
+    const prepare = vi.fn((...args: Parameters<NativeAccountBootInput['prepare']>) => f.input.prepare(...args))
+    const original = Reflect.get(RegistryService.prototype, 'plugin') as RegistryService['plugin']
     const spy = vi.spyOn(RegistryService.prototype, 'plugin').mockImplementation(function (this: RegistryService, plugin, config, stack) {
       const fiber = original.call(this, plugin, config, stack)
       if (plugin === PluginPackages) {
