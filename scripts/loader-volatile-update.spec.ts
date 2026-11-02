@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Fiber, type Plugin } from '@deepseek-ai/cordis'
 import Loader, { Group } from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
@@ -156,6 +156,10 @@ describe('volatile Loader updates', () => {
       configs.push(config)
     } }, {})
     await update(consumer, { title: 'pending' })
+    expect(consumer.state).not.toBe(FiberState.ACTIVE)
+    const revision = consumer.configMutationRevision
+    consumer.update({ title: 'pending' }, true)
+    expect(consumer.configMutationRevision).toBe(revision + 1)
     const provider = await ctx.plugin({ apply(owner: Context) { owner.provide('volatile-test-provider', {}) } })
     await consumer.await()
     expect(configs[0]!.title.get()).toBe('pending')

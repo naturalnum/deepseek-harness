@@ -182,6 +182,10 @@ const INACTIVE = '__INACTIVE__'
  * cleanup for the plugin context returned by `ctx.plugin()`.
  */
 export class Fiber {
+  private configUpdateRevision = 0
+
+  /** Revision of attempted native Fiber.update calls, including rejected validation. */
+  get configMutationRevision(): number { return this.configUpdateRevision }
   /** Unique id within the registry; 0 for the root fiber, `null` once disposed. */
   public uid: number | null
   /** The context this fiber's plugin runs in (extends the parent context). */
@@ -736,6 +740,7 @@ export class Fiber {
    */
   update(config: any, noSave = false) {
     this.assertActive()
+    this.configUpdateRevision++
     this._config = config
     if (this.state !== FiberState.ACTIVE) {
       // Config resolution may access injected services, so defer it until the

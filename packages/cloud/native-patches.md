@@ -27,6 +27,9 @@ Cloud packages own account identity, owner routing, tenant policy, storage admis
 | [Web bootstrap](../../apps/web/src/cloud-web.ts) | This pre-module entry is owned by pe-cloud-client integration but remains an explicit application patch. Moving it into the dynamic client entry would require another static/dynamic build route; keep the current bootstrap until an equivalent native pre-boot integration exists. |
 | [Frontend](pe-cloud-access/src/frontend.ts), [field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud public-page routing and ordinary editable-field policy live in existing Cloud packages. The native frontend and ConfigField implementations are restored. Models uses native onboarding; protected Cloud keys use the separate manual integration. |
 
+
+Root recipe sealing performs the full native plan validation. Its admission checks use the original plan's constant-time Entry and Fiber mutation-version and retained identity check, retain the provider and health audits, and revoke on a direct native Fiber update before its update waterfall continues. The Fiber revision also detects an attempted update rejected before the waterfall. The version check alone is not a configuration or readiness proof; it tracks Native update APIs and does not detect direct mutation of trusted Host objects.
+
 Generic fixes remain native patches: UTF-8 and complete-frame bounds, cancellation and close results, CSV byte-range preview, completed-answer file links, upload receipts, configuration redaction, width geometry and activation judgment. Moving their engines into Cloud would duplicate native functionality. Keep their owning tests and evaluate them as separate upstream contributions.
 
 ## Upgrade procedure

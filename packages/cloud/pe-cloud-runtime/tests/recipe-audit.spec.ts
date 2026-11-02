@@ -1,9 +1,11 @@
 /** Real Loader/fiber/service facts with external-resource fixtures; no fixture can issue a storage seal. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
+import { Group, type LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import z from '@deepseek-ai/schemastery'
@@ -29,6 +31,7 @@ async function fixture(options: {
   wrongRegistration?: boolean
   disabledFiles?: boolean
   resourceOnlyAuth?: boolean
+  volatileFiles?: boolean
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8m-root-recipe-')))
   directories.push(directory)
@@ -52,7 +55,7 @@ async function fixture(options: {
   const access = { Config: z.object({}), apply(ctx: Context) { ctx.provide('peAuth', auth) } }
   const isolatedAccess = { Config: z.object({}), apply(ctx: Context) { ctx.provide('peAuth', { ...auth }) } }
   const fileModule = {
-    Config: z.object({ minimumHealthyWorkers: z.natural().min(1).required() }), inject: ['peAccountRuntime'],
+    Config: options.volatileFiles ? z.object({ minimumHealthyWorkers: z.natural().min(1).required(), frequency: z.number().min(1).default(1).volatile() }) : z.object({ minimumHealthyWorkers: z.natural().min(1).required() }), inject: ['peAccountRuntime'],
     apply(ctx: Context) {
       ctx.provide('peFilesPool', files)
       ctx.peAccountRuntime.registerDrainParticipant(options.wrongRegistration ? { ...files } : files)
@@ -274,7 +277,7 @@ it('keeps the original revocation when writing its observation fails', async () 
   expect(() => { f.runtime.assertRecipeSealed('m8m') }).toThrow('not sealed')
 })
 
-it('offline captured Root audit detects revoke and reseal and defers only plan drift', async () => {
+it('offline captured Root audit detects native mutation, revoke and reseal', async () => {
   const f = await fixture()
   // Component substitute: no claim of Linux storage verification or production readiness.
   const owner = new RootStorageOwner({} as never, 4096, {} as never)
@@ -294,11 +297,9 @@ it('offline captured Root audit detects revoke and reseal and defers only plan d
   if (typeof config !== 'object' || config === null || !('minimumHealthyWorkers' in config)
     || typeof config.minimumHealthyWorkers !== 'number') throw new Error('Files fixture config missing')
   current(); expect(guard).not.toHaveBeenCalled()
-  config.minimumHealthyWorkers++
-  current(); expect(guard).not.toHaveBeenCalled()
+  await entry.update({ config: structuredClone(config) })
   expect(() => { audit.assertSealed('m8m') }).toThrow()
   expect(() => { current() }).toThrow()
-  config.minimumHealthyWorkers--
   audit.seal(f.input)
   expect(audit.inspect().status).toBe('sealed')
   expect(() => { current() }).toThrow()
@@ -332,17 +333,17 @@ it('detects Root config drift introduced reentrantly during a preceding health c
   let calls = 0
   vi.spyOn(f.files, 'inspect').mockImplementation(() => {
     const observation = inspect()
-    if (++calls === 1) entry.options.config = { ...original, minimumHealthyWorkers: 2 }
+    if (++calls === 1) void entry.update({ config: { ...original, minimumHealthyWorkers: 2 } })
     return observation
   })
   try {
     // Admission must reject drift introduced by a health callback during this same audit.
     expect(() => { audit.assertSealed('m8m') }).toThrow()
     expect(audit.inspect().status).toBe('revoked')
-  } finally { entry.options.config = original }
+  } finally { await entry.fiber?.await().catch(() => {}) }
 })
 
-it('rejects Root provider replacement triggered while validating a config plan', async () => {
+it('rejects Root provider replacement during a current health check', async () => {
   const f = await fixture()
   const owner = new RootStorageOwner({} as never, 4096, {} as never)
   vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
@@ -350,30 +351,21 @@ it('rejects Root provider replacement triggered while validating a config plan',
   const filesFiber = f.entry('files').fiber, executionFiber = f.entry('execution').fiber
   if (filesFiber === undefined || executionFiber === undefined) throw new Error('Original participant fibers missing')
   const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
-  const audit = new RootRecipeAudit(f.ctx, () => participants,
-    () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  const audit = new RootRecipeAudit(f.ctx, () => participants, () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
   audit.seal(f.input)
-  const config: unknown = f.entry('files').options.config
   const provider = filesFiber.store?.peFilesPool
-  if (typeof config !== 'object' || config === null || provider === undefined) throw new Error('Original fixture state missing')
-  const descriptor = Object.getOwnPropertyDescriptor(config, 'minimumHealthyWorkers'), previous: unknown = provider.value
-  if (descriptor === undefined || !('value' in descriptor) || descriptor.value !== 1) throw new Error('Original health configuration missing')
-  let replaced = false
-  Object.defineProperty(config, 'minimumHealthyWorkers', { enumerable: true, configurable: true, get() {
-    replaced = true
+  if (provider === undefined) throw new Error('Original provider missing')
+  const previous: unknown = provider.value
+  const inspect = f.files.inspect.bind(f.files)
+  vi.spyOn(f.files, 'inspect').mockImplementationOnce(() => {
+    const result = inspect()
     Reflect.set(provider, 'value', { ...f.files })
-    return 1
-  } })
-  try {
-    expect(() => { audit.assertSealed('m8m') }).toThrow()
-    expect(replaced).toBe(true)
-  } finally {
-    Object.defineProperty(config, 'minimumHealthyWorkers', descriptor)
-    Reflect.set(provider, 'value', previous)
-  }
+    return result
+  })
+  try { expect(() => { audit.assertSealed('m8m') }).toThrow() } finally { Reflect.set(provider, 'value', previous) }
 })
 
-it('rejects Root schema drift introduced reentrantly during a health check', async () => {
+it.each([false, true])('revokes before a native Fiber.update continues (noSave: %s)', async (noSave) => {
   const f = await fixture()
   const owner = new RootStorageOwner({} as never, 4096, {} as never)
   vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
@@ -381,24 +373,149 @@ it('rejects Root schema drift introduced reentrantly during a health check', asy
   const filesFiber = f.entry('files').fiber, executionFiber = f.entry('execution').fiber
   if (filesFiber === undefined || executionFiber === undefined) throw new Error('Original participant fibers missing')
   const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
+  const audit = new RootRecipeAudit(f.ctx, () => participants, () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  audit.seal(f.input)
+  const current = audit.captureReadCurrent('m8m')
+  filesFiber.update({ minimumHealthyWorkers: 2 }, noSave)
+  expect(() => { current() }).toThrow()
+  expect(audit.inspect().status).toBe('revoked')
+  await filesFiber.await().catch(() => {})
+})
+
+it('revokes on an invalid native volatile update even without a Loader event', async () => {
+  const f = await fixture({ volatileFiles: true })
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const filesFiber = f.entry('files').fiber, executionFiber = f.entry('execution').fiber
+  if (filesFiber === undefined || executionFiber === undefined) throw new Error('Original participant fibers missing')
+  const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
+  const audit = new RootRecipeAudit(f.ctx, () => participants, () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  audit.seal(f.input)
+  const current = audit.captureReadCurrent('m8m')
+  const events = vi.fn()
+  f.ctx.on('loader/volatile-update', events, { global: true })
+  await f.entry('files').update({ config: { minimumHealthyWorkers: 1, frequency: 0 } })
+  expect(events).not.toHaveBeenCalled()
+  expect(() => { current() }).toThrow()
+  expect(audit.inspect().status).toBe('revoked')
+})
+
+it('rejects an invalid Fiber.update attempt before the native update event', async () => {
+  const f = await fixture()
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const fiber = f.entry('files').fiber, executionFiber = f.entry('execution').fiber
+  if (fiber === undefined || executionFiber === undefined) throw new Error('Original participant fibers missing')
+  const participants = [{ participant: f.files, fiber }, { participant: f.execution, fiber: executionFiber }]
+  const audit = new RootRecipeAudit(f.ctx, () => participants, () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  audit.seal(f.input)
+  const current = audit.captureReadCurrent('m8m')
+  const event = vi.fn((_config: unknown, _noSave: boolean, next: () => void) => { next() })
+  f.ctx.on('internal/update', event, { global: true })
+  expect(() => { fiber.update({ minimumHealthyWorkers: 0 }) }).toThrow()
+  expect(fiber.state).toBe(FiberState.ACTIVE)
+  expect(event).not.toHaveBeenCalled()
+  expect(() => { current() }).toThrow()
+  expect(audit.inspect().status).toBe('revoked')
+})
+
+it('rejects an invalid Fiber.update attempted by a health callback during sealing', async () => {
+  const f = await fixture()
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const filesFiber = f.entry('files').fiber
+  const executionFiber = f.entry('execution').fiber
+  if (filesFiber === undefined || executionFiber === undefined) throw new Error('Participant fibers missing')
+  const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
+  const audit = new RootRecipeAudit(f.ctx, () => participants,
+    () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  const inspect = f.files.inspect.bind(f.files)
+  let attempted = false
+  vi.spyOn(f.files, 'inspect').mockImplementationOnce(() => {
+    attempted = true
+    try { filesFiber.update({ minimumHealthyWorkers: 0 }) } catch { /* Native invalid update stays rejected. */ }
+    return inspect()
+  })
+  expect(() => { audit.seal(f.input) }).toThrow()
+  expect(attempted).toBe(true)
+  expect(filesFiber.state).toBe(FiberState.ACTIVE)
+  expect(audit.inspect().status).toBe('revoked')
+})
+
+it('rejects a native ancestor group update that changes a sealed entry', async () => {
+  const f = await fixture()
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const filesFiber = f.entry('files').fiber, executionFiber = f.entry('execution').fiber
+  if (filesFiber === undefined || executionFiber === undefined) throw new Error('Participant fibers missing')
+  const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
   const audit = new RootRecipeAudit(f.ctx, () => participants,
     () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
   audit.seal(f.input)
-  const schema: unknown = f.entry('access').fiber?.runtime?.Config
-  if ((typeof schema !== 'object' && typeof schema !== 'function') || schema === null) throw new Error('Original Root schema missing')
-  const meta: unknown = Reflect.get(schema, 'meta')
-  if (typeof meta !== 'object' || meta === null) throw new Error('Original Root schema metadata missing')
-  const previous = Object.getOwnPropertyDescriptor(meta, 'description'), inspect = f.files.inspect.bind(f.files)
-  vi.spyOn(f.files, 'inspect').mockImplementationOnce(() => {
-    const observation = inspect()
-    Reflect.set(meta, 'description', 'changed during Root health')
-    return observation
+  const current = audit.captureReadCurrent('m8m')
+  const group = f.entry('files').parent
+  await group.update(group.data.map(row => row.id === 'files' ? { ...row, config: { minimumHealthyWorkers: 2 } } : row))
+  expect(() => { current() }).toThrow()
+  expect(audit.inspect().status).toBe('revoked')
+})
+
+it('rejects a late invalid Fiber update during sealing plan checks', async () => {
+  const f = await fixture()
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const filesFiber = f.entry('files').fiber, executionFiber = f.entry('execution').fiber
+  if (filesFiber === undefined || executionFiber === undefined) throw new Error('Participant fibers missing')
+  const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
+  const audit = new RootRecipeAudit(f.ctx, () => participants,
+    () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  const entry = f.entry('execution'), check = entry.assertConfigUpdatePlan.bind(entry)
+  let attempted = false
+  vi.spyOn(entry, 'assertConfigUpdatePlan').mockImplementationOnce((plan) => {
+    check(plan)
+    attempted = true
+    try { filesFiber.update({ minimumHealthyWorkers: 0 }) } catch { /* Native invalid update stays rejected. */ }
   })
+  expect(() => { audit.seal(f.input) }).toThrow()
+  expect(attempted).toBe(true)
+  expect(audit.inspect().status).toBe('revoked')
+})
+
+
+it('rejects synchronous admission while Native moves an existing Entry between groups', async () => {
+  const f = await fixture()
+  f.ctx.loader.builtins['worker1-group'] = Group
+  const files = f.entry('files'), previous = files.parent
+  await previous.create({ id: 'worker1-group', name: 'cordis:worker1-group', group: true, config: [] })
+  const target = f.entry('worker1-group').subgroup
+  if (target === undefined) throw new Error('Native target group missing')
+  const owner = new RootStorageOwner({} as never, 4096, {} as never)
+  vi.spyOn(owner, 'assertRootCurrent').mockImplementation(() => {})
+  Object.assign(f.files, { requireStorageOwner: () => owner })
+  const filesFiber = files.fiber, executionFiber = f.entry('execution').fiber
+  if (filesFiber === undefined || executionFiber === undefined) throw new Error('Participant fibers missing')
+  const participants = [{ participant: f.files, fiber: filesFiber }, { participant: f.execution, fiber: executionFiber }]
+  const audit = new RootRecipeAudit(f.ctx, () => participants,
+    () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
+  audit.seal(f.input)
+  const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  const reason = new Error('guard observed moved Entry')
+  let admitted = true
   try {
-    expect(() => { audit.assertSealed('m8m') }).toThrow()
-    expect(audit.inspect().status).toBe('revoked')
+    await expect(f.ctx.loader.withUpdateGuard({
+      create() {}, group() {}, remove() {},
+      entry() {
+        try { audit.assertSealed('m8m') } catch { admitted = false }
+        throw reason
+      },
+    }, () => target.create({ ...files.options }), scope)).rejects.toBe(reason)
+    expect(admitted).toBe(false)
   } finally {
-    if (previous === undefined) Reflect.deleteProperty(meta, 'description')
-    else Object.defineProperty(meta, 'description', previous)
+    files.parent = previous
+    scope.disable()
   }
 })

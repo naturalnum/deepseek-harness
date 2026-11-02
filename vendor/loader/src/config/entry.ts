@@ -105,6 +105,12 @@ export class Entry {
   _initTask?: Promise<void>
   private configVersion = 0
   private readonly configPlans = new WeakMap<EntryConfigUpdatePlan, ConfigPlanState>()
+  private readonly planFiberRevisions = new WeakMap<EntryConfigUpdatePlan, number | undefined>()
+
+  private rememberConfigPlan(plan: EntryConfigUpdatePlan, state: ConfigPlanState): void {
+    this.configPlans.set(plan, state)
+    this.planFiberRevisions.set(plan, plan.fiber?.configMutationRevision)
+  }
   private optionsDisposal: Fiber | undefined
 
   /** Identify the exact disposal already owned by a prepared native update.
@@ -288,7 +294,7 @@ export class Entry {
       if (changes.length === 0 && this.options.disabled === true && !this.subgroup && !this.subtree) {
         const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber, version: this.configVersion,
           impact: 'none', stopped: Object.freeze([]) })
-        this.configPlans.set(plan, { kind: 'passive', version: this.configVersion, options, next: detachedNext,
+        this.rememberConfigPlan(plan, { kind: 'passive', version: this.configVersion, options, next: detachedNext,
           before: undefined, candidate: undefined, effective: undefined, parent: Object.getPrototypeOf(this.ctx),
           schema: undefined, runtime: fiber?.runtime, moduleNamespace: this.moduleNamespace })
         return plan
@@ -321,8 +327,22 @@ export class Entry {
       entry: this, fiber, version: this.configVersion, impact,
       stopped: impact === 'live' || impact === 'none' ? Object.freeze([]) : undefined,
     })
-    if (state !== undefined) this.configPlans.set(plan, state)
+    if (state !== undefined) this.rememberConfigPlan(plan, state)
     return plan
+  }
+
+  /** Check an original, unconsumed plan's native mutation versions and retained entry identities.
+   * This is not a config, schema, lifecycle, or readiness audit.
+   * @param plan Original plan issued by this entry.
+   * @returns False for a foreign, consumed, or version/fiber-stale plan.
+   */
+  isConfigPlanVersionCurrent(plan: EntryConfigUpdatePlan): boolean {
+    const state = this.configPlans.get(plan)
+    return state !== undefined && plan.entry === this && state.version === this.configVersion
+      && plan.version === this.configVersion && plan.fiber === this.fiber
+      && this.planFiberRevisions.has(plan) && this.planFiberRevisions.get(plan) === plan.fiber?.configMutationRevision
+      && state.parent === Object.getPrototypeOf(this.ctx) && (state.kind === 'passive' || state.parent === this.parent.ctx)
+      && state.runtime === this.fiber?.runtime && state.moduleNamespace === this.moduleNamespace
   }
 
   /**
@@ -434,7 +454,7 @@ export class Entry {
         maximum, topology }
     } catch (error) { void error }
     const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber, version: this.configVersion, impact, stopped })
-    if (state !== undefined) this.configPlans.set(plan, state)
+    if (state !== undefined) this.rememberConfigPlan(plan, state)
     return plan
   }
 
@@ -479,7 +499,7 @@ export class Entry {
         runtime: undefined, moduleNamespace: undefined, maximum, topology }
     } catch (error) { void error }
     const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber: undefined, version: this.configVersion, impact, stopped })
-    if (state !== undefined) this.configPlans.set(plan, state)
+    if (state !== undefined) this.rememberConfigPlan(plan, state)
     return plan
   }
 

@@ -104,7 +104,7 @@
 | `internal/plugin` | - | `computer-use-cua-driver-native`, `inspector`, `loader`, [`lsp-stdio`](../packages/lsp/lsp-stdio), [`mcp-client`](../packages/mcp/mcp-client), `modules`, [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`web`](../packages/web/web) |
 | `internal/service` | - | `gateway`, [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, `translator`, [`web`](../packages/web/web) |
-| `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
+| `internal/update` | - | [`app-boot`](../packages/boot/app-boot), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) |
 | `loader/entry-init` | - | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) |
 | `loader/partial-dispose` | - | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) |
 | `loader/patch-context` | - | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) |

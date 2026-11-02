@@ -33,14 +33,18 @@ it('only exposes detached effective snapshots of the same current Loader plan', 
   const { ctx } = await configurationFixture({ hmr: false })
   const entry = first(ctx)
   const plan = entry.prepareConfigUpdate({ ...raw(ctx), count: 5 })
+  expect(entry.isConfigPlanVersionCurrent(plan)).toBe(true)
+  expect(entry.isConfigPlanVersionCurrent({ ...plan })).toBe(false)
   const candidate = entry.snapshotConfigUpdatePlan(plan) as Record<string, unknown>
   expect(candidate.count).toBe(5)
   candidate.count = 999
   expect(entry.snapshotConfigUpdatePlan(plan)).toMatchObject({ count: 5 })
   expect(() => entry.snapshotConfigUpdatePlan({ ...plan })).toThrow('unproven')
   const foreign = await configurationFixture({ hmr: false })
+  expect(first(foreign.ctx).isConfigPlanVersionCurrent(plan)).toBe(false)
   expect(() => first(foreign.ctx).snapshotConfigUpdatePlan(plan)).toThrow('unproven')
   await ctx.settings.update('first', { count: 7 })
+  expect(entry.isConfigPlanVersionCurrent(plan)).toBe(false)
   expect(() => entry.snapshotConfigUpdatePlan(plan)).toThrow('stale')
 })
 
@@ -385,4 +389,33 @@ it('keeps independent Loader reservations isolated while one Host save waits for
   expect(raw(firstProfile.ctx).count).toBe(5)
   expect(firstProfile.ctx.loader.updateGuard).toBeUndefined()
   expect(secondProfile.ctx.loader.updateGuard).toBeUndefined()
+})
+
+it('retains an independent native plan through a guarded no-op editor commit', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const entry = first(ctx)
+  const original = entry.prepareConfigUpdate(entry.options.config)
+  expect(entry.isConfigPlanVersionCurrent(original)).toBe(true)
+  let consumed: (typeof original) | undefined
+  onTestFinished(ctx.configEditor.registerImpactGuard({ check(plan) {
+    consumed = plan.entries.find(row => row.entry === entry)
+  } }))
+  await ctx.configEditor.edit(entry, raw => raw)
+  if (consumed === undefined) throw new Error('Native no-op plan missing')
+  expect(entry.isConfigPlanVersionCurrent(consumed)).toBe(true)
+  expect(entry.isConfigPlanVersionCurrent(original)).toBe(true)
+  expect(() => { entry.assertConfigUpdatePlan(original) }).not.toThrow()
+})
+
+
+it('rejects a plan consumed by the real guarded live commit', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const entry = first(ctx)
+  let consumed: ReturnType<typeof entry.prepareConfigUpdate> | undefined
+  onTestFinished(ctx.configEditor.registerImpactGuard({ check(plan) {
+    consumed = plan.entries.find(row => row.entry === entry)
+  } }))
+  await ctx.settings.update('first', { count: 5 })
+  if (consumed === undefined) throw new Error('Native live plan missing')
+  expect(entry.isConfigPlanVersionCurrent(consumed)).toBe(false)
 })

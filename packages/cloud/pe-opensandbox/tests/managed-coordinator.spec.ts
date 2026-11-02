@@ -737,9 +737,9 @@ it('reuses the fixed two compute slots across four idle Sessions only after orig
 
 it.each(['third', 'same-id', 'same-id-cancel', 'uncertain'] as const)('reclaims a disposed native Session through the original allocation owner; case=%s', async (scenario) => {
   // The Agent handles, coordinator and allocation owner are real; SQL, mounts and SDK are controlled substitutes.
-  const realPrepare = SessionAllocationOwner.prototype.prepare
-  const realStop = SessionAllocationOwner.prototype.stop
-  const realSelect = SessionAllocationOwner.prototype.preparedForRetirement
+  const realPrepare = Reflect.get(SessionAllocationOwner.prototype, 'prepare')
+  const realStop = Reflect.get(SessionAllocationOwner.prototype, 'stop')
+  const realSelect = Reflect.get(SessionAllocationOwner.prototype, 'preparedForRetirement')
   const f = await idleComputeFixture(true)
   const rows = new Map<string, SandboxAllocation>()
   const resources: unknown = Reflect.get(f.owner, 'resources')
@@ -788,10 +788,10 @@ it.each(['third', 'same-id', 'same-id-cancel', 'uncertain'] as const)('reclaims 
   f.prepare.mockImplementation(async (request, signal) => {
     Reflect.set(request, 'prepareMount', async () => ({ value: {}, projectMountVersion: 'mount-v1',
       assertCurrent: () => { request.assertCurrent() }, release: () => {} }))
-    return await Reflect.apply(realPrepare, allocationOwner, [request, signal]) as PreparedSandbox
+    return await Reflect.apply(realPrepare, allocationOwner, [request, signal])
   })
   f.stop.mockImplementation(async (request) => { await Reflect.apply(realStop, allocationOwner, [request]) })
-  f.observe.mockImplementation(request => Reflect.apply(realSelect, allocationOwner, [request]) as PreparedSandbox | undefined)
+  f.observe.mockImplementation(request => Reflect.apply(realSelect, allocationOwner, [request]))
   f.retire.mockImplementation(() => {})
   expect((await f.runSession(0)).isError).toBe(false)
   expect((await f.runSession(1)).isError).toBe(false)

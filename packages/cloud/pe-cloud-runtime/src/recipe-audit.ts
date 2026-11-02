@@ -11,7 +11,7 @@ type Entry = NonNullable<Fiber['entry']>
 type Plan = ReturnType<Entry['prepareConfigUpdate']>
 
 type RevokeReason = 'explicit' | 'root-plugin' | 'root-service' | 'entry-init' | 'partial-dispose'
-  | 'volatile-update' | 'patch-context' | 'recipe-version' | 'reseal' | 'entry-identity' | 'entry-config-plan'
+  | 'volatile-update' | 'patch-context' | 'fiber-update' | 'recipe-version' | 'reseal' | 'entry-identity' | 'entry-config-plan'
   | 'provider-identity' | 'provider-ownership-or-health' | 'participants' | 'manifest' | 'storage-owner'
   | 'storage-current' | 'runtime-control' | 'participant-registration' | 'participant-removal'
 
@@ -76,6 +76,13 @@ export class RootRecipeAudit {
     owner.on('loader/partial-dispose', () => { this.revoke('partial-dispose') })
     owner.on('loader/volatile-update', () => { this.revoke('volatile-update') }, { global: true })
     owner.on('loader/patch-context', (_entry, next) => { this.revoke('patch-context'); next() })
+    const checkFiber = (fiber: Fiber): void => {
+      if (this.candidate?.facts.some(fact => descends(fiber, fact.fiber))) this.revoke('fiber-update')
+    }
+    owner.on('internal/update', function (this: Fiber, _config, _noSave, next) {
+      checkFiber(this)
+      next()
+    }, { global: true, prepend: true })
   }
 
   /**
@@ -153,6 +160,14 @@ export class RootRecipeAudit {
         issue('account-entry-in-root')
       }
     }
+    // Capture every audited provider entry before invoking any provider health callback.
+    for (const expected of input.providers) {
+      const entry = rows.find(row => row.options.id === expected.entryId)
+      if (entry?.fiber === undefined || facts.has(entry)) continue
+      const plan = entry.prepareConfigUpdate(entry.options.config)
+      if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
+      facts.set(entry, { entry, fiber: entry.fiber, plan, module: entry.moduleNamespace })
+    }
     const providers: Candidate['providers'][number][] = []
     const implementations = new Map<string, { fiber: Fiber; value: unknown; record: object } | null>()
     for (const runtime of root.registry.values()) {
@@ -185,9 +200,7 @@ export class RootRecipeAudit {
       const role = roles[expected.key]
       if (role !== undefined && rootEntries.get(role) !== entry) { issue('provider-owner-mismatch'); continue }
       if (!this.healthy(expected.key, original(value), entry)) { issue('provider-not-current'); continue }
-      const plan = entry.prepareConfigUpdate(entry.options.config)
-      if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
-      facts.set(entry, { entry, fiber: entry.fiber, plan, module: entry.moduleNamespace })
+      if (!facts.has(entry)) { issue('root-config-unproven'); continue }
       providers.push({ key: expected.key, value: original(value), fiber: implementation.fiber,
         record: implementation.record, registered: implementation.value })
     }
@@ -232,6 +245,8 @@ export class RootRecipeAudit {
       ...storage === undefined ? {} : { storage } }
     this.record(input.recipeVersion, [...rootEntries.values()], providers, registered, manifest, issues)
     if (issues.length !== 0) this.fail()
+    this.recheck(true)
+    if (this.state.status !== 'sealed') this.fail()
   }
 
   /**
@@ -240,7 +255,7 @@ export class RootRecipeAudit {
    * @throws AccountRuntimeError before any account or transport business work.
    */
   assertSealed(recipeVersion: string): void {
-    this.recheck()
+    this.recheck(false)
     if (this.state.recipeVersion !== undefined && recipeVersion !== this.state.recipeVersion) this.revoke('recipe-version')
     if (this.state.status !== 'sealed') this.fail()
   }
@@ -289,7 +304,7 @@ export class RootRecipeAudit {
    * Inspect actual identities without upgrading a blocked audit to a seal.
    * @returns Safe detached facts, revoked if any retained identity or health check changed.
    */
-  inspect(): RootRecipeObservation { this.recheck(); return this.state }
+  inspect(): RootRecipeObservation { this.recheck(false); return this.state }
 
   /**
    * Capture the fixed Root entry specifiers and original providers after native startup commits.
@@ -399,6 +414,7 @@ export class RootRecipeAudit {
         reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
         reason = 'entry-config-plan'
+        if (!entry.isConfigPlanVersionCurrent(plan)) throw new Error('changed')
         if (checkPlans) {
           if (this.fileReadTiming === undefined) entry.assertConfigUpdatePlan(plan)
           else {
@@ -431,9 +447,11 @@ export class RootRecipeAudit {
       const exposure: unknown = exposureLabel === undefined ? undefined : root.reflect.store[exposureLabel]?.value
       if (candidate.manifest !== undefined && (!(exposure instanceof ExposureService)
         || exposure.policy.manifest !== candidate.manifest)) throw new Error('changed')
-      for (const { entry, fiber, module } of candidate.facts) {
+      for (const { entry, fiber, module, plan } of candidate.facts) {
         reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        reason = 'entry-config-plan'
+        if (!entry.isConfigPlanVersionCurrent(plan)) throw new Error('changed')
       }
       if (this.candidate !== candidate || this.state !== observedState) throw new Error('changed')
     } catch (_cause) { this.revoke(reason, provider) }

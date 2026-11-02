@@ -57,7 +57,11 @@ export class ConnectionGenerations {
       || record.binding.lifetime !== binding.lifetime) throw new AuthAccessError('cloud/account-unavailable', requestId)
   }
 
-  /** Read the original generation after the exact Peer Use has checked current business admission. */
+  /** Read the original generation after the exact Peer Use has checked current business admission.
+   * @param binding Original installed account binding.
+   * @param requestId Safe identifier for a rejected request.
+   * @returns The original token, or undefined when the binding has no retained generation.
+   */
   retained(binding: AccountBinding, requestId: Branded<'pe-request-id'>): Generation | undefined {
     if (this.closed || binding.lifetime.aborted) throw new AuthAccessError('cloud/account-unavailable', requestId)
     const record = this.records.get(binding.accountId)
