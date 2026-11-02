@@ -216,6 +216,15 @@ it('rejects the retained cold file selection after account lifetime ends', async
   expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
 })
 
+it('rejects a same-id Workspace replacement for a retained cold file selection', async () => {
+  const { graph, selection } = await retainedColdFileSelection()
+  const workspace = selection.workspace, original = graph.ctx.workspaceRegistry.get.bind(graph.ctx.workspaceRegistry)
+  const replacement = new Proxy(workspace, {})
+  const swapped = vi.spyOn(graph.ctx.workspaceRegistry, 'get').mockImplementation(id => id === workspace.id ? replacement : original(id))
+  try { expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' })) }
+  finally { swapped.mockRestore() }
+})
+
 it('rechecks membership when a retained cold file selection becomes live', async () => {
   const { graph, sessionId, selection, presetId } = await retainedColdFileSelection()
   const resumed = await graph.ctx.agents.resume({ resumeSessionId: sessionId,

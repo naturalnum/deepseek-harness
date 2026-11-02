@@ -241,16 +241,25 @@ class AccountPolicy {
 
   assertWorkspace(workspace: Workspace): void {
     this.current()
+    this.assertWorkspaceIdentity(workspace)
+  }
+
+  private assertWorkspaceIdentity(workspace: Workspace): void {
     if (this.provider('workspaceRegistry').get(workspace.id) !== workspace) refuse()
   }
 
   workspaceAt(cwd: string | undefined): Workspace {
     this.current()
+    return this.workspaceAtCurrent(cwd)
+  }
+
+  /** The caller has checked account current in this synchronous operation. */
+  private workspaceAtCurrent(cwd: string | undefined): Workspace {
     if (cwd === undefined) refuse()
     const matches = this.provider('workspaceRegistry').list().filter(workspace => workspace.path === cwd)
     const workspace = matches[0]
     if (matches.length !== 1 || workspace === undefined) refuse()
-    this.assertWorkspace(workspace)
+    this.assertWorkspaceIdentity(workspace)
     return workspace
   }
 
@@ -266,7 +275,7 @@ class AccountPolicy {
     const matches = this.provider('workspaceRegistry').list().filter(workspace => workspace.sessionIds.includes(id))
     if (matches.length > 1) refuse()
     const workspace = matches[0]
-    if (workspace !== undefined && this.provider('workspaceRegistry').get(workspace.id) !== workspace) refuse()
+    if (workspace !== undefined) this.assertWorkspaceIdentity(workspace)
     return workspace
   }
 
@@ -275,28 +284,35 @@ class AccountPolicy {
     const workspace = this.memberCurrent(id)
     if (workspace === undefined || header.id !== id || header.agentPreset !== this.config.presetId) refuse()
     this.sessionHeader(header, workspace.path)
+    const needsFinalAudit = header.origin === 'subagent' || this.facts === undefined
     if (header.origin === 'subagent') { this.spawn(); if (header.parentSession === id) refuse() }
-    // Once pinned, assertWorkspace performs the same current check that pin would repeat.
     if (this.facts === undefined) this.pin()
-    this.assertWorkspace(workspace)
+    if (needsFinalAudit) this.assertWorkspace(workspace)
+    else this.assertWorkspaceIdentity(workspace)
     return workspace
   }
 
   private sessionProject(session: Session, attached: boolean): Workspace {
     this.current()
-    const workspace = this.workspaceAt(session.header.cwd)
+    return this.sessionProjectCurrent(session, attached)
+  }
+
+  /** The caller has checked account current in this synchronous operation. */
+  private sessionProjectCurrent(session: Session, attached: boolean): Workspace {
+    const workspace = this.workspaceAtCurrent(session.header.cwd)
     if (session.id !== session.header.id || session.header.agentPreset !== this.config.presetId) refuse()
     this.sessionHeader(session.header, workspace.path)
     if (this.provider('workingDirectory').get(session) !== workspace.path
       || this.provider('sessionProjections').stateOf(session, 'agentPreset') !== this.config.presetId) refuse()
-    if (attached && (this.provider('sessions').get(session.id) !== session || this.member(session.id) !== workspace)) refuse()
+    if (attached && (this.provider('sessions').get(session.id) !== session || this.memberCurrent(session.id) !== workspace)) refuse()
     return workspace
   }
 
   liveSessionProject(session: Session): Workspace {
-    const workspace = this.sessionProject(session, true)
+    this.current()
+    const workspace = this.sessionProjectCurrent(session, true)
     const agent = this.provider('agents').get(session.id)
-    if (agent !== undefined && (agent.session !== session || this.prepared(agent, true) !== workspace)) refuse()
+    if (agent !== undefined && (agent.session !== session || this.preparedCurrent(agent, true) !== workspace)) refuse()
     return workspace
   }
 
@@ -514,6 +530,11 @@ class AccountPolicy {
 
   allowedModel(provider: string, model: string): boolean {
     this.current()
+    return this.allowedModelCurrent(provider, model)
+  }
+
+  /** The caller has checked account current in this synchronous operation. */
+  private allowedModelCurrent(provider: string, model: string): boolean {
     if (!this.config.models.some(row => row.provider === provider && row.model === model)) return false
     const llm = this.provider('llm')
     return llm instanceof LlmRuntime && llm.listProviders().some(row => row.id === provider)
@@ -642,11 +663,16 @@ class AccountPolicy {
 
   prepared(agent: Agent, attached: boolean, parent?: Agent): Workspace {
     this.current()
-    const workspace = this.sessionProject(agent.session, false)
+    return this.preparedCurrent(agent, attached, parent)
+  }
+
+  /** The caller has checked account current in this synchronous operation. */
+  private preparedCurrent(agent: Agent, attached: boolean, parent?: Agent): Workspace {
+    const workspace = this.sessionProjectCurrent(agent.session, false)
     if (this.facts === undefined || this.modules === undefined || agent.ctx.root !== this.ctx.root
       || agent.ctx.get('peAccount') !== this.binding || agent.id !== agent.session.header.id) refuse()
     agent.ctx.fiber.assertActive()
-    if (!this.allowedModel(agent.options.provider ?? '', agent.options.model ?? '')) refuse()
+    if (!this.allowedModelCurrent(agent.options.provider ?? '', agent.options.model ?? '')) refuse()
     const presets = this.provider('agentPresets')
     const composition = presets.inspectCompositions(agent.ctx), row = composition[0]
     if (presets.composedPreset(agent.ctx) !== this.config.presetId || composition.length !== 1 || row === undefined
@@ -670,8 +696,9 @@ class AccountPolicy {
       if (root === undefined ? child !== undefined : !object(root) || !object(child) || original(root) !== original(child)) refuse()
     }
     if (attached && (this.provider('agents').get(agent.id) !== agent || this.provider('sessions').get(agent.id) !== agent.session
-      || this.member(agent.id) !== workspace)) refuse()
-    this.assertWorkspace(workspace)
+      || this.memberCurrent(agent.id) !== workspace)) refuse()
+    if (agent.session.header.origin === 'subagent') this.assertWorkspace(workspace)
+    else this.assertWorkspaceIdentity(workspace)
     return workspace
   }
 
@@ -693,7 +720,7 @@ class AccountPolicy {
         if (!object(actual) || original(actual) !== original(installed)) refuse()
       }
     }
-    const workspace = this.sessionProject(parent.session, true)
+    const workspace = this.sessionProjectCurrent(parent.session, true)
     if (expected !== undefined && workspace !== expected) refuse()
     if (this.provider('workingDirectory').get(parent.session) !== workspace.path) refuse()
     return workspace
@@ -865,7 +892,7 @@ class AccountPolicy {
       || child.session !== session || child.id !== session.id || session.header.id !== child.id) refuse()
     const parentScope = scopeOf(parent.ctx)
     if (parentScope === undefined || this.parentCurrentForChild(child.ctx, parent, workspace) !== workspace
-      || this.prepared(parent, true) !== workspace || scopeParentOf(parentScope) !== generation) refuse()
+      || this.preparedCurrent(parent, true) !== workspace || scopeParentOf(parentScope) !== generation) refuse()
     const childGeneration = scopeParentOf(child)
     if (childGeneration !== undefined && childGeneration !== generation) refuse()
     const header = session.header
@@ -873,7 +900,7 @@ class AccountPolicy {
     if (header.origin !== 'subagent' || header.parentSession !== parent.id || header.agentPreset !== this.config.presetId
       || (header.delegationDepth ?? 0) < delegationDepthOf(parent) + 1 || child.id === parent.id
       || this.provider('agents').get(child.id) !== undefined || this.provider('sessions').get(child.id) !== undefined
-      || !this.allowedModel(child.options.provider ?? '', child.options.model ?? '')) refuse()
+      || !this.allowedModelCurrent(child.options.provider ?? '', child.options.model ?? '')) refuse()
     for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'llm', 'subagents', 'workingDirectory'] as const) {
       const root: unknown = this.ctx.root.get(key), selected: unknown = child.ctx.get(key)
       if (root === undefined ? selected !== undefined
@@ -937,9 +964,9 @@ class AccountPolicy {
       assertCaller()
       const workspace = this.prepared(agent, true)
       const assertCurrent = (): void => {
-        this.current()
+        const current = this.prepared(agent, true)
         assertCaller()
-        if (this.prepared(agent, true) !== workspace) refuse()
+        if (current !== workspace) refuse()
       }
       return { workspace, assertCurrent,
         ...this.provider('peAccountExecution').enforcesSessionFilePolicy !== true ? {} : {

@@ -59,6 +59,7 @@ export interface AccountFileSelection {
   readonly assertMutationPolicy?: (policy?: SandboxExecutionPolicy) => void
   /** Omission retains ordinary selection; trusted factory preparation permits only its one root-directory sequence. */
   readonly directoryPreparation?: { assertCaller(caller: Context): void }
+  /** Recheck the original account graph, selected Workspace registration, and issuing Session/Agent authority. */
   assertCurrent(): void
 }
 

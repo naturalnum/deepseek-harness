@@ -33,7 +33,7 @@ import Agents from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import { FsError } from '@deepseek-ai/dsh-fs'
-import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
+import Sessions, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
@@ -1338,12 +1338,60 @@ it('reuses synchronous account validation inside cold Session read checks', asyn
   const value = await ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'readBytes',
     args: { workspaceFileScopeId: own.sessionId, path: 'offline-count.txt', options: {} }, peer })
   expect(value).toMatchObject({ data: new TextEncoder().encode('owned data') })
-  expect(accountChecks).toBeLessThan(450)
+  expect(accountChecks).toBeLessThan(200)
   expect(planChecks).toBe(accountChecks * 2)
   expect(selected).toBeGreaterThan(0)
   expect(stat).toHaveBeenCalledTimes(6)
   expect(root).toHaveBeenCalledTimes(2)
 }, 30000)
+
+it('checks a live Session and Agent selection once and rejects replaced native identities', async () => {
+  let checks = 0
+  const timing: FileReadTiming = { measure(key, action) { if (key === 'account-current') checks++; return action() }, close() {} }
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true, timing,
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  const agent = ctx.agents.get(own.sessionId), result = f.guards.mock.results[0]
+  if (agent === undefined || result?.type !== 'return') throw new Error('Native Agent or account policy is unavailable')
+  const policy = result.value, workspace = ctx.peCloudFiles.project().workspace
+  const peer = { id: brandString<PeerId>('live-file-selection'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const caller = ctx.extend({ invocation: { service: 'workspaceFiles', peer, signal: outcome.binding.lifetime,
+    request: { namespace: 'workspaceFiles', method: 'read', args: { workspaceFileScopeId: own.sessionId } },
+    async *uplink<T>(): AsyncIterable<T> {},
+  } })
+  const live = await policy.getFileProject(caller)
+  const initiated = await ctx.agents.withInitiator(agent, () => policy.getFileProject(agent.ctx))
+  for (const selection of [live, initiated]) {
+    checks = 0
+    expect(() => { selection.assertCurrent() }).not.toThrow()
+    expect(checks).toBe(1)
+  }
+  const originalWorkspace = ctx.workspaceRegistry.get.bind(ctx.workspaceRegistry)
+  const workspaceSwap = vi.spyOn(ctx.workspaceRegistry, 'get').mockImplementation(id =>
+    id === workspace.id ? new Proxy(workspace, {}) : originalWorkspace(id))
+  for (const selection of [live, initiated]) {
+    expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  }
+  workspaceSwap.mockRestore()
+  const replacement = Session.create(agent.id, undefined, agent.session.header)
+  const originalSession = ctx.sessions.get.bind(ctx.sessions)
+  const sessionSwap = vi.spyOn(ctx.sessions, 'get').mockImplementation(id => id === agent.id ? replacement : originalSession(id))
+  for (const selection of [live, initiated]) {
+    expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  }
+  sessionSwap.mockRestore()
+  const originalAgent = ctx.agents.get.bind(ctx.agents), otherAgent = new Proxy(agent, {})
+  const agentSwap = vi.spyOn(ctx.agents, 'get').mockImplementation(id => id === agent.id ? otherAgent : originalAgent(id))
+  expect(() => { initiated.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  agentSwap.mockRestore()
+  await workspace.detachSession(agent.id)
+  for (const selection of [live, initiated]) {
+    expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  }
+})
 
 it('rejects a cold Session file read when membership changes during a later stat', async () => {
   const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true,

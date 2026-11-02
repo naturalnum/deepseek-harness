@@ -33,6 +33,19 @@ it('runs inherited child directory setup under exact preparation identity then r
       const assertCaller = Reflect.get(identity, 'assertCaller') as (caller: typeof owner) => void
       assertCaller(owner)
       expect(() => { assertCaller(f.parent.ctx) }).toThrow()
+      expect(first.workspace).toBe(f.graph.files.project().workspace)
+      const entries = [...f.graph.ctx.loader.entries()]
+      const preset = entries.find(entry => entry.options.id === 'cloud-preset')!
+      const loop = entries.find(entry => entry.options.id === 'agent-loop')!
+      const audits = [vi.spyOn(preset, 'assertConfigUpdatePlan'), vi.spyOn(loop, 'assertConfigUpdatePlan')]
+      try {
+        expect(() => { first.assertCurrent() }).not.toThrow()
+        for (const audit of audits) expect(audit).toHaveBeenCalledTimes(1)
+      } finally { for (const audit of audits) audit.mockRestore() }
+      const registry = f.graph.ctx.workspaceRegistry, original = registry.get.bind(registry)
+      const changed = vi.spyOn(registry, 'get').mockImplementation(id =>
+        id === first.workspace.id ? new Proxy(first.workspace, {}) : original(id))
+      try { expect(() => { first.assertCurrent() }).toThrow() } finally { changed.mockRestore() }
       selections.push(first, second)
       await owner.get('workingDirectory')!.set(agent, f.project)
       await applyChildComposition(owner, f.parent, {})

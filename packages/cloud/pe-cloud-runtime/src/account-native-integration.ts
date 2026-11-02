@@ -241,7 +241,7 @@ export class AccountNativeIntegration {
     )
     if (this.input.files !== undefined) {
       const files = this.input.files(ctx, binding, async (caller, signal) => {
-        const admit = (): void => {
+        const admit = (): boolean => {
           const invocation = caller.invocation
           const method = invocation?.request.method
           const endpoint = `workspaceFiles/${method}`
@@ -267,13 +267,16 @@ export class AccountNativeIntegration {
             else if (manifest.streamEndpoints.some(row => row.endpoint === endpoint)) api.requireStream(endpoint)
             else throw new CloudApiError('cloud/forbidden', 'The native file endpoint is not selected.')
           }
+          return fileRead
         }
         admit()
         const selected = await requireGuards(caller).getFileProject(caller, signal)
         const assertCurrent = (): void => {
-          admit()
+          const fileRead = admit()
           selected.assertCurrent()
-          requireGuards(ctx).assertWorkspace(selected.workspace)
+          const guards = requireGuards(ctx)
+          // Admitted reads use the policy selection's complete Workspace audit.
+          if (!fileRead) guards.assertWorkspace(selected.workspace)
         }
         assertCurrent()
         const mutation = selected.assertMutationPolicy
