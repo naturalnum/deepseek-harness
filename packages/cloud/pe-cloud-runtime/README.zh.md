@@ -60,7 +60,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 `inspectRecipe()` 返回冻结的计数和有限问题标识，不暴露路径、凭据或 provider 对象。Loader 变化、provider 替换或关闭、参与者移除、显式 `revokeRecipe()` 及 runtime 关闭都会使保留的审核失效。`assertRecipeSealed()` 要求完整审核及原始 files pool/storage owner 持续有效。缺少实际存储仍以 `storage-root-capability-missing` 拒绝。既有 AppReady 回调在原生启动成功后尝试完整审核；该通知自身不授予准入。
 
-Factory 业务准入保留原生准备对象和原 Root 回调，每次同步准入只检查该 Root 一次。Integration 要求此合并的 Root/ready 检查；文件 scope lookup 在 await 前后保留该检查。完整 Root 检查先观察 provider 健康和存储，再核验原生 Loader plan，最后检查原登记身份和撤销状态。获批 Host 回调不得在 Loader 验证 plan 时修改其他条目；此机制不隔离任意 Host JavaScript。既有捕获式读取检查仍将 plan 验证留给完整准入和响应检查。
+Factory 业务准入保留原生准备对象和原 Root 回调，每次同步准入只检查该 Root 一次。Integration 要求此合并的 Root/ready 检查；文件 scope lookup 在 await 前后保留该检查。Root 封口时完整核验原生 Loader plan。准入检查复用 plan 原始 Entry/Fiber 变更版本和保留的身份，同时核验 provider 健康、原始存储归属和撤销状态。原生变更通过 Loader 事件、版本变化或身份变化使审核失效，涵盖失败或 no-save 的 Fiber 更新。版本匹配跟踪原生更新 API，不检测可信 Host 对象的直接改写。
 
 AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写入原审核的状态、计数及固定问题码。首次转为 revoked 时，还记录固定事件、进程 id、先前状态及内部原因；provider 身份或健康检查拒绝时，只附带固定 provider key。不记录配方配置、版本、错误或路径。日志失败不改变原封口、启动或拒绝结果。
 
@@ -81,7 +81,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 | `presetConfigSha256` | 可信已解析声明的规范 JSON 摘要，精确为 64 个小写十六进制字符。 |
 | `maxPresetConfigBytes` | 规范 UTF-8 摘要输入及遍历的正数上界。 |
 
-声明摘要使用 SHA-256、排序后的对象键和原数组顺序。函数、JS 表达式、非 JSON 对象和别名均拒绝。有界编码器在遍历期间拒绝超量输入。批准还要求原始 ACTIVE Loader 条目、未变化的原生配置 plan、实际 Preset inventory，以及 Agent 保留且无服务泄漏的组合。
+声明摘要使用 SHA-256、排序后的对象键和原数组顺序。函数、JS 表达式、非 JSON 对象和别名均拒绝。有界编码器在遍历期间拒绝超量输入。批准还要求原始 ACTIVE Loader 条目、未变化的原生配置 plan、实际 Preset inventory，以及 Agent 保留且无服务泄漏的组合。 策略首次 pin 会完整校验固定 Preset 与 AgentLoop 两份 plan，最后复核原始活跃身份和变更版本。后续 current 检查复用这些原生版本，同时保留 provider、files、binding 和生命周期检查。原生更新尝试会使 pin 失效，包括失败或 no-save 的 Fiber 更新；批准的设置事务仍保留完整 plan 校验及显式刷新和发布。该检查不检测可信 Host 对象的直接改写。
 
 仅当明确批准 `agentLoopEntryId.maxParallelToolCalls` 时，账户策略才在原生串行保存过程中保留原 AgentLoop 策略 pin。策略只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。 获批网页搜索表单的受限字段只能重置为获批的原生继承值，提供方选择只能是两组受支持的搜索／抓取组合。
 
@@ -193,7 +193,7 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。 固定私有 `ACCOUNT_NATIVE_ENTRIES.workspaceFiles` builtin 只在配方显式安装该入口时激活。它保留原生 WorkspaceFiles 的 Config 和全部 inject，额外要求 `peCloudApi`，并经原 API owner 构造不变的原生服务。配方须安装真实 sandbox-policy provider，显式选择部署模式和 fallback root；该 fallback 不授予项目权限。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。受限 files lane 构造原始 `CloudAccountFiles`，其 `/account` 入口持有原生 Registry/default/FS 安装。API 业务准入后，目录准备从原始已登记 Workspace 派生 `projectFor(workspace)`，并在 await 后复核 binding、owner 和 Workspace；新派生能力 wrapper 不要求对象身份相同。指令准备先选择 Agent 的 Workspace，再保留完整 snapshot 预算，并在 reservation 内使用同步共享检查。原生依赖可能在 files 初始化期间激活，必需入口检查与业务准入仍阻止不完整发布。缺 files 或共享 guard 时保持关闭。
 
-对三个已准入的 WorkspaceFiles HTTP 读取，原生集成可复用原请求 carrier 和持有的 ready `AccountUse`，执行局部 Root、代际和 binding 检查。显式 Root 撤销或替换会使下一次检查拒绝。静默的 Loader plan 原地变更在读取内部可能暂未发现，但响应头发送前的完整 Root plan 检查会拒绝。其他操作和没有匹配 carrier 的请求保留完整准入。该机制不新增缓存、服务或生命周期 owner；参见 [Access](../pe-cloud-access/README.zh.md#understand-the-implementation)。
+对三个已准入的 WorkspaceFiles HTTP 读取，原生集成可复用原请求 carrier 和持有的 ready `AccountUse`，执行 Root、代际和 binding 检查。捕获的 Root 检查保留同一个已封口 candidate，并核验原生变更版本、provider 身份与健康、原始存储归属；撤销或替换会使下一次检查拒绝。原认证、Session/Workspace 作用域、取消、await 后及响应头发送前的检查继续生效。其他操作和没有匹配 carrier 的请求保留普通业务准入。该机制不新增缓存、服务或生命周期 owner；参见 [Access](../pe-cloud-access/README.zh.md#understand-the-implementation)。
 
 原认证拥有者提供 Root Fetch 检查时，私有账户准备过程捕获该拥有者，只向 API 传入其只读注册回调。更换或撤回会拒绝下一次检查；账户图中不安装 Root 服务或 Context，此读取也不创建请求或分配。
 

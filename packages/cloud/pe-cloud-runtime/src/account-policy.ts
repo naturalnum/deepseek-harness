@@ -206,19 +206,23 @@ class AccountPolicy {
       if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
         || fact.entry.moduleNamespace !== fact.module) unavailable()
       try {
-        if (this.fileReadTiming === undefined) fact.entry.assertConfigUpdatePlan(fact.plan)
-        else this.fileReadTiming.measure('account-plan', () => { fact.entry.assertConfigUpdatePlan(fact.plan) })
+        this.assertPlanCurrent(fact)
       }
       catch (_cause) {
         const update = this.loopUpdates.getStore()
         if (update?.fact !== fact) unavailable()
         const next = update.refresh()
         try {
-          if (this.fileReadTiming === undefined) next.entry.assertConfigUpdatePlan(next.plan)
-          else this.fileReadTiming.measure('account-plan', () => { next.entry.assertConfigUpdatePlan(next.plan) })
+          this.assertPlanCurrent(next)
         } catch (_invalid) { unavailable() }
       }
     }
+  }
+
+  private assertPlanCurrent(fact: EntryFact): void {
+    const check = (): void => { if (!fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable() }
+    if (this.fileReadTiming === undefined) check()
+    else this.fileReadTiming.measure('account-plan', check)
   }
 
   private provider<K extends string & keyof Context>(key: K): NonNullable<Context[K]> {
@@ -352,7 +356,20 @@ class AccountPolicy {
       || loop.entry.options.name !== 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop
       || loop.fiber.store?.agentLoop?.fiber !== loop.fiber
       || !object(loop.fiber.store.agentLoop.value) || original(loop.fiber.store.agentLoop.value) !== original(nativeLoop)) unavailable()
-    this.facts = [preset, loop]
+    const facts = [preset, loop]
+    try { for (const fact of facts) {
+      if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
+        || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
+      fact.entry.assertConfigUpdatePlan(fact.plan)
+    } }
+    catch (_invalid) { unavailable() }
+    this.current()
+    // The last full validation can reenter native code; finish without invoking callbacks.
+    for (const fact of facts) {
+      if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
+        || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
+    }
+    this.facts = facts
   }
 
   /** Retain the policy pin across one bounded, original native settings transaction. */
