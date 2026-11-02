@@ -490,7 +490,8 @@ it('rejects synchronous admission while Native moves an existing Entry between g
   const f = await fixture()
   f.ctx.loader.builtins['worker1-group'] = Group
   const files = f.entry('files'), previous = files.parent
-  await previous.create({ id: 'worker1-group', name: 'cordis:worker1-group', group: true, config: [] })
+  const groupOptions = { id: 'worker1-group', name: 'cordis:worker1-group', group: true, config: [] }
+  await previous.create(groupOptions)
   const target = f.entry('worker1-group').subgroup
   if (target === undefined) throw new Error('Native target group missing')
   const owner = new RootStorageOwner({} as never, 4096, {} as never)
