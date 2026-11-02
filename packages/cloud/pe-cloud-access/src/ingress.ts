@@ -924,10 +924,14 @@ export class CloudIngress {
   }
 
   private assertCurrent(id: RequestId): void {
-    if (!this.observe().current) throw new AuthAccessError('cloud/account-unavailable', id)
-    this.ctx.fiber.assertActive()
+    this.assertIngressLocal(id)
     this.dependencies.runtime.assertRecipeSealed(this.dependencies.recipeVersion)
     this.dependencies.assertAuthenticationCurrent()
+  }
+
+  private assertIngressLocal(id: RequestId): void {
+    if (!this.observe().current) throw new AuthAccessError('cloud/account-unavailable', id)
+    this.ctx.fiber.assertActive()
   }
 
   private assertOperation(operation: Operation): void {
@@ -966,20 +970,30 @@ export class CloudIngress {
   }
 
   private assertPeer(peer: LoginPeer, id: RequestId): void {
-    this.assertCurrent(id)
+    this.assertIngressLocal(id)
+    this.dependencies.assertAuthenticationCurrent()
     this.peers.assertCurrent(peer, id)
+    if (peer.binding.recipeVersion !== this.dependencies.recipeVersion) throw new AuthAccessError('cloud/account-unavailable', id)
     const generation = this.peerGenerations.get(peer)
-    if (generation === undefined || generation !== this.generations.current(peer.binding, id)) {
-      throw new RequestBindingError(id)
-    }
+    if (generation === undefined || generation !== this.generations.retained(peer.binding, id)) throw new RequestBindingError(id)
+    this.dependencies.assertAuthenticationCurrent()
+    this.assertIngressLocal(id)
   }
 
   private assertRequest(request: IncomingMessage, peer: LoginPeer, id: RequestId): void {
     const entry = this.requests.get(request)
     if (entry === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
-    this.assertOperation(entry.operation)
+    this.assertIngressLocal(id)
+    if (entry.operation.timedOut || entry.operation.observer.signal.aborted) throw new AuthAccessError('cloud/account-unavailable', id)
+    this.dependencies.assertAuthenticationCurrent()
     assertExpectedAccount(entry.expected, peer.principal.accountId, id)
     assertExpectedGeneration(entry.expected, this.generations.current(peer.binding, id), id)
+    this.dependencies.assertAuthenticationCurrent()
+    this.assertIngressLocal(id)
+    if (this.requests.get(request) !== entry || Reflect.get(entry.operation, 'timedOut')
+      || Reflect.get(entry.operation.observer.signal, 'aborted')) {
+      throw new AuthAccessError('cloud/account-unavailable', id)
+    }
   }
 
   private register(acquire: () => () => void, label: string): object {

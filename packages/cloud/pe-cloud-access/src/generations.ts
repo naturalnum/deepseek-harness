@@ -57,6 +57,16 @@ export class ConnectionGenerations {
       || record.binding.lifetime !== binding.lifetime) throw new AuthAccessError('cloud/account-unavailable', requestId)
   }
 
+  /** Read the original generation after the exact Peer Use has checked current business admission. */
+  retained(binding: AccountBinding, requestId: Branded<'pe-request-id'>): Generation | undefined {
+    if (this.closed || binding.lifetime.aborted) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    const record = this.records.get(binding.accountId)
+    if (record === undefined) return undefined
+    if (record.binding.epoch !== binding.epoch || record.binding.recipeVersion !== binding.recipeVersion
+      || record.binding.lifetime !== binding.lifetime) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    return record.value
+  }
+
   /** Revoke retained tokens and remove observers after ingress and Peer work has stopped. */
   close(): void {
     this.closed = true

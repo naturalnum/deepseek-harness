@@ -9,6 +9,27 @@ import { ConnectionGenerations } from '../src/generations.ts'
 const id = 'generation-denial-test' as Branded<'pe-request-id'>
 
 describe('runtime-bound generation ownership', () => {
+  it('observes only the original retained generation after business admission without issuing a replacement', async () => {
+    const ctx = new Context()
+    const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 1, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+    const current = vi.spyOn(runtime, 'assertBusinessCurrent').mockImplementation(() => {})
+    const owner = new ConnectionGenerations(runtime, 1), lifetime = new AbortController()
+    const binding: AccountBinding = { accountId: 'retained-test' as AccountBinding['accountId'],
+      epoch: '1' as AccountBinding['epoch'], recipeVersion: 'retained', lifetime: lifetime.signal }
+    try {
+      expect(owner.retained(binding, id)).toBeUndefined()
+      const generation = owner.current(binding, id)
+      expect(owner.retained(binding, id)).toBe(generation)
+      expect(current).toHaveBeenCalledTimes(1)
+      expect(() => owner.retained({ ...binding, epoch: '2' as AccountBinding['epoch'] }, id))
+        .toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+      lifetime.abort()
+      expect(() => owner.retained(binding, id)).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+      const newer = { ...binding, epoch: '2' as AccountBinding['epoch'], lifetime: new AbortController().signal }
+      expect(owner.retained(newer, id)).toBeUndefined()
+    } finally { owner.close(); await ctx.fiber.dispose() }
+  })
+
   it('cannot issue a token from an unsealed component runtime or client-like binding', async () => {
     const ctx = new Context()
     const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 1, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })

@@ -78,6 +78,8 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 私有[账户暴露视图](src/account-exposure.ts) 从根的冻结 manifest 中选择同配方子集。RPC 与流类别、Fetch 方法/路径、handler、guard 和 settings 字段必须对应根的精确声明。每图拥有自己的 inventory 审核和销毁失效；A 的审核或失效不改变 B 或根。审核及操作准入核验实际安装的精确 AccountBinding 与可信 graph/mount-current 回调，允许在 ready 前受限挂载时审核，拒绝过期或关闭的图。现有 ExposurePolicy 消费者可直接接收该视图，不增加 Loader 服务或全局账户注册表。
 
+原生插件清单保留本地化标题和描述，不返回图标数据，并替换可能包含私有路径的元数据诊断。既有条目数和完整帧大小限制继续生效。
+
 可信构造准备过程向 runtime 的[私有启动观察器](../pe-cloud-runtime/README.zh.md#understand-the-implementation)报告 provider、bootstrap-policy 及 inventory 阶段。回调异常不影响审核或发布；此回调不属于 Loader 配置或 Remote 入口。
 
 Page 和 follow 对普通 Session 地址等待共享项目守卫。Page 在原生读取前和返回结果前复核准入。Follow 要求已审核的流声明，并在每次推进原生迭代器前及交付结果前检查准入和取消。原生迭代器接收调用者与图生命周期的取消，继续独占历史、promotion 及清理责任。Subagent 历史地址在单独范围审核前继续拒绝。

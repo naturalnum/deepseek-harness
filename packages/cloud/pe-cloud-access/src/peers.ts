@@ -243,12 +243,15 @@ export class LoginPeerRegistry {
    */
   assertCurrent(handle: LoginPeer, requestId: RequestId): void {
     const entry = this.currentEntry(handle, requestId)
+    const use = entry.use
     try { this.auth.assertLoginCurrent(entry.principal, requestId) }
     catch (error) {
       if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') void this.beginRecheck(entry)
       else void this.startClose(entry, requestId)
       throw this.safe(error, requestId)
     }
+    if (entry.phase !== 'ready' || entry.handle !== handle || entry.use !== use || use?.binding !== handle.binding
+      || handle.binding.lifetime.aborted) throw new AuthAccessError('cloud/account-unavailable', requestId)
   }
 
   /**
@@ -859,10 +862,16 @@ export class LoginPeerRegistry {
 
   private currentEntry(handle: LoginPeer, requestId: RequestId): Entry {
     const entry = this.handles.get(handle)
-    if (entry === undefined || entry.phase !== 'ready' || entry.use === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    if (entry === undefined || entry.phase !== 'ready' || entry.use === undefined
+      || entry.handle !== handle || entry.binding !== handle.binding || entry.use.binding !== handle.binding) {
+      throw new AuthAccessError('cloud/account-unavailable', requestId)
+    }
+    const use = entry.use
     try {
       if (entry.binding.lifetime.aborted) throw new AuthAccessError('cloud/account-unavailable', requestId)
-      entry.use.assertCurrent()
+      use.assertCurrent()
+      if (Reflect.get(entry, 'phase') !== 'ready' || entry.handle !== handle || entry.use !== use || use.binding !== handle.binding
+        || Reflect.get(entry.binding.lifetime, 'aborted')) throw new AuthAccessError('cloud/account-unavailable', requestId)
     } catch (error) {
       void this.startClose(entry, requestId)
       throw this.safe(error, requestId)

@@ -22,6 +22,13 @@ function unavailable(): never {
   throw new CloudApiError('cloud/account-unavailable', 'The original account plugin inventory is unavailable.')
 }
 
+// Diagnostics can contain private paths; inventory cards do not need icon bytes.
+function publicMeta(meta: NonNullable<PluginInventorySnapshot['entries'][number]['meta']>) {
+  return { ...meta.title === undefined ? {} : { title: meta.title },
+    ...meta.description === undefined ? {} : { description: meta.description },
+    ...meta.error === undefined ? {} : { error: 'Plugin metadata unavailable.' } }
+}
+
 /** Install the native Loader inventory without granting native manager write methods.
  * @param ctx Actual independent account Loader owner.
  * @param binding Original account generation.
@@ -62,9 +69,11 @@ export function createNativePluginInventory(ctx: Context, binding: AccountBindin
         || native.agentPresets?.some(group => group.rows.length > maximum) === true) unavailable()
       // Conditions are raw Loader expressions and preset errors may contain private values.
       const result: PluginInventorySnapshot = { ...native,
+        entries: native.entries.map(({ meta, ...row }) => ({ ...row, ...meta === undefined ? {} : { meta: publicMeta(meta) } })),
         ...native.agentPresets === undefined ? {} : { agentPresets: native.agentPresets.map(group => ({
           ...group, ...group.broken === undefined ? {} : { broken: 'Preset could not load.' },
-          rows: group.rows.map(({ condition: _condition, ...row }) => row),
+          rows: group.rows.map(({ condition: _condition, meta, ...row }) =>
+            ({ ...row, ...meta === undefined ? {} : { meta: publicMeta(meta) } })),
         })) },
       }
       firstScreenJsonBytes(result, maxFrameBytes)

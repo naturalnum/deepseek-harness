@@ -1,7 +1,7 @@
 /** Private native assembly after the factory's owner, root-capability, and recipe admission checks. */
 import { isAbsolute } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
-import { boot, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { boot, PluginPackages, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { installAccountBinding, requireAccountBinding } from './binding.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -132,6 +132,11 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
         if (disposeRequested) throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup was closed')
         ctx.provide('profileContext', profile)
         ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, environment)
+        // Read native display metadata without installing a resolution interceptor.
+        await ctx.plugin(PluginPackages)
+        if (closing(input.binding)) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup ended while preparing package metadata')
+        }
         const binding = installAccountBinding(ctx, input.binding)
         try { await input.prepare(ctx, binding) }
         catch (cause) { observeStartup(diagnostic, { failure: cause }); throw cause }

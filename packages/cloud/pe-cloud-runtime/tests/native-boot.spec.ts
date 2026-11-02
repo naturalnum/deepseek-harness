@@ -3,15 +3,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context, FiberState } from '@deepseek-ai/cordis'
+import { Context, FiberState, RegistryService } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { initProfile, PluginPackages, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import Settings from '@deepseek-ai/dsh-settings'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import { ConfigSaveCoordinator, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as AccountEntry from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { startNativeAccountBoot, type NativeAccountBootHandle, type NativeAccountBootInput } from '../src/native-boot.ts'
+import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { startupFailureObserver } from '../src/startup-observation.ts'
 import type { AccountId, OwnerEpoch } from '../src/types.ts'
 import NativeAccountProbe from './fixtures/native-probe.ts'
@@ -121,6 +122,35 @@ function entrySnapshot(ctx: Context) {
 }
 
 describe('private native account assembly', () => {
+  it('uses native metadata for a preset row from the account boot configuration base', async () => {
+    const f = fixture('metadata-base')
+    const dir = join(f.profile.dir, 'node_modules', 'fixture-metadata')
+    mkdirSync(join(dir, 'locale'), { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture-metadata',
+      exports: { './package.json': './package.json', './locale/*.json': './locale/*.json' } }))
+    writeFileSync(join(dir, 'locale', 'en.json'), JSON.stringify({ meta: { title: 'Fixture title' } }))
+    writeFileSync(join(dir, 'locale', 'zh.json'), JSON.stringify({ meta: { title: '本地标题', description: '本地描述' } }))
+    const ctx = await mounted(f.start({ prepare: async (owner, binding) => {
+      await f.input.prepare(owner, binding)
+      owner.provide('agentPresets', { compositionInventory: async () => [{ id: 'cloud-text', isDefault: true,
+        rows: [{ entryId: 'row', moduleName: 'fixture-metadata', enabled: true }] }] } as never)
+    } }))
+    const snapshot = await readPluginInventory(ctx)
+    expect(snapshot.agentPresets?.[0]?.rows[0]?.meta).toMatchObject({ title: { zh: '本地标题' }, description: { zh: '本地描述' } })
+  })
+  it('owns an isolated metadata provider for the account lifetime', async () => {
+    const first = fixture('metadata-first'), second = fixture('metadata-second')
+    const a = first.start(), b = second.start()
+    const [left, right] = await Promise.all([mounted(a), mounted(b)])
+    const original = left.get('pluginPackages')
+    expect(original).toBeDefined()
+    expect(original?.resolution).toBeUndefined()
+    expect(right.get('pluginPackages')).toBeDefined()
+    expect(right.get('pluginPackages')).not.toBe(original)
+    await a.dispose()
+    expect(left.get('pluginPackages')).toBeUndefined()
+    expect(right.get('pluginPackages')).toBeDefined()
+  })
   it('saves native settings for a base row alongside the private inserted profile', async () => {
     const f = fixture('base-settings')
     writeFileSync(f.input.configPath, JSON.stringify([{ id: 'probe', name: 'cordis:probe', config: { ordinary: 'base', count: 3 } }]))
@@ -513,6 +543,38 @@ describe('private native account assembly', () => {
     const disposal = handle.dispose()
     await expect(handle.result).resolves.toMatchObject({ status: 'failed' })
     await expect(disposal).resolves.toMatchObject({ status: 'confirmed' })
+  })
+
+  it.each(['abort', 'dispose'])('skips account preparation after %s while PluginPackages is settling', async (action) => {
+    const f = fixture(`packages-${action}`)
+    const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const prepare = vi.fn(f.input.prepare)
+    const original = RegistryService.prototype.plugin
+    const spy = vi.spyOn(RegistryService.prototype, 'plugin').mockImplementation(function (this: RegistryService, plugin, config, stack) {
+      const fiber = original.call(this, plugin, config, stack)
+      if (plugin === PluginPackages) {
+        const then = fiber.then.bind(fiber)
+        fiber.then = (resolve, reject) => {
+          entered.resolve(undefined)
+          return release.promise.then(() => then(resolve, reject))
+        }
+      }
+      return fiber
+    })
+    try {
+      const handle = f.start({ prepare })
+      await entered.promise
+      if (action === 'abort') f.controller.abort()
+      else void handle.dispose()
+      release.resolve(undefined)
+      await expect(handle.result).resolves.toMatchObject({ status: 'failed',
+        cause: { cause: { code: 'cloud/account-unavailable', message: 'Native account startup ended while preparing package metadata' } } })
+      expect(prepare).not.toHaveBeenCalled()
+      await handle.dispose()
+    } finally {
+      release.resolve(undefined)
+      spy.mockRestore()
+    }
   })
 
   it.each(['abort', 'dispose'])('starts no Include entry or writer after %s during delayed preparation', async (action) => {

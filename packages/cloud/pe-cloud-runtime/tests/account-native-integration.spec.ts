@@ -9,6 +9,15 @@ import * as fs from 'node:fs/promises'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { createServer, request as httpRequest, type IncomingMessage } from 'node:http'
+import { Socket } from 'node:net'
+import pg from 'pg'
+import { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import * as NativeConnection from '@deepseek-ai/dsh-client-connection'
+import { CloudIngress } from '@deepseek-ai/dsh-pe-cloud-access/src/ingress.ts'
+import { BetterAuthAccess } from '@deepseek-ai/dsh-pe-cloud-access/src/auth.ts'
+import type { AccessConfig } from '@deepseek-ai/dsh-pe-cloud-access/types'
+import type { AuthIngressConfig } from '@deepseek-ai/dsh-pe-cloud-access/src/root-config.ts'
 import { LinuxFilesPool } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
 import type { NativeTextFileSystemConstructor } from '@deepseek-ai/dsh-pe-cloud-files/src/text-project.ts'
 import { tmpdir } from 'node:os'
@@ -66,6 +75,25 @@ import { nativeProjectDeriver, nativeRoutedFileSystem } from './native-project-f
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
 import type { FileReadTiming } from '../src/file-read-timing.ts'
+
+/** Real Node HTTP parser and bridge over an in-process socket pair; no listener or network. */
+class ReadFixtureSocket extends Socket {
+  other?: ReadFixtureSocket
+  override get remoteAddress(): string { return '127.0.0.1' }
+  override _read(): void {}
+  override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    if (this.other === undefined || this.other.destroyed) { callback(new Error('fixture socket closed')); return }
+    this.other.push(Buffer.from(chunk)); callback()
+  }
+  override _writev(chunks: { chunk: Buffer; encoding: BufferEncoding }[], callback: (error?: Error | null) => void): void {
+    this._write(Buffer.concat(chunks.map(item => Buffer.from(item.chunk))), 'utf8', callback)
+  }
+  override _final(callback: (error?: Error | null) => void): void { this.other?.push(null); callback() }
+  override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    this.other?.push(null); callback(error)
+    process.nextTick(() => { this.emit('close', error !== null) })
+  }
+}
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>()
@@ -1715,3 +1743,243 @@ it('uses the actual factory callback to reject Root revocation after a file scop
     Reflect.set(slot, 'state', originalState)
   }
 })
+
+it('traces real Access HTTP carrier through the native Gateway and Cloud file selection', async () => {
+  const access: { ingress?: CloudIngress } = {}
+  const trace = { hit: 0, miss: 0, captured: 0, root: 0, sessionStatRoot: 0, sessionStatCalls: 0,
+    mismatchChecks: 0, stages: [] as { stage: string; root: number; captured: number; hit: number }[] }
+  let sessionStat = false, rootValid = true, authValid = true, revokeOnStat = false
+  let revokeAtResponse = false, revokeAuthAtResponse = false, revokeGenerationAtPeer = false
+  let revokePeerDuringUse = false, revokeAuthDuringUse = false, revokeAuthDuringBusiness = false
+  let armAuthDuringRequest = false, dispatches = 0
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+    auditedFileBytes: true, realFiles: true,
+    readCurrent: (caller, binding, endpoint) => {
+      const peer = caller.invocation?.peer
+      const ingress = access.ingress
+      if (peer === undefined || ingress === undefined) { trace.miss++; return false }
+      if (trace.mismatchChecks === 0) {
+        expect(ingress.readOperationCurrent(new Proxy(peer, {}), binding, endpoint)).toBe(false)
+        expect(ingress.readOperationCurrent(peer, { ...binding }, endpoint)).toBe(false)
+        expect(ingress.readOperationCurrent(peer, binding, 'workspaceFiles/stat')).toBe(false)
+        trace.mismatchChecks++
+      }
+      const admitted = ingress.readOperationCurrent(peer, binding, endpoint)
+      if (admitted) trace.hit++; else trace.miss++
+      return admitted
+    },
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, binding = outcome.binding
+  const connection = ctx.plugin(NativeConnection)
+  await connection.await()
+  if (ctx.get('connection') === undefined) throw new Error('Original account connection missing')
+  const own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'access-carrier.txt'), 'exact 15 bytes!')
+  await ctx.sessionPersistence.flush()
+  const runtime = f.root.peAccountRuntime, native = f.recipe.native
+  if (native === undefined) throw new Error('Original native root missing')
+  const nativeRoot = native.assertRootCurrent.bind(native)
+  const full = (reason: string): void => {
+    trace.root++
+    if (sessionStat) trace.sessionStatRoot++
+    if (!rootValid) throw new Error(`Fixture Root revoked: ${reason}`)
+    if (reason === 'use' && revokeAuthDuringUse && dispatches === 1) { revokeAuthDuringUse = false; authValid = false }
+    if (reason === 'business' && revokeAuthDuringBusiness) { revokeAuthDuringBusiness = false; authValid = false }
+    binding.lifetime.throwIfAborted()
+  }
+  vi.spyOn(native, 'assertRootCurrent').mockImplementation(() => { full('native'); nativeRoot() })
+  vi.spyOn(runtime, 'assertRecipeSealed').mockImplementation(() => { full('seal') })
+  vi.spyOn(runtime, 'assertBusinessCurrent').mockImplementation((current) => {
+    if (current !== binding) throw new Error('wrong account binding')
+    full('business')
+  })
+  vi.spyOn(runtime, 'captureReadRecipeCurrent').mockImplementation(() => {
+    full('capture')
+    return () => { binding.lifetime.throwIfAborted(); if (!rootValid) throw new Error('Fixture captured Root revoked'); trace.captured++ }
+  })
+  const issue = () => {
+    let released = false
+    return { binding, context: ctx,
+      assertCurrent() {
+        if (released) throw new Error('Use released')
+        full('use')
+        if (revokePeerDuringUse && dispatches === 1 && access.ingress !== undefined) {
+          revokePeerDuringUse = false
+          void access.ingress.invalidateLogin(brandString<'pe-auth-session-id'>('fixture-login')).catch(() => {})
+        }
+      },
+      assertRetained() { if (released) throw new Error('Use released'); binding.lifetime.throwIfAborted() },
+      release() { released = true } }
+  }
+  vi.spyOn(runtime, 'locateAccount').mockResolvedValue(undefined)
+  vi.spyOn(runtime, 'acquireAccount').mockImplementation(async (id) => {
+    if (id !== binding.accountId) throw new Error('foreign account')
+    return issue()
+  })
+  vi.spyOn(runtime, 'borrowAccount').mockImplementation(async (current) => {
+    if (current !== binding) throw new Error('foreign binding')
+    return issue()
+  })
+  const config: AccessConfig = {
+    publicOrigin: 'http://127.0.0.1:4100', deploymentMode: 'development', trustedProxyAddresses: [], authSecretRef: 'test-reference',
+    sessionRecheckMs: 60_000, authCheckTimeoutMs: 1000, maxPeers: 4, maxPeersPerAccount: 2,
+    maxPeerWaiters: 24, maxPeerWaitersPerAccount: 20, maxPeerCarriers: 8, maxPeerCarriersPerAccount: 4,
+    maxPeerCarriersPerLogin: 2, peerCloseTimeoutMs: 1000, maxAuthOperations: 8, maxTrackedLogins: 16,
+    maxTrackedLoginsPerAccount: 4, maxAuthInvalidations: 16,
+    bindingFields: { accountHeader: 'x-pe-account', generationHeader: 'x-pe-generation', accountQuery: 'peAccount', generationQuery: 'peGeneration' },
+  }
+  const limits: AuthIngressConfig = { sessionRecheckLeadMs: 25, maxOperations: 4, maxOperationsPerAccount: 2,
+    requestTimeoutMs: 5000, maxAuthRequestBodyBytes: 4096, maxRequestBodyBytes: 65536, maxBootstrapResponseBytes: 65536,
+    maxGenerationBindings: 4, maxFrameBytes: 65536, maxLogicalStreams: 8, maxLogicalStreamsPerAccount: 4, maxLogicalStreamsPerPeer: 2 }
+  const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'test', database: 'unavailable', password: 'test', max: 1, connectionTimeoutMillis: 30 })
+  const query = vi.spyOn(pool, 'query')
+  const auth = await BetterAuthAccess.create(config, pool, 'access-carrier-fixture-secret-0123456789',
+    async (login) => { await access.ingress?.invalidateLogin(login) })
+  const library = Reflect.get(auth, 'auth') as { api: { getSession(...args: unknown[]): Promise<unknown> } }
+  const now = new Date(), expiresAt = new Date(Date.now() + 60000)
+  vi.spyOn(library.api, 'getSession').mockImplementation(async () => ({
+    user: { id: binding.accountId, name: 'Fixture', email: 'carrier@example.test', emailVerified: false, createdAt: now, updatedAt: now },
+    session: { id: 'fixture-login', userId: binding.accountId, token: 'fixture-token', expiresAt, createdAt: now, updatedAt: now,
+      ipAddress: null, userAgent: null },
+  }))
+  const web = new WebServer(f.root, { host: '127.0.0.1', port: 0 })
+  const register = vi.spyOn(web, 'register')
+  const ingress = new CloudIngress(f.root, config, limits, auth,
+    { web, runtime, recipeVersion: binding.recipeVersion, assertAuthenticationCurrent: () => {
+      if (!authValid) throw new Error('Fixture authentication withdrawn')
+    } })
+  access.ingress = ingress
+  const stageOwner = ingress as unknown as { requestStage(request: IncomingMessage, stage: string): void }
+  const requestStage = stageOwner.requestStage.bind(ingress)
+  vi.spyOn(stageOwner, 'requestStage').mockImplementation((request, stage) => {
+    trace.stages.push({ stage, root: trace.root, captured: trace.captured, hit: trace.hit })
+    if (stage === 'beforeDispatch.peer' && ++dispatches === 2) {
+      if (revokeAtResponse) rootValid = false
+      if (revokeAuthAtResponse) authValid = false
+    }
+    if (stage === 'beforeDispatch.request' && armAuthDuringRequest) {
+      armAuthDuringRequest = false; revokeAuthDuringBusiness = true
+    }
+    requestStage(request, stage)
+  })
+  cleanups.push(async () => { await ingress.closeActual(); await auth.close(); await pool.end(); await connection.dispose() })
+  await ingress.install()
+  const route = register.mock.calls.map(([row]) => row).find(row => row.path === '/api')
+  if (route === undefined) throw new Error('Original Access API route missing')
+  const generations = Reflect.get(ingress, 'generations') as { current(value: AccountBinding, id: ReturnType<typeof brandString<'pe-request-id'>>): string }
+  const generation = generations.current(binding, brandString<'pe-request-id'>('fixture-generation'))
+  const originalLogin = auth.assertLoginCurrent.bind(auth)
+  vi.spyOn(auth, 'assertLoginCurrent').mockImplementation((principal, id) => {
+    originalLogin(principal, id)
+    if (revokeGenerationAtPeer && dispatches === 1) {
+      const owner = Reflect.get(ingress, 'generations') as { close(): void }
+      owner.close(); revokeGenerationAtPeer = false
+    }
+  })
+  const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+  vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementation(async (...args) => {
+    trace.sessionStatCalls++; sessionStat = true
+    try { const value = await stat(...args); if (revokeOnStat) rootValid = false; return value } finally { sessionStat = false }
+  })
+  const send = async (options: { account?: string; generation?: string; endpoint?: string; scope?: string } = {}) => {
+    dispatches = 0
+    const endpoint = options.endpoint ?? 'workspaceFiles/readBytes'
+    const server = createServer((request, response) => {
+      void Promise.resolve(route.handler(request, response)).catch(() => { response.destroy() })
+    })
+    const client = new ReadFixtureSocket(), incoming = new ReadFixtureSocket()
+    client.other = incoming; incoming.other = client
+    client.on('error', () => {}); incoming.on('error', () => {})
+    server.emit('connection', incoming)
+    return await new Promise<unknown>((resolve, reject) => {
+      const request = httpRequest(`http://127.0.0.1:4100/api/${endpoint}`, {
+        method: 'POST', headers: { host: '127.0.0.1:4100', origin: config.publicOrigin, cookie: 'login=a',
+          'content-type': 'application/json', 'x-pe-account': options.account ?? binding.accountId,
+          'x-pe-generation': options.generation ?? generation,
+          connection: 'close' }, createConnection: () => client,
+      }, (response) => {
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        response.on('end', () => {
+          void (async () => {
+            const type = response.headers['content-type']
+            if (type === undefined) throw new Error('Missing content type')
+            if (!type.startsWith('multipart/form-data')) return { status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }
+            const form = await new Response(Buffer.concat(chunks), { headers: { 'content-type': type } }).formData()
+            const data = form.get('bytes-0'), metadata = form.get('metadata')
+            if (!(data instanceof Blob) || typeof metadata !== 'string') throw new Error('Missing native binary response')
+            const parsed: unknown = JSON.parse(metadata)
+            return { status: response.statusCode, bytes: await data.text(), metadata: parsed }
+          })().then(resolve, reject).finally(() => { client.destroy(); incoming.destroy() })
+        })
+        response.on('error', reject)
+      })
+      request.on('error', reject)
+      request.end(JSON.stringify({ type: 'client-request', rpcId: 'read-carrier', method: endpoint,
+        payload: { args: { workspaceFileScopeId: options.scope ?? own.sessionId, path: 'access-carrier.txt', options: {} } } }))
+    })
+  }
+  trace.root = 0; trace.captured = 0; trace.hit = 0; trace.miss = 0; trace.stages.length = 0
+  const warm = await send()
+  expect(warm).toMatchObject({ status: 200, bytes: 'exact 15 bytes!', metadata: { result: { ok: true } } })
+  process.stdout.write(`ACCESS_FILE_WARM ${JSON.stringify({ root: trace.root, captured: trace.captured, hit: trace.hit,
+    miss: trace.miss, stat: trace.sessionStatCalls, statRoot: trace.sessionStatRoot, stages: trace.stages })}\n`)
+  expect(trace.hit).toBeGreaterThan(0)
+  expect(trace.miss).toBe(0); expect(trace.mismatchChecks).toBe(1)
+  expect(trace.root).toBeLessThan(50)
+  await ctx.agentLoop.stop()
+  trace.root = 0; trace.captured = 0; trace.hit = 0; trace.miss = 0
+  trace.sessionStatCalls = 0; trace.sessionStatRoot = 0; trace.stages.length = 0
+  const cold = await send()
+  expect(cold).toMatchObject({ status: 200, bytes: 'exact 15 bytes!', metadata: { result: { ok: true } } })
+  process.stdout.write(`ACCESS_FILE_COLD ${JSON.stringify({ root: trace.root, captured: trace.captured, hit: trace.hit,
+    miss: trace.miss, stat: trace.sessionStatCalls, statRoot: trace.sessionStatRoot, stages: trace.stages })}\n`)
+  expect(trace.hit).toBeGreaterThan(0)
+  expect(trace.root).toBeLessThan(47)
+  await expect(send({ account: 'foreign-account' })).resolves.toMatchObject({ status: 409 })
+  await expect(send({ generation: 'wrong-generation' })).resolves.toMatchObject({ status: 409 })
+  const unselected = await send({ endpoint: 'workspaceFiles/list' })
+  expect(unselected).not.toHaveProperty('bytes')
+  const foreignSession = await send({ scope: 'foreign-session' })
+  expect(foreignSession).not.toHaveProperty('bytes')
+  expect(JSON.stringify(foreignSession)).toContain('cloud/forbidden')
+  const workspace = ctx.peCloudFiles.project().workspace, registry = ctx.workspaceRegistry
+  const getWorkspace = registry.get.bind(registry)
+  const replaced = vi.spyOn(registry, 'get').mockImplementation(id => id === workspace.id ? new Proxy(workspace, {}) : getWorkspace(id))
+  try { expect(await send()).not.toHaveProperty('bytes') } finally { replaced.mockRestore() }
+  const denied = async (): Promise<void> => {
+    try { expect(await send()).not.toHaveProperty('bytes') }
+    catch (error) { expect(error).toMatchObject({ code: 'ECONNRESET' }) }
+  }
+  revokeOnStat = true
+  await denied()
+  expect(rootValid).toBe(false)
+  rootValid = true; revokeOnStat = false
+  revokeAtResponse = true
+  await denied()
+  expect(dispatches).toBe(2)
+  expect(rootValid).toBe(false)
+  rootValid = true; revokeAtResponse = false; revokeAuthAtResponse = true
+  await denied()
+  expect(dispatches).toBe(2)
+  expect(authValid).toBe(false)
+  authValid = true; revokeAuthAtResponse = false; revokeAuthDuringUse = true
+  await denied()
+  expect(dispatches).toBe(1)
+  expect(revokeAuthDuringUse).toBe(false); expect(authValid).toBe(false)
+  authValid = true; armAuthDuringRequest = true
+  await denied()
+  expect(dispatches).toBe(1)
+  expect(armAuthDuringRequest).toBe(false); expect(revokeAuthDuringBusiness).toBe(false); expect(authValid).toBe(false)
+  authValid = true; revokePeerDuringUse = true
+  await denied()
+  expect(dispatches).toBe(1)
+  expect(revokePeerDuringUse).toBe(false)
+  revokeGenerationAtPeer = true
+  await denied()
+  expect(dispatches).toBe(1)
+  expect(revokeGenerationAtPeer).toBe(false)
+  expect(query).not.toHaveBeenCalled()
+}, 30000)

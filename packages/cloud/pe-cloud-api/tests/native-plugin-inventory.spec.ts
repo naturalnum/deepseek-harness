@@ -80,14 +80,49 @@ it('preserves preset state without disclosing raw Loader conditions or exception
     rows: [{ entryId: null, moduleName: 'cordis:sample', enabled: 'conditional', fiberPhase: null }] }] })
 })
 
-it('does not publish a pending inventory result after the account is withdrawn', async () => {
+it('retains native localized text while withholding metadata icons and private diagnostics', async () => {
+  const f = await fixture()
+  const meta = { title: { zh: '原生标题', en: 'Native title' }, description: { zh: '原生描述', en: 'Native description' },
+    error: '/private/account/plugin/locale.json', icon: 'data:image/png;base64,QUJD' }
+  const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockResolvedValue({
+    entries: [{ entryId: brandString('row'), moduleName: 'package', enabled: true, fiberPhase: 'active', meta }],
+    agentPresets: [{ id: 'cloud-text', isDefault: true, rows: [{ entryId: 'entry', moduleName: 'package',
+      enabled: true, fiberPhase: null, meta }] }],
+  })
+  onTestFinished(() => { spy.mockRestore() })
+  const result = await f.invoke(), encoded = JSON.stringify(result)
+  expect(encoded).toContain('原生标题')
+  expect(encoded).toContain('原生描述')
+  expect(encoded).toContain('Plugin metadata unavailable.')
+  expect(encoded).not.toContain('/private/account')
+  expect(encoded).not.toContain('data:image')
+})
+
+it.each(['ready', 'binding', 'exposure'])('does not publish pending metadata after %s is withdrawn', async (reason) => {
   const f = await fixture()
   const settled = Promise.withResolvers<Awaited<ReturnType<PluginInventoryGateway['list']>>>()
   const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockReturnValue(settled.promise)
   onTestFinished(() => { spy.mockRestore() })
   const result = f.native.value.list()
-  f.revoke()
-  settled.resolve({ entries: [] })
+  if (reason === 'ready') f.revoke()
+  else if (reason === 'binding') f.end()
+  else f.policy.invalidate()
+  settled.resolve({ entries: [{ entryId: brandString('entry'), moduleName: 'package', enabled: true,
+    fiberPhase: 'active', meta: { title: { zh: '本地标题' } } }] })
+  await expect(result).rejects.toBeDefined()
+})
+
+it('does not publish pending metadata after the inventory provider is disposed', async () => {
+  const f = await fixture()
+  const settled = Promise.withResolvers<Awaited<ReturnType<PluginInventoryGateway['list']>>>()
+  const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockReturnValue(settled.promise)
+  onTestFinished(() => { spy.mockRestore() })
+  const result = f.native.value.list()
+  const row = [...f.graph.loader.entries()].find(entry => entry.options.id === 'inventory')
+  if (row?.fiber === undefined) throw new Error('inventory owner missing')
+  await row.fiber.dispose()
+  settled.resolve({ entries: [{ entryId: brandString('entry'), moduleName: 'package', enabled: true,
+    fiberPhase: 'active', meta: { title: { zh: '本地标题' } } }] })
   await expect(result).rejects.toBeDefined()
 })
 
@@ -96,6 +131,16 @@ it('refuses an over-limit native inventory before publishing any partial list', 
   const row = { entryId: null, moduleName: 'cordis:sample', enabled: true as const, fiberPhase: null }
   const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockResolvedValue({ entries: [], agentPresets: [{
     id: 'too-many', isDefault: true, rows: Array.from({ length: 257 }, () => row),
+  }] })
+  onTestFinished(() => { spy.mockRestore() })
+  await expect(f.invoke()).rejects.toBeDefined()
+})
+
+it('applies the existing complete frame limit to localized metadata', async () => {
+  const f = await fixture()
+  const spy = vi.spyOn(PluginInventoryGateway.prototype, 'list').mockResolvedValue({ entries: [{
+    entryId: brandString('row'), moduleName: 'package', enabled: true, fiberPhase: 'active',
+    meta: { description: { en: 'x'.repeat(65536) } },
   }] })
   onTestFinished(() => { spy.mockRestore() })
   await expect(f.invoke()).rejects.toBeDefined()
