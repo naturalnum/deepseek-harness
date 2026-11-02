@@ -11,7 +11,7 @@ import { managedSkillApiLimits, managedSkillCodecs } from './managed-skill-json.
 import type { ManagedSkillPreparation } from './managed-skill-source.ts'
 import type { ManagedSkillsInstalledRequest, ManagedSkillsInstalled, ManagedSkillDetailsRequest, ManagedSkillDetails,
   ManagedSkillInstallRequest, ManagedSkillUpdateRequest, ManagedSkillUninstallRequest, ManagedSkillMutationResult,
-  ManagedSkillDownloadRequest, ManagedSkillDownload } from './managed-skill-types.ts'
+  ManagedSkillDownloadRequest, ManagedSkillDownload, ManagedSkillReadFileRequest, ManagedSkillFileContent } from './managed-skill-types.ts'
 import { skillCodecs, skillPublicationLimits } from './skill-json.ts'
 import type { ExposureInventory } from './types.ts'
 import type { SkillCurrentRequest, SkillCurrentState, SkillPublicationLimits, SkillPublishRequest, SkillPublishResult } from './skill-types.ts'
@@ -26,7 +26,7 @@ export interface CloudSkillPreparation extends ModelKeyPeerConsumer {
   readonly managed: ManagedSkillPreparation
 }
 declare module '@deepseek-ai/cordis' { interface Context { cloudSkills: CloudSkillService } }
-const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download'] as const
+const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile'] as const
 function original(value: object): object {
   const target: unknown = Reflect.get(value, symbols.original)
   return target !== null && typeof target === 'object' ? target : value
@@ -172,6 +172,17 @@ export class CloudSkillService extends TypertRemoteService {
   @Remote('download')
   download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload> {
     return this.consume('download', request, signal, (check, raw) => this.publication.download(this.managedCodecs.download.create().parse(raw), check, signal))
+  }
+
+  /**
+   * Read one verified file from the exact installed skill version.
+   * @param request Original installation, content version and inventory member.
+   * @param signal Observer cancellation.
+   * @returns Complete bounded bytes, with the files borrow settled before the response.
+   */
+  @Remote('readFile')
+  readFile(request: ManagedSkillReadFileRequest, signal: AbortSignal): Promise<ManagedSkillFileContent> {
+    return this.consume('readFile', request, signal, (check, raw) => this.publication.readFile(this.managedCodecs.readFile.create().parse(raw), check, signal))
   }
 
   /** Inspect actual native registration rather than a configured availability flag.

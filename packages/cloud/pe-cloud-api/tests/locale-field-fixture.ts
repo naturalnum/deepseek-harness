@@ -147,7 +147,7 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
     })) : [], exactFetchRoutes: [],
     rpcEndpoints: [
       ...MODEL_KEY_RPC_ENDPOINTS.map(endpoint => ({ endpoint, handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const })),
-      ...['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download'].map(method => ({
+      ...['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile'].map(method => ({
         endpoint: 'cloudSkills/' + method, handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const })),
       { endpoint: 'workspace/initializeDefault', handlerId: 'native:workspaceController', guard: 'account-project' },
       { endpoint: 'workspace/create', handlerId: 'native:workspaceController', guard: 'account-project' },

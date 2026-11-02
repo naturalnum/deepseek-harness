@@ -1,6 +1,6 @@
 /** User management-page presentation on the current account source; no registration, transport or backend adapter. */
 import { useRef, useState, type ReactNode } from 'react'
-import { IconPlusOutlineRegular, IconSearchOutlineRegular, IconSkillOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineRegular, IconPlusOutlineRegular, IconSearchOutlineRegular, IconSkillOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SkillCard, SkillCategory, SkillManagementActions, SkillsPageInjected } from './types.ts'
 import { ManagedSkillEditor } from './ManagedSkillEditor.tsx'
@@ -152,9 +152,11 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
     {skill.installed && skill.shadowed === undefined ? <small>{t('bundleSelectionUnknown')}</small> : null}
     <div className={css.cardFooter}>
       <small>{skill.version === undefined ? t(skill.installed ? 'installed' : 'available') : `${t('version')} ${skill.version}`}</small>
-      <div><button type="button" className={css.linkButton} onClick={onOpen}>{t('details')}</button>
-        {!skill.installed ? <button type="button" className={css.linkButton} disabled={!canAct || actions.installCatalog === undefined}
-          onClick={install}>{t('installCatalog')}</button> : skill.enabled === undefined ? null : <Switch checked={skill.enabled}
+      <div className={css.cardControls}>
+        {!skill.installed ? <button type="button" className={`${css.button} ${css.cardInstall}`} aria-label={`${t('installCatalog')} ${skill.name}`}
+          disabled={!canAct || actions.installCatalog === undefined} onClick={install}><IconPlusOutlineRegular size={20}/></button>
+          : <span role="img" aria-label={t('installed')} className={css.installedMark}><IconCheckOutlineRegular size={20}/></span>}
+        {!skill.installed || skill.enabled === undefined ? null : <Switch checked={skill.enabled}
           label={`${skill.name} ${t('toggle')}`} disabled={!canAct || !skill.canToggle || actions.toggle === undefined}
           onChange={(enabled) => {
             const toggle = actions.toggle

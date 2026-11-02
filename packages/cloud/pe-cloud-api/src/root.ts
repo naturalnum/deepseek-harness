@@ -91,7 +91,7 @@ export class ExposureService extends Service {
     }
     const skillMethods = approved?.skills.mode === 'managed'
       ? ['cloudSkills/current', 'cloudSkills/publish', 'cloudSkills/installed', 'cloudSkills/details',
-        'cloudSkills/install', 'cloudSkills/update', 'cloudSkills/uninstall', 'cloudSkills/download']
+        'cloudSkills/install', 'cloudSkills/update', 'cloudSkills/uninstall', 'cloudSkills/download', 'cloudSkills/readFile']
       : ['cloudSkills/current', 'cloudSkills/publish']
     const skillRows = policy.manifest.rpcEndpoints.filter(row => row.endpoint.startsWith('cloudSkills/'))
     if (approved !== undefined && approved.skills.mode !== 'closed' ? skillRows.length !== skillMethods.length

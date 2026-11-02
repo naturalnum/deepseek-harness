@@ -22,7 +22,7 @@ const catalog: ApprovedConfigurationCatalog = {
 const limits = { maxFileBytes: 4096, maxRequestBytes: 16384, maxReplyBytes: 4096, maxRetainedVersions: 4 }
 const management = { maxRequestBytes: 65536, maxReplyBytes: 65536, maxMetadataBytes: 65536, maxRetainedProviders: 4 }
 type Mode = ApprovedConfigurationCatalog['skills']['mode']
-const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download']
+const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile']
 const rows: readonly EndpointExposure[] = methods.map(method => ({ endpoint: `cloudSkills/${method}`,
   handlerId: 'native:cloudSkills', guard: 'authenticated-account' }))
 const list: EndpointExposure = { endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' }
@@ -71,7 +71,7 @@ it.each(['managed', 'sample', 'closed'] as const)('projects %s through the real 
   expect(result.assertCurrent).toThrow()
 })
 
-it('admits the complete managed eight without manufacturing the optional native catalog endpoint', async () => {
+it('admits the complete managed group without manufacturing the optional native catalog endpoint', async () => {
   const f = await fixture('managed', rows), result = await f.produce()
   expect(JSON.parse(result.body)).toMatchObject({ capabilities: { configuration: { skills: { manage: true } } } })
   for (const row of rows) expect(f.audited).toHaveBeenCalledWith(row.endpoint)

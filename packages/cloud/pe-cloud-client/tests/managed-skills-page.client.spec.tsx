@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /** Actual management presentation and original stable source, with explicit backend callback answers. */
 import { afterEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
 import { skillsManagementDictionaries } from '../src/client/management/skills/locales.ts'
 import { managedFixture } from './fixtures/managed-skills.client.ts'
+import type { ManagedSkillDetail, ManagedSkillFileContent } from '../src/client/managed-skill-editing.ts'
 
 afterEach(cleanup)
 const en = skillsManagementDictionaries.en
@@ -21,6 +22,100 @@ function file(path: string, text: string): File {
   const bytes = new TextEncoder().encode(text)
   return Object.assign(new File([bytes], path.split('/').at(-1) ?? path), { webkitRelativePath: path, arrayBuffer: async () => bytes.slice().buffer })
 }
+function withFiles(f: ReturnType<typeof page>, readFile: NonNullable<ManagedSkillDetail['readFile']>): void {
+  const original = f.details.getMockImplementation()
+  if (original === undefined) throw new Error('Missing fixture detail callback')
+  f.details.mockImplementation(async id => ({ ...await original(id), readFile, files: [
+    { path: 'SKILL.md', bytes: 20 }, { path: 'scripts/run.py', bytes: 35 }, { path: 'resource.bin', bytes: 3 },
+  ] }))
+}
+
+it('opens a metadata-only dialog and reads exact selected files only after a user request', async () => {
+  const f = page(), readFile = vi.fn<NonNullable<ManagedSkillDetail['readFile']>>(async path => path === 'resource.bin'
+    ? { kind: 'binary' } : { kind: 'text', text: path === 'SKILL.md' ? '# Actual installed instructions' : '<script>never_execute()</script>' })
+  withFiles(f, readFile)
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  fireEvent.click(await screen.findByRole('button', { name: 'first' }))
+  const dialog = await screen.findByRole('dialog', { name: 'first' })
+  expect(within(dialog).getByText('first description')).toBeTruthy()
+  expect(within(dialog).queryByRole('navigation')).toBeNull()
+  expect(within(dialog).queryByLabelText(en.archive)).toBeNull()
+  expect(readFile).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button', { name: en.details }))
+  await within(dialog).findByRole('heading', { name: 'Actual installed instructions' })
+  expect(readFile).toHaveBeenCalledExactlyOnceWith('SKILL.md', expect.any(AbortSignal))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'scripts/run.py (35)' }))
+  await within(dialog).findByText('<script>never_execute()</script>')
+  expect(dialog.querySelector('script')).toBeNull()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'resource.bin (3)' }))
+  await within(dialog).findByText(en.binaryFile)
+  expect(readFile).toHaveBeenCalledTimes(3)
+  expect(f.update).not.toHaveBeenCalled()
+})
+
+it('cancels replaced file reads and ignores their late answers after switching or closing the dialog', async () => {
+  const f = page(), held = Promise.withResolvers<ManagedSkillFileContent>()
+  const readFile = vi.fn<NonNullable<ManagedSkillDetail['readFile']>>(async path => path === 'SKILL.md'
+    ? held.promise : { kind: 'text', text: 'print("actual script")' })
+  withFiles(f, readFile)
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  fireEvent.click(await screen.findByRole('button', { name: 'first' }))
+  fireEvent.click(await screen.findByRole('button', { name: en.details }))
+  expect(screen.getByRole('status').textContent).toBe(en.fileLoading)
+  const firstSignal = readFile.mock.calls[0]?.[1]
+  fireEvent.click(screen.getByRole('button', { name: 'scripts/run.py (35)' }))
+  await screen.findByText('print("actual script")')
+  expect(firstSignal?.aborted).toBe(true)
+  await act(async () => { held.resolve({ kind: 'text', text: '# Late instructions' }); await held.promise })
+  expect(screen.queryByRole('heading', { name: 'Late instructions' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'SKILL.md (20)' }))
+  const lastSignal = readFile.mock.calls.at(-1)?.[1]
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(lastSignal?.aborted).toBe(true)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(f.update).not.toHaveBeenCalled()
+})
+
+it('reports a file read failure locally and retries only that exact file on request', async () => {
+  const f = page(), readFile = vi.fn<NonNullable<ManagedSkillDetail['readFile']>>()
+    .mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce({ kind: 'text', text: '# Retry instructions' })
+  withFiles(f, readFile)
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  fireEvent.click(await screen.findByRole('button', { name: 'first' }))
+  fireEvent.click(await screen.findByRole('button', { name: en.details }))
+  await screen.findByText(en.fileReadFailed)
+  expect(readFile).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: en.retry }))
+  await screen.findByRole('heading', { name: 'Retry instructions' })
+  expect(readFile).toHaveBeenCalledTimes(2)
+  expect(readFile.mock.calls.map(call => call[0])).toEqual(['SKILL.md', 'SKILL.md'])
+})
+
+it('keeps a pending publication in its dialog and retains the uncertain draft after an explicit close', async () => {
+  const f = page(), held = Promise.withResolvers<Awaited<ReturnType<typeof f.update>>>()
+  f.update.mockReturnValueOnce(held.promise)
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  fireEvent.click(await screen.findByRole('button', { name: 'first' }))
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
+  fireEvent.change(screen.getByLabelText(en.archive), { target: { files: [new File(['owned'], 'owned.zip')] } })
+  fireEvent.click(screen.getByRole('button', { name: en.bundleUpdate }))
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(f.update).toHaveBeenCalledTimes(1)
+  await act(async () => { held.resolve({ kind: 'unknown' }); await held.promise })
+  await screen.findByText(en.sampleUnknown)
+  const draft = f.editor().draft
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByText(en.bundleRetained)).toBeTruthy()
+  expect(f.editor().draft).toBe(draft)
+  expect(f.update).toHaveBeenCalledTimes(1)
+})
 
 it('renders multiple native installations and selects one exact detail without eager RPC or fabricated document text', async () => {
   const f = page()
@@ -30,8 +125,13 @@ it('renders multiple native installations and selects one exact detail without e
   await screen.findByRole('button', { name: 'first' })
   expect(screen.getByRole('button', { name: 'second' })).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
-  await screen.findByText('references/guide.md (20)')
-  expect(screen.getByText(en.documentUnavailable)).toBeTruthy()
+  const dialog = await screen.findByRole('dialog', { name: 'first' })
+  expect(within(dialog).getByText('first description')).toBeTruthy()
+  expect(within(dialog).queryByRole('button', { name: 'references/guide.md (20)' })).toBeNull()
+  expect(within(dialog).queryByLabelText(en.bundleDirectory)).toBeNull()
+  fireEvent.click(within(dialog).getByRole('button', { name: en.details }))
+  expect(within(dialog).getByRole('button', { name: 'references/guide.md (20)' })).toBeTruthy()
+  expect(within(dialog).getByText(en.documentUnavailable)).toBeTruthy()
   expect(f.details).toHaveBeenCalledExactlyOnceWith('first', expect.any(AbortSignal))
 })
 
@@ -41,7 +141,8 @@ it('copies a complete directory with nested resources and publishes an independe
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
   await screen.findByRole('button', { name: 'first' })
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
-  const input = await screen.findByLabelText(en.bundleDirectory)
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
+  const input = screen.getByLabelText(en.bundleDirectory)
   fireEvent.change(input, { target: { files: [file('bundle/SKILL.md', 'original instructions'), file('bundle/scripts/run.sh', 'echo safe-as-data')] } })
   const editable = await screen.findByLabelText(en.sampleEditable)
   expect(editable).toHaveProperty('value', 'original instructions')
@@ -73,7 +174,7 @@ it('imports a selected ZIP through the owner and confirms uninstall without clai
   fireEvent.click(screen.getByRole('button', { name: en.confirmRemove }))
   await screen.findByText(en.bundleApplied)
   expect(f.uninstall).toHaveBeenCalledTimes(1)
-  expect(screen.queryByRole('button', { name: 'first' })).toBeNull()
+  expect(document.querySelector('[data-skill-id=first]')).toBeNull()
 })
 
 it('rejects non-ZIP selection and does not repeat an uncertain install', async () => {
@@ -161,6 +262,7 @@ it.each(['en', 'zh'] as const)('distinguishes a failed download from an invalid 
   await screen.findByRole('alert')
   expect(screen.queryByText(copy.bundleInvalid)).toBeNull()
   expect(f.download).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: copy.bundleEdit }))
   fireEvent.change(screen.getByLabelText(copy.archive), { target: { files: [new File(['x'], 'wrong.txt')] } })
   expect(screen.getByText(copy.bundleInvalid)).toBeTruthy()
   expect(screen.getByText(copy.bundleDownloadFailed)).toBeTruthy()
@@ -179,7 +281,8 @@ it('leaves an uncertain draft visible after dependency withdrawal and never reop
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
   await screen.findByRole('button', { name: 'first' })
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
-  const archive = await screen.findByLabelText(en.archive)
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
+  const archive = screen.getByLabelText(en.archive)
   fireEvent.change(archive, { target: { files: [new File(['archive bytes'], 'skill.zip')] } })
   fireEvent.click(screen.getByRole('button', { name: en.bundleUpdate }))
   await screen.findByText(en.sampleUnknown)
@@ -196,7 +299,8 @@ it.each(['unknown', 'conflict'] as const)('keeps a %s write and draft visible af
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
   await screen.findByRole('button', { name: 'first' })
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
-  const archive = await screen.findByLabelText(en.archive)
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
+  const archive = screen.getByLabelText(en.archive)
   fireEvent.change(archive, { target: { files: [new File(['archive bytes'], 'skill.zip')] } })
   fireEvent.click(screen.getByRole('button', { name: en.bundleUpdate }))
   const result = kind === 'unknown' ? en.sampleUnknown : en.sampleConflict
@@ -213,6 +317,7 @@ it.each(['unknown', 'conflict'] as const)('keeps a %s write and draft visible af
   expect(f.editor().draft).toBe(draft)
   expect(f.details).toHaveBeenCalledTimes(2)
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
   await screen.findByLabelText(en.archive)
   expect(f.details).toHaveBeenCalledTimes(3)
   expect(f.update).toHaveBeenCalledTimes(1)
@@ -244,7 +349,8 @@ it('keeps an invalid update in the editor without reporting a permission failure
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
   await screen.findByRole('button', { name: 'first' })
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
-  const archive = await screen.findByLabelText(en.archive)
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
+  const archive = screen.getByLabelText(en.archive)
   vi.mocked(f.props.report).mockClear()
   fireEvent.change(archive, { target: { files: [new File(['zip'], 'missing.zip')] } })
   fireEvent.click(screen.getByRole('button', { name: en.bundleUpdate }))
@@ -265,7 +371,8 @@ it('clears the missing-manifest message when opening a skill and choosing a vali
   fireEvent.change(screen.getByLabelText(en.chooseArchive), { target: { files: [new File(['zip'], 'missing.zip')] } })
   await screen.findByText(en.bundleMissingManifest)
   fireEvent.click(screen.getByRole('button', { name: 'first' }))
-  const archive = await screen.findByLabelText(en.archive)
+  fireEvent.click(await screen.findByRole('button', { name: en.bundleEdit }))
+  const archive = screen.getByLabelText(en.archive)
   expect(screen.queryByText(en.bundleMissingManifest)).toBeNull()
   expect(screen.queryByText(en.invalidZip)).toBeNull()
   fireEvent.change(archive, { target: { files: [new File([new Uint8Array(7462)], 'fixed.zip')] } })

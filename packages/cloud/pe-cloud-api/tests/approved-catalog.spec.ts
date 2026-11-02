@@ -102,11 +102,11 @@ describe('explicit Root bootstrap catalog', () => {
 })
 
 
-it('requires all eight exact native endpoints and explicit management limits for managed mode', async () => {
+it('requires all nine exact native endpoints and explicit management limits for managed mode', async () => {
   const limits = { maxFileBytes: 4096, maxRequestBytes: 16384, maxReplyBytes: 8192, maxRetainedVersions: 8 }
   const management = { maxRequestBytes: 65536, maxReplyBytes: 131072, maxMetadataBytes: 4096, maxRetainedProviders: 8 }
   const input = { ...catalog(), skills: { mode: 'managed', limits, management } }
-  const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download']
+  const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile']
   const rows = methods.map(method => ({ endpoint: 'cloudSkills/' + method, handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const }))
   for (const rpcEndpoints of [[], rows.slice(0, 2), rows.slice(1), [...rows, { ...rows[0]!, endpoint: 'cloudSkills/extra' }]]) {
     const ctx = new Context()

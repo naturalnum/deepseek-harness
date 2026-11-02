@@ -110,6 +110,16 @@ export type ManagedSkillMutationResult = Readonly<{
 export interface ManagedSkillDownloadRequest extends ManagedSkillDetailsRequest {
   readonly contentVersion: ManagedSkillContentVersion
 }
+/** Exact installed-file selector; relativePath must name a verified member of the current version. */
+export interface ManagedSkillReadFileRequest extends ManagedSkillDownloadRequest {
+  readonly relativePath: string
+}
+/** Complete bounded file bytes from the current installed version, without a filesystem capability. */
+export interface ManagedSkillFileContent extends ManagedSkillReadFileRequest {
+  readonly bytes: number
+  readonly sha256: string
+  readonly dataBase64: string
+}
 /** Complete bounded ZIP export of the exact borrowed version, without private path or source handle. */
 export interface ManagedSkillDownload {
   readonly skillId: ManagedSkillId

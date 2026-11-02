@@ -6,8 +6,8 @@ import type { TypertCodec } from '@deepseek-ai/dsh-typert-protocol'
 import type { SkillEditToken, SkillEditVersion } from './save-hooks.ts'
 import type { ManagedSkillApiLimits, ManagedSkillBundleUpload, ManagedSkillContentVersion,
   ManagedSkillDetails, ManagedSkillDetailsRequest, ManagedSkillDownload, ManagedSkillDownloadRequest,
-  ManagedSkillEntry, ManagedSkillFileMetadata, ManagedSkillId, ManagedSkillInstallRequest,
-  ManagedSkillMutationResult, ManagedSkillOrigin, ManagedSkillPublicLimits, ManagedSkillSelection,
+  ManagedSkillEntry, ManagedSkillFileMetadata, ManagedSkillReadFileRequest, ManagedSkillFileContent, ManagedSkillId,
+  ManagedSkillInstallRequest, ManagedSkillMutationResult, ManagedSkillOrigin, ManagedSkillPublicLimits, ManagedSkillSelection,
   ManagedSkillsInstalled, ManagedSkillsInstalledRequest, ManagedSkillUninstallRequest,
   ManagedSkillUpdateRequest } from './managed-skill-types.ts'
 import { CloudApiError } from './errors.ts'
@@ -47,16 +47,18 @@ export interface ManagedSkillCodecs {
   readonly update: Strict<ManagedSkillUpdateRequest>
   readonly uninstall: Strict<ManagedSkillUninstallRequest>
   readonly download: Strict<ManagedSkillDownloadRequest>
+  readonly readFile: Strict<ManagedSkillReadFileRequest>
   readonly installedResult: Strict<ManagedSkillsInstalled>
   readonly detailsResult: Strict<ManagedSkillDetails>
   readonly mutationResult: Strict<ManagedSkillMutationResult>
   readonly downloadResult: Strict<ManagedSkillDownload>
+  readonly readFileResult: Strict<ManagedSkillFileContent>
 }
 
 /**
  * Construct JSON codecs without I/O, registration, archive decoding or output-side Remote decoding.
  * @param configured Root's exact API limits; the files owner separately enforces its physical policy.
- * @returns Complete request/result codecs for the six concrete methods.
+ * @returns Complete request/result codecs for managed skill operations.
  */
 export function managedSkillCodecs(configured: ManagedSkillApiLimits): ManagedSkillCodecs {
   const limits = managedSkillApiLimits(configured)
@@ -173,6 +175,11 @@ export function managedSkillCodecs(configured: ManagedSkillApiLimits): ManagedSk
       const row = record(value, ['skillId', 'contentVersion'])
       return bounded({ skillId: id(row.skillId), contentVersion: contentVersion(row.contentVersion) }, limits.maxRequestBytes)
     }),
+    readFile: codec('ManagedSkillReadFileRequest', (value) => {
+      const row = record(value, ['skillId', 'contentVersion', 'relativePath'])
+      return bounded({ skillId: id(row.skillId), contentVersion: contentVersion(row.contentVersion),
+        relativePath: text(row.relativePath) }, limits.maxRequestBytes)
+    }),
     installedResult: codec('ManagedSkillsInstalled', (value) => {
       const row = record(value, ['entries', 'version', 'complete', 'actions', 'limits'])
       const actions = record(row.actions, ['install'])
@@ -204,6 +211,13 @@ export function managedSkillCodecs(configured: ManagedSkillApiLimits): ManagedSk
       if (Buffer.from(dataBase64, 'base64').byteLength !== bytes) invalid()
       return bounded({ skillId: id(row.skillId), contentVersion: contentVersion(row.contentVersion),
         fileName: text(row.fileName), mediaType: 'application/zip', bytes, sha256: digest(row.sha256), dataBase64 }, limits.maxReplyBytes)
+    }),
+    readFileResult: codec('ManagedSkillFileContent', (value) => {
+      const row = record(value, ['skillId', 'contentVersion', 'relativePath', 'bytes', 'sha256', 'dataBase64'])
+      const dataBase64 = base64(row.dataBase64, limits.maxReplyBytes), bytes = integer(row.bytes)
+      if (Buffer.from(dataBase64, 'base64').byteLength !== bytes) invalid()
+      return bounded({ skillId: id(row.skillId), contentVersion: contentVersion(row.contentVersion),
+        relativePath: text(row.relativePath), bytes, sha256: digest(row.sha256), dataBase64 }, limits.maxReplyBytes)
     }),
   }
 }

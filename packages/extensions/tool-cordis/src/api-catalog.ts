@@ -834,6 +834,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Complete authorized ZIP.',
       },
       {
+        signature: '@Remote(\'readFile\') readFile(request: ManagedSkillReadFileRequest, signal: AbortSignal): Promise<ManagedSkillFileContent>',
+        description: 'Read one verified file from the exact installed skill version.',
+        parameters: [{ name: 'request', description: 'Original installation, content version and inventory member.' }, { name: 'signal', description: 'Observer cancellation.' }],
+        returns: 'Complete bounded bytes, with the files borrow settled before the response.',
+      },
+      {
         signature: 'inspect(): ExposureInventory',
         description: 'Inspect actual native registration rather than a configured availability flag.',
         parameters: [],
@@ -6210,7 +6216,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudSkillService',
-    declaration: 'export class CloudSkillService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudSkillPreparation, saves: ConfigSaveBarrier);\n    restore(): Promise<void>;\n    @Remote(\'current\')\n    current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>;\n    @Remote(\'publish\')\n    publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>;\n    @Remote(\'installed\')\n    installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>;\n    @Remote(\'details\')\n    details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>;\n    @Remote(\'install\')\n    install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'update\')\n    update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'uninstall\')\n    uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'download\')\n    download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>;\n    inspect(): ExposureInventory;\n    assertCurrent(): void;\n}',
+    declaration: 'export class CloudSkillService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudSkillPreparation, saves: ConfigSaveBarrier);\n    restore(): Promise<void>;\n    @Remote(\'current\')\n    current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>;\n    @Remote(\'publish\')\n    publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>;\n    @Remote(\'installed\')\n    installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>;\n    @Remote(\'details\')\n    details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>;\n    @Remote(\'install\')\n    install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'update\')\n    update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'uninstall\')\n    uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'download\')\n    download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>;\n    @Remote(\'readFile\')\n    readFile(request: ManagedSkillReadFileRequest, signal: AbortSignal): Promise<ManagedSkillFileContent>;\n    inspect(): ExposureInventory;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'CollectedOutput',
@@ -7469,6 +7475,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManagedSkillEntry extends ManagedSkillOrigin {\n    readonly skillId: ManagedSkillId;\n    readonly description: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly contentVersion: ManagedSkillContentVersion;\n    readonly fileCount: number;\n    readonly contentBytes: number;\n    readonly legacySample: boolean;\n    readonly selection: ManagedSkillSelection;\n    readonly mutable: boolean;\n    readonly actions: Readonly<{\n        update: boolean;\n        uninstall: boolean;\n        download: boolean;\n    }>;\n}',
   },
   {
+    name: 'ManagedSkillFileContent',
+    declaration: 'export interface ManagedSkillFileContent extends ManagedSkillReadFileRequest {\n    readonly bytes: number;\n    readonly sha256: string;\n    readonly dataBase64: string;\n}',
+  },
+  {
     name: 'ManagedSkillFileMetadata',
     declaration: 'export interface ManagedSkillFileMetadata {\n    readonly relativePath: string;\n    readonly bytes: number;\n    readonly sha256: string;\n}',
   },
@@ -7495,6 +7505,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManagedSkillPublicLimits',
     declaration: 'export interface ManagedSkillPublicLimits {\n    readonly maxSkills: number;\n    readonly maxFilesPerBundle: number;\n    readonly maxDirectoriesPerBundle: number;\n    readonly maxFileBytes: number;\n    readonly maxBundleBytes: number;\n    readonly maxZipBytes: number;\n    readonly maxPathBytes: number;\n    readonly maxPathDepth: number;\n    readonly maxRequestBytes: number;\n    readonly maxReplyBytes: number;\n}',
+  },
+  {
+    name: 'ManagedSkillReadFileRequest',
+    declaration: 'export interface ManagedSkillReadFileRequest extends ManagedSkillDownloadRequest {\n    readonly relativePath: string;\n}',
   },
   {
     name: 'ManagedSkillResourcePreparation',

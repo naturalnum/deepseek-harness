@@ -251,8 +251,8 @@ it('approved plugin bootstrap keeps closed, raw-manager and stream policies clos
     .rejects.toMatchObject({ code: 'cloud/invalid-config' })
   await expect(fixture(pluginRows, [pluginRows[0]!], [], false, true)).rejects.toMatchObject({ code: 'cloud/invalid-config' })
 })
-it('approved plugin bootstrap preserves the complete managed eight and model-key four in the same original policy', async () => {
-  const skills = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download']
+it('approved plugin bootstrap preserves the complete managed group and model-key four in the same original policy', async () => {
+  const skills = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile']
     .map(method => ({ endpoint: 'cloudSkills/' + method, handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const }))
   const keys = MODEL_KEY_RPC_ENDPOINTS.map(endpoint => ({ endpoint, handlerId: 'native:cloudModelKey', guard: 'authenticated-account' as const }))
   const f = await fixture([...pluginRows, ...skills, ...keys], [], [], true, true, { mode: 'managed',

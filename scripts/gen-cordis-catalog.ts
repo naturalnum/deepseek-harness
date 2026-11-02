@@ -348,6 +348,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ManagedSkillDetailsRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   ManagedSkillDownload: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   ManagedSkillDownloadRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillReadFileRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillFileContent: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   ManagedSkillInstallRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   ManagedSkillMutationResult: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   ManagedSkillUninstallRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',

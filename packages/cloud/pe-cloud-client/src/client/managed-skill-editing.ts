@@ -12,11 +12,14 @@ export interface ManagedSkillLimits extends SkillSelectionLimits { readonly maxA
 /** Confirmed metadata and catalog application remain distinct from an uncertain write. */
 export type ManagedSkillOutcome = { readonly kind: 'persisted'; readonly applied: boolean; readonly item: SkillCard | null }
   | { readonly kind: 'conflict' | 'unknown' | 'unavailable' | 'invalid-bundle' }
+/** Complete UTF-8 content is displayed inertly; non-text files remain downloadable in the original package. */
+export type ManagedSkillFileContent = { readonly kind: 'text'; readonly text: string } | { readonly kind: 'binary' }
 /** Native detail projection; file paths are relative display data, never private source paths. */
 export interface ManagedSkillDetail {
   readonly item: SkillCard
   readonly markdown?: string
   readonly files: readonly { readonly path: string; readonly bytes: number }[]
+  readonly readFile?: (path: string, signal: AbortSignal) => Promise<ManagedSkillFileContent>
   readonly update?: (bundle: ManagedSkillBundle, signal: AbortSignal) => Promise<ManagedSkillOutcome>
   readonly uninstall?: (signal: AbortSignal) => Promise<ManagedSkillOutcome>
   readonly download?: (signal: AbortSignal) => Promise<void>

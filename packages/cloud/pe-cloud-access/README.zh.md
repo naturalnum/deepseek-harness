@@ -94,11 +94,11 @@ producer 还识别选中的 `session/rename` 及 `workspace/pinSession`、`unpin
 
 producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `workspaceFiles/read`、`stat`、`list`、`readBytes` RPC 和 `workspaceFiles/changes` stream。这两个 namespace 的其他方法及错误的 RPC/stream 类别均拒绝。每个选中条目都经原 API owner 的当前注册审计。只有完整文件组被选中，且原 Files owner 的 `assertContentAvailable()` 通过，包含已结算的 ABI8、content 和 provider 前提时，`filePreview` 才为 available。部分文件组仍显示 disabled；任何选中的文件端点都要求该内容断言。Runtime 在 ready 前也检查相同前提。未选择文件端点的 first-trial 配方保持 preview disabled。项目元数据沿用原字段；配置及其他未批准能力保持关闭。显式 API 模型 Key 策略还可准入其四个精确、已审核 RPC。C11 原生凭据写能力仍为 false；独立服务提供实际只读元数据及编辑状态。
 
-`sample` 和 `managed` 技能批准模式均在相同的原 Loader、包及 provider 检查通过后，投影 `configuration.skills.manage: true`。Sample 模式要求精确的 `cloudSkills/current` 与 `cloudSkills/publish`；managed 模式还要求同一 namespace 下的 `installed`、`details`、`install`、`update`、`uninstall` 和 `download`。每个选中的技能 RPC 保持 handler `native:cloudSkills` 及 guard `authenticated-account`。可选的原生 `skills/list` 在两种开启模式下均保持 handler `native:sessionSkillCatalog` 及 guard `account-session`。缺失方法、未授权声明及 closed 模式的技能端点均拒绝；bootstrap 不增加权限或修改 owner。
+`sample` 和 `managed` 技能批准模式均在相同的原 Loader、包及 provider 检查通过后，投影 `configuration.skills.manage: true`。Sample 模式要求精确的 `cloudSkills/current` 与 `cloudSkills/publish`；managed 模式还要求同一 namespace 下的 `installed`、`details`、`install`、`update`、`uninstall`、`download` 和 `readFile`。每个选中的技能 RPC 保持 handler `native:cloudSkills` 及 guard `authenticated-account`。可选的原生 `skills/list` 在两种开启模式下均保持 handler `native:sessionSkillCatalog` 及 guard `account-session`。缺失方法、未授权声明及 closed 模式的技能端点均拒绝；bootstrap 不增加权限或修改 owner。
 
 服务能力来自原执行拥有者的 `accountServiceAvailability(ctx)`，包含当前原始 `dev_service` 定义，以及安装和消费位置的原 Tools provider。预览还要求原应用 provider 和经 API 审计、仍有效的 GET `/cloud/service-preview` 注册。producer 允许该精确路由与原生上传并存，重新检查每条选中路由，拒绝重复和变体。这些事实仅表示能力已安装；检查不创建服务进程、分配或请求，也不产生 HTTP 就绪结果。
 
-可选的获批 `pluginControl` 策略要求完整且精确的 `cloudPlugins/current`、`cloudPlugins/change` 一元方法组，handler 为 `native:cloudPlugins`，guard 为 `authenticated-account`。producer 在清单读取前后及响应发出前核验两个方法的成员关系和原生当前审计；缺失或越权声明拒绝整个 bootstrap。此校验保留多技能完整八方法、模型 Key 方法组、原账户／图／文件／执行身份、有限预算及关闭的原生配置写入口。它不新增安装／卸载端点、原始 plugin-manager 写入、流或任意后端权限；真实原生就绪仍由原清单和 API owner 确认。
+可选的获批 `pluginControl` 策略要求完整且精确的 `cloudPlugins/current`、`cloudPlugins/change` 一元方法组，handler 为 `native:cloudPlugins`，guard 为 `authenticated-account`。producer 在清单读取前后及响应发出前核验两个方法的成员关系和原生当前审计；缺失或越权声明拒绝整个 bootstrap。此校验保留包含确切版本文件读取的完整托管技能方法组、模型 Key 方法组、原账户／图／文件／执行身份、有限预算及关闭的原生配置写入口。它不新增安装／卸载端点、原始 plugin-manager 写入、流或任意后端权限；真实原生就绪仍由原清单和 API owner 确认。
 
 禁用的可选 entry 按各目录项的批准启停许可和实际原生身份检查。bootstrap 不通过固定插件 id 选择特权模块。
 

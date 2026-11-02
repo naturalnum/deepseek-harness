@@ -42,7 +42,7 @@ const S = 5000
 const ORIGIN = 'http://127.0.0.1:4100'
 const INSTALLATION = '11111111-2222-3333-4444-555555555555'
 const CONTENT = '66666666-7777-8888-9999-aaaaaaaaaaaa'
-const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download']
+const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile']
 const bundleLimits = { maxInstallations: 4, maxFiles: 8, maxDirectories: 6, maxDepth: 5, maxPathBytes: 256,
   maxFileBytes: 4096, maxContentBytes: 16384, maxArchiveBytes: 32768, maxArchiveEntries: 16,
   maxExpandedArchiveBytes: 16384, maxInputBytes: 65536, maxManifestBytes: 8192, maxCatalogBytes: 8192,

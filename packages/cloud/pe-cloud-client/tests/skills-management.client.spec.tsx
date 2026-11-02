@@ -40,7 +40,7 @@ it('keeps missing account actions closed and does not claim an unavailable catal
   const f = fixture(); render(<SkillsPage {...f.props}/>)
   expect(screen.getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
-  expect(screen.getByRole('button', { name: en.installCatalog })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: `${en.installCatalog} Data analysis` })).toHaveProperty('disabled', true)
   act(() => { f.source.set({ phase: 'unavailable', items: [] }) })
   expect(screen.getByRole('alert').textContent).toBe(en.unavailable)
   expect(screen.queryByText(en.empty)).toBeNull()
@@ -95,7 +95,7 @@ it('revokes local observation on scope replacement and ignores a late action res
   const f = fixture(), held = Promise.withResolvers<SkillActionOutcome>()
   const installCatalog = vi.fn<NonNullable<SkillsPageProps['installCatalog']>>(() => held.promise)
   const view = render(<SkillsPage {...f.props} installCatalog={installCatalog}/>)
-  fireEvent.click(screen.getByRole('button', { name: en.installCatalog }))
+  fireEvent.click(screen.getByRole('button', { name: `${en.installCatalog} Data analysis` }))
   const signal = installCatalog.mock.calls[0]![1]
   view.rerender(<SkillsPage {...f.props} scope="replacement-page" installCatalog={installCatalog}/>)
   expect(signal.aborted).toBe(true)

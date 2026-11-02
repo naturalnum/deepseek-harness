@@ -37,7 +37,7 @@ function deferred() {
   return { promise, release }
 }
 const own = <T>(value: T) => ({ value, release() {} })
-async function fixture() {
+async function fixture(configuredLimits = apiLimits) {
   const home = mkdtempSync(join(tmpdir(), 'managed-skills-api-')), profileDir = join(home, 'profiles/test')
   mkdirSync(profileDir, { recursive: true }); initProfile(profileDir, [])
   writeFileSync(join(home, 'package.json'), '{"name":"managed-api-test"}')
@@ -60,6 +60,7 @@ async function fixture() {
   let prepares = 0, commits = 0, sources = 0, exports = 0, borrows = 0, failApply = false, unknownCommit = false
   let projectionFailure: Error | undefined
   let exportBlock: ReturnType<typeof deferred> | undefined, sourceBlock: ReturnType<typeof deferred> | undefined
+  let afterSource: (() => void) | undefined, sourceResidents = 0, sourceReleases = 0
   const prepared = new Map<SkillBundleVersion, number>(), releases = new Map<string, number>()
   const releaseWhilePending: boolean[] = [], sourcePreparedRefs: number[] = [], commitPreparedRefs: number[] = []
   const preparedResident = <T>(value: T, version: SkillBundleVersion) => {
@@ -119,9 +120,15 @@ async function fixture() {
       const lease = Object.freeze({ ...version }); activeSourceLeases.add(lease)
       try {
         await sourceBlock?.promise
-        return own(await consume({ version: lease, files: version.files, directories: version.directories,
+        const value = await consume({ version: lease, files: version.files, directories: version.directories,
           async readText(path, child) { child?.throwIfAborted(); return Buffer.from(data.get(path)!).toString('utf8') },
-          async readBytes(path, child) { child?.throwIfAborted(); const value = data.get(path); if (value === undefined) throw Error('Missing'); return Uint8Array.from(value) } }, control))
+          async readBytes(path, child) { child?.throwIfAborted(); const value = data.get(path); if (value === undefined) throw Error('Missing'); return Uint8Array.from(value) } }, control)
+        sourceResidents++; afterSource?.()
+        let released = false
+        return { value, release() {
+          if (released) throw Error('Source resident released more than once')
+          released = true; sourceResidents--; sourceReleases++
+        } }
       } finally { activeSourceLeases.delete(lease); borrows-- }
     },
     async exportBundle(version, control) {
@@ -189,7 +196,7 @@ async function fixture() {
   ctx.skills.registerProvider((control: SkillProviderControl) => {
     providerSignal = control.signal
     const actual = { signal: control.signal, invalidate() { if (failApply) throw Error('Native apply failed'); control.invalidate() } }
-    manager = new AccountManagedSkills(ctx, actual, saves, port, legacy, ctx.skills, { limits: apiLimits, bundleLimits,
+    manager = new AccountManagedSkills(ctx, actual, saves, port, legacy, ctx.skills, { limits: configuredLimits, bundleLimits,
       assertWorkspace() { throw Error('No workspace authorized in fixture') }, resources }, sampleLimits)
     return manager
   })
@@ -201,7 +208,9 @@ async function fixture() {
     failCommit: (error: Error) => { commitFailure = error },
     afterCommit: (callback: () => void) => { afterCommit = callback },
     materialize: resources.materialize.bind(resources), materialized: () => [...materialized],
-    stats: () => ({ prepares, commits, sources, exports, borrows, providerListeners: getEventListeners(providerSignal, 'abort').length }), catalog: () => catalog,
+    stats: () => ({ prepares, commits, sources, exports, borrows, sourceResidents, sourceReleases,
+      providerListeners: getEventListeners(providerSignal, 'abort').length }), catalog: () => catalog,
+    afterSource: (callback: () => void) => { afterSource = callback },
     failPrepare: (error: Error) => { preparationFailure = error },
     failProjection: (error: Error | undefined) => { projectionFailure = error },
     failApply: () => { failApply = true }, unknownCommit: () => { unknownCommit = true },
@@ -311,6 +320,98 @@ it('holds an in-flight export and its original save turn through pause observati
   expect(Buffer.from(exported.dataBase64, 'base64').toString()).toContain('nested/scripts/run.sh')
   expect((await remove).persisted).toBe(true); expect(f.stats().borrows).toBe(0)
   expect((await f.saves.pauseAccountChanges(Date.now() + 100)).status).toBe('confirmed')
+})
+
+it('reads exact current instruction, script and binary files without executing or exporting the bundle', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const input = bundle('view-files')
+  input.files[1] = { relativePath: 'nested/data.bin', dataBase64: 'AP8=' }
+  const installed = await f.manager.install(initial.version, input, f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const selectors = { skillId: installed.entry.skillId, contentVersion: installed.entry.contentVersion }
+  const before = f.stats()
+  for (const file of input.files) {
+    const content = await f.manager.readFile({ ...selectors, relativePath: file.relativePath }, f.check, f.signal)
+    const bytes = Buffer.from(file.dataBase64, 'base64')
+    expect(content).toEqual({ ...selectors, relativePath: file.relativePath, bytes: bytes.byteLength,
+      sha256: hash(bytes), dataBase64: file.dataBase64 })
+  }
+  expect(f.stats().sourceReleases).toBe(before.sourceReleases + input.files.length)
+  expect(f.stats().sourceResidents).toBe(0); expect(f.stats().borrows).toBe(0)
+  expect(f.stats().exports).toBe(before.exports); expect(f.stats().commits).toBe(before.commits)
+})
+
+it('rejects stale versions, unknown installations and nonmember paths before borrowing source bytes', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('view-members'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const request = { skillId: installed.entry.skillId, contentVersion: installed.entry.contentVersion, relativePath: 'SKILL.md' }
+  const before = f.stats().sources
+  await expect(f.manager.readFile({ ...request, contentVersion: brandString<typeof request.contentVersion>('old') }, f.check, f.signal))
+    .rejects.toMatchObject({ code: 'cloud/config-conflict' })
+  await expect(f.manager.readFile({ ...request, skillId: brandString<SkillInstallationId>(randomUUID()) }, f.check, f.signal))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  for (const relativePath of ['../SKILL.md', '/SKILL.md', 'nested/../SKILL.md', 'nested\\scripts\\run.sh', 'missing.py']) {
+    await expect(f.manager.readFile({ ...request, relativePath }, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  }
+  expect(f.stats().sources).toBe(before); expect(f.stats().sourceResidents).toBe(0)
+  expect(f.saves.snapshot().failures).toEqual([])
+})
+
+it('keeps file reading in the save turn until the source settles before uninstall', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('read-and-remove'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const block = f.blockSource(), before = f.stats().sourceReleases
+  const read = f.manager.readFile({ skillId: installed.entry.skillId, contentVersion: installed.entry.contentVersion,
+    relativePath: 'nested/scripts/run.sh' }, f.check, f.signal)
+  await vi.waitFor(() => { expect(f.stats().borrows).toBe(1) }, { interval: 1 })
+  const remove = f.manager.uninstall(installed.entry.skillId, installed.version, f.check, f.signal)
+  expect(f.stats().commits).toBe(1)
+  block.release(); expect(Buffer.from((await read).dataBase64, 'base64').toString()).toBe('echo data-only')
+  expect((await remove).persisted).toBe(true)
+  expect(f.stats().sourceReleases).toBe(before + 1); expect(f.stats().sourceResidents).toBe(0)
+})
+
+it.each(['observer', 'peer'] as const)('denies %s revocation after source await and settles the source', async (mode) => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('late-revocation'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const request = { skillId: installed.entry.skillId, contentVersion: installed.entry.contentVersion, relativePath: 'SKILL.md' }
+  const observer = new AbortController(), before = f.stats().sourceReleases
+  let revoked = false
+  f.afterSource(() => { if (mode === 'observer') observer.abort(); else revoked = true })
+  await expect(f.manager.readFile(request, () => {
+    observer.signal.throwIfAborted()
+    if (revoked) throw Error('Peer withdrawn')
+  }, observer.signal)).rejects.toThrow()
+  expect(f.stats().sourceReleases).toBe(before + 1); expect(f.stats().sourceResidents).toBe(0)
+  expect(f.saves.snapshot().failures).toEqual([])
+})
+
+it('does not borrow file bytes when the Peer ends during catalog observation', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('revoked-before-borrow'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const original = f.ports.bundle.observeCatalog.bind(f.ports.bundle), before = f.stats().sources
+  let revoked = false
+  f.ports.bundle.observeCatalog = async (signal) => {
+    const held = await original(signal); revoked = true; return held
+  }
+  await expect(f.manager.readFile({ skillId: installed.entry.skillId, contentVersion: installed.entry.contentVersion,
+    relativePath: 'SKILL.md' }, () => { if (revoked) throw Error('Peer withdrawn') }, f.signal)).rejects.toThrow('Peer withdrawn')
+  expect(f.stats().sources).toBe(before); expect(f.stats().sourceResidents).toBe(0)
+})
+
+it('refuses oversized complete file responses without publishing or retaining source work', async () => {
+  const f = await fixture({ ...apiLimits, maxReplyBytes: 1500 }), initial = await f.manager.installed({}, f.check, f.signal)
+  const input = bundle('bounded-read'); input.files[1] = { relativePath: 'nested/data.bin', dataBase64: Buffer.alloc(2000).toString('base64') }
+  const installed = await f.manager.install(initial.version, input, f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  await expect(f.manager.readFile({ skillId: installed.entry.skillId, contentVersion: installed.entry.contentVersion,
+    relativePath: 'nested/data.bin' }, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/capacity' })
+  expect(f.stats().sourceResidents).toBe(0); expect(f.stats().borrows).toBe(0); expect(f.stats().commits).toBe(1)
+  expect(f.saves.snapshot().failures).toEqual([])
 })
 
 it('retains a confirmed native apply failure separately from an unknown durable outcome', async () => {

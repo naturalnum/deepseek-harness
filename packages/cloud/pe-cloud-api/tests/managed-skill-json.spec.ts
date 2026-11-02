@@ -25,6 +25,8 @@ describe('managed skill strict JSON', () => {
     expect(codecs.update.create().parse({ skillId, version, bundle: { kind: 'zip', dataBase64: 'UEs=' } })).toEqual({
       skillId, version, bundle: { kind: 'zip', dataBase64: 'UEs=' } })
     expect(codecs.details.create().parse({ skillId: 'sample' })).toEqual({ skillId: 'sample' })
+    expect(codecs.readFile.create().parse({ skillId, contentVersion, relativePath: 'nested/scripts/run.sh' }))
+      .toEqual({ skillId, contentVersion, relativePath: 'nested/scripts/run.sh' })
     expect(codecs.installed.create().parse({})).toEqual({})
     expect(codecs.installed.create().parse({ workspaceId: 'workspace-1' })).toEqual({ workspaceId: 'workspace-1' })
   })
@@ -77,5 +79,19 @@ describe('managed skill strict JSON', () => {
       sha256: digest, dataBase64: 'UEs=' }
     expect(codecs.downloadResult.create().parse(exported)).toEqual(exported)
     expect(() => codecs.downloadResult.create().parse({ ...exported, bytes: 3 })).toThrow()
+  })
+
+  it('keeps file reads exact, canonical and bounded including reply metadata', () => {
+    const request = { skillId, contentVersion, relativePath: 'nested/script.py' }
+    const content = { ...request, bytes: 2, sha256: digest, dataBase64: 'AP8=' }
+    expect(codecs.readFileResult.create().parse(content)).toEqual(content)
+    expect(() => codecs.readFile.create().parse({ ...request, accountId: 'another' })).toThrow()
+    expect(() => codecs.readFile.create().parse({ skillId, relativePath: 'SKILL.md' })).toThrow()
+    for (const change of [{ bytes: 3 }, { dataBase64: 'AP8' }, { sha256: 'not-a-hash' }, { privatePath: '/private/skills' }]) {
+      expect(() => codecs.readFileResult.create().parse({ ...content, ...change })).toThrow()
+    }
+    const exact = Buffer.byteLength(JSON.stringify(content))
+    expect(managedSkillCodecs({ ...limits, maxReplyBytes: exact }).readFileResult.create().parse(content)).toEqual(content)
+    expect(() => managedSkillCodecs({ ...limits, maxReplyBytes: exact - 1 }).readFileResult.create().parse(content)).toThrow()
   })
 })

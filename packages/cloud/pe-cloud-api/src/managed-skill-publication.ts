@@ -17,7 +17,7 @@ import { skillProviderFor, type SkillResourcePreparation } from './skill-source.
 import { managedSkillProviderFor, type ManagedSkillPreparation } from './managed-skill-source.ts'
 import type { ManagedSkillBundleUpload, ManagedSkillDetails, ManagedSkillDownload, ManagedSkillDownloadRequest,
   ManagedSkillEntry, ManagedSkillId, ManagedSkillMutationResult, ManagedSkillPublicLimits, ManagedSkillSelection,
-  ManagedSkillsInstalled, ManagedSkillsInstalledRequest } from './managed-skill-types.ts'
+  ManagedSkillsInstalled, ManagedSkillsInstalledRequest, ManagedSkillReadFileRequest, ManagedSkillFileContent } from './managed-skill-types.ts'
 import type { SkillCurrentState, SkillPublicationLimits, SkillPublishResult, SkillVersionMetadata } from './skill-types.ts'
 
 /** Preparation may retain actual files responsibility although no directory commit was submitted. */
@@ -206,6 +206,33 @@ export class AccountManagedSkills implements SkillProvider {
           mediaType: 'application/zip', bytes: held.value.byteLength,
           sha256: createHash('sha256').update(held.value).digest('hex'), dataBase64: Buffer.from(held.value).toString('base64') })
       } finally { held.release() }
+    })
+  }
+
+  /**
+   * Read one current inventory member inside the original retained save turn.
+   * @param request Exact installation, content version and relative inventory path.
+   * @param check Original Peer/Use guard.
+   * @param signal Observer cancellation.
+   * @returns Complete file content; the borrowed source is released on success or refusal.
+   */
+  readFile(request: ManagedSkillReadFileRequest, check: () => void, signal: AbortSignal): Promise<ManagedSkillFileContent> {
+    return this.read(async () => {
+      check()
+      const catalog = await this.observeCurrent(signal), entry = this.selected(catalog, request.skillId)
+      check()
+      if (entry.version.id !== request.contentVersion) throw refused('The installed content changed; refresh before reading.', true)
+      const file = entry.version.files.find(value => value.relativePath === request.relativePath)
+      if (file === undefined) throw refused('The requested skill file is not in the installed inventory.')
+      const held = await this.port.withBundleSource(entry.version, async (source, control) => {
+        check()
+        const bytes = await source.readBytes(file.relativePath, control)
+        check()
+        return this.reply({ skillId: entry.skillId, contentVersion: entry.version.id, relativePath: file.relativePath,
+          bytes: file.bytes, sha256: file.sha256, dataBase64: Buffer.from(bytes).toString('base64') })
+      }, signal)
+      try { check(); return held.value }
+      finally { held.release() }
     })
   }
 

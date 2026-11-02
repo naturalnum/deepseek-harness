@@ -324,6 +324,14 @@ restore(): Promise<void>
  */
 @Remote('download') download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>
 
+/**
+ * Read one verified file from the exact installed skill version.
+ * @param request Original installation, content version and inventory member.
+ * @param signal Observer cancellation.
+ * @returns Complete bounded bytes, with the files borrow settled before the response.
+ */
+@Remote('readFile') readFile(request: ManagedSkillReadFileRequest, signal: AbortSignal): Promise<ManagedSkillFileContent>
+
 /** Inspect actual native registration rather than a configured availability flag.
  * @returns Exact unary inventory.
  */
@@ -333,7 +341,7 @@ inspect(): ExposureInventory
 assertCurrent(): void
 ```
 
-Types: [ManagedSkillDetails](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDetailsRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDownload](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDownloadRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillInstallRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillMutationResult](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillUninstallRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillUpdateRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillsInstalled](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillsInstalledRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillCurrentRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillCurrentState](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillPublishRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillPublishResult](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication)
+Types: [ManagedSkillDetails](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDetailsRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDownload](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillDownloadRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillFileContent](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillInstallRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillMutationResult](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillReadFileRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillUninstallRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillUpdateRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillsInstalled](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ManagedSkillsInstalledRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillCurrentRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillCurrentState](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillPublishRequest](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [SkillPublishResult](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication)
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-skills.ts`](../../packages/cloud/pe-cloud-api/src/cloud-skills.ts)
 

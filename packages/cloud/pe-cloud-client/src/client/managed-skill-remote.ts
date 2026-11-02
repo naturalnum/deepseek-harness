@@ -8,7 +8,7 @@ import { ClientFailure } from './errors.ts'
 
 /** Actual generated namespace; no alternative RemoteMap, wire envelope, or callable backend is declared here. */
 export type ManagedSkillRemote = Pick<TypertClientRemote['cloudSkills'],
-  'installed' | 'details' | 'install' | 'update' | 'uninstall' | 'download'>
+  'installed' | 'details' | 'install' | 'update' | 'uninstall' | 'download' | 'readFile'>
 type Installed = Extract<Awaited<ReturnType<ManagedSkillRemote['installed']>>, { ok: true }>['value']
 type Entry = Installed['entries'][number]
 type MutationReply = ReturnType<ManagedSkillRemote['install']>
@@ -29,7 +29,7 @@ function row(entry: Entry, applied = true): SkillCard {
 }
 
 /**
- * Capture the real six generated operations without reading or installing anything at registration.
+ * Capture generated operations without reading or installing anything at registration.
  * @param remote Original generated namespace on the captured page's only Connection.
  * @param input Original admission, lifetime, and explicit deadline.
  * @returns Read callbacks for the original stable source; write callbacks each consume the native version that opened them.
@@ -37,6 +37,7 @@ function row(entry: Entry, applied = true): SkillCard {
 export function managedSkillCallbacks(remote: ManagedSkillRemote, input: ManagedSkillRemoteInput): Pick<ManagedSkillEditingInput, 'installed' | 'details'> {
   const installed = remote.installed.bind(remote), details = remote.details.bind(remote), install = remote.install.bind(remote)
   const update = remote.update.bind(remote), uninstall = remote.uninstall.bind(remote), download = remote.download.bind(remote)
+  const readFile = remote.readFile.bind(remote)
   // These are only the actual opaque wire selectors from displayed native replies, not installation metadata or authorization.
   const selectors = new Map<string, Entry['skillId']>()
   let observed: Installed['limits'] | undefined
@@ -101,6 +102,22 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
       let used = false
       return Object.freeze({ item: row(value.entry),
         files: Object.freeze(value.files.map(file => Object.freeze({ path: file.relativePath, bytes: file.bytes }))),
+        ...!value.entry.actions.download ? {} : { readFile: async (path: string, signal: AbortSignal) => {
+          const file = value.files.find(file => file.relativePath === path)
+          if (file === undefined || file.bytes > limits.maxFileBytes) throw new ClientFailure('closed')
+          const contentVersion = value.entry.contentVersion
+          const answer = await request(current => readFile({ skillId, contentVersion, relativePath: file.relativePath }, current), signal)
+          if (!answer.ok || answer.value.skillId !== skillId || answer.value.contentVersion !== contentVersion
+            || answer.value.relativePath !== file.relativePath || answer.value.bytes !== file.bytes || answer.value.sha256 !== file.sha256
+            || answer.value.dataBase64.length > 4 * Math.ceil(limits.maxFileBytes / 3)
+            || new TextEncoder().encode(JSON.stringify(answer.value)).byteLength > state.maxReplyBytes) throw new ClientFailure('closed')
+          const bytes = Uint8Array.from(atob(answer.value.dataBase64), char => char.charCodeAt(0))
+          if (bytes.byteLength !== file.bytes) throw new ClientFailure('closed')
+          let text: string
+          try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+          catch { return { kind: 'binary' as const } }
+          return text.includes('\u0000') ? { kind: 'binary' as const } : { kind: 'text' as const, text }
+        } },
         ...!value.entry.mutable || !value.entry.actions.update ? {} : { update: async (bundle: ManagedSkillBundle, signal: AbortSignal) => {
           check(signal)
           if (used) throw new ClientFailure('closed')

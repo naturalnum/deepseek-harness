@@ -99,7 +99,7 @@ export async function produceCloudBootstrap(
   const skillRpcEndpoints = catalog.skills.mode === 'closed' ? [] : catalog.skills.mode === 'sample'
     ? ['cloudSkills/current', 'cloudSkills/publish']
     : ['cloudSkills/current', 'cloudSkills/publish', 'cloudSkills/installed', 'cloudSkills/details',
-      'cloudSkills/install', 'cloudSkills/update', 'cloudSkills/uninstall', 'cloudSkills/download']
+      'cloudSkills/install', 'cloudSkills/update', 'cloudSkills/uninstall', 'cloudSkills/download', 'cloudSkills/readFile']
   const pluginRpcEndpoints = catalog.pluginControl === undefined ? [] : PLUGIN_RPC_ENDPOINTS
   const settingsWrites = catalog.fields.length !== 0
   const settingsWriter = manifest.rpcEndpoints.find(row => row.endpoint === 'settings/mutate')
