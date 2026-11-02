@@ -256,15 +256,17 @@ class AccountPolicy {
 
   private member(id: SessionId): Workspace | undefined {
     this.current()
-    return this.memberCurrent(id)
+    const workspace = this.memberCurrent(id)
+    if (workspace !== undefined) this.assertWorkspace(workspace)
+    return workspace
   }
 
-  /** Resolve membership only after this same synchronous call has checked account current. */
+  /** Resolve membership after the same synchronous admission; the public caller rechecks before returning. */
   private memberCurrent(id: SessionId): Workspace | undefined {
     const matches = this.provider('workspaceRegistry').list().filter(workspace => workspace.sessionIds.includes(id))
     if (matches.length > 1) refuse()
     const workspace = matches[0]
-    if (workspace !== undefined) this.assertWorkspace(workspace)
+    if (workspace !== undefined && this.provider('workspaceRegistry').get(workspace.id) !== workspace) refuse()
     return workspace
   }
 
@@ -981,7 +983,7 @@ class AccountPolicy {
     control.throwIfAborted()
     this.assertWorkspace(workspace)
     return { workspace, assertCurrent: () => {
-      this.current()
+      // Both branches perform the full current check for their selected Session.
       const live = this.provider('sessions').get(id)
       if ((live === undefined ? this.observedProject(id, header) : this.liveSessionProject(live)) !== workspace) refuse()
     } }

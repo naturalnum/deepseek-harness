@@ -8,6 +8,9 @@ import { OfficeSourceKey, type OfficeToPdfRequest } from '@deepseek-ai/dsh-offic
 import * as fs from 'node:fs/promises'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { Worker } from 'node:worker_threads'
+import { LinuxFilesPool } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
+import type { NativeTextFileSystemConstructor } from '@deepseek-ai/dsh-pe-cloud-files/src/text-project.ts'
 import { tmpdir } from 'node:os'
 import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
 import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
@@ -62,6 +65,7 @@ import { instructionLimits, instructionSourceFixture, type InstructionSourceFixt
 import { nativeProjectDeriver, nativeRoutedFileSystem } from './native-project-fixture.ts'
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
+import type { FileReadTiming } from '../src/file-read-timing.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>()
@@ -110,6 +114,8 @@ async function fixture(options: {
   beforeBootstrap?: (ctx: Context) => void
   readCurrent?: (caller: Context, binding: AccountBinding, endpoint: string) => boolean
   verifyBootstrap?: (api: CloudAccountApi) => Promise<void>
+  timing?: FileReadTiming
+  realFiles?: boolean
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8s-native-integration-')))
   directories.push(directory)
@@ -178,7 +184,9 @@ async function fixture(options: {
     models: [{ provider: 'local-text', model: 'plain-text' }], presetId: declaration.id, presetEntryId: 'instruction-preset',
     presetConfigSha256: accountPresetConfigDigest(declaration, 8192), maxPresetConfigBytes: 8192, agentLoopEntryId: 'loop' })
   const guards = vi.fn((_ctx: Context, _installed: AccountBinding, files: CloudAccountFiles): AccountNativeGuards => {
-    if (options.instructionSources !== undefined) return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy, 128)
+    if (options.instructionSources !== undefined) {
+      return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy, 128, undefined, undefined, options.timing)
+    }
     const unavailable = (): never => { throw new AccountRuntimeError('cloud/account-unavailable', 'No fixture project/model/Preset approval') }
     return {
       beginSettingsUpdate: () => ({ check() {}, approve() {}, finish() {}, publish: (audit) => { audit() },
@@ -249,6 +257,8 @@ async function fixture(options: {
   ]
   if (options.earlyLlmAndController) rows.sort((a, b) => Number(b.id === 'controller') - Number(a.id === 'controller'))
   writeFileSync(layout.patchPath, JSON.stringify([{ insert: rows }]))
+  let testPool: LinuxFilesPool | undefined
+  const testWorkers: Worker[] = []
   const recipe: AccountRecipe = {
     profile: { name: 'account', dir: layout.profileRoot, patchPath: layout.patchPath, installAnchor: anchor,
       cwd: project, home: layout.privateRoot, startedBundles: [], overlays: [], telemetryDisabledEnv: undefined },
@@ -283,8 +293,30 @@ async function fixture(options: {
           async createS2Project() {
             const workspace = await this.initializeDefault(async () => project)
             if (workspace === undefined) throw new Error('Native default project is not eligible')
-            return { binding: installed, workspaceId: workspace.id,
-              FileSystem: options.nativeFiles ? nativeRoutedFileSystem(project, getFileProject) : FixtureFileSystem,
+            let FileSystem: NativeTextFileSystemConstructor = options.nativeFiles
+              ? nativeRoutedFileSystem(project, getFileProject) : FixtureFileSystem
+            if (options.realFiles) {
+              const gate = new SharedArrayBuffer(32)
+              testPool = new LinuxFilesPool({ maxLanes: 1, maxRunning: 2, maxRunningPerLane: 2, maxQueued: 4, maxQueuedPerLane: 4,
+                maxResidentBytes: 1048576, maxResidentBytesPerLane: 524288, waitTimeoutMs: 3000, workerCount: 2,
+                minimumHealthyWorkers: 1, workerReservationBytes: 128, replyOverheadBytes: 64, readyTimeoutMs: 2000,
+                drainTimeoutMs: 100, helperPath: '/test-only/not-loaded.node', maxReadBytes: 4096, maxPathBytes: 4096,
+                maxResolveRetries: 2, readChunkBytes: 512,
+                content: { maxEntries: 8, maxNameBytes: 64, maxReplyBytes: 8192, operationTimeoutMs: 3000 },
+              }, (input) => {
+                const worker = new Worker(new URL('./fixtures/account-read-worker.mjs', import.meta.url),
+                  { workerData: { gate, abiVersion: 8, content: input.content } })
+                testWorkers.push(worker); return worker
+              })
+              await testPool.start()
+              const info = statSync(layout.projectsRoot, { bigint: true })
+              const port = testPool.bind(installed, { rootPath: layout.projectsRoot,
+                rootDevice: String(info.dev), rootInode: String(info.ino) }, () => { assertCurrent(installed) })
+              FileSystem = await port.createTextFileSystem(workspace, (caller) => {
+                assertCurrent(installed); caller.fiber.assertActive()
+              }, getFileProject)
+            }
+            return { binding: installed, workspaceId: workspace.id, FileSystem,
               projectDirectory: { binding: installed, prepare: async (cwd: string) => {
                 assertCurrent(installed)
                 if (cwd !== workspace.path || !statSync(cwd).isDirectory()) throw new Error('Outside the Node fixture project')
@@ -347,6 +379,8 @@ async function fixture(options: {
       await componentNative?.dispose()
       await factory.close()
       await context?.fiber.dispose()
+      if (testPool !== undefined) await testPool.stop(Date.now() + 3000)
+      await Promise.all(testWorkers.map(worker => worker.terminate()))
       for (const barrier of barriers) {
         const receipt = await barrier.stopConfigSaves(Date.now() + 1000)
         if (receipt.status === 'confirmed') saves.releaseAccount(barrier)
@@ -1275,6 +1309,103 @@ it('an admitted file read retains the native Session and provider checks while a
   await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data' })
   expect(full.mock.calls.length).toBeGreaterThan(admittedRootChecks)
   process.stdout.write(`OFFLINE_NATIVE_FILE_READ ${JSON.stringify({ localChecks, admittedRootChecks, fallbackRootChecks: full.mock.calls.length })}\n`)
+})
+
+it('reuses synchronous account validation inside cold Session read checks', async () => {
+  let accountChecks = 0, planChecks = 0, selected = 0
+  const timing: FileReadTiming = { measure(key, action) {
+    if (key === 'account-current') accountChecks++
+    if (key === 'account-plan') planChecks++
+    return action()
+  }, close() {} }
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+    auditedFileBytes: true, timing, realFiles: true,
+    readCurrent: (_caller, _binding, endpoint) => { selected++; return endpoint === 'workspaceFiles/readBytes' },
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'offline-count.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  expect(ctx.sessions.get(own.sessionId)).toBeUndefined()
+  const native = f.recipe.native
+  if (native === undefined) throw new Error('Native preparation absent')
+  const root = vi.spyOn(native, 'assertRootCurrent')
+  const stat = vi.spyOn(ctx.sessionPersistence, 'stat')
+  const peer = { id: brandString<PeerId>('offline-count'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  accountChecks = 0; planChecks = 0; selected = 0; root.mockClear(); stat.mockClear()
+  const value = await ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'readBytes',
+    args: { workspaceFileScopeId: own.sessionId, path: 'offline-count.txt', options: {} }, peer })
+  expect(value).toMatchObject({ data: new TextEncoder().encode('owned data') })
+  expect(accountChecks).toBeLessThan(450)
+  expect(planChecks).toBe(accountChecks * 2)
+  expect(selected).toBeGreaterThan(0)
+  expect(stat).toHaveBeenCalledTimes(6)
+  expect(root).toHaveBeenCalledTimes(2)
+}, 30000)
+
+it('rejects a cold Session file read when membership changes during a later stat', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true,
+    auditedFileCalls: true, auditedFileBytes: true, realFiles: true,
+    readCurrent: (_caller, _binding, endpoint) => endpoint === 'workspaceFiles/readBytes',
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'revoked-read.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  expect(ctx.sessions.get(own.sessionId)).toBeUndefined()
+  const workspace = ctx.peCloudFiles.project().workspace
+  const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+  let calls = 0
+  const observed = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementation(async (...args) => {
+    const result = await stat(...args)
+    if (++calls === 2) await workspace.detachSession(own.sessionId)
+    return result
+  })
+  const content = vi.spyOn(ctx.fs, 'readBytes')
+  const peer = { id: brandString<PeerId>('cold-revoke-membership'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'readBytes',
+    args: { workspaceFileScopeId: own.sessionId, path: 'revoked-read.txt', options: {} }, peer }))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(observed).toHaveBeenCalledTimes(2)
+  expect(content).not.toHaveBeenCalled()
+})
+
+it('does not share a revoked cold Session selection with a concurrent Session read', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true,
+    auditedFileCalls: true, auditedFileBytes: true, realFiles: true,
+    readCurrent: (_caller, _binding, endpoint) => endpoint === 'workspaceFiles/readBytes',
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, a = await ctx.sessionController.create({}), b = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'concurrent-read.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  expect(ctx.sessions.get(a.sessionId)).toBeUndefined()
+  expect(ctx.sessions.get(b.sessionId)).toBeUndefined()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const original = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+  let blocked = false
+  vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementation(async (...args) => {
+    const result = await original(...args)
+    if (!blocked && args[0] === a.sessionId) { blocked = true; entered.resolve(undefined); await release.promise }
+    return result
+  })
+  const peer = { id: brandString<PeerId>('parallel-cold-reads'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const read = (id: SessionId) => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'readBytes',
+    args: { workspaceFileScopeId: id, path: 'concurrent-read.txt', options: {} }, peer })
+  const pending = read(a.sessionId)
+  const denied = expect(pending).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  try {
+    await entered.promise
+    await expect(read(b.sessionId)).resolves.toMatchObject({ data: new TextEncoder().encode('owned data') })
+    await ctx.peCloudFiles.project().workspace.detachSession(a.sessionId)
+  } finally { release.resolve(undefined) }
+  await denied
 })
 
 it('checks account plans and provider after the cold-read stat await without repeating nested checks', async () => {

@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
@@ -186,6 +188,46 @@ it('runs a native plain-text turn, then cold-observes and resumes the same ordin
   expect(resumed.agent.session.header.id).toBe(created.sessionId)
   expect(resumed.agent.session.header.isSeeded).toBe(false)
   await resumed.dispose()
+})
+
+async function retainedColdFileSelection() {
+  const f = policyFixture(), first = await f.start()
+  const { sessionId } = await first.ctx.sessionController.create({})
+  await first.ctx.sessionPersistence.flush()
+  await first.close()
+  const graph = await f.start('2')
+  expect(graph.ctx.sessions.get(sessionId)).toBeUndefined()
+  const peer = { id: brandString<PeerId>('retained-cold-selection'), ctx: graph.ctx,
+    principal: { kind: 'owner' as const }, interactions: 'answer' as const,
+    signal: graph.binding.lifetime, dispose: async () => {} }
+  const caller = graph.ctx.extend({ invocation: {
+    service: 'workspaceFiles', request: { namespace: 'workspaceFiles', method: 'readBytes', args: { workspaceFileScopeId: sessionId } },
+    peer, signal: graph.binding.lifetime, async *uplink<T>(): AsyncIterable<T> {},
+  } })
+  const selection = await graph.guards.getFileProject(caller)
+  expect(selection.workspace).toBe(graph.files.project().workspace)
+  expect(() => { selection.assertCurrent() }).not.toThrow()
+  return { graph, sessionId, selection, presetId: f.config.presetId }
+}
+
+it('rejects the retained cold file selection after account lifetime ends', async () => {
+  const { graph, selection } = await retainedColdFileSelection()
+  graph.lifetime.abort()
+  expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+})
+
+it('rechecks membership when a retained cold file selection becomes live', async () => {
+  const { graph, sessionId, selection, presetId } = await retainedColdFileSelection()
+  const resumed = await graph.ctx.agents.resume({ resumeSessionId: sessionId,
+    agentOptions: { provider: 'local-text', model: 'plain-text' },
+    setup: async (ctx) => { await graph.ctx.agentPresets.mount(ctx, presetId) },
+  })
+  try {
+    expect(graph.ctx.sessions.get(sessionId)).toBe(resumed.agent.session)
+    expect(() => { selection.assertCurrent() }).not.toThrow()
+    await selection.workspace.detachSession(sessionId)
+    expect(() => { selection.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  } finally { await resumed.dispose() }
 })
 
 it('rejects foreign project, unapproved model/Preset and a missing actual Preset composition before publication', async () => {
