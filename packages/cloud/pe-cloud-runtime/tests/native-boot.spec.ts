@@ -549,7 +549,7 @@ describe('private native account assembly', () => {
     const f = fixture(`packages-${action}`)
     const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
     const prepare = vi.fn((...args: Parameters<NativeAccountBootInput['prepare']>) => f.input.prepare(...args))
-    const original = Reflect.get(RegistryService.prototype, 'plugin') as RegistryService['plugin']
+    const original = Reflect.get(RegistryService.prototype, 'plugin')
     const spy = vi.spyOn(RegistryService.prototype, 'plugin').mockImplementation(function (this: RegistryService, plugin, config, stack) {
       const fiber = original.call(this, plugin, config, stack)
       if (plugin === PluginPackages) {
