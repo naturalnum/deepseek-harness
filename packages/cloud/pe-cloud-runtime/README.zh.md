@@ -95,6 +95,8 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 账户持有的 `workspaceFileScope` lookup 在读取冷持久化 header 前检查原 Session 成员关系；未知、外账户及未挂载的 ID 不触发该元数据读取。lookup 使用账户生命周期，并在观察后复核原 provider。准入文件读取的完整账户和精确 Workspace 审核由策略 selection 持有，涵盖冷、live、Agent 和子代理准备阶段的选择；公开选择入口和异步工作后的检查仍核验原账户、Workspace 及 Session 或 Agent 权限。首次 pin 和 subagent 检查保留额外审核。
 
+已选原生文件或 Office 端点没有准入的读取 carrier 时，由 API owner 执行完整业务准入；文件选择包装器不会在同一次同步操作内重复执行。异步工作后的检查仍会执行。
+
 唯一账户 FS 接收惰性的共享选择回调。 原 `workspaceFiles` invocation 先按所选 RPC/stream 类别经原 API owner 准入，包含当前唯一的原生注册检查；未选中或已撤销的注册在共享项目选择前拒绝。原生工具调用要求精确已发布的 Agent、Session 和成员关系，带 scope 标记的调用方，其不透明 scope key 必须属于该 Agent 保留的原生 scope 链；共享账户服务可以没有标记，仅继承因果父 Agent 不授予带独立标记的子 Agent 文件访问。原生 `workspaceFiles` 调用使用原 invocation 的 SessionId。冷文件选择先核验成员关系，再只读取实际持久化 header，检查固定 Preset 及当前 owner，不加载完整 Session 消息，也不以目标路径授予项目权限。返回的 selection 继续核验同一原始 Workspace、owner 和成员关系。文件调用没有可变 active project 或默认回退。
 
 同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。 若选中任何 `workspaceFiles` 端点或 `officeToPdf/render`，它还会在异步检查前后要求原 Files owner 的 `assertContentAvailable()`；仅具元数据能力的 S2 无法通过启用文件端点的 ready 检查。未选择文件端点的配方保留原先前提。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。

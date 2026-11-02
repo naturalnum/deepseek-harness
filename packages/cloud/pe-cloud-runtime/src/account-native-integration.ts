@@ -245,10 +245,14 @@ export class AccountNativeIntegration {
           const invocation = caller.invocation
           const method = invocation?.request.method
           const endpoint = `workspaceFiles/${method}`
-          const fileRead = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
+          const workspaceCall = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
+          const officeCall = invocation?.service === 'officeToPdf' && invocation.request.namespace === 'officeToPdf'
+            && method === 'render'
+          const fileRead = workspaceCall
             && (method === 'read' || method === 'stat' || method === 'readBytes')
             && this.input.readCurrent?.(caller, binding, endpoint) === true
-          if (!fileRead) rootBusinessCurrent(binding)
+          // Selected native endpoints perform their full business admission in the API owner below.
+          if (!fileRead && !workspaceCall && !officeCall) rootBusinessCurrent(binding)
           if (invocation?.service === 'officeToPdf' || invocation?.request.namespace === 'officeToPdf') {
             if (invocation.service !== 'officeToPdf' || invocation.request.namespace !== 'officeToPdf'
               || invocation.request.method !== 'render') {
@@ -265,7 +269,10 @@ export class AccountNativeIntegration {
               api.requireAdmittedFileRead(endpoint)
             } else if (manifest.rpcEndpoints.some(row => row.endpoint === endpoint)) api.requireRpc(endpoint)
             else if (manifest.streamEndpoints.some(row => row.endpoint === endpoint)) api.requireStream(endpoint)
-            else throw new CloudApiError('cloud/forbidden', 'The native file endpoint is not selected.')
+            else {
+              rootBusinessCurrent(binding)
+              throw new CloudApiError('cloud/forbidden', 'The native file endpoint is not selected.')
+            }
           }
           return fileRead
         }

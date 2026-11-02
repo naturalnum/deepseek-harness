@@ -1308,7 +1308,84 @@ it('an admitted file read retains the native Session and provider checks while a
   admitted = false; full.mockClear()
   await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data' })
   expect(full.mock.calls.length).toBeGreaterThan(admittedRootChecks)
+  expect(full.mock.calls.length).toBeLessThan(20)
   process.stdout.write(`OFFLINE_NATIVE_FILE_READ ${JSON.stringify({ localChecks, admittedRootChecks, fallbackRootChecks: full.mock.calls.length })}\n`)
+})
+
+it('retains fallback Root admission when the carrier check synchronously revokes it', async () => {
+  let rootCurrent = true, revokeOnRead = false, carrierChecks = 0
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+    readCurrent: () => { carrierChecks++; if (revokeOnRead) rootCurrent = false; return false },
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'fallback-reentry.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  const native = f.recipe.native
+  if (native === undefined) throw new Error('Original Root preparation missing')
+  const original = native.assertRootCurrent.bind(native)
+  vi.spyOn(native, 'assertRootCurrent').mockImplementation(() => {
+    if (!rootCurrent) throw new Error('Original Root revoked')
+    original()
+  })
+  const peer = { id: brandString<PeerId>('fallback-reentry'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const read = () => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read', peer,
+    args: { workspaceFileScopeId: own.sessionId, path: 'fallback-reentry.txt', range: {} } })
+  await expect(read()).resolves.toMatchObject({ text: 'owned data' })
+  rootCurrent = false
+  await expect(read()).rejects.toThrow()
+  rootCurrent = true; revokeOnRead = true; carrierChecks = 0
+  await expect(read()).rejects.toThrow()
+  expect(carrierChecks).toBeGreaterThan(0)
+})
+
+it('retains full fallback admission for the native file changes stream', async () => {
+  const carrier = vi.fn(() => true)
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+    realFiles: true, readCurrent: carrier,
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'stream-count.txt'), 'owned data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  const native = f.recipe.native
+  if (native === undefined) throw new Error('Original Root preparation missing')
+  const originalRoot = native.assertRootCurrent.bind(native)
+  const root = vi.spyOn(native, 'assertRootCurrent')
+  const peer = { id: brandString<PeerId>('native-changes-fallback'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  await expect(ctx.typertGateway.stream({ namespace: 'workspaceFiles', method: 'readBytes', peer,
+    args: { workspaceFileScopeId: own.sessionId, path: 'stream-count.txt', options: {} } }))
+    .rejects.toMatchObject({ code: 'gateway/signature-invalid' })
+  carrier.mockClear(); root.mockClear()
+  const stream = await ctx.typertGateway.stream({ namespace: 'workspaceFiles', method: 'changes', peer,
+    args: { workspaceFileScopeId: own.sessionId, path: 'stream-count.txt' } })
+  const iterator = stream[Symbol.asyncIterator]()
+  try {
+    await expect(iterator.next()).rejects.toMatchObject({ code: 'workspace-file/watch-unsupported' })
+  } finally { await iterator.return?.() }
+  expect(carrier).not.toHaveBeenCalled()
+  expect(root.mock.calls.length).toBeGreaterThan(0)
+  expect(root.mock.calls.length).toBeLessThan(100)
+  process.stdout.write(`OFFLINE_NATIVE_CHANGES ${JSON.stringify({ rootChecks: root.mock.calls.length })}\n`)
+  let revoked = true
+  root.mockImplementation(() => { if (revoked) throw new Error('Original stream Root revoked'); originalRoot() })
+  const open = () => ctx.typertGateway.stream({ namespace: 'workspaceFiles', method: 'changes', peer,
+    args: { workspaceFileScopeId: own.sessionId, path: 'stream-count.txt' } })
+  await expect(open()).rejects.toThrow()
+  revoked = false
+  const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
+  const changed = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
+    const value = await stat(...args)
+    revoked = true
+    return value
+  })
+  await expect(open()).rejects.toThrow()
+  expect(changed).toHaveBeenCalledOnce()
+  expect(carrier).not.toHaveBeenCalled()
 })
 
 it('reuses synchronous account validation inside cold Session read checks', async () => {
@@ -1571,9 +1648,9 @@ it('uses one pinned Root check in factory business admission and rejects synchro
   }
 })
 
-it('rechecks the original Root plan after the cold file scope stat awaits', async () => {
+it.each([true, false])('rechecks the original Root plan after the cold file scope stat awaits (carrier: %s)', async (admitted) => {
   const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
-    readCurrent: (_caller, _binding, endpoint) => endpoint === 'workspaceFiles/read',
+    readCurrent: (_caller, _binding, endpoint) => admitted && endpoint === 'workspaceFiles/read',
     beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
   const outcome = await f.start()
   if (outcome.status === 'failed') throw outcome.cause
