@@ -82,6 +82,8 @@ The optional fixed preview entry preserves the original database-backed login, C
 
 ### Bootstrap metadata
 
+The producer obtains reviewed Session RPC/stream declarations from API's `SESSION_CONTROLLER_ENDPOINTS`, including `session/projections`. API owns their handler, guard, mode and installation requirements. Bootstrap still checks the selected manifest against each actual account API registration; shared metadata cannot authorize an uninstalled method or a different transport mode.
+
 Selected native Session controls require exact reviewed handler identities and resource guards: model catalog/selection, commands, goals, permission catalog, feedback and user-question operations remain independently audited. The producer rejects namespace-prefix substitutes and rechecks each actual account API registration before emitting bootstrap. Plan interaction uses the native question-answer RPC, timed-wait stream and Gateway event-result RPC; admission does not manufacture an answer provider. Native Session export accepts only `GET` and `HEAD /api/session.export` with `native:sessionLogDownload` and `account-session`, alongside the existing exact upload and service-preview routes.
 
 The producer also recognizes selected `session/rename` and `workspace/pinSession`, `unpinSession`, `archiveSession` and `unarchiveSession` with their original native Controller handlers and the `account-session` guard. Selection and mutation authority remain with the existing exposure and account API owners. `workspace/rename` uses the original WorkspaceController with `account-project`; `workspace/delete` remains unapproved.

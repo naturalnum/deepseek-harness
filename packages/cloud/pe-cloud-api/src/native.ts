@@ -18,6 +18,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
+import { SESSION_CONTROLLER_ENDPOINTS } from './session-endpoints.ts'
 import { firstScreenNativeOwner } from './native-first-screen.ts'
 import type { ExposurePolicy } from './exposure.ts'
 import type { ExposureGuard, ExposureInventory } from './types.ts'
@@ -600,18 +601,16 @@ export function inspectNativeController(
   const stream: ExposureInventory['streamEndpoints'][number][] = []
   for (const marker of methods) {
     const method = marker.method
-    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow', 'updateQueue', 'rename'].includes(method)
-      && !(actual.hasFirstScreenReader() && ['list', 'control', 'projections'].includes(method))
-      && !(method === 'modelCatalog' && actual.hasModelSelection('session/modelCatalog'))
-      && !(method === 'selectModel' && actual.hasModelSelection('session/selectModel'))) continue
-    const streaming = method === 'follow' || method === 'control'
-    if ((marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== (streaming ? 'stream' : 'rpc')
+    const declaration = SESSION_CONTROLLER_ENDPOINTS.find(row => row.endpoint === `${binding.namespace}/${method}`)
+    if (declaration === undefined
+      || (declaration.requires === 'firstScreen' && !actual.hasFirstScreenReader())
+      || (declaration.requires === 'modelSelection' && !actual.hasModelSelection(declaration.endpoint))) continue
+    const streaming = declaration.mode === 'stream'
+    if ((marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== declaration.mode
       || Reflect.get(actual, method) !== Reflect.get(AccountSessionController.prototype, method)) {
       throw new CloudApiError('cloud/account-unavailable', 'The original native guarded method changed.')
     }
-    const row = Object.freeze({ endpoint: `${binding.namespace}/${method}`, handlerId: `native:${binding.serviceKey}`,
-      guard: method === 'create' ? 'account-project' as const
-        : method === 'modelCatalog' ? 'authenticated-account' as const : 'account-session' as const })
+    const row = Object.freeze({ endpoint: declaration.endpoint, handlerId: declaration.handlerId, guard: declaration.guard })
     if (streaming) stream.push(row)
     else rpc.push(row)
   }

@@ -23,11 +23,12 @@ const bounds = { maxHomeBytes: 4096, maxCollectionItems: 16, maxFrameBytes: 6553
 const fileRpc = ['read', 'stat', 'list', 'readBytes'].map(method => ({ endpoint: `workspaceFiles/${method}`,
   handlerId: 'native:workspaceFiles', guard: 'account-session' as const }))
 const changes = { endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
+const projection = { endpoint: 'session/projections', handlerId: 'native:sessionController', guard: 'account-session' as const }
 
 async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly EndpointExposure[] = [],
   fetch: readonly ExactFetchExposure[] = [], modelKey = false, pluginControl = false,
-  skills: ApprovedConfigurationCatalog['skills'] = { mode: 'closed' }) {
-  const native = policyFixture([], bounds), graph = await native.start(), root = new Context()
+  skills: ApprovedConfigurationCatalog['skills'] = { mode: 'closed' }, actualProjection = false) {
+  const native = policyFixture(actualProjection ? [projection] : [], bounds), graph = await native.start(), root = new Context()
   onTestFinished(async () => { vi.restoreAllMocks(); await root.fiber.dispose() })
   const manifest = native.exposureOwner.policy.manifest
   const exposure = new ExposureService(root, { ...manifest,
@@ -48,7 +49,7 @@ async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly 
   // Only the added owner audits are stubbed; the first-screen methods keep their real native API checks.
   const requireRpc = graph.api.requireRpc.bind(graph.api), requireStream = graph.api.requireStream.bind(graph.api)
   const auditedRpc = vi.spyOn(graph.api, 'requireRpc').mockImplementation(endpoint =>
-    rpc.find(row => row.endpoint === endpoint) ?? requireRpc(endpoint))
+    (endpoint === projection.endpoint ? undefined : rpc.find(row => row.endpoint === endpoint)) ?? requireRpc(endpoint))
   const auditedStream = vi.spyOn(graph.api, 'requireStream').mockImplementation(endpoint =>
     streams.find(row => row.endpoint === endpoint) ?? requireStream(endpoint))
   const requireFetch = graph.api.requireFetch.bind(graph.api)
@@ -60,6 +61,35 @@ async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly 
     () => { graph.ctx.fiber.assertActive() }, () => 'producer-generation')
   return { produce, graph, exposure, auditedRpc, auditedStream, auditedFetch, content }
 }
+
+it('produces bootstrap with the installed native Session projections endpoint', async () => {
+  const f = await fixture([projection], [], [], false, false, { mode: 'closed' }, true)
+  const result = await f.produce()
+  expect(f.auditedRpc).toHaveBeenCalledWith(projection.endpoint)
+  expect(JSON.parse(result.body)).toHaveProperty('capabilities')
+  result.assertCurrent()
+})
+
+it.each([
+  { ...projection, guard: 'authenticated-account' as const },
+  { ...projection, handlerId: 'native:other' },
+  { ...projection, endpoint: 'session/unknown' },
+])('rejects unreviewed Session metadata: %j', async (row) => {
+  const f = await fixture([row], [], [], false, false, { mode: 'closed' }, true)
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+it('rejects projections when the actual account graph did not install it', async () => {
+  const f = await fixture([projection])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(f.auditedRpc).toHaveBeenCalledWith(projection.endpoint)
+})
+
+it('rejects the native unary projections endpoint selected as a stream', async () => {
+  const f = await fixture([], [projection])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedStream).not.toHaveBeenCalledWith(projection.endpoint)
+})
 
 const upload: ExactFetchExposure = { method: 'POST', path: FILE_UPLOAD_PATH,
   handlerId: 'native:fileUploads', guard: 'account-session' }

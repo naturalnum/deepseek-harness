@@ -44,6 +44,8 @@ kind: "package-reference"
 
 清单审核将配置声明与原生已挂载处理者比较。额外注册的原生入口保持关闭。根匹配只声明部署策略；每个账户还须核对当前 runtime 绑定、实际启用处理者和资源。
 
+`SESSION_CONTROLLER_ENDPOINTS` 持有已审核的 Session 端点名、handler、资源守卫、传输模式及安装前提。原生 Controller 清单与 Access bootstrap producer 共用这些声明。声明方法不等于安装或开放方法：清单仍核验原有受守卫实现、实际原生 Remote 元数据、可选的首屏／模型选择 provider，以及部署所选 manifest。
+
 `CloudAccountApi.prepareCloudProjects(owner, { createProject })` 在清单审核前安装唯一、增量的 `cloudProjects/create` Remote。请求只有可选显示标题；显式空白或超过 256 UTF-8 字节的标题在分配前拒绝。可信回调捕获账户能力，经 files 分配并返回原生 `WorkspaceValue`。原生 `workspace/create(path)` 保留既有目录登记与幂等含义。取消仍等待实际回调结算，不承诺回滚；未知结果不得重放。精确开放行为 `cloudProjects/create`、`native:cloudProjects`、`authenticated-account`。
 
 可信账户装配可在 API 构造时保留私有 Office 生命周期能力。它安装原生 Office-to-PDF provider，并通过云端 `convert` 适配器接线，保留两个原生 Remote 方法、授权和版本复核。有界清单检查唯一的渲染器、账户文件系统和 WorkspaceFiles 注册；manifest 对 `officeToPdf/render` 选择 Session 准入，对 `officeToPdf/generation` 选择已认证账户准入。调用方取消只结束自身观察：适配器继续持有原生 reader，直至转换及临时目录清理结算，并继续占用原 reader 容量。清理结果未知时关闭转换准入并保留责任。部署必须提供匹配的引擎和字体，并将 Office 输入保持在云文件系统实际读取上限以内。

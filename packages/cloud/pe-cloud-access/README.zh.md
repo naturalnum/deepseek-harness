@@ -82,6 +82,8 @@ Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.
 
 ### Bootstrap 元数据
 
+producer 从 API 的 `SESSION_CONTROLLER_ENDPOINTS` 取得已审核的 Session RPC/stream 声明，包含 `session/projections`。API 持有其 handler、guard、模式及安装前提。Bootstrap 仍将选中 manifest 与每个实际账户 API 注册逐项核对；共用元数据不能授权未安装的方法或不同的传输模式。
+
 选中的原生会话控件要求处理器身份及资源守卫精确匹配已审核声明：模型目录／选择、命令、目标、权限目录、反馈和用户问题操作分别接受审计。producer 拒绝通过命名空间前缀扩大范围，并在发出 bootstrap 前重新检查每个账户 API 的实际注册。计划互动使用原生问题回答 RPC、定时等待流及 Gateway 事件结果 RPC；准入不会凭空提供回答方。原生会话导出仅接受处理器为 `native:sessionLogDownload`、守卫为 `account-session` 的 `GET` 和 `HEAD /api/session.export`，并可与现有精确上传和服务预览路由并存。
 
 producer 还识别选中的 `session/rename` 及 `workspace/pinSession`、`unpinSession`、`archiveSession`、`unarchiveSession`，其处理器为各自原生 Controller，守卫为 `account-session`。选择和修改权限仍由现有 exposure 和账户 API owner 控制。 `workspace/rename` 使用原生 WorkspaceController 和 `account-project`；`workspace/delete` 仍未获准。
