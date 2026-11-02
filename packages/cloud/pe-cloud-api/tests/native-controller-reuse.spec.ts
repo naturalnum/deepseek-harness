@@ -13,6 +13,7 @@ import SessionController, { SessionSkillCatalog } from '@deepseek-ai/dsh-api-ses
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import type {
   SessionCancelRequest, SessionCreateRequest, SessionCreateValue, SessionForkValue,
+  SessionProjectionsValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
@@ -27,6 +28,12 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { CloudApiError } from '../src/errors.ts'
 import { createNativeController, inspectNativeController, type NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface PrincipalMap {
+    'cloud-projection-guest': { readonly kind: 'cloud-projection-guest' }
+  }
+}
 
 type ActiveAgent = NonNullable<ReturnType<Context['agents']['get']>>
 
@@ -118,7 +125,7 @@ async function fixture(accountId = 'reuse', firstScreen = false, skills = false)
   let instances = 0
   const manifest = {
     recipeVersion: binding.recipeVersion,
-    rpcEndpoints: ['create', 'prompt', 'fork', 'cancel', 'updateQueue', ...firstScreen ? ['list'] : []].map(method => ({
+    rpcEndpoints: ['create', 'prompt', 'fork', 'cancel', 'updateQueue', ...firstScreen ? ['list', 'projections'] : []].map(method => ({
       endpoint: 'session/' + method, handlerId: 'native-session',
       guard: method === 'create' ? 'account-project' as const : 'account-session' as const,
     })).concat(skills ? [{ endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' as const }] : []),
@@ -149,6 +156,82 @@ async function fixture(accountId = 'reuse', firstScreen = false, skills = false)
     ctx, controller, project, outside, binding, lifetime, denied, guards, instances, adapter, invoke, create, assertCurrent, policy, peer,
   }
 }
+
+it('dispatches native projections only for a Session admitted by the shared readonly guard', async () => {
+  const f = await fixture('projection-owned', true)
+  const { sessionId } = await f.create()
+  const check = f.guards.firstScreen!.assertSessionRead
+  check.mockImplementation((id) => { if (id !== sessionId) throw f.denied })
+  const native = vi.spyOn(SessionController.prototype, 'projections')
+  expect(inspectNativeController(f.controller, f.binding.recipeVersion, 128).rpcEndpoints).toContainEqual({
+    endpoint: 'session/projections', handlerId: 'native:sessionController', guard: 'account-session',
+  })
+  await expect(f.invoke('projections', { sessionId })).resolves.toMatchObject({ kind: 'sequenced' })
+  expect(check).toHaveBeenCalledTimes(2)
+  expect(native).toHaveBeenCalledOnce()
+  await expect(f.invoke('projections', { sessionId: SessionId('unrelated') })).rejects.toBe(f.denied)
+  expect(native).toHaveBeenCalledOnce()
+  await expect(f.ctx.typertGateway.invoke({ namespace: 'session', method: 'projections', args: { request: { sessionId } },
+    peer: { ...f.peer, principal: { kind: 'cloud-projection-guest' } } }))
+    .rejects.toMatchObject({ code: 'remote-access/denied' })
+  expect(native).toHaveBeenCalledOnce()
+})
+
+it('rejects projections after membership changes or the account lifetime ends during the native read', async () => {
+  for (const revoke of ['membership', 'lifetime'] as const) {
+    const f = await fixture('projection-revoke-' + revoke, true)
+    const { sessionId } = await f.create()
+    const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const native = vi.spyOn(SessionController.prototype, 'projections').mockImplementation(async () => {
+      entered.resolve(undefined); await release.promise
+      return { kind: 'sequenced', asOfSeq: -1, values: {} }
+    })
+    const pending = f.invoke('projections', { sessionId })
+    const rejected = expect(pending).rejects.toThrow()
+    onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([pending]) })
+    await entered.promise
+    if (revoke === 'membership') f.guards.firstScreen!.assertSessionRead.mockImplementation(() => { throw f.denied })
+    else f.lifetime.abort()
+    release.resolve(undefined)
+    await rejected
+    native.mockRestore()
+  }
+})
+
+it('preserves admitted native null and migration results while rejecting non-plain projection values', async () => {
+  const f = await fixture('projection-variants', true)
+  const absent = SessionId('absent-but-admitted-by-fixture')
+  const native = vi.spyOn(SessionController.prototype, 'projections')
+  await expect(f.invoke('projections', { sessionId: absent })).resolves.toBeNull()
+  expect(native).toHaveBeenCalledOnce()
+  const migration = { kind: 'migration-required' as const, values: { title: '缓存' } }
+  native.mockResolvedValueOnce(migration)
+  await expect(f.invoke('projections', { sessionId: absent })).resolves.toEqual(migration)
+  native.mockResolvedValueOnce({ kind: 'sequenced', asOfSeq: -1, values: { title: new Date(0) } } as unknown as SessionProjectionsValue)
+  await expect(f.invoke('projections', { sessionId: absent })).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+it('limits the complete native projections result and inventories only the guarded implementation', async () => {
+  const f = await fixture('projection-limits', true)
+  const { sessionId } = await f.create()
+  const native = vi.spyOn(SessionController.prototype, 'projections')
+  const empty = { kind: 'sequenced' as const, asOfSeq: -1, values: { title: '' } }
+  const exact = { ...empty, values: { title: 'a'.repeat(65536 - Buffer.byteLength(JSON.stringify(empty))) } }
+  expect(Buffer.byteLength(JSON.stringify(exact))).toBe(65536)
+  native.mockResolvedValue(exact)
+  await expect(f.invoke('projections', { sessionId })).resolves.toEqual(exact)
+  const value = { kind: 'sequenced' as const, asOfSeq: -1, values: { title: '中'.repeat(22000) } }
+  expect(Buffer.byteLength(JSON.stringify(value))).toBeGreaterThan(65536)
+  native.mockResolvedValue(value)
+  await expect(f.invoke('projections', { sessionId })).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  native.mockRestore()
+  vi.spyOn(f.controller, 'projections').mockResolvedValue(null)
+  expect(() => inspectNativeController(f.controller, f.binding.recipeVersion, 128))
+    .toThrow('The original native guarded method changed')
+  const closed = await fixture('projection-closed')
+  expect(inspectNativeController(closed.controller, closed.binding.recipeVersion, 128).rpcEndpoints)
+    .not.toContainEqual(expect.objectContaining({ endpoint: 'session/projections' }))
+})
 
 it('updates only pending items in the admitted native Session', async () => {
   const f = await fixture('queue-owned')

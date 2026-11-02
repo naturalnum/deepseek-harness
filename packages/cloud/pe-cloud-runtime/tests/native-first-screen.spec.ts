@@ -117,6 +117,24 @@ it('keeps same-name accounts independent and reuses the original cold Workspace/
   expect(b.api.requireStream('$events').handlerId).toBe('native:typertGateway')
 })
 
+it('routes projections through the native Gateway for owned live and cold Sessions and denies foreign identities', async () => {
+  const row = { endpoint: 'session/projections', handlerId: 'native:sessionController', guard: 'account-session' as const }
+  const fixtureA = policyFixture([row], bounds), fixtureB = policyFixture([row], bounds)
+  const a = await fixtureA.start(), b = await fixtureB.start()
+  const { sessionId } = await a.ctx.sessionController.create({})
+  expect(a.api.requireRpc('session/projections')).toMatchObject(row)
+  await expect(a.invoke('projections', { sessionId })).resolves.toMatchObject({ kind: 'sequenced' })
+  await expect(b.invoke('projections', { sessionId })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await expect(a.invoke('projections', { sessionId: SessionId('not-a-member') }))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await a.ctx.sessionPersistence.flush()
+  await a.close()
+  const cold = await fixtureA.start('2')
+  expect(cold.ctx.sessions.get(sessionId)).toBeUndefined()
+  await expect(cold.invoke('projections', { sessionId })).resolves.toMatchObject({ kind: 'sequenced' })
+  expect(cold.ctx.agents.get(sessionId)).toBeUndefined()
+})
+
 it('revokes prepared audit on locale fiber removal or a changed original method', async () => {
   const graph = await policyFixture([], bounds).start()
   const replacement = vi.spyOn(graph.ctx.settingsController, 'describe').mockImplementation(() => {

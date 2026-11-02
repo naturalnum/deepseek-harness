@@ -8,7 +8,7 @@ import type {
   SessionUpdateQueueRequest, SessionUpdateQueueValue,
   SessionRenameRequest, SessionRenameValue,
   SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
-  SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary,
+  SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary, SessionProjectionsRequest, SessionProjectionsValue,
   SkillListRequest, SkillListValue, ModelCatalog, ModelSelection, SessionSelectModelRequest, SessionSelectModelValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -264,6 +264,22 @@ class NativeSessionAdmission {
 
   controlBufferLimits(): SessionControlBufferLimits | undefined { return this.reader }
 
+  projection(sessionId: SessionId): void {
+    this.admit('session/projections', 'account-session')
+    if (this.reader === undefined) {
+      throw new CloudApiError('cloud/account-unavailable', 'The original first-screen Session reader is absent.')
+    }
+    this.reader.assertSessionRead(sessionId)
+    this.admit('session/projections', 'account-session')
+  }
+
+  projectionResult(value: SessionProjectionsValue): void {
+    if (this.reader === undefined) {
+      throw new CloudApiError('cloud/account-unavailable', 'The original first-screen Session reader is absent.')
+    }
+    firstScreenJsonBytes(value, this.reader.maxFrameBytes)
+  }
+
   admitRead(endpoint: 'session/list' | 'session/control'): void {
     if (this.reader === undefined) {
       throw new CloudApiError('cloud/account-unavailable', 'The original first-screen Session reader is absent.')
@@ -441,6 +457,17 @@ class AccountSessionController extends SessionController {
   /** Actual optional reader installation, used only by native inventory inspection. */
   hasFirstScreenReader(): boolean { return this.admission.hasReader() }
 
+  override async projections(request: SessionProjectionsRequest, signal: AbortSignal): Promise<SessionProjectionsValue> {
+    const control = this.admission.historySignal(signal)
+    control.throwIfAborted()
+    this.admission.projection(request.sessionId)
+    const value = await super.projections(request, control)
+    control.throwIfAborted()
+    this.admission.projection(request.sessionId)
+    this.admission.projectionResult(value)
+    return value
+  }
+
   override async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     const control = this.admission.historySignal(signal)
     control.throwIfAborted()
@@ -574,7 +601,7 @@ export function inspectNativeController(
   for (const marker of methods) {
     const method = marker.method
     if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow', 'updateQueue', 'rename'].includes(method)
-      && !(actual.hasFirstScreenReader() && ['list', 'control'].includes(method))
+      && !(actual.hasFirstScreenReader() && ['list', 'control', 'projections'].includes(method))
       && !(method === 'modelCatalog' && actual.hasModelSelection('session/modelCatalog'))
       && !(method === 'selectModel' && actual.hasModelSelection('session/selectModel'))) continue
     const streaming = method === 'follow' || method === 'control'
