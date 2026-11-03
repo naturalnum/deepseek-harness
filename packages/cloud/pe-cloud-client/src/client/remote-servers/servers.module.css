@@ -1,0 +1,15 @@
+.section { display: grid; gap: 16px; padding: 24px; color: var(--dsw-alias-label-primary); }
+.section header, .actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.section h2, .section h3, .section p { margin: 0; }
+.section p, .section time { font-size: 13px; line-height: 1.6; }
+.list { display: grid; gap: 12px; }
+.card, .form { display: grid; gap: 12px; padding: 16px; background: var(--dsw-alias-bg-layer-2); border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); }
+.form label { display: grid; gap: 6px; font-size: 13px; }
+.actions { justify-content: flex-start; }
+.note { color: var(--dsw-alias-label-secondary); }
+.error { color: var(--dsw-alias-state-error-primary); }
+.facts { display: grid; gap: 8px; font-size: 13px; }
+.facts div { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 12px; }
+.facts dt { color: var(--dsw-alias-label-secondary); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.form label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 8px; }

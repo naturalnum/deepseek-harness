@@ -14,7 +14,7 @@ import { CloudApiError } from './errors.ts'
  * @returns A one-call asker, or undefined when native approval is unavailable.
  */
 export function remoteServerApproval(ctx: Context, binding: AccountBinding, exec: ToolRunContext, assertCurrent: () => void):
-  { ask(reason: string): Promise<boolean> } | undefined {
+  { ask(reason: string): Promise<boolean>; denialReason(): string | undefined } | undefined {
   const approval = ctx.get('approval'), agent = exec.agent
   if (approval === undefined || agent === undefined) return undefined
   const originalApproval: unknown = Reflect.get(approval, symbols.original) ?? approval
@@ -29,10 +29,14 @@ export function remoteServerApproval(ctx: Context, binding: AccountBinding, exec
     }
   }
   current()
-  return { ask: async (reason) => {
+  let refusal: string | undefined
+  return { denialReason: () => refusal, ask: async (reason) => {
     current()
     const outcome = await approval.request({ agent, toolName: exec.name, callId: exec.callId, reason, signal: exec.signal })
     current()
+    if (outcome !== 'allowed-once' && (approval.overrideOf(agent.session) ?? approval.config.policy) === 'never') {
+      refusal = 'Native never policy refuses approval. Use the existing permission settings that permit asking.'
+    }
     return outcome === 'allowed-once'
   } }
 }

@@ -101,6 +101,13 @@ Approved entries without mutation controls retain native inventory reads with em
 
 `ApprovedConfigurationBundle` pins the preinstalled package/version and complete member entry/module/package/version identities, with only graph-level selection control. `PluginCurrentState.selectionTarget.kind` distinguishes native entry `plugin` from native `bundle`; readonly entry inventory omits `maxImpact`. `PluginRebuildPersistence` retains the old epoch, native save result and private disk revision. `PluginRebuildVerification` pairs that result with the audited new state. Runtime-owned `ConfigurationRebuildReceipt<T, V>` resolves only after the different epoch passes intent verification and original ready CAS; these Host values are not Remote result fields.
 
+<a id="remote-server-management"></a>
+## Remote-server management
+
+`RemoteServerRequest` and `RemoteServerReply` are bounded account-management JSON for `CloudRemoteServerService`; metadata and actual probe observations exclude key values, which are accepted only by explicit upload ([DTOs](../../packages/cloud/pe-cloud-api/src/remote-server-types.ts)). Native tools execute opaque current references; management RPC cannot execute. `CloudRemoteServerPreparation` captures original files/save, authenticated Peer/Use and Session guards ([declaration](../../packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts)).
+
+Files owns `RemoteStoreLimits` and `AccountRemoteServerStore`, binding one native private domain and credential provider to the existing save owner ([declarations](../../packages/cloud/pe-cloud-files/src/remote-server-store.ts)). Native `never` refuses mandatory approval; local SSH cleanup does not certify remote descendant termination.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -251,6 +258,30 @@ inspect(): ExposureInventory
 Types: [WorkspaceValue](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-projects.ts`](../../packages/cloud/pe-cloud-api/src/cloud-projects.ts)
+
+<a id="ctxcloudremoteservers--cloudremoteserverservice"></a>
+
+### `ctx.cloudRemoteServers` — `CloudRemoteServerService`
+
+Fixed audited management endpoint; it cannot execute an SSH command or select an account/path from JSON.
+
+```ts cordis-catalog
+/** Dispatch only strict account-local management JSON through the original authenticated Peer borrow.
+ * @param request Bounded untrusted wire request.
+ * @param signal Original observer lifetime.
+ * @returns Sanitized metadata and actual observations; key material is never returned.
+ */
+@Remote('action') action(request: RemoteServerRequest, signal: AbortSignal): Promise<RemoteServerReply>
+
+/** Exact service/method identity inventory for the original complete account audit.
+ * @returns Installed audited endpoint only; no metadata or credential read is performed.
+ */
+inspect(): ExposureInventory
+```
+
+Types: [RemoteServerReply](cloud.md#remote-server-management) · [RemoteServerRequest](cloud.md#remote-server-management)
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts`](../../packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts)
 
 <a id="ctxcloudskills--cloudskillservice"></a>
 
@@ -714,6 +745,12 @@ prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudMode
  */
 prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService
 
+/** Prepare account-private remote-server management and its original native tool consumers.
+ * @param owner Original selected account entry.
+ * @param input Trusted Root capabilities and limits.
+ * @returns Actual installed Remote before full native auditing. */
+async prepareCloudRemoteServers(owner: Context, input: CloudRemoteServerPreparation): Promise<CloudRemoteServerService>
+
 /** Prepare the fixed plugin Remote after its original guarded manager and editor activate.
  * @param owner Actual original account Loader entry.
  * @returns Exact original two-method Remote.
@@ -963,7 +1000,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresetGuards](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
+Types: [AgentLoop](core.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudRemoteServerPreparation](cloud.md#remote-server-management) · [CloudRemoteServerService](cloud.md#remote-server-management) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresetGuards](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 
@@ -979,6 +1016,14 @@ One graph's real Registry/FS installation; shared pool drain and directory respo
  * @returns The original bound port, rejecting when static storage or the native capability is absent.
  */
 skillVersions(): SkillVersionPort
+
+/** Prepare only this files owner's installed private native storage and credential providers.
+ * @param owner Original account entry.
+ * @param limits Root bounds.
+ * @param current Original business admission.
+ * @param submit Original save barrier.
+ * @returns Private account metadata/credential capability. */
+remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>
 
 /**
  * Prepare a complete immutable tree through the original lane and reviewed helper.
@@ -1238,7 +1283,7 @@ async createProject(use: AccountUse, title: string | undefined, signal: AbortSig
 async withInstructionReaders<T>( workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, ): Promise<ResidentResult<T>>
 ```
 
-Types: [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [SkillBundleInput](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleSource](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleWorkingCopy](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalog](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogChange](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogCommit](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillProjectGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersionPort](../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation) · [SkillWorkingCopyGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [Workspace](workspace.md)
+Types: [AccountRemoteServerStore](cloud.md#remote-server-management) · [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [RemoteStoreLimits](cloud.md#remote-server-management) · [SkillBundleInput](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleSource](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleWorkingCopy](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalog](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogChange](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogCommit](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillProjectGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersionPort](../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation) · [SkillWorkingCopyGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [Workspace](workspace.md)
 
 Source: [`packages/cloud/pe-cloud-files/src/account-service.ts`](../../packages/cloud/pe-cloud-files/src/account-service.ts)
 

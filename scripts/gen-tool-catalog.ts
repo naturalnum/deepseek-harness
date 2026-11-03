@@ -82,6 +82,9 @@ import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflo
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import * as ToolWorkspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { AccountRemoteServers, installRemoteServerTools } from '@deepseek-ai/dsh-remote-server-cloud'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -189,6 +192,26 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-remote-server-cloud', dir: 'remote-server', source: 'packages/community/remote-server/src/tools.ts',
+    requires: ['ctx.tools', 'original account binding, approval and managed execution'],
+    writes: ['native tool result', 'approval audit events', 'actual probe observations'],
+    mount(ctx) {
+      // Schema harvest registers the production consumer but cannot execute or issue account readiness.
+      const binding: AccountBinding = { accountId: brandString<AccountBinding['accountId']>('tool-catalog'),
+        epoch: brandString<AccountBinding['epoch']>('1'), recipeVersion: 'schema-harvest', lifetime: new AbortController().signal }
+      ctx.provide('peAccount', binding)
+      const collection = new AccountRemoteServers(ctx, binding, { maxServers: 4, maxCommandBytes: 4096,
+        policy: { alwaysAsk: true, readOnlyAllowlist: [] }, assertCurrent() { ctx.fiber.assertActive() }, read: () => [],
+        write: () => Promise.reject(new Error('Schema harvest cannot persist remote servers')),
+        deleteCredential: () => Promise.reject(new Error('Schema harvest cannot mutate credentials')) })
+      installRemoteServerTools(ctx, collection, { maxReplyBytes: 65536, assertCurrent() { ctx.fiber.assertActive() },
+        approval: () => undefined, run: () => Promise.reject(new Error('Schema harvest cannot execute SSH')) })
+      return Promise.resolve()
+    },
+    note: 'Optional cloud integration only; native never policy refuses mandatory approval. Local SSH cleanup does not certify remote descendant termination.',
+  },
+
   {
     pkg: '@deepseek-ai/dsh-plugin-manager',
     dir: 'plugin-manager',

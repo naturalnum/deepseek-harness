@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-remote-server-cloud` | `remote_exec`, `remote_server_info` | `ctx.tools`, `原有账户绑定、审批与受管执行` | `原生工具结果`, `审批审计事件`, `实际探测观测` | - | 仅供可选云集成使用；原生 never 策略拒绝强制审批。本地 SSH 清理不代表远端后代进程终止。 |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -52,6 +53,59 @@
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+<a id="deepseek-aidsh-remote-server-cloud"></a>
+
+## `@deepseek-ai/dsh-remote-server-cloud`
+
+### `remote_exec`
+
+在用户所选的远程服务器引用上执行一条命令。从服务器引用中复制精确值。强制或高风险请求需要人工审批；原生 never 策略拒绝这些请求，请使用现有允许询问的权限设置。取消会停止本地 SSH 操作，不代表远端后代进程终止。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "server": {
+      "type": "string",
+      "description": "Exact current server reference from the selected mention."
+    },
+    "command": {
+      "type": "string",
+      "description": "One command passed verbatim to the remote shell."
+    }
+  },
+  "required": [
+    "server",
+    "command"
+  ]
+}
+```
+
+源码： [`packages/community/remote-server/src/tools.ts`](../packages/community/remote-server/src/tools.ts)
+
+### `remote_server_info`
+
+通过 SSH 从所选服务器采集当前主机名、系统、CPU、内存、磁盘及运行时间。使用精确的服务器引用，沿用原有审批与取消规则。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "server": {
+      "type": "string",
+      "description": "Exact current server reference from the selected mention."
+    }
+  },
+  "required": [
+    "server"
+  ]
+}
+```
+
+源码： [`packages/community/remote-server/src/tools.ts`](../packages/community/remote-server/src/tools.ts)
+
+仅供可选云集成使用；原生 never 策略拒绝强制审批。本地 SSH 清理不代表远端后代进程终止。
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

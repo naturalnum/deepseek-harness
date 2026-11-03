@@ -21,7 +21,7 @@ kind: "package-group"
 
 | 包 | 职责 |
 | --- | --- |
-| [remote-server](remote-server/README.zh.md) | 源自 dsh-remote-server，尚未启用的账户基础能力。 |
+| [remote-server](remote-server/README.zh.md) | 源自 dsh-remote-server 的账户级工具，需显式云端启用。 |
 
 <a id="dev-note"></a>
 ## 开发备注

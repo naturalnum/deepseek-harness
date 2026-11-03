@@ -556,3 +556,17 @@ it('requires the standalone shortcut protocol and rejects unrelated runtime file
       .toEqual([expect.stringContaining('package.json files must be')])
   }
 })
+
+it('keeps the independent SSH derivative private and admits only its browser-safe DTO export on Cloud API', () => {
+  const dir = 'packages/community/remote-server'
+  const manifest = JSON.parse(readFileSync(new URL('../' + dir + '/package.json', import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } })).not.toEqual([])
+  const api = { name: '@deepseek-ai/dsh-pe-cloud-api', exports: {
+    './root': { types: './lib/types/root.d.ts', default: './lib/root.js' },
+    './account': { types: './lib/types/account.d.ts', default: './lib/account.js' },
+    './remote-server-types': { types: './lib/types/remote-server-types.d.ts', default: './lib/types/remote-server-types.js' },
+  } }
+  expect(checkCloudLoaderEntries(api)).toEqual([])
+  expect(checkCloudLoaderEntries({ ...api, exports: { ...api.exports, './execute': './lib/index.js' } })).not.toEqual([])
+})

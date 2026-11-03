@@ -16,6 +16,9 @@
     },
     {
       "path": "../../cloud/pe-cloud-runtime/tsconfig.account.json"
+    },
+    {
+      "path": "../../core/tools"
     }
   ]
 }

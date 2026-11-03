@@ -107,6 +107,7 @@ const GROUP_ORDER = [
 ]
 
 const SERVICE_ROLES: ServiceRole[] = [
+
   {
     key: 'cloudModelKey', pkg: 'pe-cloud-api', title: 'Account model-key editing', mode: 'service',
     consumers: ['pe-cloud-api'],
@@ -121,6 +122,11 @@ const SERVICE_ROLES: ServiceRole[] = [
     key: 'cloudProjects', pkg: 'pe-cloud-api', title: 'Account project metadata', mode: 'service',
     consumers: ['pe-cloud-api', 'pe-cloud-runtime'],
     note: 'Adapts native Workspace operations to the installed account files owner and approved project roots.',
+  },
+  {
+    key: 'cloudRemoteServers', pkg: 'pe-cloud-api', title: 'Account remote-server management', mode: 'service',
+    consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Uses the original authenticated Peer, private files/credentials and save owner; execution remains with native Session tools.',
   },
   {
     key: 'cloudSkills', pkg: 'pe-cloud-api', title: 'Account skill installation management', mode: 'service',

@@ -10,6 +10,13 @@
  */
 export type ConnectFailure = 'dns' | 'refused' | 'auth' | 'timeout' | 'unknown'
 
+/** One actual connectivity observation. */
+export interface ConnectivityResult {
+  readonly reachable: boolean
+  readonly checkedAt: string
+  readonly failure?: ConnectFailure
+}
+
 /**
  * Basic facts about one server. Every field is independently nullable: a target
  * lacking the command or file behind one field yields null for it and keeps the rest.

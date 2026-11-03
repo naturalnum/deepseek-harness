@@ -40,3 +40,7 @@ export type { NativeSettingsWritePolicy } from './native-first-screen.ts'
 export { SESSION_CONTROLLER_ENDPOINTS } from './session-endpoints.ts'
 
 export { remoteServerApproval } from './remote-server-approval.ts'
+export { CloudRemoteServerService } from './cloud-remote-servers.ts'
+export type { CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
+export type { RemoteServerRequest, RemoteServerReply, RemoteServerView, RemoteServerForm } from './remote-server-types.ts'
+export type { ApprovedRemoteServers } from './remote-server-policy.ts'

@@ -94,6 +94,7 @@ export interface BootstrapConfigurationField {
 /** Sanitized configuration controls; no values, schemas, credentials or backend code locations. */
 export interface BootstrapConfiguration {
   readonly catalogVersion: string
+  readonly remoteServers?: Readonly<{ manage: boolean }>
   readonly plugins: readonly BootstrapPlugin[]
   readonly skills: Readonly<{ manage: boolean }>
   readonly credentials: Readonly<{ write: boolean }>

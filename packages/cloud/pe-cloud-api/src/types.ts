@@ -130,6 +130,7 @@ export interface ApprovedConfigurationCatalog {
   readonly skills: Readonly<{ mode: 'closed' }> | Readonly<{ mode: 'sample'; limits: Readonly<SkillPublicationLimits> }>
     | Readonly<{ mode: 'managed'; limits: Readonly<SkillPublicationLimits>; management: Readonly<ManagedSkillApiLimits> }>
   readonly credentials: Readonly<{ mode: 'read-only' }>
+  readonly remoteServers?: import('./remote-server-policy.ts').ApprovedRemoteServers
   readonly modelKey?: ApprovedModelKeyConfiguration
   readonly pluginControl?: Readonly<PluginControlLimits>
   readonly fields: readonly ApprovedConfigurationField[]

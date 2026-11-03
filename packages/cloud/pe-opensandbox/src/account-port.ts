@@ -46,12 +46,15 @@ export interface ExecutionPortOwner {
   assertSessionFilePolicyChange?(port: AccountExecutionPort, ctx: Context, session: Session): void
   assertPort(port: AccountExecutionPort, ctx: Context): void
   assertProviders(port: AccountExecutionPort, ctx: Context): void
-  /** @param port Original issued port. @param ctx Actual consumer scope. @returns Current installed service facts. */
+  /** @param port Original issued port.
+ * @param ctx Actual consumer scope.
+ * @returns Current installed service facts. */
   inspectServices(port: AccountExecutionPort, ctx: Context): AccountServiceAvailability
 }
 
 /** Original installed consumer/provider facts only; no service process or HTTP readiness is asserted. */
 export interface AccountServiceAvailability {
+  readonly remoteServers?: true
   readonly developmentServices: boolean
   readonly servicePreview: boolean
 }
@@ -61,7 +64,8 @@ export abstract class IssuedExecutionPort implements AccountExecutionPort {
   declare readonly enforcesSessionFilePolicy?: true | undefined
   readonly #owner: ExecutionPortOwner
 
-  /** @param binding Original runtime binding. @param owner Original mode-specific Root registry.
+  /** @param binding Original runtime binding.
+ * @param owner Original mode-specific Root registry.
    * @param mode Fixed provider selection; declarations alone cannot issue this original capability.
    */
   constructor(readonly binding: AccountBinding, owner: ExecutionPortOwner, readonly mode: 'closed' | 'session-collect') {
@@ -183,7 +187,8 @@ export async function withAccountApplicationService(ctx: Context, selection: App
   IssuedExecutionPort.prototype.assertProvidersOwned.call(port, ctx)
   try { await port.withApplicationService(ctx, selection, signal, deadlineAtMs, consume) }
   catch (cause) {
-    if (cause instanceof PreviewHttpError) throw new ExecutionStateError(cause.code, 'The original application request remains unavailable or unconfirmed.')
+    if (cause instanceof PreviewHttpError) throw new ExecutionStateError(cause.code,
+      'The original application request remains unavailable or unconfirmed.')
     throw cause
   }
 }

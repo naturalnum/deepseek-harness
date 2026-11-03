@@ -1,4 +1,5 @@
 /** Graph-owned API preparation and native providers consumed by trusted runtime assembly. */
+import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
 import type { WorkspaceTransferLimits } from './types.ts'
 import { approvedSettingsMatch } from './approved-settings.ts'
@@ -113,6 +114,7 @@ export class CloudAccountApi extends Service {
   private readonly streamGuard: { dispose?: () => void } = {}
   private readonly firstScreen: { native?: NativeFirstScreen; events?: FirstScreenEvents } = {}
   private readonly modelKey: { native?: CloudModelKeyService } = {}
+  private readonly remoteServers: { native?: CloudRemoteServerService } = {}
   private readonly skills: { native?: CloudSkillService } = {}
   private readonly plugins: { control?: AccountPluginControl; native?: CloudPluginService } = {}
   /** Actual installed managed Shell limits, read through the account's original execution owner. */
@@ -267,6 +269,7 @@ export class CloudAccountApi extends Service {
     const firstScreen = this.firstScreen.native?.inspect()
     const events = this.firstScreen.events?.inspect()
     const modelKey = this.modelKey.native?.inspect()
+    const remoteServers = this.remoteServers.native?.inspect()
     const skills = this.skills.native?.inspect()
     const plugins = this.plugins.native?.inspect()
     const projects = this.projects.native?.inspect()
@@ -284,7 +287,7 @@ export class CloudAccountApi extends Service {
       recipeVersion: this.binding.recipeVersion,
       rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
         ...files?.rpcEndpoints ?? [], ...office?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [],
-        ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
+        ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [], ...remoteServers?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
         ...pluginInventory?.rpcEndpoints ?? [], ...presets?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
@@ -390,11 +393,16 @@ export class CloudAccountApi extends Service {
       if (this.projects.native === undefined) this.nativeUnavailable()
       this.projects.native.assertCurrent()
     }
-    if (endpoint === 'workspace/initializeDefault' || endpoint === 'workspace/rename' || endpoint === 'settings/describe' || endpoint === 'settings/mutate') {
+    if (endpoint === 'workspace/initializeDefault' || endpoint === 'workspace/rename'
+      || endpoint === 'settings/describe' || endpoint === 'settings/mutate') {
       if (this.firstScreen.native === undefined) this.nativeUnavailable()
       this.firstScreen.native.assertCurrent()
     }
     if (endpoint.startsWith('cloudModelKey/')) this.modelKey.native?.inspect()
+    if (endpoint.startsWith('cloudRemoteServers/')) {
+      if (this.remoteServers.native === undefined) this.nativeUnavailable()
+      this.remoteServers.native.inspect()
+    }
     if (endpoint.startsWith('cloudSkills/')) {
       if (this.skills.native === undefined) this.nativeUnavailable()
       this.skills.native.inspect()
@@ -471,7 +479,8 @@ export class CloudAccountApi extends Service {
    * @param input Actual files-owned project, shared Session metadata check and explicit native limits.
    * @returns Original constructor installation, with no readiness publication or directory creation.
    */
-  prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding' | 'assertSettingsFields' | 'beginModelSettingsUpdate' | 'settingsSave'>): NativeFirstScreen {
+  prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput,
+    'api' | 'binding' | 'assertSettingsFields' | 'beginModelSettingsUpdate' | 'settingsSave'>): NativeFirstScreen {
     this.assertInstalled(owner)
     if (this.firstScreen.native !== undefined) this.duplicateNative()
     const fields = this.installation.exposure.manifest.allowedSettings
@@ -516,6 +525,18 @@ export class CloudAccountApi extends Service {
     if (this.skills.native !== undefined) this.duplicateNative()
     const native = new CloudSkillService(owner, this, input, this.saves)
     this.skills.native = native
+    return native
+  }
+
+  /** Prepare account-private remote-server management and its original native tool consumers.
+   * @param owner Original selected account entry.
+ * @param input Trusted Root capabilities and limits.
+   * @returns Actual installed Remote before full native auditing. */
+  async prepareCloudRemoteServers(owner: Context, input: CloudRemoteServerPreparation): Promise<CloudRemoteServerService> {
+    this.assertInstalled(owner)
+    if (this.remoteServers.native !== undefined) this.duplicateNative()
+    const native = await CloudRemoteServerService.prepare(owner, this, input, this.saves)
+    this.remoteServers.native = native
     return native
   }
 
@@ -645,7 +666,8 @@ export class CloudAccountApi extends Service {
    * @param input Exact graph profile home and all required event bounds.
    * @returns Actual registration/disposer; native Gateway owns ready and wire framing.
    */
-  installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native' | 'settingsNamespaces' | 'controls'>): FirstScreenEvents {
+  installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput,
+    'api' | 'native' | 'settingsNamespaces' | 'controls'>): FirstScreenEvents {
     this.assertInstalled(owner)
     if (this.firstScreen.events !== undefined) this.duplicateNative()
     const native = this.firstScreen.native

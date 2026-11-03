@@ -1,3 +1,4 @@
+import { remoteServerPolicy } from './remote-server-policy.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { managedSkillApiLimits } from './managed-skill-json.ts'
 /** Validate the finite deployment catalog; it describes approval and never establishes actual installation. */
@@ -36,9 +37,11 @@ export function parseApprovedConfigurationCatalog(
   if (input === undefined) return undefined
   const optionalBundles = input !== null && typeof input === 'object' && Object.hasOwn(input, 'bundles')
   const optionalKey = input !== null && typeof input === 'object' && Object.hasOwn(input, 'modelKey')
+  const optionalRemote = input !== null && typeof input === 'object' && Object.hasOwn(input, 'remoteServers')
   const optionalPlugin = input !== null && typeof input === 'object' && Object.hasOwn(input, 'pluginControl')
   const row = record(input, ['recipeVersion', 'catalogVersion', 'maxEntries', 'maxStringBytes', 'maxCatalogBytes',
-    'plugins', 'skills', 'credentials', 'fields', ...optionalKey ? ['modelKey'] : [], ...optionalPlugin ? ['pluginControl'] : [], ...optionalBundles ? ['bundles'] : []])
+    'plugins', 'skills', 'credentials', 'fields', ...optionalRemote ? ['remoteServers'] : [],
+    ...optionalKey ? ['modelKey'] : [], ...optionalPlugin ? ['pluginControl'] : [], ...optionalBundles ? ['bundles'] : []])
   const maxEntries = positive(row.maxEntries), maxStringBytes = positive(row.maxStringBytes)
   const maxCatalogBytes = positive(row.maxCatalogBytes)
   const text = (value: unknown): string => {
@@ -80,7 +83,8 @@ export function parseApprovedConfigurationCatalog(
   const credentials = record(row.credentials, ['mode'])
   if (credentials.mode !== 'read-only') return invalid()
   const skills: ApprovedConfigurationCatalog['skills'] = (() => {
-    if (row.skills !== null && typeof row.skills === 'object' && 'mode' in row.skills && (row.skills.mode === 'sample' || row.skills.mode === 'managed')) {
+    if (row.skills !== null && typeof row.skills === 'object' && 'mode' in row.skills
+      && (row.skills.mode === 'sample' || row.skills.mode === 'managed')) {
       const managed = row.skills.mode === 'managed'
       const selected = record(row.skills, managed ? ['mode', 'limits', 'management'] : ['mode', 'limits'])
       const limits = record(selected.limits, ['maxFileBytes', 'maxRequestBytes', 'maxReplyBytes', 'maxRetainedVersions'])
@@ -127,7 +131,8 @@ export function parseApprovedConfigurationCatalog(
   }
   // Charge the complete wrapper first; each inserted row adds its exact encoded bytes and comma.
   charge({ recipeVersion: version, catalogVersion, maxEntries, maxStringBytes, maxCatalogBytes,
-    ...modelKey === undefined ? {} : { modelKey }, ...pluginControl === undefined ? {} : { pluginControl }, plugins: [], ...optionalBundles ? { bundles: [] } : {}, skills, credentials: { mode: 'read-only' }, fields })
+    ...modelKey === undefined ? {} : { modelKey }, ...pluginControl === undefined ? {} : { pluginControl },
+    plugins: [], ...optionalBundles ? { bundles: [] } : {}, skills, credentials: { mode: 'read-only' }, fields })
   for (const value of row.plugins as unknown[]) {
     const hasControl = value !== null && typeof value === 'object' && Object.hasOwn(value, 'control')
     const item = record(value, ['id', 'entryId', 'moduleName', 'packageName', 'packageVersion', 'installable', 'toggleable',
@@ -210,14 +215,21 @@ export function parseApprovedConfigurationCatalog(
       })
       const bundle: ApprovedConfigurationBundle = Object.freeze({ id, packageName, packageVersion,
         control: Object.freeze({ selectionTarget: Object.freeze({ kind: 'bundle' as const, name: packageName }),
-          operations: Object.freeze(['selected'] as const), maxImpact: 'graph' as const, fields: Object.freeze([]) }), members: Object.freeze(members) })
+          operations: Object.freeze(['selected'] as const), maxImpact: 'graph' as const,
+          fields: Object.freeze([]) }), members: Object.freeze(members) })
       ids.add(id); charge(bundle)
       if (bundles.length > 0 && ++encodedBytes > maxCatalogBytes) invalid()
       bundles.push(bundle)
     }
   }
   if (pluginControl !== undefined && !plugins.some(plugin => plugin.control !== undefined) && bundles.length === 0) return invalid()
-  return Object.freeze({ recipeVersion: version, catalogVersion, maxEntries, maxStringBytes, maxCatalogBytes,
+  const remoteServers = optionalRemote ? remoteServerPolicy(row.remoteServers) : undefined
+  if (remoteServers !== undefined) {
+    encodedBytes += Buffer.byteLength(JSON.stringify({ remoteServers })) - 1
+    if (encodedBytes > maxCatalogBytes) invalid()
+  }
+  return Object.freeze({ ...remoteServers === undefined ? {} : { remoteServers }, recipeVersion: version,
+    catalogVersion, maxEntries, maxStringBytes, maxCatalogBytes,
     ...modelKey === undefined ? {} : { modelKey }, ...pluginControl === undefined ? {} : { pluginControl },
     plugins: Object.freeze(plugins), ...optionalBundles ? { bundles: Object.freeze(bundles) } : {}, skills,
     credentials: Object.freeze({ mode: 'read-only' }), fields })

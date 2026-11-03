@@ -13,6 +13,7 @@ flowchart LR
   pkg_pe_cloud_client["pe-cloud-client"]
   pkg_pe_cloud_runtime["pe-cloud-runtime"]
   svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
+  svc_cloudRemoteServers["ctx.cloudRemoteServers<br/>Account remote-server management"]
   svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
   svc_peAccount["ctx.peAccount<br/>Installed account generation"]
   pkg_pe_cloud_files["pe-cloud-files"]
@@ -402,6 +403,7 @@ flowchart LR
   pkg_pe_cloud_api --> svc_cloudModelKey
   pkg_pe_cloud_api --> svc_cloudPlugins
   pkg_pe_cloud_api --> svc_cloudProjects
+  pkg_pe_cloud_api --> svc_cloudRemoteServers
   pkg_pe_cloud_api --> svc_cloudSkills
   pkg_pe_cloud_api --> svc_peCloudApi
   pkg_pe_cloud_api --> svc_peExposure
@@ -509,6 +511,8 @@ flowchart LR
   svc_cloudPlugins --> pkg_pe_cloud_runtime
   svc_cloudProjects --> pkg_pe_cloud_api
   svc_cloudProjects --> pkg_pe_cloud_runtime
+  svc_cloudRemoteServers --> pkg_pe_cloud_client
+  svc_cloudRemoteServers --> pkg_pe_cloud_runtime
   svc_cloudSkills --> pkg_pe_cloud_api
   svc_cloudSkills --> pkg_pe_cloud_client
   svc_cloudSkills --> pkg_pe_cloud_runtime
@@ -676,6 +680,7 @@ flowchart LR
 | `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner. |
 | `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts fixed plugin edits to original Peer admission, account saves and native profile application. |
 | `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts native Workspace operations to the installed account files owner and approved project roots. |
+| `ctx.cloudRemoteServers` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Uses the original authenticated Peer, private files/credentials and save owner; execution remains with native Session tools. |
 | `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Manages account skill installations and complete packages through original Peer admission, account saves and files-owned catalog/version CAS. |
 | `ctx.peAccount` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | Carries the immutable account binding and lifetime for one independent account Context. |
 | `ctx.peAccountExecution` | `service` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Exposes only the original Root-issued account capability; closed mode refuses native execution. |

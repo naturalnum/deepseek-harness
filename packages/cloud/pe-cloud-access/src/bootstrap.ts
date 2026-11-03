@@ -129,7 +129,8 @@ class Decoder {
 
   private plugin(input: unknown): BootstrapPlugin {
     const value = this.record(input, ['id', 'installable', 'toggleable'])
-    return Object.freeze({ id: this.token(value['id']), installable: this.boolean(value['installable']), toggleable: this.boolean(value['toggleable']) })
+    return Object.freeze({ id: this.token(value['id']), installable: this.boolean(value['installable']),
+      toggleable: this.boolean(value['toggleable']) })
   }
 
   private field(input: unknown): BootstrapConfigurationField {
@@ -140,12 +141,17 @@ class Decoder {
   }
 
   private configuration(input: unknown): BootstrapConfiguration {
-    const value = this.record(input, ['catalogVersion', 'plugins', 'skills', 'credentials', 'fields'])
+    const hasRemote = input !== null && typeof input === 'object' && Object.hasOwn(input, 'remoteServers')
+    const value = this.record(input, ['catalogVersion', 'plugins', 'skills', 'credentials', 'fields',
+      ...hasRemote ? ['remoteServers'] : []])
     const skills = this.record(value['skills'], ['manage'])
     const credentials = this.record(value['credentials'], ['write'])
     return Object.freeze({
+      ...hasRemote ? { remoteServers: Object.freeze({ manage: this.boolean(this.record(value['remoteServers'],
+        ['manage'])['manage']) }) } : {},
       catalogVersion: this.token(value['catalogVersion']), plugins: this.list(value['plugins'], item => this.plugin(item)),
-      skills: Object.freeze({ manage: this.boolean(skills['manage']) }), credentials: Object.freeze({ write: this.boolean(credentials['write']) }),
+      skills: Object.freeze({ manage: this.boolean(skills['manage']) }),
+      credentials: Object.freeze({ write: this.boolean(credentials['write']) }),
       fields: this.list(value['fields'], item => this.field(item)),
     })
   }

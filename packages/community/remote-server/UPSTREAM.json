@@ -14,7 +14,9 @@
     "gate.ts": "Remove full-access bypass; recheck cancellation around approval/classification; unavailable approval rejects.",
     "types.ts": "Retain probe, outcome and gate types; remove legacy global/local-path server entries and the full-access gate path.",
     "import.ts": "New uploaded-text adapter discards identity paths and rejects Include, Match, proxy and forwarding directives.",
-    "probe.ts": "Repository formatting only; original behavior retained."
+    "probe.ts": "Repository formatting only; original behavior retained.",
+    "tools.ts": "Native tool registrations consume account-bound records, original approval and injected native execution; no upstream global routes.",
+    "account.ts": "New account-private collection, revocable generation references and actual probe observations."
   },
-  "activation": "not enabled; native forced approval and managed credential execution qualification remain unresolved"
+  "activation": "explicit cloud catalog, account recipe and original managed execution opt-in; no default activation"
 }

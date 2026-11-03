@@ -132,6 +132,8 @@ export interface CommandClassifier {
 
 /** Asks a human for a one-shot decision. Absent means no approval channel is composed. */
 export interface ApprovalAsker {
+  /** Explain a native-policy refusal without changing that policy. */
+  denialReason?(): string | undefined
   /**
    * @param reason - why this command needs a human.
    * @returns true when a human allowed this one call.
@@ -212,5 +214,5 @@ async function escalate(input: GateInput, path: GateDecision['path'], reason: st
   input.signal?.throwIfAborted()
   return allowed
     ? { kind: 'approved', path, reason }
-    : { kind: 'denied', path, reason: `${reason}; a human declined` }
+    : { kind: 'denied', path, reason: `${reason}; ${input.approval.denialReason?.() ?? 'a human declined'}` }
 }

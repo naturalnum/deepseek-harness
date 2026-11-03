@@ -2,10 +2,12 @@
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import { CloudApiError, CloudPluginService, projectApprovedSettings, type ApprovedConfigurationCatalog } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, CloudPluginService, projectApprovedSettings,
+  type ApprovedConfigurationCatalog } from '@deepseek-ai/dsh-pe-cloud-api'
 import type { BootstrapConfiguration } from './types.ts'
 
-function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The actual approved plugin inventory could not be confirmed.') }
+function unavailable(): never { throw new CloudApiError('cloud/account-unavailable',
+  'The actual approved plugin inventory could not be confirmed.') }
 function original(value: object): object {
   const target: unknown = Reflect.get(value, symbols.original)
   return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
@@ -102,6 +104,7 @@ export async function inspectBootstrapConfiguration(
   assertCurrent()
   return {
     configuration: Object.freeze({ catalogVersion: catalog.catalogVersion,
+      ...catalog.remoteServers === undefined ? {} : { remoteServers: Object.freeze({ manage: true }) },
       plugins: Object.freeze([...catalog.plugins.map(plugin => Object.freeze({ id: plugin.id,
         installable: plugin.installable, toggleable: plugin.toggleable })),
       ...(catalog.bundles ?? []).map(bundle => Object.freeze({ id: bundle.id, installable: true, toggleable: false }))]),

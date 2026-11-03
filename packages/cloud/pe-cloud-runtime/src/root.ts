@@ -3,7 +3,8 @@ import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { posix } from 'node:path'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { ConfigSaveCoordinator, AccountModelKeyEnvironment, type ModelKeyPeerConsumer, type ConfigurationPeerConsumer, type CloudPluginPreparation, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { ConfigSaveCoordinator, AccountModelKeyEnvironment, type ModelKeyPeerConsumer,
+  type ConfigurationPeerConsumer, type CloudPluginPreparation, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { RuntimeRootConfig } from './root-config.ts'
@@ -41,7 +42,10 @@ import { createAccountPolicy } from './account-policy.ts'
 import { createFileReadTiming, type FileReadTiming } from './file-read-timing.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
-import type { AccountBinding, AccountId, AccountOwner, AccountOwnerResolver, AccountRecoveryRuntime, AccountRuntimeService, AccountUse, InstanceId, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootIngressCloseOwner, RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
+import type { AccountBinding, AccountId, AccountOwner, AccountOwnerResolver, AccountRecoveryRuntime,
+  AccountRuntimeService, AccountUse, InstanceId, RuntimeControlObservation, DrainCapacityReservation,
+  DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootIngressCloseOwner,
+  RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
@@ -658,6 +662,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const selectedAuth: unknown = this.ctx.root.get('peAuth')
     const auth = hasRootFetch(selectedAuth) ? selectedAuth : undefined
     if (exposure === undefined || execution === undefined || files === undefined) throw new AccountMountPrerequisiteError()
+    const remoteServers = exposure.approvedConfiguration?.remoteServers
     const modelKey = exposure.approvedConfiguration?.modelKey
     const skills = exposure.approvedConfiguration?.skills
     if (skills?.mode === 'sample') {
@@ -668,7 +673,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const settingsWrites = settingsFields.length !== 0
     const pluginCatalog = exposure.approvedConfiguration
     const plugins = pluginCatalog?.pluginControl
-    if ((modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined) && !hasModelKeyPeerConsumer(selectedAuth)) {
+    if ((remoteServers !== undefined || modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined) && !hasModelKeyPeerConsumer(selectedAuth)) {
       throw new AccountMountPrerequisiteError()
     }
     if (settingsWrites && config.native.firstScreen === undefined) throw new AccountMountPrerequisiteError()
@@ -745,6 +750,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           maxNativeInventoryEntries: config.native.maxEntries,
           ...pluginPreparation === undefined ? {} : { plugins: pluginPreparation },
           ...settingsWrites ? { settingsWrites: { withModelKeyPeerUse, fields: settingsFields } } : {},
+          ...remoteServers === undefined ? {} : { remoteServers: { ...remoteServers, withModelKeyPeerUse } },
           ...modelKey === undefined ? {} : { modelKey: {
             limits: modelKey, maxNativeInventoryEntries: config.native.maxEntries,
             withModelKeyPeerUse,

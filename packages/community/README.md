@@ -21,7 +21,7 @@ This group keeps community-derived code separate from the seven cloud integratio
 
 | Package | Role |
 | --- | --- |
-| [remote-server](remote-server/README.md) | Unactivated account primitives derived from dsh-remote-server. |
+| [remote-server](remote-server/README.md) | Account-scoped remote-server tools derived from dsh-remote-server; explicit cloud activation. |
 
 <a id="dev-note"></a>
 ## Dev Note

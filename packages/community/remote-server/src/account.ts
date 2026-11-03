@@ -6,7 +6,8 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { decide, type ApprovalAsker } from './gate.ts'
 import type { RemoteApprovalPolicy } from './policy.ts'
-import type { GateDecision, RemoteExecOutcome } from './types.ts'
+import { parseProbe } from './probe.ts'
+import type { GateDecision, RemoteExecOutcome, ConnectivityResult, ServerFacts } from './types.ts'
 
 /** Account-local persistent identifier, distinct from a mention capability. */
 export type ServerId = Branded<'CloudRemoteServerId'>
@@ -23,7 +24,8 @@ const serverInput = z.strictObject({
   tags: z.array(z.string().max(64)).max(16),
   alwaysAsk: z.boolean(),
 })
-const row = serverInput.extend({ id: z.uuid() }).strict()
+/** Strict native domain record parser; excludes credentials and local identity paths. */
+export const remoteServerRecord = serverInput.extend({ id: z.uuid() }).strict()
 
 /** Browser-safe server configuration. Secret addresses and host paths are excluded. */
 export interface RemoteServer extends z.infer<typeof serverInput> { readonly id: ServerId }
@@ -50,11 +52,13 @@ function denied(): never { throw new Error('cloud/remote-server-forbidden') }
 /** A per-generation collection. It owns neither execution processes nor credential material. */
 export class AccountRemoteServers {
   private readonly references = new Map<ServerReference, RemoteServer>()
+  private readonly observations = new Map<ServerId, { connectivity: ConnectivityResult; facts?: ServerFacts }>()
   private tail: Promise<void> = Promise.resolve()
 
   constructor(private readonly ctx: Context, private readonly binding: AccountBinding, private readonly ports: AccountRemotePorts) {
-    for (const n of [ports.maxServers, ports.maxCommandBytes]) if (!Number.isSafeInteger(n) || n < 1) throw new RangeError('Invalid remote-server bounds')
-    this.current()
+    for (const n of [ports.maxServers, ports.maxCommandBytes]) if (!Number.isSafeInteger(n)
+      || n < 1) throw new RangeError('Invalid remote-server bounds')
+    this.installed()
     ctx.effect(() => () => { this.references.clear() }, 'remote-server: revoke account generation references')
   }
 
@@ -76,6 +80,26 @@ export class AccountRemoteServers {
     })
   }
 
+  /** Read actual observed facts only, preserving unknown and collection timestamps.
+   * @returns Current account records and any still-applicable SSH observations. */
+  states(): Array<RemoteTarget & { connectivity?: ConnectivityResult; facts?: ServerFacts }> {
+    return this.list().map(row => ({ ...row, ...this.observations.get(row.entry.id) }))
+  }
+
+  /** Publish one current reference's real SSH probe outcome.
+   * @param reference Exact executed reference.
+ * @param outcome Actual original SSH outcome. */
+  observe(reference: string, outcome: RemoteExecOutcome): void {
+    this.current()
+    const target = this.references.get(brandString<ServerReference>(reference))
+    if (target === undefined) denied()
+    const checkedAt = new Date().toISOString()
+    if (outcome.kind === 'completed' && outcome.exitCode === 0) {
+      this.observations.set(target.id, { connectivity: { reachable: true, checkedAt }, facts: parseProbe(outcome.stdout.text, checkedAt) })
+    } else this.observations.set(target.id, { connectivity: { reachable: false, checkedAt,
+      failure: outcome.kind === 'connect-failed' ? outcome.failure : outcome.kind === 'timeout' ? 'timeout' : 'unknown' } })
+  }
+
   /** Add validated account data.
    * @param input Untrusted form JSON.
    * @returns Persisted browser-safe configuration. */
@@ -87,6 +111,22 @@ export class AccountRemoteServers {
       const entry: RemoteServer = { ...value, id: brandString<ServerId>(randomUUID()) }
       await this.ports.write([...rows, entry]); this.current()
       return structuredClone(entry)
+    })
+  }
+
+  /** Import a validated batch in one durable write; no partial import on ordinary invalid input.
+   * @param inputs Untrusted normalized uploaded host forms.
+ * @returns Number actually added. */
+  addMany(inputs: readonly unknown[]): Promise<number> {
+    const values = z.array(serverInput).max(this.ports.maxServers).parse(inputs)
+    return this.mutate(async () => {
+      const rows = this.rows(), known = new Set(rows.map(row => row.alias))
+      const additions = values.filter(value => !known.has(value.alias))
+      if (rows.length + additions.length > this.ports.maxServers
+        || new Set(additions.map(row => row.alias)).size !== additions.length) denied()
+      if (additions.length) await this.ports.write([...rows, ...additions.map(value => ({ ...value,
+        id: brandString<ServerId>(randomUUID()) }))])
+      this.current(); return additions.length
     })
   }
 
@@ -148,7 +188,8 @@ export class AccountRemoteServers {
     run: (entry: RemoteServer, signal: AbortSignal, assertCurrent: () => void) => Promise<RemoteExecOutcome>,
   ): Promise<{ decision: GateDecision; outcome?: RemoteExecOutcome }> {
     this.current(); signal.throwIfAborted()
-    if (typeof command !== 'string' || command.length === 0 || command.includes('\0') || Buffer.byteLength(command) > this.ports.maxCommandBytes) denied()
+    if (typeof command !== 'string' || command.length === 0 || command.includes('\0')
+      || Buffer.byteLength(command) > this.ports.maxCommandBytes) denied()
     const captured = this.references.get(brandString<ServerReference>(reference))
     const assertTarget = (): RemoteServer => {
       this.current(); signal.throwIfAborted()
@@ -168,18 +209,24 @@ export class AccountRemoteServers {
     return { decision, outcome }
   }
 
-  private current(): void {
+  /** Revoke pending references before an account credential update.
+   * @param id Original selected account-local id. */
+  revokeCredential(id: ServerId): void { this.current(); this.revoke(id) }
+
+  private installed(): void {
     this.ctx.fiber.assertActive()
-    if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding || this.ctx.root.get('peAccount') !== this.binding) denied()
-    this.ports.assertCurrent()
+    if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding
+      || this.ctx.root.get('peAccount') !== this.binding) denied()
   }
+  private current(): void { this.installed(); this.ports.assertCurrent() }
   private rows(): RemoteServer[] {
     this.current()
-    const data = z.array(row).max(this.ports.maxServers).parse(this.ports.read())
+    const data = z.array(remoteServerRecord).max(this.ports.maxServers).parse(this.ports.read())
     if (new Set(data.map(entry => entry.id)).size !== data.length || new Set(data.map(entry => entry.alias)).size !== data.length) denied()
     return data.map(entry => ({ ...entry, id: brandString<ServerId>(entry.id) }))
   }
-  private revoke(id: ServerId): void { for (const [ref, entry] of this.references) if (entry.id === id) this.references.delete(ref) }
+  private revoke(id: ServerId): void { this.observations.delete(id); for (const [ref,
+    entry] of this.references) if (entry.id === id) this.references.delete(ref) }
   private mutate<T>(work: () => Promise<T>): Promise<T> {
     this.current()
     const operation = this.tail.then(() => { this.current(); return work() })

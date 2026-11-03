@@ -123,6 +123,7 @@
     "@deepseek-ai/dsh-client-ui-settings-subagent": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-shell": "workspace:*",
     "@deepseek-ai/dsh-client-ui-approval": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-sidebar-files": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-sidebar-files": "workspace:*",
+    "@deepseek-ai/dsh-util-crypto": "workspace:*"
   }
 }

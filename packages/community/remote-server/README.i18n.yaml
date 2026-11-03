@@ -9,20 +9,47 @@
   en: 8446595fe680456c
   zh: ea66d1dab5aa4131
 /deepseek-ai-dsh-remote-server-cloud/summary:
-  en: 26fa7e2ca067e23c
-  zh: 825cfff43893fd4d
+  en: a78f2549eff351db
+  zh: 815f922b7ef814f6
 /deepseek-ai-dsh-remote-server-cloud/table-of-contents:
-  en: ffb84c2858905086
-  zh: 4d3b6551e34d1dde
+  en: 122f0d41696980b1
+  zh: 5423073f383f055d
 /deepseek-ai-dsh-remote-server-cloud/use-this-package:
   en: 68954aa88602b628
   zh: b7e580c245999bc0
 /deepseek-ai-dsh-remote-server-cloud/understand-the-implementation:
-  en: b263cc11e0590ada
-  zh: 6e9682239e92c7ab
+  en: a30558f746c913ab
+  zh: aa064ed661bc7a06
+/deepseek-ai-dsh-remote-server-cloud/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-schemas-and-selected-references:
+  en: 0f1203042a2e2288
+  zh: 9a5070ffa9491299
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-schemas-and-selected-references/what-the-model-sees:
+  en: 7faf2c8f7a1a705f
+  zh: 11b66e48911926bf
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-schemas-and-selected-references/token-effect:
+  en: a35f9da94f2baa48
+  zh: 6a155acd659c3f41
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-schemas-and-selected-references/kv-cache-effect:
+  en: b4724b3714c26ac9
+  zh: c3aa00f204a98fa7
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-results:
+  en: beaabb79f229692a
+  zh: 8573891441963be4
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-results/what-the-model-sees:
+  en: 76a74547e32096df
+  zh: 618219134d48fccc
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-results/token-effect:
+  en: 128702f1b6acb39e
+  zh: 1ec2d5df15ca7bce
+/deepseek-ai-dsh-remote-server-cloud/model-experience/tool-results/kv-cache-effect:
+  en: 70fd95df216685e8
+  zh: 5c2a309e444d106b
 /deepseek-ai-dsh-remote-server-cloud/known-limitations-and-deferred-work:
-  en: 9e6b698f80c003e2
-  zh: 9bea846fec6bd1e2
-/deepseek-ai-dsh-remote-server-cloud/dev-note:
-  en: 4106921421327a1d
-  zh: 3617b720a5c9db17
+  en: 248363fc5f06dba0
+  zh: 01fcdc3f0a319c2f
+/deepseek-ai-dsh-remote-server-cloud/known-limitations-and-deferred-work/dev-note:
+  en: 1cd0cebaaca02821
+  zh: ac48195d553da0a2

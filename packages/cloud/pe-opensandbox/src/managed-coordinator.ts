@@ -3,14 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AccountBinding, AccountId, AccountRuntimeService, OperationId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountId, AccountRuntimeService, OperationId,
+  ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { FdMutationFailure, FilesFailure, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SandboxCoordinator, type NativeAccountExecutionAuthority } from './coordinator.ts'
-import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExecutionPort, type AccountExecutionPort } from './account-port.ts'
-import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocationRequest, type PreparedSandbox } from './allocation-owner.ts'
+import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExecutionPort,
+  type AccountExecutionPort } from './account-port.ts'
+import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocationRequest,
+  type PreparedSandbox } from './allocation-owner.ts'
 import { PostgresAllocationStore } from './allocation-store.ts'
 import type { AllocationStoreLimits } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
@@ -63,7 +66,8 @@ export interface ManagedExecutionDeployment {
   /** Root-selected explicit bound; actual membership must come from the original files owner. */
   readonly skillCopies?: { readonly maxCopiesPerOperation: number }
   assertCurrent(): void
-  /** @param grant Files owner's original mount grant. @param assertCurrent Original native/files admission recheck.
+  /** @param grant Files owner's original mount grant.
+ * @param assertCurrent Original native/files admission recheck.
    * @returns Retained, exact daemon exports of the same project/protected .pe/environment devices and quotas.
    */
   share(grant: ExecutionMountGrant, assertCurrent: () => void, skills?: VerifiedExecutionMount['skills']): Promise<ExecutionExportShare>
@@ -188,7 +192,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
     for (const value of [config.maxBoundAccounts, config.maxActiveCommands, config.maxActiveCommandsPerAccount,
       config.maxResidentCommands, config.maxResidentCommandsPerAccount, config.maxResidentBytes,
       config.maxResidentBytesPerAccount, config.maxStopObservers, config.stopWaitBudgetMs, config.recoveryPageSize]) {
-      if (!Number.isSafeInteger(value) || value < 1 || value > 2147483647) throw new RangeError('Managed execution requires finite positive limits.')
+      if (!Number.isSafeInteger(value) || value < 1
+        || value > 2147483647) throw new RangeError('Managed execution requires finite positive limits.')
     }
     if (config.maxActiveCommandsPerAccount > config.maxActiveCommands || config.maxResidentCommandsPerAccount > config.maxResidentCommands
       || config.maxResidentBytesPerAccount > config.maxResidentBytes || config.recoveryPageSize > config.store.maxRows) {
@@ -300,7 +305,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
   installProviders(port: AccountExecutionPort, ctx: Context): void {
     if (requireIssuedExecutionPort(ctx) !== port) this.stale()
     const service = this.config.commands.services
-    if (this.config.commands.pipes !== undefined && this.config.shell.enforceSessionFilePolicy !== true) {
+    if ((this.config.commands.pipes !== undefined || this.config.commands.remoteServers === true)
+      && this.config.shell.enforceSessionFilePolicy !== true) {
       throw new ExecutionStateError('cloud/invalid-config', 'Native pipes require original Session file-policy enforcement.')
     }
     if (service !== undefined && ctx.get('tools') === undefined) {
@@ -424,7 +430,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
     }, configured.commandLimits)
     const shell = new CloudShellExecutor(ctx, commands, this.config.shell), subprocess = new CloudSubprocessRuntime(ctx, commands, sandbox)
     const shellEnv = new CloudShellEnvRegistry(ctx, commands)
-    const providers: NonNullable<AccountWork['providers']> = { ctx, commands, shell, subprocess, shellEnv, ...sandbox === undefined ? {} : { sandbox } }
+    const providers: NonNullable<AccountWork['providers']> = { ctx, commands, shell, subprocess, shellEnv,
+      ...sandbox === undefined ? {} : { sandbox } }
     work.providers = providers
     if (service !== undefined) ctx.effect(() => {
       const registration = registerDevServiceConsumer(ctx, commands.calls, subprocess, commands, service.profile)
@@ -476,16 +483,19 @@ export class ManagedCoordinator extends SandboxCoordinator {
    * @param ctx Actual admitted account consumer scope.
    * @returns Current consumer and configured application-factory availability; no HTTP request is made.
    */
-  inspectServices(port: AccountExecutionPort, ctx: Context): { developmentServices: boolean; servicePreview: boolean } {
+  inspectServices(port: AccountExecutionPort,
+    ctx: Context): { developmentServices: boolean; servicePreview: boolean; remoteServers?: true } {
     this.assertProviders(port, ctx)
     const service = this.config.commands.services, providers = this.owned(port).providers
-    if (service === undefined) return Object.freeze({ developmentServices: false, servicePreview: false })
+    const remote = this.config.commands.remoteServers === true ? { remoteServers: true as const } : {}
+    if (service === undefined) return Object.freeze({ ...remote, developmentServices: false, servicePreview: false })
     if (providers === undefined) this.stale()
     const installed = providers.services
-    if (installed === undefined || installed.configuration !== service || !this.config.commands.allowedTools.includes('dev_service')) this.stale()
+    if (installed === undefined || installed.configuration !== service
+      || !this.config.commands.allowedTools.includes('dev_service')) this.stale()
     installed.registration.assertCurrent(ctx)
     providers.commands.assertQualified(service.profile)
-    return Object.freeze({ developmentServices: true,
+    return Object.freeze({ ...remote, developmentServices: true,
       servicePreview: service.application !== undefined && this.deployment.runtimes.hasApplicationProvider() })
   }
 

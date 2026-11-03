@@ -154,6 +154,15 @@
     },
     {
       "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../community/remote-server"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../pe-opensandbox"
     }
   ]
 }

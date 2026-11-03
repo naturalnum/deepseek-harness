@@ -177,6 +177,8 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 显式的获批 Settings 字段策略要求 `native.firstScreen`，并复用模型 Key 和 skill 操作使用的原认证 consumer。Runtime 将不可变的获批字段交给共享原生 Settings 适配器；每次保存仍由原生 schema、revision 和 none/live 更新计划决定。即使仅选择此策略，也接入既有可变保存隔离路径；不新增 participant、owner 或队列。
 
+远程服务器启用需要已批准目录的 `remoteServers` 策略、经审核的 `cloudRemoteServers/action` 端点、使用 `cordis:pe-cloud-remote-servers` 的账户配方条目，以及原有受管执行显式启用。运行时在账户发布前准备原有文件、保存、审批和 Session 守卫；缺少条目会使现有清单审核失败。
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

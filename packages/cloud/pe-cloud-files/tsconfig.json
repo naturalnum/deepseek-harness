@@ -40,6 +40,15 @@
     },
     {
       "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../../storage/storage-domain"
+    },
+    {
+      "path": "../../community/remote-server"
     }
   ]
 }
