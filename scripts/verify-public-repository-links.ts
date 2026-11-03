@@ -1,9 +1,9 @@
 /** Reject tracked files that reference an unavailable legacy repository. */
 
-import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { trackedRepositoryFiles } from './tracked-repository-files.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const unavailableOwner = ['deepseek', 'ai'].join('-')
@@ -65,15 +65,9 @@ export function findUnavailableRepositoryReferences(file: string, source: string
   return references
 }
 
-function trackedFiles(repoRoot: string): string[] {
-  return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
-    .split('\0')
-    .filter(file => file !== '')
-}
-
 function scanRepository(repoRoot: string): UnavailableRepositoryReference[] {
   const references: UnavailableRepositoryReference[] = []
-  for (const file of trackedFiles(repoRoot)) {
+  for (const file of trackedRepositoryFiles(repoRoot)) {
     const path = resolve(repoRoot, file)
     if (!existsSync(path)) continue
     const stat = lstatSync(path)

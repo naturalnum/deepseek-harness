@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import ts from 'typescript'
 import { canonicalReferenceText } from './verify-public-repository-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -31,6 +32,33 @@ function isMaintained(file: string): boolean {
   return !excludedPrefixes.some(prefix => file.startsWith(prefix))
 }
 
+/** Exact upstream revision in the generated Office source notice, never prose or an arbitrary JSON field. */
+function officeSourcePin(file: string, source: string): { value: string; line: number; column: number } | undefined {
+  const matched = /^packages\/skill\/skill-office\/assets\/(office(?:-docx|-pptx|-xlsx|-render|-recalculate|-export-pdf)?)\/DSH-SOURCE\.json$/.exec(file)
+  if (matched === null) return undefined
+  let record: unknown
+  try { record = JSON.parse(source) } catch { return undefined }
+  if (typeof record !== 'object' || record === null || !('name' in record) || record.name !== matched[1]
+    || !('source' in record) || typeof record.source !== 'object' || record.source === null) return undefined
+  const origin = record.source
+  if (!('repository' in origin) || origin.repository !== 'https://github.com/deepseek-ai/deepseek-harness'
+    || !('commit' in origin) || typeof origin.commit !== 'string' || !/^[a-f0-9]{40}$/.test(origin.commit)) return undefined
+  const parsed = ts.parseJsonText(file, source)
+  const first = parsed.statements[0]
+  if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return undefined
+  const property = (object: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined => {
+    const matches = object.properties.filter((node): node is ts.PropertyAssignment => ts.isPropertyAssignment(node)
+      && ts.isStringLiteralLike(node.name) && node.name.text === key)
+    return matches.length === 1 ? matches[0]?.initializer : undefined
+  }
+  const sourceObject = property(first.expression, 'source')
+  if (sourceObject === undefined || !ts.isObjectLiteralExpression(sourceObject)) return undefined
+  const commit = property(sourceObject, 'commit')
+  if (commit === undefined || !ts.isStringLiteralLike(commit) || !/^"[a-f0-9]{40}"$/.test(commit.getText(parsed))) return undefined
+  const position = parsed.getLineAndCharacterOfPosition(commit.getStart(parsed))
+  return { value: origin.commit, line: position.line, column: position.character + 1 }
+}
+
 /**
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
@@ -44,6 +72,7 @@ export function findRepositoryReferences(
   commits: ReadonlySet<string>,
 ): RepositoryReference[] {
   if (!isMaintained(file)) return []
+  const sourcePin = officeSourcePin(file, source)
   const references: RepositoryReference[] = []
   for (const [index, line] of source.split('\n').entries()) {
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
@@ -52,7 +81,8 @@ export function findRepositoryReferences(
     const artifactSizes = file === 'uv.lock' || file.endsWith('/uv.lock')
       ? [...line.matchAll(/(?<=\bsize\s*=\s*)\d+(?=\s*(?:[,}]|$))/g)] : []
     if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase())
-      && !artifactSizes.some(size => size.index === match.index && size[0] === match[0]))) {
+      && !artifactSizes.some(size => size.index === match.index && size[0] === match[0])
+      && !(match[0] === sourcePin?.value && index === sourcePin.line && match.index === sourcePin.column))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
