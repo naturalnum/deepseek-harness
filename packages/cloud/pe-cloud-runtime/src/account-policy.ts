@@ -588,7 +588,22 @@ class AccountPolicy {
     this.current()
     if (resolved.id !== selected.id || resolved.broken !== undefined) {
       // Operator-only bounded diagnosis; account-facing refusal and strict preset admission stay unchanged.
-      if (resolved.broken !== undefined) this.ctx.logger.warn('Native preset %s failed admission: %s', selected.id, resolved.broken.slice(0, 4096))
+      if (resolved.broken !== undefined) {
+        // The Native observer suppresses warning text. Emit only bounded declaration ids and missing service names.
+        const rows = resolved.broken.slice(0, 4096).split('\n').slice(0, 8).flatMap((line) => {
+          const row = /^([A-Za-z0-9:_-]{1,96}) \((@deepseek-ai\/[A-Za-z0-9_/-]{1,120}|cordis:[A-Za-z0-9_-]{1,40})\): (.*)$/.exec(line)
+          if (row === null) return []
+          const [, entryId, moduleName, detail] = row
+          if (entryId === undefined || moduleName === undefined || detail === undefined) return []
+          const waiting = /^waiting for ([A-Za-z0-9_, ]{1,256})$/.exec(detail)?.[1]
+          return [{ entryId, moduleName, state: waiting === undefined ? 'failed' : 'pending',
+            ...(waiting === undefined ? {} : { missingServices: waiting.split(', ').slice(0, 8) }) }]
+        })
+        try {
+          const record = JSON.stringify({ kind: 'cloud/native-preset-unavailable', presetId: selected.id, rows })
+          if (Buffer.byteLength(record) <= 4096) console.error(record)
+        } catch (_cause) { /* Operator diagnostics cannot change the original refusal or its cleanup. */ }
+      }
       refuse()
     }
     const inventory = await presets.compositionInventory()
