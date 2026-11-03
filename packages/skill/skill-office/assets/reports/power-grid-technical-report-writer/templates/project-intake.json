@@ -1,0 +1,19 @@
+{
+  "task_book": {
+    "available": false,
+    "scope": "无任务书",
+    "topic_name_or_number": null
+  },
+  "content_generation_mode": "source_grounded",
+  "report_constraints": {
+    "has_requirements": false,
+    "target_words": null,
+    "template": null,
+    "chapter_count": null
+  },
+  "experimental_data": {
+    "available": false,
+    "description": null,
+    "files_or_locations": []
+  }
+}

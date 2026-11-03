@@ -1,0 +1,11 @@
+{
+  "name": "office-render",
+  "source": {
+    "repository": "https://github.com/deepseek-ai/deepseek-harness",
+    "commit": "d1b9c0406783051f53587719372489aa0a9d76ac",
+    "packageVersion": "0.2.1-rc.2"
+  },
+  "license": "MIT",
+  "sourceVersion": "0.2.1-rc.2",
+  "resources": "Shared read-only execution assets; user installations retain native override priority."
+}

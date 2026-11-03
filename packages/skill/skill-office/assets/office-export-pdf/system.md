@@ -1,0 +1,9 @@
+# Export PDF with native LibreOffice
+
+This deployment explicitly selects native Linux LibreOffice and Poppler. Use the absolute tool paths supplied below in the same execution environment as the source file. Preserve the saved source, styles, formulas and print settings. Use task-local working copies for conversion.
+
+Every LibreOffice invocation needs its own private profile: create a fresh owner-only directory inside the task workspace and pass `-env:UserInstallation=file://<absolute-profile-directory>`. Quote paths. Run headless with `--norestore --nodefault --nofirststartwizard`, wait for the command and its children to finish, and check that the expected nonempty output exists. A zero exit code alone is insufficient. Keep conversion output in a fresh directory so an existing source cannot be overwritten. Clean only the operation-owned profile and temporary working copies after completion or confirmed cancellation; retain requested deliverables.
+
+Do not install another engine or change execution permissions or quotas to recover a failed operation. Keep source files usable and report the actual failure. Deliver the actual saved path through the session's supported file preview/download method. Native LibreOffice output can differ from Microsoft Office; it does not certify macros, animation or embedded media.
+
+Run `"<soffice>" -env:UserInstallation=file://<private-profile> --headless --norestore --nodefault --nofirststartwizard --convert-to pdf --outdir <fresh-output-directory> <saved-source>`. LibreOffice derives the PDF basename from the source. Move it to the requested final path only after checking the result. For spreadsheets preserve the source print settings and verify the intended sheets/pages. Check text, page count and requested content; load `office-render` for visual inspection when required.

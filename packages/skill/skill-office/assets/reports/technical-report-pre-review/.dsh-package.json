@@ -1,0 +1,74 @@
+{
+  "version": "7212c49fd14508bdb460054fc3cd29a43d8d50a960aacd4553fed643e31627be",
+  "files": [
+    {
+      "relativePath": "DSH-SOURCE.json",
+      "bytes": 523,
+      "sha256": "bd173cc8497e4ddad50b7e71f132e168e0fa3c9fb39d807502a6df56d9646e13"
+    },
+    {
+      "relativePath": "SKILL.md",
+      "bytes": 8349,
+      "sha256": "d589a6db04cb0de0fc1e53b265d91ceb19a90f3fb1412bb6467c7499c3811b55"
+    },
+    {
+      "relativePath": "agents/openai.yaml",
+      "bytes": 651,
+      "sha256": "93ba877b55f747413ca80c958f2e44493616f7c10e5ae9868dcee2e134adbcb7"
+    },
+    {
+      "relativePath": "assets/pre_review_template.docx",
+      "bytes": 219856,
+      "sha256": "d26ea39f9529cb4f8394975a66ebd0c6d04994b6ff1b09a3555eed5fb2babacb"
+    },
+    {
+      "relativePath": "references/authoritative_sources.md",
+      "bytes": 2329,
+      "sha256": "dd1b9035fa8c1f7d8faa976fa8e7f4c4bb5ffe003f5957fc25ab68c304d115ee"
+    },
+    {
+      "relativePath": "references/evolution_strategy.md",
+      "bytes": 2715,
+      "sha256": "cdb324c37ed3a6060bbb4fbdcd206b45a840aa35ae3d8c3eed1b10a8d21b5292"
+    },
+    {
+      "relativePath": "references/markdown_schema.md",
+      "bytes": 4135,
+      "sha256": "32c80a9dba0c0dd08b50f4996b08b7c291d83c9cc9db006a6e75f17cc6cd5c28"
+    },
+    {
+      "relativePath": "references/review_criteria.md",
+      "bytes": 6920,
+      "sha256": "380b851cf326305c3f65f618a7981c5c7df392eef6bc4371213efe3c20b7d3d9"
+    },
+    {
+      "relativePath": "references/reviewer_profiles.md",
+      "bytes": 6880,
+      "sha256": "e3665842caeb360955291d4ace190232793dfb1900fcce03ecc3848a10ceaa45"
+    },
+    {
+      "relativePath": "references/supplemental_reports.md",
+      "bytes": 4001,
+      "sha256": "e76b9c128e2a4f3eb03c023103698bdf2df2112b1d4e2452b4bb8f933ace1744"
+    },
+    {
+      "relativePath": "references/template_contract.md",
+      "bytes": 2411,
+      "sha256": "ce8f624685ab335440abda314a4df4a8819b89c3f1d689eda2ff310af324952a"
+    },
+    {
+      "relativePath": "scripts/extract_materials.py",
+      "bytes": 2336,
+      "sha256": "7e38cb6ffa2474116f9a7289bdced98cf9332fb9d3c90b4a45cee9d4def24865"
+    },
+    {
+      "relativePath": "scripts/fill_review_template.py",
+      "bytes": 11938,
+      "sha256": "155176615a728147aa0f48e2a8df8f12c157f0bc9d894f4fbefdc57b4d2745aa"
+    }
+  ],
+  "archive": {
+    "bytes": 243978,
+    "sha256": "6caafa2bd5f9dc6002bfb4a424bcffefffe06a3f7fbbef67024a7557679066b7"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "status": "confirmed",
+  "targets": [
+    {
+      "chapter_key": "foundation",
+      "suggested_title": "第一章（背景、研究现状和主要研究内容）"
+    },
+    {
+      "chapter_key": "technical_1",
+      "suggested_title": "拟定核心技术章"
+    },
+    {
+      "chapter_key": "conclusion",
+      "suggested_title": "总结与展望"
+    }
+  ],
+  "items": [
+    {
+      "chapter_key": "foundation",
+      "approximate_content": "无特殊要求",
+      "available_materials": [],
+      "known_data_or_results": []
+    },
+    {
+      "chapter_key": "technical_1",
+      "approximate_content": "填写该章准备写入的大概内容",
+      "available_materials": [],
+      "known_data_or_results": []
+    },
+    {
+      "chapter_key": "conclusion",
+      "approximate_content": "无特殊要求",
+      "available_materials": [],
+      "known_data_or_results": []
+    }
+  ]
+}

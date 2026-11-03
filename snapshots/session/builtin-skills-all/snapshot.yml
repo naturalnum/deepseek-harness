@@ -1,0 +1,10 @@
+version: 1
+scenario: builtin-skills-all
+profile: headless
+composition: builtin-skills-all
+recording: authored
+header:
+  class: builtin-skills-all
+  pin: true
+workspace:
+  setup: builtin-report-skills

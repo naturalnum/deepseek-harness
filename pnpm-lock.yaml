@@ -6800,6 +6800,9 @@ importers:
         specifier: 3.3.1
         version: 3.3.1
     devDependencies:
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:*
+        version: link:../../skill/skill-office
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -14419,6 +14422,9 @@ importers:
 
   packages/skill/skill-office:
     dependencies:
+      '@deepseek-ai/dsh-skill-filesystem':
+        specifier: workspace:*
+        version: link:../skill-filesystem
       '@deepseek-ai/libreoffice-kit':
         specifier: ^0.1.5
         version: 0.1.5

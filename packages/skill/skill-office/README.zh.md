@@ -79,6 +79,10 @@ flowchart TD
 
 -----
 
+`executionRoot` 与 `executionRuntime` 显式指定只读 guest 资源镜像及其 Node/Kit 入口；省略时保留 Host 默认路径与可执行文件检查。guest 绝对路径由部署验收验证。`packagedBundles: true` 通过原生候选项检查提供完整、经校验的技能包。
+
+`systemTools` 为受限 Linux guest 显式选择原生 LibreOffice/Poppler 操作指令，不能与 Kit 运行时或 `cli: false` 组合；省略时保留官方 Kit 工作流。每次转换使用任务内独立用户配置及输出目录，原生 Shell 权限、取消和资源限制继续生效。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

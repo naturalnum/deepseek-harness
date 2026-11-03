@@ -189,6 +189,8 @@ interface SkillCatalogSnapshot {
 
 `ctx.skills.inspect(options)` 从与 `snapshot()`、`get()` 相同的收集和胜出映射中返回仅供 Host 使用的 `SkillCatalogInspection`。按名称排序的 `candidates` 包含每个借用的原始 `candidate`、`selected` 标记，以及被覆盖行的 `overriddenBy`。来源元数据和 opaque locator 会被保留，但不加载正文，也不授予资源权限。`complete` 与快照含义相同；不完整结果中的覆盖关系仅描述已观测候选项。消费方必须授权并限制公开投影，不得序列化私有路径或 locator。
 
+`SkillPackage` 为不可变内置来源提供完整版本清单和经过哈希校验的文件/归档读取能力。此 Host 能力不进入模型目录或远程元数据。
+
 `SkillCandidate` 是提供方到注册表的形状。`locator` 是提供方拥有的不透明状态；注册表为获胜提供方的 `get()` 和仅供 Host 使用的检查接口保留它，它不是资源能力。
 
 ```ts type-equiv
@@ -198,6 +200,8 @@ interface SkillCandidate extends SkillSummary {
   readonly rank: number
   /** Opaque provider-owned handle passed back to `provider.get()`. */
   readonly locator: unknown
+  /** Optional immutable package capability for management consumers; loading and precedence remain provider-owned. */
+  readonly package?: SkillPackage
   /** Parsed optional metadata object from provider-specific skill frontmatter. */
   readonly metadata?: Readonly<Record<string, unknown>>
 }

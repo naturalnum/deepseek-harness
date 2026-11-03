@@ -1,0 +1,112 @@
+{
+  "initialized": false,
+  "abstract_structure": {
+    "paragraph_count": 3,
+    "paragraph_1_focus": "domain_status_need_challenges",
+    "paragraph_2_focus": "merged_research_points",
+    "paragraph_3_focus": "task_book_assessment_results_and_research_application_prospects"
+  },
+  "use_default_three_research_point_grouping": true,
+  "domain_context": "",
+  "practical_need": "",
+  "business_need_opening_candidates": [
+    "",
+    "",
+    ""
+  ],
+  "selected_business_need_opening": "",
+  "existing_limitations": [],
+  "key_challenges": [
+    {
+      "id": "C1",
+      "description": "",
+      "technical_cause": "",
+      "research_point_ids": [
+        "R1"
+      ]
+    },
+    {
+      "id": "C2",
+      "description": "",
+      "technical_cause": "",
+      "research_point_ids": [
+        "R2"
+      ]
+    },
+    {
+      "id": "C3",
+      "description": "",
+      "technical_cause": "",
+      "research_point_ids": [
+        "R3"
+      ]
+    }
+  ],
+  "research_points": [
+    {
+      "id": "R1",
+      "challenge_ids": [
+        "C1"
+      ],
+      "problem": "",
+      "technology": "",
+      "core_mechanism": "",
+      "capability": "",
+      "supporting_chapters": [],
+      "verified_results": [],
+      "applicable_conditions": [],
+      "evidence_status": "planned"
+    },
+    {
+      "id": "R2",
+      "challenge_ids": [
+        "C2"
+      ],
+      "problem": "",
+      "technology": "",
+      "core_mechanism": "",
+      "capability": "",
+      "supporting_chapters": [],
+      "verified_results": [],
+      "applicable_conditions": [],
+      "evidence_status": "planned"
+    },
+    {
+      "id": "R3",
+      "challenge_ids": [
+        "C3"
+      ],
+      "problem": "",
+      "technology": "",
+      "core_mechanism": "",
+      "capability": "",
+      "supporting_chapters": [],
+      "verified_results": [],
+      "applicable_conditions": [],
+      "evidence_status": "planned"
+    }
+  ],
+  "representative_quantitative_results": [],
+  "task_book_assessment_results": [],
+  "supplementary_result_metrics": [],
+  "overall_conclusion": "",
+  "research_prospects": [],
+  "application_value": "",
+  "application_prospects": [],
+  "application_conditions": [],
+  "keyword_plan": {
+    "use_default_five_keyword_rule": true,
+    "domain_keywords": [
+      "",
+      ""
+    ],
+    "research_point_keywords": [
+      "",
+      "",
+      ""
+    ]
+  },
+  "last_updated_after_chapter": "",
+  "pending_evidence": [],
+  "notes": []
+}

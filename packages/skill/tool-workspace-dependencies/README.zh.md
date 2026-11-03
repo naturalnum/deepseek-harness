@@ -56,6 +56,8 @@ kind: "package-reference"
 
 -----
 
+`executionManifest` 指定从选定 guest 镜像复制的 Host 侧 `runtime.json`。此时 `source` 是 guest 载荷根目录，禁止 Host 安装，查询返回 guest 路径且不比较 guest 与 Host 平台。部署方验证不可变清单及载荷并绑定到选定镜像；查询不代表实时 Session 就绪，也不绕过权限。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

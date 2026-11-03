@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Model Generated Experiment Reference Package",
+  "type": "object",
+  "required": [
+    "reference_only",
+    "evidence_status",
+    "chapter_id",
+    "research_question",
+    "experiment_objectives",
+    "dataset_plan",
+    "experiment_settings",
+    "evaluation_metrics",
+    "baseline_methods",
+    "experiment_items",
+    "simulated_reference_data",
+    "user_supplementation_checklist",
+    "draft_report_inclusion",
+    "reference_result_analysis"
+  ],
+  "properties": {
+    "reference_only": {
+      "const": true
+    },
+    "evidence_status": {
+      "const": "model_generated_reference"
+    },
+    "chapter_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "research_question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "experiment_objectives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "dataset_plan": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "dataset_or_source",
+          "source_status",
+          "intended_use"
+        ],
+        "properties": {
+          "dataset_or_source": {
+            "type": "string"
+          },
+          "source_status": {
+            "enum": [
+              "user_data_template",
+              "public_candidate",
+              "synthetic"
+            ]
+          },
+          "intended_use": {
+            "type": "string"
+          },
+          "fields_or_features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "split_strategy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "experiment_settings": {
+      "type": "object"
+    },
+    "evaluation_metrics": {
+      "type": "array",
+      "minItems": 1
+    },
+    "baseline_methods": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "method",
+          "baseline_role",
+          "selection_reason"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baseline_role": {
+            "enum": [
+              "classical",
+              "mainstream",
+              "strong",
+              "related"
+            ]
+          },
+          "selection_reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "experiment_items": {
+      "type": "object",
+      "required": [
+        "comparison",
+        "ablation"
+      ],
+      "properties": {
+        "comparison": {
+          "type": "array"
+        },
+        "ablation": {
+          "type": "array"
+        },
+        "sensitivity": {
+          "type": "array"
+        },
+        "robustness": {
+          "type": "array"
+        },
+        "generalization": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "simulated_reference_data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "data_status",
+          "purpose"
+        ],
+        "properties": {
+          "data_status": {
+            "enum": [
+              "simulated_reference",
+              "illustrative_example",
+              "expected_range"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "user_supplementation_checklist": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "draft_report_inclusion": {
+      "enum": [
+        "allowed_with_chapter_end_notice",
+        "allowed_if_labeled",
+        "external_only"
+      ],
+      "description": "默认 allowed_with_chapter_end_notice；allowed_if_labeled 仅用于兼容旧状态；仅用户明确要求不进入正文时使用 external_only。"
+    },
+    "reference_result_analysis": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "对模拟/示例结果的参考性分析，不得使用已完成项目事实口吻。"
+    }
+  },
+  "additionalProperties": true
+}

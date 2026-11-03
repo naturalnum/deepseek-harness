@@ -137,7 +137,7 @@ export function ManagedSkillEditor({ editor, actions, t }: {
         <header className={css.detailHead}>
           <span className={css.glyph} aria-hidden="true"><IconSkillOutlineRegular size={24}/></span>
           <div><strong>{item.name}</strong><p>{item.description}</p>
-            {item.sourceLabel === undefined ? null : <small>{item.sourceLabel}</small>}
+            {item.sourceLabel === undefined ? null : <small>{item.sourceLabel === 'bundled' ? t('bundledSource') : item.sourceLabel}</small>}
             {item.version === undefined ? null : <small>{t('version')} {item.version}</small>}
             {item.publisher === undefined ? null : <small>{t('publisher')} {item.publisher}</small>}
           </div>

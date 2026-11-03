@@ -1,0 +1,11 @@
+{
+  "name": "technical-report-pre-review",
+  "source": {
+    "archive": "technical-report-pre-review.zip",
+    "sha256": "0d94d8bd9ee8e6c340be8937a493e43d6ec18e9cf1266514577f9cddeb6f359a"
+  },
+  "license": "No license text supplied; preserved under explicit instruction for internal DSH integration. No additional redistribution grant asserted.",
+  "sourceVersion": "unversioned in SKILL.md",
+  "resources": "Shared read-only execution assets; user installations retain native override priority.",
+  "suiteVersion": null
+}

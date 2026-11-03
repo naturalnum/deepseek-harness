@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { BUNDLED_SKILL_RANK, type SkillCandidate, type SkillProvider } from '@deepseek-ai/dsh-skill'
 import { parse as parseYaml } from 'yaml'
+import { readSkillPackage } from '@deepseek-ai/dsh-skill-filesystem'
 
 const SKILL_NAMES = ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'office-render', 'office-recalculate', 'office-export-pdf'] as const
 
@@ -20,11 +21,33 @@ export interface Config {
   node?: string
   /** Absolute LibreOffice Kit CLI entry; false explicitly disables CLI access. */
   cli?: string | false
+  /** Guest-visible read-only mirror of assetRoot; omission retains local execution. */
+  executionRoot?: string
+  /** Explicit guest Node and Kit entries; validated by the execution environment rather than Host stat. */
+  executionRuntime?: {
+    /** Absolute Node executable in the execution environment. */
+    node: string
+    /** Absolute LibreOffice Kit CLI entry in the execution environment. */
+    cli: string
+  }
+  /** Explicit native Linux tools selected by the deployment; omission retains LibreOffice Kit. */
+  systemTools?: {
+    /** Absolute headless LibreOffice executable in the execution environment. */
+    soffice: string
+    /** Absolute Poppler page-image executable in the execution environment. */
+    pdftoppm: string
+  }
+  /** Require generated complete-package inventories. */
+  packagedBundles?: boolean
 }
 
 /** Validated resource configuration. */
 export const Config: z<Config> = z.object({
   assetRoot: z.string().min(1),
+  executionRoot: z.string().min(1),
+  executionRuntime: z.union([z.object({ node: z.string().min(1).required(), cli: z.string().min(1).required() }).required()]),
+  packagedBundles: z.boolean(),
+  systemTools: z.union([z.object({ soffice: z.string().min(1).required(), pdftoppm: z.string().min(1).required() }).required()]),
   node: z.string().min(1),
   cli: z.union([z.string().min(1), z.const(false)]),
 })
@@ -49,6 +72,11 @@ function officeRuntime(config: Config): string {
   if (config.node === undefined && (isSea() || process.versions.electron !== undefined)) {
     throw new Error('skill-office: packaged applications must supply a standalone Node executable')
   }
+  if (config.executionRuntime !== undefined) {
+    const { node, cli } = config.executionRuntime
+    if (![node, cli].every(isAbsolute)) throw new Error('skill-office: guest runtime entries must be absolute')
+    return `\n\n## Installed LibreOffice Kit\n\nRun these entries in the execution environment.\n\n${JSON.stringify({ libreofficeKit: { node, cli } }, undefined, 2)}`
+  }
   const node = config.node ?? process.execPath
   let cli = config.cli
   if (cli === undefined) {
@@ -68,6 +96,10 @@ function officeRuntime(config: Config): string {
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const assetRoot = config.assetRoot ?? fileURLToPath(new URL('../assets/', import.meta.url))
+  if (config.systemTools !== undefined && (!Object.values(config.systemTools).every(isAbsolute) || config.executionRuntime !== undefined || config.cli === false)) {
+    throw new Error('skill-office: systemTools requires absolute execution paths and cannot be combined with a Kit runtime or disabled CLI')
+  }
+  if (config.executionRoot !== undefined && !isAbsolute(config.executionRoot)) throw new Error('skill-office: executionRoot must be absolute')
   if (!isAbsolute(assetRoot)) throw new Error('skill-office: assetRoot must be an absolute directory')
   const candidates: SkillCandidate[] = SKILL_NAMES.map((skillName) => {
     const directory = join(assetRoot, skillName)
@@ -77,18 +109,22 @@ export function apply(ctx: Context, config: Config = {}): void {
       name: skillName, description,
       invocation: { modelInvocable: true, userInvocable: true },
       provider: 'dsh-office', source: 'bundled', rank: BUNDLED_SKILL_RANK,
-      resourceBase: { kind: 'directory', path: directory.split(sep).join('/') }, locator: path,
+      resourceBase: { kind: 'directory', path: join(config.executionRoot ?? assetRoot, skillName).split(sep).join('/') }, locator: path,
+      ...config.packagedBundles ? { package: readSkillPackage(directory) } : {},
     }
   })
   const provider: SkillProvider = {
     name: 'dsh-office',
     list: () => Promise.resolve(candidates),
     async get(candidate, options) {
-      const { rank: _rank, locator, ...summary } = candidate
+      const { rank: _rank, locator, package: _package, ...summary } = candidate
       const raw = await readFile(locator as string, { encoding: 'utf8', signal: options.signal })
-      const content = parseSkill(raw, locator as string).content
-        + (['office-render', 'office-recalculate', 'office-export-pdf'].includes(candidate.name) ? officeRuntime(config) : '')
-      return { ...summary, content }
+      const operation = ['office-render', 'office-recalculate', 'office-export-pdf'].includes(candidate.name)
+      const content = operation && config.systemTools !== undefined
+        ? await readFile(join(assetRoot, candidate.name, 'system.md'), { encoding: 'utf8', signal: options.signal })
+          + `\n\n## Installed native Linux tools\n\n${JSON.stringify(config.systemTools, undefined, 2)}`
+        : parseSkill(raw, locator as string).content + (operation ? officeRuntime(config) : '')
+      return { ...summary, content: content + (config.executionRoot === undefined ? '' : '\n\nShared resources are read-only paths in the execution environment. Use its Bash tool or interpreter to read referenced files and run scripts; Host file tools do not provide these guest image paths.') }
     },
   }
   ctx.skills.registerProvider(() => provider)

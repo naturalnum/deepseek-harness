@@ -3234,7 +3234,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-skill`
 
-- `source`: [`packages/skill/skill/src/index.ts:298`](../packages/skill/skill/src/index.ts)
+- `source`: [`packages/skill/skill/src/index.ts:314`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
@@ -3251,7 +3251,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-filesystem`
 
 - `inject`: `skills`
-- `source`: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
+- `source`: [`packages/skill/skill-filesystem/src/index.ts:51`](../packages/skill/skill-filesystem/src/index.ts)
 
 ```ts config-catalog
 /** Local filesystem skill provider configuration. */
@@ -3280,6 +3280,10 @@ export interface Config {
   watchFollowSymlinks?: boolean
   /** Bundled skill root; defaults to `$DSH_BUNDLED_SKILL_DIR` when default roots are included, otherwise mounts none. */
   bundledSkillDir?: string
+  /** Guest-visible mirror of bundledSkillDir; deployment must supply the identical read-only asset tree. */
+  bundledExecutionRoot?: string
+  /** Require generated complete-package inventories for the bundled root. */
+  packagedBundles?: boolean
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
@@ -3290,7 +3294,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-office`
 
 - `inject`: `skills`
-- `source`: [`packages/skill/skill-office/src/index.ts:16`](../packages/skill/skill-office/src/index.ts)
+- `source`: [`packages/skill/skill-office/src/index.ts:17`](../packages/skill/skill-office/src/index.ts)
 
 ```ts config-catalog
 /** Office skill resource location. */
@@ -3301,6 +3305,24 @@ export interface Config {
   node?: string
   /** Absolute LibreOffice Kit CLI entry; false explicitly disables CLI access. */
   cli?: string | false
+  /** Guest-visible read-only mirror of assetRoot; omission retains local execution. */
+  executionRoot?: string
+  /** Explicit guest Node and Kit entries; validated by the execution environment rather than Host stat. */
+  executionRuntime?: {
+    /** Absolute Node executable in the execution environment. */
+    node: string
+    /** Absolute LibreOffice Kit CLI entry in the execution environment. */
+    cli: string
+  }
+  /** Explicit native Linux tools selected by the deployment; omission retains LibreOffice Kit. */
+  systemTools?: {
+    /** Absolute headless LibreOffice executable in the execution environment. */
+    soffice: string
+    /** Absolute Poppler page-image executable in the execution environment. */
+    pdftoppm: string
+  }
+  /** Require generated complete-package inventories. */
+  packagedBundles?: boolean
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-office -->
@@ -4379,6 +4401,8 @@ export interface Config {
    * which suits read-only carriers such as container image layers.
    */
   readonly root?: string
+  /** Host carrier of runtime.json copied from the selected guest image; source then names its guest-visible payload. */
+  readonly executionManifest?: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-workspace-dependencies -->

@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tech Report Writer Orchestration Response",
+  "type": "object",
+  "required": [
+    "request_id",
+    "skill_name",
+    "action",
+    "status"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "skill_name": {
+      "const": "tech-report-writer"
+    },
+    "action": {
+      "enum": [
+        "create_word_report",
+        "format_existing_word_report",
+        "validate_word_report"
+      ]
+    },
+    "status": {
+      "enum": [
+        "success",
+        "blocked",
+        "failed"
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "artifact_type",
+        "artifact_id",
+        "version",
+        "content"
+      ],
+      "properties": {
+        "artifact_type": {
+          "const": "word_report"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content": {
+          "type": "object"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "validation_result": {
+      "type": "object",
+      "required": [
+        "validated_artifact_id",
+        "validated_version",
+        "decision",
+        "valid",
+        "docx_path",
+        "structural_validation",
+        "visual_qa",
+        "revision_instruction"
+      ],
+      "properties": {
+        "validated_artifact_id": {
+          "type": "string"
+        },
+        "validated_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision": {
+          "enum": [
+            "pass",
+            "revise",
+            "blocked"
+          ]
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "docx_path": {
+          "type": "string"
+        },
+        "structural_validation": {
+          "type": "object",
+          "required": [
+            "passed",
+            "errors",
+            "warnings"
+          ],
+          "properties": {
+            "passed": {
+              "type": "boolean"
+            },
+            "errors": {
+              "type": "array"
+            },
+            "warnings": {
+              "type": "array"
+            }
+          },
+          "additionalProperties": true
+        },
+        "visual_qa": {
+          "type": "object",
+          "required": [
+            "status",
+            "page_count",
+            "inspected_pages",
+            "issues"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "blocked",
+                "rendered_pending_inspection"
+              ]
+            },
+            "page_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inspected_pages": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "issues": {
+              "type": "array"
+            },
+            "catalog_qa": {
+              "type": "object",
+              "properties": {
+                "checked": {
+                  "type": "boolean"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "not_found_markers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "missing_figure_catalog_entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "missing_table_catalog_entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "figure_tc_entries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "table_tc_entries": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "revision_instruction": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "error": {
+      "type": [
+        "object",
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

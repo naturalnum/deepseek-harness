@@ -206,3 +206,21 @@ it('validates operation paths on loading while authoring remains available', asy
     await ctx.fiber.dispose()
   }
 })
+
+it('selects explicit native Linux operation instructions without consulting Host Kit executables', async () => {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillOffice, { executionRoot: '/opt/dsh/skills/office', packagedBundles: true,
+      systemTools: { soffice: '/usr/bin/soffice', pdftoppm: '/usr/bin/pdftoppm' } })
+    for (const name of ['office-render', 'office-recalculate', 'office-export-pdf']) {
+      const loaded = await ctx.skills.get(name)
+      expect(loaded?.content).toContain('native Linux')
+      expect(loaded?.content).toContain('/usr/bin/soffice')
+      expect(loaded?.content).not.toContain('/Users/')
+      expect(loaded?.content).not.toContain('LibreOffice Kit CLI')
+    }
+    const authoring = await ctx.skills.get('office-docx')
+    expect(authoring?.content).toContain('load_workspace_dependencies')
+  } finally { await ctx.fiber.dispose() }
+})

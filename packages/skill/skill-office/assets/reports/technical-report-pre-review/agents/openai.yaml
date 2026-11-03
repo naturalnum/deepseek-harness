@@ -1,0 +1,7 @@
+interface:
+  display_name: "科技技术报告前置审查"
+  short_description: "审查任务书、总报告及可选分报告，生成兼顾总体判断与具体问题的五视角审查意见"
+  default_prompt: "使用 $technical-report-pre-review 审查任务书和总技术报告；每名专家的意见直接从1.开始编号，先从自身视角给出任务书—报告总体对应、证据支撑和主要风险判断，必要时可有多条总体层面意见，再下钻到具体问题；不要单列或标注‘总体评价’。初审后如有课题分报告，继续形成盲审意见最终版。"
+
+policy:
+  allow_implicit_invocation: true

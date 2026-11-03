@@ -10,6 +10,7 @@ import { FdMutationFailure, FilesFailure, InvalidSkillBundleFailure, type SkillB
 import type { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import type { FsVersion } from '@deepseek-ai/dsh-fs'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { bundledSkillEntry } from './bundled-skills.ts'
 import { ConfigSaveOutcomeUnknown, SkillEditApplyFailure } from './config-saves.ts'
 import type { ConfigSaveBarrier, SkillEditVersion } from './save-hooks.ts'
 import { CloudApiError } from './errors.ts'
@@ -105,8 +106,9 @@ export class AccountManagedSkills implements SkillProvider {
       const options = this.view(request, signal), catalog = await this.observeCurrent(signal)
       const inspection = await this.registry.inspect(options)
       check()
-      return { value: { entries: catalog.entries.map(entry => this.row(this.handle(entry), inspection)),
-        complete: inspection.complete, actions: { install: catalog.entries.length < this.publicLimits.maxSkills
+      return { value: { entries: [...catalog.entries.map(entry => this.row(this.handle(entry), inspection)),
+        ...inspection.candidates.flatMap((row) => { const entry = bundledSkillEntry(row); return entry === undefined ? [] : [entry] })],
+      complete: inspection.complete, actions: { install: catalog.entries.length < this.publicLimits.maxSkills
           && this.providers.size < this.input.limits.maxRetainedProviders }, limits: this.publicLimits }, revision: catalog.revision }
     }, () => { this.active(); check() })
     return this.reply({ ...result.value, version: result.version })
@@ -121,8 +123,15 @@ export class AccountManagedSkills implements SkillProvider {
    */
   async details(skillId: ManagedSkillId, check: () => void, signal: AbortSignal): Promise<ManagedSkillDetails> {
     const result = await this.saves.describeSkillEdit(async () => {
-      const catalog = await this.observeCurrent(signal), entry = this.selected(catalog, skillId)
+      const catalog = await this.observeCurrent(signal)
       const inspection = await this.registry.inspect({ signal })
+      const builtin = this.bundled(inspection, skillId)
+      if (builtin !== undefined) {
+        const bytes = await builtin.bundle.readFile('SKILL.md', signal)
+        check()
+        return { value: { entry: builtin.entry, files: builtin.bundle.files, markdown: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }, revision: catalog.revision }
+      }
+      const entry = this.selected(catalog, skillId)
       check()
       const held = await this.port.withBundleSource(entry.version, (source, control) => source.readText('SKILL.md', control), signal)
       try {
@@ -201,7 +210,18 @@ export class AccountManagedSkills implements SkillProvider {
   download(request: ManagedSkillDownloadRequest, check: () => void, signal: AbortSignal): Promise<ManagedSkillDownload> {
     return this.read(async () => {
       check()
-      const catalog = await this.observeCurrent(signal), entry = this.selected(catalog, request.skillId)
+      const catalog = await this.observeCurrent(signal)
+      const builtin = this.visible.has(request.skillId) ? undefined : this.bundled(await this.registry.inspect({ signal }), request.skillId)
+      if (builtin !== undefined) {
+        if (builtin.entry.contentVersion !== request.contentVersion) throw refused('The built-in version changed; refresh before downloading.', true)
+        if (builtin.bundle.archive.bytes > this.publicLimits.maxZipBytes) throw this.capacity()
+        const bytes = await builtin.bundle.readArchive(signal)
+        check()
+        return this.reply({ skillId: builtin.entry.skillId, contentVersion: builtin.entry.contentVersion,
+          fileName: `${builtin.entry.name}.skill`, mediaType: 'application/zip', ...builtin.bundle.archive,
+          dataBase64: Buffer.from(bytes).toString('base64') })
+      }
+      const entry = this.selected(catalog, request.skillId)
       if (entry.version.id !== request.contentVersion) throw refused('The installed content changed; refresh before downloading.', true)
       // Selection and the files borrow begin inside this same original turn; no source is captured before admission.
       const held = await this.port.exportBundle(entry.version, signal)
@@ -224,7 +244,19 @@ export class AccountManagedSkills implements SkillProvider {
   readFile(request: ManagedSkillReadFileRequest, check: () => void, signal: AbortSignal): Promise<ManagedSkillFileContent> {
     return this.read(async () => {
       check()
-      const catalog = await this.observeCurrent(signal), entry = this.selected(catalog, request.skillId)
+      const catalog = await this.observeCurrent(signal)
+      const builtin = this.visible.has(request.skillId) ? undefined : this.bundled(await this.registry.inspect({ signal }), request.skillId)
+      if (builtin !== undefined) {
+        if (builtin.entry.contentVersion !== request.contentVersion) throw refused('The built-in version changed; refresh before reading.', true)
+        const file = builtin.bundle.files.find(value => value.relativePath === request.relativePath)
+        if (file === undefined) throw refused('The requested file is not in the built-in inventory.')
+        if (file.bytes > this.publicLimits.maxFileBytes) throw this.capacity()
+        const bytes = await builtin.bundle.readFile(file.relativePath, signal)
+        check()
+        return this.reply({ skillId: builtin.entry.skillId, contentVersion: builtin.entry.contentVersion,
+          ...file, dataBase64: Buffer.from(bytes).toString('base64') })
+      }
+      const entry = this.selected(catalog, request.skillId)
       check()
       if (entry.version.id !== request.contentVersion) throw refused('The installed content changed; refresh before reading.', true)
       const file = entry.version.files.find(value => value.relativePath === request.relativePath)
@@ -418,6 +450,15 @@ export class AccountManagedSkills implements SkillProvider {
       if (error instanceof ConfigSaveOutcomeUnknown) return { persisted: 'unknown', applied: false }
       throw error
     } finally { releasePreparation() }
+  }
+
+  private bundled(inspection: SkillCatalogInspection, skillId: ManagedSkillId) {
+    if (!inspection.complete) throw refused('The native skill catalog is incomplete.')
+    for (const row of inspection.candidates) {
+      const entry = bundledSkillEntry(row), bundle = row.candidate.package
+      if (entry?.skillId === skillId && bundle !== undefined) return { entry, bundle }
+    }
+    return undefined
   }
 
   private async observe(signal: AbortSignal): Promise<SkillCatalog> {

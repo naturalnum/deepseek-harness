@@ -1,0 +1,682 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Power Grid Technical Report State",
+  "type": "object",
+  "required": [
+    "stage",
+    "report_type",
+    "confirmed_chapters",
+    "content_generation_mode",
+    "mode_selection_confirmed",
+    "temporary_mode_override",
+    "chapter_materials"
+  ],
+  "properties": {
+    "stage": {
+      "type": "string"
+    },
+    "report_type": {
+      "type": "string",
+      "default": "科技项目结题技术报告"
+    },
+    "overall_goal": {
+      "type": "string"
+    },
+    "report_scope": {
+      "type": "object"
+    },
+    "confirmed_chapters": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "current_chapter": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "term_registry": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "symbol_registry": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "research_content_coverage": {
+      "type": "object"
+    },
+    "abstract_evidence": {
+      "type": "object",
+      "description": "Three-paragraph abstract evidence package containing business-need opening candidates, challenge-to-research-point mapping, task-book quantitative and qualitative assessment results, at most 1-2 supplemental non-taskbook metrics when useful, research/application prospects and keyword plan."
+    },
+    "pending_sources": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "content_generation_mode": {
+      "type": "string",
+      "enum": [
+        "source_grounded",
+        "model_autonomous",
+        "pending_selection"
+      ],
+      "default": "pending_selection"
+    },
+    "mode_selection_confirmed": {
+      "type": "boolean",
+      "default": false
+    },
+    "temporary_mode_override": {
+      "type": "string",
+      "enum": [
+        "none",
+        "current_chapter",
+        "current_section"
+      ],
+      "default": "none"
+    },
+    "effective_mode_for_current_unit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "source_grounded",
+        "model_autonomous",
+        null
+      ]
+    },
+    "chapter_materials": {
+      "type": "object",
+      "description": "Per-chapter material preparation state used by source_grounded mode.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status",
+          "inventory",
+          "gaps"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not-needed",
+              "requested",
+              "partial",
+              "ready"
+            ]
+          },
+          "inventory": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "request_history": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "temporary_override": {
+            "type": "string",
+            "enum": [
+              "none",
+              "current_chapter",
+              "current_section"
+            ],
+            "default": "none"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "chapter_research_subpoints": {
+      "type": "object",
+      "description": "Per technical chapter, 3 core in-chapter research subpoints by default; 4-5 only when source-grounded expected goals or schedule technical points cannot be reasonably merged.",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "required": [
+            "research_subpoint_index",
+            "section_number",
+            "title",
+            "derivation_basis"
+          ],
+          "properties": {
+            "research_subpoint_index": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "section_number": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "derivation_basis": {
+              "type": "string"
+            },
+            "source_item_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "assessment_item_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "specific_computing_technology": {
+              "type": "string",
+              "description": "细化到技术变体、关键结构、机制、约束或组合方式的具体计算技术；内部字段可以保留原始英文模型名/缩写以便追溯，但不得只填RAG、图神经网络/GNN、Transformer、强化学习、大模型等技术族名称。"
+            },
+            "technology_specificity_basis": {
+              "type": "string",
+              "description": "说明该技术相对同技术族常规实现的区分性成分，例如混合检索+重排序、关系类型感知异构图注意力、时序门控或安全约束策略。不得只写“更具体/更先进”等空话。"
+            },
+            "technology_origin": {
+              "type": "string",
+              "enum": [
+                "source_confirmed",
+                "model_suggested",
+                "user_confirmed_design"
+              ]
+            },
+            "shared_chapter_question": {
+              "type": "string"
+            },
+            "chain_order": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "chain_role": {
+              "type": "string"
+            },
+            "depends_on_previous": {
+              "type": "boolean"
+            },
+            "handoff_from_previous": {
+              "type": "string"
+            },
+            "output_to_next": {
+              "type": "string"
+            },
+            "technical_signature": {
+              "type": "string",
+              "minLength": 1,
+              "description": "必须直接出现在二/三级技术标题中的中文语义最小区分性技术签名；不得裸露英文模型名/英文缩写，应以简洁中文表达实际技术路线；不得只写RAG/GNN/Transformer等技术族，也不得只写Span抽取、双塔匹配、置信校准、参数更新等任务动作。"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    "assessment_indicator_coverage": {
+      "type": "object",
+      "description": "Internal technical requirements embedded in X.1-X.N core-section prose, with source identity hidden, evidence status, and confirmed location."
+    },
+    "development_status_attribution_style": {
+      "type": "string",
+      "enum": [
+        "author_et_al",
+        "author_team"
+      ],
+      "default": "author_et_al",
+      "description": "Unified personal-author attribution style across domestic and foreign development-status sections."
+    },
+    "summary_evidence_policy": {
+      "type": "object",
+      "description": "Quantitative, qualitative and power-domain evidence requirements for chapter summaries and final conclusion.",
+      "properties": {
+        "require_quantitative_expression": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_qualitative_judgment": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_power_domain_meaning": {
+          "type": "boolean",
+          "default": true
+        },
+        "allow_explicit_data_placeholder_when_missing": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "formula_selection_policy": {
+      "type": "object",
+      "description": "Formula selection preference layered on top of existing must/should/exempt rules.",
+      "properties": {
+        "descriptive_formulas": {
+          "type": "string"
+        },
+        "technical_formulas": {
+          "type": "string"
+        },
+        "no_formula_quota": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": true,
+      "default": {
+        "descriptive_formulas": "minimize_when_plain_language_is_sufficient",
+        "technical_formulas": "expand_when_they_carry_core_principles_losses_constraints_updates_or_performance_relations",
+        "no_formula_quota": true
+      }
+    },
+    "fixed_project_brief_questions": {
+      "type": "object",
+      "description": "Answers to the four mandatory project-brief questions.",
+      "properties": {
+        "task_book_scope": {
+          "type": "string"
+        },
+        "content_generation_mode": {
+          "type": "string"
+        },
+        "report_requirements": {
+          "type": "object"
+        },
+        "experimental_data_status": {
+          "type": "string"
+        },
+        "confirmed": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "chapter_content_briefs": {
+      "type": "object",
+      "description": "Per-chapter rough content collected before outline generation in source_grounded mode.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "chapter_content_briefs_confirmed": {
+      "type": "boolean",
+      "default": false
+    },
+    "word_count_policy": {
+      "type": "object",
+      "properties": {
+        "minimum_ratio": {
+          "type": "number",
+          "const": 0.8,
+          "default": 0.8
+        },
+        "count_method": {
+          "type": "string",
+          "default": "han_characters_plus_latin_numeric_tokens_excluding_markdown_code_math"
+        },
+        "require_section_check": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_chapter_check": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "chapter_word_count_status": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "target_words": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minimum_words": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "actual_words": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ratio": {
+            "type": "number",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pass",
+              "fail"
+            ]
+          },
+          "maximum_words": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Only used for fixed-range chapters such as the final conclusion; 800 by current rule."
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "heading_preservation_policy": {
+      "type": "object",
+      "description": "Confirmed outline headings are locked for body generation and validated deterministically.",
+      "default": {
+        "lock_confirmed_headings": true,
+        "preserve_number": true,
+        "preserve_title": true,
+        "preserve_level": true,
+        "preserve_order": true,
+        "require_level3_coverage_check": true
+      },
+      "properties": {
+        "lock_confirmed_headings": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        },
+        "preserve_number": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        },
+        "preserve_title": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        },
+        "preserve_level": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        },
+        "preserve_order": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        },
+        "require_level3_coverage_check": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "chapter_heading_coverage_status": {
+      "type": "object",
+      "description": "Per-chapter deterministic heading coverage results after body generation.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "planned_level3_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "preserved_level3_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missing_headings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "renamed_headings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "wrong_level_headings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "order_preserved": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pass",
+              "fail"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "markdown_normalization": {
+      "type": "object",
+      "default": {
+        "dash_style": "hyphen",
+        "remove_digit_han_spaces": true,
+        "run_at_final_assembly_end": true
+      },
+      "properties": {
+        "dash_style": {
+          "type": "string",
+          "enum": [
+            "hyphen",
+            "em-dash"
+          ],
+          "default": "hyphen"
+        },
+        "remove_digit_han_spaces": {
+          "type": "boolean",
+          "default": true
+        },
+        "run_at_final_assembly_end": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "task_book_scope": {
+      "type": "string",
+      "enum": [
+        "specific_topic",
+        "total_report",
+        "not_applicable",
+        "pending"
+      ],
+      "default": "pending",
+      "description": "Controls the technical-chapter mapping unit before outline generation."
+    },
+    "report_tasks": {
+      "type": "array",
+      "description": "Ordered task catalog required for total_report mode; each task maps to exactly one technical chapter.",
+      "items": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "task_order",
+          "task_title",
+          "normalized_chapter_title",
+          "task_role",
+          "research_point_ids"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "task_order": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "task_title": {
+            "type": "string"
+          },
+          "normalized_chapter_title": {
+            "type": "string"
+          },
+          "task_role": {
+            "type": "string",
+            "enum": [
+              "technical-research",
+              "engineering-implementation"
+            ]
+          },
+          "research_point_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "chapter_mapping_policy": {
+      "type": "object",
+      "default": {
+        "total_report_unit": "task",
+        "specific_topic_unit": "research_content_subpoint",
+        "domestic_foreign_level3_exact_match": true,
+        "development_status_titles_match_technical_chapters": true
+      },
+      "properties": {
+        "total_report_unit": {
+          "type": "string",
+          "const": "task"
+        },
+        "specific_topic_unit": {
+          "type": "string",
+          "const": "research_content_subpoint"
+        },
+        "domestic_foreign_level3_exact_match": {
+          "type": "boolean",
+          "const": true
+        },
+        "development_status_titles_match_technical_chapters": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "experiment_reference_packages": {
+      "type": "object",
+      "description": "Optional per-chapter model-generated experiment reference packages. These are reference-only and must not be treated as verified project results.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "report_theme_type": {
+      "enum": [
+        "evaluation-related",
+        "non-evaluation"
+      ]
+    },
+    "technology_option_sets": {
+      "type": "object",
+      "description": "Per technical chapter optional technology sets generated alongside the outline. Unlocked core sections normally have 2-3 candidates; source-locked routes may have one source-confirmed candidate. Option blocks are not formal headings.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "section_number",
+            "problem_or_role",
+            "source_locked",
+            "candidates",
+            "selection_status"
+          ],
+          "properties": {
+            "section_number": {
+              "type": "string"
+            },
+            "problem_or_role": {
+              "type": "string"
+            },
+            "source_locked": {
+              "type": "boolean"
+            },
+            "candidates": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "type": "object"
+              }
+            },
+            "recommended_candidate_id": {
+              "type": "string"
+            },
+            "selected_candidate_id": {
+              "type": "string"
+            },
+            "selection_status": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode_selection_confirmed": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode_selection_confirmed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "content_generation_mode": {
+            "enum": [
+              "source_grounded",
+              "model_autonomous"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+# Apply to the trusted account recipe before its normal sealing/audit. These are release-owned paths.
+# The image/asset mirrors must be prepared and qualified together; this overlay grants no execution authority.
+- insert:
+    - id: skill-office
+      name: '@deepseek-ai/dsh-skill-office'
+      config:
+        assetRoot: !!js process.env.DSH_BUNDLED_OFFICE_SKILLS
+        executionRoot: /opt/dsh/skills/office
+        packagedBundles: true
+        systemTools:
+          soffice: /usr/bin/soffice
+          pdftoppm: /usr/bin/pdftoppm
+    - id: bundled-report-skills
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: dsh-reports
+        includeDefaultRoots: false
+        watch: false
+        bundledSkillDir: !!js process.env.DSH_BUNDLED_REPORT_SKILLS
+        bundledExecutionRoot: /opt/dsh/skills/reports
+        packagedBundles: true
+    - id: workspace-dependencies
+      name: '@deepseek-ai/dsh-tool-workspace-dependencies'
+      config:
+        source: /opt/dsh/runtime
+        executionManifest: !!js process.env.DSH_EXECUTION_RUNTIME_MANIFEST

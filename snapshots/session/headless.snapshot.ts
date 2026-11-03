@@ -508,6 +508,10 @@ const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
     await writeFile(join(cwd, 'office-node'), `#!/bin/sh\nexec '${nodePath}' "$@"\n`, { mode: 0o755 })
     await copyFile(join(repoRoot, 'packages/skill/skill-office/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js'), join(cwd, 'office-cli.js'))
   },
+  async 'builtin-report-skills'(cwd) {
+    await workspaceSetups['office-skills']!(cwd)
+    await cp(join(repoRoot, 'packages/skill/skill-office/assets/reports'), join(cwd, 'report-skills'), { recursive: true })
+  },
   async 'office-retired-ptc'(cwd) {
     await workspaceSetups['office-skills']!(cwd)
     // Keep the removed-tool error without process-specific stack locations.

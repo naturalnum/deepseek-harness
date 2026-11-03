@@ -1,0 +1,11 @@
+{
+  "name": "tech-report-writer",
+  "source": {
+    "archive": "power-grid-report-skill-suite-v1.1.31-install.zip",
+    "sha256": "1cdd33563243139bc8a5eeb4c4821224aee405cdc24ece01680519a00a27d6e3"
+  },
+  "license": "No license text supplied; preserved under explicit instruction for internal DSH integration. No additional redistribution grant asserted.",
+  "sourceVersion": "unversioned in SKILL.md",
+  "resources": "Shared read-only execution assets; user installations retain native override priority.",
+  "suiteVersion": "1.1.31"
+}

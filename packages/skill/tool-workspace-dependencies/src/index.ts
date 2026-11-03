@@ -21,12 +21,15 @@ export interface Config {
    * which suits read-only carriers such as container image layers.
    */
   readonly root?: string
+  /** Host carrier of runtime.json copied from the selected guest image; source then names its guest-visible payload. */
+  readonly executionManifest?: string
 }
 
 /** Require a named payload source before the Loader activates the tool. */
 export const Config: z<Config> = z.object({
   source: z.string().min(1).required(),
   root: z.string().min(1),
+  executionManifest: z.string().min(1),
 })
 
 /** Canonical build metadata, independent of user-installed packages; legacy files are normalized on read. */
@@ -286,6 +289,9 @@ export function apply(ctx: Context, config: Config): void {
   if (!isAbsolute(config.source) || (config.root !== undefined && !isAbsolute(config.root))) {
     throw new Error('workspace dependencies: source and root must be absolute paths')
   }
+  if (config.executionManifest !== undefined && (!isAbsolute(config.executionManifest) || config.root !== undefined)) {
+    throw new Error('workspace dependencies: executionManifest must be absolute and cannot install a Host payload')
+  }
   let preparation: Promise<WorkspaceDependencies> | undefined
   ctx.effect(() => async () => {
     // Tool execution reports preparation failures; disposal only waits for filesystem work to settle.
@@ -309,7 +315,11 @@ export function apply(ctx: Context, config: Config): void {
       },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, undefined, 2) }],
     },
-    execute: () => {
+    execute: async () => {
+      if (config.executionManifest !== undefined) {
+        // The deployment binds this immutable carrier to its selected image; this read does not assert a live Session is ready.
+        return workspaceDependencyPaths(config.source, await readPrimaryRuntime(config.executionManifest))
+      }
       preparation ??= (config.root === undefined ? resolvePrimaryRuntime(config.source) : installPrimaryRuntime(config.source, config.root))
         .catch((error: unknown) => {
           preparation = undefined

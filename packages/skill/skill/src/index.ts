@@ -75,12 +75,28 @@ export interface SkillSummary {
   readonly resourceBase?: SkillResourceBase
 }
 
+/** Immutable packaged files supplied by the owning provider; never serialized as catalog metadata. */
+export interface SkillPackage {
+  /** Content identity derived from the complete ordered file inventory. */
+  readonly version: string
+  /** Complete regular-file inventory, relative to the skill root. */
+  readonly files: readonly { readonly relativePath: string; readonly bytes: number; readonly sha256: string }[]
+  /** Verified ZIP metadata for the same complete tree. */
+  readonly archive: { readonly bytes: number; readonly sha256: string }
+  /** @param path Inventory member. @param signal Observer cancellation. @returns Verified complete member bytes. */
+  readFile(path: string, signal?: AbortSignal): Promise<Uint8Array>
+  /** @param signal Observer cancellation. @returns Verified complete ZIP bytes. */
+  readArchive(signal?: AbortSignal): Promise<Uint8Array>
+}
+
 /** Provider catalog entry used by the registry to merge and later load skills. */
 export interface SkillCandidate extends SkillSummary {
   /** Lower ranks win duplicate skill names before provider registration order is considered. */
   readonly rank: number
   /** Opaque provider-owned handle passed back to `provider.get()`. */
   readonly locator: unknown
+  /** Optional immutable package capability for management consumers; loading and precedence remain provider-owned. */
+  readonly package?: SkillPackage
   /** Parsed optional metadata object from provider-specific skill frontmatter. */
   readonly metadata?: Readonly<Record<string, unknown>>
 }
