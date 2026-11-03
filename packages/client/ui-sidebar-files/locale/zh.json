@@ -2,5 +2,23 @@
   "meta": {
     "title": "文件浏览面板",
     "description": "浏览工作区目录，并在右侧面板中打开文件。"
-  }
+  },
+  "upload": "上传",
+  "download": "下载",
+  "uploadOptions": "上传选项",
+  "uploadFolder": "上传文件夹",
+  "newFolder": "新建文件夹",
+  "untitledFolder": "未命名文件夹",
+  "selectFile": "选择 {name}",
+  "cancel": "取消",
+  "folderFailed": "创建未确认。刷新检查是否已创建；检查名称和权限后重试。",
+  "transferFailed": "上传未完成。已完成文件保留，请刷新检查后重试未完成文件。",
+  "cancelledUnknown": "已停止上传。刷新检查已完成文件后再重试。",
+  "downloadFailed": "无法下载，请检查文件后重试。",
+  "loading": "正在读取…",
+  "empty": "空目录",
+  "truncated": "条目太多，只显示了一部分。",
+  "noWorkspace": "这个会话没有工作区目录。",
+  "reload": "重新读取",
+  "autoRefresh": "自动刷新"
 }

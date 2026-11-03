@@ -176,3 +176,20 @@
 .titleIcon {
   flex: none;
 }
+
+.path { min-width: 0; flex: 1 1 auto; overflow: hidden; margin-right: 0; }
+.fileRow { display: flex; align-items: center; padding-left: 10px; }
+.fileRow .row { flex: 1; }
+.row[aria-current='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+.tool:disabled { opacity: .4; cursor: default; }
+.uploadMenu { flex: none; }
+.dropdown { width: 14px; padding: 0; background: transparent; color: inherit; border: 0; cursor: pointer; }
+.dropdown svg { width: 12px; }
+.draft { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 10px; }
+.draft input { min-width: 40px; width: 140px; max-width: 100%; color: inherit; background: transparent; }
+.draft span { flex-basis: 100%; }
+.failure { padding: 6px 12px; overflow-wrap: anywhere; }
+.transfer { display: flex; align-items: center; gap: 6px; padding: 6px 12px; }
+.transfer progress { min-width: 20px; flex: 1; }
+
+.uploadIcon { transform: rotate(180deg); }

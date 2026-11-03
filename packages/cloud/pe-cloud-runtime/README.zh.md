@@ -227,7 +227,10 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 
 -----
 
-<a id="model-experience"></a>
+## 工作区上传发布
+
+账户附件接收在原生上传所有者报告完成前，将每个新文件发布到确切 Agent 所属工作区。原私有附件对象继续服务于对话历史，旧附件记录保持不变。先释放原接收驻留预留，再由同一变更通道准入工作区副本，避免嵌套等待。私有存储完成后的失败报告为结果未确认，不宣称可安全回滚。文件树专用上传结算后不保留对话回执。`native.workspaceTransfers` 开启可选 HTTP 下载及目录操作；有限参数不替代内核配额、账户归属或原文件 worker 容量。
+
 ## Model Experience
 
 ### Runtime admission

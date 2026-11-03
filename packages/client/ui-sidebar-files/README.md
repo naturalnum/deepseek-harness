@@ -49,6 +49,10 @@ State lives in the type's own store, bucketed by tab id: `root`, `levels` (loadi
 
 Each open `DirectoryNode` owns its target watch for the Tab lifetime; collapse closes that node and its hidden descendants. Expansion changes during ancestor restoration update the store and pending nodes, so restored descendants follow the latest expansion preferences. Automatic refresh defaults to enabled; its separate toggle is hidden while state, labels, styles, and toggle logic remain. Changes received during a directory read or its completion remain pending for another refresh.
 
+## Optional workspace management
+
+A prepared account page can supply `workspaceFileManagement` before native activation. The native tree then renders upload, download and new-folder icon buttons after reload. Upload opens a multiple-file picker directly; its adjacent menu opens a directory picker and retains relative paths. The selected expanded directory is the target, otherwise the tree root. File checkboxes and preview buttons are independent. One selected file downloads the original, several download a ZIP. New folders appear as editable tree nodes with the default name selected; Enter commits and Escape cancels without writing. Failed creation retains editable input. The original `file-upload/complete` event refreshes open trees after conversation uploads, including backends without watches. Progress and failure messages stay outside the fixed toolbar row.
+
 <a id="model-experience"></a>
 ## Model Experience
 

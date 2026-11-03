@@ -90,6 +90,8 @@ export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'stora
 
 /** Internal fixed-root read capability, not the native FileSystem or a client-facing project scope. */
 export interface PoolReadPort {
+  /** Borrow the existing project content backend for a trusted Session-selected workspace. */
+  workspaceContent(workspace: Workspace, current: () => void, signal?: AbortSignal): Promise<TextProjectBackend>
   /** Exact account-private capability, issued only after real static storage verification. */
   skillVersions(): SkillVersionPort
   /** Original bound projection issuer; omission of explicit limits or the independent helper refuses. */
@@ -1121,6 +1123,8 @@ export class LinuxFilesPool implements DrainParticipant {
           assertCurrent: checkCurrent,
           project: (selected, assertSelection, signal) => projectBackend(selected, assertSelection, assertInstalled, signal) })
       },
+      workspaceContent: (workspace: Workspace, current: () => void, signal?: AbortSignal) =>
+        projectBackend(workspace, current, () => { current() }, signal),
       projectFor: async (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject> => {
         const backend = await projectBackend(workspace, assertRegistered, () => { assertRegistered() }, signal)
         const projectDirectory = Object.freeze({ binding, prepare: async (cwd: string): Promise<void> => {

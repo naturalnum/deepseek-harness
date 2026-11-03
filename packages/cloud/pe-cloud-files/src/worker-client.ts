@@ -1,4 +1,5 @@
 /** Worker transport retains operations until actual FD-closure replies or actual worker exit. */
+import { validStageName } from './worker-protocol.ts'
 import { parseBundleFrame } from './bundle-native.ts'
 import type { FdBundleRequest, FdBundleFacts } from './bundle-native.ts'
 import { skillSourceContext, parseSkillProjectFrame } from './skill-projection.ts'
@@ -273,9 +274,10 @@ function pathMetadata(value: unknown, named = false): FdPathMetadata | undefined
 }
 
 function stagingFacts(value: unknown, maximum: number, chunk: number): value is StagingFacts {
-  if (!object(value) || Object.keys(value).length !== 10
+  if (!object(value) || Object.keys(value).length !== (value.publishedName === undefined ? 10 : 11)
+    || value.publishedName !== undefined && (typeof value.publishedName !== 'string' || !validStageName(value.publishedName))
     || Object.keys(value).some(key => !['kind', 'code', 'publication', 'closed', 'clean', 'temporaryPresent',
-      'writtenBytes', 'readBytes', 'sequence', 'retainedCreatedDirectories'].includes(key))) return false
+      'writtenBytes', 'readBytes', 'sequence', 'retainedCreatedDirectories', 'publishedName'].includes(key))) return false
   return ['write', 'written', 'existing', 'existing-chunk', 'published', 'reused', 'aborted', 'failed',
     'unknown'].includes(String(value.kind))
     && typeof value.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(value.code)
@@ -1142,6 +1144,7 @@ export class FdWorkerClient {
     const result = value.result
     if (value.kind === 'stage-result' && Object.keys(value).length === 3 && object(result) && Object.keys(result).length === 2
       && (result.outcome === 'published' || result.outcome === 'reused') && stagingFacts(result.facts, pending.maxBytes, pending.chunkBytes)
+      && (pending.file.workspaceDirectory === undefined || typeof result.facts.publishedName === 'string')
       && result.facts.kind === result.outcome && result.facts.closed && result.facts.clean && !result.facts.temporaryPresent
       && result.facts.publication !== 'unknown'
       && (result.outcome === 'published' ? step.kind === 'finishing' && result.facts.publication === 'published'

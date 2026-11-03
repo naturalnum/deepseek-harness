@@ -83,7 +83,8 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
   const selected = new Map<Agent, Workspace>(), a = workspace(join(home, 'project-a')), b = workspace(join(home, 'project-b'))
   let insideStage = false, failure: Error | undefined
   const inputs: (readonly FileAttachmentRef[])[] = [], releases: ReturnType<typeof vi.fn>[] = []
-  const port: Pick<CloudAccountFiles, 'stageAttachments' | 'runAttachmentIntake'> = {
+  const port: Pick<CloudAccountFiles, 'stageAttachments' | 'runAttachmentIntake' | 'publishUpload'> = {
+    publishUpload: async (_workspace, ref, directory, check, signal) => { check(); signal?.throwIfAborted(); return `${directory}/${ref.name}` },
     stageAttachments: vi.fn<CloudAccountFiles['stageAttachments']>(async (_workspace, buildRefs, check, signal) => {
       check()
       signal?.throwIfAborted()

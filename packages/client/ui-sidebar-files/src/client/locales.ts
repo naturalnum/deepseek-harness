@@ -20,6 +20,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
+  upload: '上传',
+  download: '下载',
+  uploadOptions: '上传选项',
+  uploadFolder: '上传文件夹',
+  newFolder: '新建文件夹',
+  untitledFolder: '未命名文件夹',
+  selectFile: '选择 {name}',
+  cancel: '取消',
+  folderFailed: '创建未确认。刷新检查是否已创建；检查名称和权限后重试。',
+  transferFailed: '上传未完成。已完成文件保留，请刷新检查后重试未完成文件。',
+  cancelledUnknown: '已停止上传。刷新检查已完成文件后再重试。',
+  downloadFailed: '无法下载，请检查文件后重试。',
+
   'shortcut.noSession': '请先选择会话',
   'type.label': '文件',
   'guide.title': '工作区文件',
@@ -44,6 +57,19 @@ export type SidebarFilesKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
+  upload: 'Upload',
+  download: 'Download',
+  uploadOptions: 'Upload options',
+  uploadFolder: 'Upload folder',
+  newFolder: 'New folder',
+  untitledFolder: 'Untitled folder',
+  selectFile: 'Select {name}',
+  cancel: 'Cancel',
+  folderFailed: 'Creation is unconfirmed. Refresh to check, then correct the name or access and retry.',
+  transferFailed: 'Upload did not complete. Completed files remain; refresh before retrying unfinished files.',
+  cancelledUnknown: 'Upload stopped. Refresh to check completed files before retrying.',
+  downloadFailed: 'Unable to download. Check the file and try again.',
+
   'shortcut.noSession': 'Select a session first',
   'type.label': 'Files',
   'guide.title': 'Workspace files',

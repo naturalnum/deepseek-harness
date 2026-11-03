@@ -183,6 +183,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  workspaceFileManagement: 'client-side captured workspace HTTP callbacks — packages/client/ui-sidebar-files/README.md owns the API',
   sessionFeedbackIdentity: 'optional application-owned anonymous display identity callback, not a Service — packages/feedback/command-feedback/README.md owns its admission and no-fallback behavior',
   sessionLogDownloadIntegration: 'client-side captured authenticated download carrier, not a Service — packages/session-query/session-log-export/README.md owns its fetch and navigation API',
   modelsSettingsIntegration: 'client-side page-owned Models input value — packages/client/ui-settings-models/README.md owns the API',
@@ -292,6 +293,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  * exemption cannot mask another declaration in that scope.
  */
 export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
+  'file-upload/complete': 'client-side upload completion signal — packages/client/file-upload/README.md owns the API',
   'command/executed': 'client-face local command acknowledgment — packages/client/ui-commands/README.md owns the API',
   'connection/reset': 'client-face transport signal — packages/api/session-controller/README.md owns the API',
   'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the API',
@@ -423,6 +425,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   createNativeMessageFeedback: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
   NativeSessionGuards: 'cloud.md',
   NativeUploadPreparation: 'cloud.md',
+  SelectWorkspaceTransfer: 'cloud.md',
+  WorkspaceTransferLimits: 'cloud.md',
   NodeStreamTransport: '../../packages/api/gateway/README.md',
   NodeStreamTransportOptions: '../../packages/api/gateway/README.md',
   ParticipantReceipt: 'cloud.md',

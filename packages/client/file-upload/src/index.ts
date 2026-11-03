@@ -91,7 +91,7 @@ export class FileUploads extends TypertRemoteService {
 
   private readonly stagedFiles = new Map<Session, Map<FileUploadReceiptId, StagedFileUpload>>()
   private readonly disposedSessions = new WeakSet<Session>()
-  private readonly intakes = new Set<Promise<FileUploadValue>>()
+  private readonly intakes = new Set<Promise<unknown>>()
   private readonly maxPendingReceipts: number
   private readonly state: { occupied: number; closed: boolean; agentResolver: AgentResolver | undefined } = {
     occupied: 0,
@@ -171,6 +171,7 @@ export class FileUploads extends TypertRemoteService {
    */
   async uploadStream(request: {
     readonly sessionId: SessionId
+    readonly workspaceDirectory?: string
     readonly data: AsyncIterable<Uint8Array>
     readonly signal?: AbortSignal
     readonly name?: string
@@ -181,7 +182,31 @@ export class FileUploads extends TypertRemoteService {
         data: request.data,
         ...(request.signal === undefined ? {} : { signal: request.signal }),
         ...(request.name === undefined ? {} : { name: request.name }),
-      }), retainReceipt)
+      }, request.workspaceDirectory), retainReceipt)
+    })
+  }
+
+  /**
+   * Store a workspace-only upload without retaining a conversation receipt.
+   * @param request Session, bytes and explicit workspace destination; the prepared store owns authorization and publication.
+   * @returns Closed native reference. A post-storage failure is unconfirmed and retains intake responsibility.
+   */
+  uploadWorkspaceStream(request: {
+    readonly sessionId: SessionId
+    readonly workspaceDirectory: string
+    readonly data: AsyncIterable<Uint8Array>
+    readonly name?: string
+    readonly signal?: AbortSignal
+  }): Promise<FileAttachmentRef> {
+    return this.intake(async () => {
+      const agent = await this.resolveAgent(request.sessionId)
+      this.assertOrdinaryAgent(agent)
+      this.assertCurrentAgent(agent)
+      const ref = await this.storeFileStream(agent, { data: request.data,
+        ...request.signal === undefined ? {} : { signal: request.signal },
+        ...request.name === undefined ? {} : { name: request.name } }, request.workspaceDirectory)
+      try { this.assertCurrentAgent(agent); return ref }
+      catch (cause) { throw new FileUploadIntakeUnconfirmedError({ cause }) }
     })
   }
 
@@ -194,8 +219,9 @@ export class FileUploads extends TypertRemoteService {
    * @param input - original ordered bytes, cancellation signal, and optional name.
    * @returns the authoritative stored reference after the override's work settles.
    */
-  protected storeFileStream(agent: Agent, input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
+  protected storeFileStream(agent: Agent, input: SaveFileStreamAttachment, workspaceDirectory?: string): Promise<FileAttachmentRef> {
     void agent
+    if (workspaceDirectory !== undefined) throw new RemoteError('gateway/bad-request', 'Workspace upload is unavailable.', {})
     return this.ctx.attachments.saveFileStream(input)
   }
 
@@ -247,7 +273,7 @@ export class FileUploads extends TypertRemoteService {
     this.retire(agent.session, requestId)
   }
 
-  private intake(run: (retainReceipt: () => void) => Promise<FileUploadValue>): Promise<FileUploadValue> {
+  private intake<T>(run: (retainReceipt: () => void) => Promise<T>): Promise<T> {
     if (this.state.closed || this.state.occupied >= this.maxPendingReceipts) {
       return Promise.reject(new RemoteError('session/attachment-invalid' as never,
         'File upload intake is closed or at capacity.', { reason: 'FILE_UPLOAD_CAPACITY' } as never))

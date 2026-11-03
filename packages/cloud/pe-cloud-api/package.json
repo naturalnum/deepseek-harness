@@ -63,7 +63,8 @@
     "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-timeout": "workspace:*",
-    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:*"
+    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:*",
+    "yazl": "3.3.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -196,6 +197,7 @@
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
     "@deepseek-ai/dsh-tool-web": "workspace:*",
     "@deepseek-ai/dsh-tool-call-timeout-policy": "workspace:*",
-    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*"
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@types/yazl": "3.3.0"
   }
 }

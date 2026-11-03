@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/cloud.md
 /cloud-account-integration:
-  en: 79d00f2330b8296c
-  zh: 3f7019cbcea0ee51
+  en: cf1eb64b2e475290
+  zh: ced9d6284824b273
 /cloud-account-integration/account-identities:
   en: 9c4d5fb6efd2f2b1
   zh: 6a66e60fc560cf36

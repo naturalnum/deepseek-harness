@@ -765,6 +765,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
               !== (Reflect.get(auth, symbols.original) ?? auth)) throw new AccountMountPrerequisiteError()
             return auth.inspectRootFetch()
           } },
+          ...config.native.workspaceTransfers === undefined ? {} : { workspaceTransfers: config.native.workspaceTransfers },
           ...config.native.attachments === undefined ? {} : { attachments: config.native.attachments },
           ...config.native.firstScreen === undefined ? {} : { firstScreen: {
             ...config.native.firstScreen, home: layout.privateRoot,

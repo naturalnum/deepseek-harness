@@ -13,7 +13,7 @@ import { CloudApiError } from './errors.ts'
 export interface NativeUploadPreparation {
   readonly maxPendingReceipts: number
   storeFileStream(agent: Agent, input: SaveFileStreamAttachment,
-    save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>): Promise<FileAttachmentRef>
+    save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>, workspaceDirectory?: string): Promise<FileAttachmentRef>
 }
 
 /** Original native service and bounded actual installation checks. */
@@ -59,7 +59,9 @@ export function createNativeUploads(
   for (const key of keys) expected.set(key, original(ctx[key]))
   if (ctx.get('fileUploads') !== undefined) unavailable()
   class AccountFileUploads extends FileUploads {
-    protected override async storeFileStream(agent: Agent, input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
+    protected override async storeFileStream(
+      agent: Agent, input: SaveFileStreamAttachment, workspaceDirectory?: string,
+    ): Promise<FileAttachmentRef> {
       graph()
       admit()
       const first: { completion?: Promise<boolean>; repeated: boolean } = { repeated: false }
@@ -78,7 +80,7 @@ export function createNativeUploads(
         return pending
       }
       let result: FileAttachmentRef
-      try { result = await preparation.storeFileStream(agent, input, save) }
+      try { result = await preparation.storeFileStream(agent, input, save, workspaceDirectory) }
       catch (cause) {
         open = false
         if (first.completion !== undefined) {

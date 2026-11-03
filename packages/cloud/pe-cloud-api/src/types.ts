@@ -170,3 +170,13 @@ export interface ModelKeyMetadata {
   readonly configurableProviders: LlmConfigurableProvider[]
   readonly settings: SettingsDescribeValue
 }
+
+/** Explicit HTTP transfer limits; storage quotas and worker bounds still apply independently. */
+export interface WorkspaceTransferLimits {
+  readonly maxFileBytes: number
+  readonly maxFiles: number
+  readonly maxTotalBytes: number
+  readonly chunkBytes: number
+  readonly maxPathBytes: number
+  readonly timeoutMs: number
+}

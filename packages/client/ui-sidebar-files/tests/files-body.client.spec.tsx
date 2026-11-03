@@ -149,7 +149,10 @@ describe('FilesBody', () => {
     const { view, script, tabActions } = mountBody()
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] > button`)!)
+    expect(view.queryByRole('checkbox')).toBeNull()
+    expect(view.queryByRole('button', { name: zh.download })).toBeNull()
+    expect(view.queryByRole('button', { name: zh.upload })).toBeNull()
+    fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] button`)!)
     // Every row sits under the tree's root, so the address is the path relative to it.
     expect(tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, `${ROOT}/README.md`))
     expect(tabActions.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s-test/README.md')
@@ -326,4 +329,126 @@ describe('failureLine', () => {
     const failure = { code: 'remote/transport', message: 'socket closed' } as unknown as RemoteFailure
     expect(failureLine(t, failure)).toBe('读取失败：socket closed')
   })
+})
+
+
+it('separates file checkbox selection from preview and downloads the selected original', async () => {
+  const download = vi.fn(async () => {})
+  const f = mountBody(ROOT, undefined, { download, upload: async () => {}, createDirectory: async () => 'folder' })
+  await act(() => f.script.watches.ready(ROOT))
+  await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+  const button = f.view.getByRole('button', { name: zh.download }) as HTMLButtonElement
+  expect(button.disabled).toBe(true)
+  fireEvent.click(f.view.getByRole('checkbox', { name: '选择 README.md' }))
+  expect(f.tabActions.openResource).not.toHaveBeenCalled()
+  expect(button.disabled).toBe(false)
+  expect([zh.upload, zh.download, zh.newFolder].map(name => ({ name,
+    disabled: (f.view.getByRole('button', { name }) as HTMLButtonElement).disabled }))).toMatchInlineSnapshot(`
+    [
+      {
+        "disabled": false,
+        "name": "上传",
+      },
+      {
+        "disabled": false,
+        "name": "下载",
+      },
+      {
+        "disabled": false,
+        "name": "新建文件夹",
+      },
+    ]
+  `)
+  await act(async () => { fireEvent.click(button) })
+  expect(download).toHaveBeenCalledWith(SESSION, [`${ROOT}/README.md`], expect.any(AbortSignal))
+})
+
+it('edits a folder node with its default name selected and Escape cancels without writing', async () => {
+  const createDirectory = vi.fn(async () => 'folder')
+  const f = mountBody(ROOT, undefined, { createDirectory, download: async () => {}, upload: async () => {} })
+  await act(() => f.script.watches.ready(ROOT))
+  await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+  fireEvent.click(f.view.getByRole('button', { name: zh.newFolder }))
+  const input = f.view.getByRole('textbox', { name: zh.newFolder }) as HTMLInputElement
+  expect(input.value).toBe(zh.untitledFolder)
+  expect([input.selectionStart, input.selectionEnd]).toEqual([0, zh.untitledFolder.length])
+  fireEvent.keyDown(input, { key: 'Escape' })
+  expect(f.view.queryByRole('textbox')).toBeNull()
+  expect(createDirectory).not.toHaveBeenCalled()
+})
+
+it('picks multiple files directly and cancelling the picker does not upload', async () => {
+  const upload = vi.fn(async () => {})
+  const f = mountBody(ROOT, undefined, { upload, download: async () => {}, createDirectory: async () => 'folder' })
+  await act(() => f.script.watches.ready(ROOT))
+  await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+  const inputs = f.view.container.querySelectorAll<HTMLInputElement>('input[type=file]')
+  expect(inputs[0]?.multiple).toBe(true)
+  expect(inputs[1]?.hasAttribute('webkitdirectory')).toBe(true)
+  fireEvent.change(inputs[0]!, { target: { files: [] } })
+  expect(upload).not.toHaveBeenCalled()
+  const files = [new File(['one'], 'one.txt'), new File(['two'], 'two.txt')]
+  await act(async () => { fireEvent.change(inputs[0]!, { target: { files } }) })
+  expect(upload).toHaveBeenCalledWith(SESSION, ROOT, files.map(file => ({ file, path: file.name })),
+    expect.any(AbortSignal), expect.any(Function))
+})
+
+
+it('opens the folder picker synchronously from a native menu item and preserves folder paths', async () => {
+  const upload = vi.fn(async () => {})
+  const f = mountBody(ROOT, undefined, { upload, download: async () => {}, createDirectory: async () => 'folder' })
+  await act(() => f.script.watches.ready(ROOT))
+  await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+  const inputs = f.view.container.querySelectorAll<HTMLInputElement>('input[type=file]')
+  const filesPicker = vi.spyOn(inputs[0]!, 'click').mockImplementation(() => {})
+  const folderPicker = vi.spyOn(inputs[1]!, 'click').mockImplementation(() => {})
+  try {
+    fireEvent.click(f.view.getByRole('button', { name: zh.upload }))
+    expect(filesPicker).toHaveBeenCalledOnce()
+    expect(f.view.queryByRole('menu')).toBeNull()
+    const trigger = f.view.getByRole('button', { name: zh.uploadOptions })
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const item = f.view.getByRole('menuitem', { name: zh.uploadFolder })
+    expect(document.activeElement).toBe(item)
+    fireEvent.click(item)
+    expect(folderPicker).toHaveBeenCalledOnce()
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(f.view.queryByRole('menu')).toBeNull()
+    expect(upload).not.toHaveBeenCalled()
+    const file = new File(['nested'], 'report.txt')
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'folder/nested/report.txt' })
+    await act(async () => { fireEvent.change(inputs[1]!, { target: { files: [file] } }) })
+    expect(upload).toHaveBeenCalledWith(SESSION, ROOT, [{ file, path: 'folder/nested/report.txt' }],
+      expect.any(AbortSignal), expect.any(Function))
+  } finally { filesPicker.mockRestore(); folderPicker.mockRestore() }
+})
+
+it('uses native menu keyboard and outside dismissal without opening the folder picker on cancellation', async () => {
+  const upload = vi.fn(async () => {})
+  const f = mountBody(ROOT, undefined, { upload, download: async () => {}, createDirectory: async () => 'folder' })
+  await act(() => f.script.watches.ready(ROOT))
+  await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+  const folderInput = f.view.container.querySelectorAll<HTMLInputElement>('input[type=file]')[1]!
+  const picker = vi.spyOn(folderInput, 'click').mockImplementation(() => {})
+  try {
+    const trigger = f.view.getByRole('button', { name: zh.uploadOptions })
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(f.view.getByRole('menuitem', { name: zh.uploadFolder }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(f.view.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(picker).not.toHaveBeenCalled()
+    fireEvent.click(trigger)
+    fireEvent.pointerDown(document.body)
+    expect(f.view.queryByRole('menu')).toBeNull()
+    expect(picker).not.toHaveBeenCalled()
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(picker).toHaveBeenCalledOnce()
+    expect(f.view.queryByRole('menu')).toBeNull()
+    expect(upload).not.toHaveBeenCalled()
+  } finally { picker.mockRestore() }
 })

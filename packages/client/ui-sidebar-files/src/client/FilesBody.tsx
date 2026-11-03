@@ -8,7 +8,7 @@
  * anything else is shown but refuses to open. The header uses the shared
  * PathLabel for the root, followed by reload and workspace directory actions.
  */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
@@ -17,7 +17,8 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   FileTypeIcon, IconFolderCloseRegular, IconFolderOpenRegular, IconRefreshOutlineRegular, Tooltip, classifyFileType,
-  IconPauseOutlineRegular, IconPlayOutlineRegular, PathLabel,
+  IconDownloadOutlineRegular, IconChevronDownOutlineRegular, IconProjectAddOutlineRegular,
+  IconPauseOutlineRegular, IconPlayOutlineRegular, Menu, MenuItemButton, PathLabel,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceDirectoryEntry } from '@deepseek-ai/dsh-api-workspace-files/types'
@@ -71,6 +72,14 @@ export function failureLine(t: TranslateNS<'sidebarFiles'>, failure: RemoteFailu
 
 /** What every level shares: the tab's tree and the two gestures. */
 interface TreeContext {
+  readonly canManage: boolean
+  readonly selected: readonly string[]
+  readonly selectFile: (path: string) => void
+  readonly selectedDirectory: string | undefined
+  readonly draft: { parent: string; name: string; error?: string; pending?: boolean } | undefined
+  readonly editDraft: (name: string) => void
+  readonly confirmDraft: () => void
+  readonly cancelDraft: () => void
   readonly state: FilesTabState
   readonly onToggle: (parent: string, path: string) => void
   readonly onOpen: (path: string) => void
@@ -84,7 +93,7 @@ function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirect
     const expanded = tree.state.expanded.includes(path)
     return (
       <li className={css.item} data-files-entry="directory" data-files-path={path}>
-        <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(parent, path) }}>
+        <button type="button" className={css.row} aria-current={tree.selectedDirectory === path ? true : undefined} aria-expanded={expanded} onClick={() => { tree.onToggle(parent, path) }}>
           {expanded ? <IconFolderOpenRegular className={css.icon} /> : <IconFolderCloseRegular className={css.icon} />}
           <span className={css.name}>{entry.name}</span>
         </button>
@@ -95,10 +104,14 @@ function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirect
   if (entry.type === 'file') {
     return (
       <li className={css.item} data-files-entry="file" data-files-path={path}>
-        <button type="button" className={css.row} onClick={() => { tree.onOpen(path) }}>
-          <FileTypeIcon kind={classifyFileType(entry.name)} size={16} className={css.fileIcon} />
-          <span className={css.name}>{entry.name}</span>
-        </button>
+        <div className={css.fileRow}>
+          {tree.canManage && <input type="checkbox" aria-label={tree.t('selectFile', { name: entry.name })}
+            checked={tree.selected.includes(path)} onChange={() => { tree.selectFile(path) }} />}
+          <button type="button" className={css.row} onClick={() => { tree.onOpen(path) }}>
+            <FileTypeIcon kind={classifyFileType(entry.name)} size={16} className={css.fileIcon} />
+            <span className={css.name}>{entry.name}</span>
+          </button>
+        </div>
       </li>
     )
   }
@@ -129,6 +142,15 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
   return (
     <>
       {level.failure !== undefined && <li className={css.note} data-files-row="failed">{failureLine(t, level.failure)}</li>}
+      {tree.draft?.parent === path && <li className={css.draft}>
+        <IconFolderCloseRegular />
+        <input autoFocus aria-label={t('newFolder')} value={tree.draft.name} disabled={tree.draft.pending === true}
+          ref={(input) => { if (input !== null && !input.dataset.selected) { input.select(); input.dataset.selected = 'true' } }}
+          onChange={(event) => { tree.editDraft(event.target.value) }}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); tree.confirmDraft() }
+            if (event.key === 'Escape') tree.cancelDraft() }} />
+        {tree.draft.error && <span role="alert">{tree.draft.error}</span>}
+      </li>}
       {entries.length === 0 && <li className={css.note} data-files-row="empty">{t('empty')}</li>}
       {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
@@ -139,9 +161,17 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
 /** The file tree's body: the workspace root and whatever the reader has opened under it. */
 export function FilesBody({
   useTabInfo, sessionId, useSessions, useStore, actions,
-  start, refresh, setAutoRefresh, toggle, t, renderSlot,
+  start, refresh, setAutoRefresh, toggle, t, renderSlot, management,
 }: FilesBodyProps): ReactNode {
   const { tab } = useTabInfo()
+  const [selected, setSelected] = useState<readonly string[]>([])
+  const [selectedDirectory, setDirectory] = useState<string>()
+  const [draft, setDraft] = useState<TreeContext['draft']>()
+  const [uploadMenu, setUploadMenu] = useState(false)
+  const [transfer, setTransfer] = useState<{ control: AbortController; completed: number; total: number }>()
+  const [failure, setFailure] = useState<string>()
+  const filesInput = useRef<HTMLInputElement>(null)
+  const folderInput = useRef<HTMLInputElement>(null)
   useEffect(() => tab.actions.bindCommands({ refresh: () => { refresh(tab.id) } }), [tab.actions, tab.id, refresh])
   const { signal, actions: tabActions } = tab
   const cwd = useSessions(sessions => sessions.byId[sessionId]?.cwd)
@@ -181,11 +211,37 @@ export function FilesBody({
   }
   if (state === undefined) return null
   const tree: TreeContext = {
-    state,
-    onToggle: (parent, path) => { toggle(tab.id, parent, path, state.expanded, signal) },
+    state, selected, selectedDirectory, draft, canManage: management !== undefined,
+    selectFile: (path) => { setSelected(old => old.includes(path) ? old.filter(value => value !== path) : [...old, path]) },
+    editDraft: (name) => { setDraft(old => old === undefined ? undefined : { ...old, name }) },
+    cancelDraft: () => { setDraft(undefined) },
+    confirmDraft: () => {
+      if (draft === undefined || draft.pending === true || management === undefined) return
+      const submitted = { ...draft, pending: true }
+      setDraft(submitted)
+      void management.createDirectory(sessionId, draft.parent, draft.name, signal).then(() => {
+        setDraft(undefined); refresh(tab.id)
+      }, () => { setDraft(old => old === submitted ? { ...draft, pending: false, error: t('folderFailed') } : old) })
+    },
+    onToggle: (parent, path) => {
+      setDirectory(state.expanded.includes(path) ? undefined : path)
+      toggle(tab.id, parent, path, state.expanded, signal)
+    },
     // Every row is under the tree's root, so its address is session-relative.
     onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
     t,
+  }
+  const upload = (list: FileList | null, folder: boolean): void => {
+    if (list === null || list.length === 0 || management === undefined || transfer !== undefined) return
+    const control = new AbortController()
+    const lifetime = AbortSignal.any([signal, control.signal])
+    const files = Array.from(list, file => ({ file, path: folder ? file.webkitRelativePath : file.name }))
+    setFailure(undefined)
+    setTransfer({ control, completed: 0, total: files.reduce((sum, item) => sum + item.file.size, 0) })
+    void management.upload(sessionId, selectedDirectory ?? state.root, files, lifetime, (completed, total) => {
+      setTransfer({ control, completed, total })
+    }).catch(() => { if (!signal.aborted) setFailure(t(control.signal.aborted ? 'cancelledUnknown' : 'transferFailed')) })
+      .finally(() => { setTransfer(undefined); refresh(tab.id) })
   }
   const reload = (): void => {
     refresh(tab.id)
@@ -214,10 +270,45 @@ export function FilesBody({
             <IconRefreshOutlineRegular />
           </button>
         </Tooltip>
-        {renderSlot('sidebar.right.tab.files.actions', {
+        {management !== undefined && <>
+          <input ref={filesInput} type="file" multiple hidden onChange={(event) => {
+            upload(event.target.files, false); event.target.value = ''
+          }} />
+          <input ref={folderInput} type="file" multiple hidden {...{ webkitdirectory: '' }} onChange={(event) => {
+            upload(event.target.files, true); event.target.value = ''
+          }} />
+          <Tooltip label={t('upload')} side="bottom"><button type="button" className={css.tool}
+            aria-label={t('upload')} disabled={transfer !== undefined} onClick={() => { filesInput.current?.click() }}><IconDownloadOutlineRegular className={css.uploadIcon} /></button></Tooltip>
+          <Menu open={uploadMenu} onClose={() => { setUploadMenu(false) }} align="end" portal compact autoFocus
+            className={css.uploadMenu} anchor={(
+              <button type="button" className={css.dropdown} aria-label={t('uploadOptions')}
+                aria-haspopup="menu" aria-expanded={uploadMenu} onClick={() => { setUploadMenu(old => !old) }}
+                onKeyDown={(event) => {
+                  if (!uploadMenu && event.key === 'ArrowDown') { event.preventDefault(); setUploadMenu(true) }
+                }}><IconChevronDownOutlineRegular /></button>
+            )}>
+            <MenuItemButton onSelect={() => { setUploadMenu(false); folderInput.current?.click() }}>
+              {t('uploadFolder')}
+            </MenuItemButton>
+          </Menu>
+          <Tooltip label={t('download')} side="bottom"><button type="button" className={css.tool}
+            aria-label={t('download')} disabled={selected.length === 0} onClick={() => {
+              setFailure(undefined)
+              void management.download(sessionId, selected, signal).catch(() => { setFailure(t('downloadFailed')) })
+            }}><IconDownloadOutlineRegular /></button></Tooltip>
+          <Tooltip label={t('newFolder')} side="bottom"><button type="button" className={css.tool}
+            aria-label={t('newFolder')} disabled={draft?.pending === true} onClick={() => { setDraft({ parent: selectedDirectory ?? state.root, name: t('untitledFolder') }) }}><IconProjectAddOutlineRegular /></button></Tooltip>
+        </>}
+        {renderSlot('sidebar.right.tab.files.actions' , {
           absolutePath: state.root,
         })}
       </div>
+      {transfer !== undefined && <div className={css.transfer} role="status">
+        <progress value={transfer.completed} max={Math.max(1, transfer.total)} aria-label={t('upload')} />
+        <span>{Math.floor(transfer.completed / Math.max(1, transfer.total) * 100)}%</span>
+        <button type="button" onClick={() => { transfer.control.abort() }}>{t('cancel')}</button>
+      </div>}
+      {failure !== undefined && <div className={css.failure} role="alert">{failure}</div>}
       <div
         ref={bodyRef}
         className={css.body}

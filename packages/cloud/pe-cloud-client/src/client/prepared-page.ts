@@ -1,4 +1,5 @@
 /** Canonical bootstrap preparation and the page owner consumed by the real Cloud Loader entry. */
+import { prepareWorkspaceManagement } from './workspace-management.ts'
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
@@ -528,6 +529,9 @@ export class PreparedCloudPage {
     }
     this.uploadHooks = existing ?? Object.freeze({ fetch })
     if (existing === undefined) ctx.provide('fileUploadHooks', this.uploadHooks)
+    if (this.config.maxDownloadBytes !== undefined && this.bootstrap.capabilities.filePreview.state === 'available') prepareWorkspaceManagement(ctx, fetch,
+      path => this.lifetime.transport.navigationUrl(path), this.lifetime.transport.signal,
+      this.config.maxDownloadBytes, this.config.maxErrorResponseBytes)
     this.root = ctx.root
     ctx.provide('peCloudPage', this)
     ctx.provide('modelsSettingsIntegration', this.modelsSettingsIntegration)

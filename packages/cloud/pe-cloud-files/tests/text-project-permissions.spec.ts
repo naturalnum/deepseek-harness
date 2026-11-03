@@ -105,14 +105,23 @@ it('enforces read-only inside the native write method before dispatching any wor
   const f = await fixture(), target = await f.graph.fs.resolve('hello.py')
   setSandboxMode(f.first, 'read-only')
   await expect(f.graph.fs.writeText(target, 'blocked')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
-  await expect(f.graph.fs.writeText(target, 'direct override is not an escalation grant', undefined, undefined, {
-    mode: 'workspace-write', workspaceRoot: f.project, sessionId: f.first.id,
-  })).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
   expect(f.writes).not.toHaveBeenCalled()
   setSandboxMode(f.first, 'workspace-write')
   await expect(f.graph.fs.writeText(target, 'permitted')).resolves.toMatchObject({ after: 'permitted' })
   expect(f.writes).toHaveBeenCalledTimes(1)
   expect(f.graph.fs.sandboxMode).toBe('workspace-write')
+})
+
+it.each(['workspace-write', 'danger-full-access'] as const)('accepts a trusted Native %s override only for its current write', async (mode) => {
+  const f = await fixture(), target = await f.graph.fs.resolve('approved.py')
+  setSandboxMode(f.first, 'read-only')
+  await expect(f.graph.fs.writeText(target, 'approved write', undefined, undefined, {
+    mode, workspaceRoot: f.project, sessionId: f.first.id,
+  })).resolves.toMatchObject({ after: 'approved write' })
+  expect(f.writes).toHaveBeenCalledTimes(1)
+  expect(f.graph.sandboxPolicy.resolve({ session: f.first }).mode).toBe('read-only')
+  await expect(f.graph.fs.writeText(target, 'ordinary write')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  expect(f.writes).toHaveBeenCalledTimes(1)
 })
 
 it('uses the current calling Session even when another Session in the workspace resolved the target', async () => {

@@ -14,7 +14,9 @@ import { ClientFailure } from './errors.ts'
 export interface FileDownloadPage {
   readonly maxDownloadBytes: number | undefined
   readonly bootstrap: { readonly capabilities: Pick<CloudBootstrap['capabilities'], 'filePreview'> }
-  readonly lifetime: { readonly transport: { readonly signal: AbortSignal } }
+  readonly lifetime: { readonly transport: { readonly signal: AbortSignal
+    readonly hooks: { readonly fetch?: import('@deepseek-ai/dsh-client-file-upload/types').FileUploadFetch }
+    navigationUrl(path: string): string } }
 }
 
 const holes = ['sidebar.right.tab.document.actions', 'sidebar.right.tab.document.unpreviewable'] as const
@@ -30,10 +32,10 @@ export function installCloudFileDownloads(ctx: Context, page: FileDownloadPage):
   const signal = page.lifetime.transport.signal
   const revoked = (): boolean => signal.aborted
   if (revoked()) return
-  const dependency = ctx.inject(['slots', 'locale', 'remote', 'remote.workspaceFiles'], (owner) => {
+  const dependency = ctx.inject(['slots', 'locale'], (owner) => {
     if (revoked()) return
-    const namespace = owner.remote.workspaceFiles
-    const nativeReadBytes = namespace.readBytes.bind(namespace)
+    const fetch = page.lifetime.transport.hooks.fetch
+    if (fetch === undefined) return
     owner.effect(() => {
       const disposers: (() => void)[] = []
       try {
@@ -56,12 +58,8 @@ export function installCloudFileDownloads(ctx: Context, page: FileDownloadPage):
         }
         const injected: FileDownloadActionInjected = {
           signal, maxFileBytes: maximum,
-          readBytes: async (...args) => {
-            current()
-            const result = await nativeReadBytes(...args)
-            current()
-            return result
-          },
+          fetch: (path, init) => { current(); return fetch(path, init) },
+          navigationUrl: (path) => { current(); return page.lifetime.transport.navigationUrl(path) },
         }
         const remove = owner.slots.register({ name: hole, id: 'cloud-download', locale: DOWNLOAD_NAMESPACE,
           inject: () => injected }, FileDownloadAction)

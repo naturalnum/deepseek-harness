@@ -9,6 +9,14 @@ export type { FileUploadProgress, FileUploadService } from './contract.ts'
 export type { FileUploadReceiptId, FileUploadValue } from '../types.ts'
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A completed upload lets native workspace readers refresh without filesystem watches.
+     * @param sessionId Session whose upload was committed.
+     * @mode emit
+     */
+    'file-upload/complete'(sessionId: import('@deepseek-ai/dsh-session/types').SessionId): void
+  }
   interface Context {
     /** Session-addressed browser service for staged file uploads. */
     fileUpload: FileUploadService

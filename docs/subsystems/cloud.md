@@ -6,6 +6,8 @@ The [cloud package map](../../packages/cloud/README.md) locates the optional dep
 
 `ApprovedConfigurationField` selects finite native namespace/field pairs and optional scalar choices. Approved leaves must exist in the original active Settings schema; native revisions and none/live update plans still govern saves. `locale.preference` retains its exact `zh`/`en` policy. The original login Use and account-save owner perform writes; bootstrap metadata grants no write capability. See the [cloud API](../../packages/cloud/pe-cloud-api/README.md).
 
+`WorkspaceTransferLimits` supplies the explicit HTTP file, selection, total, buffer, path and duration bounds. `SelectWorkspaceTransfer` resolves the original account Session to its exact registered project and files owner; its current check remains attached to each read and publication. The [HTTP adapter](../../packages/cloud/pe-cloud-api/src/workspace-transfers.ts) owns attachment responses, while the original files mutation lane owns workspace upload publication and directory creation. Native Fs process paths and execution mounts retain their existing mapping; an HTTP path never selects a Host filesystem root.
+
 <a id="account-identities"></a>
 ## Account identities
 
@@ -762,6 +764,14 @@ prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProj
 createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]): WorkspaceFiles
 
 /**
+ * Register selected streaming HTTP operations beside the original WorkspaceFiles service.
+ * @param owner Original native Loader scope.
+ * @param limits Explicit byte, count, path, buffer and duration limits.
+ * @param select Shared native Session/project authority.
+ */
+installWorkspaceTransfers(owner: Context, limits: WorkspaceTransferLimits, select: SelectWorkspaceTransfer): void
+
+/**
  * Register the actual bounded native event subset on the original Gateway.
  * @param owner Original registration Loader fiber after readonly native providers activate.
  * @param input Exact graph profile home and all required event bounds.
@@ -1111,6 +1121,37 @@ attachmentStore(): typeof LocalAttachmentStore
  * @returns Closed publications whose retained reservation must be released after handoff.
  */
 async stageAttachments( workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal, ): Promise<ResidentResult<readonly StageFileResult[]>>
+
+/**
+ * Borrow the original bounded content backend after native Session/project admission.
+ * @param workspace Exact account Registry object.
+ * @param authorized Session selection recheck, retained for every bounded read.
+ * @param signal Actual HTTP lifetime.
+ * @returns The original project backend; reads retain their storage reservation until released.
+ */
+workspaceContent(workspace: Workspace, authorized: () => void, signal?: AbortSignal): Promise<import('./text-project.ts').TextProjectBackend>
+
+/**
+ * Publish a verified native attachment into the selected registered workspace directory.
+ * @param workspace Exact account Registry object after Session admission.
+ * @param ref Closed native attachment; the original store supplies and verifies the source stream.
+ * @param directory Workspace-relative directory; no Host/Guest path conversion is performed here.
+ * @param authorized Current native Agent/Session admission.
+ * @param signal Cancellation joins source closure and temporary cleanup.
+ * @returns Actual published relative filename, atomically deduplicated on disk.
+ */
+async publishUpload(workspace: Workspace, ref: FileAttachmentRef, directory: string, authorized: () => void, signal?: AbortSignal): Promise<string>
+
+/**
+ * Create a uniquely named directory through the original bounded storage worker.
+ * @param workspace Exact registered account project.
+ * @param directory Workspace-relative existing parent.
+ * @param name Proposed portable leaf; the native worker atomically resolves collisions.
+ * @param authorized Original Session admission, repeated during execution.
+ * @param signal Cancellation; a completed publication remains committed.
+ * @returns Actual relative directory name after durable publication.
+ */
+async createWorkspaceDirectory(workspace: Workspace, directory: string, name: string, authorized: () => void, signal?: AbortSignal): Promise<string>
 
 /**
  * Admit native upload persistence on the same files mutation owner before any stream is pulled.

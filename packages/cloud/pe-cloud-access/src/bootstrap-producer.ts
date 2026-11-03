@@ -144,7 +144,7 @@ export async function produceCloudBootstrap(
     if (!approvedSettingsMatch(catalog.fields, settings)
       || settingsWrites && (settingsWriter === undefined
         || settingsWriter.handlerId !== 'native:settingsController' || settingsWriter.guard !== 'authenticated-account')
-      || manifest.exactFetchRoutes.length > 4) unavailable()
+      || manifest.exactFetchRoutes.length > 7) unavailable()
     const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
       const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
@@ -152,8 +152,11 @@ export async function produceCloudBootstrap(
         && row.handlerId === SERVICE_PREVIEW_ROUTE.handlerId
       const sessionExport = (row.method === 'GET' || row.method === 'HEAD') && row.path === SESSION_LOG_EXPORT_PATH
         && row.handlerId === 'native:sessionLogDownload'
+      const workspaceTransfer = row.handlerId === 'native:workspaceFiles' && (
+        ((row.method === 'GET' || row.method === 'HEAD') && row.path === '/api/workspace-files/download')
+        || row.method === 'POST' && row.path === '/api/workspace-files/directory')
       const key = `${row.method} ${row.path}`
-      if ((!upload && !preview && !sessionExport) || row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
+      if ((!upload && !preview && !sessionExport && !workspaceTransfer) || row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
       selectedFetch.add(key)
       // Original API checks its audited manifest and freshly inspects actual native + Root inventory.
       const actual = api.requireFetch(row.method, row.path)

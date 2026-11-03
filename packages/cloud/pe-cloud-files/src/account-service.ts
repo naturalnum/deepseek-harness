@@ -14,6 +14,9 @@ import type { S2ProjectDirectory, S2ProjectPort } from './s2-project.ts'
 import { FilesFailure } from './error.ts'
 import type { InstructionReadReaders } from './instruction-read-work.ts'
 import type { ResidentResult } from './work-queue.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { posix } from 'node:path'
+import type { AttachmentId } from '@deepseek-ai/dsh-attachment/types'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
 import { createAccountAttachmentStore, type AccountAttachmentBackend } from './account-attachment-store.ts'
@@ -42,7 +45,7 @@ export interface AccountFilesPreparation {
     mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean,
   ) => Promise<S2ProjectPort['FileSystem']>
   /** Original lane mutation capabilities; omission keeps attachment intake and staging closed. */
-  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'runNativeMutation'>
+  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'runNativeMutation' | 'workspaceContent'>
   /** Trusted synchronous lookup of an active request's verified copies; never a private-root prefix grant. */
   readonly attachmentProjection?: Pick<AccountAttachmentBackend, 'mapFileHostPath'> & {
     mapProcessPath(caller: Context, hostPath: string): string | undefined
@@ -413,6 +416,75 @@ export class CloudAccountFiles extends Service {
     } })), current, signal)
     try { current(); signal?.throwIfAborted(); return held }
     catch (error) { held.release(); throw error }
+  }
+
+  /**
+   * Borrow the original bounded content backend after native Session/project admission.
+   * @param workspace Exact account Registry object.
+   * @param authorized Session selection recheck, retained for every bounded read.
+   * @param signal Actual HTTP lifetime.
+   * @returns The original project backend; reads retain their storage reservation until released.
+   */
+  workspaceContent(workspace: Workspace, authorized: () => void, signal?: AbortSignal): Promise<import('./text-project.ts').TextProjectBackend> {
+    const port = this.providers.attachments
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace content is unavailable.')
+    return port.workspaceContent(workspace, () => { this.assertWorkspace(workspace); authorized() }, signal)
+  }
+
+  /**
+   * Publish a verified native attachment into the selected registered workspace directory.
+   * @param workspace Exact account Registry object after Session admission.
+   * @param ref Closed native attachment; the original store supplies and verifies the source stream.
+   * @param directory Workspace-relative directory; no Host/Guest path conversion is performed here.
+   * @param authorized Current native Agent/Session admission.
+   * @param signal Cancellation joins source closure and temporary cleanup.
+   * @returns Actual published relative filename, atomically deduplicated on disk.
+   */
+  async publishUpload(workspace: Workspace, ref: FileAttachmentRef, directory: string,
+    authorized: () => void, signal?: AbortSignal): Promise<string> {
+    const port = this.providers.attachments, Store = this.attachmentProvider.Store
+    const store = this.ctx.get('attachments')
+    if (port === undefined || Store === undefined || !(store instanceof Store)) {
+      throw new FilesFailure('files/prerequisite-missing', 'Workspace upload is unavailable.')
+    }
+    const current = (): void => { this.assertWorkspace(workspace); authorized() }
+    current()
+    const held = await port.stageFiles(workspace, [{ ref, workspaceDirectory: directory,
+      open: control => store.readFileStream(ref, control) }], current, signal)
+    try {
+      current()
+      const [result] = held.value
+      if (result === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace publication returned no result.')
+      return result.relativePath
+    } finally { held.release() }
+  }
+
+  /**
+   * Create a uniquely named directory through the original bounded storage worker.
+   * @param workspace Exact registered account project.
+   * @param directory Workspace-relative existing parent.
+   * @param name Proposed portable leaf; the native worker atomically resolves collisions.
+   * @param authorized Original Session admission, repeated during execution.
+   * @param signal Cancellation; a completed publication remains committed.
+   * @returns Actual relative directory name after durable publication.
+   */
+  async createWorkspaceDirectory(workspace: Workspace, directory: string, name: string,
+    authorized: () => void, signal?: AbortSignal): Promise<string> {
+    const port = this.providers.attachments
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace mutation is unavailable.')
+    const current = (): void => { this.assertWorkspace(workspace); authorized() }
+    current()
+    // The empty digest describes this storage transaction only; no attachment receipt or Session event is created.
+    const ref: FileAttachmentRef = { attachmentId: brandString<AttachmentId>(
+      'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), name, bytes: 0 }
+    const held = await port.stageFiles(workspace, [{ ref, workspaceDirectory: directory, directoryOnly: true,
+      open: async function* () {} }], current, signal)
+    try {
+      current()
+      const [result] = held.value
+      if (result === undefined) throw new FilesFailure('files/prerequisite-missing', 'Directory publication returned no result.')
+      return posix.normalize(result.relativePath)
+    } finally { held.release() }
   }
 
   /**

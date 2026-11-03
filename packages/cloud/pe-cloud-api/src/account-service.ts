@@ -1,5 +1,7 @@
-import { approvedSettingsMatch } from './approved-settings.ts'
 /** Graph-owned API preparation and native providers consumed by trusted runtime assembly. */
+import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
+import type { WorkspaceTransferLimits } from './types.ts'
+import { approvedSettingsMatch } from './approved-settings.ts'
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
@@ -117,6 +119,7 @@ export class CloudAccountApi extends Service {
   readonly readTerminalLimits: AccountApiPreparation['readTerminalLimits']
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
+  private fileTransfers: readonly import('./types.ts').ExactFetchExposure[] = []
   private readonly office: { native?: NativeOffice } = {}
   private readonly uploads: { native?: NativeUploads } = {}
   private readonly commands: { native?: NativeCommands } = {}
@@ -612,6 +615,18 @@ export class CloudAccountApi extends Service {
     return native.value
   }
 
+  /**
+   * Register selected streaming HTTP operations beside the original WorkspaceFiles service.
+   * @param owner Original native Loader scope.
+   * @param limits Explicit byte, count, path, buffer and duration limits.
+   * @param select Shared native Session/project authority.
+   */
+  installWorkspaceTransfers(owner: Context, limits: WorkspaceTransferLimits, select: SelectWorkspaceTransfer): void {
+    this.assertInstalled(owner)
+    this.fileTransfers = registerWorkspaceTransfers(owner, limits, select,
+      (method, path) => { this.assertInstalled(owner); this.requireFetch(method, path) }, this.binding.lifetime)
+  }
+
   private installOffice(owner: Context, nativeConfig: Parameters<AccountOfficeLifecycle['install']>[1]): void {
     this.assertInstalled(owner)
     if (this.office.native !== undefined) this.duplicateNative()
@@ -1012,7 +1027,7 @@ export class CloudAccountApi extends Service {
     if (maximum === undefined || !Number.isSafeInteger(maximum) || maximum < 1) this.nativeUnavailable()
     const root = this.rootFetch?.() ?? []
     if (root.length > maximum) this.nativeUnavailable()
-    const native = [...this.uploads.native?.inspect().exactFetchRoutes ?? [],
+    const native = [...this.fileTransfers, ...this.uploads.native?.inspect().exactFetchRoutes ?? [],
       ...this.sessionExport.native?.inspect().exactFetchRoutes ?? []]
     if (native.length > maximum - root.length) this.nativeUnavailable()
     return { native, root }

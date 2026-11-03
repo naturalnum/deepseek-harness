@@ -103,7 +103,7 @@ Subagent 卡片使用该命名空间及当前账户已声明的字段。读取�
 
 -----
 
-Cloud entry 仅在显式提供 `maxDownloadBytes` 且 bootstrap filePreview 为 available 时，向原生文档预览 actions 和 unpreviewable slots 安装下载动作。注册适配器以框架注入的 SessionId、owner.absolutePath 和原生 `sessionFileAddress` 构造地址，捕获唯一原 readBytes 方法及已准备 transport 的 signal，不读取全局选中 Session。其独立 `CloudFileDownload`/`FileDownloadButton` 通过原授权接口分段读取，核对偏移、文件身份、版本、大小和 EOF，然后仅保存 `application/octet-stream` Blob。浏览器在保存前最多缓冲配置的 `maxDownloadBytes`；这不是直接写入磁盘的大文件流式下载，部署必须按浏览器内存配置上限。每次读取保留至结算；页面撤销、声明退出、替换和卸载均丢弃迟到结果，并回收临时锚点/Blob URL。文案归 cloud-file-download namespace，并随 Cordis scope 撤销。发起浏览器保存不证明操作系统已写入文件，也不能回滚已发出的请求。旧七字段输入仍合法且不注册下载；原生预览与服务端授权保持权威。
+当显式设置 `maxDownloadBytes` 且预览可用时，已准备页面安装原生文件树管理及详情下载图标。下载先做账户绑定的 HEAD 预检，再通过捕获账户／代际的 GET 附件 URL 交给浏览器。文件及 ZIP 内容不进入浏览器 JavaScript 内存，进度、取消及保存由浏览器负责；成功不再添加常驻工具栏文案，预检失败显示简短本地化提示。卸载会取消预检，已交给浏览器的下载通过浏览器控制。上传采用 File 请求体，保留选择目录的相对路径；选择器限制来自服务端，原接收限制及磁盘配额保持权威。
 
 通用管理装配通过生成的 `cloudPlugins/current/change` 命名空间呈现原 bootstrap 批准的插件目录，复用既有侧栏和 shell 反馈。选择插件面板或显式刷新时按目录顺序读取每个获批标识；尚未读取与不可用状态分开显示。开启条目启停、插件包选择或普通配置编辑时再次读取，并私有捕获该次原 epoch/edit token。原生元数据提供各卡片的本地化文本和操作权限；预安装插件包选择使用同一获批标识及原 `selected` 操作。原生 `BundleInfo.enabled` 提供 manifest 选择状态，`installed` 提供 profile 依赖声明，`availability` 提供可读文件来源，`version` 提供原生公开版本。没有 Entry 的插件包不填造模块或条目启用状态。操作同时要求 bootstrap 能力及实际操作权限；选择路径不提供包安装器。只读条目保持 operations／fields 为空，也不要求 maxImpact 值。应用启动、选择字段、修改草稿和切换语言均不读取账户插件目录。原账户管理读取确认受管 Shell 提供方有效时，原生终端卡片只读显示实际超时、最大超时和单流输出上限；账户页面撤销时同步移除。
 

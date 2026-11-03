@@ -198,7 +198,10 @@ function stageBegin(raw: unknown, limits: FdWorkerInput): Extract<FdStageRequest
     || limits.staging === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
   const base = taskRequest({ ...raw, kind: 'read', relativePath: '.', maxBytes: 0 }, limits)
   const file = raw.file
-  if (Object.keys(file).length !== 3 || typeof file.digest !== 'string' || !/^[a-f0-9]{64}$/.test(file.digest)
+  if (Object.keys(file).some(key => !['digest', 'name', 'expectedBytes', 'workspaceDirectory', 'directoryOnly'].includes(key))
+    || file.workspaceDirectory !== undefined && (typeof file.workspaceDirectory !== 'string'
+      || file.workspaceDirectory.startsWith('/') || file.workspaceDirectory.split('/').some(part => part !== '.' && (!validStageName(part) || part === '.pe')))
+    || file.directoryOnly !== undefined && (typeof file.directoryOnly !== 'boolean' || file.workspaceDirectory === undefined) || typeof file.digest !== 'string' || !/^[a-f0-9]{64}$/.test(file.digest)
     || typeof file.name !== 'string' || !validStageName(file.name) || !Number.isSafeInteger(file.expectedBytes)
     || typeof file.expectedBytes !== 'number' || file.expectedBytes < 0 || file.expectedBytes > limits.staging.maxFileBytes
     || base.root.rootMountId === undefined
@@ -206,12 +209,15 @@ function stageBegin(raw: unknown, limits: FdWorkerInput): Extract<FdStageRequest
     throw new WorkerFailure('FS_PERMISSION_DENIED')
   }
   return { kind: 'stage-begin', id: base.id, root: base.root, cancel: base.cancel,
-    file: { digest: file.digest, name: file.name, expectedBytes: file.expectedBytes } }
+    file: { digest: file.digest, name: file.name, expectedBytes: file.expectedBytes,
+      ...typeof file.workspaceDirectory === 'string' ? { workspaceDirectory: file.workspaceDirectory } : {},
+      ...typeof file.directoryOnly === 'boolean' ? { directoryOnly: file.directoryOnly } : {} } }
 }
 
 function wireStagingFacts(value: StagingFacts): StagingFacts {
   // Native begin owns a non-cloneable handle; only these bounded facts may cross the worker boundary.
-  return { kind: value.kind, code: value.code, publication: value.publication, closed: value.closed, clean: value.clean,
+  return { ...value.publishedName === undefined ? {} : { publishedName: value.publishedName },
+    kind: value.kind, code: value.code, publication: value.publication, closed: value.closed, clean: value.clean,
     temporaryPresent: value.temporaryPresent, writtenBytes: value.writtenBytes, readBytes: value.readBytes,
     sequence: value.sequence, retainedCreatedDirectories: value.retainedCreatedDirectories }
 }
@@ -888,6 +894,8 @@ function start(): void {
           device: request.root.rootDevice, inode: request.root.rootInode,
           mountId: request.root.rootMountId ?? '0', digest: request.file.digest, name: request.file.name,
           expectedBytes: request.file.expectedBytes,
+          ...request.file.workspaceDirectory === undefined ? {} : { workspaceDirectory: request.file.workspaceDirectory },
+          ...request.file.directoryOnly === undefined ? {} : { directoryOnly: request.file.directoryOnly },
           maxBytes: config.maxFileBytes, maxChunkBytes: limits.readChunkBytes, maxPathBytes: limits.maxPathBytes,
           timeoutMs: config.operationTimeoutMs, cancel: new Int32Array(request.cancel) }, () => source.promise)
         const state: ActiveStage = { request, transaction, source, phase: 'writing', sourceReceived: false }

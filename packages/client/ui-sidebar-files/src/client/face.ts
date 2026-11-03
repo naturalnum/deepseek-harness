@@ -114,6 +114,7 @@ export function childPath(parent: string, name: string): string {
 
 /** The tree's injected business face, as the body receives it. */
 export interface FilesInjected {
+  readonly management?: import('./management.ts').WorkspaceFileManagement
   /** Refresh the open directory tree. @param tabId - owning tab. */
   readonly refresh: (tabId: TabId) => void
   /** Control automatic rereads without closing watches. @param tabId - owning tab. @param enabled - automatic-refresh setting. */
@@ -147,11 +148,13 @@ export interface FilesInjected {
  * Bind the tree's face to one directory listing.
  * @param list - the bound `workspaceFiles.list` call.
  * @param watch - target-scoped directory observation.
+ * @param observeUpload - optional native upload completion listener; its disposer belongs to the tab.
  * @returns the Slot `inject` factory: session and bound actions in, face out.
  */
 export function filesFace(
   list: ListWorkspaceDirectory,
   watch: WatchWorkspaceDirectory,
+  observeUpload?: (sessionId: SessionId, changed: () => void) => () => void,
 ): (sessionId: SessionId, actions: BoundActions<ReturnType<typeof createFilesStore>>) => FilesInjected {
   return (
     sessionId: SessionId,
@@ -188,7 +191,9 @@ export function filesFace(
       },
       start(tabId, root, signal) {
         actions.start(tabId, root)
+        const unobserve = observeUpload?.(sessionId, () => { void roots.get(tabId)?.refreshTree() })
         signal.addEventListener('abort', () => {
+          unobserve?.()
           void roots.get(tabId)?.close()
           roots.delete(tabId)
           generations.delete(tabId)

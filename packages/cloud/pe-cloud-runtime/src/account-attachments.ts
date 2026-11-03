@@ -51,7 +51,7 @@ export class AccountAttachments {
    */
   constructor(
     private readonly ctx: Context, private readonly binding: AccountBinding, private readonly limits: AccountAttachmentLimits,
-    private readonly files: () => Pick<CloudAccountFiles, 'stageAttachments' | 'runAttachmentIntake'>,
+    private readonly files: () => Pick<CloudAccountFiles, 'stageAttachments' | 'runAttachmentIntake' | 'publishUpload'>,
     private readonly project: (agent: Agent) => Workspace,
     private readonly installed: (caller: Context) => void,
   ) {
@@ -192,12 +192,15 @@ export class AccountAttachments {
    * @param agent Original receiving Agent selected by FileUploads.
    * @param input Native streamed upload, never encoded fallback data.
    * @param save Captured original native store implementation.
+   * @param workspaceDirectory Selected workspace directory; omitted conversation uploads use the project root.
    * @returns Original durable ref; unknown source/storage cleanup closes native receipt admission.
    */
   async storeFileStream(agent: Agent, input: SaveFileStreamAttachment,
-    save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>): Promise<FileAttachmentRef> {
+    save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>, workspaceDirectory = '.'): Promise<FileAttachmentRef> {
     const workspace = this.current(agent)
     const check = (): void => { if (this.current(agent) !== workspace) denied() }
+    const directory = posix.isAbsolute(workspaceDirectory) ? posix.relative(workspace.path, workspaceDirectory) || '.' : workspaceDirectory
+    if (!directory || directory.split('/').some(part => part === '..' || part === '.pe') || directory.includes('\\')) denied()
     let sizeLimitFailure: FdMutationFailure | undefined
     try {
       const held = await this.files().runAttachmentIntake(this.limits.intakeReservationBytes, check, async (control) => {
@@ -255,7 +258,12 @@ export class AccountAttachments {
           finally { signal.removeEventListener('abort', abort) }
         }
       }, input.signal)
-      try { check(); return held.value } finally { held.release() }
+      let ref: FileAttachmentRef
+      try { check(); ref = held.value } finally { held.release() }
+      // Intake has relinquished the mutation lane before the same owner admits the workspace copy.
+      await this.files().publishUpload(workspace, ref, directory, check, input.signal)
+      check()
+      return ref
     } catch (error) {
       // Only the exact confirmed byte-limit failure is safe to classify. Cleanup
       // failures and all other upload errors retain their existing disposition.

@@ -168,6 +168,10 @@ files 静止查询观察原有精确 epoch lane、待处理工作及 root probe 
 
 -----
 
+## 工作区传输
+
+新对话上传保留原生私有附件对象，同时立即在已注册工作区根目录发布经过独立校验的副本。`publishUpload` 与 `createWorkspaceDirectory` 复用账户原有变更通道及有界 staging worker。staging 组件必须声明 `workspaceTransfersVersion: 1`；部署时重编译并更新资产摘要固定值。临时文件采用 `.stage-<随机值>` 名称，仅在源 EOF、字节数、SHA-256 及文件同步完成后以 `RENAME_NOREPLACE` 发布；重名选择末尾扩展名前最小可用后缀。新建目录通过原子 `mkdirat` 处理重名。所有路径保持在原实测 ext4 锚点下，拒绝链接及 `.pe`，沿用真实磁盘配额。取消会等待源和目标清理；发布或清理结果未知时，继续保留原变更责任。历史附件不迁移也不删除，原生附件与工作区副本分别占用实际磁盘配额。
+
 <a id="model-experience"></a>
 ## 模型体验
 

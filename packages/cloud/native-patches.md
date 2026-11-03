@@ -32,6 +32,8 @@ Root recipe sealing performs the full native plan validation. Its admission chec
 
 Generic fixes remain native patches: UTF-8 and complete-frame bounds, cancellation and close results, CSV byte-range preview, completed-answer file links, upload receipts, configuration redaction, width geometry and activation judgment. Moving their engines into Cloud would duplicate native functionality. Keep their owning tests and evaluate them as separate upstream contributions.
 
+The native file tree accepts a prepared `workspaceFileManagement` face; selection, native pickers and editable folder nodes remain in `ui-sidebar-files`. The native upload owner accepts an optional workspace destination separately from attachment bytes and supports a workspace-only stream without retaining a prompt receipt. Its browser completion event refreshes trees whose Cloud backend cannot watch directories. The Cloud adapter registers streaming attachment responses on the existing Connection Fetch registry, and its files owner extends the existing staging companion with versioned workspace publication; no alternate upload, download or account filesystem owner is introduced.
+
 ## Upgrade procedure
 
 1. Record the current clean source revision, deployment revision, chosen upstream revision and trusted configuration before changing anything. Source tests and an old running release are different evidence.

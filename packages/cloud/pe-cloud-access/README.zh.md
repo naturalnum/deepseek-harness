@@ -72,7 +72,7 @@ kind: "package-reference"
 
 向 `parseRequestExpectation` 提供载体字段的全部出现值；缺失、重复、空值、首尾空白或控制字符均以 HTTP 409 失败。真实认证后，先比较预期账户再查询 owner，取得当前图后再比较代际。纯比较通过不会授予 Peer、项目范围或业务权限；派发及每个 WS 逻辑流前仍须执行 `AccountUse.assertCurrent()`。
 
-私有 ingress 持有 `/cloud/auth`、`/cloud/bootstrap`、`/cloud/settings`、`/api` 及原生 `/api/remote.mux` upgrade 注册。每个 handler/继续执行点均检查真实 seal；注册不等待 seal，也不形成 Loader 循环。HTTP 使用原始绑定头，只有精确的 `GET /api/session.export` 导航可改用绑定 query 字段；混合头和 query 绑定会被拒绝。WS 使用 query 字段。所选载体的全部出现值均保留，不互相回退。有界 opaque 代际 token 要求真实 runtime 业务当前检查。请求借用保留到 HTTP 响应/错误结算；已升级 socket 使用独立 Peer 借用。根容量满时关闭 carrier，不排队。
+私有 ingress 持有 `/cloud/auth`、`/cloud/bootstrap`、`/cloud/settings`、`/api` 及原生 `/api/remote.mux` upgrade 注册。每个 handler/继续执行点均检查真实 seal；注册不等待 seal，也不形成 Loader 循环。HTTP 使用原始绑定头，只有精确的 `GET /api/session.export` 及 `GET`/`HEAD /api/workspace-files/download` 请求可改用明确提供的绑定 query 字段；这些路由拒绝混合头和 query 绑定。两个 query 字段仍须同时提供，载体选择不授予端点暴露或账户权限。WS 使用 query 字段。所选载体的全部出现值均保留，不互相回退。有界 opaque 代际 token 要求真实 runtime 业务当前检查。请求借用保留到 HTTP 响应/错误结算；已升级 socket 使用独立 Peer 借用。根容量满时关闭 carrier，不排队。
 
 原生最终分派 callback 在实际路由/envelope 选择后复核原请求、登录、Use、代际及图内 `CloudAccountApi`。每个逻辑流检查原 Peer 和每图策略。原生帧上限及 acquire/实际 settle callback 限制全局/账户/Peer 流容量；未知清理保留槽位并调度关闭，不等待自己的 transport。bootstrap 还要求原目录、原生策略及实际安装包证据；C06 settings 保持关闭。
 
@@ -215,7 +215,7 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 - 生产准入要求真实存储权、配方审核及账户发布；这些前提独立于元数据投影。`CloudAccountApi` 及原生分派/流 hook 已接线，不以根策略替代。未 sealed 的 ingress 拒绝业务工作。库初始化及拒绝测试不代表 S1/S2 或完整 F01 浏览器/WS 成功。
 - 部署必须对齐监听器 parser／buffer 限制、固定 HTTPS 元数据地址、客户端 CA 及精确 node／service pin。组件测试不签发两个原生 ready 实例或原 factory 借用／释放竞态资格。
 - 内部[预览请求](src/preview-access.ts)及[响应](src/preview-response.ts)辅助函数保留原账户和服务借用，生成有界文本及固定响应头；它们不注册路由或开启预览能力，仍须完成 HTTP 适配、origin 隔离以及真实服务与生命周期验证。
-- 根拒绝非空库迁移计划，且从不执行迁移。Root 必须提供真实批准的公开控制目录；未列入目录的基础设施仍须通过原 API/files/execution 断言。C06 控制及批准的导航下载载体选择仍待提供；原生 HTTP 当前要求绑定头，WS 使用 query 字段。开放完整链路前，仍须正式生产者/消费者构建及真实 PG/Web 集成验证。
+- 根拒绝非空库迁移计划，且从不执行迁移。Root 必须提供真实批准的公开控制目录；未列入目录的基础设施仍须通过原 API/files/execution 断言。C06 控制保持关闭；HTTP query 绑定仅限上文的精确下载路由，WS 使用 query 字段。开放完整链路前，仍须正式生产者/消费者构建及真实 PG/Web 集成验证。
 
 <a id="dev-note"></a>
 ### 开发备注

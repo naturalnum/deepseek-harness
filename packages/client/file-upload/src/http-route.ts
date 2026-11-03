@@ -4,10 +4,11 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { FileUploadIntakeUnconfirmedError, type FileUploads } from './index.ts'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { FileUploadValue } from './types.ts'
 
 type FileUploadHttpResult =
-  | { readonly ok: true; readonly value: FileUploadValue }
+  | { readonly ok: true; readonly value: FileUploadValue | FileAttachmentRef }
   | {
     readonly ok: false
     readonly error: { readonly code: string; readonly message: string; readonly details: object }
@@ -33,16 +34,21 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
     return rejectBeforeIntake(request.body, new Response('sessionId is required', { status: 400 }))
   }
   const name = url.searchParams.get('name') ?? undefined
+  const workspaceDirectory = url.searchParams.get('directory') ?? undefined
   let result: FileUploadHttpResult
   const body = requestBodyChunks(request.body)
   try {
-    let value: FileUploadValue | undefined
+    let value: FileUploadValue | FileAttachmentRef | undefined
     let uploadError: unknown
     let uploadFailed = false
     try {
-      value = await service.uploadStream({
+      value = url.searchParams.get('workspaceOnly') === 'true' ? await service.uploadWorkspaceStream({
+        sessionId: brandString<SessionId>(sessionId), workspaceDirectory: workspaceDirectory ?? '.',
+        data: body, signal: request.signal, ...name === undefined ? {} : { name },
+      }) : await service.uploadStream({
         sessionId: brandString<SessionId>(sessionId),
         data: body,
+        ...workspaceDirectory === undefined ? {} : { workspaceDirectory },
         signal: request.signal,
         ...(name === undefined ? {} : { name }),
       })

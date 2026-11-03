@@ -6,6 +6,8 @@ import { isMainThread } from 'node:worker_threads'
 
 /** Every bound is supplied by the admitting worker; none is a deployment default. */
 export interface StagingInput {
+  readonly workspaceDirectory?: string
+  readonly directoryOnly?: boolean
   readonly rootPath: string
   readonly device: string
   readonly inode: string
@@ -26,6 +28,7 @@ export interface StagingInput {
  * Retained created directories are persistent storage facts whose inode charge remains with the storage owner.
  */
 export interface StagingFacts {
+  readonly publishedName?: string
   readonly kind: 'write' | 'written' | 'existing' | 'existing-chunk' | 'published' | 'reused' | 'aborted' | 'failed' | 'unknown'
   readonly code: string
   readonly publication: 'none' | 'published' | 'unknown'
@@ -46,6 +49,7 @@ export class StagingFailure extends Error {
 }
 
 interface Companion {
+  readonly workspaceTransfersVersion: 1
   readonly stagingAbiVersion: 1
   begin(input: StagingInput): unknown
   write(handle: object, sequence: number, bytes: Uint8Array): unknown
@@ -87,7 +91,7 @@ function facts(value: unknown): StagingFacts {
 }
 
 function isCompanion(value: unknown): value is Companion {
-  return record(value) && value.stagingAbiVersion === 1
+  return record(value) && value.stagingAbiVersion === 1 && value.workspaceTransfersVersion === 1
     && ['begin', 'write', 'readExisting', 'finalize', 'abort'].every(key => typeof value[key] === 'function')
 }
 

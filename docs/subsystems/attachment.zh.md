@@ -327,7 +327,14 @@ registerAgentResolver(resolve: AgentResolver): () => void
  * @param request - Session identity, ordered bytes, cancellation, and optional display name.
  * @returns the staged receipt and durable file reference.
  */
-async uploadStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+async uploadStream(request: { readonly sessionId: SessionId readonly workspaceDirectory?: string readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+
+/**
+ * Store a workspace-only upload without retaining a conversation receipt.
+ * @param request Session, bytes and explicit workspace destination; the prepared store owns authorization and publication.
+ * @returns Closed native reference. A post-storage failure is unconfirmed and retains intake responsibility.
+ */
+uploadWorkspaceStream(request: { readonly sessionId: SessionId readonly workspaceDirectory: string readonly data: AsyncIterable<Uint8Array> readonly name?: string readonly signal?: AbortSignal }): Promise<FileAttachmentRef>
 
 /**
  * Resolve one staged receipt for the receiving Agent's exact Session.

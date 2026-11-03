@@ -76,6 +76,7 @@ export interface AccountNativeGuards {
   /** Shared Agent or original file-RPC selection, with native cold observation when needed. */
   readonly getFileProject: ResolveAccountFileProject
   /** Resolve only an original member Session before Gateway can read its persisted header. */
+  readonly resolveFileTransfer?: (id: SessionId, signal: AbortSignal) => Promise<import('@deepseek-ai/dsh-pe-cloud-files').AccountFileSelection>
   readonly resolveFileScope: (id: SessionId) => Promise<{ sessionId: SessionId; workspaceRoot: string }>
   readonly sessions: Omit<Parameters<CloudAccountApi['createController']>[1], 'projectDirectory'>
   readonly agents: Parameters<CloudAccountApi['createAgentLoop']>[1]
@@ -111,6 +112,7 @@ export interface AccountNativePreparation {
    */
   readonly inspectRootFetch?: () => readonly ExactFetchExposure[]
   /** Omission keeps streamed uploads and attachment-path projection closed. */
+  readonly workspaceTransfers?: import('@deepseek-ai/dsh-pe-cloud-api/types').WorkspaceTransferLimits
   readonly attachments?: AccountAttachmentLimits
   /** Optional fixed readonly first-screen composition; every limit and exact graph home is required when selected. */
   readonly firstScreen?: {
@@ -658,9 +660,17 @@ export class AccountNativeIntegration {
       },
       [ACCOUNT_NATIVE_ENTRIES.llm]: llm,
       [ACCOUNT_NATIVE_ENTRIES.workspaceFiles]: {
-        inject: [...WorkspaceFiles.inject, 'peCloudApi'], Config: WorkspaceFiles.Config,
+        inject: [...WorkspaceFiles.inject, 'peCloudApi', ...(input.workspaceTransfers === undefined ? [] : ['connection'])],
+        Config: WorkspaceFiles.Config,
         apply(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]) {
           api.createWorkspaceFiles(owner, nativeConfig)
+          if (input.workspaceTransfers !== undefined) api.installWorkspaceTransfers(owner, input.workspaceTransfers, async (id, signal) => {
+            rootBusinessCurrent(binding)
+            const resolve = requireGuards(owner).resolveFileTransfer
+            if (resolve === undefined || filesOwner === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Workspace transfer admission is unavailable.')
+            const selected = await resolve(id, signal)
+            return { ...selected, files: filesOwner }
+          })
           ctx.typert.lookups.configure('workspaceFileScope', async (id) => {
             rootBusinessCurrent(binding)
             api.assertInstalled(owner)

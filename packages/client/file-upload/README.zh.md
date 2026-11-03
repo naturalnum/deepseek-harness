@@ -72,6 +72,10 @@ Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编
 
 -----
 
+## 工作区专用流式上传
+
+原始 HTTP 路由接受可选 `directory` 和 `workspaceOnly=true` 元数据。存储 hook 将目标目录作为独立参数接收，普通 provider 在没有授权集成时拒绝显式工作区目录。工作区专用上传复用原接收所有者、Agent 选择、取消和流式 hook，完成后不保留对话回执；对话上传保持原回执行为。Blob／流上传完成后为接收 Session 发出 `file-upload/complete`，供原生文件树刷新。文件内容保持为原始 HTTP 请求体。
+
 <a id="model-experience"></a>
 ## 模型体验
 

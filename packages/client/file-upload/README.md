@@ -72,6 +72,10 @@ Each upload receipt belongs to one exact Session, and each request uses one sele
 
 -----
 
+## Workspace-only streamed uploads
+
+The raw HTTP route accepts optional `directory` and `workspaceOnly=true` metadata. Prepared storage hooks receive the directory separately from attachment content. The ordinary provider rejects an explicit workspace directory unless an authorized integration implements it. Workspace-only uploads use the same intake owner, Agent resolution, cancellation and stream hook but do not retain a prompt receipt after completion; conversation uploads retain existing receipt behavior. Blob/stream upload completion emits `file-upload/complete` for the receiving Session so native file trees can refresh. File bytes remain raw HTTP bodies.
+
 <a id="model-experience"></a>
 ## Model Experience
 

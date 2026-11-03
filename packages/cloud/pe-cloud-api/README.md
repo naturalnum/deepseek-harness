@@ -182,6 +182,10 @@ Provider selection, source borrowing and complete resource preparation begin aft
 
 -----
 
+## Workspace HTTP transfers
+
+Root may select `native.workspaceTransfers` with explicit `maxFileBytes`, `maxFiles`, `maxTotalBytes`, `chunkBytes`, `maxPathBytes` and `timeoutMs`. Add exact account-session Fetch declarations for GET and HEAD `/api/workspace-files/download` and POST `/api/workspace-files/directory`, all with handler `native:workspaceFiles`. Each request resolves the original native Session membership and registered workspace; every bounded read repeats the current selection check. GET streams the original file or a lazy ZIP64 archive through the existing HTTP bridge and its socket backpressure. ZIP names retain workspace-relative directories. No file or archive content enters Remote JSON or an aggregate buffer. HEAD performs admission/metadata checks; HEAD without `path` reports picker limits. Query selections also remain subject to the server/proxy request-line limit. The native attachment intake and staging limits independently bound uploads, and physical quota can refuse any write. Browser download progress and cancellation use the browser download UI. A post-header failure terminates the response; the application cannot confirm the browser saved the file. A failed directory response may have an unknown publication result: refresh before retrying.
+
 <a id="model-experience"></a>
 ## Model Experience
 

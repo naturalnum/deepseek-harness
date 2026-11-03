@@ -1,5 +1,23 @@
 {
   "meta": {
     "title": "ui-sidebar-files"
-  }
+  },
+  "upload": "Upload",
+  "download": "Download",
+  "uploadOptions": "Upload options",
+  "uploadFolder": "Upload folder",
+  "newFolder": "New folder",
+  "untitledFolder": "Untitled folder",
+  "selectFile": "Select {name}",
+  "cancel": "Cancel",
+  "folderFailed": "Creation is unconfirmed. Refresh to check, then correct the name or access and retry.",
+  "transferFailed": "Upload did not complete. Completed files remain; refresh before retrying unfinished files.",
+  "cancelledUnknown": "Upload stopped. Refresh to check completed files before retrying.",
+  "downloadFailed": "Unable to download. Check the file and try again.",
+  "loading": "Reading…",
+  "empty": "Empty directory",
+  "truncated": "Too many entries, showing only some of them.",
+  "noWorkspace": "This session has no workspace directory.",
+  "reload": "Reload",
+  "autoRefresh": "Auto refresh"
 }

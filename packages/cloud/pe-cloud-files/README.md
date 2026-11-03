@@ -168,6 +168,10 @@ The files idle query observes the original exact epoch lane, pending work and ro
 
 -----
 
+## Workspace transfers
+
+New conversation uploads retain the native private attachment object and publish a separately verified copy in the registered workspace root immediately. `publishUpload` and `createWorkspaceDirectory` use the existing account mutation lane and bounded staging worker. The staging companion must advertise `workspaceTransfersVersion: 1`; rebuild and hash-pin it with the deployment assets. Temporary files use `.stage-<random>` names and are renamed with `RENAME_NOREPLACE` only after source EOF, byte count, SHA-256 and file sync. Collisions choose the smallest available suffix before the final extension. Directory creation uses atomic `mkdirat` collision handling. Paths remain beneath the original measured ext4 anchor, reject links and `.pe`, and retain the real filesystem quota. Cancelled work joins source and destination cleanup; uncertain publication or cleanup retains the original mutation responsibility. Historical attachments are neither moved nor removed. Canonical attachment copies and workspace copies each consume their actual disk quota.
+
 <a id="model-experience"></a>
 ## Model Experience
 

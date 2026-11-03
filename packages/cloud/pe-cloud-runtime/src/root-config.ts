@@ -51,6 +51,7 @@ export interface RuntimeRootConfig extends RuntimeConfig {
     readonly maxEntries: number
     /** Explicit optional readonly budgets; Root supplies the actual per-account profile home. */
     readonly firstScreen?: Omit<NonNullable<AccountNativePreparation['firstScreen']>, 'home'>
+    readonly workspaceTransfers?: NonNullable<AccountNativePreparation['workspaceTransfers']>
     readonly attachments?: NonNullable<AccountNativePreparation['attachments']>
   }
 }
@@ -140,6 +141,8 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
       maxHomeBytes: positive(), maxCollectionItems: positive(), maxFrameBytes: positive(),
       maxQueuedEvents: positive(), maxQueuedBytes: positive(),
     }).required()]),
+    workspaceTransfers: z.union([z.object({ maxFileBytes: positive(), maxFiles: positive(), maxTotalBytes: positive(),
+      chunkBytes: positive(), maxPathBytes: positive(), timeoutMs: timer() }).required()]),
     attachments: z.union([z.object({
       maxSurfaceNodes: positive(), maxRefs: positive(), maxRefBytes: positive(),
       maxPromptFiles: positive(), maxFileBytes: positive(), maxUploadChunkBytes: positive(),

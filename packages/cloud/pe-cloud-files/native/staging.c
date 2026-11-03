@@ -21,7 +21,9 @@ typedef struct {
   struct stat directory[4], identity;
   int created[4], existing, eof, temporary, publication, unknown, close_unknown;
   uint64_t mount, maximum, expected, chunk, written, read, sequence, deadline;
-  char *root, *name;
+  char *root, *name, *workspace;
+  int mkdir_only;
+  char published_name[256];
   char digest[65], temp[64];
   int32_t *cancel;
   napi_ref cancel_ref;
@@ -84,6 +86,7 @@ static int sync_fd(stage *s, int fd) {
   return errno;
 }
 static const char *directory_name(stage *s, int index) {
+  if (s->workspace) return index == 1 ? s->workspace : ".";
   return index == 1 ? ".pe" : index == 2 ? "attachments" : s->digest;
 }
 static int chain(stage *s) {
@@ -154,7 +157,7 @@ static void cleanup(owner *o, int rollback) {
   }
   for (int i = 3; i >= 0; i--) close_fd(s, &s->dirs[i]);
   if (s->cancel_ref) { napi_delete_reference(o->env, s->cancel_ref); s->cancel_ref = NULL; }
-  free(s->root); free(s->name); s->root = s->name = NULL;
+  free(s->root); free(s->name); free(s->workspace); s->root = s->name = s->workspace = NULL;
   o->active = 0;
   if (s->unknown) o->poisoned = 1;
 }
@@ -209,6 +212,7 @@ static napi_value facts(napi_env env, owner *o, const char *kind, int error) {
   number_property(env, result, "sequence", s->sequence);
   unsigned retained = 0; for (int i = 1; i < 4; i++) retained += !!s->created[i];
   number_property(env, result, "retainedCreatedDirectories", retained);
+  if (s->published_name[0]) string_property(env, result, "publishedName", s->published_name);
   return result;
 }
 static napi_value failed(napi_env env, owner *o, int error) {
@@ -315,6 +319,24 @@ static napi_value begin(napi_env env, napi_callback_info info) {
   if (!property(env, args[0], "rootPath", &value) || !(s->root = text(env, value, path_maximum))
     || !property(env, args[0], "name", &value) || !(s->name = text(env, value, path_maximum < 255 ? path_maximum : 255))) goto invalid;
   if (s->root[0] != '/' || !safe_name(s->name) || strlen(s->root) + strlen(s->name) + 83 > path_maximum) goto invalid;
+  bool has_workspace = false;
+  if (napi_has_named_property(env, args[0], "workspaceDirectory", &has_workspace) != napi_ok) goto invalid;
+  if (has_workspace) {
+    if (!property(env, args[0], "workspaceDirectory", &value) || !(s->workspace = text(env, value, path_maximum))) goto invalid;
+    if (s->workspace[0] == '/' || strlen(s->root) + strlen(s->workspace) + 257 > path_maximum) goto invalid;
+    char *copy = strdup(s->workspace), *save = NULL;
+    if (!copy) goto invalid;
+    int valid_path = 1;
+    for (char *part = strtok_r(copy, "/", &save); part; part = strtok_r(NULL, "/", &save)) {
+      if (strcmp(part, ".") && (!safe_name(part) || !strcmp(part, ".pe"))) valid_path = 0;
+    }
+    free(copy);
+    if (!valid_path) goto invalid;
+    bool directory = false;
+    if (property(env, args[0], "directoryOnly", &value)) (void)napi_get_value_bool(env, value, &directory);
+    s->mkdir_only = directory;
+    if (directory && s->expected) goto invalid;
+  }
   if (!property(env, args[0], "digest", &value)) goto invalid;
   char *digest = text(env, value, 64);
   if (!digest) goto invalid;
@@ -340,7 +362,7 @@ static napi_value begin(napi_env env, napi_callback_info info) {
     if ((error = pending(s)) || (error = chain(s))) return failed(env, o, error);
     const char *name = directory_name(s, i);
     s->dirs[i] = below(s->dirs[i - 1], name, O_RDONLY | O_DIRECTORY, 0);
-    if (s->dirs[i] < 0 && errno == ENOENT) {
+    if (s->dirs[i] < 0 && errno == ENOENT && !s->workspace) {
       if (!mkdirat(s->dirs[i - 1], name, 0700)) s->created[i] = 1;
       else if (errno != EEXIST) return failed(env, o, errno);
       s->dirs[i] = below(s->dirs[i - 1], name, O_RDONLY | O_DIRECTORY, 0);
@@ -351,7 +373,7 @@ static napi_value begin(napi_env env, napi_callback_info info) {
     if (s->created[i] && (error = sync_fd(s, s->dirs[i - 1]))) return failed(env, o, error);
   }
   if ((error = chain(s))) return failed(env, o, error);
-  error = open_existing(s);
+  error = s->workspace ? ENOENT : open_existing(s);
   if (error == ENOENT && s->file >= 0) return failed(env, o, ESTALE);
   if (error != ENOENT && error) return failed(env, o, error);
   if (error == ENOENT) {
@@ -379,7 +401,7 @@ static napi_value begin(napi_env env, napi_callback_info info) {
   napi_value result = facts(env, o, s->existing ? "existing" : "write", 0);
   napi_set_named_property(env, result, "handle", wrapped); return result;
 invalid:
-  free(s->root); free(s->name); s->root = s->name = NULL;
+  free(s->root); free(s->name); free(s->workspace); s->root = s->name = s->workspace = NULL;
   return thrown(env, EINVAL);
 }
 static napi_value write_chunk(napi_env env, napi_callback_info info) {
@@ -442,6 +464,32 @@ static napi_value finalize(napi_env env, napi_callback_info info) {
   if ((error = sync_fd(s, s->file))) return failed(env, o, error);
   if (!s->existing) {
     if ((error = pending(s)) || (error = chain(s)) || (error = leaf_identity(s, s->temp))) return failed(env, o, error);
+    if (s->workspace) {
+      const char *dot = s->mkdir_only ? NULL : strrchr(s->name, '.');
+      if (dot == s->name) dot = NULL;
+      size_t stem = dot ? (size_t)(dot - s->name) : strlen(s->name);
+      uint64_t suffix = 0;
+      for (;;) {
+        if ((error = pending(s)) || (error = chain(s))) return failed(env, o, error);
+        int size = suffix ? snprintf(s->published_name, sizeof(s->published_name), "%.*s_%llu%s",
+          (int)stem, s->name, (unsigned long long)suffix, dot ? dot : "")
+          : snprintf(s->published_name, sizeof(s->published_name), "%s", s->name);
+        if (size < 1 || size > 255) return failed(env, o, ENAMETOOLONG);
+        int result = s->mkdir_only ? mkdirat(s->dirs[3], s->published_name, 0700)
+          : (int)syscall(SYS_renameat2, s->dirs[3], s->temp, s->dirs[3], s->published_name, RENAME_NOREPLACE);
+        if (!result) break;
+        error = errno;
+        if (error == EEXIST) { suffix++; continue; }
+        if (!definite_no_create(error)) { s->publication = 2; s->unknown = 1; }
+        return failed(env, o, error);
+      }
+      if (s->mkdir_only) remove_temp(s); else s->temporary = 0;
+      s->publication = 1;
+      if ((error = sync_fd(s, s->dirs[3])) || (error = chain(s))) { s->unknown = 1; return failed(env, o, error); }
+      if (!s->mkdir_only && (error = leaf_identity(s, s->published_name))) { s->unknown = 1; return failed(env, o, error); }
+      cleanup(o, 0);
+      return facts(env, o, "published", 0);
+    }
     if (syscall(SYS_renameat2, s->dirs[3], s->temp, s->dirs[3], s->name, RENAME_NOREPLACE)) {
       error = errno;
       if (error != EEXIST) { s->publication = 2; s->unknown = 1; return failed(env, o, error); }
@@ -486,6 +534,7 @@ static napi_value init(napi_env env, napi_value exports) {
     napi_set_named_property(env, exports, methods[i].name, function);
   }
   number_property(env, exports, "stagingAbiVersion", 1);
+  number_property(env, exports, "workspaceTransfersVersion", 1);
   number_property(env, exports, "nativeControlBytes", sizeof(owner) + sizeof(handle));
   return exports;
 }

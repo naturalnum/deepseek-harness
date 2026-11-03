@@ -392,13 +392,14 @@ export class CloudIngress {
         this.assertOperation(operation)
         operation.stage = 'request.binding'
         const fields = this.config.bindingFields
-        const exportNavigation = request.method === 'GET' && url.pathname === SESSION_LOG_EXPORT_PATH
+        const downloadNavigation = (request.method === 'GET' && url.pathname === SESSION_LOG_EXPORT_PATH
+          || (request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/workspace-files/download')
           && (url.searchParams.has(fields.accountQuery) || url.searchParams.has(fields.generationQuery))
-        if (exportNavigation && request.rawHeaders.some((value, index) => index % 2 === 0
+        if (downloadNavigation && request.rawHeaders.some((value, index) => index % 2 === 0
           && (value.toLowerCase() === fields.accountHeader || value.toLowerCase() === fields.generationHeader))) {
           throw new RequestBindingError(operation.id)
         }
-        const expected = readRequestExpectation(request, url, fields, exportNavigation ? 'query' : 'headers', operation.id)
+        const expected = readRequestExpectation(request, url, fields, downloadNavigation ? 'query' : 'headers', operation.id)
         assertExpectedAccount(expected, principal.accountId, operation.id)
         this.requests.set(request, { operation, expected })
         operation.stage = 'account.bind'

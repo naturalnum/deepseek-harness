@@ -209,7 +209,9 @@ export class FileUploadRuntime extends Service implements FileUploadService {
       if (response.status !== 200) {
         throw new Error(`file upload transport failed with HTTP ${String(response.status)}`)
       }
-      return parseFileUploadResult(response.body)
+      const result = parseFileUploadResult(response.body)
+      if (result.ok) this.ctx.emit('file-upload/complete', sessionId)
+      return result
     }
     return (this.ctx as FileUploadRemoteContext).remote.fileUploads.upload(
       sessionId,

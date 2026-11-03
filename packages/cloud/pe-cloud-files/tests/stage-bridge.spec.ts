@@ -283,3 +283,11 @@ it('retains the real mutation lane when native alias publication fails after obj
     .rejects.toMatchObject({ outcome: 'unknown' })
   expect(invoked).toBe(false)
 })
+
+
+it('retains unknown workspace publication when a worker omits its actual collision-resolved name', async () => {
+  const test = await fixture(), source = await test.source(Uint8Array.of(1, 2, 3))
+  await expect(test.port.stageFiles(test.workspace, [{ ...source.entry, workspaceDirectory: '.' }], test.assertCurrent))
+    .rejects.toMatchObject({ outcome: 'unknown', code: 'FS_IO_ERROR' })
+  expect(test.pool.inspect().work.pending).toBe(1)
+})

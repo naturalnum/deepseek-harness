@@ -291,7 +291,7 @@ describe('two retained static preparations with serial verification', () => {
     const port: PoolReadPort = {
       get reader() { return unused() }, get directory() { return unused() },
       skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
-      prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
+      workspaceContent: unused, prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
       projectFor: unused, withInstructionReaders: unused, derivePreparedLeaf: unused, createWorkspaceRegistry: unused,
       stat: unused, streamText: unused, readBytes: unused,
     }
@@ -326,7 +326,7 @@ describe('two retained static preparations with serial verification', () => {
     const port: PoolReadPort = {
       get reader() { return unused() }, get directory() { return unused() },
       skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
-      prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
+      workspaceContent: unused, prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
       projectFor: unused, withInstructionReaders: unused, derivePreparedLeaf: unused, createWorkspaceRegistry: unused,
       stat: unused, streamText: unused, readBytes: unused,
     }
@@ -386,7 +386,7 @@ describe('two retained static preparations with serial verification', () => {
     const unused = (): never => { throw new Error('No other operation belongs to this fixture') }
     const pool = { get reader() { return unused() }, get directory() { return unused() },
       skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
-      prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
+      workspaceContent: unused, prepareExecutionMounts: unused, stageFiles: unused, runNativeMutation: unused, createTextFileSystem: unused,
       projectFor: unused, withInstructionReaders: unused, derivePreparedLeaf: unused, createWorkspaceRegistry: unused,
       stat: unused, streamText: unused, readBytes: unused } satisfies PoolReadPort
     const make = async (f: Awaited<ReturnType<typeof fixture>>) => {

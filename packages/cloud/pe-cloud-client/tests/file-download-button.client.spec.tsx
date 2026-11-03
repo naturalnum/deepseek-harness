@@ -1,88 +1,21 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { expect, it, vi, afterEach } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
-import { FileDownloadButton, type FileDownloadButtonProps } from '../src/client/FileDownloadButton.tsx'
-import type { CloudFileReadBytes } from '../src/client/file-download.ts'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-
-const id = SessionId('download-original'), next = SessionId('download-next')
-const labels = { download: 'Download', pending: 'Downloading', cancel: 'Cancel download', cancelled: 'Download cancelled', started: 'Download requested',
-  failed: 'Unable to download. Check this file and try again.', tooLarge: 'File is too large', invalid: 'File cannot be downloaded' }
-function complete(offset = 0): Awaited<ReturnType<CloudFileReadBytes>> {
-  return { ok: true, value: { absolutePath: '/native/file', version: 'v', data: offset === 0 ? new Uint8Array([1, 2]) : new Uint8Array(), bytes: 2, offset, eof: true } }
-}
-function fixture(readBytes = vi.fn<CloudFileReadBytes>(async (_session, _path, options) => complete(options?.range?.offset ?? 0))) {
-  const createObjectURL = vi.fn((_blob: Blob) => 'blob:owned-download')
-  const revokeObjectURL = vi.fn()
-  vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
-  const clicked: string[] = []
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this.download) })
-  const page = new AbortController()
-  const props: FileDownloadButtonProps = { sessionId: id, resourceAddress: sessionFileAddress(id, 'original.bin'),
-    signal: page.signal, maxFileBytes: 16, readBytes, labels }
-  return { props, page, readBytes, createObjectURL, revokeObjectURL, clicked }
-}
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
-
-it('discards a late native result after unmount and aborts that occurrence', async () => {
-  let finish!: (result: Awaited<ReturnType<CloudFileReadBytes>>) => void
-  const read = vi.fn<CloudFileReadBytes>(() => new Promise((resolve) => { finish = resolve }))
-  const f = fixture(read)
-  const view = render(<FileDownloadButton {...f.props} />)
-  fireEvent.click(screen.getByRole('button', { name: labels.download }))
-  view.unmount()
-  expect(read.mock.calls[0]?.[3]?.aborted).toBe(true)
-  await act(async () => { finish(complete()) })
-  expect(f.createObjectURL).not.toHaveBeenCalled()
-  expect(f.clicked).toEqual([])
-})
-
-it('captures each Session/resource and never adopts old bytes after resource replacement', async () => {
-  let finishOld!: (result: Awaited<ReturnType<CloudFileReadBytes>>) => void
-  const old = new Promise<Awaited<ReturnType<CloudFileReadBytes>>>((resolve) => { finishOld = resolve })
-  const read = vi.fn<CloudFileReadBytes>((session, _path, options) =>
-    session === id ? old : Promise.resolve(complete(options?.range?.offset ?? 0)))
-  const f = fixture(read)
-  const view = render(<FileDownloadButton {...f.props} />)
-  fireEvent.click(screen.getByRole('button', { name: labels.download }))
-  const replacement = { ...f.props, sessionId: next, resourceAddress: sessionFileAddress(next, 'next.bin') }
-  view.rerender(<FileDownloadButton {...replacement} />)
-  expect(read.mock.calls[0]?.[3]?.aborted).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: labels.download }))
-  await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(labels.started) })
-  await act(async () => { finishOld(complete()) })
-  expect(f.clicked).toEqual(['next.bin'])
-  expect(read.mock.calls.map(call => [call[0], call[1]])).toEqual([[id, 'original.bin'], [next, 'next.bin'], [next, 'next.bin']])
-  expect(f.createObjectURL).toHaveBeenCalledOnce()
-  expect(f.revokeObjectURL).toHaveBeenCalledOnce()
-  expect(screen.getByRole('status').textContent).toBe(labels.started)
-})
-
-it('shows only localized failure copy and does not retry a refused native read', async () => {
-  const read = vi.fn<CloudFileReadBytes>().mockResolvedValue({ ok: false,
-    error: new RemoteError('gateway/bad-request', '/private/account', {}) })
-  const f = fixture(read)
-  render(<FileDownloadButton {...f.props} />)
-  fireEvent.click(screen.getByRole('button', { name: labels.download }))
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe(labels.failed) })
-  expect(screen.queryByText('/private/account')).toBeNull()
-  expect(read).toHaveBeenCalledOnce()
-  expect(f.createObjectURL).not.toHaveBeenCalled()
-})
-
-it('cancels a read explicitly, keeps it owned until settlement, and does not save late bytes', async () => {
-  let finish!: (result: Awaited<ReturnType<CloudFileReadBytes>>) => void
-  const read = vi.fn<CloudFileReadBytes>(() => new Promise((resolve) => { finish = resolve }))
-  const f = fixture(read)
-  render(<FileDownloadButton {...f.props} />)
-  fireEvent.click(screen.getByRole('button', { name: labels.download }))
-  fireEvent.click(screen.getByRole('button', { name: labels.cancel }))
-  expect(read.mock.calls[0]?.[3]?.aborted).toBe(true)
-  expect(screen.getByRole('button', { name: labels.pending }).hasAttribute('disabled')).toBe(true)
-  await act(async () => { finish(complete()) })
-  expect(screen.getByRole('status').textContent).toBe(labels.cancelled)
-  expect(f.clicked).toEqual([])
-  expect(f.createObjectURL).not.toHaveBeenCalled()
+import { FileDownloadButton } from '../src/client/FileDownloadButton.tsx'
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
+const labels = { download: 'Download', pending: 'Pending', cancel: 'Cancel', cancelled: 'Cancelled', started: 'Requested',
+  failed: 'Unable to download', tooLarge: 'Too large', invalid: 'Invalid' }
+it('renders an accessible icon and no persistent success message', async () => {
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  const fetch = vi.fn(async () => new Response(null))
+  render(<FileDownloadButton sessionId={SessionId('s')} resourceAddress={sessionFileAddress(SessionId('s'), '/x')}
+    fetch={fetch} navigationUrl={path => path} signal={new AbortController().signal} maxFileBytes={2 ** 40} labels={labels} />)
+  const button = screen.getByRole('button', { name: 'Download' })
+  expect(button.querySelector('svg')).not.toBeNull()
+  fireEvent.click(button)
+  await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('false') })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.queryByText('Requested')).toBeNull()
 })

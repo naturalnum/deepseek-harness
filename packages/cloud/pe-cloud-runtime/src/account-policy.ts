@@ -1100,6 +1100,14 @@ class AccountPolicy {
     return this.fileSession(SessionId(raw), control)
   }
 
+  /**
+   * Select the original account member Session for HTTP file operations.
+   * @param id Original member Session.
+   * @param signal Request lifetime.
+   * @returns Registered project with current membership checks.
+   */
+  fileTransfer(id: SessionId, signal: AbortSignal): Promise<AccountFileSelection> { return this.fileSession(id, signal) }
+
   async fileScope(id: SessionId): Promise<{ sessionId: SessionId; workspaceRoot: string }> {
     const selected = await this.fileSession(id, this.binding.lifetime)
     selected.assertCurrent()
@@ -1193,6 +1201,7 @@ export function createAccountPolicy(
     projectForDirectory: cwd => policy.workspaceAt(cwd),
     getFileProject: (caller, signal) => policy.fileProject(caller, signal),
     resolveFileScope: id => policy.fileScope(id),
+    resolveFileTransfer: (id, signal) => policy.fileTransfer(id, signal),
     assertBootstrapCurrent: signal => policy.assertBootstrapCurrent(signal),
     assertSessionRead: (id, summary) => { policy.readSession(id, summary) },
     sessions: {

@@ -5,14 +5,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { FileDownloadButton } from './FileDownloadButton.tsx'
-import type { CloudFileReadBytes } from './file-download.ts'
+import type { FileUploadFetch } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from './download/locales.ts'
 
 /** Stable page/declaration inputs supplied by the Cordis-owned installer. */
 export interface FileDownloadActionInjected {
   readonly signal: AbortSignal
   readonly maxFileBytes: number
-  readonly readBytes: CloudFileReadBytes
+  readonly fetch: FileUploadFetch
+  readonly navigationUrl: (path: string) => string
 }
 
 /** Original native action owner and framework Session seat, without a global selection read. */
@@ -27,7 +28,7 @@ export type FileDownloadActionProps = PropsRuntime<'sidebar.right.tab.document.a
 export function FileDownloadAction(props: FileDownloadActionProps): ReactElement {
   return <FileDownloadButton sessionId={props.sessionId}
     resourceAddress={sessionFileAddress(props.sessionId, props.absolutePath)}
-    signal={props.signal} readBytes={props.readBytes} maxFileBytes={props.maxFileBytes}
+    signal={props.signal} fetch={props.fetch} navigationUrl={props.navigationUrl} maxFileBytes={props.maxFileBytes}
     labels={{ download: props.t('download'), pending: props.t('pending'), cancel: props.t('cancel'),
       cancelled: props.t('cancelled'), started: props.t('started'), failed: props.t('failed'),
       tooLarge: props.t('tooLarge'), invalid: props.t('invalid') }} />

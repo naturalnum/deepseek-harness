@@ -202,6 +202,8 @@ export interface FdStagingWorkerInput extends FdStagingLimits {
 
 /** Derived only after native-ref authorization; this private descriptor grants no account authority. */
 export interface FdStageFile {
+  readonly workspaceDirectory?: string
+  readonly directoryOnly?: boolean
   readonly digest: string
   readonly name: string
   readonly expectedBytes: number

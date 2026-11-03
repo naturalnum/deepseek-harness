@@ -1,4 +1,4 @@
-/** Real loopback ingress and native ZIP route; Root admission and login database answers are explicit fixtures. */
+/** Real loopback ingress and native download routes; Root, login DB and file bytes are explicit fixtures. */
 import { createServer, request as httpRequest } from 'node:http'
 import type { Socket } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -11,6 +11,7 @@ import pg from 'pg'
 import type { Auth } from 'better-auth'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { policyFixture } from '../../pe-cloud-runtime/tests/account-policy-fixture.ts'
+import { registerWorkspaceTransfers } from '../../pe-cloud-api/src/workspace-transfers.ts'
 import { BetterAuthAccess } from '../src/auth.ts'
 import { CloudIngress } from '../src/ingress.ts'
 import { ConnectionGenerations } from '../src/generations.ts'
@@ -18,18 +19,45 @@ import { accessConfig, ingressConfig } from './ingress-fixture.ts'
 
 const exportRoutes = ['GET', 'HEAD'].map(method => ({ method, path: SESSION_LOG_EXPORT_PATH,
   handlerId: 'native:sessionLogDownload', guard: 'account-session' as const }))
+const downloadPath = '/api/workspace-files/download'
+const downloadRoutes = ['GET', 'HEAD'].map(method => ({ method, path: downloadPath,
+  handlerId: 'native:workspaceFiles', guard: 'account-session' as const }))
 
-async function fixture() {
+async function fixture(reviewDownload = true) {
+  const reviewed = [...exportRoutes, ...reviewDownload ? downloadRoutes : []]
   const native = policyFixture([], { maxHomeBytes: 4096, maxCollectionItems: 512, maxFrameBytes: 262144,
     maxQueuedEvents: 128, maxQueuedBytes: 4194304 }, 'component',
-  { selected: exportRoutes, inspectRootFetch: () => exportRoutes })
-  const graph = await native.start()
-  await graph.ctx.plugin({ inject: connectionInject, apply: applyConnection })
-  graph.ctx.provide('commands', { register: () => () => {} } as never)
-  registerSessionLogExport(graph.ctx, {}, async (sessionId, request) => {
-    await graph.guards.sessions.assertSessionProject(sessionId)
-    return request.signal
-  })
+  { selected: reviewed, inspectRootFetch: () => reviewed })
+  const start = (epoch = '1') => native.start(epoch, native.config, true, { maxNativeInventoryEntries: 256 })
+  let graph = await start()
+  const data = Buffer.from([0, 255, 2, 13, 10]), content = vi.fn(), select = vi.fn()
+  const install = async (): Promise<void> => {
+    const current = graph
+    await current.ctx.plugin({ inject: connectionInject, apply: applyConnection })
+    current.ctx.provide('commands', { register: () => () => {} } as never)
+    registerSessionLogExport(current.ctx, {}, async (sessionId, request) => {
+      await current.guards.sessions.assertSessionProject(sessionId)
+      return request.signal
+    })
+    // The storage worker is outside this ingress fixture; native Session selection and HTTP streaming remain real.
+    vi.spyOn(current.files, 'workspaceContent').mockImplementation(async (_workspace, check, signal) => {
+      check(); signal?.throwIfAborted(); content()
+      return {
+        lstat: async (path: string) => ({ value: path === 'report.bin'
+          ? { type: 'file', size: data.length, version: 'fixture-v1' } : undefined, release() {} }),
+        readByteRange: async (_path: string, range: { offset: number; length: number }) =>
+          ({ value: data.subarray(range.offset, range.offset + range.length), release() {} }),
+      } as never
+    })
+    registerWorkspaceTransfers(current.ctx, { maxFiles: 10, maxFileBytes: 1024, maxTotalBytes: 2048,
+      chunkBytes: 2, maxPathBytes: 1024, timeoutMs: 5000 }, async (id, signal) => {
+      select()
+      const resolve = current.guards.resolveFileTransfer
+      if (resolve === undefined) throw new Error('Original account Session file policy absent')
+      return { ...await resolve(id, signal), files: current.files }
+    }, (method, path) => { current.api.requireFetch(method, path) }, current.binding.lifetime)
+  }
+  await install()
   const own = await graph.ctx.sessionController.create({})
   const root = new Context(), sockets = new Set<Socket>(), pending: Promise<void>[] = []
   const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'unused', database: 'unused', max: 1, connectionTimeoutMillis: 10 })
@@ -83,19 +111,29 @@ async function fixture() {
   const cookie = 'better-auth.session_token=fixture', account = graph.binding.accountId
   const query = `peAccount=${encodeURIComponent(account)}&peGeneration=${encodeURIComponent(generation)}`
   const call = (path: string, method = 'GET', extra: Record<string, string> = {}, includeCookie = true) =>
-    new Promise<{ status: number; body: Buffer }>((resolve, reject) => {
+    new Promise<{ status: number; body: Buffer; headers: import('node:http').IncomingHttpHeaders }>((resolve, reject) => {
       const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method, agent: false,
         headers: { Host: '127.0.0.1:4100', Origin: config.publicOrigin, ...includeCookie ? { Cookie: cookie } : {}, ...extra } }, (response) => {
         const chunks: Buffer[] = []
         response.on('data', (chunk: Buffer) => { chunks.push(chunk) }); response.on('error', reject)
-        response.on('end', () => { resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks) }) })
+        response.on('end', () => { resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks), headers: response.headers }) })
       })
       request.on('error', reject); request.end()
     })
-  return { call, query, account, generation, own: own.sessionId, pending }
+  const restart = async () => {
+    await Promise.allSettled(pending)
+    await graph.close()
+    graph = await start('2')
+    await install()
+    const next = generations.current(graph.binding, 'fixture-next-generation' as Parameters<ConnectionGenerations['current']>[1])
+    const own = await graph.ctx.sessionController.create({})
+    return { query: `peAccount=${encodeURIComponent(account)}&peGeneration=${encodeURIComponent(next)}`, own: own.sessionId }
+  }
+  return { call, query, account, generation, own: own.sessionId, pending, data, content, select, restart,
+    expireLogin: () => { login.session.expiresAt = new Date(Date.now() - 1000) } }
 }
 
-it('binds only the original ZIP navigation query to the authenticated account and current generation', async () => {
+it('binds the original ZIP navigation query to the authenticated account and current generation', async () => {
   const f = await fixture(), route = `${SESSION_LOG_EXPORT_PATH}?sessionId=${encodeURIComponent(f.own)}&includeDescendants=true`
   const downloaded = await f.call(`${route}&${f.query}`)
   expect(downloaded.status).toBe(200)
@@ -116,4 +154,86 @@ it('binds only the original ZIP navigation query to the authenticated account an
   expect((await f.call(`${route}&${f.query}`, 'GET', {}, false)).status).toBe(401)
   expect((await f.call(`${SESSION_LOG_EXPORT_PATH}?sessionId=${SessionId('foreign-session')}&${f.query}`)).status).toBe(403)
   await Promise.allSettled(f.pending)
+})
+
+it('downloads with explicit query binding and retains header-bound HEAD preflight', async () => {
+  const f = await fixture(), route = `${downloadPath}?sessionId=${encodeURIComponent(f.own)}&path=report.bin`
+  const headers = { 'x-pe-account': f.account, 'x-pe-generation': f.generation }
+  for (const method of ['GET', 'HEAD']) {
+    for (const carrier of ['query', 'headers']) {
+      const response = await f.call(carrier === 'query' ? `${route}&${f.query}` : route, method,
+        carrier === 'headers' ? headers : {})
+      expect(response.status).toBe(200)
+      expect(response.headers['content-disposition']).toContain('attachment;')
+      expect(response.headers['content-length']).toBe(String(f.data.length))
+      expect(response.body).toEqual(method === 'HEAD' ? Buffer.alloc(0) : f.data)
+    }
+  }
+  const preflight = await f.call(`${downloadPath}?sessionId=${f.own}`, 'HEAD', headers)
+  expect(preflight.status).toBe(200)
+  expect(preflight.headers['x-workspace-max-files']).toBe('10')
+})
+
+it('rejects missing, duplicate, mixed, wrong-account and stale download bindings before Session selection', async () => {
+  const f = await fixture(), route = `${downloadPath}?sessionId=${f.own}&path=report.bin`
+  const account = `peAccount=${encodeURIComponent(f.account)}`, generation = `peGeneration=${encodeURIComponent(f.generation)}`
+  for (const method of ['GET', 'HEAD']) {
+    for (const binding of ['', account, generation, `${account}&peGeneration=stale`, `peAccount=foreign&${generation}`,
+      `${f.query}&${account}`, `${f.query}&${generation}`]) {
+      expect((await f.call(`${route}&${binding}`, method)).status).toBe(409)
+    }
+    const mixedHeaders: Record<string, string>[] = [{ 'x-pe-account': f.account }, { 'x-pe-generation': f.generation },
+      { 'x-pe-account': f.account, 'x-pe-generation': f.generation }]
+    for (const headers of mixedHeaders) {
+      expect((await f.call(`${route}&${f.query}`, method, headers)).status).toBe(409)
+    }
+  }
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.content).not.toHaveBeenCalled()
+})
+
+it('does not accept query binding on other paths or download methods', async () => {
+  const f = await fixture()
+  for (const [path, method] of [[`${downloadPath}/other`, 'GET'], [`${downloadPath}/`, 'HEAD'],
+    [downloadPath, 'POST'], [downloadPath, 'OPTIONS'], ['/api/workspace-files/directory', 'POST'],
+    ['/api/session/list', 'GET'], ['/api/workspace-files/download.other', 'GET']]) {
+    expect((await f.call(`${path}?sessionId=${f.own}&path=report.bin&${f.query}`, method)).status).toBe(409)
+  }
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.content).not.toHaveBeenCalled()
+})
+
+it('requires authenticated current login and original Session membership for a bound download', async () => {
+  const f = await fixture(), route = `${downloadPath}?sessionId=${f.own}&path=report.bin&${f.query}`
+  expect((await f.call(route, 'GET', {}, false)).status).toBe(401)
+  expect((await f.call(route, 'GET', { Origin: 'http://other.invalid' })).status).toBe(403)
+  expect(f.select).not.toHaveBeenCalled()
+  expect((await f.call(`${downloadPath}?sessionId=foreign-session&path=report.bin&${f.query}`)).status).toBe(400)
+  expect(f.content).not.toHaveBeenCalled()
+  expect((await f.call(route)).body).toEqual(f.data)
+  f.expireLogin()
+  f.content.mockClear(); f.select.mockClear()
+  expect((await f.call(route)).status).toBe(401)
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.content).not.toHaveBeenCalled()
+})
+
+it('rejects a previous epoch download token and accepts only the replacement graph token', async () => {
+  const f = await fixture(), route = `${downloadPath}?sessionId=${f.own}&path=report.bin`
+  expect((await f.call(`${route}&${f.query}`)).body).toEqual(f.data)
+  const next = await f.restart()
+  expect(next.query).not.toBe(f.query)
+  const nextRoute = `${downloadPath}?sessionId=${next.own}&path=report.bin`
+  f.content.mockClear(); f.select.mockClear()
+  for (const method of ['GET', 'HEAD']) expect((await f.call(`${nextRoute}&${f.query}`, method)).status).toBe(409)
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.content).not.toHaveBeenCalled()
+  expect((await f.call(`${nextRoute}&${next.query}`)).body).toEqual(f.data)
+})
+
+it('does not expose an unreviewed download handler merely because query binding is accepted', async () => {
+  const f = await fixture(false)
+  expect((await f.call(`${downloadPath}?sessionId=${f.own}&path=report.bin&${f.query}`)).status).toBe(403)
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.content).not.toHaveBeenCalled()
 })

@@ -51,6 +51,25 @@ function identityChecks(fetch: RpcFetch, timeout = 50) {
 }
 
 describe('captured native carrier', () => {
+  it('binds workspace download navigation and its HEAD preflight to the same captured account and generation', async () => {
+    const send = vi.fn<RpcFetch>(async () => new Response(null))
+    const transport = new BoundTransport(input(send, { baseUrl: 'https://example.test/' }))
+    try {
+      const path = 'api/workspace-files/download?sessionId=own&path=report.bin'
+      const navigation = new URL(transport.navigationUrl(path))
+      expect(navigation.pathname).toBe('/api/workspace-files/download')
+      expect([...navigation.searchParams]).toEqual([
+        ['sessionId', 'own'], ['path', 'report.bin'], ['peAccount', 'a'], ['peGeneration', 'a-generation'],
+      ])
+      await transport.hooks.fetch!(navigation, { method: 'HEAD' })
+      const [target, init] = send.mock.calls[0]!
+      expect(String(target)).toBe(`https://example.test/${path}`)
+      expect(init.method).toBe('HEAD')
+      expect(new Headers(init.headers).get('x-pe-account')).toBe('a')
+      expect(new Headers(init.headers).get('x-pe-generation')).toBe('a-generation')
+    } finally { await transport.close() }
+  })
+
   it.each(['same identity', 'network failure', 'HTTP 503', 'oversized response'])('keeps captured identity after a WS recheck with %s', async (outcome) => {
     const socket = new Socket(), send = vi.fn(async () => new Response('native'))
     const checks = identityChecks(vi.fn(async () => {

@@ -18,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { FILES_ID, filesDefinition } from './definition.tsx'
 import { createList, createWatch, filesFace } from './face.ts'
+import type {} from './management.ts'
+import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import { FilesBody } from './FilesBody.tsx'
 import { FilesTitle } from './FilesTitle.tsx'
 import { en, zh } from './locales.ts'
@@ -82,7 +84,12 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-files: dictionaries')
 
   const store = createFilesStore()
-  const inject = filesFace(createList(ctx.remote), createWatch(ctx.remote))
+  const face = filesFace(createList(ctx.remote), createWatch(ctx.remote),
+    (sessionId, changed) => ctx.on('file-upload/complete', (id) => { if (id === sessionId) changed() }))
+  const inject: typeof face = (sessionId, actions) => {
+    const management = ctx.get('workspaceFileManagement')
+    return { ...face(sessionId, actions), ...management === undefined ? {} : { management } }
+  }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     {
       name: 'sidebar.right.pane.tab', key: FILES_ID, locale: NS, store, inject,

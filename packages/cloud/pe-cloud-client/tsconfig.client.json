@@ -81,7 +81,8 @@
     "src/client/management/plugins/native-integration.ts",
     "src/client/management/plugins/NativePluginConfigurationSection.tsx",
     "src/client/management/plugins/PluginEditPanel.tsx",
-    "src/client/management/plugins/plugin-schema.ts"
+    "src/client/management/plugins/plugin-schema.ts",
+    "src/client/workspace-management.ts"
   ],
   "references": [
     {
@@ -164,6 +165,9 @@
     },
     {
       "path": "../../client/ui-settings-shell"
+    },
+    {
+      "path": "../../client/ui-sidebar-files"
     }
   ]
 }

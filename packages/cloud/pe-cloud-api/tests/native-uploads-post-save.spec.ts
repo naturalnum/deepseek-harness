@@ -183,3 +183,17 @@ it('keeps the slot unknown when a concurrent second call is rejected and the fir
   await rejected
   expect(f.state()).toMatchObject({ occupied: 1, closed: true })
 })
+
+
+it('releases workspace-only intake capacity after each closed upload without retaining receipts', async () => {
+  const destinations: (string | undefined)[] = []
+  const f = await fixture(async (_agent, input, save, directory) => { destinations.push(directory); return save(input) })
+  for (let index = 0; index < 3; index++) {
+    const response = await handleFileUploadHttp(f.uploads, new Request(
+      `http://fixture/upload?sessionId=${f.agent.id}&name=file-${index}.bin&workspaceOnly=true&directory=folder`,
+      { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: Uint8Array.of(index) }))
+    expect(await response.json()).toMatchObject({ ok: true, value: { bytes: 1 } })
+    expect(f.state()).toMatchObject({ occupied: 0, closed: false })
+  }
+  expect(destinations).toEqual(['folder', 'folder', 'folder'])
+})

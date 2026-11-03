@@ -7,6 +7,8 @@ import type { FdStageSink } from './worker-client.ts'
 
 /** Only trusted account composition supplies this closure; no caller-provided iterator is admitted. */
 export interface StageSource {
+  readonly workspaceDirectory?: string
+  readonly directoryOnly?: boolean
   readonly ref: FileAttachmentRef
   open(this: void, signal: AbortSignal): AsyncIterable<Uint8Array>
 }
@@ -85,10 +87,17 @@ export function planStageBatch(
     total += ref.bytes
     if (!Number.isSafeInteger(ref.bytes) || ref.bytes < 0 || ref.bytes > limits.maxFileBytes
       || !Number.isSafeInteger(total) || total > limits.maxBatchBytes) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
-    const relativePath = `.pe/attachments/${digest}/${ref.name}`
+    const relativePath = source.workspaceDirectory === undefined ? `.pe/attachments/${digest}/${ref.name}`
+      : `${source.workspaceDirectory}/${ref.name}`
+    if (source.workspaceDirectory !== undefined && (source.workspaceDirectory.startsWith('/')
+      || source.workspaceDirectory.split('/').some(part => part !== '.' && (!validStageName(part) || part === '.pe')))) {
+      throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+    }
     if (Buffer.byteLength(`${root.rootPath}/${relativePath}`) > bounds.maxPathBytes) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
     const copied = Object.freeze({ attachmentId: ref.attachmentId, name: ref.name, bytes: ref.bytes })
-    const file = Object.freeze({ digest, name: ref.name, expectedBytes: ref.bytes })
+    const file = Object.freeze({ digest, name: ref.name, expectedBytes: ref.bytes,
+      ...source.workspaceDirectory === undefined ? {} : { workspaceDirectory: source.workspaceDirectory },
+      ...source.directoryOnly === undefined ? {} : { directoryOnly: source.directoryOnly } })
     // Input/output metadata must fit their complete frame ceiling, including bounded native facts.
     if (Buffer.byteLength(JSON.stringify({ file, relativePath, ref: copied })) + 1024 > bounds.replyOverheadBytes) {
       throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
@@ -180,7 +189,7 @@ export async function executeStageBatch(
         await sink.finishSource()
       }
       const result = await sink.settled
-      results.push(Object.freeze({ ...result, ref: entry.source.ref, relativePath: entry.relativePath }))
+      results.push(Object.freeze({ ...result, ref: entry.source.ref, relativePath: resultPath(entry, result) }))
     } catch (error) {
       const cancelled = actualSignal.aborted
       // Request sink cleanup before waiting on a possibly blocked native source return.
@@ -196,7 +205,7 @@ export async function executeStageBatch(
       }
       if (destination.status === 'fulfilled') {
         // A closed durable result stays committed even if observation cancellation arrives afterwards.
-        results.push(Object.freeze({ ...destination.value, ref: entry.source.ref, relativePath: entry.relativePath }))
+        results.push(Object.freeze({ ...destination.value, ref: entry.source.ref, relativePath: resultPath(entry, destination.value) }))
         if (results.length === plan.files.length) return Object.freeze(results)
       }
       const failure = error instanceof FdStageFailure ? error : new FdStageFailure('not-published',
@@ -206,4 +215,10 @@ export async function executeStageBatch(
     } finally { clearTimeout(timer) }
   }
   return Object.freeze(results)
+}
+
+function resultPath(entry: StageBatchPlan['files'][number], result: FdStageResult): string {
+  if (entry.file.workspaceDirectory === undefined) return entry.relativePath
+  if (result.facts.publishedName === undefined) throw new FdStageFailure('unknown', 'FS_IO_ERROR', result.facts)
+  return `${entry.file.workspaceDirectory}/${result.facts.publishedName}`
 }
