@@ -3280,6 +3280,8 @@ export interface Config {
   bundledSkillDir?: string
   /** Guest-visible mirror of bundledSkillDir; deployment must supply the identical read-only asset tree. */
   bundledExecutionRoot?: string
+  /** Deployment instructions appended only to loaded bundled bodies and logged by the native skill tool. */
+  bundledInstructions?: string
   /** Require generated complete-package inventories for the bundled root. */
   packagedBundles?: boolean
 }
@@ -3318,6 +3320,8 @@ export interface Config {
     soffice: string
     /** Absolute Poppler page-image executable in the execution environment. */
     pdftoppm: string
+    /** Optional executable that preserves bundled technical-report C/F/T fields while refreshing catalogs. */
+    wordRefresh?: string
   }
   /** Require generated complete-package inventories. */
   packagedBundles?: boolean
