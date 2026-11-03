@@ -45,6 +45,8 @@ export interface AccountPolicyConfig {
   readonly maxPolicyStringBytes: number
   readonly models: { readonly provider: string; readonly model: string }[]
   readonly defaultPresetId: string
+  /** Restore-only declaration accepted as an inherited old default; new work uses defaultPresetId. */
+  readonly legacyDefaultPresetId?: string
   readonly presets: AccountPresetPolicy[]
   readonly maxPresetConfigBytes: number
   readonly agentLoopEntryId: string
@@ -213,7 +215,8 @@ class AccountPolicy {
       const actual: unknown = this.ctx.get(key)
       if (!object(actual) || original(actual) !== expected) unavailable()
       if (key === 'agentPresets' && actual instanceof AgentPresets
-        && (actual.config.default !== this.config.defaultPresetId || !this.approvedPreset(actual.defaultId).selectable)) refuse()
+        && (this.resolveDefault(actual.config.default) !== this.config.defaultPresetId
+          || !this.approvedPreset(actual.defaultId).selectable)) refuse()
       if (key === 'agentLoop' && actual instanceof AgentLoop && actual.config.agents.length !== 0) refuse()
     }
     for (const fact of this.facts ?? []) {
@@ -577,7 +580,7 @@ class AccountPolicy {
     control.throwIfAborted()
     this.pin()
     const presets = this.provider('agentPresets')
-    if (!(presets instanceof AgentPresets) || presets.config.default !== this.config.defaultPresetId) refuse()
+    if (!(presets instanceof AgentPresets) || this.resolveDefault(presets.config.default) !== this.config.defaultPresetId) refuse()
     const selected = this.approvedPreset(id ?? presets.defaultId, selectable || id === undefined)
     this.approvedPreset(presets.defaultId, true)
     const resolved = await presets.resolve(selected.id)
@@ -608,6 +611,14 @@ class AccountPolicy {
   allowedModel(provider: string, model: string): boolean {
     this.current()
     return this.allowedModelCurrent(provider, model)
+  }
+
+  resolveDefault(id: string): string {
+    if (id === this.config.legacyDefaultPresetId) {
+      if (this.approvedPreset(id).selectable) refuse()
+      return this.approvedPreset(this.config.defaultPresetId, true).id
+    }
+    return this.approvedPreset(id, true).id
   }
 
   /** The caller has checked account current in this synchronous operation. */
@@ -1190,6 +1201,7 @@ export function createAccountPolicy(
       assertSession: (agent) => { policy.prepared(agent, true) },
       assertSelectCurrent: (agent, id) => { policy.selectCurrent(agent, id) },
       isSelectable: id => policy.selectablePreset(id),
+      resolveDefault: id => policy.resolveDefault(id),
     },
     beginSettingsUpdate: (namespace, ops, fields) => policy.beginSettingsUpdate(namespace, ops, fields),
     allowSettingsUnset: (namespace, field, values) => policy.allowSettingsUnset(namespace, field, values),

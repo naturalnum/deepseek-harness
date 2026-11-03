@@ -228,7 +228,8 @@ export class ExecutionStream implements AgentDataStream {
     const lane = this.#lanes.get(channel)
     const size = typeof chunk === 'string' ? Buffer.byteLength(chunk, encoding) : chunk instanceof Uint8Array ? chunk.byteLength : -1
     if (this.#failed || this.#closing || this.#closeRequested || lane === undefined || !lane.input || lane.inputEof
-      || size < 0 || lane.accepted + size > lane.budget) {
+      || size < 0 || lane.accepted + size > lane.budget
+      || lane.endpoint.writableLength + size > L.windowBytes + L.frameBytes) {
       this.fail(); return false
     }
     lane.accepted += size

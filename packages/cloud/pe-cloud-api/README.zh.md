@@ -148,7 +148,7 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 凭据引用、技能目录和批准插件 Profile 在同一个 `AccountSaves` 中保留各自的编辑 token。技能工作及必需应用/provider 释放继续占用该 turn，阻止独占 paused 插件修改。插件嵌套 writer 加入原 paused turn；顶层技能仍使用普通 live 准入。失败或未知保存阻止重新开放，终态 stop 不能恢复。paused 插件权限不授予原始 Settings、凭据或 manager/package writer 权限。
 
-显式账户配方入口可通过 runtime 私有 builtin 选择原生 Commands、Goals、Agent 预设、权限预设、UserQuestions、反馈及 Session 日志导出。这些服务保留原生注册表、投影、修订号、队列与持久化。每个实际 RPC、流或 Fetch 注册都须匹配已审核开放清单及原 provider 身份；浏览器选择控件本身不授权操作。模型目录使用与 prompt 调度相同的批准 provider/model 路由过滤，保留原生 effort 元数据，并在原生选择提交点复核准入。
+显式账户配方入口可通过 runtime 私有 builtin 选择原生 Commands、Goals、Agent 预设、权限预设、UserQuestions、反馈及 Session 日志导出。这些服务保留原生注册表、投影、修订号、队列与持久化。预设适配通过共享 Runtime 策略取得生效的继承默认值，不改写原生声明；显式选中的默认值仍受可选择 id 策略约束。每个实际 RPC、流或 Fetch 注册都须匹配已审核开放清单及原 provider 身份；浏览器选择控件本身不授权操作。模型目录使用与 prompt 调度相同的批准 provider/model 路由过滤，保留原生 effort 元数据，并在原生选择提交点复核准入。
 
 Commands 在附件准入之后、原生 handler 执行之前复核原账户及 Agent。原生问答及授权 waterfall 复用 Remote 投影器及结果协议；已交付但未回答的请求仍占用同一事件条数与完整帧字节预算，直到结算。结果在结算前复核原账户、Agent 及 Session。原生取消、销毁及重连保留其原有未决请求行为。反馈沿用原生排队 JSONL 写入和账户范围的匿名展示身份；已经开始的写入在准入关闭后仍保留原有 flush/close 责任。
 

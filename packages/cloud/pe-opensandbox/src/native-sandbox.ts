@@ -59,7 +59,7 @@ export class CloudSandboxProvider extends SandboxProvider {
       || argv.reduce((total, value) => total + Buffer.byteLength(value) + 1, 0) > this.limits.maxArgvBytes) throw this.refusal()
     const selected = Object.freeze({ mode: policy.mode, workspaceRoot: policy.workspaceRoot,
       ...policy.sessionId === undefined ? {} : { sessionId: policy.sessionId } })
-    const standingMode = this.ctx.sandboxPolicy.resolve({ session: call.scope.agent.session }).mode
+    const standingMode = selectNativeFilePolicy(this.ctx, call.scope.agent.session, call.scope.project.path).mode
     const filePolicy = selectNativeFilePolicy(this.ctx, call.scope.agent.session, call.scope.project.path, selected)
     const facts = this.profile.current(call.scope, selected)
     if (facts === undefined) throw new SandboxUnavailableError(policy.mode, 'The remote guard/profile is not qualified.')
@@ -88,7 +88,7 @@ export class CloudSandboxProvider extends SandboxProvider {
     if (held === undefined || held.scope !== call.scope || argv.length !== held.argv.length
       || argv.some((value, index) => value !== held.argv[index])) throw this.refusal()
     held.signal?.throwIfAborted()
-    if (caller.sandboxPolicy.resolve({ session: call.scope.agent.session }).mode !== held.standingMode) throw this.refusal()
+    if (selectNativeFilePolicy(caller, call.scope.agent.session, call.scope.project.path).mode !== held.standingMode) throw this.refusal()
     const current = selectNativeFilePolicy(caller, call.scope.agent.session, call.scope.project.path, held.policy)
     if (current.mode !== held.filePolicy.mode || this.profile.current(call.scope, held.policy) === undefined) throw this.refusal()
     this.bindings.delete(argv)

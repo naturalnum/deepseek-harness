@@ -9,7 +9,7 @@ from types import MappingProxyType
 
 from paths import absolute
 
-VERSION = 's6-stream/1-native-pipes-pty-v1'
+VERSION = 's6-stream/2-native-pipes-pty-v1'
 ROLE_DOMAIN = b'dsh:s4:range-role:v1'
 ROLES = ['foreground', 'service', 'program']
 AUTH_HEADER = 'x-pe-execution-token'

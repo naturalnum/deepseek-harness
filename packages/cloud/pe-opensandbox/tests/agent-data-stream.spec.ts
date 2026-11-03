@@ -138,30 +138,37 @@ it('rejects padding, incorrect length and oversized binary messages before enter
   }
   expect(() => decodeStreamFrame(new Uint8Array(4109))).toThrow(LocalRefusal)
 })
-it('splits a large Native write and waits for real delivery credit under the independent 64KiB window', async () => {
-  const f = mux(), bytes = Buffer.alloc(131072, 0xab)
+it('splits a bounded Native frame and waits for real delivery credit under the independent 8KiB window', async () => {
+  const f = mux(), bytes = Buffer.alloc(STREAM_LIMITS.windowBytes + 1, 0xab)
   let completed = false
   f.stream.control?.write(bytes, () => { completed = true })
   await setImmediate()
-  expect(f.wire.frames.filter(frame => frame.kind === 1)).toHaveLength(16)
+  expect(f.wire.frames.filter(frame => frame.kind === 1)).toHaveLength(2)
   expect(completed).toBe(false)
-  f.stream.events.data(credit(4, 0, 65536)); await setImmediate()
-  expect(f.wire.frames.filter(frame => frame.kind === 1)).toHaveLength(32)
+  f.stream.events.data(credit(4, 0, STREAM_LIMITS.windowBytes)); await setImmediate()
+  expect(f.wire.frames.filter(frame => frame.kind === 1)).toHaveLength(3)
   expect(completed).toBe(false)
-  f.stream.events.data(credit(4, 1, 65536)); await setImmediate()
+  f.stream.events.data(credit(4, 1, 1)); await setImmediate()
   expect(completed).toBe(true)
   expect(Buffer.concat(f.wire.frames.map(frame => Buffer.from(frame.payload)))).toEqual(bytes)
 })
+it('rejects retained input beyond one window plus one frame before queuing a Native buffer', async () => {
+  const f = mux(), failure = Promise.withResolvers<Error | null | undefined>()
+  expect(f.stream.control?.write(Buffer.alloc(STREAM_LIMITS.windowBytes + STREAM_LIMITS.frameBytes + 1), failure.resolve)).toBe(false)
+  expect(await failure.promise).toBeInstanceOf(LocalRefusal)
+  expect(f.stream.control?.writableLength).toBe(0)
+  expect(f.wire.frames).toEqual([])
+})
 it('slow unread stdout does not consume the fd7 credit lane', async () => {
   const f = mux()
-  for (let i = 0; i < 16; i++) f.stream.events.data(data(2, i, Buffer.alloc(4096, i)))
+  for (let i = 0; i < STREAM_LIMITS.windowBytes / 4096; i++) f.stream.events.data(data(2, i, Buffer.alloc(4096, i)))
   f.stream.events.data(data(4, 0)); await setImmediate()
   expect(f.wire.frames).toHaveLength(0)
   expect(f.stream.control?.read()).toEqual(Buffer.from([0, 255, 65])); await setImmediate()
   expect(f.wire.frames).toMatchObject([{ kind: 3, channel: 4 }])
-  expect(f.stream.stdout?.readableLength).toBe(65536)
+  expect(f.stream.stdout?.readableLength).toBe(STREAM_LIMITS.windowBytes)
 })
-it('lets fd7 cumulative output cross the 64KiB window while preserving stdout lifetime limits', async () => {
+it('lets fd7 cumulative output cross the 8KiB window while preserving stdout lifetime limits', async () => {
   const f = mux()
   for (let i = 0; i < 32; i++) {
     f.stream.events.data(data(4, i, Buffer.alloc(4096, i)))
@@ -201,7 +208,7 @@ it.each(['credit', 'sequence', 'window', 'after-eof'] as const)('retains actual 
   const f = mux()
   if (bad === 'credit') f.stream.events.data(credit(4, 0, 1))
   if (bad === 'sequence') f.stream.events.data(data(4, 1))
-  if (bad === 'window') for (let i = 0; i < 17; i++) f.stream.events.data(data(2, i, Buffer.alloc(4096)))
+  if (bad === 'window') for (let i = 0; i <= STREAM_LIMITS.windowBytes / 4096; i++) f.stream.events.data(data(2, i, Buffer.alloc(4096)))
   if (bad === 'after-eof') { f.stream.events.data(eof(4, 0)); f.stream.events.data(data(4, 1)) }
   await expect(f.stream.outputEnded).rejects.toBeInstanceOf(ControlUncertain)
   expect(f.failures()).toBe(1)

@@ -3,7 +3,7 @@ import struct
 
 from wire import Refused, STREAM_VERSION, require
 
-DATA_BYTES, WINDOW_BYTES, HEADER_BYTES = 4096, 65536, 12
+DATA_BYTES, WINDOW_BYTES, HEADER_BYTES = 4096, 8192, 12
 DATA, EOF, CREDIT = 1, 2, 3
 NAMES = {1: 'stdin', 2: 'stdout', 3: 'stderr', 4: 'control'}
 HEADER = struct.Struct('!IBBHI')

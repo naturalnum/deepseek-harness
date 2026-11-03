@@ -1,15 +1,15 @@
 {
   "status": "native-stream-candidate-not-kernel-accepted",
-  "protocol": "s6-stream/1-native-pipes-pty-v1",
-  "agentSourceSha256": "20bcbcf4fb67868ec6c9120abc3b218770e695563b634b112e808661f9868e6d",
+  "protocol": "s6-stream/2-native-pipes-pty-v1",
+  "agentSourceSha256": "b83348df549b3b8c531b2124a1b0460f6b1b871e99872275a2f9130bbe466f9a",
   "sources": {
     "guardian.py": "6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e",
     "launcher.py": "b60e9714b0bfd08804900485a4816c9e4a542ea2031c0ab43af1a81b36791a7a",
-    "manager.py": "7b21968b03ddc76f67edeabfa4424f1f8f98cdb3d15bbc3453b36563f5b32d1d",
+    "manager.py": "f73bb3effd9132ed23dcfe76d2aebe48ba1a9cc52d18b6c5c7a75c35274bfe46",
     "paths.py": "718a6818a548a4c766d974d70e9cad4e88cbc184abc722fd4cb85cbc895f903f",
     "server.py": "70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32",
-    "stream.py": "850e40e6c07eb5516b770bf3dd830bd7f506903f6ec7f390b640299fa4bbca7e",
+    "stream.py": "32a1daf8c61aff586b079b2de6cd00500c05ef7e19552a5385450a123635b4b3",
     "terminal.py": "e7c3e8e298562a9629f1cefec2f753d34fda1d6285ad14982859c4cd026d8c36",
-    "wire.py": "6f09005091c01691501cdb859f7ecc43c73ec4cdfa6f5a6b8383146e6252567e"
+    "wire.py": "f24f61297924fa11d3cf0876c6bbe9ca07c22774555aadc24dfb36acc9a5ab8c"
   }
 }

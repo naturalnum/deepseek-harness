@@ -109,7 +109,7 @@ export interface AgentDataStream {
 export interface StreamLimits {
   readonly version: 'pe-execution-stream-v1'
   readonly frameBytes: 4096
-  readonly windowBytes: 65536
+  readonly windowBytes: 8192
   readonly controlInputBytes: 8388608
   readonly controlOutputBytes: 8388608
   readonly stdinBytes: 4096

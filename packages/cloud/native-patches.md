@@ -46,3 +46,5 @@ The native file tree accepts a prepared `workspaceFileManagement` face; selectio
 Native patch removal is conditional on equivalent behavior, not on reducing a file count. Optional plugin management, preview, arbitrary SSH, host failover and large-file acceptance require their own runtime evidence; passing this maintenance workflow does not enable them.
 
 Native PTC and terminal spawn requests carry their resolved per-call sandbox policy into the remote provider. Local argv wrapping remains native; the Cloud provider consumes the original confinement handoff and signs the approved policy on the same operation.
+
+The optional Native `ProfileContext.entryAliases` keeps trusted launch-time entry renames consistent across detached boot/HMR reads and the original ConfigEditor. Cloud uses one bounded, explicitly selected historical `presets` to `agent-preset-registry` alias with the original guarded provider; existing profile bytes remain unchanged until an explicit Native save. Ordinary Native profiles have no alias.

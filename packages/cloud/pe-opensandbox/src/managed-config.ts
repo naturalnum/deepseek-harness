@@ -7,6 +7,7 @@ import type { ManagedNativeCommandConfig, ManagedServiceConfig } from './service
 import type { CommandOperationLimits } from './command-operation.ts'
 import type { NativeExecutionConfig } from './native-providers.ts'
 import { SLICE_LIMITS, CARRIER_LIMITS } from './agent-data/constants.ts'
+import { STREAM_RETAINED_BYTES } from './agent-data/role-protocol.ts'
 import { allocationMigrationSql } from './migrations/allocations.ts'
 import { ExecutionStateError } from './errors.ts'
 
@@ -246,7 +247,7 @@ export function parseManagedCoordinatorConfig(value: unknown): ManagedCoordinato
   requireLimit(config.recoveryPageSize <= store.maxRows, 'configuration.recoveryPageSize')
   requireLimit(config.recoveryPageSize * (store.maxRowBytes + 1) + 2 <= store.maxResultBytes, 'store.maxResultBytes')
   const command = commands.commandLimits
-  const largestReservation = 8 * (2 * (commands.pipes === undefined ? command.maxTailBytes : 65536)
+  const largestReservation = 8 * ((commands.pipes === undefined ? 2 * command.maxTailBytes : STREAM_RETAINED_BYTES)
     + command.maxStdinBytes + command.maxPathBytes + command.maxArgvBytes)
     + 8192 + command.maxWaiters * 256
   requireLimit(Number.isSafeInteger(largestReservation) && largestReservation <= config.maxResidentBytesPerAccount,

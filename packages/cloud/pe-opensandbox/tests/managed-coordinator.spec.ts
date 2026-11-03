@@ -1,6 +1,6 @@
 /** Actual Cordis/binding composition with scripted Root SQL and SDK transport; no Agent, network or sandbox is created. */
 import { Context } from '@deepseek-ai/cordis'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
@@ -42,6 +42,14 @@ import type { PreviewHttpOwner } from '../src/application-http.ts'
 import type { OriginalDevServiceWork } from '../src/dev-service-consumer.ts'
 import type { RegisteredApplicationService } from '../src/types.ts'
 import type {} from '@deepseek-ai/dsh-shell-env'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import NodePtcRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
+import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
+import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
+import { localKernelChannel, type KernelLaunch } from './local-kernel-channel.ts'
+import { STREAM_RETAINED_BYTES } from '../src/agent-data/role-protocol.ts'
 
 const applicationCleanups: (() => void)[] = []
 afterEach(() => { for (const close of applicationCleanups.splice(0)) close(); vi.restoreAllMocks() })
@@ -378,13 +386,20 @@ async function applicationFixture(options: {
   application?: boolean
   services?: boolean
   skillCopies?: number
+  pipes?: boolean
 } = {}) {
   const managed: ManagedCoordinatorConfig = { ...config, maxActiveCommands: 8, maxActiveCommandsPerAccount: 4,
     maxResidentCommands: 16, maxResidentCommandsPerAccount: 8,
+    ...options.pipes ? { maxActiveCommands: 2, maxActiveCommandsPerAccount: 1,
+      maxResidentCommands: 8, maxResidentCommandsPerAccount: 4 } : {},
     maxResidentBytes: options.globalBytes ?? options.bytes ?? 1048576, maxResidentBytesPerAccount: options.bytes ?? 1048576,
     allocations: { ...config.allocations, maxAllocations: 4, maxAllocationsPerAccount: 2 },
-    commands: { ...config.commands, allowedTools: ['bash', 'dev_service'], maxScopes: 8,
+    shell: { ...config.shell, ...options.pipes ? { enforceSessionFilePolicy: true, timeoutMs: 10000,
+      maxTimeoutMs: 10000, maxOutputBytes: 4096, graceMs: 1000 } : {} },
+    commands: { ...config.commands, allowedTools: options.pipes ? ['bash', 'run_code', 'terminal_open'] : ['bash', 'dev_service'], maxScopes: 8,
+      ...options.pipes ? { pipes: { controlInputBytes: 8388608, controlOutputBytes: 8388608 } } : {},
       commandLimits: { ...config.commands.commandLimits, pollIntervalMs: 1000, maxLifetimeMs: 190000, maxWaiters: 4,
+        ...options.pipes ? { maxTailBytes: 4096, maxLifetimeMs: 155000, pollIntervalMs: 5 } : {},
         ...options.skillCopies === undefined ? {} : { maxArgvBytes: 256, maxArgvEntries: 8, maxPathBytes: 128, maxStdinBytes: 256 } },
       ...(options.services === false ? {} : { services: { maxOutputBytes: 32, graceMs: 1000,
         profile: { kind: 'python-http-v1', port: 8000, startWaitMs: 5000, runMs: 120000, stopWaitMs: 5000,
@@ -447,6 +462,10 @@ async function applicationFixture(options: {
     const a = f.bind(id)
     await mountAgentLoopTestDependencies(a.ctx, { tools: { mode: 'native' } })
     provideWorkingDirectoryFixture(a.ctx, '/project')
+    if (options.pipes) {
+      await a.ctx.plugin(SandboxPolicy, { mode: 'workspace-write', workspaceRoot: '/project' })
+      await a.ctx.plugin(LocalFileSystem)
+    }
     const harness = await mountAgentLoopTestHarness(a.ctx)
     const handles = ownedHandles ? await Promise.all(Array.from({ length: sessions }, (_, i) =>
       a.ctx.agents.create({ sessionId: SessionId(`${id}-${i + 1}`), meta: { cwd: '/project' } }))) : []
@@ -486,6 +505,66 @@ function trackApplication(actual: Promise<void>) {
   const joined = actual.then(() => { state.settled = true }, (cause: unknown) => { state.settled = true; state.cause = cause })
   return { state, joined }
 }
+
+it.each(['foreground', 'background', 'cancel'] as const)('joins a real Native PTC %s Bash under the original one-per-account admission group', async (mode) => {
+  const f = await applicationFixture({ pipes: true, services: false, bytes: 524288, globalBytes: 1048576 })
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'native-ptc-group-')))
+  onTestFinished(() => { rmSync(directory, { recursive: true, force: true }) })
+  for (const file of ['process', 'bootstrap', 'channel', 'json-wire', 'output-json', 'protocol', 'environment']) {
+    copyFileSync(new URL(`../../../ptc-runtime/ptc-runtime-node/src/${file}.ts`, import.meta.url), join(directory, `${file}.ts`))
+  }
+  const a = await f.account('real-pipes', 2), launches: KernelLaunch[] = []
+  vi.spyOn(f.deployment.runtimes, 'needsContinuation').mockReturnValue(false)
+  const output = Promise.withResolvers<undefined>()
+  const program = vi.spyOn(f.deployment.runtimes, 'program').mockImplementation(() => localKernelChannel(directory,
+    (launch) => { launches.push(launch) }, () => { output.resolve(undefined) }))
+  const command = vi.spyOn(f.deployment.runtimes, 'command').mockImplementation(() => localKernelChannel(directory,
+    (launch) => { launches.push(launch) }, () => { output.resolve(undefined) }))
+  a.authority.assertRetainedExecutionOwner.mockImplementation((agent, workspace) => {
+    expect(a.agents).toContain(agent); expect(workspace).toBe(a.workspace); a.lifetime.signal.throwIfAborted()
+  })
+  await a.ctx.plugin(NodePtcRuntime, { executionMode: 'per-call', timeoutMs: 10000, maxTimeoutMs: 10000,
+    graceMs: 1000, maxMessageBytes: 8192, maxOutputBytes: 8192, maxPendingCalls: 1, maxOldGenerationSizeMb: 64,
+    launch: { kind: 'node-script', executable: '/opt/dsh-native/node', bootstrapPath: '/opt/dsh-native/process.js' } })
+  await a.ctx.plugin(LocalJobRegistry, { pumpPollMs: 5 })
+  await a.ctx.plugin(ToolJobs, { completionDelivery: 'quiet' })
+  await a.ctx.plugin(ToolBash)
+  const agent = a.agents[0], other = a.agents[1]
+  if (agent === undefined || other === undefined) throw new Error('Original Native Agents absent')
+  agent.ctx.tools.presentAs('ptc')
+  const controller = new AbortController()
+  const pending = a.ctx.tools.execute({ callId: ToolCallId(`real-${mode}`), name: 'run_code', agent,
+    signal: controller.signal, arguments: { description: 'Original Native nested shell', code:
+      `return await tools.bash({command:"printf native-nested; exec sleep ${mode === 'foreground' ? '0.3' : '10'}",description:"Original shell",run_in_background:${mode === 'background'}})` } })
+  const observed = pending.catch((cause: unknown) => cause)
+  await Promise.race([output.promise, observed.then((value) => { throw new Error(`Native program ended before nested output: ${JSON.stringify(value)}`) })])
+  expect(launches).toHaveLength(2)
+  expect(launches.map(launch => launch.program)).toEqual([true, false])
+  expect(launches.every(launch => launch.process.pid !== undefined && launch.process.exitCode === null)).toBe(true)
+  // Each actual range pays separately; only the exact original run_code parent shares the active admission slot.
+  const bytes = launches.reduce((sum, launch) => sum + 8 * ((launch.program ? STREAM_RETAINED_BYTES : 8192)
+    + Buffer.byteLength(launch.spec.cwd) + launch.spec.argv.reduce((total, part) => total + Buffer.byteLength(part) + 1, 0))
+    + 8192 + 4 * 256, 0)
+  expect(bytes).toBeLessThanOrEqual(524288)
+  expect(f.owner).toMatchObject({ state: { active: 1, resident: 2, bytes } })
+  const refused = await a.ctx.tools.execute({ callId: ToolCallId('foreign-admission'), name: 'run_code', agent: other,
+    signal: new AbortController().signal, arguments: { description: 'Independent second Session', code: 'return 1' } })
+  expect(refused.isError).toBe(true)
+  expect(program).toHaveBeenCalledTimes(1); expect(command).toHaveBeenCalledTimes(1)
+  if (mode === 'cancel') controller.abort(new Error('Cancel original Native program'))
+  const result = await observed
+  if (mode !== 'cancel') {
+    expect(result).toMatchObject({ isError: false })
+    if (mode === 'foreground') expect(JSON.stringify(result)).toContain('native-nested')
+  }
+  if (mode === 'background') {
+    await vi.waitFor(() => { expect(f.owner).toMatchObject({ state: { active: 1, resident: 1 } }) })
+    expect(launches[1]?.process.exitCode).toBeNull()
+    await a.ctx.agentLoop.stop()
+  }
+  await vi.waitFor(() => { expect(f.owner).toMatchObject({ state: { active: 0, resident: 0, bytes: 0 } }) })
+  expect(launches.every(launch => launch.process.exitCode !== null || launch.process.signalCode !== null)).toBe(true)
+}, 30000)
 
 it('shares account request ceilings across original service rows and reuses a slot only after its terminal', async () => {
   const f = await applicationFixture(), a = await f.account('A'), b = await f.account('B')

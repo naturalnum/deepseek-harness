@@ -1,7 +1,7 @@
 /** Private native assembly after the factory's owner, root-capability, and recipe admission checks. */
 import { isAbsolute } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
-import { boot, PluginPackages, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { boot, composeEntries, PluginPackages, readProfilePatches, normalizeProfileEntryAliases, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { installAccountBinding, requireAccountBinding } from './binding.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -19,6 +19,8 @@ export interface NativeAccountBootInput {
   readonly maxObservedEvents: number
   /** Production uses its existing native entry budget; omission remains native-mechanism-only. */
   readonly maxEntries?: number
+  /** Explicit historical default also admits the original `presets` registry id through the guarded canonical entry. */
+  readonly legacyDefaultPresetId?: string
   /** Private original-owner observation only; callback failures never affect startup. */
   readonly observeStartup?: StartupObserver
   /** Original files lease checks exact Profile/base addresses before native Profile or configuration I/O. */
@@ -84,7 +86,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
   if (input.binding.lifetime.aborted) {
     throw new AccountRuntimeError('cloud/stale-generation', 'Account generation lifetime has ended')
   }
-  const profile = Object.freeze(structuredClone(input.profile))
+  let profile = Object.freeze(structuredClone(input.profile))
   const environment = input.environment
   const requiredIds = [...input.requiredEntryIds]
   observeStartup(diagnostic, { phase: 'storage-before-read' })
@@ -92,6 +94,39 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
   try {
     input.assertBeforeNativeRead?.()
     patches = readProfilePatches('pe-cloud-account', profile)
+    if (input.legacyDefaultPresetId !== undefined) {
+      if (input.maxEntries === undefined) {
+        throw new AccountRuntimeError('cloud/invalid-config', 'Historical preset compatibility requires the native entry limit')
+      }
+      const maximum = input.maxEntries
+      let visited = 0
+      const walk = (rows: typeof patches): void => {
+        for (const patch of rows) {
+          if (++visited > maximum) {
+            throw new AccountRuntimeError('cloud/invalid-config', 'Historical preset patches exceed the native entry limit')
+          }
+          if (patch.insert !== undefined) walk(patch.insert)
+          if (patch.group && Array.isArray(patch.config)) walk(patch.config as typeof patches)
+        }
+      }
+      walk(patches)
+      const entries = composeEntries([patches]), legacy = entries.filter(row => row.id === 'presets')
+      if (legacy.length !== 0) {
+        const row = legacy[0]
+        const config: unknown = row?.config
+        if (legacy.length !== 1 || entries.some(row => row.id === 'agent-preset-registry') || row === undefined
+          || !['@deepseek-ai/dsh-agent-preset-registry', 'cordis:pe-cloud-agent-presets'].includes(row.name)
+          || config === null || typeof config !== 'object' || Array.isArray(config)
+          || Reflect.get(config, 'default') !== input.legacyDefaultPresetId) {
+          throw new AccountRuntimeError('cloud/invalid-config', 'Historical preset registry does not match the approved default')
+        }
+        // Native patches are detached read results. The stored profile retains its original bytes until an explicit Native save.
+        const entryAliases = [{ from: 'presets', to: 'agent-preset-registry',
+          fromName: '@deepseek-ai/dsh-agent-preset-registry', toName: 'cordis:pe-cloud-agent-presets' }]
+        normalizeProfileEntryAliases(patches, entryAliases)
+        profile = Object.freeze({ ...profile, entryAliases })
+      }
+    }
   } catch (cause) { observeStartup(diagnostic, { failure: cause }); throw cause }
   const observer = new Context()
   let context: Context | undefined

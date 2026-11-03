@@ -218,7 +218,7 @@ async function fixture(options: {
     const unavailable = (): never => { throw new AccountRuntimeError('cloud/account-unavailable', 'No fixture project/model/Preset approval') }
     return {
       presets: { assertCurrent: unavailable, assertPreset: async () => unavailable(), assertSession: unavailable,
-        assertSelectCurrent: unavailable, isSelectable: () => false },
+        assertSelectCurrent: unavailable, isSelectable: () => false, resolveDefault: unavailable },
       beginSettingsUpdate: () => ({ check() {}, approve() {}, finish() {}, publish: (audit) => { audit() },
         abort() {}, run: operation => operation() }),
       assertWorkspace: unavailable, projectForAgent: unavailable, projectForSession: unavailable,

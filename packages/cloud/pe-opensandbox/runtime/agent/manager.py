@@ -141,7 +141,7 @@ class Manager:
                 'sealed': self.sealed, 'sealReason': self.seal_reason,
                 'physicalStopRequired': self.control_unknown or any(r['unknown'] for r in self.records.values()),
                 **({} if not self.stream_enabled else {'streamLimits': {'version': STREAM_VERSION,
-                    'frameBytes': 4096, 'windowBytes': 65536, 'controlInputBytes': STREAM_CONTROL_MAX,
+                    'frameBytes': 4096, 'windowBytes': 8192, 'controlInputBytes': STREAM_CONTROL_MAX,
                     'controlOutputBytes': STREAM_CONTROL_MAX, 'stdinBytes': 4096}})}
 
     def stream_operation(self, body):

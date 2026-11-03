@@ -139,7 +139,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 ## 已知限制与延期工作
 
-原生 raw 执行要求显式 `commands.pipes: { controlInputBytes, controlOutputBytes }`、固定消费者 `bash`、可选 `dev_service`、`run_code` 和 `terminal_open`，同时启用 Session 策略，并使原 resident 容量能容纳完整流窗口。原 token 发行器只准入仍存活的 `run_code` 下同 Agent、同 root call 的子调用；签名 program 范围可与一个 foreground 范围并存，但不可与 service 并存。终端句柄在最终投影后保留原调用，只有原范围与流实际结清后才释放。固定 guest 提供 Node 与受保护的 WS 解析器；经验证的 server 配置允许 bwrap 所需命名空间操作和 proc 布局，不增加 capabilities 或租户配额。配置或镜像标签本身不代表目标验收。只读档禁止文件写入，工作区写入档允许项目与会话临时区写入，完全访问档还允许私有 home 与环境写入。三档均保留账户、项目及受信元数据隔离。
+原生 raw 执行要求显式 `commands.pipes: { controlInputBytes, controlOutputBytes }`、固定消费者 `bash`、可选 `dev_service`、`run_code` 和 `terminal_open`，同时启用 Session 策略，并使原 resident 容量能容纳完整流窗口。原 token 发行器只准入仍存活的 `run_code` 下同 Agent、同 root call 的子调用；签名 program 范围可与一个 foreground 范围并存，但不可与 service 并存。`maxActiveCommands` 及其每账户上限计量原始准入组：存活的 program 与其精确嵌套 foreground 共享一个名额，每个操作仍分别承担驻留计数与字节费用。最后一个成员在实际范围结清前保留该名额，包括 program 退出后仍存在的原生后台任务。其他 Session 不能加入该组。终端句柄在最终投影后保留原调用，只有原范围与流实际结清后才释放。Minimal 的持久 `bash` 只有经原预设注册表确认该 Agent 精确的原生终端服务后，才可保留 PTY。私有流协议 `s6-stream/2-native-pipes-pty-v1` 将每方向信用窗口固定为 8 KiB，帧固定为 4 KiB。待处理输入最多准入一个窗口加一帧；累计控制流量仍独立限制为每方向 8 MiB。Root 在驻留副本倍率前计费六个完整窗口，与累计流量独立。原生 PTC 部署必须将完整序列化消息限制为 8 KiB，待处理调用限制为一个。固定 guest 提供 Node 与受保护的 WS 解析器；经验证的 server 配置允许 bwrap 所需命名空间操作和 proc 布局，不增加 capabilities 或租户配额。配置或镜像标签本身不代表目标验收。只读档禁止文件写入，工作区写入档允许项目与会话临时区写入，完全访问档还允许私有 home 与环境写入。三档均保留账户、项目及受信元数据隔离。
 
 <a id="known-limitations-and-deferred-work"></a>
 

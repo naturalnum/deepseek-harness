@@ -734,6 +734,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         configPath: config.native.configPath, bareModuleBaseUrl: config.native.bareModuleBaseUrl,
         requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
         maxPathBytes: config.paths.maxPathBytes,
+        ...config.accountPolicy.legacyDefaultPresetId === undefined ? {}
+          : { legacyDefaultPresetId: config.accountPolicy.legacyDefaultPresetId },
         storage: Object.freeze({ owner: storage, files }),
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
           ...this.fileReadTiming === undefined ? {} : { fileReadTiming: this.fileReadTiming },

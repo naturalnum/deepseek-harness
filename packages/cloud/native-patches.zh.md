@@ -45,3 +45,5 @@ Root 配方封印执行完整的原生计划校验。准入时，原计划以常
 删除原生补丁的条件是等价行为，不是减少文件数量。可选插件管理、预览、任意 SSH、主机故障接管和大文件验收各自需要运行证据；通过此维护流程不会启用这些能力。
 
 原生 PTC 与终端 spawn 请求将已解析的本次沙箱策略传给远程 provider。本地 argv 包装仍由原生实现负责；Cloud provider 消费原始约束交接，并在同一操作上为已批准策略签名。
+
+原生可选 `ProfileContext.entryAliases` 使受信启动期入口重命名在独立 boot/HMR 读取与原 ConfigEditor 中保持一致。Cloud 使用一个有界且显式选择的历史 `presets` 到 `agent-preset-registry` 别名，复用原受保护提供方；现有 profile 字节在显式原生保存前保持不变。普通原生 profile 不设别名。

@@ -161,8 +161,11 @@ it('requires the Native consumers, enforced policy and whole raw-stream reservat
   expect(() => parseManagedCoordinatorConfig({ ...raw, commands })).toThrow('shell.enforceSessionFilePolicy')
   const selected = { ...raw, commands, shell: { ...raw.shell, enforceSessionFilePolicy: true } }
   expect(() => parseManagedCoordinatorConfig(selected)).toThrow('maxResidentBytesPerAccount')
-  const reserved = { ...selected, maxResidentBytes: 4194304, maxResidentBytesPerAccount: 2097152 }
+  const reserved = { ...selected, maxActiveCommands: 2, maxActiveCommandsPerAccount: 1,
+    maxResidentBytes: 1048576, maxResidentBytesPerAccount: 524288 }
   expect(parseManagedCoordinatorConfig(reserved).commands.pipes).toEqual(pipes)
+  expect(parseManagedCoordinatorConfig({ ...reserved, maxResidentBytesPerAccount: 472064 }).maxResidentBytesPerAccount).toBe(472064)
+  expect(() => parseManagedCoordinatorConfig({ ...reserved, maxResidentBytesPerAccount: 472063 })).toThrow('maxResidentBytesPerAccount')
   expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, maxScopes: 1 } })).toThrow('maxScopes')
   expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, allowedTools: ['bash', 'run_code'] } })).toThrow('allowedTools')
 })

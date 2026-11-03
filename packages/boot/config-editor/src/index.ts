@@ -9,7 +9,7 @@ import yaml from 'js-yaml'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
 import {
-  composeProfileEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches,
+  composeProfileEntries, loadProfileDirectory, readProfilePatches, normalizeProfileEntryAliases, reconcileProfilePatches,
   prepareProfileConfigUpdate, prepareProfilePluginUpdate, assertProfileConfigUpdate, withProfileConfigUpdate, type ProfileConfigUpdatePlan,
 } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
@@ -157,6 +157,7 @@ export class ConfigEditor extends Service {
   configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }> {
     const profile = this.ownerContext.profileContext
     const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor, { readOnly: true })
+    normalizeProfileEntryAliases(loaded.patches, profile.entryAliases)
     const entries = this.entries()
     // An own config key can replace inherited config even when its value is undefined.
     const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))
@@ -178,6 +179,7 @@ export class ConfigEditor extends Service {
   }
 
   private inherited(entry: Entry, loaded: ReturnType<typeof loadProfileDirectory>): Record<string, unknown> {
+    normalizeProfileEntryAliases(loaded.patches, this.ownerContext.profileContext.entryAliases)
     const patches = loaded.patches.map((patch) => {
       if (patch.id !== entry.options.id || patch.insert !== undefined) return patch
       const rest = { ...patch }; Reflect.deleteProperty(rest, 'config')

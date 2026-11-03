@@ -55,6 +55,12 @@
     },
     {
       "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../terminal/terminal"
     }
   ]
 }

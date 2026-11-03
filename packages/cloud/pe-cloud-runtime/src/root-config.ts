@@ -65,6 +65,7 @@ const accountPolicyFields: z<AccountPolicyConfig> = z.object({
   maxModelRoutes: positive(), maxPolicyStringBytes: positive(), maxPresetConfigBytes: positive(),
   models: z.array(z.object({ provider: text(), model: text() })).required(),
   defaultPresetId: text(), agentLoopEntryId: text(),
+  legacyDefaultPresetId: z.union([text()]),
   presets: z.array(z.object({ id: text(), entryId: text(), selectable: z.boolean().required(),
     configSha256: z.string().pattern(/^[0-9a-f]{64}$/).required() })).required(),
 }).required()
@@ -74,10 +75,13 @@ export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(acc
   const invalid = (): never => { throw new AccountRuntimeError('cloud/invalid-config', 'Account policy exceeds its finite limits or repeats a route') }
   if (config.models.length === 0 || config.models.length > config.maxModelRoutes
     || config.presets.length === 0 || !config.presets.some(row => row.id === config.defaultPresetId && row.selectable)) invalid()
+  if (config.legacyDefaultPresetId !== undefined && (config.legacyDefaultPresetId === config.defaultPresetId
+    || !config.presets.some(row => row.id === config.legacyDefaultPresetId && !row.selectable))) invalid()
   const bounded = (value: string): void => {
     if (value.length > config.maxPolicyStringBytes || Buffer.byteLength(value) > config.maxPolicyStringBytes) invalid()
   }
   bounded(config.defaultPresetId); bounded(config.agentLoopEntryId)
+  if (config.legacyDefaultPresetId !== undefined) bounded(config.legacyDefaultPresetId)
   const ids = new Set<string>(), entries = new Set<string>()
   for (const preset of config.presets) {
     bounded(preset.id); bounded(preset.entryId)

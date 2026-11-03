@@ -2923,8 +2923,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'profileContext',
-    summary: 'Current profile facts; scheduling and mutation belong to their callers.',
-    description: 'Current profile facts; scheduling and mutation belong to their callers.',
+    summary: 'Current profile facts and optional trusted entry aliases; callers own scheduling and explicit writes.',
+    description: 'Current profile facts and optional trusted entry aliases; callers own scheduling and explicit writes.',
     methods: [
       {
         signature: 'readonly packageManager?: ProfilePnpmInvocation',
@@ -2939,6 +2939,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'readonly overlays: readonly PatchOptions[]',
         description: 'Parsed command-line overlays, applied above profile and home patches.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly entryAliases?: readonly { readonly from: string; readonly to: string; readonly fromName: string; readonly toName: string }[]',
+        description: 'Trusted launch-time entry renames, applied on detached reads and explicit Native writes; omission preserves stored ids.',
         parameters: [],
       },
       {
@@ -7907,7 +7912,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativePresetGuards',
-    declaration: 'export interface NativePresetGuards {\n    assertCurrent(): void;\n    assertPreset(id: string | undefined, signal?: AbortSignal, selectable?: boolean): Promise<string>;\n    assertSelectCurrent(agent: Agent, id: string): void;\n    isSelectable(id: string): boolean;\n}',
+    declaration: 'export interface NativePresetGuards {\n    assertCurrent(): void;\n    resolveDefault(id: string): string;\n    assertPreset(id: string | undefined, signal?: AbortSignal, selectable?: boolean): Promise<string>;\n    assertSelectCurrent(agent: Agent, id: string): void;\n    isSelectable(id: string): boolean;\n}',
   },
   {
     name: 'NativePresets',

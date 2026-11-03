@@ -335,6 +335,14 @@ it('requires finite exact route and UTF-8 limits at the configuration parser', (
   const short = { ...f.config, defaultPresetId: 'p', presets: [shortPreset], agentLoopEntryId: 'b', maxPolicyStringBytes: 3,
     models: [{ provider: '中', model: 'm' }] }
   expect(AccountPolicyConfigSchema(short)).toEqual(short)
+  const compatible = { ...short, legacyDefaultPresetId: 'old',
+    presets: [shortPreset, { ...shortPreset, id: 'old', entryId: 'c', selectable: false }] }
+  expect(AccountPolicyConfigSchema(compatible)).toEqual(compatible)
+  for (const id of ['p', 'missing', '中中']) {
+    expect(() => AccountPolicyConfigSchema({ ...compatible, legacyDefaultPresetId: id })).toThrow()
+  }
+  expect(() => AccountPolicyConfigSchema({ ...compatible,
+    presets: compatible.presets.map(row => ({ ...row, selectable: true })) })).toThrow()
   expect(() => AccountPolicyConfigSchema({ ...short, models: [{ provider: '中a', model: 'm' }] })).toThrow()
   expect(() => AccountPolicyConfigSchema({ ...short, maxModelRoutes: 0 })).toThrow()
   expect(() => AccountPolicyConfigSchema({ ...short, maxPolicyStringBytes: Infinity })).toThrow()

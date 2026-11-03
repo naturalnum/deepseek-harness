@@ -1,5 +1,7 @@
 /** Real Native registry, Loader compositions, settings transactions and JSONL; not deployed mode acceptance. */
 import { expect, it } from 'vitest'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { childSessionMeta, applyChildComposition } from '../../../subagent/subagent/src/child-agent.ts'
 import { policyFixture } from './account-policy-fixture.ts'
@@ -8,7 +10,7 @@ const bounds = { maxHomeBytes: 4096, maxCollectionItems: 32, maxFrameBytes: 6553
   maxQueuedEvents: 32, maxQueuedBytes: 131072 }
 const exposure = ['list', 'read', 'select'].map(method => ({ endpoint: 'agentPresets/' + method,
   handlerId: 'native:agentPresets', guard: method === 'select' ? 'account-session' as const : 'authenticated-account' as const }))
-function fixture(legacySelectable = false, reserveChild = false, defaults = false) {
+function fixture(legacySelectable = false, reserveChild = false, defaults = false, legacyDefault = false) {
   const declarations = ['standard', 'ptc', 'minimal', 'cordis', 'cloud-text'].map((id, index) => ({
     entryId: 'declaration-' + id, selectable: index < 4 || legacySelectable,
     config: { id, plugins: [
@@ -27,8 +29,35 @@ function fixture(legacySelectable = false, reserveChild = false, defaults = fals
     guard: 'authenticated-account' as const }] : exposure
   return policyFixture(rpc, bounds, 'native-preset-set', undefined, catalog, undefined,
     reserveChild ? () => ({ settle() {} }) : undefined, undefined, [], true, undefined,
-    { defaultId: 'standard', declarations })
+    { defaultId: 'standard', declarations, ...legacyDefault ? {
+      inheritedDefaultId: 'cloud-text', legacyDefaultPresetId: 'cloud-text', legacyRegistryId: true,
+    } : {} })
 }
+
+it('maps only the approved inherited historical default while preserving private config and old Session bytes', async () => {
+  const f = fixture(false, false, false, true)
+  const { legacyDefaultPresetId: _legacy, ...oldPolicy } = f.config
+  const old = await f.start('1', { ...oldPolicy, defaultPresetId: 'cloud-text',
+    presets: f.config.presets.map(row => ({ ...row, selectable: true })) })
+  const created = await old.ctx.sessionController.create({})
+  expect(old.ctx.agents.get(created.sessionId)?.session.header.agentPreset).toBe('cloud-text')
+  await old.ctx.sessionPersistence.flush(); await old.close()
+  const profile = readFileSync(f.patchPath)
+  const root = join(f.privateRoot, 'sessions')
+  const originalFiles = readdirSync(root, { recursive: true }).map(name => join(root, String(name)))
+    .filter(path => statSync(path).isFile()).map(path => ({ path, bytes: readFileSync(path) }))
+  const current = await f.start('2')
+  expect(current.ctx.agentPresets.config.default).toBe('cloud-text')
+  expect(current.ctx.agentPresets.defaultId).toBe('standard')
+  expect((await current.ctx.agentPresets.remoteExportList()).presets.filter(row => row.isDefault).map(row => row.id)).toEqual(['standard'])
+  const next = await current.ctx.sessionController.create({})
+  expect(current.ctx.agents.get(next.sessionId)?.session.header.agentPreset).toBe('standard')
+  await expect(current.guards.agents.assertResume({ resumeSessionId: created.sessionId,
+    agentOptions: { provider: 'local-text', model: 'plain-text' } }, current.lifetime.signal)).resolves.toBeUndefined()
+  await expect(current.ctx.agentPresets.readDocument('cloud-text')).resolves.toMatchObject({ agentPreset: 'cloud-text' })
+  expect(readFileSync(f.patchPath)).toEqual(profile)
+  for (const file of originalFiles) expect(readFileSync(file.path)).toEqual(file.bytes)
+})
 
 it('admits all four explicitly approved Native compositions and filters the historical declaration from the roster', async () => {
   const f = fixture(), graph = await f.start()
@@ -105,8 +134,8 @@ it('preserves a different approved child composition while retaining original ac
   await child.dispose()
 })
 
-it('commits and resets the Native selectedDefault through the original bounded policy transaction and survives reload', async () => {
-  const f = fixture(false, false, true), graph = await f.start()
+it.each([false, true])('commits and resets Native selectedDefault with historical inherited default %s through reload', async (legacyDefault) => {
+  const f = fixture(false, false, true, legacyDefault), graph = await f.start()
   const namespace = 'agent-preset-registry', fields = [{ namespace, field: 'selectedDefault',
     values: ['standard', 'ptc', 'minimal', 'cordis'] }]
   const write = async (value: string | undefined): Promise<void> => {

@@ -76,6 +76,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 | `models` | 唯一且精确的 `{provider, model}` 对；不推断 provider、model 或通配符匹配。 |
 | `maxPolicyStringBytes` | Provider/model、各 Preset id 和原生 entry id 的正数 UTF-8 上界。 |
 | `defaultPresetId` | 部署默认值，必须指向已批准且可选择的声明。 |
+| `legacyDefaultPresetId` | 可选的精确继承默认值，读取时映射到 `defaultPresetId`；必须指向已批准但不可选择的声明。 |
 | `presets` | 非空且唯一的 `{id, entryId, configSha256, selectable}` 原生 `agent-preset` 声明；`selectable: false` 只允许恢复历史会话。 |
 | `agentLoopEntryId` | 实际受保护的原生 AgentLoop 入口，其启动 agents 保持为空。 |
 | `maxPresetConfigBytes` | 规范 UTF-8 摘要输入及遍历的正数上界。 |
@@ -84,7 +85,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 原生 registry entry id 为 `agent-preset-registry`，与原生 Settings 和 Client 消费者一致。新 Session 和空白会话切换只接受可选择声明；既有 Session 可恢复已批准但不可选择的声明。空白切换后的有效预设来自原生 Session 投影，创建 header 保持不变。子 Agent 可继承父组合，或在同一账户与 Workspace 中选择另一个已批准预设；仍要求原始父子归属和 provider 检查。
 
-明确批准的 `agentLoopEntryId.maxParallelToolCalls` 和 `agent-preset-registry.selectedDefault` 写入使用同一原生串行保存事务保留原策略 pin。默认选择必须可选择；清除其 override 时恢复已批准的部署默认值。Loop 上限只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。 获批网页搜索表单的受限字段只能重置为获批的原生继承值，提供方选择只能是两组受支持的搜索／抓取组合。
+明确批准的 `agentLoopEntryId.maxParallelToolCalls` 和 `agent-preset-registry.selectedDefault` 写入使用同一原生串行保存事务保留原策略 pin。默认选择必须可选择；清除其 override 时恢复已批准的部署默认值。显式 `legacyDefaultPresetId` 还会在读取时映射未改写的历史继承 `default`，保留私有配置字节和既有 Session 记录；它不会映射 `selectedDefault` override。精确的历史原始 `presets` 入口通过有界的读取期别名保留配置，并接入原生设置使用的受保护 `agent-preset-registry` 命名空间。启动与 editor 读取不改写磁盘；显式用户设置仍使用原生保存所有者。模块变化、默认值不匹配或规范入口歧义均拒绝。Loop 上限只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。 获批网页搜索表单的受限字段只能重置为获批的原生继承值，提供方选择只能是两组受支持的搜索／抓取组合。
 
 业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和已批准的原生预设校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入或带 seed 的普通根会话仍被拒绝。可选原生 child 路径接受原 in-process spawn 和 fork provider；原生 fork 持有已完成轮次的 seed 及持久化 descriptor，冷续接复用已存储的 child 历史。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
 

@@ -11,7 +11,7 @@ export interface ProfilePnpmInvocation {
   readonly env: Readonly<Record<string, string>>
 }
 
-/** Current profile facts; scheduling and mutation belong to their callers. */
+/** Current profile facts and optional trusted entry aliases; callers own scheduling and explicit writes. */
 export interface ProfileContext {
   readonly name: string
   /** Packaged applications supply their bundled runtime instead of a PATH executable. */
@@ -25,6 +25,8 @@ export interface ProfileContext {
   readonly startedBundles: readonly string[]
   /** Parsed command-line overlays, applied above profile and home patches. */
   readonly overlays: readonly PatchOptions[]
+  /** Trusted launch-time entry renames, applied on detached reads and explicit Native writes; omission preserves stored ids. */
+  readonly entryAliases?: readonly { readonly from: string; readonly to: string; readonly fromName: string; readonly toName: string }[]
   /** Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out. */
   readonly telemetryDisabledEnv: string | undefined
 }
@@ -78,8 +80,28 @@ export function readProfilePatches(binName: string, context: ProfileContext, ini
     ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
     ...context.overlays,
   ])
+  normalizeProfileEntryAliases(patches, context.entryAliases)
   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
     composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) patches.push(telemetryPatch)
   return patches
+}
+
+/**
+ * Apply trusted entry aliases to detached native patch values; this performs no file or Loader mutation.
+ * @param patches Caller-owned detached patches, changed in place.
+ * @param aliases Exact launch-selected ids and module names; omitted leaves values unchanged.
+ */
+export function normalizeProfileEntryAliases(patches: PatchOptions[], aliases: ProfileContext['entryAliases']): void {
+  if (aliases === undefined) return
+  for (const patch of patches) {
+    const alias = aliases.find(row => row.from === patch.id
+      && (patch.name === undefined || patch.name === row.fromName || patch.name === row.toName))
+    if (alias !== undefined) {
+      patch.id = alias.to
+      if (patch.name !== undefined) patch.name = alias.toName
+    }
+    if (patch.insert !== undefined) normalizeProfileEntryAliases(patch.insert, aliases)
+    if (patch.group && Array.isArray(patch.config)) normalizeProfileEntryAliases(patch.config as PatchOptions[], aliases)
+  }
 }

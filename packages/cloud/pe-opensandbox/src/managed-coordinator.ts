@@ -26,13 +26,16 @@ import { ExecutionStateError } from './errors.ts'
 import type { ManagedServiceConfig, ManagedNativeCommandConfig } from './service-config.ts'
 import { registerDevServiceConsumer, type DevServiceRegistration } from './dev-service-consumer.ts'
 import { SLICE_LIMITS } from './agent-data/constants.ts'
+import { STREAM_RETAINED_BYTES } from './agent-data/role-protocol.ts'
 import type { ApplicationServiceSelection, RegisteredApplicationService } from './types.ts'
 import type { HttpRequestCharge } from './application-http.ts'
 
 /** Explicit Root limits; logical payload reservations bound retained copies rather than claiming a V8 RSS quota. */
 export interface ManagedCoordinatorConfig {
   readonly maxBoundAccounts: number
+  /** Active original command groups; one live run_code and its exact nested foreground share a slot. */
   readonly maxActiveCommands: number
+  /** Per-account group ceiling; each member pays separate resident counts and bytes until actual settlement. */
   readonly maxActiveCommandsPerAccount: number
   readonly maxResidentCommands: number
   readonly maxResidentCommandsPerAccount: number
@@ -112,6 +115,7 @@ interface AccountWork {
   readonly sessions: Map<SessionId, ManagedSessionRequest>
   readonly observers: Set<EpochObserver>
   readonly capacity: { active: number; resident: number; bytes: number; requests: number }
+  readonly activeCommands: Map<ExecutionScope<Workspace>, { members: number }>
   readonly detach: () => void
   open: boolean
   claimed: boolean
@@ -253,7 +257,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const abort = (): void => { this.beginStop(work) }
     const work: AccountWork = { binding, root: ctx.root, assertMountCurrent: assertCurrent, authority,
       stopId: brandString<OperationId>(randomUUID()), sessions: new Map(), observers: new Set(),
-      capacity: { active: 0, resident: 0, bytes: 0, requests: 0 }, open: true, claimed: false,
+      capacity: { active: 0, resident: 0, bytes: 0, requests: 0 }, activeCommands: new Map(), open: true, claimed: false,
       detach: () => { binding.lifetime.removeEventListener('abort', abort) } }
     const port = Object.freeze(new ManagedAccountPort(binding, this,
       this.config.shell.enforceSessionFilePolicy === true ? true : undefined))
@@ -709,21 +713,31 @@ export class ManagedCoordinator extends SandboxCoordinator {
     this.assertReady(); work.authority.assertBusinessCurrent()
     if (!work.open || scope.binding !== work.binding) this.stale()
     const stdinBytes = typeof spec.stdio.stdin === 'object' ? Buffer.byteLength(spec.stdio.stdin.data) : 0
-    const bytes = 8 * ((typeof spec.stdio.stdout === 'object' ? spec.stdio.stdout.maxBytes : 65536)
-      + (typeof spec.stdio.stderr === 'object' ? spec.stdio.stderr.maxBytes : 65536) + stdinBytes + Buffer.byteLength(spec.cwd)
+    const pipes = spec.stdio.stdout === 'pipe' || spec.stdio.control === 'pipe'
+    const outputBytes = pipes ? STREAM_RETAINED_BYTES
+      : (typeof spec.stdio.stdout === 'object' ? spec.stdio.stdout.maxBytes : 0)
+        + (typeof spec.stdio.stderr === 'object' ? spec.stdio.stderr.maxBytes : 0)
+    const bytes = 8 * (outputBytes + stdinBytes + Buffer.byteLength(spec.cwd)
       + spec.argv.reduce((total, part) => total + Buffer.byteLength(part) + 1, 0)) + 8192
       + this.config.commands.commandLimits.maxWaiters * 256
       + (this.deployment.skillCopies === undefined ? 0 : this.deployment.skillCopies.maxCopiesPerOperation * 2048 + 4096)
-    if (!Number.isSafeInteger(bytes) || bytes < 1 || this.state.active >= this.config.maxActiveCommands
-      || work.capacity.active >= this.config.maxActiveCommandsPerAccount || this.state.resident >= this.config.maxResidentCommands
+    const parent = work.providers?.commands.calls.programParent(scope)
+    const shared = parent === undefined ? undefined : work.activeCommands.get(parent)
+    if (work.activeCommands.has(scope)) this.stale()
+    if (!Number.isSafeInteger(bytes) || bytes < 1 || shared === undefined && (this.state.active >= this.config.maxActiveCommands
+      || work.capacity.active >= this.config.maxActiveCommandsPerAccount) || this.state.resident >= this.config.maxResidentCommands
       || work.capacity.resident >= this.config.maxResidentCommandsPerAccount || this.state.bytes + bytes > this.config.maxResidentBytes
       || work.capacity.bytes + bytes > this.config.maxResidentBytesPerAccount) this.capacity()
-    this.state.active++; this.state.resident++; this.state.bytes += bytes
-    work.capacity.active++; work.capacity.resident++; work.capacity.bytes += bytes
+    const group = shared ?? { members: 0 }
+    if (shared === undefined) { this.state.active++; work.capacity.active++ }
+    group.members++; work.activeCommands.set(scope, group)
+    this.state.resident++; this.state.bytes += bytes
+    work.capacity.resident++; work.capacity.bytes += bytes
     let active = true, resident = true
     return Object.freeze({ releaseActive: () => {
       if (!active) return
-      active = false; this.state.active--; work.capacity.active--
+      active = false; work.activeCommands.delete(scope)
+      if (--group.members === 0) { this.state.active--; work.capacity.active-- }
     }, releaseResident: () => {
       if (!resident) return
       resident = false; this.state.resident--; work.capacity.resident--; this.state.bytes -= bytes; work.capacity.bytes -= bytes

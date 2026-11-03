@@ -122,6 +122,15 @@ function entrySnapshot(ctx: Context) {
 }
 
 describe('private native account assembly', () => {
+  it.each(['module', 'default', 'ambiguous', 'budget'] as const)('rejects invalid historical preset %s before native boot or a profile write', (kind) => {
+    const f = fixture('legacy-' + kind)
+    const row = { id: 'presets', name: kind === 'module' ? 'cordis:foreign' : '@deepseek-ai/dsh-agent-preset-registry',
+      config: { default: kind === 'default' ? 'foreign' : 'cloud-text' } }
+    const text = JSON.stringify([{ insert: [row, ...kind === 'ambiguous' ? [{ ...row, id: 'agent-preset-registry' }] : []] }])
+    writeFileSync(f.profile.patchPath, text)
+    expect(() => f.start({ legacyDefaultPresetId: 'cloud-text', maxEntries: kind === 'budget' ? 1 : 512 })).toThrow()
+    expect(readFileSync(f.profile.patchPath, 'utf8')).toBe(text)
+  })
   it('uses native metadata for a preset row from the account boot configuration base', async () => {
     const f = fixture('metadata-base')
     const dir = join(f.profile.dir, 'node_modules', 'fixture-metadata')

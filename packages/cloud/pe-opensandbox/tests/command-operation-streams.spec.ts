@@ -6,6 +6,8 @@ import { ManagedCommandOperation, type CommandChannel, type CommandSnapshot } fr
 import { makePrepared } from '../src/agent-data/canonical.ts'
 import { createProgramIssuer } from '../src/agent-data/root-role-issuer.ts'
 import { decodeStreamFrame, encodeStreamFrame, ExecutionStream, type StreamFrame } from '../src/agent-data/stream.ts'
+import { CommandStreams } from '../src/command-streams.ts'
+import { STREAM_LIMITS } from '../src/agent-data/role-protocol.ts'
 
 const limits = { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512, maxStdinBytes: 4096, maxTailBytes: 32,
   maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2, maxLifetimeMs: 5000, stopWaitMs: 1000 }
@@ -80,6 +82,19 @@ it('publishes raw endpoints synchronously but requires actual attachment before 
       limits: { controlInputBytes: pipes.controlInputBytes, controlOutputBytes: pipes.controlOutputBytes } } })
 })
 
+it('bounds preparing Native control buffers independently of the cumulative control budget', async () => {
+  const failed = vi.fn(), streams = new CommandStreams(false, true,
+    { stdinBytes: 4096, controlInputBytes: 8388608, observedBytes: 65536 }, () => true, failed)
+  const control = streams.control
+  control?.write(Buffer.alloc(STREAM_LIMITS.windowBytes), () => {})
+  expect(control?.writableLength).toBe(STREAM_LIMITS.windowBytes)
+  const rejected = vi.fn()
+  expect(control?.write(Buffer.alloc(STREAM_LIMITS.frameBytes + 1), rejected)).toBe(false)
+  expect(rejected).toHaveBeenCalledWith(expect.any(Error)); expect(failed).toHaveBeenCalledWith(expect.any(Error))
+  expect(control?.writableLength).toBe(STREAM_LIMITS.windowBytes)
+  streams.fail(new Error('Original preparing owner ended')); await streams.joinWrites(); streams.release()
+})
+
 it('preserves early raw stdin bytes and delays its callback until the original remote delivery credit', async () => {
   const f = fixture(), bytes = Buffer.from([0, 255, 195, 169]), wrote = vi.fn()
   f.operation.handle.stdin!.write(bytes, wrote)
@@ -115,7 +130,7 @@ it('preserves end(data) delivery before its ordinary input EOF and completion ca
 })
 
 it('uses only WS raw bytes, preserves unread buffers after actual close, and separates all three completion facts', async () => {
-  const f = fixture('ignore'), handle = f.operation.handle, done = handle.done, bytes = Buffer.alloc(24576, 0xab)
+  const f = fixture('ignore'), handle = f.operation.handle, done = handle.done, bytes = Buffer.alloc(8192, 0xab)
   f.operation.publish(); f.operation.begin(); await f.operation.prepared
   await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledOnce() })
   for (let i = 0; i < bytes.length; i += 4096) f.receive(2, 1, bytes.subarray(i, i + 4096))

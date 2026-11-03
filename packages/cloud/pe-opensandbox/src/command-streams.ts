@@ -1,6 +1,7 @@
 /** Local raw endpoints for one existing command; transport, signing and process ownership stay with its channel. */
 import { Duplex, PassThrough, Writable, type Readable } from 'node:stream'
 import type { AgentDataStream } from './agent-data/types.ts'
+import { STREAM_LIMITS } from './agent-data/role-protocol.ts'
 
 const BUFFER_BYTES = 4096
 type WriteCallback = (error?: Error | null) => void
@@ -135,7 +136,9 @@ export class CommandStreams {
     if (!this.inputCurrent()) return new Error('Native command input is no longer active.')
     const bytes = typeof chunk === 'string' ? Buffer.byteLength(chunk, encoding) : chunk instanceof Uint8Array ? chunk.byteLength : -1
     const limit = name === 'stdin' ? this.limits.stdinBytes : this.limits.controlInputBytes
-    if (this.failed || this.released || bytes < 0 || this.accepted[name] + bytes > limit) {
+    const queued = this[name]?.writableLength ?? 0
+    if (this.failed || this.released || bytes < 0 || this.accepted[name] + bytes > limit
+      || queued + bytes > STREAM_LIMITS.windowBytes + STREAM_LIMITS.frameBytes) {
       const failure = new Error('Command input exceeds its original byte budget.')
       this.notify(failure)
       return failure

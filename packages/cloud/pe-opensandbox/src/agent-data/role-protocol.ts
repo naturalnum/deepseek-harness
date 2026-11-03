@@ -12,7 +12,10 @@ export const ROLE_LIMITS = SLICE_LIMITS
 export const ROLE_DOMAIN = 'dsh:s4:range-role:v1'
 /** Private pipes subprotocol and fixed per-direction windows, distinct from cumulative traffic budgets. */
 export const STREAM_LIMITS: StreamLimits = Object.freeze({ version: 'pe-execution-stream-v1', frameBytes: 4096,
-  windowBytes: 65536, controlInputBytes: 8388608, controlOutputBytes: 8388608, stdinBytes: 4096 })
+  windowBytes: 8192, controlInputBytes: 8388608, controlOutputBytes: 8388608, stdinBytes: 4096 })
+
+/** Five channel directions and one parser window, before the command ledger's retained-copy multiplier. */
+export const STREAM_RETAINED_BYTES = 6 * STREAM_LIMITS.windowBytes
 
 /**
  * Parse the complete wire authorization without issuing a role or interpreting command arguments.

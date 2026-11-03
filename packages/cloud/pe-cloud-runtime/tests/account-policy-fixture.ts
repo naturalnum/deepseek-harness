@@ -89,6 +89,12 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   preserveProfile = false, initialLoopLimit?: number,
   presetOptions?: {
     readonly defaultId: string
+    readonly inheritedDefaultId?: string
+    readonly legacyDefaultPresetId?: string
+    readonly legacyRegistryId?: boolean
+    readonly sourceModules?: Readonly<Record<string, unknown>>
+    readonly extraEntries?: readonly { readonly id: string; readonly name: string; readonly config?: object }[]
+    readonly prepare?: (ctx: Context, binding: AccountBinding, guards: ReturnType<typeof createAccountPolicy>) => void
     readonly declarations: readonly {
       readonly entryId: string
       readonly config: PresetDefinition
@@ -130,7 +136,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     },
   }
   const config: AccountPolicyConfig = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
-    models: [{ provider: 'local-text', model: 'plain-text' }], defaultPresetId: presetOptions?.defaultId ?? declaration.id, presets: declarations.map(row => ({
+    models: [{ provider: 'local-text', model: 'plain-text' }], defaultPresetId: presetOptions?.defaultId ?? declaration.id,
+    ...presetOptions?.legacyDefaultPresetId === undefined ? {} : { legacyDefaultPresetId: presetOptions.legacyDefaultPresetId },
+    presets: declarations.map(row => ({
       id: row.config.id, entryId: row.entryId, configSha256: accountPresetConfigDigest(row.config, 8192), selectable: row.selectable })), maxPresetConfigBytes: 8192, agentLoopEntryId: 'agent-loop' })
   const saves = new ConfigSaveCoordinator({ maxAccounts: 2, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 1,
     maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 16, maxWaitersPerAccount: 2 })
@@ -251,7 +259,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       { id: 'query', name: 'cordis:m8z-query' },
       { id: 'files', name: 'cordis:m8z-files' }, { id: 'llm', name: 'cordis:m8z-llm' },
       { id: 'working-directory', name: 'cordis:m8z-working-directory', config: { defaultDirectory: project } },
-      { id: 'agent-preset-registry', name: 'cordis:m8z-presets', config: { default: config.defaultPresetId } },
+      { id: presetOptions?.legacyRegistryId ? 'presets' : 'agent-preset-registry',
+        name: presetOptions?.legacyRegistryId ? '@deepseek-ai/dsh-agent-preset-registry' : 'cordis:m8z-presets', config: { default: presetOptions?.inheritedDefaultId ?? config.defaultPresetId } },
       ...declarations.map(row => ({ id: row.entryId, name: 'cordis:m8z-preset', config: row.config })),
       { id: 'model', name: 'cordis:m8z-model', config: { provider: 'local-text', model: 'plain-text' } },
       ...reserveChild === undefined ? [] : [
@@ -271,6 +280,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         { id: 'settings-controller', name: 'cordis:m8ax-settings-controller' },
         { id: 'first-screen-events', name: 'cordis:m8ax-events' },
       ],
+      ...presetOptions?.extraEntries ?? [],
     ]
     if (!preserveProfile || !profileWritten) {
       writeFileSync(patchPath, JSON.stringify([{ insert: rows }]))
@@ -281,16 +291,20 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         recipeVersion: 'm8z', lifetime: lifetime.signal },
       profile: { name: 'component', dir: profileRoot, patchPath, home: privateRoot, cwd: project,
         installAnchor: join(home, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined },
+      ...presetOptions?.legacyRegistryId ? { legacyDefaultPresetId: presetOptions.legacyDefaultPresetId } : {},
       configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
       environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: privateRoot, DSH_HOME: privateRoot } }]),
-      requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16,
+      requiredEntryIds: ['include', ...rows.map(row => row.id === 'presets' && presetOptions?.legacyRegistryId ? 'agent-preset-registry' : row.id)],
+      maxEntries: 512, maxObservedEvents: 16,
       prepare(owner, binding) {
         ctx = owner; barrier = saves.createAccount(binding)
-        if (bootstrapCatalog !== undefined) {
+        if (bootstrapCatalog !== undefined || presetOptions?.sourceModules !== undefined) {
           const internal = owner.loader.internal
           if (internal === undefined) throw new Error('Native Loader import bridge absent')
           const nativeImport = internal.import
           const imported = vi.spyOn(internal, 'import').mockImplementation(async (specifier: string, ...args: unknown[]) => {
+            const sourceModule = presetOptions?.sourceModules?.[specifier]
+            if (sourceModule !== undefined) return sourceModule
             if (specifier === '@deepseek-ai/dsh-client-locale') return Locale
             if (specifier === '@deepseek-ai/dsh-llm-deepseek-api-key') return ModelProvider
             const namespace: unknown = await Reflect.apply(nativeImport, internal, [specifier, ...args])
@@ -371,16 +385,17 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
               apply(scope: Context) { eventOwner = scope } },
           })
         }
+        const presetRegistry = presetOptions === undefined ? AgentPresets : {
+          inject: AgentPresets.inject, Config: AgentPresets.Config,
+          apply(scope: Context, config: ConstructorParameters<typeof AgentPresets>[1]) {
+            requireApi().createPresets(scope, config, requireGuards().presets, firstScreen?.maxFrameBytes ?? 65536)
+          },
+        }
         Object.assign(owner.loader.builtins, {
           'b1-spawn': Spawn,
           'b1-subagents': SubagentRuntime, 'b1-fork': Fork, 'm8z-bootstrap-execution': ExecutionAccount, 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-title': SessionTitle, 'm8z-files': FilesAccount,
-          'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': presetOptions === undefined ? AgentPresets : {
-            inject: AgentPresets.inject, Config: AgentPresets.Config,
-            apply(scope: Context, config: ConstructorParameters<typeof AgentPresets>[1]) {
-              requireApi().createPresets(scope, config, requireGuards().presets, firstScreen?.maxFrameBytes ?? 65536)
-            },
-          }, 'm8z-preset': AgentPreset,
+          'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': presetRegistry, 'm8z-preset': AgentPreset,
           'm8z-persona': persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
           [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller,
           [ACCOUNT_NATIVE_ENTRIES.userQuestions]: { inject: ['peCloudApi', 'agents', 'sessionProjections'], Config: UserQuestions.Config,
@@ -389,6 +404,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
                 projectDirectory: { binding, prepare: async () => { throw new Error('Questions cannot create Session directories') } } })
             } },
         })
+        if (presetOptions?.legacyRegistryId) owner.loader.builtins[ACCOUNT_NATIVE_ENTRIES.presets] = presetRegistry
+        presetOptions?.prepare?.(owner, binding, requireGuards())
       },
     })
     let closing: Promise<void> | undefined, expectedEventFailure: { readonly error: unknown } | undefined

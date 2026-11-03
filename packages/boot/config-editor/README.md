@@ -48,7 +48,7 @@ An optional `ConfigEditControl` retains the original caller check across queuein
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Without an impact guard, the [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces its config override. It preserves YAML comments and `!!js` expressions outside replaced values. A failed reconciliation restores the prior document and reloads the prior patches. Installing an impact guard selects the checked live-only path described above; it never first applies pending old patches.
+Without an impact guard, the [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces its config override. It preserves YAML comments and `!!js` expressions outside replaced values. Explicit trusted profile entry aliases use the same launch-time patch reader for inherited values, candidate checks and reconciliation; reads leave stored history unchanged. A failed reconciliation restores the prior document and reloads the prior patches. Installing an impact guard selects the checked live-only path described above; it never first applies pending old patches.
 
 Configuration reads share one composition for entries without profile config overrides. Overridden entries are composed separately with only their own override removed; profile inserts and other entries' overrides remain effective. Returned configs are detached, and compositions are not cached between reads.
 

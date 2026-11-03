@@ -18,6 +18,8 @@ export interface AccountRecipe {
   readonly requiredEntryIds: readonly string[]
   readonly maxObservedEvents: number
   readonly maxPathBytes: number
+  /** Explicit read-time compatibility for the historical Native preset default/registry. */
+  readonly legacyDefaultPresetId?: string
   /** Actual Root-issued API/execution resources; absent for isolated native-mechanism fixtures. */
   readonly native?: AccountNativePreparation
   /** Original files Root owner and participant, retained by the private production factory only. */
@@ -79,6 +81,7 @@ export function mountAccount(
     binding: input.binding, environment: input.environment, profile: recipe.profile,
     configPath: recipe.configPath, bareModuleBaseUrl: recipe.bareModuleBaseUrl,
     requiredEntryIds: recipe.requiredEntryIds, maxObservedEvents: recipe.maxObservedEvents,
+    ...recipe.legacyDefaultPresetId === undefined ? {} : { legacyDefaultPresetId: recipe.legacyDefaultPresetId },
     ...observeStartup === undefined ? {} : { observeStartup },
     ...recipe.native === undefined ? {} : { maxEntries: recipe.native.maxNativeInventoryEntries },
     ...lease === undefined ? {} : { assertBeforeNativeRead: () => { lease.assertBeforeNativeRead(recipe.profile, recipe.configPath) } },

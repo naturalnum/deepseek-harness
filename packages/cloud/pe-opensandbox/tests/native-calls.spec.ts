@@ -142,8 +142,14 @@ it('admits only a live same-Agent run_code parent token and revokes its nested c
   const f = fixture(), parent = { ...f.exec(), name: 'run_code' }
   let childScope: ReturnType<typeof f.calls.capture> | undefined
   await f.calls.run(parent, async () => {
+    const parentScope = f.calls.capture(f.ctx).scope
     const child = { ...f.exec(), parent: parent.token, rootCallId: parent.rootCallId }
-    await f.calls.run(child, async () => { childScope = f.calls.capture(f.ctx); return result })
+    await f.calls.run(child, async () => {
+      childScope = f.calls.capture(f.ctx)
+      expect(f.calls.programParent(childScope.scope)).toBe(parentScope)
+      expect(f.calls.programParent(childScope.scope)?.consumerId).toBe('run_code')
+      return result
+    })
     expect(() => f.calls.run({ ...f.exec('B'), parent: parent.token, rootCallId: parent.rootCallId }, async () => result)).toThrow()
     expect(() => f.calls.run({ ...f.exec(), parent: parent.token, rootCallId: 'foreign' as typeof parent.rootCallId }, async () => result)).toThrow()
     return result
@@ -154,4 +160,14 @@ it('admits only a live same-Agent run_code parent token and revokes its nested c
   expect(childScope.scope.lifetime.aborted).toBe(true)
   expect(f.calls.inspect()).toBe(0)
   expect(() => f.calls.run({ ...f.exec(), parent: parent.token }, async () => result)).toThrow()
+})
+
+it('does not retain an ordinary Bash invocation as a terminal without the exact Native preset service', async () => {
+  const f = fixture(), exec = f.exec()
+  await f.calls.run(exec, async () => {
+    expect(f.calls.programParent(f.calls.capture(f.ctx).scope)).toBeUndefined()
+    expect(() => f.calls.retainTerminal(f.ctx)).toThrow()
+    return result
+  })
+  f.calls.release(exec.token)
 })

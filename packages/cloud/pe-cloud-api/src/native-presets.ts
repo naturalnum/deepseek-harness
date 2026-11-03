@@ -14,6 +14,12 @@ import { firstScreenNativeOwner } from './native-first-screen.ts'
 /** Shared Runtime checks over the exact account's approved native declarations. */
 export interface NativePresetGuards {
   assertCurrent(): void
+  /**
+   * Map an explicitly approved historical inherited default without rewriting its declaration.
+   * @param id Original native inherited default, never a selectedDefault override.
+   * @returns Approved selectable deployment default or the unchanged approved default; rejects all other ids.
+   */
+  resolveDefault(id: string): string
   assertPreset(id: string | undefined, signal?: AbortSignal, selectable?: boolean): Promise<string>
   assertSelectCurrent(agent: Agent, id: string): void
   isSelectable(id: string): boolean
@@ -60,6 +66,10 @@ export function createNativePresets(
   }
   installed()
   class AccountPresets extends AgentPresets {
+    override get defaultId(): string {
+      return this.config.selectedDefault.get() ?? guards.resolveDefault(this.config.default)
+    }
+
     protected override assertSelectionCurrent(agent: Agent, id: string): void {
       admit('select')
       guards.assertSelectCurrent(agent, id)

@@ -1,6 +1,8 @@
 /** Per-account async propagation from the original native tool dispatch; no module-global current Session. */
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Context } from '@deepseek-ai/cordis'
+import { symbols, type Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JobEvent, JobId, JobRegistry } from '@deepseek-ai/dsh-jobs'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -159,6 +161,20 @@ export class NativeExecutionCalls<Project> {
     return Object.freeze({ scope: call.scope, signal: call.exec.signal })
   }
 
+  /** Original live program whose nested tool owns this scope; serialized identities cannot join its admission.
+   * @param scope Original issued child scope.
+   * @returns The same issuer's live parent program scope, if present.
+   */
+  programParent(scope: ExecutionScope<Project>): ExecutionScope<Project> | undefined {
+    this.scopes.assertCurrent(scope)
+    const call = [...this.calls.values()].find(row => row.scope === scope)
+    const parent = call?.exec.parent === undefined ? undefined : this.calls.get(call.exec.parent)
+    if (parent === undefined || parent.projected || parent.exec.name !== 'run_code') return undefined
+    if (parent.scope.agent !== scope.agent || parent.exec.rootCallId !== call?.exec.rootCallId) this.stale()
+    this.scopes.assertCurrent(parent.scope)
+    return parent.scope
+  }
+
   /**
    * Derive one service lifetime from the current original dev_service dispatch, never its result token.
    * @param caller Actual account-native consumer context.
@@ -246,7 +262,13 @@ export class NativeExecutionCalls<Project> {
    */
   retainTerminal(caller: Context): () => void {
     const captured = this.capture(caller), call = this.current.getStore()
-    if (call === undefined || call.scope !== captured.scope || call.exec.name !== 'terminal_open' || call.terminal) this.stale()
+    if (call === undefined || call.scope !== captured.scope || call.terminal) this.stale()
+    if (call.exec.name !== 'terminal_open') {
+      const registry = this.ctx.get('agentPresets'), selected = caller.get('terminals')
+      const expected = registry?.serviceFor(call.scope.agent, 'terminals')
+      if (call.exec.name !== 'bash' || !(expected instanceof TerminalSessionService) || selected === undefined
+        || (Reflect.get(selected, symbols.original) ?? selected) !== (Reflect.get(expected, symbols.original) ?? expected)) this.stale()
+    }
     call.terminal = true
     return () => { this.release(call.token) }
   }
