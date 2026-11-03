@@ -10,6 +10,7 @@
         systemTools:
           soffice: /usr/bin/soffice
           pdftoppm: /usr/bin/pdftoppm
+          wordRefresh: /opt/dsh/runtime/office/refresh_word.py
     - id: bundled-report-skills
       name: '@deepseek-ai/dsh-skill-filesystem'
       config:
@@ -18,6 +19,10 @@
         watch: false
         bundledSkillDir: !!js process.env.DSH_BUNDLED_REPORT_SKILLS
         bundledExecutionRoot: /opt/dsh/skills/reports
+        bundledInstructions: |
+          Linux report runtime: when a generated Word report contains the C/F/T main, figure and table catalog fields, refresh them before delivery with the managed Bash tool:
+          /opt/dsh/runtime/office/refresh_word.py <source.docx> <new-output-directory> --soffice /usr/bin/soffice --timeout-seconds <remaining-execution-seconds> --cancel-grace-seconds <remaining-cancellation-seconds>
+          The bundled Windows Word COM refresher does not refresh these fields on Linux. This operation preserves original fields and content, publishes report.docx, report.pdf and catalogs.json together after success, and rejects existing output directories. Use those deliverables, verify every catalog and visually inspect the PDF, including equations. Select explicit timing within the original execution budgets; do not increase quotas. Other report formats retain their own workflow.
         packagedBundles: true
     - id: workspace-dependencies
       name: '@deepseek-ai/dsh-tool-workspace-dependencies'

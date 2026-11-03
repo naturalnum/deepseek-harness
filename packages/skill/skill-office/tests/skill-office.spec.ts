@@ -224,3 +224,12 @@ it('selects explicit native Linux operation instructions without consulting Host
     expect(authoring?.content).toContain('load_workspace_dependencies')
   } finally { await ctx.fiber.dispose() }
 })
+
+it('rejects a relative report operation and keeps catalog refresh opt-in', async () => {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(SkillRegistry)
+    await expect(ctx.plugin(SkillOffice, { systemTools: { soffice: '/usr/bin/soffice',
+      pdftoppm: '/usr/bin/pdftoppm', wordRefresh: 'relative.py' } })).rejects.toThrow('absolute')
+  } finally { await ctx.fiber.dispose() }
+})

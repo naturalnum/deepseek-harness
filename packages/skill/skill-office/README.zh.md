@@ -83,6 +83,8 @@ flowchart TD
 
 `systemTools` 为受限 Linux guest 显式选择原生 LibreOffice/Poppler 操作指令，不能与 Kit 运行时或 `cli: false` 组合；省略时保留官方 Kit 工作流。每次转换使用任务内独立用户配置及输出目录，原生 Shell 权限、取消和资源限制继续生效。
 
+可选 `systemTools.wordRefresh` 指定处理内置科技报告 C/F/T 目录的 guest 绝对可执行路径。加载正文会引导模型在导出/渲染前调用该操作；省略时保留原工作流。Cloud [报告运行参考](../../../docs/user/cloud-builtin-skills.zh.md) 说明支持的字段、产物发布、取消和镜像验收。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

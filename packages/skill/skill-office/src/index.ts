@@ -36,6 +36,8 @@ export interface Config {
     soffice: string
     /** Absolute Poppler page-image executable in the execution environment. */
     pdftoppm: string
+    /** Optional executable that preserves bundled technical-report C/F/T fields while refreshing catalogs. */
+    wordRefresh?: string
   }
   /** Require generated complete-package inventories. */
   packagedBundles?: boolean
@@ -47,7 +49,9 @@ export const Config: z<Config> = z.object({
   executionRoot: z.string().min(1),
   executionRuntime: z.union([z.object({ node: z.string().min(1).required(), cli: z.string().min(1).required() }).required()]),
   packagedBundles: z.boolean(),
-  systemTools: z.union([z.object({ soffice: z.string().min(1).required(), pdftoppm: z.string().min(1).required() }).required()]),
+  systemTools: z.union([z.object({
+    soffice: z.string().min(1).required(), pdftoppm: z.string().min(1).required(), wordRefresh: z.string().min(1),
+  }).required()]),
   node: z.string().min(1),
   cli: z.union([z.string().min(1), z.const(false)]),
 })
@@ -125,7 +129,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         ? await readFile(join(assetRoot, candidate.name, 'system.md'), { encoding: 'utf8', signal: options.signal })
           + `\n\n## Installed native Linux tools\n\n${JSON.stringify(config.systemTools, undefined, 2)}`
         : parseSkill(raw, locator as string).content + (operation ? officeRuntime(config) : '')
-      return { ...summary, content: content + (config.executionRoot === undefined ? '' : '\n\nShared resources are read-only paths in the execution environment. Use its Bash tool or interpreter to read referenced files and run scripts; Host file tools do not provide these guest image paths.') }
+      const reportRuntime = config.systemTools?.wordRefresh === undefined ? ''
+        : `\n\n## Bundled technical-report catalogs\n\nFor a technical-report DOCX with C/F/T main, figure and table fields, run the installed wordRefresh executable before PDF export or visual inspection. Pass the source, a new output directory, --soffice with the installed soffice path, --timeout-seconds within the current execution deadline and --cancel-grace-seconds within its cancellation budget. Use the returned report.docx and report.pdf, inspect catalogs.json and check rendered pages. This Linux operation preserves original field codes and content; the bundled Windows COM refresher cannot refresh these catalogs on Linux. Other documents use the normal operation instructions.\n\n${JSON.stringify(config.systemTools, undefined, 2)}`
+      return { ...summary, content: content + reportRuntime + (config.executionRoot === undefined ? '' : '\n\nShared resources are read-only paths in the execution environment. Use its Bash tool or interpreter to read referenced files and run scripts; Host file tools do not provide these guest image paths.') }
     },
   }
   ctx.skills.registerProvider(() => provider)

@@ -208,6 +208,28 @@ describe('FileSystemSkillProvider', () => {
     }
   })
 
+  it('appends deployment instructions only to bundled loads without changing source files or catalog descriptions', async () => {
+    const home = await tempDir('skill-runtime-guidance')
+    const bundled = join(home, 'builtin')
+    const custom = join(home, 'custom')
+    await writeSkill(bundled, 'builtin-report', 'Bundled report')
+    await writeSkill(custom, 'user-report', 'User report')
+    const input = await readFile(join(bundled, 'builtin-report/SKILL.md'), 'utf8')
+    const ctx = await setupLocal(home, { includeDefaultRoots: false, bundledSkillDir: bundled,
+      customSkillDirs: [custom], bundledInstructions: 'Run the installed Linux catalog refresh before delivery.' })
+    try {
+      expect((await ctx.skills.get('builtin-report'))?.content).toContain('Linux catalog refresh')
+      expect((await ctx.skills.get('user-report'))?.content).toBe('Use the skill.')
+      expect((await ctx.skills.list()).find(skill => skill.name === 'builtin-report')?.description).toBe('Bundled report')
+      expect(await readFile(join(bundled, 'builtin-report/SKILL.md'), 'utf8')).toBe(input)
+    } finally { await ctx.fiber.dispose() }
+    const invalid = new Context()
+    try {
+      await invalid.plugin(SkillRegistry)
+      await expect(invalid.plugin(SkillFileSystem, { bundledInstructions: 'Missing explicit bundle root' })).rejects.toThrow('bundledInstructions')
+    } finally { await invalid.fiber.dispose() }
+  })
+
   it('discovers project, custom, user, and agents skill roots in priority order', async () => {
     const home = await tempDir('skill-home')
     const project = await tempDir('skill-project')

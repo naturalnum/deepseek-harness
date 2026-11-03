@@ -75,6 +75,8 @@ export interface Config {
   bundledSkillDir?: string
   /** Guest-visible mirror of bundledSkillDir; deployment must supply the identical read-only asset tree. */
   bundledExecutionRoot?: string
+  /** Deployment instructions appended only to loaded bundled bodies and logged by the native skill tool. */
+  bundledInstructions?: string
   /** Require generated complete-package inventories for the bundled root. */
   packagedBundles?: boolean
 }
@@ -94,6 +96,7 @@ export const Config: Schema<Config> = z.object({
   bundledSkillDir: z.string(),
   bundledExecutionRoot: z.string(),
   packagedBundles: z.boolean(),
+  bundledInstructions: z.string().min(1),
 })
 
 interface SkillRoot {
@@ -200,6 +203,7 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly watchManager: SkillWatchManager
   private readonly bundledSkillDir: string | undefined
   private readonly bundledExecutionRoot: string | undefined
+  private readonly bundledInstructions: string | undefined
   private readonly packagedBundles: boolean
   private disposal: Promise<void> | undefined
 
@@ -211,6 +215,10 @@ export class FileSystemSkillProvider implements SkillProvider {
   ) {
     if (source !== undefined && (config.includeDefaultRoots !== false || config.watch !== false || config.bundledSkillDir !== undefined)) {
       throw new TypeError('skill-filesystem: an explicit source requires isolated roots, disabled host watching and no bundled host root')
+    }
+    this.bundledInstructions = config.bundledInstructions
+    if (config.bundledInstructions !== undefined && config.bundledSkillDir === undefined) {
+      throw new TypeError('skill-filesystem: bundledInstructions requires an explicit bundledSkillDir')
     }
     this.bundledExecutionRoot = config.bundledExecutionRoot
     this.packagedBundles = config.packagedBundles ?? false
@@ -305,7 +313,7 @@ export class FileSystemSkillProvider implements SkillProvider {
         provider: this.name,
         ...resources,
         ...parsed.metadata !== undefined ? { metadata: parsed.metadata } : {},
-        content: parsed.content + (resourceDirectory === undefined ? '' : '\n\nShared resources are read-only paths in the execution environment. Use its Bash tool or interpreter to read referenced files and run scripts; Host file tools do not provide these guest image paths.'),
+        content: parsed.content + (candidate.source === 'bundled' && this.bundledInstructions !== undefined ? '\n\n' + this.bundledInstructions : '') + (resourceDirectory === undefined ? '' : '\n\nShared resources are read-only paths in the execution environment. Use its Bash tool or interpreter to read referenced files and run scripts; Host file tools do not provide these guest image paths.'),
       }
     })
   }

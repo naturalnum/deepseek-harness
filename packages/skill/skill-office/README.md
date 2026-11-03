@@ -83,6 +83,8 @@ New files and content, data, or formula edits do not require rendering solely be
 
 `systemTools` explicitly selects native LibreOffice/Poppler operation instructions for constrained Linux guests. It cannot be combined with a Kit runtime or `cli: false`; omission preserves the official Kit workflow. Each conversion uses a private task-local profile and a separate output directory; native shell permissions, cancellation and resource limits remain authoritative.
 
+Optional `systemTools.wordRefresh` names an absolute guest executable for bundled technical-report C/F/T catalogs. The loaded bodies direct the model to that operation before export/rendering; omission leaves the normal workflow unchanged. The Cloud [report runtime reference](../../../docs/user/cloud-builtin-skills.md) owns supported fields, output publication, cancellation and image qualification.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

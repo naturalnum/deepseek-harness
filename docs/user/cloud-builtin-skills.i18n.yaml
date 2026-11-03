@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/cloud-builtin-skills.md
 /cloud-built-in-skills:
-  en: 1e36329fe716bb47
-  zh: 7941c5d298f983c7
+  en: 3a667b1be601629b
+  zh: 66e4f2e05ed2aaa5
