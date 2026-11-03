@@ -181,6 +181,33 @@ describe('dsh-skill-filesystem plugin exports', () => {
 })
 
 describe('FileSystemSkillProvider', () => {
+  it.each([undefined, '/opt/dsh/shared-skills'])('keeps bundled filenames in catalog and loaded paths (%s)', async (executionRoot) => {
+    const home = await tempDir('skill-bundled-path-home')
+    const bundled = await tempDir('skill-bundled-path-assets')
+    await writeFlatSkill(bundled, 'bundled-flat', 'flat bundled skill')
+    await writeSkill(bundled, 'bundled-directory', 'directory bundled skill')
+    const ctx = await setupLocal(home, {
+      includeDefaultRoots: false, bundledSkillDir: bundled,
+      ...executionRoot === undefined ? {} : { bundledExecutionRoot: executionRoot },
+    })
+    try {
+      const catalog = await ctx.skills.list({ cwd: home })
+      for (const [name, file, directory] of [
+        ['bundled-flat', 'bundled-flat.md', ''],
+        ['bundled-directory', join('bundled-directory', 'SKILL.md'), 'bundled-directory'],
+      ] as const) {
+        const path = join(executionRoot ?? bundled, file)
+        expect(catalog.find(skill => skill.name === name)?.path).toBe(path)
+        const loaded = await ctx.skills.get(name)
+        expect(loaded?.path).toBe(path)
+        expect(loaded?.resourceBase).toEqual({ kind: 'directory', path: join(executionRoot ?? bundled, directory) })
+        if (executionRoot === undefined) expect((await stat(path)).isFile()).toBe(true)
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('discovers project, custom, user, and agents skill roots in priority order', async () => {
     const home = await tempDir('skill-home')
     const project = await tempDir('skill-project')

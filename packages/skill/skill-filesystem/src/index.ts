@@ -259,9 +259,10 @@ export class FileSystemSkillProvider implements SkillProvider {
           if (this.source === undefined) {
             if (root.source === 'bundled') {
               const locator = skill.locator as LocalLocator
-              const base = this.bundledExecutionRoot === undefined ? locator.directory
+              const base = this.bundledExecutionRoot === undefined ? undefined
                 : join(this.bundledExecutionRoot, relative(root.path, locator.directory))
-              candidates.push({ ...skill, path: join(base, 'SKILL.md'), resourceBase: { kind: 'directory', path: base },
+              candidates.push({ ...skill,
+                ...base === undefined ? {} : { path: join(base, basename(locator.path)), resourceBase: { kind: 'directory' as const, path: base } },
                 ...this.packagedBundles ? { package: readSkillPackage(locator.directory) } : {} })
             } else candidates.push(skill)
           }
