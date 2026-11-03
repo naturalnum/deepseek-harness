@@ -17,6 +17,7 @@ export class NativeTerminalHandle implements SubprocessTerminalHandle {
   private buffer = Buffer.alloc(0)
   private stopped: Promise<void> | undefined
   private failed = false
+  private controlEnded = false
   private actualPid: number | undefined
 
   /** @param operation Original reserved command. @param current Original issued terminal-scope admission.
@@ -31,8 +32,15 @@ export class NativeTerminalHandle implements SubprocessTerminalHandle {
     void this.ready.promise.catch(() => { /* Allocation waits on this same rejected promise. */ })
     handle.control.on('data', (data: Buffer) => { this.receive(data) })
     handle.control.on('error', () => { this.fail() })
-    handle.control.once('end', () => { if (this.stopped === undefined) this.fail() })
-    void this.done.then(() => { this.fail(false) }, () => { this.fail() })
+    handle.control.once('end', () => {
+      this.controlEnded = true
+      if (this.stopped === undefined) this.operation.requestStop()
+    })
+    void this.done.then(async () => {
+      // Native consumers observe the actual exit before an outstanding inspection loses its endpoint.
+      await this.operation.whenEmpty
+      this.fail(false)
+    }, () => { this.fail() })
   }
 
   /** Wait for the original guardian’s actual spawned child.
@@ -43,7 +51,7 @@ export class NativeTerminalHandle implements SubprocessTerminalHandle {
   async write(data: string): Promise<void> {
     this.current()
     const stdin = this.operation.handle.stdin
-    if (this.stopped !== undefined || this.failed || stdin === undefined) throw failure()
+    if (this.stopped !== undefined || this.failed || this.controlEnded || stdin === undefined) throw failure()
     await new Promise<void>((resolve, reject) => {
       stdin.write(data, (error) => { if (error) reject(failure()); else resolve() })
     })
@@ -83,6 +91,12 @@ export class NativeTerminalHandle implements SubprocessTerminalHandle {
   }
   private async request(method: string, args: readonly (string | number)[]): Promise<unknown> {
     this.current()
+    if (this.controlEnded) {
+      await this.done
+      await this.operation.whenEmpty
+      this.current()
+      throw failure()
+    }
     const control = this.operation.handle.control
     if (this.failed || this.stopped !== undefined || control === undefined
       || this.pending.size >= this.maxPending || this.sequence >= 0xffffffff) throw failure()

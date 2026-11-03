@@ -8,6 +8,7 @@ import { createProgramIssuer } from '../src/agent-data/root-role-issuer.ts'
 import { decodeStreamFrame, encodeStreamFrame, ExecutionStream, type StreamFrame } from '../src/agent-data/stream.ts'
 import { CommandStreams } from '../src/command-streams.ts'
 import { STREAM_LIMITS } from '../src/agent-data/role-protocol.ts'
+import { NativeTerminalHandle } from '../src/native-terminal.ts'
 
 const limits = { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512, maxStdinBytes: 4096, maxTailBytes: 32,
   maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2, maxLifetimeMs: 5000, stopWaitMs: 1000 }
@@ -65,6 +66,46 @@ function fixture(input: 'ignore' | 'pipe' | { readonly data: string } = 'pipe', 
     streamFailures: () => streamFailures,
     setSnapshot: (value: CommandSnapshot) => { snapshot = value } }
 }
+
+it('joins the actual terminal exit before rejecting an inspection whose control EOF arrived first', async () => {
+  const f = fixture(), released = vi.fn()
+  const terminal = new NativeTerminalHandle(f.operation, () => {}, released, 2)
+  let exited = false
+  void terminal.done.then(async () => { await f.get().outputEnded; exited = true }, () => {})
+  f.operation.publish(); f.operation.begin(); await f.operation.prepared
+  await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledTimes(1) })
+  f.receive(4, 1, Buffer.from('{"ready":123}\n')); await terminal.started()
+  let settled = false
+  const inspected = terminal.inspectForeground().then(() => { settled = true }, () => { settled = true; return exited })
+  await vi.waitFor(() => { expect(f.frames.some(frame => frame.kind === 1 && frame.channel === 4)).toBe(true) })
+  f.credit(4, f.frames.filter(frame => frame.kind === 1 && frame.channel === 4).reduce((bytes, frame) => bytes + frame.payload.length, 0))
+  await setImmediate(); f.eof(4); await setImmediate()
+  expect(settled).toBe(false)
+  expect(exited).toBe(false)
+  f.complete(); f.eof(2); f.eof(3)
+  expect(await terminal.done).toEqual({ exitCode: 0, signal: null })
+  await vi.waitFor(() => { expect(exited).toBe(true) })
+  expect(settled).toBe(false)
+  await vi.waitFor(() => { expect(f.wire.close).toHaveBeenCalledTimes(1) })
+  f.get().events.closed(); expect(await inspected).toBe(true); await terminal.terminate()
+  expect(released).toHaveBeenCalledTimes(1)
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+})
+
+it('does not turn terminal EOF into a successful direct exit when the original outcome is missing', async () => {
+  const f = fixture(), terminal = new NativeTerminalHandle(f.operation, () => {}, () => {}, 2)
+  f.operation.publish(); f.operation.begin(); await f.operation.prepared
+  await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledTimes(1) })
+  f.receive(4, 1, Buffer.from('{"ready":123}\n')); await terminal.started()
+  const rejected = expect(terminal.done).rejects.toThrow('without complete direct exit facts')
+  f.eof(4)
+  const before = initial()
+  f.setSnapshot({ ...before, submitted: true, rangeEmpty: true, ioClosed: true,
+    stdout: { ...before.stdout, eof: true }, stderr: { ...before.stderr, eof: true } })
+  f.eof(2); f.eof(3); await rejected
+  await vi.waitFor(() => { expect(f.wire.close).toHaveBeenCalledTimes(1) })
+  f.get().events.closed(); await terminal.terminate()
+})
 
 it('publishes raw endpoints synchronously but requires actual attachment before preparation and commit', async () => {
   const f = fixture(), handle = f.operation.handle
