@@ -21,7 +21,10 @@ parser.add_argument('--runtime-directory', required=True, type=Path)
 parser.add_argument('--soffice', required=True)
 parser.add_argument('--pdftotext', required=True)
 args = parser.parse_args()
-resource.setrlimit(resource.RLIMIT_AS, (536870912, 536870912))
+for limit, value in [(resource.RLIMIT_AS, 536870912), (resource.RLIMIT_FSIZE, 67108864),
+                     (resource.RLIMIT_NOFILE, 64), (resource.RLIMIT_NPROC, 64),
+                     (resource.RLIMIT_CORE, 0), (resource.RLIMIT_CPU, 75)]:
+    resource.setrlimit(limit, (value, value))
 sys.path.insert(0, str(args.runtime_directory))
 from refresh_word import refresh, Cancelled
 from word_catalog import parse_xml, fields, catalogs, tag, NS, xml, write_copy, E, normalized
