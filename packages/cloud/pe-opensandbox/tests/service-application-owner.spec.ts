@@ -135,6 +135,7 @@ async function fixture(options: { application?: boolean; bind?: boolean; maximum
   })
   const owner = new NativeCommandAccount(ctx, binding, { assertBusinessCurrent() { if (!businessCurrent) throw new Error('stale epoch') },
     getAgent: id => agents.get(id), projectForAgent: () => currentProject, projectForSession: () => currentProject,
+    assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
     files() { throw new Error('not used') } },
   { allowedTools: ['dev_service'], maxScopes: 64, commandLimits: limits,
     services: { profile, operationLimits: limits, assertQualified(value) { expect(value).toBe(profile) },
@@ -258,7 +259,7 @@ it('cannot replace original cancellation with a fresh withResponse signal, and a
 it.each(['deadline', 'project'] as const)('rechecks %s immediately before wire and preserves the original bounded timeout', async (variant) => {
   const f = await fixture(); await f.start(); f.holdWire()
   const start = Date.now(), clock = vi.spyOn(Date, 'now').mockReturnValue(start)
-  vi.spyOn(performance, 'now').mockReturnValue(performance.now())
+  vi.spyOn(performance, 'now').mockReturnValue(Math.ceil(performance.now()))
   const read = observed(f.borrow(service => service.withResponse(request, responseLimits, new AbortController().signal, idle),
     new AbortController().signal, start + 37))
   await vi.waitFor(() => { expect(f.attempts[0]?.retained).toBeDefined() })

@@ -92,7 +92,9 @@ async function fixture(next: () => ReturnType<typeof channel> = channel) {
   const unknown = vi.fn(), physical = Promise.withResolvers<undefined>()
   let failReserve = false, count = 0
   const owner = new NativeCommandAccount(ctx, binding, { assertBusinessCurrent() {}, getAgent: id => agents.get(id),
-    projectForAgent: () => workspace, projectForSession: () => workspace, files() { throw new Error('not used') } },
+    projectForAgent: () => workspace, projectForSession: () => workspace,
+    assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
+    files() { throw new Error('not used') } },
   { allowedTools: ['bash', 'dev_service'], maxScopes: 32, commandLimits: limits,
     services: { profile, operationLimits: limits, assertQualified(value) { expect(value).toBe(profile) },
       serviceSpec(scope, _profile, start) { return { argv: ['/opt/session-env/venv/bin/python', '-B', scope.project.path + '/' + start.script, ...start.args], cwd: scope.project.path,
@@ -283,15 +285,14 @@ it('a preparing lease row is included in closeProvider and releases its zero-pro
   expect(closing).toBeDefined(); f.physical.resolve(undefined); await closing
 })
 
-it('constructor refusal before operation binding releases only its original preparing row and never acquires remotely', async () => {
+it('refuses unsupported service pipes before reservation and never acquires remotely', async () => {
   const f = await fixture(), spec = f.owner.serviceSpec.bind(f.owner)
   vi.spyOn(f.owner, 'serviceSpec').mockImplementation((scope, profile, start) => {
     const value = spec(scope, profile, start)
     return { ...value, stdio: { ...value.stdio, stdout: 'pipe' } }
   })
   expect((await f.call({ action: 'start' })).isError).toBe(true)
-  expect(f.entries).toHaveLength(0); expect(f.reservations).toHaveLength(1)
-  expect(f.reservations[0]!.active).toHaveBeenCalledTimes(1); expect(f.reservations[0]!.resident).toHaveBeenCalledTimes(1)
+  expect(f.entries).toHaveLength(0); expect(f.reservations).toHaveLength(0)
 })
 
 it('resolves a project Python script with literal args under the original project and defaults omitted args explicitly to empty', async () => {

@@ -63,7 +63,7 @@ async function fixture(id: string, initiallyReady = true) {
     await ctx.plugin(RemoteAccess)
     await ctx.plugin(Gateway)
     await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
-    await ctx.plugin(UserApproval, { policy: 'never' })
+    await ctx.plugin(UserApproval, { policy: 'ask' })
     await mountAgentLoopTestHarness(ctx)
     Object.assign(ctx.loader.builtins, {
       'account-permissions': { inject: PermissionPresets.inject, Config: PermissionPresets.Config,
@@ -109,15 +109,21 @@ it('pins initial native defaults using installation checks before business-ready
 
 it('uses the original catalog and /permission handler with durable Session state and the same guarded registry', async () => {
   const f = await fixture('catalog')
-  expect(await f.catalog()).toEqual({ options: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' }), expect.objectContaining({ value: 'danger-full-access' })],
+  const catalog = await f.catalog()
+  expect(catalog).toEqual({ options: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' }), expect.objectContaining({ value: 'danger-full-access' })],
     defaultOptions: [expect.objectContaining({ value: 'read-only' }), expect.objectContaining({ value: 'workspace-write' }), expect.objectContaining({ value: 'danger-full-access' })], defaultPreset: 'workspace-write' })
+  // Unmodified Native clients translate these original keys; cloud configuration supplies no replacement labels.
+  expect(catalog.options.map(({ value, name }) => ({ value, name }))).toEqual([
+    { value: 'read-only', name: 'read-only' }, { value: 'workspace-write', name: 'workspace-write' },
+    { value: 'danger-full-access', name: 'danger-full-access' },
+  ])
   expect(f.service.inspect().rpcEndpoints).toEqual([{ endpoint: 'permissionPresets/catalog', handlerId: 'native:permissionPresets', guard: 'authenticated-account' }])
   expect(f.service.value.current(f.agent.session)).toBe('workspace-write')
   const before = f.assertSwitch.mock.calls.length
   expect(await f.execute('/permission read-only')).toMatchObject({ result: { kind: 'success' } })
   expect(f.assertSwitch.mock.calls.length).toBe(before + 1)
   expect(f.service.value.current(f.agent.session)).toBe('read-only')
-  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'permissions')).toMatchObject({ preset: 'read-only', sandbox: 'read-only', approval: 'never' })
+  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'permissions')).toMatchObject({ preset: 'read-only', sandbox: 'read-only', approval: 'ask' })
 })
 
 it('blocks native private command apply and direct set before permission events while previous work remains live', async () => {
@@ -169,5 +175,19 @@ it('selects full access through the original command and persists the native Ses
   expect(await f.execute('/permission danger-full-access')).toMatchObject({ result: { kind: 'success' } })
   expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'permissions')).toMatchObject({
     preset: 'danger-full-access', sandbox: 'danger-full-access', approval: 'never',
+  })
+})
+
+it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)('uses the original approval policy for %s without treating never as a grant', async (mode) => {
+  const f = await fixture('policy-' + mode)
+  f.service.value.set(f.agent.session, mode)
+  f.agent.session.append('turn/start', { turn: 1 })
+  const decision = vi.fn(() => Promise.resolve('allowed-once' as const))
+  f.ctx.on('approval/request', decision)
+  await expect(f.ctx.approval.request({ agent: f.agent, toolName: 'Bash', reason: 'Policy escalation.' }))
+    .resolves.toBe(mode === 'danger-full-access' ? 'rejected' : 'allowed-once')
+  expect(decision).toHaveBeenCalledTimes(mode === 'danger-full-access' ? 0 : 1)
+  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'permissions')).toMatchObject({
+    preset: mode, sandbox: mode, approval: mode === 'danger-full-access' ? 'never' : 'ask',
   })
 })

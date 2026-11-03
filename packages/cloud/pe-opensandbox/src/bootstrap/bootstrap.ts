@@ -17,7 +17,7 @@ import { DataClient } from '../agent-data/client-internal.ts'
 import { AGENT_SOURCE_SHA256, BWRAP_SHA256, digest, expectedWorldHash } from '../agent-data/index.ts'
 import { checkOptions } from '../agent-data/validate.ts'
 
-const IMAGE = 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f'
+const IMAGE = 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a'
 
 /** Failure messages stay secret-free; only Root's private cause retains bounded tagged HTTP diagnostics. */
 export class BootstrapFailure extends Error {
@@ -58,7 +58,7 @@ export interface BootstrapPayload {
 /**
  * Verify fixed helper and agent bytes before per-allocation remote effects.
  * @param bootstrapDirectory This frozen helper directory.
- * @param agentDirectory Root-approved six-file source directory.
+ * @param agentDirectory Root-approved eight-file source directory.
  * @returns Fixed, individually verified source bytes; configuration and tokens are never part of this payload.
  */
 export async function loadBootstrapPayload(bootstrapDirectory: string, agentDirectory: string): Promise<BootstrapPayload> {
@@ -148,7 +148,7 @@ class BootstrapConnection extends ConnectionConfig {
     need(request.url === work.url && request.method === work.method && ++work.requests === 1
       && request.headers.get('OPEN-SANDBOX-API-KEY') === this.config.lifecycle.apiKey, 'binding')
     request.headers.set('OpenSandbox-Access-Renew', 'skip')
-    need(++this.attempts <= 12, 'bounds')
+    need(++this.attempts <= Object.keys(SOURCES).length + 6, 'bounds')
     const body = request.body === null ? undefined : new Uint8Array(await request.clone().arrayBuffer())
     const size = body?.length ?? 0
     need(size <= this.config.maxRequestBytes, 'bounds')
@@ -220,7 +220,7 @@ export class TrustedSdkBootstrap {
   private readonly retiredIntents = new WeakSet<AgentSelection['intent']>()
   private readonly options = new WeakMap<ClientOptions, Readonly<{ record: RecordState; endpoint: URL; headers: Record<string, string> }>>()
   private readonly payload: BootstrapPayload
-  /** @param config Root's fixed selected deployment. @param payload Verified helper and six-file source payload.
+  /** @param config Root's fixed selected deployment. @param payload Verified helper and eight-file source payload.
    * @param transportFactory Creates one exclusively owned real dispatcher per started allocation; tests transfer equivalent ownership.
    */
   constructor(private readonly config: BootstrapConfig, payload: BootstrapPayload,
@@ -241,7 +241,7 @@ export class TrustedSdkBootstrap {
       && [selected.payloadSha256, AGENT_SOURCE_SHA256, SOURCE_DIGEST].every(pin => pin === sourceDigest)
       && JSON.stringify(selected.entrypoint) === JSON.stringify(['/usr/bin/tail', '-f', '/dev/null']), 'binding')
     need(hash(Buffer.from(payload.prep)) === BOOTSTRAP_PINS['prep.py'].sha256
-      && hash(Buffer.from(payload.loader)) === BOOTSTRAP_PINS['loader.py'].sha256 && payload.uploads.length === 7, 'binding')
+      && hash(Buffer.from(payload.loader)) === BOOTSTRAP_PINS['loader.py'].sha256 && payload.uploads.length === Object.keys(SOURCES).length + 1, 'binding')
     this.payload = { prep: payload.prep, loader: payload.loader, uploads: payload.uploads.map(({ name, data }) => {
       const pin = name === 'publisher.py' ? BOOTSTRAP_PINS['publisher.py'] : undefined
       const source = Object.entries(SOURCES).find(([file]) => file === name)?.[1]
@@ -249,7 +249,7 @@ export class TrustedSdkBootstrap {
         || (source !== undefined && data.length === source[1] && hash(data) === source[0]), 'binding')
       return Object.freeze({ name, data: Uint8Array.from(data) })
     }) }
-    need(new Set(this.payload.uploads.map(item => item.name)).size === 7, 'binding')
+    need(new Set(this.payload.uploads.map(item => item.name)).size === Object.keys(SOURCES).length + 1, 'binding')
   }
 
   /**

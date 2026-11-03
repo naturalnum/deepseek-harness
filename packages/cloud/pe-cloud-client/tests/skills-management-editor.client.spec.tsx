@@ -38,7 +38,7 @@ it('omits the legacy sample editor from the skills page', () => {
   const f = fixture()
   render(<SkillsPage {...f.props}/>)
   expect(screen.queryByRole('button', { name: en.sampleOpen })).toBeNull()
-  expect(screen.getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
+  expect(screen.queryByRole('button', { name: en.install })).toBeNull()
   expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
   expect(f.prepare).not.toHaveBeenCalled()
 })

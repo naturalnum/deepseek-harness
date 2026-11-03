@@ -206,7 +206,9 @@ async function fixture(name: string, handler: (request: IncomingMessage, respons
   const unknown = vi.fn<NativeCommandRoot['unknown']>((_scope, operation, cause) => { operation.requestStop(cause) })
   const owner = new NativeCommandAccount(ctx, binding, { assertBusinessCurrent() {},
     getAgent: selected => selected === id ? agent : undefined,
-    projectForAgent: () => workspace, projectForSession: () => workspace, files() { throw new Error('not used') } },
+    projectForAgent: () => workspace, projectForSession: () => workspace,
+    assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
+    files() { throw new Error('not used') } },
   { allowedTools: ['dev_service'], maxScopes: 8, commandLimits: limits,
     services: { profile, operationLimits: limits, application: { maxRequestsPerService: 1, reserve, transport },
       assertQualified(value) { expect(value).toBe(profile) },

@@ -9,10 +9,12 @@ from types import MappingProxyType
 
 from paths import absolute
 
-VERSION = 's5-collect/10-skill-working-copies-v1'
+VERSION = 's6-stream/1-native-pipes-pty-v1'
 ROLE_DOMAIN = b'dsh:s4:range-role:v1'
-ROLES = ['foreground', 'service']
+ROLES = ['foreground', 'service', 'program']
 AUTH_HEADER = 'x-pe-execution-token'
+STREAM_VERSION = 'pe-execution-stream-v1'
+STREAM_CONTROL_MAX = 8388608
 MAX_BODY, MAX_REPLY, MAX_TAIL, MAX_OBSERVED = 12288, 16384, 4096, 65536
 LIMITS = MappingProxyType({
     'lifetimeOperations': 4, 'activeRanges': 2, 'tailBytesPerStream': MAX_TAIL,
@@ -71,7 +73,8 @@ def loads(data, max_bytes=MAX_BODY):
 
 
 def canonical(spec):
-    keys(spec, ['argv', 'stdin', 'cwd'])
+    pipes = type(spec) is dict and spec.get('executionKind') == 'pipes'
+    keys(spec, ['argv', 'stdin', 'cwd'] + (['executionKind', 'env', 'stream'] if pipes else []))
     try:
         absolute(spec['cwd'])
     except ValueError:
@@ -85,8 +88,8 @@ def canonical(spec):
         raise Refused(400, 'invalid_argv_encoding') from None
     require(argv[0].startswith('/') and size <= 4096, 'argv_budget')
     stdin = spec['stdin']
-    require(type(stdin) is dict and stdin.get('mode') in ['ignore', 'batch'], 'unsupported_mode')
-    if stdin['mode'] == 'ignore':
+    require(type(stdin) is dict and stdin.get('mode') in (['ignore', 'batch', 'pipe'] if pipes else ['ignore', 'batch']), 'unsupported_mode')
+    if stdin['mode'] in ['ignore', 'pipe']:
         keys(stdin, ['mode'])
         batch = b''
     else:
@@ -99,14 +102,50 @@ def canonical(spec):
             raise Refused(400, 'invalid_stdin_base64') from None
         require(len(batch) <= 4096 and base64.b64encode(batch).decode('ascii') == encoded, 'invalid_stdin_base64')
     normalized = {'argv': argv[:], 'stdin': dict(stdin), 'cwd': spec['cwd']}
+    if pipes:
+        normalized.update(executionKind='pipes', env=environment(spec['env']), stream=stream_spec(spec['stream']))
     return normalized, batch, hashlib.sha256(dumps(normalized)).hexdigest()
+
+
+def environment(value):
+    require(type(value) is dict and len(value) <= 128, 'environment_budget')
+    for name, content in value.items():
+        require(type(name) is str and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,127}', name) is not None
+                and name != 'DSH_SUBPROCESS_CONTROL', 'environment_name')
+        require(content is None or type(content) is str and '\0' not in content, 'environment_value')
+        if content is not None:
+            try:
+                content.encode('utf-8')
+            except UnicodeError:
+                raise Refused(400, 'environment_encoding') from None
+    try:
+        require(len(dumps(value)) <= 4096, 'environment_budget')
+    except UnicodeError:
+        raise Refused(400, 'environment_encoding') from None
+    return dict(value)
+
+
+def stream_spec(value):
+    keys(value, ['version', 'stdout', 'stderr', 'control', 'limits'] + (['terminal'] if 'terminal' in value else []))
+    if 'terminal' in value:
+        terminal = value['terminal']
+        keys(terminal, ['rows', 'cols'])
+        require(all(type(x) is int and 1 <= x <= 65535 for x in terminal.values()), 'terminal_dimensions')
+        require(value['control'] == value['stdout'] == value['stderr'] == 'pipe', 'terminal_pipes')
+    require(value['version'] == STREAM_VERSION, 'stream_version')
+    for name in ['stdout', 'stderr', 'control']:
+        require(value[name] in ['pipe', 'ignore'], 'stream_disposition')
+    keys(value['limits'], ['controlInputBytes', 'controlOutputBytes'])
+    for limit in value['limits'].values():
+        require(type(limit) is int and 1 <= limit <= STREAM_CONTROL_MAX, 'stream_budget')
+    return {**value, 'limits': dict(value['limits'])}
 
 
 def authorization(value):
     keys(value, ['role', 'registrationId', 'signature'])
     require(type(value['role']) is str and value['role'] in ROLES, 'invalid_role')
     registration = value['registrationId']
-    require((value['role'] == 'foreground' and registration is None)
+    require((value['role'] in ['foreground', 'program'] and registration is None)
             or (value['role'] == 'service' and type(registration) is str
                 and IDENTIFIER.fullmatch(registration) is not None), 'invalid_role_registration')
     hex64(value['signature'])
@@ -135,7 +174,7 @@ def request(path, body, runtime):
     common = ['runtimeIdentity']
     if path in ['/handshake', '/seal']:
         keys(body, common)
-    elif path in ['/prepare', '/commit', '/cancel', '/poll', '/stop']:
+    elif path in ['/prepare', '/commit', '/cancel', '/poll', '/stop', '/stream']:
         fields = common + ['operationId', 'specHash', 'authorization']
         if path == '/prepare':
             fields += ['spec'] + (['skillWorld'] if 'skillWorld' in body else []) + (['filePolicy'] if 'filePolicy' in body else [])

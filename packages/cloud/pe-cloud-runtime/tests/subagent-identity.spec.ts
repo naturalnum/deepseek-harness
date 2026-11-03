@@ -40,7 +40,7 @@ it('uses A, the original cloud factory/checker, real Root capacity and native Se
   expect(() => { f.capacity.assertSubagentsStopped(f.graph.binding.accountId) }).not.toThrow()
   using first = await f.graph.ctx.sessionQuery.observeSession(started.childId, { projectionMode: 'all' })
   expect(first.header.parentSession).toBe(f.parent.id)
-  expect(first.header.agentPreset).toBe(f.config.presetId)
+  expect(first.header.agentPreset).toBe(f.config.defaultPresetId)
   expect(first.projections?.values.workingDirectory).toBe(f.project)
   expect(first.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
   await vi.waitFor(() => { expect(f.graph.files.project().workspace.sessionIds).toContain(started.childId) })
@@ -50,6 +50,66 @@ it('uses A, the original cloud factory/checker, real Root capacity and native Se
   using second = await f.graph.ctx.sessionQuery.observeSession(started.childId, { projectionMode: 'all' })
   expect(second.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
   expect(f.graph.adapter.calls).toBeGreaterThanOrEqual(2)
+})
+
+it('reuses the Native fork completed-turn seed, own descriptor and cold continuation without re-forking newer parent turns', async () => {
+  const f = await fixture()
+  await f.graph.invoke('prompt', { sessionId: f.parent.id, requestId: 'native-fork-parent-first', mode: 'followup',
+    content: [{ type: 'text', text: 'Complete the original parent turn.' }] })
+  await f.parent.whenIdle()
+  using parent = await f.graph.ctx.sessionQuery.observeSession(f.parent.id)
+  const completed = parent.events.findLast(event => event.type === 'turn/end')
+  if (completed === undefined) throw new Error('Native parent turn did not complete')
+  const inherited = parent.events.slice(0, completed.seq + 1)
+  const started = await f.graph.ctx.subagents.startActivation({ ...f.spec(), provider: 'fork' })
+  await expect(started.result).resolves.toMatchObject({ stopReason: 'completed' })
+  using first = await f.graph.ctx.sessionQuery.observeSession(started.childId, { projectionMode: 'all' })
+  expect(first.header).toMatchObject({ isSeeded: true, parentSession: f.parent.id, origin: 'subagent' })
+  expect(first.inheritedEventCount).toBe(inherited.length)
+  expect(first.events.slice(0, first.inheritedEventCount)).toEqual(inherited)
+  expect(first.events[first.inheritedEventCount]).toMatchObject({ type: 'session/end-seed', data: { inherited: true } })
+  const own = first.events.slice(first.inheritedEventCount)
+  expect(own.filter(event => event.type === 'subagent/descriptor')).toMatchObject([{ data: { provider: 'fork', mode: 'continuable' } }])
+  expect(own.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+  expect(first.projections?.values.workingDirectory).toBe(f.project)
+  expect(() => { f.capacity.assertSubagentsStopped(f.graph.binding.accountId) }).not.toThrow()
+  await f.graph.invoke('prompt', { sessionId: f.parent.id, requestId: 'native-fork-parent-later', mode: 'followup',
+    content: [{ type: 'text', text: 'A newer parent turn must not change the existing fork.' }] })
+  await f.parent.whenIdle()
+  await f.graph.ctx.subagents.sendMessage(f.parent, started.childId, [{ type: 'text', text: 'Continue the original fork.' }],
+    { signal: new AbortController().signal })
+  await vi.waitFor(() => { expect(f.graph.ctx.agents.get(started.childId)).toBeUndefined() })
+  using restored = await f.graph.ctx.sessionQuery.observeSession(started.childId, { projectionMode: 'all' })
+  expect(restored.inheritedEventCount).toBe(inherited.length)
+  expect(restored.events.slice(0, restored.inheritedEventCount)).toEqual(inherited)
+  expect(restored.events.slice(restored.inheritedEventCount).filter(event => event.type === 'assistant/message')).toHaveLength(2)
+  expect(f.observed).toEqual(['confirmed', 'confirmed'])
+  expect(() => { f.capacity.assertSubagentsStopped(f.graph.binding.accountId) }).not.toThrow()
+})
+
+it('retains the Native fork fresh-child behavior before any completed parent turn', async () => {
+  const f = await fixture(), started = await f.graph.ctx.subagents.startActivation({ ...f.spec(), provider: 'fork' })
+  await expect(started.result).resolves.toMatchObject({ stopReason: 'completed' })
+  using source = await f.graph.ctx.sessionQuery.observeSession(started.childId)
+  expect(source.header.isSeeded).toBe(false)
+  expect(source.inheritedEventCount).toBe(0)
+  expect(source.events.filter(event => event.type === 'subagent/descriptor')).toMatchObject([{ data: { provider: 'fork' } }])
+  expect(f.observed).toEqual(['confirmed'])
+})
+
+it('rejects an unreviewed provider before its preparation and retains the ordinary root seed prohibition', async () => {
+  const f = await fixture(), prepare = vi.fn(async () => ({})), create = vi.spyOn(f.graph.ctx.sessionPersistence, 'create')
+  const remove = f.graph.ctx.subagents.registerProvider({ name: 'unreviewed-provider', capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false }, inheritsParentContext: true,
+    prepareContinuable: prepare })
+  try {
+    await expect(f.graph.ctx.subagents.startActivation({ ...f.spec(), provider: 'unreviewed-provider' })).rejects.toBeDefined()
+  } finally { remove() }
+  expect(prepare).not.toHaveBeenCalled()
+  await expect(f.graph.ctx.agents.create({ sessionId: SessionId('unreviewed-root-seed'), seed: [],
+    meta: { cwd: f.project, agentPreset: f.config.defaultPresetId }, agentOptions: { provider: 'local-text', model: 'plain-text' } }))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(create).not.toHaveBeenCalled()
+  expect(f.observed).toEqual([])
 })
 
 it.each(['active', 'pending'] as const)('audits canonical preset Entries while preserving an owned %s inject fiber', async (state) => {
@@ -68,7 +128,7 @@ it.each(['active', 'pending'] as const)('audits canonical preset Entries while p
   expect(f.observed).toEqual(['confirmed'])
   using observed = await f.graph.ctx.sessionQuery.observeSession(started.childId, { projectionMode: 'all' })
   expect(observed.header.parentSession).toBe(f.parent.id)
-  expect(observed.header.agentPreset).toBe(f.config.presetId)
+  expect(observed.header.agentPreset).toBe(f.config.defaultPresetId)
   expect(observed.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
 })
 
@@ -109,12 +169,12 @@ it.each(['cwd', 'model', 'preset'] as const)('rejects unapproved %s before origi
   expect(create).not.toHaveBeenCalled()
 })
 
-it('rejects a cloned Parent object at both A and the actual cloud factory before native creation', async () => {
+it.each(['spawn', 'fork'])('rejects a cloned Parent object at both %s admission and the actual cloud factory before native creation', async (provider) => {
   const f = await fixture(), create = vi.spyOn(f.graph.ctx.sessionPersistence, 'create')
   const clone = { ...f.parent }
-  await expect(f.graph.ctx.subagents.startActivation(f.spec(clone))).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  await expect(f.graph.ctx.subagents.startActivation({ ...f.spec(clone), provider })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
   await expect(f.graph.ctx.agents.create({ sessionId: SessionId('cloned-parent-child'), parentAgent: clone,
-    meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.presetId },
+    meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.defaultPresetId },
     agentOptions: { provider: 'local-text', model: 'plain-text' } })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   expect(create).not.toHaveBeenCalled()
 })
@@ -122,7 +182,7 @@ it('rejects a cloned Parent object at both A and the actual cloud factory before
 it('refuses a caller-supplied disposal observer before reserving or creating a child', async () => {
   const f = await fixture(), supplied = vi.fn(), create = vi.spyOn(f.graph.ctx.sessionPersistence, 'create')
   await expect(f.graph.ctx.agents.create({ sessionId: SessionId('caller-observer'), parentAgent: f.parent,
-    meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.presetId },
+    meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.defaultPresetId },
     agentOptions: { provider: 'local-text', model: 'plain-text' }, observeDisposal: supplied })).rejects.toMatchObject({ code: 'cloud/forbidden' })
   expect(create).not.toHaveBeenCalled(); expect(supplied).not.toHaveBeenCalled(); expect(f.observed).toEqual([])
 })
@@ -197,10 +257,10 @@ it('retains a real late-setup unknown reservation and immediately closes origina
   onTestFinished(() => { release.resolve(undefined) })
   const caller = new AbortController(), failure = new Error('caller stops waiting for real child setup')
   const creating = f.graph.ctx.agents.create({ sessionId: SessionId('late-real-child'), parentAgent: f.parent,
-    meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.presetId },
+    meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.defaultPresetId },
     agentOptions: { provider: 'local-text', model: 'plain-text' }, signal: caller.signal,
     setup: async (owner, agent) => {
-      await f.graph.ctx.agentPresets.mount(owner, f.config.presetId)
+      await f.graph.ctx.agentPresets.mount(owner, f.config.defaultPresetId)
       await owner.get('workingDirectory')!.set(agent, f.project)
       entered.resolve(undefined); await release.promise; finished.resolve(undefined)
     },
@@ -225,7 +285,7 @@ it.each(['create', 'resume'] as const)('checks actual runtime depth against the 
   const options = { parentAgent: f.parent, agentOptions: { provider: 'local-text', model: 'plain-text', subagentDepth: 100 } }
   const starting = operation === 'create'
     ? f.graph.ctx.agents.create({ ...options, sessionId: SessionId('runtime-depth-child'),
-      meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.presetId } })
+      meta: { cwd: f.project, origin: 'subagent', parentSession: f.parent.id, delegationDepth: 1, agentPreset: f.config.defaultPresetId } })
     : f.graph.ctx.agents.resume({ ...options, resumeSessionId: child.childId })
   await expect(starting).rejects.toMatchObject({ code: operation === 'create' ? 'cloud/forbidden' : 'cloud/capacity' })
   expect(create).not.toHaveBeenCalled()
@@ -237,7 +297,7 @@ it('keeps the existing cloud factory closed when no original Root reservation ca
   const f = policyFixture(), graph = await f.start(), created = await graph.ctx.sessionController.create({})
   const parent = graph.ctx.agents.get(created.sessionId)!, create = vi.spyOn(graph.ctx.sessionPersistence, 'create')
   await expect(graph.ctx.agents.create({ sessionId: SessionId('closed-child'), parentAgent: parent,
-    meta: { cwd: f.project, origin: 'subagent', parentSession: parent.id, delegationDepth: 1, agentPreset: f.config.presetId },
+    meta: { cwd: f.project, origin: 'subagent', parentSession: parent.id, delegationDepth: 1, agentPreset: f.config.defaultPresetId },
     agentOptions: { provider: 'local-text', model: 'plain-text' } })).rejects.toMatchObject({ code: 'cloud/forbidden' })
   expect(create).not.toHaveBeenCalled()
 })
@@ -258,13 +318,13 @@ it('rejects an equal-id replacement Workspace after await using the original Reg
   expect(f.observed).toEqual([])
 })
 
-it('rejects another native graph parent with a different real binding at A and actual factory admission', async () => {
+it.each(['spawn', 'fork'])('rejects another native graph parent with a different real binding at %s and actual factory admission', async (provider) => {
   const f = await fixture(), other = policyFixture([], undefined, 'other-b1-component'), graph = await other.start()
   const created = await graph.ctx.sessionController.create({}), parent = graph.ctx.agents.get(created.sessionId)!
   const create = vi.spyOn(f.graph.ctx.sessionPersistence, 'create')
-  await expect(f.graph.ctx.subagents.startActivation(f.spec(parent))).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  await expect(f.graph.ctx.subagents.startActivation({ ...f.spec(parent), provider })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
   await expect(f.graph.ctx.agents.create({ sessionId: SessionId('foreign-parent-child'), parentAgent: parent,
-    meta: { cwd: f.project, origin: 'subagent', parentSession: parent.id, delegationDepth: 1, agentPreset: f.config.presetId },
+    meta: { cwd: f.project, origin: 'subagent', parentSession: parent.id, delegationDepth: 1, agentPreset: f.config.defaultPresetId },
     agentOptions: { provider: 'local-text', model: 'plain-text' } })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   expect(create).not.toHaveBeenCalled()
 })

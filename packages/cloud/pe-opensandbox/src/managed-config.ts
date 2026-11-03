@@ -152,9 +152,10 @@ function serviceLimits(value: unknown, limits: CommandOperationLimits): ManagedS
 function commandLimits(value: unknown): ManagedNativeCommandConfig {
   // Select the exact key list without reading a possible services accessor or inherited property.
   const hasServices = value !== null && typeof value === 'object' && Object.hasOwn(value, 'services')
-  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasServices ? ['services'] : [])], 'commands')
+  const hasPipes = value !== null && typeof value === 'object' && Object.hasOwn(value, 'pipes')
+  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : [])], 'commands')
   const tools = row['allowedTools']
-  const expectedTools = hasServices ? ['bash', 'dev_service'] : ['bash']
+  const expectedTools = ['bash', ...hasServices ? ['dev_service'] : [], ...hasPipes ? ['run_code', 'terminal_open'] : []]
   if (!Array.isArray(tools) || Object.getPrototypeOf(tools) !== Array.prototype
     || tools.length !== expectedTools.length || Reflect.ownKeys(tools).length !== expectedTools.length + 1) refuse('commands.allowedTools')
   for (const [index, tool] of expectedTools.entries()) {
@@ -180,7 +181,10 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   requireLimit(attempts <= CARRIER_LIMITS.attempts, `${path}.pollIntervalMs`)
   // This is the sole services resolve point. Absence produces no service policy or dev_service consumer.
   const services = hasServices ? serviceLimits(row['services'], limits) : undefined
-  return Object.freeze({ allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
+  const rawPipes = hasPipes ? object(row['pipes'], ['controlInputBytes', 'controlOutputBytes'], 'commands.pipes') : undefined
+  const pipes = rawPipes === undefined ? undefined : Object.freeze({ controlInputBytes: integer(rawPipes, 'controlInputBytes', 'commands.pipes', 8388608),
+    controlOutputBytes: integer(rawPipes, 'controlOutputBytes', 'commands.pipes', 8388608) })
+  return Object.freeze({ ...pipes === undefined ? {} : { pipes }, allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
     commandLimits: limits, ...(services === undefined ? {} : { services }) })
 }
 
@@ -220,6 +224,10 @@ export function parseManagedCoordinatorConfig(value: unknown): ManagedCoordinato
   const row = object(value, rootKeys, 'configuration')
   const store = storeLimits(row['store']), allocations = allocationLimits(row['allocations'], store)
   const commands = commandLimits(row['commands']), shell = shellLimits(row['shell'], commands.commandLimits)
+  if (commands.pipes !== undefined) {
+    requireLimit(shell.enforceSessionFilePolicy === true, 'shell.enforceSessionFilePolicy')
+    requireLimit(commands.maxScopes >= 2, 'commands.maxScopes')
+  }
   const config: ManagedCoordinatorConfig = Object.freeze({
     maxBoundAccounts: integer(row, 'maxBoundAccounts', 'configuration'),
     maxActiveCommands: integer(row, 'maxActiveCommands', 'configuration'),
@@ -238,7 +246,8 @@ export function parseManagedCoordinatorConfig(value: unknown): ManagedCoordinato
   requireLimit(config.recoveryPageSize <= store.maxRows, 'configuration.recoveryPageSize')
   requireLimit(config.recoveryPageSize * (store.maxRowBytes + 1) + 2 <= store.maxResultBytes, 'store.maxResultBytes')
   const command = commands.commandLimits
-  const largestReservation = 8 * (2 * command.maxTailBytes + command.maxStdinBytes + command.maxPathBytes + command.maxArgvBytes)
+  const largestReservation = 8 * (2 * (commands.pipes === undefined ? command.maxTailBytes : 65536)
+    + command.maxStdinBytes + command.maxPathBytes + command.maxArgvBytes)
     + 8192 + command.maxWaiters * 256
   requireLimit(Number.isSafeInteger(largestReservation) && largestReservation <= config.maxResidentBytesPerAccount,
     'configuration.maxResidentBytesPerAccount')

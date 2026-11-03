@@ -17,6 +17,8 @@ export interface NativeAccountExecutionAuthority {
   readonly projectForAgent: (agent: Agent) => Workspace
   /** Select the Workspace through the original native Session guards. */
   readonly projectForSession: (session: Session) => Workspace
+  /** Recheck an already leased execution owner through original identity guards during Native cleanup, never business admission. */
+  readonly assertRetainedExecutionOwner: (agent: Agent, workspace: Workspace) => void
   /** Resolve the original installed files owner only when a native operation needs it. */
   readonly files: () => CloudAccountFiles
 }

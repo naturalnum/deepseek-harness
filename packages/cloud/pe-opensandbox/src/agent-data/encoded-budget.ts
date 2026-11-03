@@ -21,11 +21,19 @@ const ROOT_PAIR = '[' + U64_MAX_DECIMAL + ',' + U64_MAX_DECIMAL + ']'
 export function guardianEncodedBudget(projectRoot: string, value: OperationSpec, copies?: SkillWorld, policy?: NativeFilePolicy): number {
   absolute(projectRoot)
   const normalized = spec(value, projectRoot)
+  const environment: Record<string, string> = { ...ENV }
+  if (normalized.executionKind === 'pipes') {
+    for (const [key, value] of Object.entries(normalized.env)) {
+      if (value === null) Reflect.deleteProperty(environment, key)
+      else Object.defineProperty(environment, key, { value, enumerable: true, configurable: true, writable: true })
+    }
+  }
   // Only fixed numeric tokens are raw. User strings/argv always go through the existing canonical encoder.
-  const frame = '{"argv":' + asciiJSON(normalized.argv) + ',"env":' + asciiJSON(ENV)
+  const frame = '{"argv":' + asciiJSON(normalized.argv) + ',"env":' + asciiJSON(environment)
     + ',"roots":{' + asciiJSON(projectRoot) + ':' + ROOT_PAIR + ',' + asciiJSON(ENV_ROOT) + ':' + ROOT_PAIR + '}'
     + ',"projectRoot":' + asciiJSON(projectRoot) + ',"cwd":' + asciiJSON(normalized.cwd)
     + ',"stdinMode":' + asciiJSON(normalized.stdin.mode)
+    + (normalized.executionKind === 'pipes' ? ',"executionKind":"pipes","stream":' + asciiJSON(normalized.stream) : '')
     + (copies === undefined ? '' : ',"skillWorld":' + asciiJSON(skillWorld(copies)))
     + (policy === undefined ? '' : ',"filePolicy":' + asciiJSON(filePolicy(policy))) + '}'
   const bytes = Buffer.byteLength(frame, 'ascii')

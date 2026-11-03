@@ -2,7 +2,7 @@
 import time
 
 from paths import checked_cwd
-from wire import LIMITS, ROLES, VERSION, Refused, canonical, collect, request, require, verify_role
+from wire import LIMITS, ROLES, VERSION, STREAM_VERSION, STREAM_CONTROL_MAX, Refused, canonical, collect, request, require, verify_role
 
 
 class Manager:
@@ -12,6 +12,7 @@ class Manager:
         self.pins, self.control_unknown = {}, False
         self.started = clock()
         self.role_token = role_token
+        self.stream_enabled = False  # Root installs the protected WebSocket dependency before advertising/admitting pipes.
 
     def envelope(self, **values):
         return {'protocolVersion': VERSION, 'runtimeIdentity': self.runtime, **values}
@@ -29,7 +30,8 @@ class Manager:
         row = {'id': body['operationId'], 'hash': body['specHash'],
                'authorization': dict(body['authorization']), 'kernel': None, 'closed': False,
                'commitAttempted': False, 'preparedAt': None, 'stopAt': None, 'unknown': False,
-               'failure': None, 'cleanupFailure': None, 'cause': None}
+               'failure': None, 'cleanupFailure': None, 'cause': None,
+               'streamAttached': False, 'streamConnected': False, 'streamHolder': None}
         self.records[row['id']] = row  # Persistent for this physical lifetime; never popped or reused.
         return row
 
@@ -106,29 +108,66 @@ class Manager:
         for name, position in zip(['stdout', 'stderr'], offsets):
             streams[name] = collect(op.counts[name] if op else 0, op.buffers[name] if op else b'',
                                     position, not started or name in op.eof)
+        io_closed = empty
+        stream = None if op is None else op.stream
+        if stream is not None and row['streamAttached']:
+            io_closed = empty and row['streamHolder']['websocket'].io_closed()
         return {'operationId': row['id'], 'specHash': row['hash'],
                 'role': row['authorization']['role'], 'registrationId': row['authorization']['registrationId'],
                 'primitiveStarted': started,
                 'prepared': bool(op and op.prepared), 'commitAttempted': row['commitAttempted'],
                 'commitClosed': row['closed'] or self.sealed, 'submitted': bool(op and op.committed),
                 'firstCause': (op.cause if op else None) or row['cause'], 'direct': op.direct if op else None,
-                'directNotObserved': not bool(op and op.direct), 'rangeEmpty': empty, 'ioClosed': empty,
+                'directNotObserved': not bool(op and op.direct), 'rangeEmpty': empty, 'ioClosed': io_closed,
                 'physicalStopRequired': self.control_unknown or any(r['unknown'] for r in self.records.values()),
                 'failure': failure, 'cleanupFailure': row['cleanupFailure'],
                 'providerFailure': bool(row['failure'] or row['cleanupFailure'] or (op and op.fault)
                                         or (result and result['providerFailure'])),
-                'streams': streams}
+                'streams': streams,
+                **({} if stream is None else {'executionKind': 'pipes', 'stream': {
+                    'attached': row['streamAttached'], 'connected': row['streamConnected'], 'ioClosed': io_closed,
+                    'controlInputBytes': stream.input_counts.get(4, 0), 'controlOutputBytes': stream.output_counts.get(4, 0)}})}
 
     def handshake(self):
         active = self.active_rows()
-        return {'capabilities': ['argv', 'stdin-ignore', 'stdin-batch', 'collect'], 'pins': self.pins,
+        return {'capabilities': ['argv', 'stdin-ignore', 'stdin-batch', 'collect']
+                + (['stdin-pipe', 'pipes', 'control-pipe'] if self.stream_enabled else []), 'pins': self.pins,
                 'declaredImageId': self.image, 'mounts': self.mounts,
-                'rangeRoles': {role: sum(r['authorization']['role'] == role for r in active) for role in ROLES},
+                'rangeRoles': {role: sum(r['authorization']['role'] == role for r in active)
+                               for role in (ROLES if self.stream_enabled else ['foreground', 'service'])},
                 'limits': dict(LIMITS),
                 'newOperationsAccepted': not self.sealed and len(self.records) < 4,
                 'recordCount': len(self.records), 'activeRangeCount': len(active),
                 'sealed': self.sealed, 'sealReason': self.seal_reason,
-                'physicalStopRequired': self.control_unknown or any(r['unknown'] for r in self.records.values())}
+                'physicalStopRequired': self.control_unknown or any(r['unknown'] for r in self.records.values()),
+                **({} if not self.stream_enabled else {'streamLimits': {'version': STREAM_VERSION,
+                    'frameBytes': 4096, 'windowBytes': 65536, 'controlInputBytes': STREAM_CONTROL_MAX,
+                    'controlOutputBytes': STREAM_CONTROL_MAX, 'stdinBytes': 4096}})}
+
+    def stream_operation(self, body):
+        require(self.stream_enabled, 'stream_unavailable', 503)
+        request('/stream', body, self.runtime)
+        verify_role(body, self.role_token)
+        self.tick()
+        row = self.existing(body)
+        require(row is not None and row['kernel'] is not None and row['kernel'].stream is not None,
+                'stream_operation_unknown', 404)
+        op = row['kernel']
+        require(not self.sealed and not row['closed'] and not row['unknown'] and not row['failure']
+                and not row['streamAttached'] and op.prepared and not op.committed and not op.cause,
+                'stream_attach_closed', 409)
+        return row
+
+    def attach_stream(self, body, holder):
+        row = self.stream_operation(body)
+        row['streamAttached'], row['streamConnected'], row['streamHolder'] = True, True, holder
+        return row
+
+    def detach_stream(self, row, clean):
+        row['streamConnected'] = False
+        if not clean:
+            row['unknown'] = True
+            self.seal('stream-disconnect')  # The original row/holder remain retained; no reconnect or inferred release.
 
     def handle(self, path, body):
         request(path, body, self.runtime)
@@ -144,6 +183,10 @@ class Manager:
         if path == '/prepare':
             if row is None:
                 spec, batch, _ = canonical(body['spec'])
+                pipes = spec.get('executionKind') == 'pipes'
+                require(not pipes or self.stream_enabled, 'stream_unavailable', 503)
+                require(body['authorization']['role'] != 'program' or pipes, 'program_requires_pipes')
+                require(not pipes or body['authorization']['role'] != 'service', 'service_requires_collect')
                 try:
                     checked_cwd(self.owner.project, spec['cwd'])
                 except ValueError:
@@ -152,11 +195,14 @@ class Manager:
                 require(len(active) < 2, 'range_busy', 409)
                 require(not any(r['authorization']['role'] == body['authorization']['role'] for r in active),
                         'role_busy', 409)
+                require(not any({r['authorization']['role'], body['authorization']['role']} == {'program', 'service'}
+                                for r in active), 'role_combination', 409)
                 row = self.register(body)
                 try:
+                    stream_options = {} if not pipes else {'pipes': spec['stream'], 'env': spec['env']}
                     row['kernel'] = self.owner.register(row['id'], spec['argv'], spec['cwd'], spec['stdin']['mode'],
                                                         batch, role=row['authorization']['role'], working_copies=body.get('skillWorld'),
-                                                        file_policy=body.get('filePolicy'))
+                                                        file_policy=body.get('filePolicy'), **stream_options)
                     row['kernel'].begin_prepare()
                 except Exception as error:
                     row['failure'] = self.error(error, row['kernel'].phase if row['kernel'] else 'register')
@@ -174,6 +220,8 @@ class Manager:
             if not row['commitAttempted']:
                 require(not self.sealed and not row['closed'], 'commit_closed', 409)
                 require(row['kernel'] is not None and row['kernel'].prepared, 'not_prepared', 409)
+                require(row['kernel'].stream is None or row['streamConnected']
+                        and not row['streamHolder']['websocket'].opening, 'stream_not_attached', 409)
                 row['commitAttempted'] = True  # Before the sole kernel C-write attempt, never reset.
                 try:
                     row['kernel'].commit(self.started + LIMITS['residentMs'] / 1000)

@@ -74,18 +74,21 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 | --- | --- |
 | `maxModelRoutes` | 非空 `models` 列表的正数有限上界。 |
 | `models` | 唯一且精确的 `{provider, model}` 对；不推断 provider、model 或通配符匹配。 |
-| `maxPolicyStringBytes` | Provider/model、Preset id 和两个原生 entry id 的正数 UTF-8 上界。 |
-| `presetId` | 唯一批准的原生 CloudPreset，且须为配置的默认值。 |
-| `presetEntryId` | 实际 Loader 声明，由原生 `agent-preset` 实现。 |
+| `maxPolicyStringBytes` | Provider/model、各 Preset id 和原生 entry id 的正数 UTF-8 上界。 |
+| `defaultPresetId` | 部署默认值，必须指向已批准且可选择的声明。 |
+| `presets` | 非空且唯一的 `{id, entryId, configSha256, selectable}` 原生 `agent-preset` 声明；`selectable: false` 只允许恢复历史会话。 |
 | `agentLoopEntryId` | 实际受保护的原生 AgentLoop 入口，其启动 agents 保持为空。 |
-| `presetConfigSha256` | 可信已解析声明的规范 JSON 摘要，精确为 64 个小写十六进制字符。 |
 | `maxPresetConfigBytes` | 规范 UTF-8 摘要输入及遍历的正数上界。 |
 
-声明摘要使用 SHA-256、排序后的对象键和原数组顺序。函数、JS 表达式、非 JSON 对象和别名均拒绝。有界编码器在遍历期间拒绝超量输入。批准还要求原始 ACTIVE Loader 条目、未变化的原生配置 plan、实际 Preset inventory，以及 Agent 保留且无服务泄漏的组合。 策略首次 pin 会完整校验固定 Preset 与 AgentLoop 两份 plan，最后复核原始活跃身份和变更版本。后续 current 检查复用这些原生版本，同时保留 provider、files、binding 和生命周期检查。原生更新尝试会使 pin 失效，包括失败或 no-save 的 Fiber 更新；批准的设置事务仍保留完整 plan 校验及显式刷新和发布。该检查不检测可信 Host 对象的直接改写。
+各声明摘要为 64 位小写 SHA-256 十六进制字符串，使用排序后的对象键和原数组顺序。原生 `!!js` 表达式只以类型化源码参与摘要，不执行求值，仍要求精确匹配部署批准的摘要。函数、畸形表达式记录、非 JSON 对象和别名在 `maxPresetConfigBytes` 约束内拒绝。批准还要求原始活跃声明、未变化的 Loader plan、精确清单，以及 Agent 保留且无服务泄漏的组合；已禁用的平台条目保持禁用。首次 pin 完整校验各声明、原 registry 和 AgentLoop；后续检查复用原生变更版本，并保留 provider、files、binding 和生命周期检查。该版本机制不检测可信 Host 对象的直接改写。
 
-仅当明确批准 `agentLoopEntryId.maxParallelToolCalls` 时，账户策略才在原生串行保存过程中保留原 AgentLoop 策略 pin。策略只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。 获批网页搜索表单的受限字段只能重置为获批的原生继承值，提供方选择只能是两组受支持的搜索／抓取组合。
+原生 registry entry id 为 `agent-preset-registry`，与原生 Settings 和 Client 消费者一致。新 Session 和空白会话切换只接受可选择声明；既有 Session 可恢复已批准但不可选择的声明。空白切换后的有效预设来自原生 Session 投影，创建 header 保持不变。子 Agent 可继承父组合，或在同一账户与 Workspace 中选择另一个已批准预设；仍要求原始父子归属和 provider 检查。
 
-业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和固定 Preset 校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入/分叉身份仍被拒绝。下述可选原生 child 路径单独核验 subagent 身份。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
+明确批准的 `agentLoopEntryId.maxParallelToolCalls` 和 `agent-preset-registry.selectedDefault` 写入使用同一原生串行保存事务保留原策略 pin。默认选择必须可选择；清除其 override 时恢复已批准的部署默认值。Loop 上限只接受 1 至原生默认值之间的整数，检查获批有限值和精确 Loader plan，并复核原 fiber、schema 及 provider。恢复默认值仅在实际继承值属于同一获批集合时准入。原保存所有者等待所有登记子任务并完成最终策略审核前，事务结果仅在其私有上下文可见；结果未知时关闭账户准入。运行时集成必须提供 `AccountNativeGuards.beginSettingsUpdate`，对无关设置提供空操作事务。直接编辑及其他配置或 provider 改动仍使准入失效。 获批网页搜索表单的受限字段只能重置为获批的原生继承值，提供方选择只能是两组受支持的搜索／抓取组合。
+
+业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和已批准的原生预设校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入或带 seed 的普通根会话仍被拒绝。可选原生 child 路径接受原 in-process spawn 和 fork provider；原生 fork 持有已完成轮次的 seed 及持久化 descriptor，冷续接复用已存储的 child 历史。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
+
+`AccountNativeGuards.assertRetainedExecutionOwner` 在既有原生 job 句柄的原始已登记 Agent 处于 active 或 unloading 时复用上述检查。原 Session、Workspace 成员关系、账户 epoch、provider、模型及预设必须仍为当前状态。已销毁 Agent 和复制的身份被拒绝。此回调只授权句柄清理；普通 Agent/Session 选择及新执行捕获仍要求 active scope。
 
 在撤销账户 graph 前，账户 stop 关闭云端 Office 准入并等待所保留的原生转换。随后由原账户 Context 统一销毁 provider，独立的原生观察器判断销毁是否已确认。既有 `stopTimeoutMs` 限制转换排空的观察时间，不释放迟到工作。临时目录、转换器销毁未确认或 provider 意外卸载会使账户保留为 unknown；迟到完成不能恢复准入。配置空闲检查包含所保留的转换及未知 Office 清理。
 
@@ -107,7 +110,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再调用原 `AgentLoop.stop()`、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。Integration 将既有 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes` 同时交给受守卫 reader 与原 Gateway 注册。Reader 捕获这些值，供原 protected control-buffer hook 使用；每个原生 control 代际和事件 client 都沿用原有界队列。下游慢读超限只终止对应流，实际 source 失败仍保留既有审核撤销与未确认清理语义。不增加配置字段、预算默认值或队列。
 
-原生权限控件要求实际签发的 execution port 强制 Session 文件策略，并从同一 port 派生 Files 的强制选择。原权限服务、目录、`/permission` 命令与默认设置继续作为权威；云端配置表只包含 read-only 和 workspace-write，两者审批均为 `never`。切换前，原 owner 检查保留命令、unknown 结果及 service 工作，Runtime 核验实际存活的 child 所有权。只读委派不能在 child 准备或后续权限切换时扩大。选中模式沿用原 Session 事件，不新增权限数据库、进程服务或更大的账户配额。
+原生权限控件要求实际签发的 execution port 强制 Session 文件策略，并从同一 port 派生 Files 的强制选择。原权限服务、目录、`/permission` 命令与默认设置继续作为权威；云端适配器沿用全部三档原生模式：read-only 和 workspace-write 保留审批 `ask`，danger-full-access 保留 `never`。原生工具可在原审批决定后传入同进程的类型化 override。变更守卫仅在精确匹配的原 Session/项目及当前账户选择内允许该次调用；普通调用仍解析 Session 的持久模式。原始模型或 HTTP 策略数据不能进入此 provider 参数。切换前，原 owner 检查保留命令、unknown 结果及 service 工作，Runtime 核验实际存活的 child 所有权。只读委派不能在 child 准备或后续权限切换时扩大。选中模式沿用原 Session 事件，不新增权限数据库、进程服务或更大的账户配额。
 
 原 files 持有者存在时，账户图准备还会创建图内的 `AccountInstructionSources` 服务。其回调复用共享活跃 Agent 的项目、模型与 Preset 检查，并使用 files 持有者的独立来源 reader 和完整快照预留。固定 Preset 通过已准备的 builtin 加载原 `/session` 命名空间。适配器准备不启动来源 I/O，缺少该 Preset 配置行时也不启用指令。
 
@@ -242,6 +245,8 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 本地容量记录不更改模型请求前缀或保留的 Session 历史。
 
 ## Known Limitations and Deferred Work
+
+账户原生 Agent 与子 Agent 的准入还要求使用原账户的 sandbox、PTC runtime 和终端登记器身份；预设不能遮蔽这些 provider。
 
 <a id="known-limitations-and-deferred-work"></a>
 

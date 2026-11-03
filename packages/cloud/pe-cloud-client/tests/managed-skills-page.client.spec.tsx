@@ -8,7 +8,7 @@ import { skillsManagementDictionaries } from '../src/client/management/skills/lo
 import { managedFixture } from './fixtures/managed-skills.client.ts'
 import type { ManagedSkillDetail, ManagedSkillFileContent } from '../src/client/managed-skill-editing.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const en = skillsManagementDictionaries.en
 function page() {
   const f = managedFixture()
@@ -160,7 +160,7 @@ it('imports a selected ZIP through the owner and confirms uninstall without clai
   render(<SkillsPage {...f.props}/>)
   const archive = screen.getByLabelText(en.chooseArchive)
   const choose = vi.spyOn(archive, 'click')
-  fireEvent.click(screen.getByRole('button', { name: en.installBundle }))
+  fireEvent.click(screen.getByRole('button', { name: en.import }))
   expect(choose).toHaveBeenCalledOnce()
   expect(archive.getAttribute('accept')).toContain('.zip')
   fireEvent.change(archive, { target: { files: [new File(['archive bytes'], 'skill.zip')] } })
@@ -177,19 +177,19 @@ it('imports a selected ZIP through the owner and confirms uninstall without clai
   expect(document.querySelector('[data-skill-id=first]')).toBeNull()
 })
 
-it('rejects non-ZIP selection and does not repeat an uncertain install', async () => {
+it('rejects unsupported package selection and does not repeat an uncertain install', async () => {
   const f = page()
   f.install.mockResolvedValueOnce({ kind: 'unknown' })
   render(<SkillsPage {...f.props}/>)
   const archive = screen.getByLabelText(en.chooseArchive)
-  fireEvent.change(archive, { target: { files: [new File(['not zip'], 'skill.skill')] } })
+  fireEvent.change(archive, { target: { files: [new File(['not zip'], 'skill.txt')] } })
   expect(screen.getByText(en.invalidZip)).toBeTruthy()
   expect(f.installed).not.toHaveBeenCalled()
   fireEvent.change(archive, { target: { files: [new File(['zip'], 'skill.zip')] } })
   await screen.findByText(en.sampleUnknown)
   expect(f.install).toHaveBeenCalledTimes(1)
   await waitFor(() => { expect(f.props.report).toHaveBeenCalledWith('install', 'unknown') })
-  expect(screen.getByRole('button', { name: en.installBundle })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
 })
 
 it('shows a confirmed capacity refusal as not installed rather than an unknown outcome', async () => {
@@ -335,7 +335,7 @@ it.each(['en', 'zh'] as const)('shows the confirmed missing SKILL.md refusal in 
   expect(f.install).toHaveBeenCalledTimes(1)
   expect(f.editor().draft).toBeDefined()
   expect(f.props.report).not.toHaveBeenCalled()
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: copy.installBundle }).disabled).toBe(false)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: copy.import }).disabled).toBe(false)
   fireEvent.change(screen.getByLabelText(copy.chooseArchive), { target: { files: [new File(['fixed zip'], 'fixed.zip')] } })
   await screen.findByText(copy.bundleApplied)
   expect(f.install).toHaveBeenCalledTimes(2)
@@ -378,5 +378,66 @@ it('clears the missing-manifest message when opening a skill and choosing a vali
   fireEvent.change(archive, { target: { files: [new File([new Uint8Array(7462)], 'fixed.zip')] } })
   expect(screen.getByText('fixed.zip (7462)')).toBeTruthy()
   expect(screen.queryByText(en.invalidZip)).toBeNull()
+  expect(f.props.report).not.toHaveBeenCalled()
+})
+
+it('opens the native picker before any webpage import dialog and ignores an empty selection', () => {
+  const f = page()
+  render(<SkillsPage {...f.props}/>)
+  const input = screen.getByLabelText(en.chooseArchive), choose = vi.spyOn(input, 'click')
+  fireEvent.click(screen.getByRole('button', { name: en.import }))
+  expect(choose).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.change(input, { target: { files: [] } })
+  expect(f.installed).not.toHaveBeenCalled()
+  expect(f.install).not.toHaveBeenCalled()
+})
+
+it('imports the original .skill archive once through installZip while its native publication is pending', async () => {
+  const f = page(), held = Promise.withResolvers<Awaited<ReturnType<typeof f.install>>>()
+  f.install.mockReturnValueOnce(held.promise)
+  render(<SkillsPage {...f.props}/>)
+  const input = screen.getByLabelText(en.chooseArchive), file = new File(['selected complete package'], 'actual.skill')
+  fireEvent.change(input, { target: { files: [file] } })
+  await waitFor(() => { expect(f.install).toHaveBeenCalledTimes(1) })
+  fireEvent.change(input, { target: { files: [file] } })
+  expect(f.install.mock.calls[0]?.[0]).toEqual({ kind: 'zip', file })
+  await act(async () => { held.resolve({ kind: 'unknown' }); await held.promise })
+  await screen.findByText(en.sampleUnknown)
+  fireEvent.change(input, { target: { files: [file] } })
+  expect(f.install).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
+})
+
+it('renders supplied root Markdown in the summary and keeps complete-package download separate from file reads', async () => {
+  const f = page(), readFile = vi.fn<NonNullable<ManagedSkillDetail['readFile']>>()
+  const original = f.details.getMockImplementation()
+  if (original === undefined) throw new Error('Missing fixture detail callback')
+  f.details.mockImplementation(async id => ({ ...await original(id), readFile,
+    markdown: '# Installed instructions\n\n**Read** `references/guide.md`\n\n<script>never_execute()</script>' }))
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  fireEvent.click(await screen.findByRole('button', { name: 'first' }))
+  const dialog = screen.getByRole('dialog')
+  await within(dialog).findByRole('heading', { name: 'Installed instructions' })
+  expect(dialog.querySelector('script')).toBeNull()
+  expect(readFile).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button', { name: en.bundleDownload }))
+  await within(dialog).findByText(en.bundleDownloadStarted)
+  expect(f.download).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal))
+  expect(f.source.getSnapshot().items[0]?.version).toBe('v1')
+})
+
+it('aborts import preparation on scope replacement without publishing a late selected package', async () => {
+  const f = page(), held = Promise.withResolvers<Awaited<ReturnType<typeof f.installed>>>()
+  f.installed.mockReturnValueOnce(held.promise)
+  const view = render(<SkillsPage {...f.props}/>)
+  fireEvent.change(screen.getByLabelText(en.chooseArchive), { target: { files: [new File(['package'], 'late.skill')] } })
+  const signal = f.installed.mock.calls[0]?.[0]
+  view.rerender(<SkillsPage {...f.props} scope="replacement-account"/>)
+  expect(signal?.aborted).toBe(true)
+  await act(async () => { held.resolve({ items: [], limits: { maxFiles: 8, maxEntries: 16, maxDirectories: 8, maxPathDepth: 4,
+    maxPathBytes: 128, maxFileBytes: 4096, maxTotalBytes: 8192, maxArchiveBytes: 8192 }, install: f.install }); await held.promise })
+  expect(f.install).not.toHaveBeenCalled()
   expect(f.props.report).not.toHaveBeenCalled()
 })

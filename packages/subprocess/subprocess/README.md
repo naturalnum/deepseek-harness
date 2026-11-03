@@ -141,6 +141,8 @@ No direct invalidation; the named consumers own any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
+Native PTC and terminal consumers carry their already resolved `sandboxPolicy` on spawn requests so a remote provider can sign the same approved policy. Local consumers retain their original argv confinement; the optional field changes no local default.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

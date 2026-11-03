@@ -23,7 +23,7 @@ const SERVICE_PREVIEW_CLIENT_PACKAGES = ['@deepseek-ai/dsh-client-ui-tool'] as c
 const NATIVE_SESSION_CLIENT_PACKAGES: Readonly<Record<CloudNativeSessionControl, readonly string[]>> = {
   commands: ['@deepseek-ai/dsh-client-ui-commands'],
   models: ['@deepseek-ai/dsh-client-ui-model-selection', '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017'],
-  permissions: ['@deepseek-ai/dsh-client-ui-permission-presets'],
+  permissions: ['@deepseek-ai/dsh-client-ui-permission-presets', '@deepseek-ai/dsh-client-ui-approval'],
   goals: ['@deepseek-ai/dsh-client-ui-goal'],
   plan: ['@deepseek-ai/dsh-client-ui-plan', '@deepseek-ai/dsh-client-ui-user-questions'],
   feedback: ['@deepseek-ai/dsh-client-ui-message-feedback'],

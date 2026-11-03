@@ -81,7 +81,9 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 现有 Root 入口还支持显式关闭的维护装配：`mode: closed`、空 required capabilities、有界 `managed` 元数据预算及唯一受保护 `recovery` 发布引用。它不构造 SDK 执行或账户图。原执行 participant 复核进程死亡及完整不可变 intent 覆盖，经原 store 对账 allocation，再调用 runtime 的精确旧 owner 恢复及独立旧实例关闭。实际工作未知时保留清理责任。发布物通过 SHA256 和只读 Root 持有租约绑定，不使用密码学签名。
 
-私有[命令操作](src/command-operation.ts) 同步提供准备中的 subprocess 句柄，并为 Shell 单独保留提交命令前的发布步骤。直接进程退出且收集流 EOF 后结算 subprocess 的 `done`；完整范围及本地 I/O 结束后结算独立的范围完成凭据。[Shell 投影](src/shell-execution.ts) 等待该完整范围。输出保持有界，直到原生结果拥有者释放；撤销后拒绝公开访问，未知清理仍由 Root 保留。账户内的[工具调用传播](src/native-calls.ts) 将这些操作跨异步等待绑定到原始 registry token、Agent、Session 和项目。
+私有[命令操作](src/command-operation.ts) 同步提供准备中的 subprocess 句柄，并单独保留提交前的发布步骤。原收集模式构造器不变，在直接进程退出且收集流 EOF 后结算 `done`。显式批准的管道模式还要求连接实际建立后才完成准备，stdout/stderr/control EOF 均已解码后才结算 `done`；完整范围、I/O 和连接实际结束仍是独立事实。连接准备失败也保留原本地终结等待。原始输出只来自该连接，保留背压和未读缓冲区，不重放 poll 尾部。原生控制端点关闭只结束输入并排空已放弃的输出。取消后拒绝新输入，仍保留清理。[Shell 投影](src/shell-execution.ts) 等待完整范围；输出保持有界，直到原生拥有者释放。账户内的[工具调用传播](src/native-calls.ts) 跨异步等待保留原 registry token、Agent、Session 和项目。源码管道装配不代表部署执行配置已通过验收。
+
+挂载原生 JobRegistry 时，其同步 Bash 注册可以在 `tools/result` 后继续持有同一命令 scope。注册必须来自同一原生 Session 的原始有效 Bash 调用；返回的 job id 不授予任何权限。调用结束后禁止再次捕获或创建命令。取消与最终输出排空仍归原生 registry 所有；任务结算后释放持有的 scope 和输出预留。原 Agent 销毁时，仅原先已获租的句柄可在 fiber 处于 `UNLOADING` 时通过完整账户身份检查；新调用捕获仍要求 Agent 有效。[真实 AccountPolicy 组合测试](tests/native-background-account-policy.spec.ts) 覆盖该退出路径。账户撤销仍立即拒绝公开访问，实际清理由 Root 保留。既有 scope、命令、时限与租户配额均不变。[组合测试](tests/native-background-composition.spec.ts) 使用真实原生 Agent、Bash、Jobs 服务，外部命令通道明确使用脚本替身，不代表已部署后端或网页验收通过。
 
 私有[开发服务消费者](src/dev-service-consumer.ts) 要求显式完整的 `commands.services` 策略和原生工具 provider。严格解析配置后，Root 接入原 managed 拥有者的回调；省略策略时该消费者保持关闭。它复用该拥有者现有的工作记录和 subprocess provider，在8000端口运行项目相对路径的 Python HTTP 脚本。启动只报告进程已提交，HTTP 就绪单独判断；状态、有界日志和停止都指向同一保留操作。固定的安装与服务 payload 声明前台命令、已登记服务各一个运行范围，角色由 Root 签发，运行时限分别为150秒、120秒，绝对驻留时限300秒。这四个生命周期记录及已做组件检查的限制，不代表完整 Session 生命周期或真实服务隔离已通过。
 
@@ -101,7 +103,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 受管 coordinator 通过原开放账户 port、命令记录及 allocation owner 观察本地修改的空闲条件。在途调用、subprocess 获取、未停后代或进程 I/O、开发服务、应用请求、创建/准备/停止/对账及未知结果均拒绝修改。已结清的 ready 沙盒、缓存 Session 选择及完成后保留的输出可以继续保留，身份、mount 和预算不释放。基础 coordinator 拒绝该观察；终态重建仍通过原 stop/dispose 路径等待全部 warm allocation 与保留结果。
 
-显式 `shell.enforceSessionFilePolicy: true` 为 Shell 与 Subprocess 同时启用原 Session 策略；省略时保留 legacy 路径，且不能宣告权限控件可用。策略服务是必需的 peer dependency：发布的执行入口使用账户原有的 `SandboxPolicyService` 构造器，不内联另一份副本。原命令 owner 捕获原生 read-only、workspace-write 或 danger-full-access 策略，并将其纳入既有 spec hash 与 Root role HMAC。每次调用的 override 不得扩大 Session 已选模式。两档可写模式仍使用同一账户项目及环境挂载；完整访问不会让可信镜像、宿主或其他账户变得可写，也不扩大配额。原生执行世界按该模式绑定项目、环境 home/venv/tmp、`/tmp` 别名及选中 skill 副本。Guardian 在 PREPARED 前检查这些路径的实际挂载标记，原完整 4096 字节 frame 预算也包含私有策略。权限切换要求保留命令、unknown 结果与服务正常结算。函数、argv 测试和 payload pins 本身不证明 Linux 内核或已部署浏览器验收通过。
+显式 `shell.enforceSessionFilePolicy: true` 为 Shell 与 Subprocess 同时启用原 Session 策略；省略时保留 legacy 路径，且不能宣告权限控件可用。策略服务是必需的 peer dependency：发布的执行入口使用账户原有的 `SandboxPolicyService` 构造器，不内联另一份副本。原命令 owner 捕获原生 read-only、workspace-write 或 danger-full-access 策略，并将其纳入既有 spec hash 与 Root role HMAC。原生工具先通过原审批服务取得提权决定，再传入同进程的类型化 override。该 override 可以在精确匹配的已注册 Session 和项目内扩大单次调用权限，但不持久改变模式。原始 HTTP 或模型参数不能直接提供此 provider override。两档可写模式仍使用同一账户项目及环境挂载；完整访问不会让可信镜像、宿主或其他账户变得可写，也不扩大配额。原生执行世界按该模式绑定项目、环境 home/venv/tmp、`/tmp` 别名及选中 skill 副本。Guardian 在 PREPARED 前检查这些路径的实际挂载标记，原完整 4096 字节 frame 预算也包含私有策略。权限切换要求保留命令、unknown 结果与服务正常结算。函数、argv 测试和 payload pins 本身不证明 Linux 内核或已部署浏览器验收通过。
 
 账户 epoch 中首次意外准备拒绝会向 stderr 写入固定阶段、进程 id、coordinator 准入布尔值及白名单内的自有数据错误码。不记录消息、stack、路径或请求参数，也不调用错误 accessor。已确认的 allocation 前环境容量不足保留原 capacity 响应。观察既不改变原失败与清理责任，也不证明沙盒 ready。
 
@@ -137,6 +139,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 ## 已知限制与延期工作
 
+原生 raw 执行要求显式 `commands.pipes: { controlInputBytes, controlOutputBytes }`、固定消费者 `bash`、可选 `dev_service`、`run_code` 和 `terminal_open`，同时启用 Session 策略，并使原 resident 容量能容纳完整流窗口。原 token 发行器只准入仍存活的 `run_code` 下同 Agent、同 root call 的子调用；签名 program 范围可与一个 foreground 范围并存，但不可与 service 并存。终端句柄在最终投影后保留原调用，只有原范围与流实际结清后才释放。固定 guest 提供 Node 与受保护的 WS 解析器；经验证的 server 配置允许 bwrap 所需命名空间操作和 proc 布局，不增加 capabilities 或租户配额。配置或镜像标签本身不代表目标验收。只读档禁止文件写入，工作区写入档允许项目与会话临时区写入，完全访问档还允许私有 home 与环境写入。三档均保留账户、项目及受信元数据隔离。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 关闭模式是受限部署配置，不是已验证的远端执行。
@@ -145,7 +149,9 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 - 默认关闭配方不开放执行。受管操作仍要求持久分配对账、完整部署配置、目标通道与隔离证据，以及受管范围停止。
 - 关闭排空观察只覆盖其精确登记的本代，不提供分配、远端停止或恢复证明，也不能清除旧未知工作。账户就绪和恢复仍由 runtime 持有。
 - 原生默认 Bash 执行器依据 subprocess 的 `done` 结算，而该值不能证明所有后代均已停止。Shell 准备与作用域完成仍需要显式、兼容的适配器。
-- OpenSandbox 的文本命令流不能提供原生 subprocess 所需的完整原始管道/control 或受管范围观察。受限的受管 collect 通道不提供交互管道、终端、宿主回退或自动恢复。
+- OpenSandbox 的文本命令流不能提供原生 subprocess 所需的完整原始管道/control 或受管范围观察。collect 通道不提供交互 I/O；独立选择的 pipes provider 提供原生 PTC 与 PTY 字节流。两者均不提供宿主回退或自动恢复。
+- 无法取得正面 shell 生命周期证据时，原生终端活动返回 `unknown`；prompt 与前台处理仍由原生终端消费者负责。
+- 私有[管道源码](runtime/agent/stream.py)在原 Manager 与 guardian fd7 路径上增加一条绑定操作的 WebSocket。准入要求受保护的 WS 依赖及已验证、匹配的协议、源码与资产配置；固定 server 只有加载受保护依赖后才宣告 pipes。[源码测试](tests/test_execution_stream.py)明确区分脚本化内核事实与真实本地管道、socketpair、fd7 继承，不证明已部署 Native PTC、终端或 PID1 完成。
 
 <a id="dev-note"></a>
 ### 开发备注

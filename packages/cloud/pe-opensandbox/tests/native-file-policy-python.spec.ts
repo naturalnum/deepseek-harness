@@ -45,9 +45,9 @@ scope={'project_path':lambda path:path,'ENV':env,'ENV_ROOT':'/opt/session-env'}
 exec(compile(ast.Module(body=[function],type_ignores=[]),str(root/'launcher.py'),'exec'),scope)
 ro=scope['world_argv']('/srv/project','read-only');rw=scope['world_argv']('/srv/project','workspace-write')
 assert '--bind' not in ro
-assert rw.count('--bind')==5
+assert rw.count('--bind')==3
 full=scope['world_argv']('/srv/project','danger-full-access')
-assert full==rw # Outer account mounts and readonly trusted world remain unchanged.
+assert full.count('--bind')==5 and full != rw
 assert full[full.index('--ro-bind')+1:full.index('--ro-bind')+3]==['/','/']
 for path in ['/srv/project','/opt/session-env/home','/opt/session-env/venv','/opt/session-env/tmp','/tmp']:
  matches=[i for i,x in enumerate(ro) if x==path and i>=2 and ro[i-2] in ['--bind','--ro-bind']]
@@ -56,7 +56,7 @@ from paths import skill_world_argv
 opened={'metadataFd':10,'copies':[{'fd':11,'version':'12345678-1234-4123-8123-123456789012'}]}
 ro_skills=skill_world_argv(ro,'/srv/project',opened,'read-only')
 rw_skills=skill_world_argv(rw,'/srv/project',opened,'workspace-write')
-assert skill_world_argv(full,'/srv/project',opened,'danger-full-access')==rw_skills
+assert skill_world_argv(full,'/srv/project',opened,'danger-full-access').count('--bind-fd')==1
 assert '--bind-fd' not in ro_skills and ro_skills.count('--ro-bind-fd')==2
 assert rw_skills.count('--bind-fd')==1
 # Execute the actual pure verification functions against explicit synthetic statvfs facts.
@@ -71,14 +71,14 @@ verification={'project_path':lambda path:path,'ENV_ROOT':'/opt/session-env','os'
 exec(compile(ast.Module(body=checks,type_ignores=[]),str(root/'paths.py'),'exec'),verification)
 writable=[project,'/opt/session-env/home','/opt/session-env/venv','/opt/session-env/tmp','/tmp']
 for mode,flag in [('read-only',1),('workspace-write',0),('danger-full-access',0)]:
- flags.update({path:flag for path in writable})
+ flags.update({path:(1 if mode=='workspace-write' and path in ['/opt/session-env/home','/opt/session-env/venv'] else flag) for path in writable})
  verification['verify_file_policy'](project,mode)
  for path in writable:
-  flags[path]=1-flag
+  original=flags[path];flags[path]=1-original
   try: verification['verify_file_policy'](project,mode)
   except ValueError: pass
   else: raise AssertionError('mismatched writable mount was accepted')
-  flags[path]=flag
+  flags[path]=original
  grant={'metadata':{'device':'1','inode':'12'},'skills':{'device':'1','inode':'13'},'maxCopies':1,'copies':[{'version':version,'identity':{'device':'1','inode':'14'}}]}
  flags[project+'/.pe']=flags[project+'/.pe/skills']=1;flags[project+'/.pe/skills/'+version]=flag
  verification['verify_skill_world'](project,[1,11],grant,mode)

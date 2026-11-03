@@ -27,6 +27,7 @@ import { createNativeCommands, type NativeCommands } from './native-commands.ts'
 import { createNativeGoals, type NativeGoals } from './native-goals.ts'
 import { createNativeSessionExport, type NativeSessionExport } from './native-session-export.ts'
 import { createNativePermissions, type NativePermissions } from './native-permissions.ts'
+import { createNativePresets, type NativePresets, type NativePresetGuards } from './native-presets.ts'
 import { createNativePluginInventory, type NativePluginInventory } from './native-plugin-inventory.ts'
 import { createNativeUserQuestions, type NativeUserQuestions } from './native-user-questions.ts'
 import { createNativeSchedule, type NativeSchedule } from './native-schedule.ts'
@@ -122,6 +123,7 @@ export class CloudAccountApi extends Service {
   private readonly goals: { native?: NativeGoals } = {}
   private readonly sessionExport: { native?: NativeSessionExport } = {}
   private readonly permissions: { native?: NativePermissions } = {}
+  private readonly presets: { native?: NativePresets } = {}
   private readonly pluginInventory: { native?: NativePluginInventory } = {}
   private readonly questions: { native?: NativeUserQuestions } = {}
   private readonly schedule: { native?: NativeSchedule } = {}
@@ -271,6 +273,7 @@ export class CloudAccountApi extends Service {
     const goals = this.goals.native?.inspect()
     const permissions = this.permissions.native?.inspect(), questions = this.questions.native?.inspect()
     const pluginInventory = this.pluginInventory.native?.inspect()
+    const presets = this.presets.native?.inspect()
     const schedule = this.schedule.native?.inspect()
     const sessionFeedback = this.sessionFeedback.native?.inspect(), messageFeedback = this.messageFeedback.native?.inspect()
     const fetch = this.inspectFetchRoutes()
@@ -280,7 +283,7 @@ export class CloudAccountApi extends Service {
         ...files?.rpcEndpoints ?? [], ...office?.rpcEndpoints ?? [], ...modelKey?.rpcEndpoints ?? [],
         ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
-        ...pluginInventory?.rpcEndpoints ?? [],
+        ...pluginInventory?.rpcEndpoints ?? [], ...presets?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
         ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
@@ -353,6 +356,10 @@ export class CloudAccountApi extends Service {
     if (endpoint === 'permissionPresets/catalog') {
       if (this.permissions.native === undefined) this.nativeUnavailable()
       this.permissions.native.inspect()
+    }
+    if (endpoint.startsWith('agentPresets/')) {
+      if (this.presets.native === undefined) this.nativeUnavailable()
+      this.presets.native.inspect()
     }
     if (endpoint === 'userQuestions/answer') {
       if (this.questions.native === undefined) this.nativeUnavailable()
@@ -634,6 +641,7 @@ export class CloudAccountApi extends Service {
     const selected = (endpoint: string): boolean => endpoints.some(row => row.endpoint === endpoint)
     const events = registerFirstScreenEvents(owner, { ...input, api: this, native, settingsNamespaces,
       controls: { commands: selected('commands/list'), goals: selected('goals/get'), permissions: selected('permissionPresets/catalog'),
+        approval: selected('permissionPresets/catalog') && selected('$events/result'),
         questions: selected('userQuestions/answer'), schedule: selected('schedule/catalog') },
     })
     this.firstScreen.events = events
@@ -743,7 +751,7 @@ export class CloudAccountApi extends Service {
   /**
    * Install native permission controls over the actual enforcing providers.
    * @param owner Actual account Loader entry.
-   * @param config Native two-mode preset table.
+   * @param config Original native operation-permission presets.
    * @param maxFrameBytes Existing complete native result limit.
    * @param assertEnforcement Recheck the original issued execution and Files policy enforcement.
    * @param assertCanSwitch Refuse a policy change while original execution work remains.
@@ -758,6 +766,25 @@ export class CloudAccountApi extends Service {
     const native = createNativePermissions(owner, this.binding, this.businessCurrent, this.installation.exposure,
       this.maxNativeInventoryEntries, config, maxFrameBytes, assertEnforcement, assertCanSwitch)
     this.permissions.native = native
+    return native.value
+  }
+
+  /**
+   * Install the original native preset registry with account selection admission.
+   * @param owner Actual registry Loader entry.
+   * @param config Native registry defaults and persisted selectedDefault.
+   * @param guards Runtime's approved declarations and original Agent checks.
+   * @param maxFrameBytes Complete existing native result bound.
+   * @returns The sole account-native preset registry.
+   */
+  createPresets(
+    owner: Context, config: Parameters<typeof createNativePresets>[6], guards: NativePresetGuards, maxFrameBytes: number,
+  ): NativePresets['value'] {
+    this.assertInstalled(owner)
+    if (this.presets.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativePresets(owner, this.binding, this.businessCurrent, this.installation.exposure,
+      guards, this.maxNativeInventoryEntries, config, maxFrameBytes)
+    this.presets.native = native
     return native.value
   }
 
@@ -1060,6 +1087,7 @@ export class CloudAccountApi extends Service {
     this.commands.native?.inspect()
     this.goals.native?.inspect()
     this.permissions.native?.inspect()
+    this.presets.native?.inspect()
     this.pluginInventory.native?.inspect()
     this.questions.native?.inspect()
     this.schedule.native?.inspect()

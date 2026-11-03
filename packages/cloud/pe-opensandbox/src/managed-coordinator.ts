@@ -19,6 +19,7 @@ import type { SdkAllocationBackend } from './sdk-lifecycle.ts'
 import type { SkillCommandBorrow, TrustedRuntimeRegistry } from './trusted-runtime.ts'
 import { NativeCommandAccount, type NativeCommandAccountLimits, type NativeCommandReservation } from './native-command-account.ts'
 import { CloudShellExecutor, CloudSubprocessRuntime, type NativeExecutionConfig } from './native-providers.ts'
+import { CloudSandboxProvider } from './native-sandbox.ts'
 import { CloudShellEnvRegistry } from './native-shell-env.ts'
 import type { ExecutionScope } from './scopes.ts'
 import { ExecutionStateError } from './errors.ts'
@@ -120,6 +121,7 @@ interface AccountWork {
     readonly shell: CloudShellExecutor
     readonly subprocess: CloudSubprocessRuntime
     readonly shellEnv: CloudShellEnvRegistry
+    readonly sandbox?: CloudSandboxProvider
     services?: { readonly configuration: ManagedServiceConfig; readonly registration: DevServiceRegistration }
   }
   allocationsStopping?: Promise<void>
@@ -294,12 +296,16 @@ export class ManagedCoordinator extends SandboxCoordinator {
   installProviders(port: AccountExecutionPort, ctx: Context): void {
     if (requireIssuedExecutionPort(ctx) !== port) this.stale()
     const service = this.config.commands.services
+    if (this.config.commands.pipes !== undefined && this.config.shell.enforceSessionFilePolicy !== true) {
+      throw new ExecutionStateError('cloud/invalid-config', 'Native pipes require original Session file-policy enforcement.')
+    }
     if (service !== undefined && ctx.get('tools') === undefined) {
       throw new ExecutionStateError('cloud/invalid-config', 'Development services require the original native tools provider.')
     }
     if (ctx.get('shell') !== undefined || ctx.root.get('shell') !== undefined
       || ctx.get('subprocess') !== undefined || ctx.root.get('subprocess') !== undefined
-      || ctx.get('shellEnv') !== undefined || ctx.root.get('shellEnv') !== undefined) {
+      || ctx.get('shellEnv') !== undefined || ctx.root.get('shellEnv') !== undefined
+      || this.config.commands.pipes !== undefined && (ctx.get('sandbox') !== undefined || ctx.root.get('sandbox') !== undefined)) {
       throw new ExecutionStateError('cloud/invalid-config', 'The account already has native execution or environment providers.')
     }
     this.claim(port, ctx)
@@ -307,6 +313,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const configured = this.config.commands
     const commandConfig: NativeCommandAccountLimits = {
       enforceSessionFilePolicy: this.config.shell.enforceSessionFilePolicy === true,
+      ...configured.pipes === undefined ? {} : { pipes: configured.pipes },
       allowedTools: configured.allowedTools, maxScopes: configured.maxScopes, commandLimits: configured.commandLimits,
       ...(this.deployment.skillCopies === undefined ? {}
         : { maxSkillCopiesPerOperation: this.deployment.skillCopies.maxCopiesPerOperation }),
@@ -367,7 +374,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
               request.assertCurrent(); registered?.assertCurrent()
             }
             stage = 'runtime-channel'
-            if (registered === undefined) return this.deployment.runtimes.command(prepared, copies)
+            if (registered === undefined) return scope.consumerId === 'run_code'
+              ? this.deployment.runtimes.program(prepared, copies) : this.deployment.runtimes.command(prepared, copies)
             registered.assertCurrent()
             if (registered.scope !== scope) this.stale()
             return this.deployment.runtimes.service(prepared, registered, copies)
@@ -403,9 +411,16 @@ export class ManagedCoordinator extends SandboxCoordinator {
       reserve: (scope, spec) => this.reserve(work, scope, spec),
       close: () => this.stopAllocations(work),
     })
-    const shell = new CloudShellExecutor(ctx, commands, this.config.shell), subprocess = new CloudSubprocessRuntime(ctx, commands)
+    const sandbox = configured.pipes === undefined ? undefined : new CloudSandboxProvider(ctx, commands.calls, {
+      current: () => {
+        this.deployment.assertCurrent()
+        if (this.config.shell.enforceSessionFilePolicy !== true) return undefined
+        return { enforcement: 'full', denialSignatures: ['Read-only file system'], runnerFailureRules: [] }
+      },
+    }, configured.commandLimits)
+    const shell = new CloudShellExecutor(ctx, commands, this.config.shell), subprocess = new CloudSubprocessRuntime(ctx, commands, sandbox)
     const shellEnv = new CloudShellEnvRegistry(ctx, commands)
-    const providers: NonNullable<AccountWork['providers']> = { ctx, commands, shell, subprocess, shellEnv }
+    const providers: NonNullable<AccountWork['providers']> = { ctx, commands, shell, subprocess, shellEnv, ...sandbox === undefined ? {} : { sandbox } }
     work.providers = providers
     if (service !== undefined) ctx.effect(() => {
       const registration = registerDevServiceConsumer(ctx, commands.calls, subprocess, commands, service.profile)
@@ -431,7 +446,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
     }
     for (const [key, expected] of [['shell', providers.shell], ['subprocess', providers.subprocess],
-      ['shellEnv', providers.shellEnv]] as const) {
+      ['shellEnv', providers.shellEnv], ...providers.sandbox === undefined ? [] : [['sandbox', providers.sandbox] as const]] as const) {
       const entry = providers.ctx.fiber.store?.[key]
       if (original(ctx.get(key)) !== expected || original(ctx.root.get(key)) !== expected
         || entry?.fiber !== providers.ctx.fiber || original(entry.value) !== expected) this.stale()
@@ -692,10 +707,10 @@ export class ManagedCoordinator extends SandboxCoordinator {
 
   private reserve(work: AccountWork, scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): NativeCommandReservation {
     this.assertReady(); work.authority.assertBusinessCurrent()
-    if (!work.open || scope.binding !== work.binding || typeof spec.stdio.stdout === 'string'
-      || typeof spec.stdio.stderr === 'string') this.stale()
+    if (!work.open || scope.binding !== work.binding) this.stale()
     const stdinBytes = typeof spec.stdio.stdin === 'object' ? Buffer.byteLength(spec.stdio.stdin.data) : 0
-    const bytes = 8 * (spec.stdio.stdout.maxBytes + spec.stdio.stderr.maxBytes + stdinBytes + Buffer.byteLength(spec.cwd)
+    const bytes = 8 * ((typeof spec.stdio.stdout === 'object' ? spec.stdio.stdout.maxBytes : 65536)
+      + (typeof spec.stdio.stderr === 'object' ? spec.stdio.stderr.maxBytes : 65536) + stdinBytes + Buffer.byteLength(spec.cwd)
       + spec.argv.reduce((total, part) => total + Buffer.byteLength(part) + 1, 0)) + 8192
       + this.config.commands.commandLimits.maxWaiters * 256
       + (this.deployment.skillCopies === undefined ? 0 : this.deployment.skillCopies.maxCopiesPerOperation * 2048 + 4096)

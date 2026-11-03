@@ -7,12 +7,19 @@ import { parseReply } from './strict-json.ts'
 import { checkOptions, envelope, handshake, operation, ref as checkRef } from './validate.ts'
 import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L } from './constants.ts'
 import { ControlUncertain, RemoteRefusal } from './errors.ts'
-import type { AgentDataClient, CallOptions, ClientOptions, ExpectedBinding, Handshake, Mutation,
-  OperationRef, OperationSnapshot, PhysicalStopAck, PreparedRequest, Responsibility, Route } from './types.ts'
+import { ExecutionStream } from './stream.ts'
+import type { AgentDataClient, AgentDataStream, CallOptions, ClientOptions, ExpectedBinding, Handshake, Mutation,
+  OperationRef, OperationSnapshot, OperationSpec, PhysicalStopAck, PipesOperationSpec, PreparedRequest, Responsibility, Route } from './types.ts'
 import type { OwnedTransport, WireEvents } from './transport.ts'
 
-interface RefRecord { ref: OperationRef; mutations: Set<Mutation>; unresolved: boolean }
-interface Flight { actual: Promise<void>; bodyBytes: number; abort(): void }
+interface RefRecord { ref: OperationRef
+  mutations: Set<Mutation>
+  unresolved: boolean
+  prepared?: boolean
+  pipes?: PipesOperationSpec
+  attachAttempted?: boolean
+  stream?: ExecutionStream }
+interface Flight { actual: Promise<void>; bodyBytes: number; stream?: boolean; abort(): void }
 
 /** Internal constructor permits exclusive fake transport ownership for units. Public factory always owns a fresh Pool. */
 export class DataClient implements AgentDataClient {
@@ -23,6 +30,7 @@ export class DataClient implements AgentDataClient {
   readonly #records = new Map<string, RefRecord>()
   readonly #active = new Set<Flight>()
   #verified = false; #fenced = false; #closing = false; #physicalAck = false; #physicalRequired = false
+  #streamVerified = false
   #attempts = 0; #sent = 0; #allowance = 0; #buffered = 0; #received = 0; #sealAttempted = false
   #closed = false; #closePending = 0; #cleanupFailure = false; #cleanupDone = false
   #cleanup?: Promise<void>; #destroy?: Promise<void>; #releaseTimer?: ReturnType<typeof setTimeout>
@@ -37,14 +45,14 @@ export class DataClient implements AgentDataClient {
   }
   fence(): Promise<void> {
     this.#fenced = true
-    return this.#fenceJoin ??= Promise.all([...this.#active].map(f => f.actual)).then(() => undefined)
+    return this.#fenceJoin ??= Promise.all([...this.#active].filter(f => !f.stream).map(f => f.actual)).then(() => undefined)
   }
   responsibility(): Responsibility {
     return Object.freeze({ fenced: this.#fenced, closing: this.#closing, inFlight: this.#active.size,
       dispatcherClosed: this.#closed, closeMethodsPending: this.#closePending, cleanupFailure: this.#cleanupFailure,
       localSettled: this.#closing && this.#cleanupDone && this.#active.size === 0 && this.#closePending === 0 && this.#closed,
       attempts: this.#attempts, sentBodyBytes: this.#sent, replyBodyAllowance: this.#allowance,
-      replyBuffersReservedBytes: this.#active.size * L.reply,
+      replyBuffersReservedBytes: [...this.#active].filter(f => !f.stream).length * L.reply,
       inFlightRequestBodyBytes: [...this.#active].reduce((bytes, flight) => bytes + flight.bodyBytes, 0),
       bufferedReplyBytes: this.#buffered, receivedReplyBodyBytes: this.#received,
       remoteUnresolved: Object.freeze([...this.#records.values()].filter(r => r.unresolved).map(r => r.ref)),
@@ -68,9 +76,51 @@ export class DataClient implements AgentDataClient {
     if (fixed !== undefined) assertSkillParent(fixed, this.#expected.skillParent)
     need((this.#expected.skillParent === undefined) === (fixed === undefined), 'skill_parent_required')
     const policy = request.filePolicy === undefined ? undefined : filePolicy(request.filePolicy)
+    need(normalized.executionKind !== 'pipes' || this.#streamVerified, 'stream_capability_unavailable')
+    need(normalized.executionKind !== 'pipes' || reference.authorization.role !== 'service', 'pipes_service_role')
+    need(reference.authorization.role !== 'program' || normalized.executionKind === 'pipes', 'program_requires_pipes')
     need(preparedDigest(normalized, fixed, policy) === reference.specHash, 'spec_hash_mismatch')
     return this.#call('/prepare', { ...reference, spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed },
-      ...policy === undefined ? {} : { filePolicy: policy } }, reference, options) as Promise<OperationSnapshot>
+      ...policy === undefined ? {} : { filePolicy: policy } }, reference, options, normalized) as Promise<OperationSnapshot>
+  }
+  attach(ref: OperationRef, options: CallOptions = {}): Promise<AgentDataStream> {
+    const reference = checkRef(ref, this.#expected.runtimeIdentity), row = this.#records.get(reference.operationId)
+    need(!this.#closing && !this.#fenced && !this.#physicalAck && this.#streamVerified, 'stream_admission_fenced')
+    need(row !== undefined && row.ref.specHash === reference.specHash
+      && asciiJSON(row.ref.authorization) === asciiJSON(reference.authorization) && row.prepared && row.pipes !== undefined
+      && !row.attachAttempted && !row.mutations.has('/commit') && reference.authorization.role !== 'service', 'stream_operation_binding')
+    need(this.#transport.attach !== undefined, 'stream_transport_unavailable')
+    const now = performance.now(), deadline = Math.min(options.deadlineMs ?? now + L.requestMs, now + L.requestMs, this.#expires)
+    need(Number.isFinite(deadline) && deadline > now && !options.signal?.aborted, 'local_deadline_or_cancel')
+    need([...this.#active].filter(f => f.stream).length < 2 && this.#attempts < L.attempts, 'carrier_budget')
+    row.attachAttempted = true; this.#attempts++
+    const stream = row.stream = new ExecutionStream(reference, row.pipes, () => {
+      void this.fence(); if (!this.#physicalAck) row.unresolved = true
+    })
+    const flight: Flight = { actual: stream.settled, bodyBytes: 0, stream: true, abort: () => { stream.fail() } }
+    this.#active.add(flight)
+    const timer = setTimeout(() => { stream.fail() }, Math.max(1, deadline - now))
+    const residence = setTimeout(() => { stream.fail() }, Math.max(1, this.#expires - now))
+    const cancel = () => { stream.fail() }
+    options.signal?.addEventListener('abort', cancel, { once: true })
+    void stream.ready.then(() => { clearTimeout(timer) }, () => { clearTimeout(timer) })
+    void stream.settled.then(() => {
+      clearTimeout(timer); clearTimeout(residence); options.signal?.removeEventListener('abort', cancel)
+      this.#active.delete(flight)
+    })
+    try {
+      const auth = reference.authorization
+      stream.bind(this.#transport.attach({ headers: { [AGENT_AUTH_HEADER]: this.#token,
+        'x-pe-operation-id': reference.operationId, 'x-pe-spec-hash': reference.specHash,
+        'x-pe-range-role': auth.role, 'x-pe-registration-id': auth.registrationId ?? '-', 'x-pe-role-signature': auth.signature } }, stream.events))
+    } catch { stream.events.error(); stream.events.closed() }
+    return stream.ready
+  }
+  joinStream(ref: OperationRef): Promise<void> {
+    const reference = checkRef(ref, this.#expected.runtimeIdentity), row = this.#records.get(reference.operationId)
+    need(row !== undefined && row.ref.specHash === reference.specHash
+      && asciiJSON(row.ref.authorization) === asciiJSON(reference.authorization), 'stream_operation_binding')
+    return row.stream?.settled ?? Promise.resolve()
   }
   /**
    * Attempt commit once using the original reference; this method never retries a lost response.
@@ -106,6 +156,9 @@ export class DataClient implements AgentDataClient {
   }
   #op(route: Route, value: OperationRef, options?: CallOptions): Promise<OperationSnapshot> {
     const reference = checkRef(value, this.#expected.runtimeIdentity)
+    const row = this.#records.get(reference.operationId)
+    if (route === '/commit' && row?.pipes !== undefined) need(row.stream?.connected, 'stream_not_attached')
+    if (route === '/stop' || route === '/cancel') row?.stream?.abandon()
     const fields = { ...reference, ...(route === '/poll' ? { stdoutOffset: 0, stderrOffset: 0 } : {}) }
     return this.#call(route, fields, reference, options) as Promise<OperationSnapshot>
   }
@@ -121,7 +174,7 @@ export class DataClient implements AgentDataClient {
     this.#records.set(reference.operationId, row); return row
   }
   #call(route: Route, fields: Record<string, unknown>, reference?: OperationRef,
-    options: CallOptions = {}): Promise<Handshake | OperationSnapshot> {
+    options: CallOptions = {}, preparedSpec?: OperationSpec): Promise<Handshake | OperationSnapshot> {
     need(!this.#closing && !this.#physicalAck, 'local_carrier_closed')
     if (route === '/prepare' || route === '/commit') need(this.#verified && !this.#fenced, 'local_admission_fenced')
     need(options.deadlineMs === undefined
@@ -130,10 +183,11 @@ export class DataClient implements AgentDataClient {
     need(Number.isFinite(deadline) && deadline > now && !options.signal?.aborted, 'local_deadline_or_cancel')
     const encoded = Buffer.from(asciiJSON({ ...fields, runtimeIdentity: this.#expected.runtimeIdentity }), 'ascii')
     need(encoded.length <= L.body, 'body_budget')
-    need(this.#active.size < L.concurrent && this.#attempts < L.attempts
+    need([...this.#active].filter(f => !f.stream).length < L.concurrent && this.#attempts < L.attempts
       && this.#sent + encoded.length <= L.sentBodyTotal && this.#allowance + L.reply <= L.replyAllowanceTotal, 'carrier_budget')
     const row = reference ? this.#remember(reference) : undefined
-    const mutation = route !== '/handshake' && route !== '/poll' ? route : undefined
+    if (row !== undefined && preparedSpec?.executionKind === 'pipes') row.pipes = preparedSpec
+    const mutation = route !== '/handshake' && route !== '/poll' && route !== '/stream' ? route : undefined
     if (mutation === '/seal') { need(!this.#sealAttempted, 'mutation_already_attempted'); this.#sealAttempted = true }
     else if (mutation && row) {
       need(!row.mutations.has(mutation), 'mutation_already_attempted'); row.mutations.add(mutation); row.unresolved = true
@@ -201,11 +255,18 @@ export class DataClient implements AgentDataClient {
           let snapshot: Handshake | OperationSnapshot
           if (route === '/handshake' || route === '/seal') {
             snapshot = handshake(value, this.#expected); this.#verified = true
+            this.#streamVerified = snapshot.streamLimits !== undefined
             if (snapshot.sealed) void this.fence()
           } else {
             record(value, ['protocolVersion', 'runtimeIdentity', 'operation'])
             need(reference, 'missing_operation_reference')
             snapshot = operation(value.operation, reference)
+            need((row?.pipes !== undefined) === (snapshot.executionKind === 'pipes'), 'operation_execution_kind')
+            if (row !== undefined && route === '/prepare') row.prepared = snapshot.prepared && !snapshot.commitClosed
+              && !snapshot.physicalStopRequired && !snapshot.providerFailure && snapshot.firstCause === null
+              && snapshot.failure === null && snapshot.cleanupFailure === null && !snapshot.stream?.attached
+            if (row?.stream !== undefined && route === '/commit' && snapshot.submitted && !snapshot.physicalStopRequired
+              && snapshot.firstCause === null && !snapshot.providerFailure) row.stream.noteSubmitted()
             if (row && snapshot.rangeEmpty && snapshot.ioClosed && !snapshot.physicalStopRequired && !this.#physicalRequired) {
               row.unresolved = false
             }

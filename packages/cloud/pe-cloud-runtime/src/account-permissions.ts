@@ -16,6 +16,8 @@ function denied(): never {
  * Capture the original native policy provider for one verified Session/project selection.
  * The files provider calls the returned guard immediately before its mutation; an omitted
  * per-call override resolves the Session's current durable mode rather than the account default.
+ * Only the trusted Native tool path supplies an override after its approval decision;
+ * that call may widen its mode while keeping the exact Session and registered project.
  * @param ctx Original account graph whose policy provider owns the native Session projection.
  * @param session Exact native Session selected by the existing account/project admission.
  * @param workspaceRoot Original registered project path, never a caller-selected prefix.
@@ -36,10 +38,10 @@ export function createAccountFileMutationGuard(
     if (!(current instanceof SandboxPolicyService) || (Reflect.get(current, symbols.original) ?? current) !== original) denied()
     const standing = current.resolve({ session })
     assertCurrent()
-    if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id || (!Object.hasOwn(MODE_RANK, standing.mode) || standing.mode === 'read-only')) denied()
+    if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id || !Object.hasOwn(MODE_RANK, standing.mode)) denied()
     const selected = override ?? standing
     if (selected.workspaceRoot !== workspaceRoot || selected.sessionId !== session.id
-      || !Object.hasOwn(MODE_RANK, selected.mode) || selected.mode === 'read-only' || MODE_RANK[selected.mode] > MODE_RANK[standing.mode]) denied()
+      || !Object.hasOwn(MODE_RANK, selected.mode) || selected.mode === 'read-only') denied()
   }
 }
 

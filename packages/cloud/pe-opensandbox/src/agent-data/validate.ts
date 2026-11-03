@@ -3,7 +3,7 @@ import { skillParent, type SkillParent } from './skill-world.ts'
 import { isIP } from 'node:net'
 import { absolute, base64, digest, hex, need, record, text, u64 } from './canonical.ts'
 import { AGENT_SOURCE_SHA256, BWRAP_SHA256 } from './constants.ts'
-import { authorization, ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS } from './role-protocol.ts'
+import { authorization, ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS, STREAM_LIMITS } from './role-protocol.ts'
 import type { ClientOptions, ExpectedBinding, FailureFact, Handshake, MountFact, OperationRef, OperationSnapshot, RawTail } from './types.ts'
 
 const ENV = '/opt/session-env'
@@ -21,8 +21,8 @@ export function worldArgv(project: string): readonly string[] {
     '--setenv', 'OPENBLAS_NUM_THREADS', '1',
     '--ro-bind', '/', '/', '--proc', '/proc', '--ro-bind', '/dev', '/dev',
     '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',
-    '--bind', project, project, '--ro-bind', ENV, ENV, '--bind', ENV + '/home', ENV + '/home',
-    '--bind', ENV + '/venv', ENV + '/venv', '--bind', ENV + '/tmp', ENV + '/tmp',
+    '--bind', project, project, '--ro-bind', ENV, ENV, '--ro-bind', ENV + '/home', ENV + '/home',
+    '--ro-bind', ENV + '/venv', ENV + '/venv', '--bind', ENV + '/tmp', ENV + '/tmp',
     '--bind', ENV + '/tmp', '/tmp', '--ro-bind', project + '/.pe', project + '/.pe', '--chdir', project]
 }
 /**
@@ -120,10 +120,18 @@ function literal<T extends string | number>(value: unknown, expected: T): T {
  */
 export function handshake(value: unknown, e: ExpectedBinding): Handshake {
   record(value, ['protocolVersion', 'runtimeIdentity', 'capabilities', 'pins', 'declaredImageId', 'mounts', 'limits',
-    'newOperationsAccepted', 'recordCount', 'activeRangeCount', 'rangeRoles', 'sealed', 'sealReason', 'physicalStopRequired'])
+    'newOperationsAccepted', 'recordCount', 'activeRangeCount', 'rangeRoles', 'sealed', 'sealReason', 'physicalStopRequired',
+    ...value !== null && typeof value === 'object' && 'streamLimits' in value ? ['streamLimits'] : []])
   envelope(value, e.runtimeIdentity)
-  need(JSON.stringify(value.capabilities) === JSON.stringify(['argv', 'stdin-ignore', 'stdin-batch', 'collect']), 'capabilities')
-  need(Array.isArray(value.capabilities))
+  const streaming = value.streamLimits !== undefined
+  const capabilities: Handshake['capabilities'] = streaming
+    ? ['argv', 'stdin-ignore', 'stdin-batch', 'collect', 'stdin-pipe', 'pipes', 'control-pipe']
+    : ['argv', 'stdin-ignore', 'stdin-batch', 'collect']
+  need(JSON.stringify(value.capabilities) === JSON.stringify(capabilities), 'capabilities')
+  if (streaming) {
+    record(value.streamLimits, Object.keys(STREAM_LIMITS))
+    for (const [key, limit] of Object.entries(STREAM_LIMITS)) need(value.streamLimits[key] === limit, 'stream_limit_mismatch')
+  }
   record(value.pins, ['bwrapSha256', 'agentSourceSha256', 'userWorldArgvSha256'])
   for (const key of Object.keys(e.pins) as (keyof ExpectedBinding['pins'])[]) need(value.pins[key] === e.pins[key], 'payload_pin')
   hex(value.pins.bwrapSha256); hex(value.pins.agentSourceSha256); hex(value.pins.userWorldArgvSha256)
@@ -146,15 +154,17 @@ export function handshake(value: unknown, e: ExpectedBinding): Handshake {
   record(value.limits, Object.keys(SLICE_LIMITS))
   for (const [key, limit] of Object.entries(SLICE_LIMITS)) need(value.limits[key] === limit, 'slice_limit_mismatch')
   const records = count(value.recordCount, 0, 4), activeRanges = count(value.activeRangeCount, 0, 2)
-  record(value.rangeRoles, ['foreground', 'service'])
-  const rangeRoles = { foreground: count(value.rangeRoles.foreground, 0, 1), service: count(value.rangeRoles.service, 0, 1) }
-  need(activeRanges === rangeRoles.foreground + rangeRoles.service && activeRanges <= records, 'role_count_mismatch')
+  record(value.rangeRoles, ['foreground', 'service', ...streaming ? ['program'] : []])
+  const program = streaming ? count(value.rangeRoles.program, 0, 1) : 0
+  const rangeRoles = { foreground: count(value.rangeRoles.foreground, 0, 1), service: count(value.rangeRoles.service, 0, 1),
+    ...streaming ? { program } : {} }
+  need(activeRanges === rangeRoles.foreground + rangeRoles.service + program && activeRanges <= records
+    && !(program && rangeRoles.service), 'role_count_mismatch')
   const sealed = bool(value.sealed), physicalStopRequired = bool(value.physicalStopRequired), sealReason = nullableText(value.sealReason)
   const newOperationsAccepted = bool(value.newOperationsAccepted)
   need(newOperationsAccepted === (!sealed && records < 4), 'admission_facts')
   return { protocolVersion: literal(value.protocolVersion, PROTOCOL), runtimeIdentity: value.runtimeIdentity,
-    capabilities: [literal(value.capabilities[0], 'argv'), literal(value.capabilities[1], 'stdin-ignore'),
-      literal(value.capabilities[2], 'stdin-batch'), literal(value.capabilities[3], 'collect')],
+    capabilities, ...streaming ? { streamLimits: STREAM_LIMITS } : {},
     pins: { bwrapSha256: value.pins.bwrapSha256, agentSourceSha256: value.pins.agentSourceSha256,
       userWorldArgvSha256: value.pins.userWorldArgvSha256 }, declaredImageId: value.declaredImageId, mounts,
     limits: { lifetimeOperations: literal(value.limits.lifetimeOperations, SLICE_LIMITS.lifetimeOperations),
@@ -182,13 +192,13 @@ function failure(value: unknown): FailureFact | null {
   const errno = value.errno === null ? null : count(value.errno, -2147483648, 2147483647)
   return { type: value.type, errno, phase: value.phase }
 }
-function tail(value: unknown): RawTail {
+function tail(value: unknown, pipes: boolean): RawTail {
   record(value, ['requestedOffset', 'startOffset', 'endOffset', 'observedBytes', 'base64', 'lossy', 'eof'])
   need(value.requestedOffset === 0, 'tail_requested_offset')
   const start = count(value.startOffset), end = count(value.endOffset), observed = count(value.observedBytes)
   const bytes = base64(value.base64, 4096)
-  need(end === observed && start === Math.max(0, observed - 4096) && bytes.length === Math.min(observed, 4096)
-    && start <= end && end - start === bytes.length
+  need(end === observed && (pipes ? start === observed && bytes.length === 0 : start === Math.max(0, observed - 4096)
+    && bytes.length === Math.min(observed, 4096)) && end - start === bytes.length
     && bool(value.lossy) === (start > 0), 'tail_coordinates')
   const eof = bool(value.eof)
   text(value.base64)
@@ -202,9 +212,10 @@ function tail(value: unknown): RawTail {
  * @returns Validated full-tail snapshots and independent direct/range/IO facts, without an invented outcome.
  */
 export function operation(value: unknown, expected: OperationRef): OperationSnapshot {
+  const pipes = value !== null && typeof value === 'object' && 'executionKind' in value
   record(value, ['operationId', 'specHash', 'role', 'registrationId', 'primitiveStarted', 'prepared', 'commitAttempted', 'commitClosed', 'submitted',
     'firstCause', 'direct', 'directNotObserved', 'rangeEmpty', 'ioClosed', 'physicalStopRequired', 'failure', 'cleanupFailure',
-    'providerFailure', 'streams'])
+    'providerFailure', 'streams', ...pipes ? ['executionKind', 'stream'] : []])
   need(value.operationId === expected.operationId && value.specHash === expected.specHash, 'operation_reply_binding')
   need(value.role === expected.authorization.role && value.registrationId === expected.authorization.registrationId,
     'operation_role_binding')
@@ -221,13 +232,24 @@ export function operation(value: unknown, expected: OperationRef): OperationSnap
     need((low === 0 && code === ((wait >> 8) & 255)) || (low > 0 && low < 127 && code === -low), 'direct_wait_status')
     direct = { waitStatus: wait, returncode: code }
   }
-  need(value.directNotObserved === (value.direct === null) && value.rangeEmpty === value.ioClosed, 'range_facts')
+  need(value.directNotObserved === (value.direct === null)
+    && (pipes ? !value.ioClosed || value.rangeEmpty : value.rangeEmpty === value.ioClosed), 'range_facts')
+  let stream: OperationSnapshot['stream']
+  if (pipes) {
+    need(value.executionKind === 'pipes', 'execution_kind')
+    record(value.stream, ['attached', 'connected', 'ioClosed', 'controlInputBytes', 'controlOutputBytes'])
+    stream = { attached: bool(value.stream.attached), connected: bool(value.stream.connected), ioClosed: bool(value.stream.ioClosed),
+      controlInputBytes: count(value.stream.controlInputBytes, 0, STREAM_LIMITS.controlInputBytes),
+      controlOutputBytes: count(value.stream.controlOutputBytes, 0, STREAM_LIMITS.controlOutputBytes) }
+    need(!stream.connected || stream.attached, 'stream_facts')
+  }
   record(value.streams, ['stdout', 'stderr'])
-  const stdout = tail(value.streams.stdout), stderr = tail(value.streams.stderr)
+  const stdout = tail(value.streams.stdout, pipes), stderr = tail(value.streams.stderr, pipes)
   if (value.rangeEmpty) need(stdout.eof && stderr.eof, 'empty_without_eof')
   if (!value.primitiveStarted) need(value.rangeEmpty && !value.prepared && !value.submitted, 'no_primitive_facts')
   return { operationId: value.operationId, specHash: value.specHash, role: expected.authorization.role,
     registrationId: expected.authorization.registrationId, primitiveStarted, prepared, commitAttempted,
     commitClosed, submitted, firstCause, direct, directNotObserved, rangeEmpty, ioClosed, physicalStopRequired,
-    failure: failureFact, cleanupFailure, providerFailure, streams: { stdout, stderr } }
+    failure: failureFact, cleanupFailure, providerFailure, streams: { stdout, stderr },
+    ...stream === undefined ? {} : { executionKind: 'pipes', stream } }
 }

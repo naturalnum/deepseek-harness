@@ -100,7 +100,7 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
       if (!answer.ok || answer.value.entry.skillId !== skillId) throw new ClientFailure('closed')
       const value = answer.value, version = Object.freeze({ ...value.version }), limits = uiLimits(state)
       let used = false
-      return Object.freeze({ item: row(value.entry),
+      return Object.freeze({ item: row(value.entry), markdown: value.markdown,
         files: Object.freeze(value.files.map(file => Object.freeze({ path: file.relativePath, bytes: file.bytes }))),
         ...!value.entry.actions.download ? {} : { readFile: async (path: string, signal: AbortSignal) => {
           const file = value.files.find(file => file.relativePath === path)

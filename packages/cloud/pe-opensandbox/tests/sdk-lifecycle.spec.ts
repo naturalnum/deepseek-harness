@@ -502,7 +502,7 @@ test('failed privileged lane still joins original locals and retains unknown wit
 async function bootstrapFailureFixture(events: readonly object[], options: { pending?: boolean; closeFailure?: boolean } = {}) {
   const runtime = fileURLToPath(new URL('../runtime/', import.meta.url)), selected = selection()
   const lifecycle: SdkLifecycleConfig = { ...config, lifecycleBaseUrl: 'http://127.0.0.1:24444/v1',
-    imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
+    imageDigest: 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a',
     payloadSha256: SOURCE_DIGEST, entrypoint: ['/usr/bin/tail', '-f', '/dev/null'] }
   const settings: BootstrapConfig = { lifecycle, execdAccessToken: 'synthetic-bootstrap-only',
     transport: { connections: 1, connectTimeoutMs: 100, headersTimeoutMs: 1000, bodyTimeoutMs: 1000,
@@ -582,7 +582,7 @@ for (const [name, events] of [['marker mismatch', completedWrongMarker], ['stder
     await f.backend.stop(created, undefined)
     assert.equal(f.transport.calls.filter(call => call.method === 'DELETE').length, 1)
     assert.equal(f.ack.mock.calls.length, 1); assert.equal(f.close.mock.calls.length, 1)
-    assert.equal(f.wire.filter(path => path.endsWith('/files/upload')).length, 8)
+    assert.equal(f.wire.filter(path => path.endsWith('/files/upload')).length, 10)
     assert.equal(f.wire.filter(path => path.endsWith('/command')).length, 2)
     assert.equal(f.wire.some(path => path.includes('/endpoints/8080')), false)
     assert.equal(f.client.mock.calls.length, 0)
@@ -703,7 +703,7 @@ test('bootstrap retirement requires its exact fenced and actually joined selecti
 test('actual SDK, pinned bootstrap and runtime owners reclaim seven completed lifetimes with maxRecords one', async () => {
   const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
   const lifecycle: SdkLifecycleConfig = { ...config, maxRecords: 1, lifecycleBaseUrl: 'http://127.0.0.1:24444/v1',
-    imageDigest: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f',
+    imageDigest: 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a',
     payloadSha256: SOURCE_DIGEST, entrypoint: ['/usr/bin/tail', '-f', '/dev/null'] }
   const settings: BootstrapConfig = { lifecycle, execdAccessToken: 'synthetic-only',
     transport: { connections: 1, connectTimeoutMs: 100, headersTimeoutMs: 1000, bodyTimeoutMs: 1000,
@@ -743,7 +743,8 @@ test('actual SDK, pinned bootstrap and runtime owners reclaim seven completed li
       recordCount: 0, activeRangeCount: 0, rangeRoles: { foreground: 0, service: 0 }, sealed: false,
       sealReason: null, physicalStopRequired: false }
     const unused = (): never => { throw new Error('No real agent command is sent by this owner-retirement component') }
-    return { handshake: async () => handshake, prepare: unused, commit: unused, poll: unused, cancel: unused, stop: unused,
+    return { handshake: async () => handshake, prepare: unused, attach: unused, joinStream: async () => {},
+      commit: unused, poll: unused, cancel: unused, stop: unused,
       seal: async () => handshake, fence: async () => {}, responsibility: () => responsibility,
       release: async () => { dataCloses++; responsibility = { ...responsibility, fenced: true, closing: true,
         dispatcherClosed: true, localSettled: true }; return responsibility }, whenLocallySettled: async () => {},

@@ -5,15 +5,12 @@
     presets:
       read-only:
         sandbox: read-only
-        approval: never
-        name: 只读
+        approval: ask
       workspace-write:
         sandbox: workspace-write
-        approval: never
-        name: 工作区内修改
+        approval: ask
       danger-full-access:
         sandbox: danger-full-access
         approval: never
-        name: 沙盒内完整访问
 - id: commands
   name: cordis:permission-command-registry

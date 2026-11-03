@@ -5,6 +5,7 @@ import { ShellExecutor, type ShellExecRequest, type ShellExecSpec, type ShellExe
 import { SubprocessRuntime, type SubprocessSpawnSpec, type SubprocessHandle, type SubprocessTerminalEnvironment,
   type SubprocessTerminalHandle, type SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { clampTimeout, deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import type { CloudSandboxProvider } from './native-sandbox.ts'
 import type { ManagedCommandOperation } from './command-operation.ts'
 import { ManagedShellExecution, type ShellInterruption } from './shell-execution.ts'
 import { ExecutionStateError } from './errors.ts'
@@ -26,6 +27,11 @@ export interface NativeExecutionConfig {
 export interface NativeExecutionProviderPort {
   /** Present only on the original command owner that signs and enforces per-Session policy for all execution paths. */
   readonly enforcesSessionFilePolicy?: true | undefined
+  /** Original Root terminal allocation, absent on collect-only channels.
+   * @param caller Actual Native tool scope. @param spec Complete terminal request with its approved policy.
+   * @returns Original terminal handle after guardian readiness.
+   */
+  createTerminal?(caller: Context, spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
   /** @param caller Actual account service caller. */
   assertCurrent(caller: Context): void
   /** @param caller Actual native tool caller. @returns Its original registered project root. */
@@ -95,24 +101,38 @@ class PreparationTimedOutExecution implements ShellExecution {
 /** Collected argv provider; unsupported consumers fail before any lookup or process allocation. */
 export class CloudSubprocessRuntime extends SubprocessRuntime {
   /** @param ctx Original account provider scope. @param port Exact Root-issued native command capability. */
-  constructor(ctx: Context, private readonly port: NativeExecutionProviderPort) {
+  constructor(ctx: Context, private readonly port: NativeExecutionProviderPort, private readonly sandbox?: CloudSandboxProvider) {
     super(ctx)
     ctx.effect(() => () => port.closeProvider(), 'pe-opensandbox: stop and join native provider commands')
   }
 
   override resolveExecutable(_command: string, _env?: Readonly<Record<string, string>>, signal?: AbortSignal): Promise<string> {
-    return refuseUnsupported(this.ctx, this.port, signal)
+    if (this.sandbox === undefined) return refuseUnsupported(this.ctx, this.port, signal)
+    this.port.assertCurrent(this.ctx); signal?.throwIfAborted()
+    if (!_command.startsWith('/') || _command.includes('\0')) return refuseUnsupported(this.ctx, this.port, signal)
+    return Promise.resolve(_command)
   }
   override terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
-    return refuseUnsupported(this.ctx, this.port, signal)
+    if (this.sandbox === undefined) return refuseUnsupported(this.ctx, this.port, signal)
+    this.port.assertCurrent(this.ctx); signal?.throwIfAborted()
+    return Promise.resolve({ platform: 'posix', defaultShell: '/bin/bash' })
   }
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
-    const operation = this.port.create(this.ctx, spec)
+    let policy = spec.sandboxPolicy
+    if (this.sandbox !== undefined && (spec.stdio.stdout === 'pipe' || spec.stdio.control === 'pipe')) {
+      if (spec.sandboxPolicy?.mode !== 'danger-full-access') {
+        policy = this.sandbox.consume(this.ctx, spec.argv, spec.signal).policy
+      }
+    }
+    const operation = this.port.create(this.ctx, spec, policy)
     operation.publish(); operation.begin()
     return operation.handle
   }
   override spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
-    return refuseUnsupported(this.ctx, this.port, spec.signal)
+    if (this.sandbox === undefined || this.port.createTerminal === undefined) return refuseUnsupported(this.ctx, this.port, spec.signal)
+    const policy = spec.sandboxPolicy?.mode === 'danger-full-access' ? spec.sandboxPolicy
+      : this.sandbox.consume(this.ctx, spec.argv, spec.signal).policy
+    return this.port.createTerminal(this.ctx, { ...spec, sandboxPolicy: policy })
   }
 }
 

@@ -153,3 +153,16 @@ it('keeps metadata migration, rows, result pages and fixed recipe tokens within 
   raw.allocations.provider = 'opensandbox'; raw.store.maxFieldBytes = 63
   expect(() => parseManagedCoordinatorConfig(raw)).toThrow('maxFieldBytes')
 })
+
+it('requires the Native consumers, enforced policy and whole raw-stream reservation before enabling pipes', () => {
+  const raw = input()
+  const pipes = { controlInputBytes: 8388608, controlOutputBytes: 8388608 }
+  const commands = { ...raw.commands, allowedTools: ['bash', 'run_code', 'terminal_open'], pipes }
+  expect(() => parseManagedCoordinatorConfig({ ...raw, commands })).toThrow('shell.enforceSessionFilePolicy')
+  const selected = { ...raw, commands, shell: { ...raw.shell, enforceSessionFilePolicy: true } }
+  expect(() => parseManagedCoordinatorConfig(selected)).toThrow('maxResidentBytesPerAccount')
+  const reserved = { ...selected, maxResidentBytes: 4194304, maxResidentBytesPerAccount: 2097152 }
+  expect(parseManagedCoordinatorConfig(reserved).commands.pipes).toEqual(pipes)
+  expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, maxScopes: 1 } })).toThrow('maxScopes')
+  expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, allowedTools: ['bash', 'run_code'] } })).toThrow('allowedTools')
+})

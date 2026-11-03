@@ -59,6 +59,10 @@ preset 的服务提供方及其消费方必须共享同一个 `cordis:group` 隔
 
 激活审计检查导入失败、缺失服务和向全局泄漏的服务。导入失败、激活失败和泄漏会拒绝挂载。等待 Host 服务的行保持挂载，每次读取和绑定都在 Host Loader 树结算后重新审计，因此启动顺序不决定结果。失败只禁用该定义的新绑定。会话日志保存 preset ID 和空白会话的切换记录；重启恢复使用该 ID 的当前定义，缺失时拒绝恢复。若空白会话已记录所请求的 preset 且正运行其当前版本，`select` 不做任何改动，也不追加切换记录或触发 `tools/change`。
 
+受保护的 `assertSelectionCurrent(agent, agentPreset)` 扩展在串行选择内部执行，并在重新组合后、持久化选择记录前再次执行。默认实现原样接受选择。账户部署可在此拒绝失效授权，无需替换原生选择引擎。
+
+选择操作保留每个 Agent 原有的队列。实际切换把重新组合和持久化选择记录放在 Agent 原有的 `runMaintenance()` 活动中。唤醒对话的请求、`followup` 和 `steer` 保留在原 Inbox 中，直到该活动结算，避免首轮对话在切换中途开始。排队的第二次选择在开始时重新检查空白会话边界。取消操作由 Agent 清除排队输入；已经开始的重新组合仍等待实际结算，不会直接丢弃。
+
 `inspectCompositions()` 读取本注册表仍保留的全部代际；传入 Agent 上下文时只选择它绑定的精确代际，在此没有绑定时返回空列表。每个 `AgentPresetInspection` 包含 preset ID、纯数据形式的活动模块引用及解析基址，以及泄漏的服务名。检查器查询运行中的服务，而不是模块级挂载表；结果不包含 Loader 树或 fiber。这些记录定义在 [composition-inventory.ts](src/composition-inventory.ts) 中。
 
 | 文件 | 职责 |

@@ -18,7 +18,7 @@ const reportPath = resolve(args.get('--out'))
 const expected = {
   server: { ref: 'sha256:a03ed486116398931f98b11ec2789fc40677ea2e27f264603e0e92a487163a91', id: 'sha256:a03ed486116398931f98b11ec2789fc40677ea2e27f264603e0e92a487163a91' },
   execd: { ref: 'opensandbox/execd@sha256:1a6fc28b5efe098f6c168ea606dbad6bde2d1fc479329b4c8a6279c82ee02e94', id: 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf' },
-  workload: { ref: 'python@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203', id: 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f' },
+  workload: { ref: 'python@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203', id: 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a' },
 }
 const task = `pe-m4-${randomUUID()}`
 const label = `pe-m4-task=${task}`

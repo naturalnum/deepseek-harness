@@ -113,19 +113,24 @@ export class AccountManagedSkills implements SkillProvider {
   }
 
   /**
-   * Inspect one current installation and its complete version-file metadata.
+   * Inspect one current installation, its root instructions and complete version-file metadata.
    * @param skillId Original installation selector.
    * @param check Original Peer/Use guard.
    * @param signal Observer signal.
-   * @returns Complete metadata and the single directory edit.
+   * @returns Complete metadata, root instructions and the single directory edit.
    */
   async details(skillId: ManagedSkillId, check: () => void, signal: AbortSignal): Promise<ManagedSkillDetails> {
     const result = await this.saves.describeSkillEdit(async () => {
       const catalog = await this.observeCurrent(signal), entry = this.selected(catalog, skillId)
       const inspection = await this.registry.inspect({ signal })
       check()
-      return { value: { entry: this.row(this.handle(entry), inspection), files: entry.version.files.map(file => ({ ...file })) },
+      const held = await this.port.withBundleSource(entry.version, (source, control) => source.readText('SKILL.md', control), signal)
+      try {
+        check(); signal.throwIfAborted()
+        return { value: { entry: this.row(this.handle(entry), inspection),
+          files: entry.version.files.map(file => ({ ...file })), markdown: held.value },
         revision: catalog.revision }
+      } finally { held.release() }
     }, () => { this.active(); check() })
     return this.reply({ ...result.value, version: result.version })
   }

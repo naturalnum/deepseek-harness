@@ -5,6 +5,8 @@ import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@
 import { CollectedOutputMirror } from './collected-output.ts'
 import { PrivateSemanticAudit, type SemanticFacts } from './semantic-audit.ts'
 import type { NativeFilePolicy } from './agent-data/file-policy.ts'
+import type { AgentDataStream, OperationSpec } from './agent-data/types.ts'
+import { CommandStreams } from './command-streams.ts'
 
 /** Authenticated raw stream facts, decoded and validated by the private channel client. */
 export interface CommandStreamSnapshot {
@@ -29,13 +31,24 @@ export interface CommandSnapshot {
 
 /** One immutable operation selection. Mutation methods each submit at most once, including lost replies. */
 export interface CommandChannel {
-  prepare(spec: Readonly<{ argv: readonly string[]; cwd: string; stdin: { readonly mode: 'ignore' } | { readonly mode: 'batch'; readonly base64: string } }>,
-    filePolicy?: NativeFilePolicy): Promise<CommandSnapshot>
+  prepare(spec: OperationSpec, filePolicy?: NativeFilePolicy): Promise<CommandSnapshot>
+  /** Original prepared pipes stream after accepted upgrade; absence keeps raw execution closed. */
+  attach?(): Promise<AgentDataStream>
+  /** Join the original attempted attachment even if readiness rejected before returning its endpoints; absent for collect channels. */
+  whenLocallySettled?(): Promise<void>
   /** End the original retained files borrow only after actual range and local request settlement. */
   release?(): void
   commit(): Promise<CommandSnapshot>
   poll(): Promise<CommandSnapshot>
   stop(): Promise<CommandSnapshot>
+}
+
+/** Root-normalized, explicitly selected pipes inputs; omission preserves the original collect-only constructor. */
+export interface CommandPipeOptions {
+  readonly terminal?: Readonly<{ rows: number; cols: number }>
+  readonly env: Readonly<Record<string, string | null>>
+  readonly controlInputBytes: number
+  readonly controlOutputBytes: number
 }
 
 /** Explicit limits for the selected channel; its transport separately bounds transient wire copies. */
@@ -81,7 +94,12 @@ export class ManagedCommandOperation {
   private readonly publication = Promise.withResolvers<void>()
   private readonly allocationWait = new AbortController()
   private readonly waiters = new Set<RangeWaiter>()
-  private readonly output: { stdout: CollectedOutputMirror; stderr: CollectedOutputMirror }
+  private readonly output: { stdout: CollectedOutputMirror; stderr: CollectedOutputMirror } | undefined
+  private readonly streams: CommandStreams | undefined
+  private readonly streamFailure: ReturnType<typeof Promise.withResolvers<never>> | undefined
+  private stream: AgentDataStream | undefined
+  private outputEnded = false
+  private unknownReported = false
   private channel: CommandChannel | undefined
   private borrowReleaseFailure: { readonly cause: unknown } | undefined
   private readonly spec: Parameters<CommandChannel['prepare']>[0]
@@ -103,6 +121,7 @@ export class ManagedCommandOperation {
   private retired = false
   private physicalStopAcknowledged = false
   private grace: ReturnType<typeof setTimeout> | undefined
+  private drainDeadlineAtMs: number | undefined
   private lifetime: ReturnType<typeof setTimeout> | undefined
   private lifetimeDeadlineAtMs: number | undefined
   private commitStartedAtMs: number | undefined
@@ -111,16 +130,17 @@ export class ManagedCommandOperation {
   readonly prepared: Promise<void>
   /** Resolves only after confirmed range emptiness and actual local settlement, independently of the direct child outcome. */
   readonly whenEmpty: Promise<void>
-  /** Original collected-output native handle; public operations recheck the owning scope's admission. */
+  /** Original native handle; raw endpoints are caller-owned while public operations retain scope admission. */
   readonly handle: SubprocessHandle
 
   /**
-   * @param spec Fully resolved native input; unsupported stdio, environment and spill reject before allocation.
+   * @param spec Fully resolved native input; unsupported stdio and spill reject before allocation.
    * @param limits Actual finite channel limits, selected by Root configuration.
    * @param authority Original account/native owner and separately retained cleanup callbacks.
+   * @param pipes Explicit qualified Root selection and normalized signed fields; omission admits collected output only.
    */
   constructor(spec: SubprocessSpawnSpec, private readonly limits: CommandOperationLimits,
-    private readonly authority: CommandOperationAuthority) {
+    private readonly authority: CommandOperationAuthority, pipes?: CommandPipeOptions) {
     authority.assertCurrent(); authority.lifetime.throwIfAborted(); spec.signal?.throwIfAborted()
     for (const limit of Object.values(limits)) if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2147483647) {
       throw new RangeError('Command limits must be finite positive timer-safe integers.')
@@ -136,22 +156,49 @@ export class ManagedCommandOperation {
       throw new RangeError('Cloud command argv, cwd or grace is invalid.')
     }
     const { stdin, stdout, stderr, control } = spec.stdio
-    if (control !== undefined || typeof stdout === 'string' || typeof stderr === 'string' || stdin === 'pipe'
-      || spec.env !== undefined && Object.keys(spec.env).length > 0) {
+    if (pipes === undefined && (control !== undefined || typeof stdout === 'string' || typeof stderr === 'string' || stdin === 'pipe'
+      || spec.env !== undefined && Object.keys(spec.env).length > 0)) {
       throw new Error('This cloud channel requires collected output, closed or batch stdin and its fixed environment.')
     }
-    if (stdout.maxBytes > limits.maxTailBytes || stderr.maxBytes > limits.maxTailBytes) {
+    if (pipes !== undefined && (stdout !== 'pipe' || stderr !== 'pipe'
+      || !Number.isSafeInteger(pipes.controlInputBytes) || pipes.controlInputBytes < 1
+      || !Number.isSafeInteger(pipes.controlOutputBytes) || pipes.controlOutputBytes < 1)) {
+      throw new Error('Raw command pipes require explicit stdout/stderr pipes and finite control limits.')
+    }
+    if (typeof stdout === 'object' && stdout.maxBytes > limits.maxTailBytes
+      || typeof stderr === 'object' && stderr.maxBytes > limits.maxTailBytes) {
       throw new RangeError('Cloud command collection exceeds the authenticated channel tail capacity.')
     }
-    const batch = stdin === 'ignore' ? undefined : stdin.data
+    const batch = typeof stdin === 'object' ? stdin.data : undefined
     if (batch !== undefined && (!encoded(batch) || Buffer.byteLength(batch) > limits.maxStdinBytes)) {
       throw new RangeError('Cloud command stdin exceeds its byte or encoding limit.')
     }
-    this.output = { stdout: new CollectedOutputMirror(stdout, limits.maxObservedBytes),
-      stderr: new CollectedOutputMirror(stderr, limits.maxObservedBytes) }
+    if (pipes === undefined) {
+      if (typeof stdout !== 'object' || typeof stderr !== 'object') throw new Error('Collected output is required.')
+      this.output = { stdout: new CollectedOutputMirror(stdout, limits.maxObservedBytes),
+        stderr: new CollectedOutputMirror(stderr, limits.maxObservedBytes) }
+      this.streams = undefined; this.streamFailure = undefined
+    } else {
+      this.output = undefined
+      this.streamFailure = Promise.withResolvers<never>()
+      void this.streamFailure.promise.catch(() => { /* The operation retains and reports its original failure. */ })
+      this.streams = new CommandStreams(stdin === 'pipe', control === 'pipe', {
+        stdinBytes: limits.maxStdinBytes, controlInputBytes: pipes.controlInputBytes, observedBytes: limits.maxObservedBytes,
+      }, () => !this.scopeReleased && this.requestedStop === undefined && this.failed === undefined
+        && !authority.lifetime.aborted && !spec.signal?.aborted, (cause) => {
+        this.fail(cause); this.requestStop(cause)
+      })
+    }
+    const input = Object.freeze(batch === undefined ? { mode: 'ignore' as const }
+      : { mode: 'batch' as const, base64: Buffer.from(batch).toString('base64') })
     this.spec = Object.freeze({ argv: Object.freeze([...spec.argv]), cwd: spec.cwd,
-      stdin: Object.freeze(batch === undefined ? { mode: 'ignore' as const }
-        : { mode: 'batch' as const, base64: Buffer.from(batch).toString('base64') }) })
+      ...pipes === undefined ? { stdin: input } : {
+        executionKind: 'pipes' as const, stdin: stdin === 'pipe' ? Object.freeze({ mode: 'pipe' as const }) : input,
+        env: Object.freeze({ ...pipes.env }),
+        stream: Object.freeze({ ...pipes.terminal === undefined ? {} : { terminal: pipes.terminal }, version: 'pe-execution-stream-v1' as const, stdout: 'pipe' as const, stderr: 'pipe' as const,
+          control: control === 'pipe' ? 'pipe' as const : 'ignore' as const,
+          limits: Object.freeze({ controlInputBytes: pipes.controlInputBytes, controlOutputBytes: pipes.controlOutputBytes }) }),
+      } })
     this.graceMs = spec.graceMs; this.signal = spec.signal
     const signal = this.signal
     this.prepared = this.preparation.promise; this.whenEmpty = this.empty.promise
@@ -166,10 +213,12 @@ export class ManagedCommandOperation {
       signal?.removeEventListener('abort', cancelled)
       authority.lifetime.removeEventListener('abort', released)
     }
-    const handle: SubprocessHandle = { stdin: undefined, stdout: undefined, stderr: undefined, control: undefined,
-      collected: Object.freeze({
-        stdout: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return this.output.stdout.readFrom(offset) } }),
-        stderr: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return this.output.stderr.readFrom(offset) } }),
+    const output = this.output
+    const handle: SubprocessHandle = { stdin: this.streams?.stdin, stdout: this.streams?.stdout,
+      stderr: this.streams?.stderr, control: this.streams?.control,
+      collected: Object.freeze(output === undefined ? {} : {
+        stdout: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return output.stdout.readFrom(offset) } }),
+        stderr: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return output.stderr.readFrom(offset) } }),
       }),
       done: this.completion.promise,
       terminate: () => { this.assertPublic(); this.requestStop(new Error('Native command termination requested.')) },
@@ -281,12 +330,20 @@ export class ManagedCommandOperation {
   }
 
   private async run(): Promise<void> {
+    let attach: (() => Promise<AgentDataStream>) | undefined, joinAttachment: (() => Promise<void>) | undefined
+    let attachmentAttempted = false
     try {
       const channel = await this.authority.acquire(this.allocationWait.signal)
       this.channel = channel
       const beforePreparation = this.stopRequest()
       if (beforePreparation !== undefined) throw beforePreparation.reason
       this.authority.assertCurrent()
+      if (this.streams !== undefined) {
+        if (channel.attach === undefined || channel.whenLocallySettled === undefined) {
+          throw new Error('The selected command channel has no qualified pipes attachment and actual local join.')
+        }
+        attach = channel.attach.bind(channel); joinAttachment = channel.whenLocallySettled.bind(channel)
+      }
       this.remoteAttempted = true
       let snapshot = await channel.prepare(this.spec), committed = false, stopAt: number | undefined
       for (;;) {
@@ -303,6 +360,19 @@ export class ManagedCommandOperation {
         const stopped = this.stopRequest()
         if (stopped !== undefined && stopAt === undefined) {
           stopAt = Date.now(); snapshot = await channel.stop(); continue
+        }
+        if (snapshot.prepared && this.streams !== undefined && attach !== undefined && this.stream === undefined && stopped === undefined) {
+          attachmentAttempted = true
+          const stream = await attach()
+          this.stream = stream
+          void stream.outputEnded.then(() => {
+            this.outputEnded = true
+            this.completeDirect()
+          }, (cause: unknown) => { this.fail(cause); this.requestStop(cause) })
+          const interrupted = this.stopRequest()
+          if (interrupted === undefined) this.streams.attach(stream)
+          else this.streams.fail(interrupted.reason)
+          continue
         }
         if (snapshot.prepared && !this.preparationSettled && stopped === undefined) {
           this.authority.assertCurrent()
@@ -325,14 +395,29 @@ export class ManagedCommandOperation {
         if (this.isRangeConfirmed()) break
         snapshot = await channel.poll()
       }
+      if (this.stream !== undefined) await this.waitForOutput(this.stream)
       if (this.direct === undefined || !this.eof.stdout || !this.eof.stderr) {
         this.fail(this.requestedStop?.reason ?? new Error('The command ended without complete direct exit facts.'))
       }
     } catch (cause) {
       this.fail(this.stopRequest()?.reason ?? cause)
-      if (this.remoteAttempted) this.authority.unknown(cause)
+      if (this.remoteAttempted) this.reportUnknown(cause)
       else this.rangeConfirmed = true
     } finally {
+      const stream = this.stream
+      if (stream !== undefined) {
+        try { stream.close() } catch (cause) { this.fail(cause); this.reportUnknown(cause) }
+        try { await stream.settled } catch (cause) { this.fail(cause); this.reportUnknown(cause) }
+      }
+      if (attachmentAttempted && joinAttachment !== undefined) {
+        try { await joinAttachment() } catch (cause) { this.fail(cause); this.reportUnknown(cause) }
+      }
+      if (this.streams !== undefined) {
+        if (this.failed !== undefined || stream === undefined) {
+          this.streams.fail(this.failed?.cause ?? this.requestedStop?.reason ?? new Error('The original command stream never attached.'))
+        }
+        await this.streams.joinWrites()
+      }
       if (!this.preparationSettled) {
         this.preparationSettled = true
         this.preparation.reject(this.failed?.cause ?? this.requestedStop?.reason ?? new Error('Command preparation did not complete.'))
@@ -342,7 +427,15 @@ export class ManagedCommandOperation {
 
   private accept(snapshot: CommandSnapshot): void {
     for (const name of ['stdout', 'stderr'] as const) {
-      const stream = snapshot[name], output = this.output[name]
+      const stream = snapshot[name], output = this.output?.[name]
+      if (output === undefined) {
+        if (!Number.isSafeInteger(stream.observedBytes) || stream.observedBytes < 0
+          || stream.observedBytes > this.limits.maxObservedBytes || this.eof[name] && !stream.eof) {
+          throw new Error('The authenticated raw output coordinate or EOF is invalid.')
+        }
+        this.eof[name] = stream.eof
+        continue
+      }
       if (this.eof[name]) {
         const previous = output.snapshot()
         const retained = stream.bytes.subarray(Math.max(0, stream.bytes.byteLength - previous.bytes.byteLength))
@@ -361,12 +454,7 @@ export class ManagedCommandOperation {
       }
       this.direct ??= Object.freeze({ ...snapshot.direct })
     } else if (this.direct !== undefined) throw new Error('The remote direct-command outcome disappeared.')
-    if (this.direct !== undefined && this.eof.stdout && this.eof.stderr) {
-      if (this.grace !== undefined) { clearTimeout(this.grace); this.grace = undefined }
-      this.completion.resolve(this.direct)
-    } else if (this.direct !== undefined && this.grace === undefined) {
-      this.grace = setTimeout(() => { this.requestStop(new Error('Collected command pipes exceeded the native drain grace.')) }, this.graceMs)
-    }
+    this.completeDirect()
     if (snapshot.rangeEmpty && snapshot.ioClosed) this.rangeConfirmed = true
     if (snapshot.submitted && !this.submittedObserved) {
       this.submittedObserved = true
@@ -374,8 +462,32 @@ export class ManagedCommandOperation {
     }
   }
 
+  private completeDirect(): void {
+    if (this.direct !== undefined && this.eof.stdout && this.eof.stderr && (this.streams === undefined || this.outputEnded)) {
+      if (this.grace !== undefined) { clearTimeout(this.grace); this.grace = undefined }
+      this.completion.resolve(this.direct)
+    } else if (this.direct !== undefined && this.grace === undefined) {
+      this.drainDeadlineAtMs = performance.now() + this.graceMs
+      this.grace = setTimeout(() => { this.requestStop(new Error('Collected command pipes exceeded the native drain grace.')) }, this.graceMs)
+    }
+  }
+
+  private async waitForOutput(stream: AgentDataStream): Promise<void> {
+    const failure = this.streamFailure
+    if (failure === undefined) throw new Error('Only a raw command owns a stream completion observer.')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<never>((_resolve, reject) => {
+      const remaining = this.drainDeadlineAtMs === undefined ? this.graceMs : Math.max(0, this.drainDeadlineAtMs - performance.now())
+      timer = setTimeout(() => { reject(new Error('Raw command output EOF did not arrive within the native drain grace.')) }, remaining)
+    })
+    try { await Promise.race([stream.outputEnded, failure.promise, expired]) }
+    finally { clearTimeout(timer) }
+  }
+
   private fail(cause: unknown): void {
     this.failed ??= { cause }
+    this.streamFailure?.reject(this.failed.cause)
+    this.streams?.fail(this.failed.cause)
     this.completion.reject(this.failed.cause)
     for (const waiter of this.waiters) waiter.settle(false, this.failed)
   }
@@ -384,7 +496,7 @@ export class ManagedCommandOperation {
     if (!this.localSettled || !this.rangeConfirmed || this.borrowReleaseFailure !== undefined) return
     const channel = this.channel
     try { channel?.release?.() } catch (cause) {
-      this.borrowReleaseFailure = { cause }; this.fail(cause); this.authority.unknown(cause); return
+      this.borrowReleaseFailure = { cause }; this.fail(cause); this.reportUnknown(cause); return
     }
     this.channel = undefined
     if (this.lifetime !== undefined) { clearTimeout(this.lifetime); this.lifetime = undefined }
@@ -394,7 +506,7 @@ export class ManagedCommandOperation {
     if (!this.scopeReleased || this.retired) return
     this.detach()
     this.retired = true
-    this.output.stdout.release(); this.output.stderr.release()
+    this.output?.stdout.release(); this.output?.stderr.release(); this.streams?.release()
     this.authority.retired()
   }
 
@@ -419,6 +531,11 @@ export class ManagedCommandOperation {
   }
 
   private stopRequest(): { readonly reason: unknown } | undefined { return this.requestedStop }
+  private reportUnknown(cause: unknown): void {
+    if (this.unknownReported) return
+    this.unknownReported = true
+    this.authority.unknown(cause)
+  }
   private isRangeConfirmed(): boolean { return this.rangeConfirmed }
 
   private auditFacts(): SemanticFacts {

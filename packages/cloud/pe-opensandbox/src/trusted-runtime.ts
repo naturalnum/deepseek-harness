@@ -10,7 +10,7 @@ import type { CommandChannel, CommandSnapshot } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
 import { createAgentDataClient, makePrepared, PROTOCOL, SLICE_LIMITS } from './agent-data/index.ts'
 import type { AgentDataClient, ClientOptions, OperationSnapshot, PreparedRequest } from './agent-data/types.ts'
-import { createForegroundIssuer, createRegisteredServiceIssuer, type RoleIssuer } from './agent-data/root-role-issuer.ts'
+import { createForegroundIssuer, createProgramIssuer, createRegisteredServiceIssuer, type RoleIssuer } from './agent-data/root-role-issuer.ts'
 import type { NativeRegisteredService } from './native-command-account.ts'
 import type { HttpTransportLimits, PreviewHttpOwner, RegisteredHttpTarget } from './application-http.ts'
 import type { RegisteredApplicationService, ServicePreviewIdentity } from './types.ts'
@@ -54,6 +54,7 @@ interface RuntimeRecord {
   client?: AgentDataClient
   expected?: ClientOptions['expected']
   foreground?: RoleIssuer
+  program?: RoleIssuer
   service?: (registration: NativeRegisteredService) => RoleIssuer
   stopping?: FencedAgentRequests
   physicalStopped: boolean
@@ -194,12 +195,20 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     return this.channel(prepared, record => record.foreground ?? unavailable(), copies)
   }
 
-  /**
-   * Bind one service operation to the exact current registration and original physical allocation.
+  /** Sign only an original Native run_code program in the existing second range.
+   * @param prepared Original allocation.
+   * @param copies Original retained skill borrow.
+   * @returns Program-only channel.
+   */
+  program(prepared: PreparedSandbox, copies?: SkillCommandBorrow): CommandChannel {
+    return this.channel(prepared, record => record.program ?? unavailable(), copies)
+  }
+
+  /** Bind one service operation to its current registration and original physical allocation.
    * @param prepared Original Root preparation result already bound to this registry.
-   * @param registration Original account work row's service capability; a projected identity grants no authority.
-   * @param copies Optional retained files-issued working copies for this service allocation.
-   * @returns A service-only channel whose original control reference remains usable for cleanup after revocation.
+   * @param registration Original account work row’s service capability.
+   * @param copies Optional original retained skill copies.
+   * @returns Service-only channel retaining its original cleanup reference.
    */
   service(prepared: PreparedSandbox, registration: NativeRegisteredService, copies?: SkillCommandBorrow): CommandChannel {
     return this.channel(prepared, (record) => {
@@ -287,6 +296,8 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
         request = issue(makePrepared(prepared.runtimeIdentity, operationId, spec, fixed, selectedPolicy))
         return client.prepare(request)
       }),
+      attach: () => client.attach(selected().ref),
+      whenLocallySettled: () => client.joinStream(selected().ref),
       commit: () => run(() => { copies?.assertCurrent(); return client.commit(selected().ref) }),
       poll: () => run(() => client.poll(selected().ref)),
       stop: () => run(() => client.stop(selected().ref)),
@@ -348,6 +359,10 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       || !sameRoot(expected.roots.project, grant.project) || !sameRoot(expected.roots.environment, grant.environment)) unavailable()
     record.expected = expected
     record.foreground = createForegroundIssuer(options.token, expected.runtimeIdentity, () => {
+      this.assertUnfenced(record)
+      if (record.physicalStopped) unavailable()
+    })
+    record.program = createProgramIssuer(options.token, expected.runtimeIdentity, () => {
       this.assertUnfenced(record)
       if (record.physicalStopped) unavailable()
     })

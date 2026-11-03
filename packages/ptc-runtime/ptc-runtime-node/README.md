@@ -157,6 +157,8 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
+The spawn request retains the resolved per-call sandbox policy, including one approved escalation, for execution-world providers.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 These limits qualify the execution guarantees and retained output.

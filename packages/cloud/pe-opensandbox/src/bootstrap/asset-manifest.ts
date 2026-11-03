@@ -2,18 +2,20 @@
 import { BOOTSTRAP_PINS } from './payload-pins.ts'
 
 /** Installation candidate aggregate; Root adoption and target qualification remain required. */
-export const SOURCE_DIGEST = 'f4f591c8eb43595ccad18ba16f3269bceadbe167167ae040de9268672ad1fb86'
+export const SOURCE_DIGEST = '20bcbcf4fb67868ec6c9120abc3b218770e695563b634b112e808661f9868e6d'
 /** Installation candidate source hashes and exact byte lengths, shared with the candidate publisher. */
 export const SOURCES = {
-  'server.py': ['1d368b899c9a587c4346e110824fd7906c811190294b609b117bdbd19f89e1fd', 13930],
-  'wire.py': ['61ccc388862c0df0b0d3e011f7f1a3e3c7506ac460dab26a18070d71e3c4b885', 9213],
-  'manager.py': ['f77fe50f041e84f6892b0a7314bbc796cb77a2c7f0e32edd8eab80b1cb2e9f64', 10286],
-  'launcher.py': ['039c76f8a83c142281b6d3f69ee183f166ecff693836eeca362c130450e7d6f5', 18093],
-  'guardian.py': ['d154d7ec699fca6da6a4e46327421ee548e5b0098744142dcab2384f9b4c6f70', 5001],
-  'paths.py': ['2515e2e14346dd2eaf0ed98fc7a6c1b9085b32180bd5a06911c63bf9101fff34', 9830],
+  'guardian.py': ['6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e', 6683],
+  'launcher.py': ['b60e9714b0bfd08804900485a4816c9e4a542ea2031c0ab43af1a81b36791a7a', 22898],
+  'manager.py': ['7b21968b03ddc76f67edeabfa4424f1f8f98cdb3d15bbc3453b36563f5b32d1d', 13545],
+  'paths.py': ['718a6818a548a4c766d974d70e9cad4e88cbc184abc722fd4cb85cbc895f903f', 10018],
+  'server.py': ['70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32', 19002],
+  'stream.py': ['850e40e6c07eb5516b770bf3dd830bd7f506903f6ec7f390b640299fa4bbca7e', 10219],
+  'terminal.py': ['e7c3e8e298562a9629f1cefec2f753d34fda1d6285ad14982859c4cd026d8c36', 6830],
+  'wire.py': ['6f09005091c01691501cdb859f7ecc43c73ec4cdfa6f5a6b8383146e6252567e', 11322],
 } as const
 
-/** The complete nine-file runtime payload shipped beside lib; no secret configuration is included. */
+/** The complete eleven-file runtime payload shipped beside lib; no secret configuration is included. */
 export const RUNTIME_ASSET_MANIFEST = Object.freeze([
   ...Object.entries(SOURCES).map(([name, pin]) => Object.freeze({ path: `agent/${name}`, bytes: pin[1], sha256: pin[0] })),
   ...Object.entries(BOOTSTRAP_PINS).map(([name, pin]) => Object.freeze({ path: `bootstrap/${name}`, bytes: pin.bytes, sha256: pin.sha256 })),

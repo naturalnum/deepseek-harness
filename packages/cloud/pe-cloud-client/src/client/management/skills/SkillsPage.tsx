@@ -1,12 +1,10 @@
 /** User management-page presentation on the current account source; no registration, transport or backend adapter. */
-import { useRef, useState, type ReactNode } from 'react'
-import { IconCheckOutlineRegular, IconPlusOutlineRegular, IconSearchOutlineRegular, IconSkillOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useId, useRef, useState, type ReactNode } from 'react'
+import { Button, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, Input, Pill, Switch, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SkillCard, SkillCategory, SkillManagementActions, SkillsPageInjected } from './types.ts'
 import { ManagedSkillEditor } from './ManagedSkillEditor.tsx'
 import { SkillDetailDialog } from './SkillDetailDialog.tsx'
-import { SkillInstallPanel } from './SkillInstallPanel.tsx'
-import { SkillImportPanel } from './SkillImportPanel.tsx'
 import { useSkillAction } from './use-skill-action.ts'
 export type {} from './locales.ts'
 export type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -27,17 +25,39 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
   const { t } = props, view = props.useSkillManagement(value => value)
   const [search, setSearch] = useState(''), [category, setCategory] = useState<SkillCategory | ''>('')
   const [installedOnly, setInstalledOnly] = useState(false), [selectedId, setSelectedId] = useState<string>()
-  const [dialog, setDialog] = useState<'install' | 'import'>(), refresh = useSkillAction('read')
-  const importAction = useSkillAction<'invalid-bundle'>('read'), picker = useRef<HTMLInputElement>(null)
-  const [invalidZip, setInvalidZip] = useState(false)
+  const refresh = useSkillAction('read'), importing = useSkillAction<'invalid-bundle'>('read')
+  const unmanagedImport = useSkillAction()
+  const importInput = useRef<HTMLInputElement>(null), [invalidArchive, setInvalidArchive] = useState(false)
   const query = search.trim().toLocaleLowerCase()
   const visible = view.items.filter(item => (!installedOnly || item.installed) && (!category || item.category === category)
     && (!query || [item.name, item.description, item.id].some(value => value.toLocaleLowerCase().includes(query))))
-  const recommended = view.items.filter(item => item.recommended).slice(0, 3)
   const selected = view.items.find(item => item.id === selectedId)
   const ready = view.phase === 'ready', managed = view.managed
+  const managedBusy = managed?.phase === 'opening' || managed?.phase === 'submitting' || managed?.phase === 'downloading'
+  const importBusy = importing.state === 'pending' || unmanagedImport.state === 'pending' || managedBusy
+  const importConsumed = managed === undefined ? unmanagedImport.state !== 'idle' && unmanagedImport.state !== 'confirmed'
+    : managed.outcome?.kind === 'unknown'
+  const chooseArchive = (file: File | undefined): void => {
+    if (file === undefined || importBusy || importConsumed) return
+    setInvalidArchive(false)
+    const valid = (maximum: number | undefined): boolean => file.size > 0 && (maximum === undefined || file.size <= maximum)
+      && /\.(?:zip|skill)$/iu.test(file.name) && !/[\u0000-\u001f\u007f]/u.test(file.name)
+    if (!valid(managed === undefined ? props.limits?.archiveBytes : undefined)) { setInvalidArchive(true); return }
+    if (managed !== undefined) {
+      void importing.run(async (signal) => {
+        const outcome = await managed.installZip(file, signal)
+        return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind
+      }).then((outcome) => { if (outcome !== undefined && outcome !== 'invalid-bundle') props.report('install', outcome) })
+      return
+    }
+    const submit = props.importPackage
+    if (submit !== undefined) void unmanagedImport.run(signal => submit(file, signal)).then((outcome) => {
+      if (outcome !== undefined) props.report('import', outcome)
+    })
+  }
   const openManaged = (id: string | undefined): void => {
     if (managed === undefined) return
+    setInvalidArchive(false)
     void refresh.run(async (signal) => { await managed.open(id, signal); return 'confirmed' })
   }
   const onRefresh = (): void => {
@@ -49,38 +69,23 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
   }
   return <main className={css.page} data-cloud-skills-management aria-busy={view.phase === 'loading'}>
     <header className={css.header}>
-      <div><h1>{t('title')}</h1><p>{t('description')}</p></div>
+      <h1>{t('title')}</h1>
       <div className={css.actions}>
-        {managed === undefined ? null : <>
-          <input ref={picker} type="file" accept=".zip,application/zip" hidden aria-label={t('chooseArchive')}
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0]
-              event.currentTarget.value = ''
-              if (file === undefined) return
-              if (!/\.zip$/i.test(file.name) || file.size === 0) { setInvalidZip(true); return }
-              setInvalidZip(false)
-              void importAction.run(async (signal) => {
-                const outcome = await managed.installZip(file, signal)
-                return outcome.kind === 'persisted' ? 'confirmed' : outcome.kind
-              }).then((outcome) => { if (outcome !== undefined && outcome !== 'invalid-bundle') props.report('install', outcome) })
-            }}/>
-          <button type="button" className={`${css.button} ${css.primary}`}
-            disabled={managed.canInstall === false || refresh.state === 'pending' || importAction.state === 'pending'
-              || managed.phase === 'submitting' || managed.phase === 'opening' || managed.phase === 'downloading' || managed.outcome?.kind === 'unknown'}
-            onClick={() => { picker.current?.click() }}>{t('installBundle')}</button>
-        </>}
-        {managed === undefined ? <>
-          <button type="button" className={css.button} disabled={!ready || props.installText === undefined || props.limits === undefined}
-            onClick={() => { setDialog('install') }}><IconPlusOutlineRegular size={15}/>{t('install')}</button>
-          <button type="button" className={`${css.button} ${css.primary}`}
-            disabled={!ready || props.importPackage === undefined || props.limits === undefined}
-            onClick={() => { setDialog('import') }}>{t('import')}</button></> : null}
+        <Button size="sm" variant="outline" icon={<IconPlusOutlineRegular size={15}/>}
+          disabled={importBusy || importConsumed || refresh.state === 'pending' || (managed === undefined
+            ? !ready || props.importPackage === undefined || props.limits === undefined : managed.canInstall === false)}
+          onClick={() => { importInput.current?.click() }}>{t('import')}</Button>
+        <input ref={importInput} type="file" hidden accept=".zip,.skill,application/zip" aria-label={t('chooseArchive')}
+          onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; chooseArchive(file) }}/>
       </div>
     </header>
     <section className={css.content} aria-label={t('title')}>
+      {invalidArchive || importing.state === 'unavailable' && managed?.outcome === undefined && managed?.phase !== 'unavailable'
+        ? <p className={css.error} role="alert">{t(managed === undefined ? 'invalidFile' : 'invalidZip')}</p> : null}
+      {importBusy && managed?.selection !== null ? <p className={css.note} role="status">{t('pending')}</p> : null}
+      {managed === undefined && unmanagedImport.state !== 'idle' && unmanagedImport.state !== 'pending' && unmanagedImport.state !== 'confirmed'
+        ? <p className={css.error} role="alert">{t(unmanagedImport.state === 'unavailable' ? 'actionUnavailable' : unmanagedImport.state)}</p> : null}
       {managed?.needsRefresh ? <p className={css.note} role="status">{t('bundleRefreshAfterChange')}</p> : null}
-      {invalidZip || importAction.state === 'unavailable' && managed?.outcome === undefined && managed?.phase !== 'unavailable'
-        ? <p className={css.error} role="alert">{t('invalidZip')}</p> : null}
       {managed?.selection === null && managed.phase === 'unavailable'
         ? <p className={css.error} role="alert">{t('unavailable')}</p> : null}
       {managed?.selection === null && managed.outcome !== undefined ? <p
@@ -88,26 +93,18 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
         role={managed.outcome.kind === 'persisted' ? 'status' : 'alert'}>{t(managed.outcome.kind === 'persisted'
           ? managed.outcome.applied ? 'bundleApplied' : 'bundleSavedPending' : managed.outcome.kind === 'conflict' ? 'sampleConflict'
             : managed.outcome.kind === 'unavailable' ? 'bundleCapacity' : managed.outcome.kind === 'invalid-bundle' ? 'bundleMissingManifest' : 'sampleUnknown')}</p> : null}
-      {managed === undefined || managed.selection === null ? null
-        : <ManagedSkillEditor key={managed.editNumber} editor={managed} report={props.report} t={t}/> }
-      {recommended.length > 0 ? <section aria-label={t('recommended')}>
-        <h2 className={css.sectionLabel}>{t('recommended')}</h2>
-        <div className={css.recommendations}>{recommended.map(item => <button type="button" key={item.id}
-          className={css.recommendation} onClick={() => { setSelectedId(item.id) }}>
-          <span><IconSkillOutlineRegular size={28}/><strong>{item.name}</strong></span><p>{item.description}</p>
-        </button>)}</div>
-      </section> : null}
-      <label className={css.search}><IconSearchOutlineRegular size={17}/><input type="search" aria-label={t('search')}
-        placeholder={t('search')} value={search} onChange={(event) => { setSearch(event.target.value) }}/></label>
+      <Input icon={<IconSearchOutlineRegular size={16}/>} type="search" aria-label={t('search')}
+        placeholder={t('search')} value={search} onChange={(event) => { setSearch(event.target.value) }}/>
       <div className={css.filters}>
-        <div className={css.categories} aria-label={t('categories')}>
-          <button type="button" aria-pressed={category === ''} onClick={() => { setCategory('') }}>{t('all')}</button>
-          {categories.map(value => <button type="button" key={value} aria-pressed={category === value}
-            onClick={() => { setCategory(value) }}>{t(value)}</button>)}</div>
+        <div className={css.categories} role="group" aria-label={t('categories')}>
+          <Pill active={category === ''} aria-pressed={category === ''} onClick={() => { setCategory('') }}>{t('all')}</Pill>
+          {categories.map(value => <Pill key={value} active={category === value} aria-pressed={category === value}
+            onClick={() => { setCategory(value) }}>{t(value)}</Pill>)}</div>
         <label className={css.installed}>{t('installed')}<Switch label={t('installed')} checked={installedOnly}
           onChange={setInstalledOnly}/></label>
-        <button type="button" className={css.linkButton} disabled={managed === undefined && props.refresh === undefined || refresh.state === 'pending' || managed?.phase === 'opening' || managed?.phase === 'submitting' || managed?.phase === 'downloading'}
-          onClick={onRefresh}>{t('refresh')}</button>
+        <Tooltip label={t('refresh')} portal><Button size="sm" aria-label={t('refresh')}
+          disabled={importBusy || managed === undefined && props.refresh === undefined || refresh.state === 'pending'}
+          icon={<IconRefreshOutlineRegular size={16}/>} onClick={onRefresh}/></Tooltip>
       </div>
       {view.phase === 'loading' && view.items.length === 0 ? <div className={css.grid} role="status" aria-label={t('loadLabel')}>
         {[0, 1, 2].map(index => <div key={index} className={css.skeleton}/>)}</div> : null}
@@ -116,15 +113,12 @@ function SkillsPageBody(props: SkillsPageProps): ReactNode {
         ? <p className={css.empty}>{t(query || category || installedOnly ? 'noMatch' : 'empty')}</p>
         : view.items.length === 0 ? null : <div className={css.grid}>{visible.map(skill =>
           <SkillCardView key={skill.id} skill={skill} actions={props} t={t}
-            ready={ready} onOpen={() => { if (managed === undefined) setSelectedId(skill.id); else openManaged(skill.id) }}/>)}</div>}
-      <p className={css.note}>{t('note')}</p>
+            ready={ready && !importBusy && refresh.state !== 'pending'} onOpen={() => { if (importBusy || refresh.state === 'pending') return; if (managed === undefined) setSelectedId(skill.id); else openManaged(skill.id) }}/>)}</div>}
+      {managed === undefined || managed.selection === null ? null
+        : <ManagedSkillEditor key={managed.editNumber} editor={managed} actions={props} t={t}/> }
     </section>
     {managed === undefined && ready && selected !== undefined ? <SkillDetailDialog key={selected.id} skill={selected} actions={props} t={t}
       onClose={() => { setSelectedId(undefined) }}/> : null}
-    {ready && dialog === 'install' && props.limits !== undefined ? <SkillInstallPanel limits={props.limits}
-      installText={props.installText} report={props.report} t={t} onClose={() => { setDialog(undefined) }}/> : null}
-    {ready && dialog === 'import' && props.limits !== undefined ? <SkillImportPanel maxBytes={props.limits.archiveBytes}
-      importPackage={props.importPackage} report={props.report} t={t} onClose={() => { setDialog(undefined) }}/> : null}
   </main>
 }
 function SkillCardView({ skill, actions, t, ready, onOpen }: {
@@ -134,7 +128,7 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
   readonly ready: boolean
   readonly onOpen: () => void
 }): ReactNode {
-  const action = useSkillAction(), canAct = ready && (action.state === 'idle' || action.state === 'confirmed')
+  const descriptionId = useId(), action = useSkillAction(), canAct = ready && (action.state === 'idle' || action.state === 'confirmed')
   const install = (): void => {
     const submit = actions.installCatalog
     if (submit === undefined) return
@@ -143,20 +137,11 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
     })
   }
   return <article className={css.card} data-skill-id={skill.id}>
-    <div className={css.cardHead}><span className={css.glyph} aria-hidden="true"><IconSkillOutlineRegular size={22}/></span>
-      <span className={css.badge}>{t(skill.status)}</span></div>
-    <button type="button" className={css.cardTitle} onClick={onOpen}>{skill.name}</button>
-    <p className={css.cardDescription}>{skill.description}</p>
-    {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel}</small>}
-    {skill.shadowed === true ? <small>{skill.shadowedBy === undefined ? t('bundleShadowed') : t('bundleShadowedBy', skill.shadowedBy)}</small> : null}
-    {skill.installed && skill.shadowed === undefined ? <small>{t('bundleSelectionUnknown')}</small> : null}
-    <div className={css.cardFooter}>
-      <small>{skill.version === undefined ? t(skill.installed ? 'installed' : 'available') : `${t('version')} ${skill.version}`}</small>
-      <div className={css.cardControls}>
-        {!skill.installed ? <button type="button" className={`${css.button} ${css.cardInstall}`} aria-label={`${t('installCatalog')} ${skill.name}`}
-          disabled={!canAct || actions.installCatalog === undefined} onClick={install}><IconPlusOutlineRegular size={20}/></button>
-          : <span role="img" aria-label={t('installed')} className={css.installedMark}><IconCheckOutlineRegular size={20}/></span>}
-        {!skill.installed || skill.enabled === undefined ? null : <Switch checked={skill.enabled}
+    <div className={css.cardHead}>
+      <button type="button" className={css.cardTitle} aria-describedby={descriptionId} disabled={!ready} onClick={onOpen}>{skill.name}</button>
+      <div className={css.cardControl}>
+        {!skill.installed ? <button type="button" className={css.linkButton} aria-label={`${t('installCatalog')} ${skill.name}`} disabled={!canAct || actions.installCatalog === undefined}
+          onClick={install}>{t('installCatalog')}</button> : skill.enabled === undefined ? null : <Switch checked={skill.enabled}
           label={`${skill.name} ${t('toggle')}`} disabled={!canAct || !skill.canToggle || actions.toggle === undefined}
           onChange={(enabled) => {
             const toggle = actions.toggle
@@ -165,6 +150,14 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
             })
           }}/>}</div>
     </div>
+    <p className={css.cardDescription} id={descriptionId}>{skill.description}</p>
+    <div className={css.cardFooter}>
+      <small>{t(skill.status)}</small>
+      {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel}</small>}
+      {skill.version === undefined ? null : <small>{t('version')} {skill.version}</small>}
+    </div>
+    {skill.installed && skill.shadowed === undefined ? <small className={css.cardNotice}>{t('bundleSelectionUnknown')}</small> : null}
+    {skill.shadowed === true ? <small className={css.cardNotice}>{skill.shadowedBy === undefined ? t('bundleShadowed') : t('bundleShadowedBy', skill.shadowedBy)}</small> : null}
     {action.state === 'unknown' || action.state === 'conflict' || action.state === 'unavailable'
       ? <p className={css.error} role="alert">{t(action.state === 'unavailable' ? 'actionUnavailable' : action.state)}</p> : null}
   </article>

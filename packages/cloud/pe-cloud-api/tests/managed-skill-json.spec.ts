@@ -73,8 +73,11 @@ describe('managed skill strict JSON', () => {
 
   it('requires complete detail byte totals and a bounded full ZIP export', () => {
     const files = [{ relativePath: 'SKILL.md', bytes: 1, sha256: digest }, { relativePath: 'nested/resource.bin', bytes: 2, sha256: digest }]
-    expect(codecs.detailsResult.create().parse({ entry, files, version })).toEqual({ entry, files, version })
-    expect(() => codecs.detailsResult.create().parse({ entry, files: files.slice(0, 1), version })).toThrow()
+    expect(codecs.detailsResult.create().parse({ entry, files, version, markdown: 'instructions' })).toEqual({ entry, files, version, markdown: 'instructions' })
+    expect(() => codecs.detailsResult.create().parse({ entry, files: files.slice(0, 1), version, markdown: 'instructions' })).toThrow()
+    expect(() => codecs.detailsResult.create().parse({ entry, files, version })).toThrow()
+    expect(() => codecs.detailsResult.create().parse({ entry, files, version, markdown: 1 })).toThrow()
+    expect(() => codecs.detailsResult.create().parse({ entry, files, version, markdown: 'x'.repeat(limits.maxReplyBytes + 1) })).toThrow()
     const exported = { skillId, contentVersion, fileName: 'example.skill', mediaType: 'application/zip', bytes: 2,
       sha256: digest, dataBase64: 'UEs=' }
     expect(codecs.downloadResult.create().parse(exported)).toEqual(exported)

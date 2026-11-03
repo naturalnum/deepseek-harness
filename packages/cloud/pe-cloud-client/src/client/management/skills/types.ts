@@ -29,6 +29,8 @@ export interface SkillCard {
 /** Actual read result, without assuming the publication metadata contains document bytes. */
 export interface SkillDetail {
   readonly instructions: string
+  /** Complete actual package download; omitted when the source cannot supply all resources. */
+  readonly download?: (signal: AbortSignal) => Promise<void>
 }
 /** Viewing data published by the original account page, never mirrored into component state. */
 export interface SkillManagementView {

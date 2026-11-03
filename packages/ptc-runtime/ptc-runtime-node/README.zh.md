@@ -157,6 +157,8 @@ Host 擦除可擦除类型，在配置的执行世界中解析可执行文件与
 
 ## 已知限制与延后工作
 
+spawn 请求为执行环境 provider 保留已解析的本次沙箱策略，包括已批准的一次提权。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 这些限制界定执行保证与保留的输出。

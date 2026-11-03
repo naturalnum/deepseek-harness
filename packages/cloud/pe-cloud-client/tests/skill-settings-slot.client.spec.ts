@@ -63,7 +63,7 @@ async function fixture(manage: boolean, configured: boolean) {
   const withdrawDeclaration = declare()
   const unused = vi.fn(async (): Promise<never> => { throw new Error('No current or publish belongs to slot registration') })
   new TestRemote(ctx, { cloudSkills: { current: unused, publish: unused, installed: unused, details: unused,
-    install: unused, update: unused, uninstall: unused, download: unused } })
+    install: unused, update: unused, uninstall: unused, download: unused, readFile: unused } })
   let owner: Context | undefined, management: ReturnType<Context['plugin']> | undefined
   const installManagement = async (): Promise<void> => {
     if (owner === undefined) throw new Error('No original activation')

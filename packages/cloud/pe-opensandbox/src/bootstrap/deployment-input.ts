@@ -9,7 +9,7 @@ import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
 
 /** Reviewed Native guard accepting direct Session directories inside the original account quota pools. */
-export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:3aa887c0d80e670ffa75e252a0919e7d917dec54183f8ba3cdb8d4791c3ad72a'
+export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:e6c391c54ebca9cd5e958065620177eb8264dfe1a2630bbf33471659778bf90f'
 
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
 export interface SharedPathStorageLimits {
@@ -60,7 +60,7 @@ function lifecycle(value: unknown): SdkLifecycleConfig {
   const endpoint = text(v.lifecycleBaseUrl, 'lifecycle.lifecycleBaseUrl', 2048), url = new URL(endpoint)
   need(url.protocol === 'http:' && url.pathname === '/v1' && !url.username && !url.password && !url.search && !url.hash
     && url.href === endpoint, 'lifecycle.lifecycleBaseUrl')
-  need(v.imageDigest === 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f'
+  need(v.imageDigest === 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a'
     && v.payloadSha256 === SOURCE_DIGEST && v.platform === 'arm64'
     && Array.isArray(v.entrypoint) && JSON.stringify(v.entrypoint) === '["/usr/bin/tail","-f","/dev/null"]', 'lifecycle.fixedSelection')
   need(typeof v.cpuCores === 'number' && Number.isFinite(v.cpuCores) && v.cpuCores > 0 && v.cpuCores <= 2147483647, 'lifecycle.cpuCores')

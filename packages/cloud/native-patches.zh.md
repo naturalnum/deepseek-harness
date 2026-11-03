@@ -14,7 +14,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | [AgentLoop](../core/agent-loop/src/index.ts)、[Subagent](../subagent/subagent/src/index.ts) | [pe-cloud-runtime integration](pe-cloud-runtime/src/account-native-integration.ts) 提供实际 graph、父 Agent 和项目准入。复用原生 Agent、回合执行和子 Agent 释放。 |
 | [Settings Controller](../api/settings-controller/src/index.ts)、[Credentials](../credentials/credentials/src/index.ts) | [Native first screen](pe-cloud-api/src/native-first-screen.ts)、[save hook](pe-cloud-api/src/native-save-hook.ts) 和模型密钥策略，将授权保持到原写入及其真实失败。 |
 | [Config impact](../boot/app-boot/src/config-impact.ts)、[ConfigEditor](../boot/config-editor/src/index.ts)、[PluginManager](../boot/plugin-manager/src/index.ts) | [Plugin control](pe-cloud-api/src/plugin-control.ts) 提供策略。原组合、预先判定的影响、持久化和 Loader 应用仍属原生；计划私有持有自己的准备状态。 |
-| [Loader entries](../../vendor/loader/src/config/entry.ts)、[Loader](../../vendor/loader/src/index.ts)、[groups](../../vendor/loader/src/config/group.ts) | 原生编辑器与 Cloud 保存共用精确变更检查、条目版本和真实子更新结算。未安装 guard 的默认行为仍属原生。Vendor 修改记录见 [vendor/README](../../vendor/README.md)。 |
+| [Loader entries](../../vendor/loader/src/config/entry.ts)、[Loader](../../vendor/loader/src/index.ts)、[groups](../../vendor/loader/src/config/group.ts) | 原生编辑器与 Cloud 保存共用精确变更检查、条目版本和真实子更新结算。不变的声明条目对类型化表达式源码取快照，不执行求值；普通运行表达式及表达式编辑仍为 unknown。未安装 guard 的默认行为仍属原生。Vendor 修改记录见 [vendor/README](../../vendor/README.md)。 |
 | [Gateway](../api/gateway/src/index.ts)、[Connection](../client/connection/src/rpc-host.ts) | [pe-cloud-access Peers](pe-cloud-access/src/peers.ts) 绑定认证和转发。既有 HTTP bridge 提供可选同步响应检查，供 Cloud 在响应头前复核并保留响应体清理未知的责任；省略时保留原生行为。共用原 mux、iterator/Peer 完成及可选完整帧预算，不复制流引擎。 |
 | [Workspace metadata](../workspace/workspace/src/metadata.ts)、[Attachment store](../attachment/attachment-local/src/file-store.ts) | [pe-cloud-files](pe-cloud-files/README.zh.md) 与 [account attachments](pe-cloud-runtime/src/account-attachments.ts) 提供实际项目、存储授权。原存储及关闭、发布结果仍为权威。 |
 | [Shell](../shell/shell/src/index.ts)、[Fs](../fs/fs/src/index.ts)、[Subprocess](../subprocess/subprocess/src/index.ts) | [pe-opensandbox providers](pe-opensandbox/src/native-providers.ts) 将原 Shell/Fs/Subprocess 消费接口接到同一 Session 环境，并拥有执行槽位。单有路径不能授权访问；释放未知不能归还槽位。 |
@@ -23,7 +23,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | [Client persistence](../client/store/src/index.ts)、[Web entry](../client/web/src/boot.ts) | [pe-cloud-client lifetime](pe-cloud-client/src/client/page-lifetime.ts) 在激活前提供账号、代际绑定的端口，在清理前撤销。复用原生 UI 和模块生命周期。 |
 | [终端设置](../client/ui-settings-shell/src/client/index.ts) | [受管终端](pe-cloud-client/src/client/management/plugins/managed-terminal.tsx) 通过有作用域的原生渲染服务复用 Shell 卡片，三个只读限制值来自当前账户的实际 Shell 执行器；本地原生表单行为保持不变。 |
 | [工作区操作](../client/ui-workspace/src/client/index.ts) | 可选删除禁用原因沿用原生菜单和确认框。[准备好的 Cloud 页面](pe-cloud-client/src/client/prepared-page.ts) 提供该值，因为 Cloud 未开放工作区删除；未提供时保留原生行为。 |
-| [Agent 预设列表](../client/ui-agent-preset/src/client/settings-store.ts) | [Cloud 预设集成](pe-cloud-client/src/client/preset-integration.ts) 提供账号绑定的列表。原生直接读取将抛出的异常或 rejected Promise 转为既有失败结果并显示错误；成功和可选服务响应保留原生行为。 |
+| [Agent 预设选择](../preset/agent-preset-registry/src/index.ts)、[原生客户端列表](../client/ui-agent-preset/src/client/settings-store.ts) | [Cloud 预设准入](pe-cloud-api/src/native-presets.ts) 继承原生注册表。默认无操作的选择回调允许在原生队列内及选择记录提交前执行精确账户检查；原生 UI、四种声明及 Settings 默认值选择均沿用原生。选择在原生 FIFO 内使用原有 Agent 维护操作，排队消息须等待重新组合及选择记录结算后才开始执行。 |
 | [Web bootstrap](../../apps/web/src/cloud-web.ts) | 该模块加载前入口归 pe-cloud-client 集成负责，但保留为明确的应用补丁。迁入动态 client 入口需要另一条静态、动态构建路径；在原生提供等价 pre-boot 集成前保留当前启动方式。 |
 | [Frontend](pe-cloud-access/src/frontend.ts)、[field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud 公开页路由和普通字段可编辑策略位于现有 Cloud 包。原生 frontend 与 ConfigField 实现已恢复。Models 使用原生 onboarding；受保护的 Cloud 密钥使用独立手动集成。 |
 
@@ -41,3 +41,5 @@ Root 配方封印执行完整的原生计划校验。准入时，原计划以常
 6. 准备有版本的产品并保留前版，随后正常停止、join 原应用，确认 owner、allocation 释放后再启动后继。实测登录、模型/Shell 执行、历史、文件预览下载及退出。不能把关闭的可选能力写为通过，也不能把隔离状态改成 ready。
 
 删除原生补丁的条件是等价行为，不是减少文件数量。可选插件管理、预览、任意 SSH、主机故障接管和大文件验收各自需要运行证据；通过此维护流程不会启用这些能力。
+
+原生 PTC 与终端 spawn 请求将已解析的本次沙箱策略传给远程 provider。本地 argv 包装仍由原生实现负责；Cloud provider 消费原始约束交接，并在同一操作上为已批准策略签名。

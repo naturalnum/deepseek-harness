@@ -805,7 +805,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'details\') details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>',
-        description: 'Read one installed skill\'s native metadata and complete file inventory.',
+        description: 'Read one installed skill\'s root instructions, native metadata and complete file inventory.',
         parameters: [{ name: 'request', description: 'Original installation id.' }, { name: 'signal', description: 'Observer cancellation.' }],
         returns: 'Complete native and file metadata.',
       },
@@ -2308,8 +2308,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'createPermissions( owner: Context, config: Parameters<typeof createNativePermissions>[5], maxFrameBytes: number, assertEnforcement: () => void, assertCanSwitch: Parameters<typeof createNativePermissions>[8], ): NativePermissions[\'value\']',
         description: 'Install native permission controls over the actual enforcing providers.',
-        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'config', description: 'Native two-mode preset table.' }, { name: 'maxFrameBytes', description: 'Existing complete native result limit.' }, { name: 'assertEnforcement', description: 'Recheck the original issued execution and Files policy enforcement.' }, { name: 'assertCanSwitch', description: 'Refuse a policy change while original execution work remains.' }],
+        parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'config', description: 'Original native operation-permission presets.' }, { name: 'maxFrameBytes', description: 'Existing complete native result limit.' }, { name: 'assertEnforcement', description: 'Recheck the original issued execution and Files policy enforcement.' }, { name: 'assertCanSwitch', description: 'Refuse a policy change while original execution work remains.' }],
         returns: 'The original native preset service.',
+      },
+      {
+        signature: 'createPresets( owner: Context, config: Parameters<typeof createNativePresets>[6], guards: NativePresetGuards, maxFrameBytes: number, ): NativePresets[\'value\']',
+        description: 'Install the original native preset registry with account selection admission.',
+        parameters: [{ name: 'owner', description: 'Actual registry Loader entry.' }, { name: 'config', description: 'Native registry defaults and persisted selectedDefault.' }, { name: 'guards', description: 'Runtime\'s approved declarations and original Agent checks.' }, { name: 'maxFrameBytes', description: 'Complete existing native result bound.' }],
+        returns: 'The sole account-native preset registry.',
       },
       {
         signature: 'createUserQuestions(owner: Context, guards: NativeSessionGuards): NativeUserQuestions[\'value\']',
@@ -6892,7 +6898,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenEventInput',
-    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n    readonly controls?: Readonly<{\n        commands: boolean;\n        goals: boolean;\n        permissions: boolean;\n        questions?: boolean;\n        schedule?: boolean;\n    }>;\n}',
+    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly settingsNamespaces: readonly string[];\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n    readonly controls?: Readonly<{\n        commands: boolean;\n        goals: boolean;\n        permissions: boolean;\n        questions?: boolean;\n        approval?: boolean;\n        schedule?: boolean;\n    }>;\n}',
   },
   {
     name: 'FirstScreenEvents',
@@ -7456,7 +7462,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ManagedSkillDetails',
-    declaration: 'export interface ManagedSkillDetails {\n    readonly entry: ManagedSkillEntry;\n    readonly files: readonly ManagedSkillFileMetadata[];\n    readonly version: SkillEditVersion;\n}',
+    declaration: 'export interface ManagedSkillDetails {\n    readonly entry: ManagedSkillEntry;\n    readonly files: readonly ManagedSkillFileMetadata[];\n    readonly markdown: string;\n    readonly version: SkillEditVersion;\n}',
   },
   {
     name: 'ManagedSkillDetailsRequest',
@@ -7824,7 +7830,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativeAccountExecutionAuthority',
-    declaration: 'export interface NativeAccountExecutionAuthority {\n    readonly assertBusinessCurrent: () => void;\n    readonly getAgent: (id: SessionId) => Agent | undefined;\n    readonly projectForAgent: (agent: Agent) => Workspace;\n    readonly projectForSession: (session: Session) => Workspace;\n    readonly files: () => CloudAccountFiles;\n}',
+    declaration: 'export interface NativeAccountExecutionAuthority {\n    readonly assertBusinessCurrent: () => void;\n    readonly getAgent: (id: SessionId) => Agent | undefined;\n    readonly projectForAgent: (agent: Agent) => Workspace;\n    readonly projectForSession: (session: Session) => Workspace;\n    readonly assertRetainedExecutionOwner: (agent: Agent, workspace: Workspace) => void;\n    readonly files: () => CloudAccountFiles;\n}',
   },
   {
     name: 'NativeAgentFactoryGuards',
@@ -7861,6 +7867,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'NativePluginInventory',
     declaration: 'export interface NativePluginInventory {\n    readonly value: PluginInventoryGateway;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'NativePresetGuards',
+    declaration: 'export interface NativePresetGuards {\n    assertCurrent(): void;\n    assertPreset(id: string | undefined, signal?: AbortSignal, selectable?: boolean): Promise<string>;\n    assertSelectCurrent(agent: Agent, id: string): void;\n    isSelectable(id: string): boolean;\n}',
+  },
+  {
+    name: 'NativePresets',
+    declaration: 'export interface NativePresets {\n    readonly value: AgentPresets;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'NativeSchedule',
@@ -9928,7 +9942,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessSpawnSpec',
-    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    env?: NodeJS.ProcessEnv | undefined;\n}',
+    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    sandboxPolicy?: SandboxExecutionPolicy | undefined;\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    env?: NodeJS.ProcessEnv | undefined;\n}',
   },
   {
     name: 'SubprocessStdinMode',
@@ -9960,7 +9974,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessTerminalSpawnSpec',
-    declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    terminalType: string;\n    shellActivity?: boolean | undefined;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
+    declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    sandboxPolicy?: SandboxExecutionPolicy | undefined;\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    terminalType: string;\n    shellActivity?: boolean | undefined;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
   },
   {
     name: 'SurfaceEvent',

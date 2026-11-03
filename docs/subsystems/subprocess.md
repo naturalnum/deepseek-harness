@@ -102,6 +102,10 @@ The seam applies no defaults: every disposition, limit, and directory is explici
 interface SubprocessSpawnSpec {
   /** Executable and arguments; `argv[0]` is the program. Never shell-interpreted here. */
   argv: readonly string[]
+  /** Native consumer’s resolved per-call policy, including approved escalation.
+   * Remote providers enforce it at signed prepare; local consumers already wrap argv.
+   */
+  sandboxPolicy?: SandboxExecutionPolicy | undefined
   /** Working directory for the child. */
   cwd: string
   /** Per-stream stdio dispositions. */
@@ -244,7 +248,7 @@ interface SubprocessOutcome {
 
 `spawnTerminal(spec)` is the non-pipe process primitive. The provider allocates the controlling terminal and owns UTF-8 text transport, foreground-process-group inspection and signalling, and one awaited TERM-to-KILL operation that reaches quiescence for every session member the provider can still observe; providers document substrate-specific observability limits. The PTY backend remains responsible for prompt detection, readiness inference, scrollback, sandbox policy, and persistent-session ownership; ordinary `spawn()` cannot reconstruct controlling-terminal semantics.
 
-The terminal spec fully specifies argv, cwd, environment overrides, terminal type, dimensions, cleanup grace, and optional allocation cancellation and shell activity observation. Its handle exposes `pid`, ordered output, `done`, `write`, `resize`, `inspectForeground`, `inspectActivity`, `signalForeground`, and awaited `terminate`; [`SubprocessTerminalSpawnSpec` and `SubprocessTerminalHandle`](../../packages/subprocess/subprocess/src/types.ts) define these fields and operations. `resize(cols, rows)` updates the live PTY dimensions and rejects after process exit.
+The terminal spec fully specifies argv, resolved per-call sandbox policy, cwd, environment overrides, terminal type, dimensions, cleanup grace, and optional allocation cancellation and shell activity observation. Its handle exposes `pid`, ordered output, `done`, `write`, `resize`, `inspectForeground`, `inspectActivity`, `signalForeground`, and awaited `terminate`; [`SubprocessTerminalSpawnSpec` and `SubprocessTerminalHandle`](../../packages/subprocess/subprocess/src/types.ts) define these fields and operations. `resize(cols, rows)` updates the live PTY dimensions and rejects after process exit.
 
 `inspectActivity()` returns `SubprocessTerminalActivity`: `state` is `idle`, `busy` or `unknown`, and `revision` changes with provider-observed activity or input. A terminal request opts into supported shell lifecycle observation with `shellActivity`; provider-specific support and conservative unknown cases are documented by [subprocess-local](../../packages/subprocess/subprocess-local/README.md#running-terminal-sessions).
 

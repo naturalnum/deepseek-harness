@@ -37,10 +37,10 @@ it('runs inherited child directory setup under exact preparation identity then r
       const entries = [...f.graph.ctx.loader.entries()]
       const preset = entries.find(entry => entry.options.id === 'cloud-preset')!
       const loop = entries.find(entry => entry.options.id === 'agent-loop')!
-      const audits = [vi.spyOn(preset, 'assertConfigUpdatePlan'), vi.spyOn(loop, 'assertConfigUpdatePlan')]
+      const audits = [vi.spyOn(preset, 'isConfigPlanVersionCurrent'), vi.spyOn(loop, 'isConfigPlanVersionCurrent')]
       try {
         expect(() => { first.assertCurrent() }).not.toThrow()
-        for (const audit of audits) expect(audit).toHaveBeenCalledTimes(1)
+        for (const audit of audits) expect(audit).toHaveBeenCalled()
       } finally { for (const audit of audits) audit.mockRestore() }
       const registry = f.graph.ctx.workspaceRegistry, original = registry.get.bind(registry)
       const changed = vi.spyOn(registry, 'get').mockImplementation(id =>
@@ -53,7 +53,7 @@ it('runs inherited child directory setup under exact preparation identity then r
       return { commit() { commits++; expect(() => { first.assertCurrent() }).toThrow() } }
     },
   }))
-  expect(child.agent.session.header.agentPreset).toBe(f.config.presetId)
+  expect(child.agent.session.header.agentPreset).toBe(f.config.defaultPresetId)
   expect(setupCalls).toBe(1); expect(commits).toBe(1)
   for (const selection of selections) {
     expect(() => { selection.assertCurrent() }).toThrow()

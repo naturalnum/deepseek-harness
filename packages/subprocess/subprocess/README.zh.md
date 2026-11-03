@@ -141,6 +141,8 @@ spawn 会立即返回活动句柄，而不公开目标身份。`done` 独立报�
 
 ## 已知限制与延期工作
 
+原生 PTC 与终端消费者在 spawn 请求中携带已解析的 `sandboxPolicy`，使远程 provider 能为同一次已批准策略签名。本地消费者保留原 argv 约束；此可选字段不改变本地默认行为。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

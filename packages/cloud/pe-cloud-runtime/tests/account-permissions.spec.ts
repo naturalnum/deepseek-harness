@@ -49,7 +49,7 @@ it('uses the same Session durable mode at each mutation rather than capturing it
   setSandboxMode(f.first, 'read-only')
   expect(() =>{  f.guard() }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
   expect(() =>{  f.guard({ mode: 'workspace-write', sessionId: f.first.id, workspaceRoot: '/projects/first' }) })
-    .toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
+    .not.toThrow()
   setSandboxMode(f.first, 'workspace-write')
   expect(() =>{  f.guard() }).not.toThrow()
 })
@@ -62,9 +62,9 @@ it('keeps another Session override independent of the original guard', async () 
   expect(() =>{  other() }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
 })
 
-it.each(['read-only', 'danger-full-access'] as const)('rejects the unsupported mutation mode %s through direct invocation', async (mode) => {
+it('rejects a read-only per-call mutation even when the standing Session is writable', async () => {
   const f = await fixture()
-  expect(() =>{  f.guard({ mode, sessionId: f.first.id, workspaceRoot: '/projects/first' }) })
+  expect(() =>{  f.guard({ mode: 'read-only', sessionId: f.first.id, workspaceRoot: '/projects/first' }) })
     .toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
 })
 
@@ -80,12 +80,21 @@ it('preserves the original account selection failure without permitting the muta
   const f = await fixture(), reason = new Error('original generation ended')
   f.current.mockImplementation(() => { throw reason })
   expect(() =>{  f.guard() }).toThrow(reason)
+  expect(() => { f.guard({ mode: 'danger-full-access', sessionId: f.first.id, workspaceRoot: '/projects/first' }) }).toThrow(reason)
+})
+
+it.each(['unsupported', 'toString'])('rejects a malformed runtime mutation override mode %s', async (mode) => {
+  const f = await fixture(), policy = { mode: 'workspace-write' as const, sessionId: f.first.id, workspaceRoot: '/projects/first' }
+  Object.defineProperty(policy, 'mode', { value: mode })
+  expect(() => { f.guard(policy) }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
 })
 
 it('rejects a policy provider removed after the original selection', async () => {
   const f = await fixture()
   await f.policyFiber.dispose()
   expect(() =>{  f.guard() }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
+  expect(() => { f.guard({ mode: 'danger-full-access', sessionId: f.first.id, workspaceRoot: '/projects/first' }) })
+    .toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
 })
 
 
@@ -128,10 +137,13 @@ it('checks live runtime owners through every ancestor before a child can become 
   expect(() => { assertAccountPermissionAncestry(ctx, grandchild.session, 'danger-full-access') }).not.toThrow()
 })
 
-it('permits account-scoped full access writes but rejects widening an ordinary Session override', async () => {
+it('permits a trusted Native one-call full access override without broadening the Session', async () => {
   const f = await fixture()
   const full = { mode: 'danger-full-access' as const, sessionId: f.first.id, workspaceRoot: '/projects/first' }
-  expect(() => { f.guard(full) }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
+  expect(() => { f.guard(full) }).not.toThrow()
+  setSandboxMode(f.first, 'read-only')
+  expect(() => { f.guard(full) }).not.toThrow()
+  expect(() => { f.guard() }).toThrow(expect.objectContaining({ code: 'FS_SANDBOX_DENIED' }))
   setSandboxMode(f.first, 'danger-full-access')
   expect(() => { f.guard() }).not.toThrow()
   expect(() => { f.guard(full) }).not.toThrow()

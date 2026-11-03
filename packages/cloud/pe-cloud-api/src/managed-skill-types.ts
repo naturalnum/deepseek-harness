@@ -86,6 +86,8 @@ export interface ManagedSkillFileMetadata {
 export interface ManagedSkillDetails {
   readonly entry: ManagedSkillEntry
   readonly files: readonly ManagedSkillFileMetadata[]
+  /** Complete root instructions read under the same admitted immutable-version borrow. */
+  readonly markdown: string
   readonly version: SkillEditVersion
 }
 

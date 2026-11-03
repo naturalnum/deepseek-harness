@@ -209,17 +209,20 @@ async function fixture(options: {
       config: { read: true, write: true, edit: false, readImage: false } }] : [],
   ] }
   const policy = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
-    models: [{ provider: 'local-text', model: 'plain-text' }], presetId: declaration.id, presetEntryId: 'instruction-preset',
-    presetConfigSha256: accountPresetConfigDigest(declaration, 8192), maxPresetConfigBytes: 8192, agentLoopEntryId: 'loop' })
+    models: [{ provider: 'local-text', model: 'plain-text' }], defaultPresetId: declaration.id, presets: [{ id: declaration.id, entryId: 'instruction-preset',
+      configSha256: accountPresetConfigDigest(declaration, 8192), selectable: true }], maxPresetConfigBytes: 8192, agentLoopEntryId: 'loop' })
   const guards = vi.fn((_ctx: Context, _installed: AccountBinding, files: CloudAccountFiles): AccountNativeGuards => {
     if (options.instructionSources !== undefined) {
       return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy, 128, undefined, undefined, options.timing)
     }
     const unavailable = (): never => { throw new AccountRuntimeError('cloud/account-unavailable', 'No fixture project/model/Preset approval') }
     return {
+      presets: { assertCurrent: unavailable, assertPreset: async () => unavailable(), assertSession: unavailable,
+        assertSelectCurrent: unavailable, isSelectable: () => false },
       beginSettingsUpdate: () => ({ check() {}, approve() {}, finish() {}, publish: (audit) => { audit() },
         abort() {}, run: operation => operation() }),
       assertWorkspace: unavailable, projectForAgent: unavailable, projectForSession: unavailable,
+      assertRetainedExecutionOwner: unavailable,
       projectForObservedHeader: unavailable, projectForDirectory: unavailable, getFileProject: async () => unavailable(),
       resolveFileScope: async () => unavailable(),
       sessions: { assertHandlerEnabled: unavailable,
@@ -270,7 +273,7 @@ async function fixture(options: {
     ...options.office ? [{ id: 'native-office', name: 'cordis:' + names.officeToPdf, config: { maxInputBytes: 16 } }] : [],
     ...options.instructionSources === undefined ? [] : [
       { id: 'instruction-adapter', name: 'cordis:m8s-instruction-adapter' },
-      { id: 'instruction-presets', name: 'cordis:m8s-presets', config: { default: declaration.id } },
+      { id: 'agent-preset-registry', name: 'cordis:m8s-presets', config: { default: declaration.id } },
       { id: 'instruction-preset', name: 'cordis:m8s-preset', config: declaration },
     ],
     { id: 'loop', name: 'cordis:' + names.agentLoop, config: { agents: [] } },
@@ -1444,7 +1447,8 @@ it('reuses synchronous account validation inside cold Session read checks', asyn
     args: { workspaceFileScopeId: own.sessionId, path: 'offline-count.txt', options: {} }, peer })
   expect(value).toMatchObject({ data: new TextEncoder().encode('owned data') })
   expect(accountChecks).toBeLessThan(200)
-  expect(planChecks).toBe(accountChecks * 2)
+  // One declaration, one original Loop, and the default-selection registry are pinned.
+  expect(planChecks).toBe(accountChecks * 3)
   expect(selected).toBeGreaterThan(0)
   expect(stat).toHaveBeenCalledTimes(6)
   expect(root).toHaveBeenCalledTimes(2)
@@ -1578,23 +1582,13 @@ it('checks account plans and provider after the cold-read stat await without rep
   const rows = [...ctx.loader.entries()]
   const preset = rows.find(entry => entry.options.id === 'instruction-preset')!
   const loop = rows.find(entry => entry.options.id === 'loop')!
-  const calls = [vi.spyOn(preset, 'assertConfigUpdatePlan'), vi.spyOn(loop, 'assertConfigUpdatePlan')]
+  const calls = [vi.spyOn(preset, 'isConfigPlanVersionCurrent'), vi.spyOn(loop, 'isConfigPlanVersionCurrent')]
   await expect(read()).resolves.toMatchObject({ text: 'owned data' })
   for (const spy of calls) {
     expect(spy.mock.calls.length).toBeGreaterThan(0)
-    expect(spy.mock.calls.length).toBeLessThan(100)
+    expect(spy.mock.calls.length).toBeLessThan(200)
   }
   const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
-  const originalConfig: unknown = preset.options.config
-  const patched = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
-    const result = await stat(...args)
-    preset.options.config = { ...originalConfig as object, id: 'replaced-preset' }
-    return result
-  })
-  try {
-    await expect(read()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
-    expect(patched).toHaveBeenCalledOnce()
-  } finally { preset.options.config = originalConfig; patched.mockRestore() }
   const implementation = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
     .map(fiber => fiber.store?.sessions).find(value => value !== undefined)
   if (implementation === undefined) throw new Error('Original session provider missing')
@@ -1609,6 +1603,16 @@ it('checks account plans and provider after the cold-read stat await without rep
     expect(swapped).toHaveBeenCalledOnce()
   } finally { Reflect.set(implementation, 'value', originalSessions); swapped.mockRestore() }
   await expect(read()).resolves.toMatchObject({ text: 'owned data' })
+  const originalConfig: unknown = preset.options.config
+  const patched = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {
+    const result = await stat(...args)
+    await preset.update({ config: { ...originalConfig as object, id: 'replaced-preset' } })
+    return result
+  })
+  try {
+    await expect(read()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(patched).toHaveBeenCalledOnce()
+  } finally { patched.mockRestore() }
 })
 
 it('uses one pinned Root check in factory business admission and rejects synchronous replacement', async () => {

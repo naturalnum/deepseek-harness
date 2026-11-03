@@ -5,32 +5,36 @@ import os
 import select
 import selectors
 import signal
+import socket
 import struct
 import subprocess
 import time
 
 from paths import ENV, ENV_ROOT, project_path, open_skill_world, skill_world_argv
-from wire import LIMITS, skill_parent, skill_world
+from wire import LIMITS, skill_parent, skill_world, environment, stream_spec
+from stream import PipeChannels
 
 BWRAP_HASH = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 
 
-def world_argv(project, mode='workspace-write'):
+def world_argv(project, mode='workspace-write', terminal=False):
     project_path(project)  # Root startup only, never an operation-selected mount.
     if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
     writable_bind = '--ro-bind' if mode == 'read-only' else '--bind'
+    private_bind = '--bind' if mode == 'danger-full-access' else '--ro-bind'
     return ['/trusted/bwrap', '--unshare-user', '--uid', '0', '--gid', '0',
         '--disable-userns', '--assert-userns-disabled', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
         '--die-with-parent', '--new-session', '--cap-drop', 'ALL', '--clearenv',
         '--setenv', 'PATH', ENV['PATH'], '--setenv', 'HOME', ENV['HOME'],
         '--setenv', 'TMPDIR', ENV['TMPDIR'], '--setenv', 'LANG', ENV['LANG'],
         '--setenv', 'OPENBLAS_NUM_THREADS', ENV['OPENBLAS_NUM_THREADS'],
-        '--ro-bind', '/', '/', '--proc', '/proc', '--ro-bind', '/dev', '/dev',
+        '--ro-bind', '/', '/', '--proc', '/proc',
+        *(['--dev', '/dev', '--remount-ro', '/dev'] if terminal else ['--ro-bind', '/dev', '/dev']),
         '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',
         writable_bind, project, project, '--ro-bind', ENV_ROOT, ENV_ROOT,
-        writable_bind, ENV_ROOT + '/home', ENV_ROOT + '/home',
-        writable_bind, ENV_ROOT + '/venv', ENV_ROOT + '/venv',
+        private_bind, ENV_ROOT + '/home', ENV_ROOT + '/home',
+        private_bind, ENV_ROOT + '/venv', ENV_ROOT + '/venv',
         writable_bind, ENV_ROOT + '/tmp', ENV_ROOT + '/tmp',
         writable_bind, ENV['TMPDIR'], '/tmp', '--ro-bind', project + '/.pe', project + '/.pe', '--chdir', project]
 RECORD = struct.Struct('!4sB3xii')
@@ -61,32 +65,47 @@ class Owner:
         self.skill_parent = None if skill_policy is None else skill_parent(skill_policy)
         self.slots, self.closed = {}, False
 
-    def register(self, identity, argv, cwd, stdin_mode, batch=b'', *, role, working_copies=None, file_policy=None):
+    def register(self, identity, argv, cwd, stdin_mode, batch=b'', *, role, working_copies=None, file_policy=None,
+                 pipes=None, env=None):
         assert type(identity) is str and 1 <= len(identity) <= 64
         assert not self.closed and identity not in self.slots and len(self.slots) < 4
         assert type(argv) is list and 1 <= len(argv) <= 16 and os.path.isabs(argv[0])
         assert all(type(x) is str and '\0' not in x for x in argv)
         assert sum(len(x.encode()) + 1 for x in argv) <= 4096 and type(batch) is bytes and len(batch) <= 4096
-        assert type(stdin_mode) is str and stdin_mode in ['ignore', 'batch']
-        assert stdin_mode != 'ignore' or batch == b''
-        assert role in ['foreground', 'service']
+        assert type(stdin_mode) is str and stdin_mode in (['ignore', 'batch', 'pipe'] if pipes is not None else ['ignore', 'batch'])
+        assert stdin_mode == 'batch' or batch == b''
+        assert role in ['foreground', 'service', 'program'] and (role != 'program' or pipes is not None)
+        assert pipes is None or role != 'service'
+        assert (pipes is None) == (env is None)
+        fixed_pipes = None if pipes is None else stream_spec(pipes)
+        fixed_env = None if env is None else environment(env)
         assert (self.skill_parent is None) == (working_copies is None)
         fixed = None if working_copies is None else skill_world(working_copies)
         assert fixed is None or {k: fixed[k] for k in ['metadata', 'skills', 'maxCopies']} == self.skill_parent
         assert file_policy is None or type(file_policy) is dict and set(file_policy) == {'mode'} and file_policy['mode'] in ['read-only', 'workspace-write', 'danger-full-access']
-        op = Operation(self, identity, argv, cwd, stdin_mode, batch, role, fixed, file_policy)
+        op = Operation(self, identity, argv, cwd, stdin_mode, batch, role, fixed, file_policy, fixed_pipes, fixed_env)
         self.slots[identity] = op  # Slot/intent retained before any FD or process; never reused.
         return op
 
 
 class Operation:
-    def __init__(self, owner, identity, argv, cwd, stdin_mode, batch, role, working_copies=None, file_policy=None):
+    def __init__(self, owner, identity, argv, cwd, stdin_mode, batch, role, working_copies=None, file_policy=None,
+                 pipes=None, env=None):
         self.owner, self.identity, self.batch = owner, identity, batch
         self.role = role
         self.working_copies = working_copies
         self.file_policy = None if file_policy is None else dict(file_policy)
-        self.spec = json.dumps({'argv': argv, 'env': ENV, 'roots': owner.roots,
+        child_env = dict(ENV)
+        for key, value in (env or {}).items():
+            if value is None:
+                child_env.pop(key, None)
+            else:
+                child_env[key] = value
+        self.stream = None if pipes is None else PipeChannels({'stdin': {'mode': stdin_mode}, 'stream': pipes})
+        self.stdin_mode, self.input_fds, self.input_closed = stdin_mode, {}, set()
+        self.spec = json.dumps({'argv': argv, 'env': child_env, 'roots': owner.roots,
                                 'projectRoot': owner.project, 'cwd': cwd, 'stdinMode': stdin_mode,
+                                **({} if pipes is None else {'executionKind': 'pipes', 'stream': pipes}),
                                 **({} if working_copies is None else {'skillWorld': working_copies}),
                                 **({} if self.file_policy is None else {'filePolicy': self.file_policy})}, separators=(',', ':')).encode()
         assert len(self.spec) <= 4096
@@ -98,6 +117,8 @@ class Operation:
         self.cause = self.fault = self.failure = self.cleanup_failure = self.direct = self.spawned = None
         self.records, self.metadata = [], []
         self.buffers = {k: bytearray() for k in ['stdout', 'stderr', 'diagnostic', 'status', 'metadata']}
+        if self.stream is not None and pipes['control'] == 'pipe':
+            self.buffers['control'] = bytearray()
         self.counts = dict.fromkeys(self.buffers, 0)
         self.deadline, self.phase = None, 'registered'
 
@@ -114,6 +135,37 @@ class Operation:
         self.fds.update(pair)
         return pair
 
+    def control_pair(self):
+        parent, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM | socket.SOCK_CLOEXEC)
+        self.fds.update([parent.fileno(), child.fileno()])
+        return parent.detach(), child.detach()
+
+    def flush_inputs(self):
+        if self.stream is None or not self.committed and not self.stream.stopped:
+            return
+        for channel, fd in list(self.input_fds.items()):
+            pending = self.stream.incoming[channel]
+            if pending:
+                try:
+                    count = os.write(fd, bytes(pending[:4096]))
+                except BlockingIOError:
+                    continue
+                if count <= 0:
+                    raise RuntimeError('stream input write did not progress; never replay')
+                self.stream.consumed(channel, count)
+            if not pending and (channel in self.stream.input_eof or self.stream.stopped):
+                if channel == 1:
+                    self.close(fd)
+                else:
+                    stream_socket = socket.socket(fileno=fd)
+                    try:
+                        stream_socket.shutdown(socket.SHUT_WR)
+                    finally:
+                        stream_socket.detach()  # Original Operation still owns the read half and single close.
+                self.input_closed.add(channel)
+                self.stream.closed_inputs.add(channel)
+                del self.input_fds[channel]
+
     def write(self, fd, data):
         os.set_blocking(fd, False)
         assert len(data) <= os.fpathconf(fd, 'PC_PIPE_BUF')
@@ -121,16 +173,35 @@ class Operation:
             raise RuntimeError('short private write; never replay')
 
     def pump(self, timeout=0.01):
+        self.flush_inputs()
         for key, _ in self.selector.select(timeout):
             fd, name = key.fd, key.data
-            data = os.read(fd, 4096)
+            allowance = self.stream.read_allowance(name) if self.stream is not None and name in ['stdout', 'stderr', 'control'] else 4096
+            if allowance == 0:
+                continue
+            try:
+                data = os.read(fd, allowance)
+            except BlockingIOError:
+                continue
             if not data:
                 self.selector.unregister(fd)
                 self.close(fd)
                 self.eof.add(name)
+                if self.stream is not None and name in ['stdout', 'stderr', 'control']:
+                    self.stream.ended(name)
+                    if name == 'control':
+                        self.input_fds.pop(4, None)
+                        self.input_closed.add(4)
+                        self.stream.closed_inputs.add(4)
+                        assert not self.stream.incoming[4], 'control closed before accepted input was delivered'
                 assert name not in ['status', 'metadata'] or not self.buffers[name]
                 continue
             self.counts[name] += len(data)
+            if self.stream is not None and name in ['stdout', 'stderr', 'control']:
+                self.stream.produced(name, data)
+                if name in ['stdout', 'stderr'] and self.counts[name] > 65536:
+                    self.stop('output-budget')
+                continue
             cap = {'status': 80, 'metadata': 2048}.get(name, 4096)
             if name in ['stdout', 'stderr', 'diagnostic']:
                 if name == 'diagnostic':
@@ -178,22 +249,30 @@ class Operation:
         assert not self.attempted and not self.cause and not self.owner.closed
         active = [op for op in self.owner.slots.values() if op is not self and op.attempted and not op.released]
         assert len(active) < 2 and all(op.role != self.role for op in active)
+        assert not any({op.role, self.role} == {'program', 'service'} for op in active)
         self.attempted, self.phase = True, 'bwrap-launch'
         self.prepare_deadline = time.monotonic() + LIMITS['prepareMs'] / 1000
         self.selector = selectors.DefaultSelector()
         opened = None if self.working_copies is None else open_skill_world(self.owner.project, self.owner.roots[self.owner.project], self.working_copies, self.fds)
         source_fds = [] if opened is None else [opened['metadataFd']] + [copy['fd'] for copy in opened['copies']]
         anchors = set(self.fds) - set(source_fds)
-        world = self.owner.base if self.file_policy is None else world_argv(self.owner.project, self.file_policy['mode'])
+        terminal = self.stream is not None and 'terminal' in self.stream.spec
+        world = self.owner.base if self.file_policy is None and not terminal else world_argv(
+            self.owner.project, 'workspace-write' if self.file_policy is None else self.file_policy['mode'], terminal)
         mode = 'workspace-write' if self.file_policy is None else self.file_policy['mode']
         base = world if opened is None else skill_world_argv(world, self.owner.project, opened, mode)
         cfg_r, cfg_w = self.pipe(); status_r, status_w = self.pipe(); gate_r, self.gate = self.pipe()
         in_r, in_w = self.pipe(); out_r, out_w = self.pipe(); err_r, err_w = self.pipe()
         meta_r, meta_w = self.pipe(); block_r, block_w = self.pipe(); diag_r, diag_w = self.pipe()
         child = [cfg_r, status_w, gate_r, in_r, out_w, err_w, meta_w, block_r]
+        control_parent = control_child = None
+        if self.stream is not None and 4 in self.stream.inputs:
+            control_parent, control_child = self.control_pair()
+            child.append(control_child)
+        guardian_fds = child[:6] + ([] if control_child is None else [control_child])
         command = base + ['--as-pid-1', '--json-status-fd', str(meta_w), '--block-fd', str(block_r), '--',
                           '/usr/local/bin/python3', '-I', '-S', '-B', '/trusted/bwrap-revision/guardian.py',
-                          *(str(fd) for fd in child[:6])]
+                          *(str(fd) for fd in guardian_fds)]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=diag_w,
                                         user=2000, group=2000, extra_groups=[], env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': ENV['LANG']},
                                         close_fds=True, pass_fds=tuple(child + source_fds))
@@ -202,8 +281,16 @@ class Operation:
         for fd, name in [(out_r, 'stdout'), (err_r, 'stderr'), (status_r, 'status'), (meta_r, 'metadata'), (diag_r, 'diagnostic')]:
             os.set_blocking(fd, False)
             self.selector.register(fd, selectors.EVENT_READ, name)
+        if control_parent is not None:
+            os.set_blocking(control_parent, False)
+            self.selector.register(control_parent, selectors.EVENT_READ, 'control')
+            self.input_fds[4] = control_parent
         self.write(cfg_w, self.spec); self.close(cfg_w)
-        self.write(in_w, self.batch); self.close(in_w)
+        if self.stdin_mode == 'pipe':
+            os.set_blocking(in_w, False)
+            self.input_fds[1] = in_w
+        else:
+            self.write(in_w, self.batch); self.close(in_w)
         self.block_write = block_w
         self.phase = 'trusted-child-identity'
 
@@ -262,6 +349,8 @@ class Operation:
         if self.empty_confirmed:
             return  # Do not touch a released/reused identity FD or invent a late cause.
         self.cause = self.cause or reason
+        if self.stream is not None:
+            self.stream.abort_inputs()
         if self.gate is not None:
             fd, self.gate = self.gate, None
             self.close(fd)
@@ -276,6 +365,7 @@ class Operation:
                 else:
                     self.controlled_stop = (pidfd == self.pidfd and pidfd in self.fds
                                             and self.cause in ['owner-stop', 'cancel', 'run-deadline', 'output-budget'])
+        self.flush_inputs()
 
     def finish(self):
         if not self.empty():

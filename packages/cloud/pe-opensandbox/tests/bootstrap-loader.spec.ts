@@ -240,6 +240,7 @@ it('refuses the original files current callback inside shared-path admission bef
       const port = f.ctx.peSandboxCoordinator.bindAccount(setup, binding, () => { lifetime.signal.throwIfAborted() }, {
         assertBusinessCurrent: () => { lifetime.signal.throwIfAborted() }, getAgent: id => setup.agents.get(id),
         projectForAgent: () => workspace, projectForSession: () => workspace, files: () => files,
+        assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
       })
       installIssuedExecutionPort(setup, port)
       setup.loader.builtins['shared-account'] = account

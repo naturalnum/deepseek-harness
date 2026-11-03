@@ -21,6 +21,9 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../jobs/jobs"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -49,6 +52,9 @@
     },
     {
       "path": "../../shell/shell-env"
+    },
+    {
+      "path": "../../sandbox/sandbox"
     }
   ]
 }

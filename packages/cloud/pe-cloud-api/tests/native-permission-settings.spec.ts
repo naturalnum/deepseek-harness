@@ -25,8 +25,8 @@ async function fixture(id: string) {
   writeFileSync(path, '[]\n')
   writeFileSync(profile.patchPath, JSON.stringify([{ insert: [{ id: 'permission', name: 'cordis:account-permissions', config: {
     defaultPreset: 'workspace-write', presets: {
-      'read-only': { sandbox: 'read-only', approval: 'never' },
-      'workspace-write': { sandbox: 'workspace-write', approval: 'never' },
+      'read-only': { sandbox: 'read-only', approval: 'ask' },
+      'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
       'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' },
     },
   } }] }]) + '\n')
@@ -48,7 +48,7 @@ async function fixture(id: string) {
       ctx.provide('profileContext', profile); ctx.provide('peAccount', binding)
       ctx.provide('shell', { sandboxMode: 'workspace-write', resolve() { throw new Error('No execution in this profile fixture') },
         run() { throw new Error('No execution in this profile fixture') }, start() { throw new Error('No execution in this profile fixture') } })
-      await ctx.plugin(Sessions); await ctx.plugin(Projections); await ctx.plugin(UserApproval, { policy: 'never' })
+      await ctx.plugin(Sessions); await ctx.plugin(Projections); await ctx.plugin(UserApproval, { policy: 'ask' })
       await ctx.plugin(ConfigEditor); await ctx.plugin(Settings)
       Object.assign(ctx.loader.builtins, { 'account-permissions': { inject: PermissionPresets.inject, Config: PermissionPresets.Config,
         apply(scope: Context, config: ConstructorParameters<typeof PermissionPresets>[1]) {

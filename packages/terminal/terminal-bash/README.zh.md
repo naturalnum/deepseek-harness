@@ -161,6 +161,8 @@ Scrollback 和尚未读取的发送输出保留独立拥有的字符串，并增
 
 ## 已知限制与延期工作
 
+终端分配将同一份已解析 Session 策略与原始受限 argv 一起传给 subprocess provider。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

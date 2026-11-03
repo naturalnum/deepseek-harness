@@ -55,6 +55,8 @@ Access 持有 `CloudBootstrap` 及其浏览器安全校验器 `decodeCloudBootst
 
 `CloudProjectCreateRequest` 仅携带可选标题；`CloudProjectsPreparation` 捕获 `CloudProjectsService` 使用的可信分配回调（[声明](../../packages/cloud/pe-cloud-api/src/cloud-projects.ts)、[请求](../../packages/cloud/pe-cloud-api/src/types.ts)）。`NativeUploadPreparation` 提供待处理收据限额和须等待的流式持久化钩子，收据仍由原生上传服务拥有（[声明](../../packages/cloud/pe-cloud-api/src/native-uploads.ts)）。
 
+`ManagedSkillDetails` 在文件清单之外，以 `markdown` 返回在同一不可变版本借用中读取的完整根 `SKILL.md`（[声明](../../packages/cloud/pe-cloud-api/src/managed-skill-types.ts)）。
+
 files 拥有的 `ResidentResult<T>` 将值与其预留释放操作配对（[声明](../../packages/cloud/pe-cloud-files/src/work-queue.ts)）。`StageFileResult` 将原生暂存事实与附件引用、项目内副本相对路径配对（[声明](../../packages/cloud/pe-cloud-files/src/stage-bridge.ts)）；`InstructionReadReaders` 提供受限项目 reader 和可选账户 reader（[声明](../../packages/cloud/pe-cloud-files/src/instruction-read-work.ts)）。`EnvironmentSessionId` 是原生 Workspace 成员关系中的 Session id 类型；`ExecutionMountGrant` 描述原始 binding、Session/项目选择、实测项目/环境身份及额度和只读 `.pe` 策略（[声明](../../packages/cloud/pe-cloud-files/src/environment-bank.ts)）。
 
 ```ts type-equiv
@@ -285,7 +287,7 @@ restore(): Promise<void>
 @Remote('installed') installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>
 
 /**
- * Read one installed skill's native metadata and complete file inventory.
+ * Read one installed skill's root instructions, native metadata and complete file inventory.
  * @param request Original installation id.
  * @param signal Observer cancellation.
  * @returns Complete native and file metadata.
@@ -825,13 +827,23 @@ createPluginInventory(owner: Context, maxFrameBytes: number): NativePluginInvent
 /**
  * Install native permission controls over the actual enforcing providers.
  * @param owner Actual account Loader entry.
- * @param config Native two-mode preset table.
+ * @param config Original native operation-permission presets.
  * @param maxFrameBytes Existing complete native result limit.
  * @param assertEnforcement Recheck the original issued execution and Files policy enforcement.
  * @param assertCanSwitch Refuse a policy change while original execution work remains.
  * @returns The original native preset service.
  */
 createPermissions( owner: Context, config: Parameters<typeof createNativePermissions>[5], maxFrameBytes: number, assertEnforcement: () => void, assertCanSwitch: Parameters<typeof createNativePermissions>[8], ): NativePermissions['value']
+
+/**
+ * Install the original native preset registry with account selection admission.
+ * @param owner Actual registry Loader entry.
+ * @param config Native registry defaults and persisted selectedDefault.
+ * @param guards Runtime's approved declarations and original Agent checks.
+ * @param maxFrameBytes Complete existing native result bound.
+ * @returns The sole account-native preset registry.
+ */
+createPresets( owner: Context, config: Parameters<typeof createNativePresets>[6], guards: NativePresetGuards, maxFrameBytes: number, ): NativePresets['value']
 
 /**
  * Install original question replies and timed-wait claims.
@@ -941,7 +953,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
+Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePresetGuards](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePresets](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePresets](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 

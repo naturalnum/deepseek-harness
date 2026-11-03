@@ -111,7 +111,7 @@ export class CloudSkillService extends TypertRemoteService {
   }
 
   /**
-   * Read one installed skill's native metadata and complete file inventory.
+   * Read one installed skill's root instructions, native metadata and complete file inventory.
    * @param request Original installation id.
    * @param signal Observer cancellation.
    * @returns Complete native and file metadata.

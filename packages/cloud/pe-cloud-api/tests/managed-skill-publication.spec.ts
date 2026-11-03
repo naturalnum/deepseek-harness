@@ -234,6 +234,7 @@ it('installs two complete roots, exposes native selection and replaces the origi
   expect(list.entries.every(row => row.fileCount === 3 && !JSON.stringify(row).includes('/skill-source/'))).toBe(true)
   const details = await f.manager.details(first.entry.skillId, f.check, f.signal)
   expect(details.files.map(file => file.relativePath)).toContain('nested/scripts/run.sh')
+  expect(details.markdown).toBe(body('first'))
   const loaded = await f.ctx.skills.get('first', { scope: f.ctx, signal: f.signal })
   expect(loaded?.content).toContain('body'); expect(loaded?.resourceBase?.kind).toBe('directory')
   const updated = await f.manager.update(first.entry.skillId, details.version, bundle('first', 'new body'), f.check, f.signal)

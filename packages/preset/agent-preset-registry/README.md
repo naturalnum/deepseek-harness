@@ -59,6 +59,10 @@ A preset service provider and its consumers must share one `cordis:group` isolat
 
 Activation auditing checks imports, missing services and globally leaked services. Import failures, activation failures and leaks reject the mount. A row waiting for a Host service stays mounted, and every read and binding re-audits it after the Host Loader tree settles, so startup order does not decide the outcome. Failure prevents new bindings to that definition. Session logs retain the preset ID and blank-session selections; recovery after restart uses the current definition of that ID and rejects a missing definition. `select` leaves a blank Session that records the requested preset and already runs its current revision unchanged, without another selection record or `tools/change`.
 
+The protected `assertSelectionCurrent(agent, agentPreset)` extension runs inside the serialized selection and again after recomposition, before the durable selection record. Its default implementation accepts the selection unchanged. Account deployments may reject stale authority there without replacing the native selection engine.
+
+Selections retain their per-Agent queue. A change runs recomposition and its durable selection record inside the Agent's original `runMaintenance()` activity. Waking prompts, `followup` and `steer` stay in the original Inbox until the activity settles, so a first turn cannot start halfway through a switch. A queued second selection rechecks the blank-session boundary when it begins. Cancellation clears queued input through the Agent; an already-started recomposition is joined rather than abandoned.
+
 `inspectCompositions()` reads all revisions retained by this registry; passing an Agent context selects its exact revision, or returns an empty list when it has no binding here. Each `AgentPresetInspection` contains a preset ID, detached active-module references with their resolution bases, and leaked-service names. Inspectors query the runtime service rather than a module-local mount table; the results contain no Loader trees or fibers. [composition-inventory.ts](src/composition-inventory.ts) defines these records.
 
 | File | Responsibility |

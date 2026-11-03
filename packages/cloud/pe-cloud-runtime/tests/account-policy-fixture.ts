@@ -15,11 +15,12 @@ import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environ
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { SubagentCapacityReservation } from '../src/types.ts'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
-import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
+import AgentPresets, { type PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import * as Persona from '@deepseek-ai/dsh-persona'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
@@ -85,7 +86,15 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   bootstrapCatalog?: ApprovedConfigurationCatalog, settingsManifest?: Parameters<Typert['register']>[0],
   reserveChild?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation,
   presetChildFiber?: 'active' | 'pending', extraStreams: readonly EndpointExposure[] = [],
-  preserveProfile = false, initialLoopLimit?: number) {
+  preserveProfile = false, initialLoopLimit?: number,
+  presetOptions?: {
+    readonly defaultId: string
+    readonly declarations: readonly {
+      readonly entryId: string
+      readonly config: PresetDefinition
+      readonly selectable: boolean
+    }[]
+  }) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -112,6 +121,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   const declaration = { id: 'cloud-chat', plugins: [
     { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
   ] }
+  const declarations = presetOptions?.declarations ?? [{ entryId: 'cloud-preset', config: declaration, selectable: true }]
   const persona = presetChildFiber === undefined ? Persona : {
     ...Persona,
     apply(owner: Context, options: Persona.Config) {
@@ -120,8 +130,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     },
   }
   const config: AccountPolicyConfig = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
-    models: [{ provider: 'local-text', model: 'plain-text' }], presetId: declaration.id, presetEntryId: 'cloud-preset',
-    presetConfigSha256: accountPresetConfigDigest(declaration, 8192), maxPresetConfigBytes: 8192, agentLoopEntryId: 'agent-loop' })
+    models: [{ provider: 'local-text', model: 'plain-text' }], defaultPresetId: presetOptions?.defaultId ?? declaration.id, presets: declarations.map(row => ({
+      id: row.config.id, entryId: row.entryId, configSha256: accountPresetConfigDigest(row.config, 8192), selectable: row.selectable })), maxPresetConfigBytes: 8192, agentLoopEntryId: 'agent-loop' })
   const saves = new ConfigSaveCoordinator({ maxAccounts: 2, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 1,
     maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 16, maxWaitersPerAccount: 2 })
   const shared = new Context()
@@ -156,7 +166,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     }
     finally { rmSync(home, { recursive: true, force: true }) }
   })
-  const maxEntries = bootstrapCatalog?.maxEntries ?? 128
+  // First-screen registration adds actual Native controller/event/projection fibers;
+  // its question graph already charges 129 selected rows and registry visits before a Session exists.
+  const maxEntries = bootstrapCatalog?.maxEntries ?? (presetOptions === undefined ? firstScreen === undefined ? 128 : 256 : 512)
   let profileWritten = false
   const start = async (epoch = '1', selected = config, bootstrapPolicy = true,
     bootstrapInventory: { maxNativeInventoryEntries?: number } = { maxNativeInventoryEntries: maxEntries }) => {
@@ -239,12 +251,13 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       { id: 'query', name: 'cordis:m8z-query' },
       { id: 'files', name: 'cordis:m8z-files' }, { id: 'llm', name: 'cordis:m8z-llm' },
       { id: 'working-directory', name: 'cordis:m8z-working-directory', config: { defaultDirectory: project } },
-      { id: 'presets', name: 'cordis:m8z-presets', config: { default: declaration.id } },
-      { id: 'cloud-preset', name: 'cordis:m8z-preset', config: declaration },
+      { id: 'agent-preset-registry', name: 'cordis:m8z-presets', config: { default: config.defaultPresetId } },
+      ...declarations.map(row => ({ id: row.entryId, name: 'cordis:m8z-preset', config: row.config })),
       { id: 'model', name: 'cordis:m8z-model', config: { provider: 'local-text', model: 'plain-text' } },
       ...reserveChild === undefined ? [] : [
         { id: 'subagents', name: 'cordis:b1-subagents' },
         { id: 'spawn', name: 'cordis:b1-spawn', config: { providerName: 'spawn' } },
+        { id: 'fork', name: 'cordis:b1-fork', config: { providerName: 'fork' } },
       ],
       { id: 'agent-loop', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop,
         config: { agents: [], ...initialLoopLimit === undefined ? {} : { maxParallelToolCalls: initialLoopLimit } } },
@@ -360,9 +373,14 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         }
         Object.assign(owner.loader.builtins, {
           'b1-spawn': Spawn,
-          'b1-subagents': SubagentRuntime, 'm8z-bootstrap-execution': ExecutionAccount, 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
+          'b1-subagents': SubagentRuntime, 'b1-fork': Fork, 'm8z-bootstrap-execution': ExecutionAccount, 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-title': SessionTitle, 'm8z-files': FilesAccount,
-          'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': AgentPresets, 'm8z-preset': AgentPreset,
+          'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': presetOptions === undefined ? AgentPresets : {
+            inject: AgentPresets.inject, Config: AgentPresets.Config,
+            apply(scope: Context, config: ConstructorParameters<typeof AgentPresets>[1]) {
+              requireApi().createPresets(scope, config, requireGuards().presets, firstScreen?.maxFrameBytes ?? 65536)
+            },
+          }, 'm8z-preset': AgentPreset,
           'm8z-persona': persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
           [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller,
           [ACCOUNT_NATIVE_ENTRIES.userQuestions]: { inject: ['peCloudApi', 'agents', 'sessionProjections'], Config: UserQuestions.Config,

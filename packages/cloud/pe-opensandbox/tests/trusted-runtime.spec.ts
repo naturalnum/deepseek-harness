@@ -57,6 +57,8 @@ function fixture(applicationFactory?: ApplicationHttpFactory) {
     replyBuffersReservedBytes: 0, inFlightRequestBodyBytes: 0, receivedReplyBodyBytes: 0,
     remoteUnresolved: [], physicalStopAcknowledged: false, physicalStopRequired: false }
   const client = {
+    attach: async (): Promise<never> => { throw new Error('This collect registry fixture has no pipes capability.') },
+    joinStream: async () => {},
     handshake: vi.fn(async () => handshake), prepare: vi.fn(async (_request: PreparedRequest) => facts), commit: vi.fn(async () => facts),
     poll: vi.fn(async () => facts), cancel: vi.fn(async () => facts), stop: vi.fn(async () => facts),
     seal: vi.fn(async () => handshake), fence: vi.fn(async () => {}), release: vi.fn(async () => responsibility),

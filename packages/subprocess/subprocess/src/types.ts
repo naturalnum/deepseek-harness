@@ -7,6 +7,7 @@
  * @module dsh-subprocess/types
  */
 
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { Duplex, Readable, Writable } from 'node:stream'
 
 /** Namespace prefix reserved for DeepSeek Harness-managed child environment facts. */
@@ -77,6 +78,10 @@ export interface SubprocessStdio {
 export interface SubprocessSpawnSpec {
   /** Executable and arguments; `argv[0]` is the program. Never shell-interpreted here. */
   argv: readonly string[]
+  /** Native consumer’s resolved per-call policy, including approved escalation.
+   * Remote providers enforce it at signed prepare; local consumers already wrap argv.
+   */
+  sandboxPolicy?: SandboxExecutionPolicy | undefined
   /** Working directory for the child. */
   cwd: string
   /** Per-stream stdio dispositions. */
@@ -214,6 +219,10 @@ export interface SubprocessTerminalEnvironment {
 export interface SubprocessTerminalSpawnSpec {
   /** Executable and arguments; `argv[0]` is the program. */
   argv: readonly string[]
+  /** Native consumer’s resolved per-call policy, including approved escalation.
+   * Remote providers enforce it at signed prepare; local consumers already wrap argv.
+   */
+  sandboxPolicy?: SandboxExecutionPolicy | undefined
   /** Working directory in this subprocess provider's execution world. */
   cwd: string
   /** Explicit environment layered after the provider's ambient scrub. */

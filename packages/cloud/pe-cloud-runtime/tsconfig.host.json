@@ -109,6 +109,15 @@
     },
     {
       "path": "../../subagent/subagent-spawn-in-process"
+    },
+    {
+      "path": "../../subagent/subagent-fork-in-process"
+    },
+    {
+      "path": "../../ptc-runtime/ptc-runtime"
+    },
+    {
+      "path": "../../terminal/terminal"
     }
   ],
   "exclude": [

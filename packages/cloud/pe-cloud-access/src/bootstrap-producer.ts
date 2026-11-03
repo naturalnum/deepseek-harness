@@ -44,6 +44,9 @@ const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'g
     'goals/' + method, { handlerId: 'native:goals', guard: 'account-session' as const },
   ])),
   'permissionPresets/catalog': { handlerId: 'native:permissionPresets', guard: 'authenticated-account' },
+  'agentPresets/list': { handlerId: 'native:agentPresets', guard: 'authenticated-account' },
+  'agentPresets/read': { handlerId: 'native:agentPresets', guard: 'authenticated-account' },
+  'agentPresets/select': { handlerId: 'native:agentPresets', guard: 'account-session' },
   'pluginInventory/list': { handlerId: 'native:pluginInventory', guard: 'authenticated-account' },
   'schedule/catalog': { handlerId: 'native:schedule', guard: 'authenticated-account' },
   ...Object.fromEntries(['list', 'history', 'delete', 'update'].map(method => [

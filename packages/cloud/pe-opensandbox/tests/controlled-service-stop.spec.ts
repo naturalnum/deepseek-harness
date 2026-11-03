@@ -147,7 +147,9 @@ async function fixture(kind: Kind) {
   const unknown = vi.fn(() => { void owner.closeProvider() })
   const owner = new NativeCommandAccount(ctx, binding, { assertBusinessCurrent() {},
     getAgent: candidate => candidate === id ? agent : undefined,
-    projectForAgent: () => workspace, projectForSession: () => workspace, files() { throw new Error('not used') } },
+    projectForAgent: () => workspace, projectForSession: () => workspace,
+    assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
+    files() { throw new Error('not used') } },
   { allowedTools: ['bash', 'dev_service'], maxScopes: 32, commandLimits: limits,
     services: { profile, operationLimits: limits, assertQualified(value) { expect(value).toBe(profile) },
       serviceSpec(scope, _profile, start) { return { argv: ['/opt/session-env/venv/bin/python', '-B', '/project/' + start.script, ...start.args], cwd: '/project',

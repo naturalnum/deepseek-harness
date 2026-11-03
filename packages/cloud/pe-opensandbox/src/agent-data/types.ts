@@ -5,14 +5,15 @@
 import type { SkillParent, SkillWorld } from './skill-world.ts'
 import type { NativeFilePolicy } from './file-policy.ts'
 import type { ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS } from './role-protocol.ts'
+import type { Duplex, Readable, Writable } from 'node:stream'
 
 /**
  * Fixed HTTP routes of the frozen agent protocol;
  * callers cannot supply arbitrary endpoints.
  */
-export type Route = '/handshake' | '/prepare' | '/commit' | '/cancel' | '/poll' | '/stop' | '/seal'
+export type Route = '/handshake' | '/prepare' | '/commit' | '/cancel' | '/poll' | '/stop' | '/seal' | '/stream'
 /** Routes with remote mutation intent, each locally attempted at most once per reference or client seal. */
-export type Mutation = Exclude<Route, '/handshake' | '/poll'>
+export type Mutation = Exclude<Route, '/handshake' | '/poll' | '/stream'>
 /**
  * Root-authorized uint64 quantities as canonical decimal strings;
  * only device permits zero.
@@ -67,17 +68,58 @@ export interface CallOptions {
   readonly signal?: AbortSignal
 }
 /** Literal absolute argv, project-contained canonical cwd and finite stdin ignore/batch input only. */
-export interface OperationSpec {
+export interface CollectOperationSpec {
+  readonly executionKind?: never
   readonly argv: readonly string[]
   readonly cwd: string
   readonly stdin: { readonly mode: 'ignore' } | { readonly mode: 'batch'; readonly base64: string }
+}
+/** Signed pipes dispositions; fd7 is a separate duplex stream, never management authority. */
+export interface PipesOperationSpec {
+  readonly executionKind: 'pipes'
+  readonly argv: readonly string[]
+  readonly cwd: string
+  readonly stdin: CollectOperationSpec['stdin'] | { readonly mode: 'pipe' }
+  readonly env: Readonly<Record<string, string | null>>
+  readonly stream: {
+    readonly terminal?: Readonly<{ rows: number; cols: number }>
+    readonly version: 'pe-execution-stream-v1'
+    readonly stdout: 'pipe' | 'ignore'
+    readonly stderr: 'pipe' | 'ignore'
+    readonly control: 'pipe' | 'ignore'
+    readonly limits: { readonly controlInputBytes: number; readonly controlOutputBytes: number }
+  }
+}
+/** Collect wire bytes stay unchanged; only signed pipes adds environment and streaming fields. */
+export type OperationSpec = CollectOperationSpec | PipesOperationSpec
+/** Raw local Node streams of one irreversible original attach, not an operation or allocation owner. */
+export interface AgentDataStream {
+  readonly stdin?: Writable
+  readonly stdout?: Readable
+  readonly stderr?: Readable
+  readonly control?: Duplex
+  /** All requested raw output EOF frames decoded, independent of consumer reads; early disconnect rejects. */
+  readonly outputEnded: Promise<void>
+  /** Actual socket terminal-event join, including after error; it never means the remote range is empty. */
+  readonly settled: Promise<void>
+  /** Request closure once without replay; pending input becomes uncertain and the original row remains retained. */
+  close(): void
+}
+/** Fixed protocol declaration compared before pipes attachment is admitted. */
+export interface StreamLimits {
+  readonly version: 'pe-execution-stream-v1'
+  readonly frameBytes: 4096
+  readonly windowBytes: 65536
+  readonly controlInputBytes: 8388608
+  readonly controlOutputBytes: 8388608
+  readonly stdinBytes: 4096
 }
 /**
  * Original runtime and operationId/specHash pair retained across uncertainty;
  * no replacement or replay authority.
  */
 export interface RangeAuthorization {
-  readonly role: 'foreground' | 'service'
+  readonly role: 'foreground' | 'service' | 'program'
   readonly registrationId: string | null
   readonly signature: string
 }
@@ -129,7 +171,7 @@ export interface FailureFact {
 export interface OperationSnapshot {
   readonly operationId: string
   readonly specHash: string
-  readonly role: 'foreground' | 'service'
+  readonly role: RangeAuthorization['role']
   readonly registrationId: string | null
   readonly primitiveStarted: boolean
   readonly prepared: boolean
@@ -148,6 +190,14 @@ export interface OperationSnapshot {
   readonly streams: {
     readonly stdout: RawTail
     readonly stderr: RawTail
+  }
+  readonly executionKind?: 'pipes'
+  readonly stream?: {
+    readonly attached: boolean
+    readonly connected: boolean
+    readonly ioClosed: boolean
+    readonly controlInputBytes: number
+    readonly controlOutputBytes: number
   }
 }
 /** Actual Root-bound identities and total capacities as lossless decimal strings, with the exact Root grant. */
@@ -171,6 +221,8 @@ export interface Handshake {
   readonly protocolVersion: typeof PROTOCOL
   readonly runtimeIdentity: string
   readonly capabilities: readonly ['argv', 'stdin-ignore', 'stdin-batch', 'collect']
+    | readonly ['argv', 'stdin-ignore', 'stdin-batch', 'collect', 'stdin-pipe', 'pipes', 'control-pipe']
+  readonly streamLimits?: StreamLimits
   readonly pins: ExpectedBinding['pins']
   readonly declaredImageId: string
   readonly mounts: Readonly<Record<string, MountFact>>
@@ -178,7 +230,7 @@ export interface Handshake {
   readonly newOperationsAccepted: boolean
   readonly recordCount: number
   readonly activeRangeCount: number
-  readonly rangeRoles: Readonly<{ foreground: number; service: number }>
+  readonly rangeRoles: Readonly<{ foreground: number; service: number; program?: number }>
   readonly sealed: boolean
   readonly sealReason: string | null
   readonly physicalStopRequired: boolean
@@ -234,6 +286,19 @@ export interface AgentDataClient {
    */
   prepare(request: PreparedRequest, options?: CallOptions): Promise<OperationSnapshot>
   /**
+   * Attach once to an actually prepared pipes operation using private headers on the fixed endpoint.
+   * @param ref Original Root-issued reference and authorization; no caller-selected URL or replacement operation.
+   * @param options Earlier attach deadline and lifetime observer cancellation.
+   * @returns Raw Node streams after the actual upgrade; commit remains a separate original operation.
+   */
+  attach(ref: OperationRef, options?: CallOptions): Promise<AgentDataStream>
+  /**
+   * Join any original attach connection, including an upgrade whose ready promise rejected before returning its stream.
+   * @param ref Exact retained original reference; no network request, new authority or remote-empty fact is created.
+   * @returns Actual local stream terminal/send join, or immediate completion if this row never attached.
+   */
+  joinStream(ref: OperationRef): Promise<void>
+  /**
    * Attempt commit once after Root has observed prepared facts.
    * @param ref - Original operation reference retained throughout its lifetime.
    * @param options - Earlier deadline or observer cancellation.
@@ -269,7 +334,7 @@ export interface AgentDataClient {
   seal(options?: CallOptions): Promise<Handshake>
   /**
    * Close prepare/commit synchronously while keeping read/stop transport available.
-   * @returns Actual-settlement barrier for requests admitted at this fence, not remote scope completion.
+   * @returns Actual-settlement barrier for HTTP requests at this fence; live streams remain owned for stop/release.
    */
   fence(): Promise<void>
   /**

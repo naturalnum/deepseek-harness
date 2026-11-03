@@ -1,4 +1,4 @@
-/** Bounded native notifications and selected question forwarding on the original account Gateway. */
+/** Bounded native notifications and selected interactive requests on the original account Gateway. */
 import { isAbsolute } from 'node:path'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import Gateway, { projectRemoteEventRequest, type TypertRemoteEventFrame,
@@ -7,6 +7,7 @@ import { createRemoteWaterfallListener } from '@deepseek-ai/dsh-api-remotes'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { isRemoteJsonValue } from '@deepseek-ai/dsh-typert-protocol'
 import { Deque } from '@deepseek-ai/dsh-deque'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -35,7 +36,14 @@ export interface FirstScreenEventInput {
   /** Complete encoded emit-frame bound, including event name and envelope. */
   readonly maxFrameBytes: number
   /** Selected native controls; every notification still requires its audited endpoint. */
-  readonly controls?: Readonly<{ commands: boolean; goals: boolean; permissions: boolean; questions?: boolean; schedule?: boolean }>
+  readonly controls?: Readonly<{
+    commands: boolean
+    goals: boolean
+    permissions: boolean
+    questions?: boolean
+    approval?: boolean
+    schedule?: boolean
+  }>
 }
 
 /** Real registration facts; Root must still connect and audit the original external C04/Peer guard. */
@@ -82,6 +90,12 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
   const original = firstScreenNativeOwner(ctx, 'typertGateway', gateway, input.maxInventoryEntries)
   const canonical = original.value
   if (!(canonical instanceof Gateway)) unavailable()
+  const approval = (() => {
+    if (input.controls?.approval !== true) return undefined
+    const value = ctx.get('approval')
+    if (!(value instanceof ApprovalService)) unavailable()
+    return firstScreenNativeOwner(ctx, 'approval', value, input.maxInventoryEntries)
+  })()
   const register: unknown = Reflect.get(canonical, 'registerRemoteEvents')
   type Guard = { readonly session?: SessionId
     readonly endpoint?: 'commands/list' | 'goals/get'
@@ -99,6 +113,12 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       skills.assertCurrent()
     }
     input.native.assertCurrent()
+    if (approval !== undefined) {
+      const value = ctx.get('approval')
+      if (!(value instanceof ApprovalService)) unavailable()
+      const actual = firstScreenNativeOwner(ctx, 'approval', value, input.maxInventoryEntries)
+      if (actual.value !== approval.value || actual.fiber !== approval.fiber) unavailable()
+    }
     const actualProfile = ctx.get('profileContext'), rootProfile = ctx.root.get('profileContext')
     const actual = firstScreenNativeOwner(ctx, 'typertGateway', canonical, input.maxInventoryEntries)
     if (input.api.binding !== input.native.binding || actualProfile !== profile || rootProfile !== profile
@@ -148,9 +168,10 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
   const session = (frame: TypertRemoteEventFrame, id: SessionId, endpoint?: Guard['endpoint']): void => {
     push(frame, { session: id, ...endpoint === undefined ? {} : { endpoint } })
   }
-  const questionEndpoints = (): void => {
+  const interactionEndpoints = (source: TypertRemoteEventInvocation): void => {
     input.api.requireRpc('$events/result')
-    input.api.requireRpc('userQuestions/answer')
+    if (source.event === 'user-questions/request' && input.controls?.questions === true) input.api.requireRpc('userQuestions/answer')
+    else if (source.event !== 'approval/request' || input.controls?.approval !== true) unavailable()
   }
   const questionSubject = (source: TypertRemoteEventInvocation) => {
     const subject = source.context.subject, agent = ctx.get('agents')?.get(SessionId(source.context.agentId))
@@ -168,7 +189,7 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
         return true
       }
       graph()
-      questionEndpoints()
+      interactionEndpoints(source)
       const subject = questionSubject(source)
       const projected = projectRemoteEventRequest(source.request, subject)
       projected.signal?.throwIfAborted()
@@ -186,7 +207,27 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       const reject = (reason: unknown): void => { if (release()) source.reject(reason) }
       const abort = (): void => { reject(projected.signal?.reason) }
       held = { ...source,
-        resolve: (outcome) => { if (release()) source.resolve(outcome) },
+        resolve: (outcome) => {
+          if (held === undefined || !pendingQuestions.has(held)) return
+          try {
+            graph()
+            input.api.requireStream('$events')
+            interactionEndpoints(source)
+            try { questionSubject(source) } catch (error) {
+              // A Session can end after delivery while its Client still holds the dialog.
+              // Isolate that stale decision only while the same account source remains admitted.
+              graph()
+              input.api.requireStream('$events')
+              interactionEndpoints(source)
+              reject(error)
+              return
+            }
+            if (release()) source.resolve(outcome)
+          } catch (error) {
+            reject(error)
+            stop({ error })
+          }
+        },
         reject,
       }
       pendingQuestions.set(held, reject)
@@ -230,6 +271,9 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
     if (input.controls?.questions === true) {
       removers.push(ctx.on('user-questions/request', createRemoteWaterfallListener('user-questions/request', { push: question }) as never))
     }
+    if (input.controls?.approval === true) {
+      removers.push(ctx.on('approval/request', createRemoteWaterfallListener('approval/request', { push: question }) as never))
+    }
     const abort = (): void => { stop() }
     signal.addEventListener('abort', abort, { once: true })
     removers.push(() => { signal.removeEventListener('abort', abort) })
@@ -255,13 +299,13 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
             }
             validate(next.guard)
             if ('context' in next.frame) {
-              questionEndpoints()
+              interactionEndpoints(next.frame)
               try { questionSubject(next.frame) } catch (error) {
                 // A single obsolete question does not revoke the account's event source.
                 // Recheck the original account/owner and stream before isolating that rejection.
                 graph()
                 input.api.requireStream('$events')
-                questionEndpoints()
+                interactionEndpoints(next.frame)
                 pendingQuestions.get(next.frame)?.(error)
                 continue
               }
@@ -290,7 +334,7 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       graph()
       if (closed || closing !== undefined || failure !== undefined || ctx.fiber.state !== FiberState.ACTIVE) unavailable()
       return Object.freeze({ endpoint: '$events' as const, gateway: canonical, fiber: original.fiber, owner: ctx.fiber,
-        ...input.controls?.questions === true ? { resultEndpoint: '$events/result' as const } : {},
+        ...input.controls?.questions === true || input.controls?.approval === true ? { resultEndpoint: '$events/result' as const } : {},
         home: input.home, queuedEvents: retained, queuedBytes: bytes })
     },
     assertAdmitted(): void {

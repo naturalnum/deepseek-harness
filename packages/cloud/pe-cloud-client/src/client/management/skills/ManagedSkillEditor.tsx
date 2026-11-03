@@ -1,11 +1,12 @@
 /** Complete-package input and actual detail/result presentation on the original page's managed skill source. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSkillOutlineRegular, Modal, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ManagedSkillEditing, ManagedSkillFileContent, ManagedSkillOutcome } from '../../managed-skill-editing.ts'
 import { readSelectedSkillBundle } from './selected-bundle.ts'
 import type { SkillManagementActions } from './types.ts'
 import { SkillMarkdown } from './SkillMarkdown.tsx'
+import { useSkillAction } from './use-skill-action.ts'
 import css from './SkillsPage.module.css'
 
 /**
@@ -13,11 +14,12 @@ import css from './SkillsPage.module.css'
  * @param props Original page-owned editor, existing feedback callback, and localized text.
  * @returns A bounded file/ZIP editor with separate persistence, application, and browser-download facts.
  */
-export function ManagedSkillEditor({ editor, report, t }: {
+export function ManagedSkillEditor({ editor, actions, t }: {
   readonly editor: ManagedSkillEditing
-  readonly report: SkillManagementActions['report']
+  readonly actions: SkillManagementActions
   readonly t: TranslateNS<'cloud-skill-management'>
 }): ReactNode {
+  const report = actions.report, toggleAction = useSkillAction()
   const observer = useRef<AbortController>()
   const fileRead = useRef<AbortController>()
   const [copying, setCopying] = useState(false), [invalid, setInvalid] = useState(false)
@@ -31,7 +33,7 @@ export function ManagedSkillEditor({ editor, report, t }: {
     const control = new AbortController(); observer.current = control
     return () => { control.abort(); fileRead.current?.abort(); observer.current = undefined }
   }, [])
-  const busy = copying || editor.phase === 'opening' || editor.phase === 'submitting' || editor.phase === 'downloading'
+  const busy = copying || toggleAction.state === 'pending' || editor.phase === 'opening' || editor.phase === 'submitting' || editor.phase === 'downloading'
   const selection = editor.selection, detail = editor.detail, limits = editor.limits
   const draft = editor.draft !== undefined && editor.draft.forSkill === selection ? editor.draft.bundle : undefined
   const canPublish = editor.phase === 'editing' && editor.canPublish
@@ -83,7 +85,8 @@ export function ManagedSkillEditor({ editor, report, t }: {
   }
   const zip = (file: File | undefined): void => {
     if (busy || !canPublish || limits === undefined) return
-    if (file === undefined || !/\.(zip|skill)$/i.test(file.name) || file.size === 0 || file.size > limits.maxArchiveBytes) {
+    if (file === undefined) return
+    if (!/\.(zip|skill)$/i.test(file.name) || file.size === 0 || file.size > limits.maxArchiveBytes) {
       setInvalid(true); return
     }
     try { editor.choose(Object.freeze({ kind: 'zip', file })); setInvalid(false) }
@@ -95,7 +98,7 @@ export function ManagedSkillEditor({ editor, report, t }: {
     setInvalid(false)
     const action = remove ? editor.uninstall : editor.publish
     const show = (outcome: ManagedSkillOutcome): void => {
-      if (outcome.kind === 'invalid-bundle') return
+      if (!alive(control) || outcome.kind === 'invalid-bundle') return
       report(remove ? 'remove' : selection === null ? 'install' : 'update', outcome.kind === 'persisted' ? 'confirmed' : outcome.kind)
     }
     void action(control.signal).then(show, () => { if (alive(control)) setInvalid(true) })
@@ -105,30 +108,64 @@ export function ManagedSkillEditor({ editor, report, t }: {
     {editor.outcome?.kind === 'unknown' || editor.outcome?.kind === 'conflict'
       ? <p className={css.error} role="alert">{t(editor.outcome.kind === 'unknown' ? 'sampleUnknown' : 'sampleConflict')}</p> : null}
   </>
-  return <Modal open title={selection === null ? t('installBundle') : detail?.item.name ?? t('bundleEditor')}
-    closeLabel={t('close')} onClose={() => { if (!busy) { fileRead.current?.abort(); editor.close() } }} className={`${css.managedModal}`}>
-    <section className={css.form} aria-label={t('bundleEditor')} aria-busy={busy}>
+  const item = detail?.item
+  const close = (): void => { if (!busy) { fileRead.current?.abort(); editor.close() } }
+  const download = (): void => {
+    const control = observer.current
+    if (control === undefined || busy) return
+    setDownloadFailed(false)
+    void editor.download(control.signal).then(() => { if (alive(control)) report('download', 'confirmed') },
+      () => { if (alive(control)) { setDownloadFailed(true); report('download', 'unavailable') } })
+  }
+  return <Modal open title={selection === null ? t('importTitle') : item?.name ?? t('details')}
+    closeLabel={t('close')} onClose={close} className={`${view === 'summary' ? css.detailModal : css.managedModal}`}
+    footer={<div className={css.footer}>
+      {selection === null ? null : <button type="button" className={css.button}
+        disabled={busy || editor.phase !== 'editing' || detail?.download === undefined} onClick={download}>{t('bundleDownload')}</button>}
+      {detail?.uninstall === undefined ? null : <>
+        {confirmRemove ? <span>{t('bundleRemoveHint')}</span> : null}
+        <button type="button" className={css.button} disabled={busy || editor.phase !== 'editing'}
+          onClick={() => { if (confirmRemove) submit(true); else setConfirmRemove(true) }}>{t(confirmRemove ? 'confirmRemove' : 'remove')}</button>
+        {confirmRemove ? <button type="button" className={css.button} disabled={busy}
+          onClick={() => { setConfirmRemove(false) }}>{t('cancel')}</button> : null}
+      </>}
+    </div>}>
+    <section className={`${css.detailBody} ${css.form}`} aria-label={t('bundleEditor')} aria-busy={busy}>
       {editor.phase === 'opening' || editor.phase === 'submitting' || editor.phase === 'downloading' ? <p role="status">{t('pending')}</p> : null}
       {editor.phase === 'unavailable' ? <p className={css.error} role="alert">{t('unavailable')}</p> : null}
+      {item === undefined ? null : <>
+        <header className={css.detailHead}>
+          <span className={css.glyph} aria-hidden="true"><IconSkillOutlineRegular size={24}/></span>
+          <div><strong>{item.name}</strong><p>{item.description}</p>
+            {item.sourceLabel === undefined ? null : <small>{item.sourceLabel}</small>}
+            {item.version === undefined ? null : <small>{t('version')} {item.version}</small>}
+            {item.publisher === undefined ? null : <small>{t('publisher')} {item.publisher}</small>}
+          </div>
+          {item.enabled === undefined ? null : <Switch checked={item.enabled} label={`${item.name} ${t('toggle')}`}
+            disabled={busy || editor.phase !== 'editing' || !item.canToggle || actions.toggle === undefined
+              || (toggleAction.state !== 'idle' && toggleAction.state !== 'confirmed')}
+            onChange={(enabled) => {
+              const toggle = actions.toggle
+              if (toggle !== undefined) void toggleAction.run(signal => toggle(item.id, enabled, signal))
+                .then((outcome) => { if (outcome !== undefined) report('toggle', outcome) })
+            }}/>}
+        </header>
+        <p className={css.note}>{t(item.status)} · {item.shadowedBy === undefined
+          ? t(item.shadowed === undefined ? 'bundleSelectionUnknown' : item.shadowed ? 'bundleShadowed' : 'bundleSelected')
+          : t('bundleShadowedBy', item.shadowedBy)}</p>
+      </>}
       {detail === undefined ? null : <>
-        <p className={css.skillDescription}>{detail.item.description}</p>
-        <p>{detail.item.sourceLabel}</p>
-        {detail.item.publisher === undefined ? null : <p>{t('publisher')} {detail.item.publisher}</p>}
-        {detail.item.version === undefined ? null : <p>{t('version')} {detail.item.version}</p>}<p>{detail.item.shadowedBy === undefined
-          ? t(detail.item.shadowed === undefined ? 'bundleSelectionUnknown' : detail.item.shadowed ? 'bundleShadowed' : 'bundleSelected')
-          : t('bundleShadowedBy', detail.item.shadowedBy)}</p>
+        {view !== 'summary' ? null : <section className={css.document} aria-label={t('document')}>
+          <div className={css.documentBar}>{t('document')}</div>
+          <div className={css.documentReader}>{detail.markdown === undefined ? <p>{t('documentUnavailable')}</p>
+            : <SkillMarkdown document={detail.markdown}/>}</div>
+        </section>}
         <div className={css.detailActions}>
           <button type="button" className={css.button} aria-pressed={view === 'files'} disabled={busy}
             onClick={() => { changeView(view === 'files' ? 'summary' : 'files') }}>{t(view === 'files' ? 'backToSummary' : 'details')}</button>
           {detail.update === undefined && draft === undefined ? null : <button type="button" className={css.button}
             aria-pressed={view === 'edit'} disabled={busy} onClick={() => { changeView(view === 'edit' ? 'summary' : 'edit') }}>{t('bundleEdit')}</button>}
-          {detail.download === undefined ? null : <button type="button" className={css.button} disabled={busy || editor.phase !== 'editing'}
-            onClick={() => {
-              const control = observer.current
-              if (control === undefined) return
-              setDownloadFailed(false)
-              void editor.download(control.signal).then(() => { report('download', 'confirmed') }, () => { if (alive(control)) setDownloadFailed(true) })
-            }}>{t('bundleDownload')}</button>}</div>
+        </div>
         {view !== 'files' ? null : <div className={css.fileBrowser}>
           <nav className={css.fileList} aria-label={t('bundleFiles')}><ul>{detail.files.map(file =>
             <li key={file.path}><button type="button" aria-pressed={selectedFile === file.path}
@@ -164,11 +201,9 @@ export function ManagedSkillEditor({ editor, report, t }: {
       </>}
       {(view === 'edit' || selection === null) && (selection === null || detail?.update !== undefined) ? <button type="button" className={`${css.button} ${css.primary}`}
         disabled={busy || !canPublish || draft === undefined} onClick={() => { submit(false) }}>{t(selection === null ? 'installBundle' : 'bundleUpdate')}</button> : null}
-      {detail?.uninstall === undefined ? null : <div className={css.footer}>
-        {confirmRemove ? <span>{t('bundleRemoveHint')}</span> : null}
-        <button type="button" className={css.button} disabled={busy || editor.phase !== 'editing'}
-          onClick={() => { if (confirmRemove) submit(true); else setConfirmRemove(true) }}>{t(confirmRemove ? 'confirmRemove' : 'remove')}</button></div>}
       {editor.downloadStarted ? <p role="status">{t('bundleDownloadStarted')}</p> : null}
+      {toggleAction.state === 'unknown' || toggleAction.state === 'conflict' || toggleAction.state === 'unavailable'
+        ? <p className={css.error} role="alert">{t(toggleAction.state === 'unavailable' ? 'actionUnavailable' : toggleAction.state)}</p> : null}
       {downloadFailed ? <p className={css.error} role="alert">{t('bundleDownloadFailed')}</p> : null}
       {editor.outcome === undefined ? null : editor.outcome.kind === 'persisted'
         ? <p role="status">{t(editor.outcome.applied ? 'bundleApplied' : 'bundleSavedPending')}</p>

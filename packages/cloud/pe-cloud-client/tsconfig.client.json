@@ -10,7 +10,6 @@
     "src/config.ts",
     "src/schema.ts",
     "src/client/index.ts",
-    "src/client/preset-integration.ts",
     "src/client/subagent-settings.ts",
     "src/client/sidebar-account.ts",
     "src/client/CloudAccountMenu.tsx",

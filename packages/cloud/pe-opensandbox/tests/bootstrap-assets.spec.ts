@@ -12,20 +12,20 @@ import { digest } from '../src/agent-data/canonical.ts'
 const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
 
 describe('fixed packaged bootstrap assets', () => {
-  it('retains exactly the approved nine Python files and loads their original pinned bytes', async () => {
+  it('retains exactly the approved eleven Python files and loads their original pinned bytes', async () => {
     const files = (await Promise.all(['agent', 'bootstrap'].map(async directory =>
       (await readdir(join(runtime, directory))).map(name => `${directory}/${name}`)))).flat().sort()
     expect(files).toEqual(RUNTIME_ASSET_MANIFEST.map(item => item.path).sort())
-    expect(files).toHaveLength(9)
+    expect(files).toHaveLength(11)
     for (const item of RUNTIME_ASSET_MANIFEST) {
       const data = await readFile(join(runtime, item.path))
       expect(data.length).toBe(item.bytes)
       expect(createHash('sha256').update(data).digest('hex')).toBe(item.sha256)
     }
     const payload = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
-    expect(payload.uploads).toHaveLength(7)
-    expect(payload.uploads.map(item => item.name)).toEqual(['server.py', 'wire.py', 'manager.py', 'launcher.py',
-      'guardian.py', 'paths.py', 'publisher.py'])
+    expect(payload.uploads).toHaveLength(9)
+    expect(payload.uploads.map(item => item.name).sort()).toEqual(['guardian.py', 'launcher.py', 'manager.py', 'paths.py',
+      'publisher.py', 'server.py', 'stream.py', 'terminal.py', 'wire.py'])
   })
 
   it('refuses source-module asset discovery instead of looking up a source-tree fallback', async () => {

@@ -8,7 +8,7 @@ import { policyFixture } from './account-policy-fixture.ts'
 async function fixture() {
   const f = policyFixture(), graph = await f.start()
   const entries = [...graph.ctx.loader.entries()]
-  const preset = entries.find(row => row.options.id === f.config.presetEntryId)
+  const preset = entries.find(row => row.options.id === f.config.presets[0]?.entryId)
   const loop = entries.find(row => row.options.id === f.config.agentLoopEntryId)
   if (preset?.fiber === undefined || loop?.fiber === undefined) throw new Error('Original account entries absent')
   const policy = createAccountPolicy(graph.ctx, graph.binding, graph.files, f.config,

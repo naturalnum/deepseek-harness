@@ -188,11 +188,12 @@ export function managedSkillCodecs(configured: ManagedSkillApiLimits): ManagedSk
         actions: { install: bool(actions.install) }, limits: publicLimits(row.limits) }, limits.maxReplyBytes)
     }),
     detailsResult: codec('ManagedSkillDetails', (value) => {
-      const row = record(value, ['entry', 'files', 'version'])
+      const row = record(value, ['entry', 'files', 'version', 'markdown'])
       if (!Array.isArray(row.files) || row.files.length > limits.maxReplyBytes) invalid()
       const parsed = entry(row.entry), files = row.files.map(fileMetadata)
       if (parsed.fileCount !== files.length || parsed.contentBytes !== files.reduce((sum, file) => sum + file.bytes, 0)) invalid()
-      return bounded({ entry: parsed, files, version: version(row.version) }, limits.maxReplyBytes)
+      return bounded({ entry: parsed, files, version: version(row.version),
+        markdown: text(row.markdown, limits.maxReplyBytes) }, limits.maxReplyBytes)
     }),
     mutationResult: codec('ManagedSkillMutationResult', (value) => {
       const row = record(value, ['persisted', 'applied', 'version', 'entry'])

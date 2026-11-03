@@ -67,7 +67,8 @@ it('projects one real native bash dispatch before releasing its original command
     }, projectForSession(current) {
       if (current !== agent.session) throw new Error('Expected the original production Session.')
       return workspace
-    }, files() { throw new Error('Files/backend preparation is replaced by the scripted Root channel.') },
+    }, assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
+    files() { throw new Error('Files/backend preparation is replaced by the scripted Root channel.') },
   }, { allowedTools: ['bash'], maxScopes: 2, commandLimits: { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512,
     maxStdinBytes: 4096, maxTailBytes: 128, maxObservedBytes: 65536, pollIntervalMs: 1000,
     maxWaiters: 2, maxLifetimeMs: 10000, stopWaitMs: 2000 } }, root)

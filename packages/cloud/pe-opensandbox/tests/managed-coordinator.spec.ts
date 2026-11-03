@@ -131,6 +131,9 @@ function fixture(input: {
       getAgent: vi.fn<NativeAccountExecutionAuthority['getAgent']>(() => undefined),
       projectForAgent: vi.fn<NativeAccountExecutionAuthority['projectForAgent']>(() => { throw new Error('No Agent is expected') }),
       projectForSession: vi.fn<NativeAccountExecutionAuthority['projectForSession']>(() => { throw new Error('No Session is expected') }),
+      assertRetainedExecutionOwner: vi.fn<NativeAccountExecutionAuthority['assertRetainedExecutionOwner']>(() => {
+        throw new Error('No Native job lease is expected in this fixture.')
+      }),
       files: vi.fn<NativeAccountExecutionAuthority['files']>(() => { throw new Error('No files owner is expected') }),
     } satisfies NativeAccountExecutionAuthority
     const port = owner.bindAccount(account, binding, current, authority)
@@ -650,7 +653,7 @@ it.each([true, false])('uses original NativeBoot and account entry with service 
     const noUse = (): never => { throw new Error('No native user work is expected') }
     const port = f.owner.bindAccount(ctx, binding, () => { lifetime.signal.throwIfAborted() }, {
       assertBusinessCurrent: () => { lifetime.signal.throwIfAborted() }, getAgent: () => undefined,
-      projectForAgent: noUse, projectForSession: noUse, files: noUse,
+      projectForAgent: noUse, projectForSession: noUse, assertRetainedExecutionOwner: noUse, files: noUse,
     })
     installIssuedExecutionPort(ctx, port)
     Object.assign(ctx.loader.builtins, { 'system-prompt': SystemPrompt, tools: ToolRuntime, 'pe-cloud-execution-account': accountEntry })

@@ -208,6 +208,7 @@ export class BashTerminalBackend implements TerminalBackend {
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
     const terminal = await this.spawnTerminal({
       argv,
+      sandboxPolicy: policy,
       cwd: spec.cwd ?? await this.ctx.workingDirectory.ensure(spec.owner, spec.signal),
       env: childEnvironment(spec, this.config.shellDialect),
       rows: this.config.rows,

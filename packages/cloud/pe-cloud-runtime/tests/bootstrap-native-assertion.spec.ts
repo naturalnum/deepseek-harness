@@ -225,7 +225,7 @@ it('rechecks the actual original listener after awaited policy metadata returns'
 })
 
 it('reads the original Workspace and native Preset expectation instead of trusting policy declarations alone', async () => {
-  const fixture = policyFixture(), wrong = await fixture.start('1', { ...fixture.config, presetConfigSha256: '0'.repeat(64) })
+  const fixture = policyFixture(), wrong = await fixture.start('1', { ...fixture.config, presets: fixture.config.presets.map(row => ({ ...row, configSha256: '0'.repeat(64) })) })
   await expect(wrong.api.assertBootstrapCurrent(wrong.ctx)).rejects.toMatchObject({ code: 'cloud/forbidden' })
   await wrong.close()
   const graph = await fixture.start('2')

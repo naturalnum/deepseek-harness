@@ -32,11 +32,12 @@ it('permits a per-call narrowing only in the same Session/project', async () => 
   })).toEqual({ mode: 'read-only' })
 })
 
-it('does not let a direct per-call override widen a read-only Session in the never-approval cloud recipe', async () => {
+it('preserves a trusted Native approved override for one call in the same read-only Session', async () => {
   const f = await fixture('read-only')
-  expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project', {
+  expect(selectNativeFilePolicy(f.ctx, f.session, '/project', {
     mode: 'workspace-write', workspaceRoot: '/project', sessionId: f.session.id,
-  })).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+  })).toEqual({ mode: 'workspace-write' })
+  expect(selectNativeFilePolicy(f.ctx, f.session, '/project')).toEqual({ mode: 'read-only' })
 })
 
 it.each(['root', 'session', 'no-session'] as const)('refuses %s before any range can be signed', async (changed) => {
@@ -48,16 +49,28 @@ it.each(['root', 'session', 'no-session'] as const)('refuses %s before any range
   })).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
 })
 
+it.each(['unsupported', 'toString'])('rejects a malformed runtime override mode %s', async (mode) => {
+  const f = await fixture(), policy = { mode: 'workspace-write' as const, workspaceRoot: '/project', sessionId: f.session.id }
+  Object.defineProperty(policy, 'mode', { value: mode })
+  expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project', policy))
+    .toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+})
+
 it('rejects a missing native policy rather than falling back to writable mounts', async () => {
   const f = await fixture()
   await f.policyFiber.dispose()
   expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project')).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+  expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project', {
+    mode: 'danger-full-access', workspaceRoot: '/project', sessionId: f.session.id,
+  })).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
 })
 
-it('captures full access and prevents a workspace-write Session from widening per call', async () => {
+it('captures trusted per-call full access without changing the standing Session mode', async () => {
   const f = await fixture('danger-full-access')
   expect(selectNativeFilePolicy(f.ctx, f.session, '/project')).toEqual({ mode: 'danger-full-access' })
   expect(selectNativeFilePolicy(f.ctx, f.session, '/project', { mode: 'workspace-write', workspaceRoot: '/project', sessionId: f.session.id })).toEqual({ mode: 'workspace-write' })
   setSandboxMode(f.session, 'workspace-write')
-  expect(() => selectNativeFilePolicy(f.ctx, f.session, '/project', { mode: 'danger-full-access', workspaceRoot: '/project', sessionId: f.session.id })).toThrow()
+  expect(selectNativeFilePolicy(f.ctx, f.session, '/project', { mode: 'danger-full-access', workspaceRoot: '/project', sessionId: f.session.id }))
+    .toEqual({ mode: 'danger-full-access' })
+  expect(selectNativeFilePolicy(f.ctx, f.session, '/project')).toEqual({ mode: 'workspace-write' })
 })

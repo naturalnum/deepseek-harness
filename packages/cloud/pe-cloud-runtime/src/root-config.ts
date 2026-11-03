@@ -63,19 +63,26 @@ const text = () => z.string().pattern(/\S/).required()
 const accountPolicyFields: z<AccountPolicyConfig> = z.object({
   maxModelRoutes: positive(), maxPolicyStringBytes: positive(), maxPresetConfigBytes: positive(),
   models: z.array(z.object({ provider: text(), model: text() })).required(),
-  presetId: text(), presetEntryId: text(), agentLoopEntryId: text(),
-  presetConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(),
+  defaultPresetId: text(), agentLoopEntryId: text(),
+  presets: z.array(z.object({ id: text(), entryId: text(), selectable: z.boolean().required(),
+    configSha256: z.string().pattern(/^[0-9a-f]{64}$/).required() })).required(),
 }).required()
 
-/** Explicit finite model routes and exact fixed-Preset expectations; no field certifies account readiness. */
+/** Explicit finite model routes and exact native-preset expectations; no field certifies account readiness. */
 export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(accountPolicyFields, (config) => {
   const invalid = (): never => { throw new AccountRuntimeError('cloud/invalid-config', 'Account policy exceeds its finite limits or repeats a route') }
   if (config.models.length === 0 || config.models.length > config.maxModelRoutes
-    || config.presetEntryId === config.agentLoopEntryId) invalid()
+    || config.presets.length === 0 || !config.presets.some(row => row.id === config.defaultPresetId && row.selectable)) invalid()
   const bounded = (value: string): void => {
     if (value.length > config.maxPolicyStringBytes || Buffer.byteLength(value) > config.maxPolicyStringBytes) invalid()
   }
-  for (const value of [config.presetId, config.presetEntryId, config.agentLoopEntryId]) bounded(value)
+  bounded(config.defaultPresetId); bounded(config.agentLoopEntryId)
+  const ids = new Set<string>(), entries = new Set<string>()
+  for (const preset of config.presets) {
+    bounded(preset.id); bounded(preset.entryId)
+    if (ids.has(preset.id) || entries.has(preset.entryId) || preset.entryId === config.agentLoopEntryId) invalid()
+    ids.add(preset.id); entries.add(preset.entryId)
+  }
   const providers = new Map<string, Set<string>>()
   for (const route of config.models) {
     bounded(route.provider); bounded(route.model)

@@ -3,6 +3,7 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
@@ -13,7 +14,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
   type ExposureService, type ExactFetchExposure, type CloudModelKeyPreparation,
   type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation,
-  type AccountOfficeLifecycle } from '@deepseek-ai/dsh-pe-cloud-api'
+  type AccountOfficeLifecycle, type NativePresetGuards } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -44,6 +45,11 @@ import * as CommandFeedback from '@deepseek-ai/dsh-command-feedback'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
+  /** Shared Native registry policy; only explicitly selectable declarations admit new work. */
+  readonly presets: NativePresetGuards & {
+    /** Require the original attached Agent and its committed Native composition. @param agent Actual account Agent. */
+    assertSession(agent: Agent): void
+  }
   /** Original account policy transaction for an approved native settings write. */
   readonly beginSettingsUpdate: NonNullable<Parameters<CloudAccountApi['prepareFirstScreen']>[1]['beginAccountSettingsUpdate']>
   /** Permit a reset only after validating its native inherited value against the approved values. */
@@ -56,6 +62,11 @@ export interface AccountNativeGuards {
   readonly assertWorkspace: (workspace: Workspace) => void
   /** Select from the exact published Agent/Session and committed project facts. */
   readonly projectForAgent: (agent: Agent) => Workspace
+  /** Check an existing execution handle's original registered Agent during active work or native scope unloading.
+   * @param agent Original owner retained by a previously issued execution handle.
+   * @param workspace Original Workspace retained with that handle; no new work is authorized.
+   */
+  readonly assertRetainedExecutionOwner: (agent: Agent, workspace: Workspace) => void
   /** Select from the exact published native Session, without resuming an Agent. */
   readonly projectForSession: (session: Session) => Workspace
   /** Private handoff from an actual native header observation; ids and paths grant no authority. */
@@ -127,7 +138,7 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account', execution: 'pe-cloud-execution-account',
   instructions: 'pe-account-instructions-session', modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
-  controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
+  controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', presets: 'pe-cloud-agent-presets', llm: 'pe-cloud-llm',
   commands: 'pe-cloud-commands',
   goals: 'pe-cloud-goals',
   sessionExport: 'pe-cloud-session-export',
@@ -229,6 +240,7 @@ export class AccountNativeIntegration {
       getAgent: id => ctx.get('agents')?.get(id),
       projectForAgent: agent => requireGuards(ctx).projectForAgent(agent),
       projectForSession: session => requireGuards(ctx).projectForSession(session),
+      assertRetainedExecutionOwner: (agent, workspace) => { requireGuards(ctx).assertRetainedExecutionOwner(agent, workspace) },
       files: () => requireFiles(ctx),
     })
     installAccountExecutionPort(ctx, this.execution)
@@ -636,6 +648,14 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.messageFeedback]: messageFeedback,
       [ACCOUNT_NATIVE_ENTRIES.commandFeedback]: commandFeedback,
       [ACCOUNT_NATIVE_ENTRIES.agentLoop]: agentLoop,
+      [ACCOUNT_NATIVE_ENTRIES.presets]: {
+        inject: AgentPresets.inject,
+        Config: AgentPresets.Config,
+        apply(owner: Context, config: ConstructorParameters<typeof AgentPresets>[1]) {
+          if (firstScreenInput === undefined) throw new CloudApiError('cloud/invalid-config', 'Agent presets require native read limits.')
+          api.createPresets(owner, config, requireGuards(owner).presets, firstScreenInput.maxFrameBytes)
+        },
+      },
       [ACCOUNT_NATIVE_ENTRIES.llm]: llm,
       [ACCOUNT_NATIVE_ENTRIES.workspaceFiles]: {
         inject: [...WorkspaceFiles.inject, 'peCloudApi'], Config: WorkspaceFiles.Config,

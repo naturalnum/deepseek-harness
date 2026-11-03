@@ -50,7 +50,9 @@ async function fixture(enabled = true) {
   }
   const commands = new NativeCommandAccount(ctx, binding, { assertBusinessCurrent,
     getAgent: id => id === session.id ? agent : undefined, projectForAgent: () => workspace,
-    projectForSession: () => workspace, files() { throw new Error('The remote allocation is mocked by this unit') } },
+    projectForSession: () => workspace,
+    assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
+    files() { throw new Error('The remote allocation is mocked by this unit') } },
   { enforceSessionFilePolicy: enabled, allowedTools: ['bash', 'dev_service'], maxScopes: 2, commandLimits: limits,
     services: { profile, operationLimits: limits, assertQualified: (value) => { expect(value).toBe(profile) },
       serviceSpec() { throw new Error('This unit constructs its exact service operation explicitly') } } }, root)
@@ -91,12 +93,13 @@ it('does not let native Subprocess bypass the same Session read-only mode by omi
   expect(f.prepare).toHaveBeenCalledWith(expect.objectContaining({ argv: ['/bin/sh', '-c', 'cat file'] }), { mode: 'read-only' })
 })
 
-it('rejects unsupported or foreign per-call policies before the remote preparation', async () => {
+it('rejects foreign per-call policies before the remote preparation', async () => {
   const f = await fixture()
   await f.run(async () => {
     for (const policy of [
-      { mode: 'danger-full-access' as const, workspaceRoot: '/project', sessionId: f.session.id },
       { mode: 'workspace-write' as const, workspaceRoot: '/other', sessionId: f.session.id },
+      { mode: 'danger-full-access' as const, workspaceRoot: '/project', sessionId: SessionId('foreign-session') },
+      { mode: 'workspace-write' as const, workspaceRoot: '/project' },
     ]) {
       await expect(f.shell.execute(f.shell.resolve({ command: 'must not start', sandboxPolicy: policy })))
         .rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
@@ -105,15 +108,21 @@ it('rejects unsupported or foreign per-call policies before the remote preparati
   expect(f.prepare).not.toHaveBeenCalled()
 })
 
-it('does not permit a caller-supplied workspace-write Shell override to widen a read-only Session', async () => {
+it('forwards the trusted Native approved one-call override without changing the read-only Session', async () => {
   const f = await fixture()
   setSandboxMode(f.session, 'read-only')
   await f.run(async () => {
-    await expect(f.shell.execute(f.shell.resolve({ command: 'must not start', sandboxPolicy: {
+    const handle = await f.shell.execute(f.shell.resolve({ command: 'approved mutation', sandboxPolicy: {
       mode: 'workspace-write', workspaceRoot: '/project', sessionId: f.session.id,
-    } }))).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+    } }))
+    await handle.result()
   })
-  expect(f.prepare).not.toHaveBeenCalled()
+  expect(f.prepare).toHaveBeenLastCalledWith(expect.anything(), { mode: 'workspace-write' })
+  await f.run(async () => {
+    const handle = await f.shell.execute(f.shell.resolve({ command: 'ordinary read' }))
+    await handle.result()
+  })
+  expect(f.prepare).toHaveBeenLastCalledWith(expect.anything(), { mode: 'read-only' })
 })
 
 it('requires the actual enforcing port before advertising the native permission capability', async () => {

@@ -23,7 +23,7 @@ function fixture(maxScopes = 4) {
     projects.set(id, Object.freeze({ id }))
   }
   const released = vi.fn<(scope: unknown) => void>()
-  const calls = new NativeExecutionCalls(ctx, { binding, maxScopes, allowedTools: ['bash'],
+  const calls = new NativeExecutionCalls(ctx, { binding, maxScopes, allowedTools: ['bash', 'run_code', 'terminal_open'],
     getAgent: id => agents.get(id), projectForAgent: agent => projects.get(agent.id)!,
     assertCurrent(scope) { if (scope.project !== projects.get(scope.sessionId)) throw new Error('project changed') }, released })
   const exec = (id = 'A'): ToolDispatchExecution => ({ callId: id as ToolDispatchExecution['callId'],
@@ -131,9 +131,27 @@ it('bounds calls and rejects missing Agent, stale registry identity and nested P
   gate.resolve(undefined); await first; f.calls.release(exec.token)
   const { agent: _agent, ...agentless } = f.exec()
   expect(() => f.calls.run(agentless, next)).toThrow('original native foreground')
-  expect(() => f.calls.run({ ...f.exec(), parent: Symbol('ptc') as ToolExecutionToken }, next)).toThrow('original native foreground')
+  expect(() => f.calls.run({ ...f.exec(), parent: Symbol('ptc') as ToolExecutionToken }, next)).toThrow('original live native invocation')
   f.agents.set(SessionId('A'), { ...exec.agent! })
   expect(() => f.calls.run(exec, next)).toThrow('exact live account-native Agent')
   expect(next).not.toHaveBeenCalled()
   expect(f.calls.inspect()).toBe(0)
+})
+
+it('admits only a live same-Agent run_code parent token and revokes its nested child with that parent', async () => {
+  const f = fixture(), parent = { ...f.exec(), name: 'run_code' }
+  let childScope: ReturnType<typeof f.calls.capture> | undefined
+  await f.calls.run(parent, async () => {
+    const child = { ...f.exec(), parent: parent.token, rootCallId: parent.rootCallId }
+    await f.calls.run(child, async () => { childScope = f.calls.capture(f.ctx); return result })
+    expect(() => f.calls.run({ ...f.exec('B'), parent: parent.token, rootCallId: parent.rootCallId }, async () => result)).toThrow()
+    expect(() => f.calls.run({ ...f.exec(), parent: parent.token, rootCallId: 'foreign' as typeof parent.rootCallId }, async () => result)).toThrow()
+    return result
+  })
+  if (childScope === undefined) throw new Error('Expected original nested scope')
+  expect(childScope.scope.lifetime.aborted).toBe(false)
+  f.calls.release(parent.token)
+  expect(childScope.scope.lifetime.aborted).toBe(true)
+  expect(f.calls.inspect()).toBe(0)
+  expect(() => f.calls.run({ ...f.exec(), parent: parent.token }, async () => result)).toThrow()
 })

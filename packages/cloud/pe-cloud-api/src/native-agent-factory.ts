@@ -142,9 +142,8 @@ class FactoryAdmission {
     const parent = options.parentAgent
     if (parent !== undefined) {
       this.child(owner, parent)
-      if (options.observeDisposal !== undefined || options.seed !== undefined || (options.inheritedEventCount ?? 0) !== 0
-        || options.meta?.origin !== 'subagent' || options.meta.parentSession !== parent.id
-        || options.meta.isSeeded === true || options.sessionId === parent.id
+      if (options.observeDisposal !== undefined || options.meta?.origin !== 'subagent' || options.meta.parentSession !== parent.id
+        || options.sessionId === parent.id
         || options.meta.delegationDepth !== delegationDepthOf(parent) + 1) {
         throw new CloudApiError('cloud/forbidden', 'The native child creation inputs are not approved.')
       }
@@ -230,7 +229,7 @@ class FactoryAdmission {
     else {
       this.parent(owner, parent)
       const header = agent.session.header
-      if (header.origin !== 'subagent' || header.parentSession !== parent.id || header.isSeeded
+      if (header.origin !== 'subagent' || header.parentSession !== parent.id
         || (header.delegationDepth ?? 0) < delegationDepthOf(parent) + 1 || id === parent.id
         || depth === undefined || delegationDepthOf(agent) !== depth) {
         throw new CloudApiError('cloud/forbidden', 'The prepared child lineage is not approved.')
@@ -318,7 +317,7 @@ class AccountAgentLoop extends AgentLoop {
  * project/model/Preset inputs; unknown composition is never an implicit approval.
  * Child create/resume additionally requires the original Root capacity reservation
  * and native Workspace preparation. Omission keeps child entry closed. Startup
- * agents, seeded paths and direct AgentLoop.create remain closed. Native ownership,
+ * agents, seeded ordinary roots and direct AgentLoop.create remain closed. Native ownership,
  * repair, publication and rollback remain owned by super. Original setup commits
  * once; current checks run again after persistence and publication awaits.
  * Unknown metadata or native cleanup retains the reservation. The reservation owner

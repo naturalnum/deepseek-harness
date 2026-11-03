@@ -1,6 +1,7 @@
 /** Account-native permission catalog over the original durable preset/command implementation. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import PermissionPresetService, { type Config as PermissionConfig, type PresetSpec } from '@deepseek-ai/dsh-permission-presets'
+import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import type { PermissionCatalog } from '@deepseek-ai/dsh-permission-presets/types'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
@@ -27,10 +28,12 @@ function unavailable(): never {
 
 function supported(value: string): value is Mode { return MODES.some(mode => mode === value) }
 
+function nativeApproval(mode: Mode): ApprovalPolicy { return mode === 'danger-full-access' ? 'never' : 'ask' }
+
 /**
  * Construct native permission controls only over the original enforcing provider pair.
- * All three original modes use native approval never. Full access is confined to the
- * account execution world and does not weaken its mounts or quota.
+ * Read-only and Workspace Write retain native interactive approval; Full access
+ * retains native approval never inside the account execution world and its quota.
  * @param ctx Original account Loader fiber.
  * @param binding Exact installed generation.
  * @param assertCurrent Original account business admission check.
@@ -51,7 +54,7 @@ export function createNativePermissions(
     || Object.keys(config.presets).length !== MODES.length) unavailable()
   for (const mode of MODES) {
     const spec = config.presets[mode]
-    if (spec?.sandbox !== mode || spec.approval !== 'never') unavailable()
+    if (spec?.sandbox !== mode || spec.approval !== nativeApproval(mode)) unavailable()
   }
   const originalService: { value?: PermissionPresetService } = {}
   const installed = (): void => {
@@ -85,7 +88,7 @@ export function createNativePermissions(
     override resolve(name: string): PresetSpec {
       if (!supported(name)) throw new CloudApiError('cloud/forbidden', 'This permission mode is not available in the account sandbox.')
       const result = super.resolve(name)
-      if (result.sandbox !== name || result.approval !== 'never') unavailable()
+      if (result.sandbox !== name || result.approval !== nativeApproval(name)) unavailable()
       return result
     }
 

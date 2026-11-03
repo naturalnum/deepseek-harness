@@ -148,6 +148,12 @@
     },
     {
       "path": "../../host/plugin-inventory"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../interaction/user-approval"
     }
   ]
 }

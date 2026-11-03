@@ -6,7 +6,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { ExecutionStateError } from './errors.ts'
 import type { NativeFilePolicy } from './agent-data/file-policy.ts'
 
-const MODE_RANK = { 'read-only': 0, 'workspace-write': 1, 'danger-full-access': 2 } as const
+const MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const
 
 function denied(): never {
   throw new ExecutionStateError('cloud/execution-unavailable', 'The requested Session file policy is unavailable in this sandbox.')
@@ -14,8 +14,8 @@ function denied(): never {
 
 /**
  * Resolve an original command's immutable file policy from its real native Session.
- * Subprocess callers omit an override. A Shell override cannot change the selected
- * Session/project or widen a read-only Session; this cloud recipe disables approval escalation.
+ * Subprocess callers omit an override. Native tools resolve approval before passing
+ * a typed per-call override; it may widen that call but cannot change its Session/project.
  * @param ctx Calling account provider scope, after original execution-scope admission.
  * @param session Actual registered native Session from the retained execution scope.
  * @param workspaceRoot Original approved project path in the execution world.
@@ -30,9 +30,9 @@ export function selectNativeFilePolicy(
   if (!(provider instanceof SandboxPolicyService)) denied()
   const standing = provider.resolve({ session })
   if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id
-    || !Object.hasOwn(MODE_RANK, standing.mode)) denied()
+    || !MODES.includes(standing.mode)) denied()
   const selected = override ?? standing
   if (selected.workspaceRoot !== workspaceRoot || selected.sessionId !== session.id
-    || !Object.hasOwn(MODE_RANK, selected.mode) || MODE_RANK[selected.mode] > MODE_RANK[standing.mode]) denied()
+    || !MODES.includes(selected.mode)) denied()
   return Object.freeze({ mode: selected.mode })
 }

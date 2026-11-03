@@ -159,9 +159,12 @@ def verify_file_policy(project, mode):
     if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
     readonly = mode == 'read-only'
-    for path in [project, ENV_ROOT + '/home', ENV_ROOT + '/venv', ENV_ROOT + '/tmp', '/tmp']:
+    for path in [project, ENV_ROOT + '/tmp', '/tmp']:
         if bool(os.statvfs(path).f_flag & os.ST_RDONLY) != readonly:
             raise ValueError('workload file policy mount mismatch')
+    for path in [ENV_ROOT + '/home', ENV_ROOT + '/venv']:
+        if bool(os.statvfs(path).f_flag & os.ST_RDONLY) != (mode != 'danger-full-access'):
+            raise ValueError('private environment file policy mount mismatch')
 
 
 def verify_skill_world(project, expected_root, value, mode='workspace-write'):

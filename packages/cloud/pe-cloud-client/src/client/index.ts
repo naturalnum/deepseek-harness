@@ -9,7 +9,6 @@ import { installCloudSkillSettings } from './skill-settings.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
 import { installCloudSidebarAccount } from './sidebar-account.ts'
-import { installCloudPresetIntegration } from './preset-integration.ts'
 import { installCloudSubagentSettings } from './subagent-settings.ts'
 
 /** Stable browser plugin name. */
@@ -33,7 +32,6 @@ export function apply(ctx: Context, config: Config): void {
   if (Object.keys(config).length !== 0) throw new Error('pe-cloud-client/client requires empty Loader configuration; limits belong to preparation')
   owner.activate(ctx)
   installCloudSubagentSettings(ctx, owner)
-  installCloudPresetIntegration(ctx, owner)
   installCloudProjects(ctx)
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)

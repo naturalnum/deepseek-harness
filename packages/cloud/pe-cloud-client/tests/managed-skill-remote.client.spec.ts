@@ -28,6 +28,7 @@ it('reads only on gesture and uses the exact details-issued directory edit after
   expect(f.installed).not.toHaveBeenCalled()
   await api.installed(signal())
   const edit = await api.details(f.entry.skillId, signal())
+  expect(edit.markdown).toBe('instructions')
   f.installed.mockResolvedValueOnce({ ok: true, value: { ...f.state, version: directoryVersion('later-list') } })
   await api.installed(signal())
   expect(await edit.update?.(zip(), signal())).toMatchObject({ kind: 'persisted', applied: false })
@@ -89,7 +90,7 @@ it('honors actual action flags and native source coverage instead of opening gue
   f.installed.mockResolvedValueOnce({ ok: true, value: { ...f.state, actions: { install: false }, entries: [{ ...f.entry,
     selection: { kind: 'shadowed', by: { name: 'one', source: 'project-dsh', provider: 'native-project' } } }] } })
   f.details.mockResolvedValueOnce({ ok: true, value: { entry: { ...f.entry, mutable: false,
-    actions: { update: false, uninstall: false, download: false } }, version: directoryVersion('details'), files: [] } })
+    actions: { update: false, uninstall: false, download: false } }, version: directoryVersion('details'), files: [], markdown: 'instructions' } })
   const api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
   expect(list.install).toBeUndefined()
   expect(list.items[0]?.shadowedBy).toEqual({ name: 'one', source: 'project-dsh' })

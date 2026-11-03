@@ -2,6 +2,7 @@
 import { PROTOCOL, SLICE_LIMITS } from './constants.ts'
 import { hex, need, record } from './canonical.ts'
 import type { RangeAuthorization } from './types.ts'
+import type { StreamLimits } from './types.ts'
 
 /** Version changes before accepting either role; old single-range peers fail closed. */
 export const ROLE_PROTOCOL = PROTOCOL
@@ -9,6 +10,9 @@ export const ROLE_PROTOCOL = PROTOCOL
 export const ROLE_LIMITS = SLICE_LIMITS
 /** HMAC key derivation domain shared with the private Python wire validator. */
 export const ROLE_DOMAIN = 'dsh:s4:range-role:v1'
+/** Private pipes subprotocol and fixed per-direction windows, distinct from cumulative traffic budgets. */
+export const STREAM_LIMITS: StreamLimits = Object.freeze({ version: 'pe-execution-stream-v1', frameBytes: 4096,
+  windowBytes: 65536, controlInputBytes: 8388608, controlOutputBytes: 8388608, stdinBytes: 4096 })
 
 /**
  * Parse the complete wire authorization without issuing a role or interpreting command arguments.
@@ -17,8 +21,8 @@ export const ROLE_DOMAIN = 'dsh:s4:range-role:v1'
  */
 export function authorization(value: unknown): RangeAuthorization {
   record(value, ['role', 'registrationId', 'signature']); hex(value.signature)
-  need(value.role === 'foreground' || value.role === 'service', 'invalid_role')
-  if (value.role === 'foreground') need(value.registrationId === null, 'invalid_role_registration')
+  need(value.role === 'foreground' || value.role === 'service' || value.role === 'program', 'invalid_role')
+  if (value.role !== 'service') need(value.registrationId === null, 'invalid_role_registration')
   else need(typeof value.registrationId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value.registrationId), 'invalid_role_registration')
   return Object.freeze({ role: value.role, registrationId: value.registrationId, signature: value.signature })
 }

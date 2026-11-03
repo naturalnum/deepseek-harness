@@ -5,14 +5,15 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { NativeTerminalHandle } from './native-terminal.ts'
+import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec, SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
 import { guardianEncodedBudget, guardianWorkingCopiesBudget } from './agent-data/encoded-budget.ts'
 import { assertInstalledExecutionBinding } from './account-port.ts'
 import type { AllocationId } from './allocation-types.ts'
 import type { NativeAccountExecutionAuthority } from './coordinator.ts'
 import { PreviewHttpError, type HttpRequestCharge, type PreviewHttpOwner } from './application-http.ts'
-import { ManagedCommandOperation, type CommandChannel, type CommandOperationLimits } from './command-operation.ts'
+import { ManagedCommandOperation, type CommandChannel, type CommandOperationLimits, type CommandPipeOptions } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
 import { NativeExecutionCalls, type RetainedNativeService } from './native-calls.ts'
 import type { NativeExecutionProviderPort } from './native-providers.ts'
@@ -73,6 +74,8 @@ export interface NativeServiceAccountConfig {
 /** Fixed native consumers and existing finite Root budgets. */
 export interface NativeCommandAccountLimits {
   readonly enforceSessionFilePolicy?: boolean
+  /** Root-selected raw stream budgets; omission preserves collect-only admission. */
+  readonly pipes?: Readonly<{ controlInputBytes: number; controlOutputBytes: number }>
   readonly allowedTools: readonly string[]
   readonly maxScopes: number
   readonly commandLimits: CommandOperationLimits
@@ -107,7 +110,7 @@ interface ServiceRow {
 interface CommandRecord {
   readonly filePolicy?: NativeFilePolicy
   readonly scope: ExecutionScope<Workspace>
-  readonly role: 'foreground' | 'service'
+  readonly role: 'foreground' | 'service' | 'program'
   readonly reservation: NativeCommandReservation
   operation?: ManagedCommandOperation
   service?: ServiceRow
@@ -117,7 +120,7 @@ interface CommandRecord {
   privateFailure?: { readonly cause: unknown }
 }
 type RecordKey = ManagedCommandOperation | RetainedNativeService<Workspace>
-interface ActiveRoles { foreground?: CommandRecord; service?: CommandRecord }
+interface ActiveRoles { foreground?: CommandRecord; service?: CommandRecord; program?: CommandRecord }
 
 /** Preparing leases and bound operations occupy the same original records container. */
 export class NativeCommandAccount implements NativeExecutionProviderPort, OriginalDevServiceHooks<Workspace> {
@@ -203,7 +206,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
    */
   assertContinuation(scope: ExecutionScope<Workspace>): void {
     this.calls.assertCurrent(scope)
-    const current = this.active.get(scope.sessionId)?.foreground
+    const current = this.active.get(scope.sessionId)?.[scope.consumerId === 'run_code' ? 'program' : 'foreground']
     if (!this.state.open || scope.purpose !== 'command' || current?.scope !== scope
       || current.operation === undefined || !current.operation.isAwaitingChannel() || current.unknownReported) throw this.failure()
     for (const row of this.records.values()) {
@@ -222,7 +225,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   assertReopenedSessionRetirement(scope: ExecutionScope<Workspace>): void {
     this.assertContinuation(scope)
     if (this.calls.hasOtherSessionCall(scope.sessionId, scope)) throw this.failure()
-    const current = this.active.get(scope.sessionId)?.foreground
+    const current = this.active.get(scope.sessionId)?.[scope.consumerId === 'run_code' ? 'program' : 'foreground']
     for (const row of this.records.values()) {
       if (row !== current && row.scope.sessionId === scope.sessionId) throw this.failure()
     }
@@ -234,7 +237,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
    */
   retireCompletedSession(scope: ExecutionScope<Workspace>): void {
     this.assertContinuation(scope)
-    const current = this.active.get(scope.sessionId)?.foreground
+    const current = this.active.get(scope.sessionId)?.[scope.consumerId === 'run_code' ? 'program' : 'foreground']
     for (const row of [...this.records.values()]) {
       if (row === current || row.scope.sessionId !== scope.sessionId) continue
       if (row.operation !== undefined) row.operation.release()
@@ -469,9 +472,17 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     record.operation.cancelUnstarted(cause)
   }
 
-  create(caller: Context, spec: SubprocessSpawnSpec, policy?: SandboxExecutionPolicy): ManagedCommandOperation {
+  /** Reserve the original native command before publication or remote mutation.
+   * @param caller Actual account provider caller.
+   * @param spec Complete Native process request.
+   * @param policy Optional already approved per-call policy.
+   * @param terminal Original terminal dimensions; absent for ordinary pipes and collect.
+   * @returns The original preparing operation.
+   */
+  create(caller: Context, spec: SubprocessSpawnSpec, policy?: SandboxExecutionPolicy,
+    terminal?: Readonly<{ rows: number; cols: number }>): ManagedCommandOperation {
     const { scope, signal } = this.capture(caller)
-    signal.throwIfAborted(); spec.signal?.throwIfAborted(); this.validateInput(scope, spec)
+    signal.throwIfAborted(); spec.signal?.throwIfAborted(); this.validateInput(scope, spec, terminal)
     if (policy !== undefined && this.config.enforceSessionFilePolicy !== true) throw this.failure()
     const filePolicy = this.config.enforceSessionFilePolicy === true
       ? selectNativeFilePolicy(caller, scope.agent.session, scope.project.path, policy) : undefined
@@ -501,9 +512,12 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       }
     }
     if (scope.purpose !== 'command') throw this.failure()
-    this.requireSlot(scope, 'foreground')
+    const role = scope.consumerId === 'run_code' ? 'program' : 'foreground'
+    this.requireSlot(scope, role)
+    const pipes = this.pipeOptions(spec, terminal)
     const input: SubprocessSpawnSpec = { ...spec,
-      signal: spec.signal === undefined || spec.signal === signal ? signal : AbortSignal.any([signal, spec.signal]) }
+      signal: terminal === undefined
+        ? (spec.signal === undefined || spec.signal === signal ? signal : AbortSignal.any([signal, spec.signal])) : scope.lifetime }
     let record: CommandRecord | undefined, reservation: NativeCommandReservation | undefined
     // Constructor validation still precedes ordinary Root reservation, as on the original command path.
     const operation = new ManagedCommandOperation(input, this.limits, {
@@ -516,20 +530,41 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       retired: () => {
         if (record !== undefined) this.retire(record)
         else { reservation?.releaseActive(); reservation?.releaseResident() }
-      } })
+      } }, pipes)
     try {
       reservation = this.root.reserve(scope, input); this.calls.assertCurrent(scope)
-      record = { scope, role: 'foreground', operation, reservation,
+      record = { scope, role, operation, reservation,
         ...filePolicy === undefined ? {} : { filePolicy }, activeReleased: false, retired: false, unknownReported: false }
       this.records.set(operation, record); this.claimSlot(record); this.watchEmpty(record, operation)
       return operation
     } catch (cause) { operation.release(); operation.begin(); throw cause }
   }
 
+  async createTerminal(caller: Context, spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    const release = this.calls.retainTerminal(caller)
+    let operation: ManagedCommandOperation | undefined
+    try {
+      operation = this.create(caller, { argv: spec.argv, cwd: spec.cwd, env: { ...spec.env, TERM: spec.terminalType },
+        graceMs: spec.graceMs, sandboxPolicy: spec.sandboxPolicy, stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', control: 'pipe' } },
+      spec.sandboxPolicy, { rows: spec.rows, cols: spec.cols })
+      const original = operation, scope = this.calls.capture(caller).scope
+      const handle = new NativeTerminalHandle(operation, () => { this.calls.assertCurrent(scope) }, release, this.limits.maxWaiters)
+      const abort = (): void => { original.requestStop(spec.signal?.reason) }
+      spec.signal?.addEventListener('abort', abort, { once: true })
+      try {
+        spec.signal?.throwIfAborted(); operation.publish(); operation.begin()
+        return await handle.started()
+      } finally { spec.signal?.removeEventListener('abort', abort) }
+    } catch (cause) {
+      if (operation !== undefined) { operation.release(); operation.cancelUnstarted(cause); await operation.whenEmpty }
+      release(); throw cause
+    }
+  }
+
   assertOperationCurrent(caller: Context, operation: ManagedCommandOperation): void {
-    assertInstalledExecutionBinding(caller, this.binding, this.ctx.root)
     const record = this.records.get(operation)
     if (record === undefined) throw this.failure()
+    this.assertConsumerBinding(caller, record.scope)
     this.calls.assertCurrent(record.scope)
   }
   providerFailed(operation: ManagedCommandOperation, cause: unknown): void {
@@ -636,9 +671,12 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     this.calls.assertCurrent(scope)
     if (scope.purpose !== 'service' || scope.consumerId !== 'dev_service') throw this.failure()
   }
-  private requireSlot(scope: ExecutionScope<Workspace>, role: 'foreground' | 'service'): void {
+  private requireSlot(scope: ExecutionScope<Workspace>, role: CommandRecord['role']): void {
     const roles = this.active.get(scope.sessionId)
-    if (roles?.foreground?.unknownReported || roles?.service?.unknownReported) throw this.failure()
+    if (roles?.foreground?.unknownReported || roles?.service?.unknownReported || roles?.program?.unknownReported) throw this.failure()
+    if (role === 'program' && roles?.service !== undefined || role === 'service' && roles?.program !== undefined) {
+      throw new ExecutionStateError('cloud/capacity', 'Programs and development services share the second Session execution range.')
+    }
     if (roles?.[role] !== undefined) {
       throw new ExecutionStateError('cloud/capacity', role === 'service' ? 'This Session already has an active development service.' : 'This Session already owns an active command range.')
     }
@@ -653,8 +691,11 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     const roles = this.active.get(record.scope.sessionId)
     if (roles?.[record.role] === record) {
       if (record.role === 'foreground') delete roles.foreground
+      else if (record.role === 'program') delete roles.program
       else delete roles.service
-      if (roles.foreground === undefined && roles.service === undefined) this.active.delete(record.scope.sessionId)
+      if (roles.foreground === undefined && roles.service === undefined && roles.program === undefined) {
+        this.active.delete(record.scope.sessionId)
+      }
     }
     record.reservation.releaseActive()
   }
@@ -707,10 +748,20 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   private capture(caller: Context) { if (!this.state.open) throw this.failure(); return this.calls.capture(caller) }
   private assertScope(scope: ExecutionScope<Workspace>): void {
     if (!this.state.open) throw this.failure()
-    this.authority.assertBusinessCurrent(); assertInstalledExecutionBinding(scope.agent.ctx, this.binding, this.ctx.root)
-    if (scope.binding !== this.binding || this.authority.projectForAgent(scope.agent) !== scope.project
-      || this.authority.projectForSession(scope.agent.session) !== scope.project
-      || !scope.project.sessionIds.includes(scope.sessionId)) throw this.failure()
+    this.authority.assertBusinessCurrent(); this.assertConsumerBinding(scope.agent.ctx, scope)
+    if (scope.binding !== this.binding || !scope.project.sessionIds.includes(scope.sessionId)) throw this.failure()
+    if (this.calls.ownsJob(scope)) this.authority.assertRetainedExecutionOwner(scope.agent, scope.project)
+    else if (this.authority.projectForAgent(scope.agent) !== scope.project
+      || this.authority.projectForSession(scope.agent.session) !== scope.project) throw this.failure()
+  }
+  private assertConsumerBinding(caller: Context, scope: ExecutionScope<Workspace>): void {
+    if (this.calls.ownsJob(scope)) {
+      // Native jobs outlive their producer fiber and drain during Agent scope disposal.
+      // Only the same installed account and issued job scope retain existing handles;
+      // capture/create still require an active original native invocation.
+      if (caller.root !== this.ctx.root || caller.get('peAccount') !== this.binding) throw this.failure()
+      assertInstalledExecutionBinding(this.ctx, this.binding, this.ctx.root)
+    } else assertInstalledExecutionBinding(caller, this.binding, this.ctx.root)
   }
   private releaseScope(scope: ExecutionScope<Workspace>): void {
     for (const row of [...this.records.values()]) if (row.scope === scope) {
@@ -719,16 +770,39 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       else { row.operation.release(); row.operation.cancelUnstarted(this.failure()) }
     }
   }
-  private validateInput(scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): void {
+  private validateInput(scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec,
+    terminal?: Readonly<{ rows: number; cols: number }>): void {
     const project = scope.project.path, stdin = spec.stdio.stdin
     if (spec.cwd !== project && !spec.cwd.startsWith(project + '/')) throw this.failure()
-    if (stdin === 'pipe') throw new ExecutionStateError('cloud/execution-unavailable', 'Closed or batch input is required.')
-    const value = { argv: spec.argv, cwd: spec.cwd,
-      stdin: stdin === 'ignore' ? { mode: 'ignore' as const } : { mode: 'batch' as const, base64: Buffer.from(stdin.data).toString('base64') } }
+    const pipes = this.pipeOptions(spec, terminal)
+    const input = typeof stdin === 'object' ? { mode: 'batch' as const, base64: Buffer.from(stdin.data).toString('base64') }
+      : stdin === 'pipe' ? { mode: 'pipe' as const } : { mode: 'ignore' as const }
+    let value: import('./agent-data/types.ts').OperationSpec
+    if (pipes === undefined) {
+      if (input.mode === 'pipe') throw this.failure()
+      value = { argv: spec.argv, cwd: spec.cwd, stdin: input }
+    } else {
+      value = { argv: spec.argv, cwd: spec.cwd, stdin: input, executionKind: 'pipes', env: pipes.env,
+        stream: { version: 'pe-execution-stream-v1', stdout: 'pipe', stderr: 'pipe',
+          ...terminal === undefined ? {} : { terminal }, control: spec.stdio.control === 'pipe' ? 'pipe' : 'ignore',
+          limits: { controlInputBytes: pipes.controlInputBytes, controlOutputBytes: pipes.controlOutputBytes } } }
+    }
     // Reserve for the longest supported mode before selecting the actual Session policy.
     const policy = this.config.enforceSessionFilePolicy === true ? { mode: 'danger-full-access' as const } : undefined
     if (this.config.maxSkillCopiesPerOperation === undefined) guardianEncodedBudget(project, value, undefined, policy)
     else guardianWorkingCopiesBudget(project, value, this.config.maxSkillCopiesPerOperation, policy)
+  }
+  private pipeOptions(spec: SubprocessSpawnSpec, terminal?: Readonly<{ rows: number; cols: number }>): CommandPipeOptions | undefined {
+    if (typeof spec.stdio.stdout !== 'string' && typeof spec.stdio.stderr !== 'string' && spec.stdio.control === undefined) return undefined
+    const limits = this.config.pipes
+    if (limits === undefined || spec.stdio.stdout !== 'pipe' || spec.stdio.stderr !== 'pipe') throw this.failure()
+    // Native PTC tombstones host variables; only remote base keys need to be signed as removals.
+    const base = new Set(['PATH', 'HOME', 'TMPDIR', 'LANG', 'OPENBLAS_NUM_THREADS'])
+    const env: Record<string, string | null> = {}
+    for (const [key, value] of Object.entries(spec.env ?? {})) {
+      if (value !== undefined || base.has(key)) env[key] = value ?? null
+    }
+    return { ...limits, env, ...terminal === undefined ? {} : { terminal } }
   }
   private fingerprint(spec: SubprocessSpawnSpec): string {
     return JSON.stringify({ argv: spec.argv, cwd: spec.cwd, stdio: spec.stdio, graceMs: spec.graceMs, env: spec.env })
@@ -738,7 +812,10 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       try { return await request() }
       catch (cause) { record.privateFailure ??= { cause }; throw this.failure() }
     }
-    return { ...(channel.release === undefined ? {} : { release: () => channel.release?.() }),
+    const attach = channel.attach?.bind(channel), join = channel.whenLocallySettled?.bind(channel)
+    return { ...(attach === undefined ? {} : { attach: () => observe(attach) }),
+      ...(join === undefined ? {} : { whenLocallySettled: join }),
+      ...(channel.release === undefined ? {} : { release: () => channel.release?.() }),
       prepare: spec => observe(() => {
         if (this.config.enforceSessionFilePolicy === true && record.filePolicy === undefined) throw this.failure()
         return record.filePolicy === undefined ? channel.prepare(spec) : channel.prepare(spec, record.filePolicy)

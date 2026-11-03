@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
+import { SkillInstallPanel } from '../src/client/management/skills/SkillInstallPanel.tsx'
 import { skillsManagementDictionaries } from '../src/client/management/skills/locales.ts'
 import type { SkillActionOutcome, SkillManagementView } from '../src/client/management/skills/types.ts'
 
@@ -13,7 +14,7 @@ const en = skillsManagementDictionaries.en
 function fixture() {
   const source = createSnapshotStore<SkillManagementView>({ phase: 'ready', items: [
     { id: 'sample', name: 'Sample', description: 'Existing account sample', category: 'writing-office',
-      installed: true, recommended: true, status: 'published', enabled: true, canTry: true },
+      installed: true, recommended: true, status: 'published', enabled: true, canTry: true, canToggle: true, sourceLabel: 'Account skills', version: '1.2.0' },
     { id: 'data', name: 'Data analysis', description: 'Analyze tables', category: 'data-analysis',
       installed: false, recommended: false, status: 'available' },
   ] })
@@ -38,7 +39,7 @@ it('filters original-source cards and reacts to its updates without fetching or 
 })
 it('keeps missing account actions closed and does not claim an unavailable catalog is empty', () => {
   const f = fixture(); render(<SkillsPage {...f.props}/>)
-  expect(screen.getByRole('button', { name: en.install })).toHaveProperty('disabled', true)
+  expect(screen.queryByRole('button', { name: en.install })).toBeNull()
   expect(screen.getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: `${en.installCatalog} Data analysis` })).toHaveProperty('disabled', true)
   act(() => { f.source.set({ phase: 'unavailable', items: [] }) })
@@ -48,8 +49,8 @@ it('keeps missing account actions closed and does not claim an unavailable catal
 it('submits a complete text draft once, keeps unknown visible and never retries or fabricates a row', async () => {
   const f = fixture(), held = Promise.withResolvers<SkillActionOutcome>()
   const installText = vi.fn<NonNullable<SkillsPageProps['installText']>>(() => held.promise)
-  render(<SkillsPage {...f.props} installText={installText}/>)
-  fireEvent.click(screen.getByRole('button', { name: en.install }))
+  render(<><SkillsPage {...f.props}/><SkillInstallPanel limits={f.props.limits!} installText={installText}
+    report={f.props.report} t={f.props.t} onClose={() => {}}/></>)
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByLabelText(en.name), { target: { value: 'New skill' } })
   fireEvent.change(within(dialog).getByLabelText(en.summary), { target: { value: 'Description' } })
@@ -67,13 +68,15 @@ it('validates archive selection locally and sends the original File only to the 
   const f = fixture(), importPackage = vi.fn<NonNullable<SkillsPageProps['importPackage']>>(async () => 'unknown')
   render(<SkillsPage {...f.props} importPackage={importPackage}/>)
   fireEvent.click(screen.getByRole('button', { name: en.import }))
-  const dialog = screen.getByRole('dialog'), input = within(dialog).getByLabelText(en.archive)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  const input = screen.getByLabelText(en.chooseArchive)
   fireEvent.change(input, { target: { files: [new File(['x'], 'wrong.txt')] } })
-  expect(within(dialog).getByRole('button', { name: en.import })).toHaveProperty('disabled', true)
+  expect(screen.getByText(en.invalidFile)).toBeTruthy()
+  expect(importPackage).not.toHaveBeenCalled()
   const file = new File(['synthetic package'], 'owned.zip')
   fireEvent.change(input, { target: { files: [file] } })
-  fireEvent.click(within(dialog).getByRole('button', { name: en.import }))
   await screen.findByText(en.unknown)
+  fireEvent.change(input, { target: { files: [file] } })
   expect(importPackage).toHaveBeenCalledExactlyOnceWith(file, expect.any(AbortSignal))
 })
 it('reads inert Markdown in the detail dialog and invokes only the supplied draft callback', async () => {
@@ -102,4 +105,63 @@ it('revokes local observation on scope replacement and ignores a late action res
   await act(async () => { held.resolve('confirmed'); await held.promise })
   expect(f.props.report).not.toHaveBeenCalled()
   expect(document.querySelectorAll('[data-skill-id]')).toHaveLength(2)
+})
+
+it('shows one catalog without featured duplicates, with an import-only header and card-owned controls', async () => {
+  const f = fixture(), toggle = vi.fn<NonNullable<SkillsPageProps['toggle']>>(async () => 'confirmed')
+  const readDetail = vi.fn(async () => ({ instructions: 'Complete skill instructions' }))
+  const { container } = render(<SkillsPage {...f.props} toggle={toggle} readDetail={readDetail}/>)
+  const header = container.querySelector('header')!
+  expect({
+    title: within(header).getByRole('heading').textContent,
+    actions: within(header).getAllByRole('button').map(button => button.textContent),
+    categories: within(screen.getByRole('group', { name: en.categories })).getAllByRole('button').map(button => button.textContent),
+    names: screen.getAllByRole('article').map(card => within(card).getByRole('button', { name: /^(?:Sample|Data analysis)$/u }).textContent),
+    installed: screen.getByRole('switch', { name: en.installed }).getAttribute('aria-checked'),
+  }).toMatchInlineSnapshot(`
+    {
+      "actions": [
+        "Import skill package",
+      ],
+      "categories": [
+        "All",
+        "Writing & office",
+        "Data analysis",
+        "Research & knowledge",
+        "Development tools",
+        "Imported",
+        "Other",
+      ],
+      "installed": "false",
+      "names": [
+        "Sample",
+        "Data analysis",
+      ],
+      "title": "Skills",
+    }
+  `)
+  expect(screen.queryByText(en.recommended)).toBeNull()
+  expect(screen.queryByText(en.description)).toBeNull()
+  const card = screen.getAllByRole('article')[0]!
+  expect(within(card).getByText('Account skills')).toBeTruthy()
+  expect(within(card).getByText('Version 1.2.0')).toBeTruthy()
+  fireEvent.click(within(card).getByRole('switch', { name: `Sample ${en.toggle}` }))
+  await act(async () => {})
+  expect(toggle).toHaveBeenCalledExactlyOnceWith('sample', false, expect.any(AbortSignal))
+  expect(readDetail).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(within(card).getByRole('button', { name: 'Sample' }))
+  await screen.findByText('Complete skill instructions')
+  expect(readDetail).toHaveBeenCalledExactlyOnceWith('sample', expect.any(AbortSignal))
+})
+
+it('applies purpose categories and installed-only filtering to the current source', () => {
+  const f = fixture()
+  render(<SkillsPage {...f.props}/>)
+  fireEvent.click(within(screen.getByRole('group', { name: en.categories })).getByRole('button', { name: en['data-analysis'] }))
+  expect(screen.getAllByRole('article')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('switch', { name: en.installed }))
+  expect(screen.queryAllByRole('article')).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: en.all }))
+  expect(screen.getAllByRole('article')).toHaveLength(1)
 })

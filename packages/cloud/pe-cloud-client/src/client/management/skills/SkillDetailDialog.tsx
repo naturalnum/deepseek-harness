@@ -36,6 +36,8 @@ export function SkillDetailDialog({ skill, actions, t, onClose }: {
   const close = (): void => { if (!busy) onClose() }
   return <Modal open onClose={close} title={skill.name} closeLabel={t('close')} className={`${css.detailModal}`}
     footer={<div className={css.footer}>
+      <button type="button" className={css.button} disabled={!canAct || detail?.download === undefined}
+        onClick={() => { const download = detail?.download; if (download !== undefined) run('download', async (signal) => { await download(signal); return 'confirmed' }) }}>{t('bundleDownload')}</button>
       {!skill.installed ? <button type="button" className={css.button}
         disabled={!canAct || actions.installCatalog === undefined}
         onClick={() => {

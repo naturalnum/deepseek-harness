@@ -1,4 +1,6 @@
 /** One account's concrete project/model/Preset checks over original native services; this issues no ready state. */
+import type {} from '@deepseek-ai/dsh-ptc-runtime'
+import type {} from '@deepseek-ai/dsh-terminal'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -23,19 +25,27 @@ import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import SubagentRuntime, { delegationDepthOf, resolveChildAgentOptions, resolveChildDepth, type SubagentAdmissionRequest } from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { AccountBinding } from './types.ts'
 import { ACCOUNT_NATIVE_ENTRIES, type AccountNativeGuards } from './account-native-integration.ts'
 import { createAccountFileMutationGuard } from './account-permissions.ts'
 import type { FileReadTiming } from './file-read-timing.ts'
 
-/** Explicit deployment selection for one fixed native preset and finite exact model routes. */
+/** One Root-approved native declaration; nonselectable rows retain historical Session recovery only. */
+export interface AccountPresetPolicy {
+  readonly id: string
+  readonly entryId: string
+  readonly configSha256: string
+  readonly selectable: boolean
+}
+
+/** Explicit deployment declarations and finite exact model routes. */
 export interface AccountPolicyConfig {
   readonly maxModelRoutes: number
   readonly maxPolicyStringBytes: number
   readonly models: { readonly provider: string; readonly model: string }[]
-  readonly presetId: string
-  readonly presetEntryId: string
-  readonly presetConfigSha256: string
+  readonly defaultPresetId: string
+  readonly presets: AccountPresetPolicy[]
   readonly maxPresetConfigBytes: number
   readonly agentLoopEntryId: string
 }
@@ -57,7 +67,7 @@ type ChildPreparation = {
   active: boolean
 }
 
-function refuse(): never { throw new CloudApiError('cloud/forbidden', 'The account project or fixed Preset is not approved.') }
+function refuse(): never { throw new CloudApiError('cloud/forbidden', 'The account project or Agent preset is not approved.') }
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The account policy requires its original native providers.') }
 function modelDenied(): never { throw new CloudApiError('cloud/model-not-allowed', 'The model route is not approved and available for this account.') }
 function object(value: unknown): value is object { return value !== null && typeof value === 'object' }
@@ -67,7 +77,7 @@ function original(value: object): object {
 }
 
 /**
- * Hash a finite plain JSON preset declaration with sorted object keys; expressions and aliases reject.
+ * Hash a finite native declaration with sorted object keys; Native expression source is retained without evaluation.
  * @param input Actual resolved native declaration, or the same trusted deployment JSON when computing its expectation.
  * @param maxBytes Explicit upper bound on the canonical UTF-8 input; traversal retains at most that finite input.
  * @returns Lowercase SHA-256; this expectation alone is never an installation or readiness certificate.
@@ -93,7 +103,8 @@ export function accountPresetConfigDigest(input: unknown, maxBytes: number): str
       if (value.length > maxBytes) refuse()
       stack.push({ kind: 'text', value: JSON.stringify(value) })
     } else if (object(value)) {
-      if (seen.has(value) || isJsExpr(value)) refuse()
+      if (seen.has(value)) refuse()
+      if (isJsExpr(value) && (Object.keys(value).length !== 1 || typeof value.__jsExpr !== 'string')) refuse()
       seen.add(value)
       if (Array.isArray(value)) {
         if (value.length > maxBytes) refuse()
@@ -165,12 +176,12 @@ export function webSearchResetAllowed(settings: Context['settings'], namespace: 
 
 class AccountPolicy {
   private facts: readonly EntryFact[] | undefined
-  private modules: readonly string[] | undefined
+  private readonly modules = new Map<string, readonly string[]>()
   private readonly providers = new Map<string, object>()
   private readonly childPreparations = new Map<object, ChildPreparation>()
-  private readonly loopUpdates = new AsyncLocalStorage<{ readonly fact: EntryFact; refresh(): EntryFact }>()
-  private activeLoopUpdate: object | undefined
-  private unknownLoopUpdate = false
+  private readonly settingsUpdates = new AsyncLocalStorage<{ readonly fact: EntryFact; refresh(): EntryFact }>()
+  private activeSettingsUpdate: object | undefined
+  private unknownSettingsUpdate = false
 
   constructor(
     private readonly ctx: Context, private readonly binding: AccountBinding, private readonly files: CloudAccountFiles,
@@ -178,7 +189,9 @@ class AccountPolicy {
     private readonly provisionableModel?: (provider: string, model: string) => void,
     private readonly assertBusinessCurrent?: (binding: AccountBinding) => void,
     private readonly fileReadTiming?: FileReadTiming,
-  ) {}
+  ) {
+    if (config.presets.length === 0 || config.presets.length > maxEntries) refuse()
+  }
 
   current(): void {
     if (this.fileReadTiming !== undefined) {
@@ -193,13 +206,14 @@ class AccountPolicy {
     if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding || this.ctx.root.get('peAccount') !== this.binding) {
       throw new CloudApiError('cloud/stale-generation', 'The account policy belongs to an ended graph.')
     }
-    if (this.unknownLoopUpdate || (this.activeLoopUpdate !== undefined
-      && this.loopUpdates.getStore() !== this.activeLoopUpdate)) unavailable()
+    if (this.unknownSettingsUpdate || (this.activeSettingsUpdate !== undefined
+      && this.settingsUpdates.getStore() !== this.activeSettingsUpdate)) unavailable()
     this.files.assertInstalled(this.ctx)
     for (const [key, expected] of this.providers) {
       const actual: unknown = this.ctx.get(key)
       if (!object(actual) || original(actual) !== expected) unavailable()
-      if (key === 'agentPresets' && actual instanceof AgentPresets && actual.defaultId !== this.config.presetId) refuse()
+      if (key === 'agentPresets' && actual instanceof AgentPresets
+        && (actual.config.default !== this.config.defaultPresetId || !this.approvedPreset(actual.defaultId).selectable)) refuse()
       if (key === 'agentLoop' && actual instanceof AgentLoop && actual.config.agents.length !== 0) refuse()
     }
     for (const fact of this.facts ?? []) {
@@ -209,7 +223,7 @@ class AccountPolicy {
         this.assertPlanCurrent(fact)
       }
       catch (_cause) {
-        const update = this.loopUpdates.getStore()
+        const update = this.settingsUpdates.getStore()
         if (update?.fact !== fact) unavailable()
         const next = update.refresh()
         try {
@@ -283,10 +297,27 @@ class AccountPolicy {
     return workspace
   }
 
+  private approvedPreset(id: string | null | undefined, selectable = false): AccountPresetPolicy {
+    const selected = this.config.presets.find(row => row.id === id)
+    if (selected === undefined || selectable && !selected.selectable) refuse()
+    return selected
+  }
+
+  selectablePreset(id: string): boolean {
+    this.current()
+    return this.config.presets.some(row => row.id === id && row.selectable)
+  }
+
+  private sessionPreset(session: Session): string {
+    this.approvedPreset(session.header.agentPreset)
+    return this.approvedPreset(this.provider('sessionProjections').stateOf(session, 'agentPreset')).id
+  }
+
   observedProject(id: SessionId, header: SessionHeader): Workspace {
     this.current()
     const workspace = this.memberCurrent(id)
-    if (workspace === undefined || header.id !== id || header.agentPreset !== this.config.presetId) refuse()
+    if (workspace === undefined || header.id !== id) refuse()
+    this.approvedPreset(header.agentPreset)
     this.sessionHeader(header, workspace.path)
     const needsFinalAudit = header.origin === 'subagent' || this.facts === undefined
     if (header.origin === 'subagent') { this.spawn(); if (header.parentSession === id) refuse() }
@@ -304,10 +335,10 @@ class AccountPolicy {
   /** The caller has checked account current in this synchronous operation. */
   private sessionProjectCurrent(session: Session, attached: boolean): Workspace {
     const workspace = this.workspaceAtCurrent(session.header.cwd)
-    if (session.id !== session.header.id || session.header.agentPreset !== this.config.presetId) refuse()
+    if (session.id !== session.header.id) refuse()
+    this.sessionPreset(session)
     this.sessionHeader(session.header, workspace.path)
-    if (this.provider('workingDirectory').get(session) !== workspace.path
-      || this.provider('sessionProjections').stateOf(session, 'agentPreset') !== this.config.presetId) refuse()
+    if (this.provider('workingDirectory').get(session) !== workspace.path) refuse()
     if (attached && (this.provider('sessions').get(session.id) !== session || this.memberCurrent(session.id) !== workspace)) refuse()
     return workspace
   }
@@ -347,16 +378,28 @@ class AccountPolicy {
       if (plan.impact !== 'none') unavailable()
       return { entry, fiber, plan, module: entry.moduleNamespace }
     }
-    const preset = fact(this.config.presetEntryId), loop = fact(this.config.agentLoopEntryId)
-    if (preset.fiber.runtime?.callback !== AgentPreset || !object(preset.fiber.config)
-      || Reflect.get(preset.fiber.config, 'id') !== this.config.presetId
-      || accountPresetConfigDigest(preset.fiber.config, this.config.maxPresetConfigBytes) !== this.config.presetConfigSha256) refuse()
+    const declarations = this.config.presets.map((selected) => {
+      const preset = fact(selected.entryId)
+      if (preset.fiber.runtime?.callback !== AgentPreset || !object(preset.fiber.config)
+        || Reflect.get(preset.fiber.config, 'id') !== selected.id
+        || accountPresetConfigDigest(preset.fiber.config, this.config.maxPresetConfigBytes) !== selected.configSha256) refuse()
+      return preset
+    })
+    const loop = fact(this.config.agentLoopEntryId)
     const nativeLoop = this.provider('agentLoop')
     if (!(nativeLoop instanceof AgentLoop) || nativeLoop.config.agents.length !== 0
       || loop.entry.options.name !== 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop
       || loop.fiber.store?.agentLoop?.fiber !== loop.fiber
       || !object(loop.fiber.store.agentLoop.value) || original(loop.fiber.store.agentLoop.value) !== original(nativeLoop)) unavailable()
-    const facts = [preset, loop]
+    const nativePresets = this.provider('agentPresets')
+    const registryEntries = entries.filter(entry => entry.fiber?.store?.agentPresets?.fiber === entry.fiber
+      && object(entry.fiber?.store?.agentPresets?.value)
+      && original(entry.fiber.store.agentPresets.value) === original(nativePresets))
+    const registryEntry = registryEntries[0]
+    if (!(nativePresets instanceof AgentPresets) || registryEntries.length !== 1 || registryEntry === undefined
+      || registryEntry.options.id !== 'agent-preset-registry') unavailable()
+    const registry = fact(registryEntry.options.id)
+    const facts = [...declarations, loop, registry]
     try { for (const fact of facts) {
       if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
         || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
@@ -372,14 +415,20 @@ class AccountPolicy {
     this.facts = facts
   }
 
-  /** Retain the policy pin across one bounded, original native settings transaction. */
-  private inheritedLoopLimit(): number {
+  /** Read the actual native inherited setting; the registry's absent override resolves through its approved default. */
+  private inheritedSetting(namespace: string, field: string): unknown {
     const settings = this.ctx.get('settings')
     if (settings === undefined) unavailable()
-    const matches = settings.describe({ redactSecrets: true }).filter(row => row.ns === this.config.agentLoopEntryId)
-    const base = matches[0]?.base
+    const matches = settings.describe({ redactSecrets: true }).filter(row => row.ns === namespace), base = matches[0]?.base
     if (matches.length !== 1 || !object(base)) unavailable()
-    const value: unknown = Reflect.get(base, 'maxParallelToolCalls')
+    return Reflect.get(base, field)
+  }
+
+  private approvedSetting(namespace: string, value: unknown): string | number {
+    if (namespace === 'agent-preset-registry') {
+      if (value !== undefined && typeof value !== 'string') refuse()
+      return this.approvedPreset(value ?? this.config.defaultPresetId, true).id
+    }
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1
       || value > DEFAULT_MAX_PARALLEL_TOOL_CALLS) refuse()
     return value
@@ -396,10 +445,11 @@ class AccountPolicy {
       if (settings === undefined) unavailable()
       return webSearchResetAllowed(settings, namespace, field, values)
     }
-    if (namespace !== this.config.agentLoopEntryId || field !== 'maxParallelToolCalls') return false
+    if (!(namespace === this.config.agentLoopEntryId && field === 'maxParallelToolCalls')
+      && !(namespace === 'agent-preset-registry' && field === 'selectedDefault')) return false
     this.pin()
     if (!this.exposure.manifest.allowedSettings.some(row => row.namespace === namespace && row.fields.includes(field))) return false
-    const inherited = this.inheritedLoopLimit()
+    const inherited = this.approvedSetting(namespace, this.inheritedSetting(namespace, field))
     return values.some(value => Object.is(value, inherited))
   }
 
@@ -407,7 +457,7 @@ class AccountPolicy {
     namespace: string, ops: Parameters<NonNullable<AccountNativeGuards['beginSettingsUpdate']>>[1],
     fields: Parameters<NonNullable<AccountNativeGuards['beginSettingsUpdate']>>[2],
   ): ReturnType<NonNullable<AccountNativeGuards['beginSettingsUpdate']>> {
-    if (this.activeLoopUpdate !== undefined) refuse()
+    if (this.activeSettingsUpdate !== undefined) refuse()
     if (namespace === 'web' && this.exposure.manifest.allowedSettings.some(row => row.namespace === 'web-search-deepseek')) {
       this.current()
       const settings = this.ctx.get('settings')
@@ -416,29 +466,33 @@ class AccountPolicy {
       if (matches.length !== 1 || view === undefined) unavailable()
       if (!webSearchSelectionAllowed(view, ops)) refuse()
     }
-    if (namespace !== this.config.agentLoopEntryId) {
+    if (namespace !== this.config.agentLoopEntryId && namespace !== 'agent-preset-registry') {
       return { check() {}, approve() {}, finish() {}, publish: (audit) => { audit() }, abort() {}, run: operation => operation() }
     }
     this.pin()
+    const fieldName = namespace === 'agent-preset-registry' ? 'selectedDefault' : 'maxParallelToolCalls'
+    const serviceKey = namespace === 'agent-preset-registry' ? 'agentPresets' : 'agentLoop'
     if (!this.exposure.manifest.allowedSettings.some(row => row.namespace === namespace
-      && row.fields.includes('maxParallelToolCalls'))) refuse()
+      && row.fields.includes(fieldName))) refuse()
     const op = ops[0]
-    if (ops.length !== 1 || op === undefined || op.path.length !== 1 || op.path[0] !== 'maxParallelToolCalls') refuse()
-    const value = op.op === 'unset' ? this.inheritedLoopLimit() : op.value
-    const approved = fields.filter(field => field.namespace === namespace && field.field === 'maxParallelToolCalls')
+    if (ops.length !== 1 || op === undefined || op.path.length !== 1 || op.path[0] !== fieldName) refuse()
+    const rawValue = op.op === 'unset' ? this.inheritedSetting(namespace, fieldName) : op.value
+    const value = this.approvedSetting(namespace, rawValue)
+    const approved = fields.filter(field => field.namespace === namespace && field.field === fieldName)
     if (approved.length !== 1 || approved[0]?.values === undefined
-      || typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > DEFAULT_MAX_PARALLEL_TOOL_CALLS
       || !approved[0].values.some(candidate => Object.is(candidate, value))) refuse()
-    const facts = this.facts, loop = facts?.find(fact => fact.entry.options.id === namespace)
-    if (facts === undefined || loop === undefined || !object(loop.entry.options.config)) unavailable()
-    const runtime = loop.fiber.runtime, schema = runtime?.Config, service = this.provider('agentLoop')
-    if (schema === undefined || !(service instanceof AgentLoop)) unavailable()
+    const facts = this.facts, setting = facts?.find(fact => serviceKey === 'agentLoop'
+      ? fact.entry.options.id === this.config.agentLoopEntryId
+      : fact.fiber.store?.agentPresets?.fiber === fact.fiber)
+    if (facts === undefined || setting === undefined || !object(setting.entry.options.config)) unavailable()
+    const runtime = setting.fiber.runtime, schema = runtime?.Config, service = this.provider(serviceKey)
+    if (schema === undefined || !(service instanceof AgentLoop || service instanceof AgentPresets)) unavailable()
     const serialize: unknown = Reflect.get(schema, 'toJSON')
     if (typeof serialize !== 'function') unavailable()
     const schemaBefore: unknown = structuredClone(Reflect.apply(serialize, schema, [])), serviceBefore = original(service)
-    const before = structuredClone(loop.entry.options.config) as Record<string, unknown>
+    const before = structuredClone(setting.entry.options.config) as Record<string, unknown>
     const retained = (config: Record<string, unknown>): Record<string, unknown> =>
-      Object.fromEntries(Object.entries(config).filter(([key]) => key !== 'maxParallelToolCalls'))
+      Object.fromEntries(Object.entries(config).filter(([key]) => key !== fieldName))
     let expected: unknown, updated: EntryFact | undefined, publishedFacts: readonly EntryFact[] | undefined
     let active = false, used = false, prepared = false, published = false
     const check = (): void => {
@@ -446,38 +500,37 @@ class AccountPolicy {
       this.current()
     }
     const refresh = (): EntryFact => {
-      if (!active || this.loopUpdates.getStore()?.fact !== loop) unavailable()
+      if (!active || this.settingsUpdates.getStore()?.fact !== setting) unavailable()
       this.ctx.fiber.assertActive()
-      if (this.binding.lifetime.aborted || this.facts !== facts || this.activeLoopUpdate !== token || this.ctx.get('peAccount') !== this.binding
-        || this.ctx.root.get('peAccount') !== this.binding || loop.entry.fiber !== loop.fiber
-        || loop.fiber.state !== FiberState.ACTIVE || loop.entry.moduleNamespace !== loop.module
-        || loop.fiber.runtime !== runtime || runtime?.Config !== schema || Reflect.get(schema, 'toJSON') !== serialize
+      if (this.binding.lifetime.aborted || this.facts !== facts || this.activeSettingsUpdate !== token || this.ctx.get('peAccount') !== this.binding
+        || this.ctx.root.get('peAccount') !== this.binding || setting.entry.fiber !== setting.fiber
+        || setting.fiber.state !== FiberState.ACTIVE || setting.entry.moduleNamespace !== setting.module
+        || setting.fiber.runtime !== runtime || runtime?.Config !== schema || Reflect.get(schema, 'toJSON') !== serialize
         || !isDeepStrictEqual(Reflect.apply(serialize, schema, []), schemaBefore)) unavailable()
-      const after: unknown = loop.entry.options.config
+      const after: unknown = setting.entry.options.config
       if (!object(after) || !isDeepStrictEqual(retained(before), retained(after as Record<string, unknown>))
         || expected === undefined) unavailable()
-      const next = loop.entry.prepareConfigUpdate(after)
-      if (next.impact !== 'none' || !isDeepStrictEqual(loop.entry.snapshotConfigUpdatePlan(next), expected)) unavailable()
-      const agentLoop = this.ctx.get('agentLoop')
-      const installed = loop.fiber.store?.agentLoop
-      if (!(agentLoop instanceof AgentLoop) || original(agentLoop) !== serviceBefore
-        || installed?.fiber !== loop.fiber || !object(installed.value) || original(installed.value) !== serviceBefore
-        || agentLoop.config.maxParallelToolCalls.get() !== value) unavailable()
+      const next = setting.entry.prepareConfigUpdate(after)
+      if (next.impact !== 'none' || !isDeepStrictEqual(setting.entry.snapshotConfigUpdatePlan(next), expected)) unavailable()
+      const actual = this.ctx.get(serviceKey), installed = setting.fiber.store?.[serviceKey]
+      if (!(actual instanceof AgentLoop || actual instanceof AgentPresets) || original(actual) !== serviceBefore
+        || installed?.fiber !== setting.fiber || !object(installed.value) || original(installed.value) !== serviceBefore
+        || (actual instanceof AgentLoop ? actual.config.maxParallelToolCalls.get() : actual.defaultId) !== value) unavailable()
       if (updated !== undefined) {
         try { updated.entry.assertConfigUpdatePlan(updated.plan) } catch (_invalid) { unavailable() }
-      } else updated = { ...loop, plan: next }
+      } else updated = { ...setting, plan: next }
       return updated
     }
-    const token = { fact: loop, refresh }
+    const token = { fact: setting, refresh }
     return {
       check,
       approve: (profile) => {
         check()
-        const matches = profile.entries.filter(plan => plan.entry === loop.entry)
+        const matches = profile.entries.filter(plan => plan.entry === setting.entry)
         const plan = matches[0]
         if (matches.length !== 1 || plan === undefined || (plan.impact !== 'live' && plan.impact !== 'none')) unavailable()
-        const candidate = loop.entry.snapshotConfigUpdatePlan(plan)
-        if (!object(candidate) || Reflect.get(candidate, 'maxParallelToolCalls') !== value) unavailable()
+        const candidate = setting.entry.snapshotConfigUpdatePlan(plan)
+        if (!object(candidate) || !Object.is(Reflect.get(candidate, fieldName), rawValue)) unavailable()
         expected = candidate
       },
       finish: () => {
@@ -486,63 +539,70 @@ class AccountPolicy {
         if (this.facts !== facts) unavailable()
         prepared = true
       },
-      publish: (audit) => { this.loopUpdates.run(token, () => {
+      publish: (audit) => { this.settingsUpdates.run(token, () => {
         try {
-          if (!prepared || published || !active || this.activeLoopUpdate !== token || this.facts !== facts) unavailable()
+          if (!prepared || published || !active || this.activeSettingsUpdate !== token || this.facts !== facts) unavailable()
           refresh(); this.current(); audit()
           const next = refresh()
           this.current()
-          if (this.facts !== facts || this.activeLoopUpdate !== token) unavailable()
-          publishedFacts = facts.map(fact => fact === loop ? next : fact)
+          if (this.facts !== facts || this.activeSettingsUpdate !== token) unavailable()
+          publishedFacts = facts.map(fact => fact === setting ? next : fact)
           this.facts = publishedFacts
           published = true
-        } catch (error) { this.unknownLoopUpdate = true; throw error }
-        finally { active = false; if (this.activeLoopUpdate === token) this.activeLoopUpdate = undefined }
+        } catch (error) { this.unknownSettingsUpdate = true; throw error }
+        finally { active = false; if (this.activeSettingsUpdate === token) this.activeSettingsUpdate = undefined }
       }) },
       abort: (uncertain = false) => {
-        if (uncertain) this.unknownLoopUpdate = true
+        if (uncertain) this.unknownSettingsUpdate = true
         active = false
-        if (this.activeLoopUpdate === token) this.activeLoopUpdate = undefined
+        if (this.activeSettingsUpdate === token) this.activeSettingsUpdate = undefined
       },
       run: async (operation) => {
-        if (active || used || this.activeLoopUpdate !== undefined) unavailable()
-        used = true; active = true; this.activeLoopUpdate = token
-        try { return await this.loopUpdates.run(token, operation) }
-        catch (error) { this.unknownLoopUpdate = true; throw error }
+        if (active || used || this.activeSettingsUpdate !== undefined) unavailable()
+        used = true; active = true; this.activeSettingsUpdate = token
+        try { return await this.settingsUpdates.run(token, operation) }
+        catch (error) { this.unknownSettingsUpdate = true; throw error }
         finally {
           if (!prepared) {
             active = false
-            if (this.activeLoopUpdate === token) this.activeLoopUpdate = undefined
+            if (this.activeSettingsUpdate === token) this.activeSettingsUpdate = undefined
           }
         }
       },
     }
   }
 
-  async preset(id: string | undefined, signal?: AbortSignal): Promise<void> {
+  async preset(id: string | undefined, signal?: AbortSignal, selectable = false): Promise<string> {
     const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
     control.throwIfAborted()
-    if (id !== undefined && id !== this.config.presetId) refuse()
     this.pin()
     const presets = this.provider('agentPresets')
-    if (!(presets instanceof AgentPresets) || presets.defaultId !== this.config.presetId) refuse()
-    const resolved = await presets.resolve(this.config.presetId)
+    if (!(presets instanceof AgentPresets) || presets.config.default !== this.config.defaultPresetId) refuse()
+    const selected = this.approvedPreset(id ?? presets.defaultId, selectable || id === undefined)
+    this.approvedPreset(presets.defaultId, true)
+    const resolved = await presets.resolve(selected.id)
     control.throwIfAborted()
     this.current()
-    if (presets.defaultId !== this.config.presetId
-      || resolved.id !== this.config.presetId || resolved.broken !== undefined) refuse()
+    if (resolved.id !== selected.id || resolved.broken !== undefined) refuse()
     const inventory = await presets.compositionInventory()
     control.throwIfAborted()
     this.current()
-    if (presets.defaultId !== this.config.presetId) refuse()
-    const row = inventory[0]
-    if (inventory.length !== 1 || row === undefined || row.id !== this.config.presetId || row.broken !== undefined
-      || !row.isDefault || row.rows.length > this.maxEntries
-      || row.rows.some(child => child.enabled !== true || child.fiberState !== FiberState.ACTIVE)) refuse()
-    const modules = row.rows.map(child => child.moduleName)
-    if (this.modules !== undefined
-      && (modules.length !== this.modules.length || modules.some((name, i) => this.modules?.[i] !== name))) refuse()
-    this.modules ??= Object.freeze(modules)
+    if (inventory.length !== this.config.presets.length) refuse()
+    const nextModules = new Map<string, readonly string[]>()
+    for (const row of inventory) {
+      this.approvedPreset(row.id)
+      if (nextModules.has(row.id) || row.broken !== undefined
+        || row.isDefault !== (row.id === presets.defaultId) || row.rows.length > this.maxEntries
+        || row.rows.some(child => child.enabled === 'conditional'
+          || child.enabled && child.fiberState !== FiberState.ACTIVE)) refuse()
+      const modules = row.rows.filter(child => child.enabled).map(child => child.moduleName)
+      const previous = this.modules.get(row.id)
+      if (previous !== undefined && (modules.length !== previous.length
+        || modules.some((name, i) => previous[i] !== name))) refuse()
+      nextModules.set(row.id, previous ?? Object.freeze(modules))
+    }
+    for (const [key, modules] of nextModules) this.modules.set(key, modules)
+    return selected.id
   }
 
   allowedModel(provider: string, model: string): boolean {
@@ -599,7 +659,7 @@ class AccountPolicy {
       || this.exposure.manifest.streamEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
     if (filesSelected) this.files.assertContentAvailable()
     this.handlers('native:sessionController')
-    await this.preset(this.config.presetId, control)
+    await this.preset(undefined, control)
     if (this.provisionableModel === undefined) await this.model(selection, control)
     else {
       if (!this.allowedModel(provider, model)) modelDenied()
@@ -615,7 +675,7 @@ class AccountPolicy {
 
   private sessionHeader(header: Header, path: string): void {
     if (header.origin === 'subagent') {
-      if (header.cwd !== path || header.isSeeded || header.parentSession === undefined
+      if (header.cwd !== path || header.parentSession === undefined
         || !Number.isSafeInteger(header.delegationDepth) || (header.delegationDepth ?? 0) < 1) refuse()
     } else this.header(header, path)
   }
@@ -640,9 +700,9 @@ class AccountPolicy {
     this.current()
     this.header(observed.header, workspace.path)
     if (this.observedProject(id, observed.header) !== workspace
-      || observed.projections?.values.workingDirectory !== workspace.path
-      || observed.projections.values.agentPreset !== this.config.presetId) refuse()
-    await this.preset(this.config.presetId, control)
+      || observed.projections?.values.workingDirectory !== workspace.path) refuse()
+    const presetId = this.approvedPreset(observed.projections.values.agentPreset).id
+    await this.preset(presetId, control)
     control.throwIfAborted()
     this.assertWorkspace(workspace)
     if (!workspace.sessionIds.includes(id)) refuse()
@@ -652,7 +712,7 @@ class AccountPolicy {
   readSession(id: SessionId, summary?: SessionSummary): void {
     this.current()
     this.pin()
-    if (this.modules === undefined) unavailable()
+    if (this.modules.size === 0) unavailable()
     const sessions = this.provider('sessions'), agents = this.provider('agents')
     const session = sessions.get(id), agent = agents.get(id)
     let workspace: Workspace | undefined
@@ -672,8 +732,8 @@ class AccountPolicy {
             ? summary.parentSessionId === undefined || summary.parentSessionId === id
             : summary.parentSessionId !== undefined)) refuse()
       const values = summary.projections?.values
-      if ((values?.workingDirectory !== undefined && values.workingDirectory !== workspace.path)
-        || (values?.agentPreset !== undefined && values.agentPreset !== this.config.presetId)) refuse()
+      if (values?.workingDirectory !== undefined && values.workingDirectory !== workspace.path) refuse()
+      if (values?.agentPreset !== undefined) this.approvedPreset(values.agentPreset)
     }
     this.assertWorkspace(workspace)
   }
@@ -684,31 +744,44 @@ class AccountPolicy {
   }
 
   /** The caller has checked account current in this synchronous operation. */
-  private preparedCurrent(agent: Agent, attached: boolean, parent?: Agent): Workspace {
+  selectCurrent(agent: Agent, id: string): void {
+    this.current()
+    this.approvedPreset(id, true)
+    this.preparedCurrent(agent, true, undefined, id)
+  }
+
+  private preparedCurrent(agent: Agent, attached: boolean, parent?: Agent, selecting?: string, retainedExecution = false): Workspace {
     const workspace = this.sessionProjectCurrent(agent.session, false)
-    if (this.facts === undefined || this.modules === undefined || agent.ctx.root !== this.ctx.root
+    const sessionPreset = this.sessionPreset(agent.session)
+    const composed = this.provider('agentPresets').composedPreset(agent.ctx)
+    if (selecting !== undefined && composed !== sessionPreset && composed !== selecting) refuse()
+    const presetId = selecting === undefined ? sessionPreset : this.approvedPreset(composed).id
+    const modules = this.modules.get(presetId)
+    if (this.facts === undefined || modules === undefined || agent.ctx.root !== this.ctx.root
       || agent.ctx.get('peAccount') !== this.binding || agent.id !== agent.session.header.id) refuse()
-    agent.ctx.fiber.assertActive()
+    if (retainedExecution) this.retainedAgentState(agent)
+    else agent.ctx.fiber.assertActive()
     if (!this.allowedModelCurrent(agent.options.provider ?? '', agent.options.model ?? '')) refuse()
     const presets = this.provider('agentPresets')
     const composition = presets.inspectCompositions(agent.ctx), row = composition[0]
-    if (presets.composedPreset(agent.ctx) !== this.config.presetId || composition.length !== 1 || row === undefined
-      || row.id !== this.config.presetId || row.leakedServices.length !== 0 || row.modules.length !== this.modules.length
-      || row.modules.some((module, index) => module.moduleName !== this.modules?.[index])) refuse()
+    if (presets.composedPreset(agent.ctx) !== presetId || composition.length !== 1 || row === undefined
+      || row.id !== presetId || row.leakedServices.length !== 0 || row.modules.length !== modules.length
+      || row.modules.some((module, index) => module.moduleName !== modules[index])) refuse()
     if (agent.session.header.origin === 'subagent') {
       this.spawn()
       const parentId = agent.session.header.parentSession
       if (parentId === undefined) refuse()
       const actualParent = parent ?? this.provider('agents').get(parentId)
       if (actualParent === undefined || agent.id === actualParent.id) refuse()
-      this.parentCurrentForChild(agent.ctx, actualParent, workspace)
+      this.parentCurrentForChild(agent.ctx, actualParent, workspace, retainedExecution)
       const childScope = scopeOf(agent.ctx), parentScope = scopeOf(actualParent.ctx)
       if (childScope === undefined || parentScope === undefined || agent.session.header.parentSession !== actualParent.id
         || (agent.session.header.delegationDepth ?? 0) < delegationDepthOf(actualParent) + 1
-        || scopeParentOf(childScope) !== scopeParentOf(parentScope)) refuse()
+        || (presetId === this.sessionPreset(actualParent.session)
+          && scopeParentOf(childScope) !== scopeParentOf(parentScope))) refuse()
       if (attached && !this.provider('agents').isOwnedBy(agent.id, actualParent)) refuse()
     } else if (parent !== undefined) refuse()
-    for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'llm', 'subagents', 'workingDirectory'] as const) {
+    for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'sandbox', 'ptcRuntime', 'terminals', 'llm', 'subagents', 'workingDirectory'] as const) {
       const root: unknown = this.ctx.root.get(key), child: unknown = agent.ctx.get(key)
       if (root === undefined ? child !== undefined : !object(root) || !object(child) || original(root) !== original(child)) refuse()
     }
@@ -719,12 +792,26 @@ class AccountPolicy {
     return workspace
   }
 
-  parentCurrentForChild(owner: Context, parent: Agent, expected?: Workspace): Workspace {
+  assertRetainedExecutionOwner(agent: Agent, workspace: Workspace): void {
+    this.current()
+    if (this.preparedCurrent(agent, true, undefined, undefined, true) !== workspace) refuse()
+  }
+
+  private retainedAgentState(agent: Agent): void {
+    if (agent.ctx.fiber.state !== FiberState.ACTIVE && agent.ctx.fiber.state !== FiberState.UNLOADING) refuse()
+  }
+
+  parentCurrentForChild(owner: Context, parent: Agent, expected?: Workspace, retainedExecution = false): Workspace {
     if (this.assertBusinessCurrent === undefined) unavailable()
     this.assertBusinessCurrent(this.binding)
     this.current()
-    owner.fiber.assertActive()
-    parent.ctx.fiber.assertActive()
+    if (retainedExecution) {
+      if (owner.fiber.state !== FiberState.ACTIVE && owner.fiber.state !== FiberState.UNLOADING) refuse()
+      this.retainedAgentState(parent)
+    } else {
+      owner.fiber.assertActive()
+      parent.ctx.fiber.assertActive()
+    }
     const agents = this.provider('agents'), sessions = this.provider('sessions')
     if (owner.root !== this.ctx.root || owner.get('peAccount') !== this.binding
       || parent.ctx.root !== this.ctx.root || parent.ctx.get('peAccount') !== this.binding
@@ -755,16 +842,20 @@ class AccountPolicy {
         || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
     }
     if (native !== 1) unavailable()
-    let found = 0
-    for (const fiber of this.ctx.registry.get(Spawn)?.fibers ?? []) {
-      if (++found > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== Spawn.apply
-        || fiber.entry?.moduleNamespace !== Spawn || !object(fiber.config)
-        || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
-      const name: unknown = Reflect.get(fiber.config, 'providerName')
-      if (typeof name !== 'string' || runtime.getProvider(name) === undefined
-        || provider !== undefined && runtime.getProvider(name) !== provider) refuse()
+    let selected = provider === undefined
+    for (const namespace of [Spawn, Fork]) {
+      let found = 0
+      for (const fiber of this.ctx.registry.get(namespace)?.fibers ?? []) {
+        if (++found > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== namespace.apply
+          || fiber.entry?.moduleNamespace !== namespace || !object(fiber.config)
+          || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
+        const name: unknown = Reflect.get(fiber.config, 'providerName')
+        if (typeof name !== 'string' || runtime.getProvider(name) === undefined) refuse()
+        if (runtime.getProvider(name) === provider) selected = true
+      }
+      if (namespace === Spawn && found !== 1) unavailable()
     }
-    if (found !== 1) unavailable()
+    if (!selected) refuse()
   }
 
   private async auditGeneration(parent: Agent, signal: AbortSignal): Promise<void> {
@@ -773,10 +864,10 @@ class AccountPolicy {
     const generation = scopeParentOf(scope)
     if (generation === undefined) refuse()
     const inspection = this.provider('agentPresets').inspectCompositions(parent.ctx)
-    if (inspection.length !== 1 || inspection[0]?.id !== this.config.presetId) refuse()
+    if (inspection.length !== 1 || inspection[0]?.id !== this.sessionPreset(parent.session)) refuse()
     const entries: Entry[] = []
     for (const runtime of this.ctx.registry.values()) for (const fiber of runtime.fibers) {
-      if (scopeOf(fiber.ctx) !== generation || fiber.entry === undefined || fiber.entry.options.group) continue
+      if (scopeOf(fiber.ctx) !== generation || fiber.entry === undefined || fiber.entry.options.group || fiber.entry.disabled) continue
       // The Loader assigns the same Entry to its owned plugin/inject fibers.
       if (fiber.parent.fiber.entry === fiber.entry) continue
       if (entries.length >= this.maxEntries || fiber.state !== FiberState.ACTIVE || fiber.entry.fiber !== fiber) refuse()
@@ -814,12 +905,12 @@ class AccountPolicy {
     this.prepared(parent, true)
     this.spawn(request.provider)
     if (request.provider === undefined) refuse()
-    if (request.kind === 'start' && (request.provider.prepareContinuable === undefined || request.provider.inheritsParentContext
-      || request.cwd !== workspace.path
-      || request.spec.request.agentPreset !== undefined && request.spec.request.agentPreset !== this.config.presetId)) refuse()
+    if (request.kind === 'start' && (request.provider.prepareContinuable === undefined
+      || request.cwd !== workspace.path)) refuse()
     await this.directory(workspace, signal)
     this.parentCurrentForChild(request.owner, parent, workspace)
-    await this.preset(request.kind === 'start' ? request.spec.request.agentPreset : request.agentPreset, signal)
+    const requested = request.kind === 'start' ? request.spec.request.agentPreset : request.agentPreset
+    await this.preset(requested ?? this.sessionPreset(parent.session), signal, request.kind === 'start')
     this.parentCurrentForChild(request.owner, parent, workspace)
     await this.auditGeneration(parent, signal)
     this.parentCurrentForChild(request.owner, parent, workspace)
@@ -846,8 +937,8 @@ class AccountPolicy {
     this.sessionHeader(header, workspace.path)
     if (header.id !== id || header.origin !== 'subagent' || header.parentSession !== parent.id
       || (header.delegationDepth ?? 0) < delegationDepthOf(parent) + 1
-      || header.agentPreset !== this.config.presetId || history.projections?.values.workingDirectory !== workspace.path
-      || history.projections.values.agentPreset !== this.config.presetId) refuse()
+      || history.projections?.values.workingDirectory !== workspace.path) refuse()
+    await this.preset(this.approvedPreset(history.projections.values.agentPreset).id, signal)
     return Math.max(header.delegationDepth ?? 0, delegationDepthOf(parent) + 1)
   }
 
@@ -857,15 +948,15 @@ class AccountPolicy {
     const workspace = this.parentCurrentForChild(this.ctx, parent)
     this.prepared(parent, true)
     this.spawn()
-    if (options.meta?.cwd !== workspace.path || options.meta.agentPreset !== this.config.presetId
-      || options.meta.origin !== 'subagent' || options.meta.parentSession !== parent.id || options.meta.isSeeded
-      || options.meta.delegationDepth !== delegationDepthOf(parent) + 1 || options.seed !== undefined) refuse()
+    if (options.meta?.cwd !== workspace.path
+      || options.meta.agentPreset === undefined || options.meta.origin !== 'subagent' || options.meta.parentSession !== parent.id
+      || options.meta.delegationDepth !== delegationDepthOf(parent) + 1) refuse()
     const runtimeDepth = options.agentOptions?.subagentDepth
     if (runtimeDepth !== undefined && (!Number.isSafeInteger(runtimeDepth)
       || runtimeDepth < 0 || runtimeDepth > options.meta.delegationDepth)) refuse()
     await this.directory(workspace, signal)
     this.parentCurrentForChild(this.ctx, parent, workspace)
-    await this.preset(options.meta.agentPreset, signal)
+    await this.preset(options.meta.agentPreset, signal, true)
     this.parentCurrentForChild(this.ctx, parent, workspace)
     await this.auditGeneration(parent, signal)
     this.parentCurrentForChild(this.ctx, parent, workspace)
@@ -886,7 +977,7 @@ class AccountPolicy {
     this.parentCurrentForChild(this.ctx, parent, workspace)
     await this.directory(workspace, signal)
     this.parentCurrentForChild(this.ctx, parent, workspace)
-    await this.preset(this.config.presetId, signal)
+    await this.preset(this.sessionPreset(parent.session), signal)
     this.parentCurrentForChild(this.ctx, parent, workspace)
     await this.auditGeneration(parent, signal)
     this.parentCurrentForChild(this.ctx, parent, workspace)
@@ -911,14 +1002,22 @@ class AccountPolicy {
     if (parentScope === undefined || this.parentCurrentForChild(child.ctx, parent, workspace) !== workspace
       || this.preparedCurrent(parent, true) !== workspace || scopeParentOf(parentScope) !== generation) refuse()
     const childGeneration = scopeParentOf(child)
-    if (childGeneration !== undefined && childGeneration !== generation) refuse()
+    if (childGeneration !== undefined) {
+      const registry = this.provider('agentPresets'), id = this.approvedPreset(registry.composedPreset(child.ctx)).id
+      const rows = registry.inspectCompositions(child.ctx), row = rows[0], modules = this.modules.get(id)
+      if (id === this.sessionPreset(parent.session) && childGeneration !== generation
+        || rows.length !== 1 || row === undefined || row.id !== id || row.leakedServices.length !== 0
+        || modules === undefined || row.modules.length !== modules.length
+        || row.modules.some((entry, index) => entry.moduleName !== modules[index])) refuse()
+    }
     const header = session.header
     this.sessionHeader(header, workspace.path)
-    if (header.origin !== 'subagent' || header.parentSession !== parent.id || header.agentPreset !== this.config.presetId
+    this.approvedPreset(header.agentPreset)
+    if (header.origin !== 'subagent' || header.parentSession !== parent.id
       || (header.delegationDepth ?? 0) < delegationDepthOf(parent) + 1 || child.id === parent.id
       || this.provider('agents').get(child.id) !== undefined || this.provider('sessions').get(child.id) !== undefined
       || !this.allowedModelCurrent(child.options.provider ?? '', child.options.model ?? '')) refuse()
-    for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'llm', 'subagents', 'workingDirectory'] as const) {
+    for (const key of ['fs', 'shell', 'subprocess', 'shellEnv', 'sandbox', 'ptcRuntime', 'terminals', 'llm', 'subagents', 'workingDirectory'] as const) {
       const root: unknown = this.ctx.root.get(key), selected: unknown = child.ctx.get(key)
       if (root === undefined ? selected !== undefined
         : !object(root) || !object(selected) || original(root) !== original(selected)) refuse()
@@ -947,6 +1046,7 @@ class AccountPolicy {
       remove = child.ctx.effect(() => revoke, 'account-policy.child-directory-preparation')
       this.preparationCurrent(record)
       const result = await operation()
+      await this.auditGeneration(child, signal)
       this.preparationCurrent(record)
       return result
     } finally {
@@ -1023,7 +1123,7 @@ class AccountPolicy {
     if (observed === undefined) refuse()
     const header = observed.header
     if (this.observedProject(id, header) !== workspace) refuse()
-    await this.preset(this.config.presetId, control)
+    await this.preset(header.agentPreset, control)
     control.throwIfAborted()
     this.assertWorkspace(workspace)
     return { workspace, assertCurrent: () => {
@@ -1058,7 +1158,7 @@ class AccountPolicy {
  * @param ctx Independent installed account graph.
  * @param binding Exact runtime binding, not a browser identity or a readiness assertion.
  * @param files Original prepared files owner, retained by native integration.
- * @param config Explicit immutable deployment policy for exact models and one fixed native preset.
+ * @param config Explicit immutable deployment policy for exact models and approved native preset declarations.
  * @param exposure Actual Root exposure policy, whose declarations must match enabled native handlers.
  * @param maxEntries Existing deployment bound on native Loader and preset inventory rows.
  * @param provisionableModel Optional original audited provider check for first-key bootstrap; actual model dispatch is unchanged.
@@ -1076,10 +1176,18 @@ export function createAccountPolicy(
   const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries,
     provisionableModel, assertBusinessCurrent, fileReadTiming)
   return {
+    presets: {
+      assertCurrent: () => { policy.current() },
+      assertPreset: (id, signal, selectable) => policy.preset(id, signal, selectable),
+      assertSession: (agent) => { policy.prepared(agent, true) },
+      assertSelectCurrent: (agent, id) => { policy.selectCurrent(agent, id) },
+      isSelectable: id => policy.selectablePreset(id),
+    },
     beginSettingsUpdate: (namespace, ops, fields) => policy.beginSettingsUpdate(namespace, ops, fields),
     allowSettingsUnset: (namespace, field, values) => policy.allowSettingsUnset(namespace, field, values),
     assertWorkspace: (workspace) => { policy.assertWorkspace(workspace) },
     projectForAgent: agent => policy.prepared(agent, true),
+    assertRetainedExecutionOwner: (agent, workspace) => { policy.assertRetainedExecutionOwner(agent, workspace) },
     projectForSession: session => policy.liveSessionProject(session),
     projectForObservedHeader: (id, header) => policy.observedProject(id, header),
     projectForDirectory: cwd => policy.workspaceAt(cwd),
@@ -1104,7 +1212,7 @@ export function createAccountPolicy(
         if (workspace === undefined) refuse()
         policy.assertWorkspace(workspace)
         await policy.directory(workspace)
-        await policy.preset(request.agentPreset)
+        const presetId = await policy.preset(request.agentPreset, undefined, true)
         await policy.model(policy.defaultModel())
         if (request.sessionId !== undefined) {
           const member = workspace.sessionIds.includes(request.sessionId)
@@ -1117,7 +1225,7 @@ export function createAccountPolicy(
         policy.current()
         policy.assertWorkspace(workspace)
         return { ...request.sessionId === undefined ? {} : { sessionId: request.sessionId },
-          workspaceId: workspace.id, agentPreset: config.presetId }
+          workspaceId: workspace.id, agentPreset: presetId }
       },
       assertSessionProject: async (id) => { await policy.history(id) },
       assertActiveScope: (agent) => { policy.prepared(agent, true) },
@@ -1131,8 +1239,8 @@ export function createAccountPolicy(
         const workspace = policy.workspaceAt(options.meta?.cwd)
         await policy.directory(workspace, signal)
         policy.header(options.meta ?? {}, workspace.path)
-        if (options.meta?.agentPreset !== config.presetId) refuse()
-        await policy.preset(options.meta.agentPreset, signal)
+        if (options.meta?.agentPreset === undefined) refuse()
+        await policy.preset(options.meta.agentPreset, signal, true)
         await policy.model(options.agentOptions, signal)
         policy.current()
         policy.assertWorkspace(workspace)

@@ -21,6 +21,7 @@ export interface EntryConfigUpdatePlan {
 }
 
 interface ConfigPlanState {
+  literalExpressions?: true
   coldNamespace?: unknown
   kind?: 'options' | 'passive'
   nextOptions?: EntryOptions
@@ -38,16 +39,30 @@ interface ConfigPlanState {
   moduleNamespace: unknown
 }
 
-function configSnapshot(value: unknown): unknown {
-  if (isVolatile(value)) return configSnapshot(value.get())
+function configSnapshot(value: unknown, literalExpressions = false, ancestors = new Set<object>()): unknown {
+  if (isVolatile(value)) return configSnapshot(value.get(), literalExpressions, ancestors)
   if (typeof value === 'function' || typeof value === 'symbol') throw new Error('Unproven config dependency')
   if (value === null || typeof value !== 'object') return value
-  if (Array.isArray(value)) return value.map(configSnapshot)
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-    throw new Error('Unproven config object')
-  }
-  if ('__jsExpr' in value) throw new Error('Unproven config expression')
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, configSnapshot(child)]))
+  if (ancestors.has(value)) throw new Error('Unproven recursive config')
+  ancestors.add(value)
+  try {
+    if (literalExpressions && Reflect.ownKeys(value).some((key) => {
+      const property = Object.getOwnPropertyDescriptor(value, key)!
+      return typeof key !== 'string' || !('value' in property)
+        || (!property.enumerable && !(Array.isArray(value) && key === 'length'))
+    })) throw new Error('Unproven declarative config property')
+    if (Array.isArray(value)) return value.map(child => configSnapshot(child, literalExpressions, ancestors))
+    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+      throw new Error('Unproven config object')
+    }
+    if ('__jsExpr' in value) {
+      const source = Object.getOwnPropertyDescriptor(value, '__jsExpr')
+      if (!literalExpressions || Reflect.ownKeys(value).length !== 1 || source === undefined
+        || !('value' in source) || typeof source.value !== 'string') throw new Error('Unproven config expression')
+      return { __jsExpr: source.value }
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, configSnapshot(child, literalExpressions, ancestors)]))
+  } finally { ancestors.delete(value) }
 }
 
 function optionChanges(previous: EntryOptions, next: EntryOptions): string[] {
@@ -279,6 +294,7 @@ export class Entry {
   /**
    * Prepare the native config-only decision without updating options or references.
    * Only a deterministic schema and the sole native config resolver can prove live.
+   * An unchanged declaration keeps exact typed expression source literal; runtime expressions stay unproven.
    * @param next - proposed complete raw plugin config.
    * @returns Opaque identity/version-bound plan; unknown/remount plans cannot commit as live.
    */
@@ -287,10 +303,14 @@ export class Entry {
     let impact: EntryConfigUpdatePlan['impact'] = 'unknown'
     let state: ConfigPlanState | undefined
     try {
-      const options = structuredClone(this.options)
       const proposed = { ...this.options, config: next }
       const changes = optionChanges(this.options, proposed)
-      const detachedNext = configSnapshot(next)
+      // Native declaration plugins keep nested row expressions literal. Only an
+      // unchanged declaration can snapshot their source; never resolve or edit it.
+      const literalExpressions = changes.length === 0
+        && Object.getOwnPropertyDescriptor(fiber?.runtime?.callback ?? {}, EntryGroup.key)?.value === true
+      const detachedNext = configSnapshot(next, literalExpressions)
+      const options = structuredClone(this.options)
       if (changes.length === 0 && this.options.disabled === true && !this.subgroup && !this.subtree) {
         const plan: EntryConfigUpdatePlan = Object.freeze({ entry: this, fiber, version: this.configVersion,
           impact: 'none', stopped: Object.freeze([]) })
@@ -301,7 +321,7 @@ export class Entry {
       }
       if (!fiber?.uid || fiber.state !== FiberState.ACTIVE || this.disabled
         || Object.getPrototypeOf(this.ctx) !== this.parent.ctx || this.subgroup || this.subtree) throw new Error('Unproven entry state')
-      const before = configSnapshot(fiber.config)
+      const before = configSnapshot(fiber.config, literalExpressions)
       let candidate: unknown = fiber.config
       if (changes.length === 0) impact = 'none'
       else {
@@ -313,8 +333,9 @@ export class Entry {
         }
       }
       state = {
+        ...literalExpressions ? { literalExpressions: true } : {},
         version: this.configVersion, options, next: detachedNext, before, candidate,
-        effective: configSnapshot(candidate), parent: Object.getPrototypeOf(this.ctx),
+        effective: configSnapshot(candidate, literalExpressions), parent: Object.getPrototypeOf(this.ctx),
         schema: configSchemaSnapshot(fiber.runtime?.Config),
         runtime: fiber.runtime, moduleNamespace: this.moduleNamespace,
       }
@@ -357,7 +378,7 @@ export class Entry {
     if (state.version !== this.configVersion || plan.fiber !== this.fiber || state.parent !== Object.getPrototypeOf(this.ctx)
       || state.runtime !== this.fiber?.runtime || state.moduleNamespace !== this.moduleNamespace
       || !deepEqual(state.options, this.options, true)
-      || (state.kind !== 'passive' && !deepEqual(state.before, configSnapshot(this.fiber?.config), true))) {
+      || (state.kind !== 'passive' && !deepEqual(state.before, configSnapshot(this.fiber?.config, state.literalExpressions === true), true))) {
       throw new Error('Loader config plan is stale')
     }
     const fresh = state.kind === 'options' ? state.coldNamespace === undefined

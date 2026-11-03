@@ -195,7 +195,7 @@ export function attachManagedSkillEditing(store: SnapshotStore<SkillManagementVi
     try {
       await open(undefined, observer)
       const value = current()
-      if (value.limits === undefined || !value.canPublish || !/\.zip$/i.test(file.name)
+      if (value.limits === undefined || !value.canPublish || !/\.(?:zip|skill)$/i.test(file.name)
         || file.size === 0 || file.size > value.limits.maxArchiveBytes) {
         close()
         return { kind: 'unavailable' }

@@ -19,6 +19,8 @@ function issuer(token: string, runtimeIdentity: string, role: RangeAuthorization
     need(ref.runtimeIdentity === runtimeIdentity && /^[A-Za-z0-9_-]{1,64}$/.test(ref.operationId), 'operation_binding')
     hex(ref.specHash)
     const normalized = spec(request.spec)
+    need((role !== 'program' || normalized.executionKind === 'pipes')
+      && (role !== 'service' || normalized.executionKind !== 'pipes'), 'execution_role_mismatch')
     const fixed = request.skillWorld === undefined ? undefined : skillWorld(request.skillWorld)
     const policy = request.filePolicy === undefined ? undefined : filePolicy(request.filePolicy)
     need(preparedDigest(normalized, fixed, policy) === ref.specHash, 'spec_hash_mismatch')
@@ -38,6 +40,17 @@ function issuer(token: string, runtimeIdentity: string, role: RangeAuthorization
  */
 export function createForegroundIssuer(token: string, runtimeIdentity: string, assertCurrent: () => void): RoleIssuer {
   return issuer(token, runtimeIdentity, 'foreground', () => { assertCurrent(); return null })
+}
+
+/**
+ * Capture Root's Native program authority without allowing command JSON to choose a role.
+ * @param token Protected original bootstrap token.
+ * @param runtimeIdentity Original runtime to which the program remains bound.
+ * @param assertCurrent Original Native program admission, rechecked for this exact issuance.
+ * @returns A program-only issuer; it does not enlarge the existing two-range allocation.
+ */
+export function createProgramIssuer(token: string, runtimeIdentity: string, assertCurrent: () => void): RoleIssuer {
+  return issuer(token, runtimeIdentity, 'program', () => { assertCurrent(); return null })
 }
 
 /**

@@ -2,6 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { JobEvent, JobId, JobRegistry } from '@deepseek-ai/dsh-jobs'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDispatchExecution, ToolExecutionToken, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { ExecutionScopes, type ExecutionScope, type ScopeAuthority } from './scopes.ts'
@@ -13,8 +14,18 @@ interface NativeCall<Project> {
   readonly exec: ToolDispatchExecution
   readonly scope: ExecutionScope<Project>
   readonly lifetime: AbortController
+  readonly revoked: ReturnType<typeof Promise.withResolvers<void>>
+  terminal: boolean
+  projected: boolean
+  job: NativeCallJob | undefined
   detachAgent: () => void | Promise<void>
   detachAbort: () => void
+}
+
+interface NativeCallJob {
+  readonly id: JobId
+  readonly registry: JobRegistry
+  readonly settled: ReturnType<typeof Promise.withResolvers<void>>
 }
 
 /** Trusted account-native inputs; ordinary command JSON supplies none of these callbacks. */
@@ -40,11 +51,12 @@ export interface RetainedNativeService<Project> {
 }
 
 /**
- * Bind approved tool bodies to exact live Agent/Session/project capabilities. Invocation propagation
- * ends with its registry token; retained services stay with the original Agent/Session and epoch under Root work ownership.
+ * Bind approved tool bodies to exact live Agent/Session/project capabilities. Final projection ends invocation
+ * authority; native jobs may retain the original scope through their final drain. Services retain their separate Root-owned lease.
  */
 export class NativeExecutionCalls<Project> {
   private readonly calls = new Map<ToolExecutionToken, NativeCall<Project>>()
+  private readonly jobs = new Map<JobId, NativeCall<Project>>()
   private readonly current = new AsyncLocalStorage<NativeCall<Project>>()
   private readonly currentService = new AsyncLocalStorage<ExecutionScope<Project>>()
   private readonly scopes: ExecutionScopes<Project>
@@ -63,7 +75,14 @@ export class NativeExecutionCalls<Project> {
     }
     this.scopes = new ExecutionScopes(authority)
     ctx.on('tools/execute', (exec, next) => this.run(exec, next))
-    ctx.on('tools/result', (exec) => { this.release(exec.token) })
+    ctx.on('tools/result', (exec) => { this.complete(exec.token) })
+    ctx.inject(['jobs'], (owner) => {
+      const registry = owner.jobs
+      registry.events.subscribe({ owners: 'scope' }, (event) => { this.jobEvent(registry, event) })
+      owner.effect(() => () => {
+        for (const call of [...this.jobs.values()]) this.release(call.token)
+      }, 'pe-opensandbox: original native job registry lifetime')
+    })
     ctx.effect(() => () => { this.close() }, 'pe-opensandbox: revoke original native execution calls')
   }
 
@@ -71,13 +90,19 @@ export class NativeExecutionCalls<Project> {
    * Around-dispatch entry used only by the native tool event registration.
    * @param exec Original registry-minted pending execution, never HTTP or model-provided identity.
    * @param next Original waterfall continuation; unrelated tools delegate without an execution scope.
-   * @returns The unchanged native result, with output retained until tools/result.
+   * @returns The unchanged native result, with output retained through final projection and any original native job drain.
    */
   run(exec: ToolDispatchExecution, next: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult> {
     if (!this.allowed.has(exec.name)) return next()
     this.assertOpen()
-    if (exec.agent === undefined || exec.parent !== undefined || this.calls.has(exec.token)) {
+    if (exec.agent === undefined || this.calls.has(exec.token)) {
       throw new ExecutionStateError('cloud/stale-generation', 'Cloud commands require one original native foreground tool execution.')
+    }
+    const parent = exec.parent === undefined ? undefined : this.calls.get(exec.parent)
+    if (exec.parent !== undefined) {
+      if (parent === undefined || parent.projected || parent.exec.name !== 'run_code'
+        || parent.scope.agent !== exec.agent || parent.exec.rootCallId !== exec.rootCallId) this.stale()
+      this.scopes.assertCurrent(parent.scope)
     }
     exec.signal.throwIfAborted()
     if (this.calls.size >= this.authority.maxScopes) {
@@ -86,12 +111,23 @@ export class NativeExecutionCalls<Project> {
     const lifetime = new AbortController()
     const scope = this.scopes.issue({ agent: exec.agent, project: this.authority.projectForAgent(exec.agent),
       consumerId: exec.name, purpose: exec.name === 'dev_service' ? 'consumer' : 'command',
-      capabilities: exec.name === 'dev_service' ? [] : ['argv-collect'], lifetime: lifetime.signal })
+      capabilities: exec.name === 'dev_service' ? [] : ['argv-collect'],
+      lifetime: lifetime.signal })
     const call: NativeCall<Project> = { token: exec.token, exec, scope, lifetime,
+      revoked: Promise.withResolvers<void>(), terminal: false, projected: false, job: undefined,
       detachAgent: () => {}, detachAbort: () => {} }
     this.calls.set(call.token, call)
     try {
-      call.detachAgent = exec.agent.ctx.effect(() => () => { this.release(call.token) }, 'pe-opensandbox: native execution owner')
+      call.detachAgent = exec.agent.ctx.effect(() => async () => {
+        const job = call.job
+        try {
+          if (job !== undefined) {
+            // JobRegistry owns Agent teardown cancellation. Keep its producer handle valid
+            // through that cancellation and final output drain, unless account authority revokes.
+            await Promise.race([job.settled.promise, call.revoked.promise])
+          }
+        } finally { this.release(call.token) }
+      }, 'pe-opensandbox: native execution owner')
       const revoked = (): void => { this.release(call.token) }
       scope.lifetime.addEventListener('abort', revoked, { once: true })
       call.detachAbort = () => { scope.lifetime.removeEventListener('abort', revoked) }
@@ -117,7 +153,8 @@ export class NativeExecutionCalls<Project> {
       return Object.freeze({ scope: service, signal: service.lifetime })
     }
     const call = this.current.getStore()
-    if (call === undefined || this.calls.get(call.token) !== call) this.stale()
+    if (call === undefined || call.projected || this.calls.get(call.token) !== call) this.stale()
+    call.scope.agent.ctx.fiber.assertActive()
     this.scopes.assertCurrent(call.scope)
     return Object.freeze({ scope: call.scope, signal: call.exec.signal })
   }
@@ -173,7 +210,7 @@ export class NativeExecutionCalls<Project> {
     this.assertOpen()
     assertInstalledExecutionBinding(caller, this.authority.binding, this.ctx.root)
     const call = this.current.getStore()
-    if (call === undefined || this.calls.get(call.token) !== call || call.exec.name !== 'dev_service'
+    if (call === undefined || call.projected || this.calls.get(call.token) !== call || call.exec.name !== 'dev_service'
       || call.scope.purpose !== 'consumer' || this.currentService.getStore() !== undefined) this.stale()
     this.scopes.assertCurrent(call.scope)
     return call
@@ -186,6 +223,57 @@ export class NativeExecutionCalls<Project> {
   assertCurrent(scope: ExecutionScope<Project>): void { this.scopes.assertCurrent(scope) }
 
   /**
+   * Observe only actual native registration ownership; this grants no new invocation authority.
+   * @param scope Exact issued scope retained by its original native job.
+   * @returns Whether that job still owns the existing producer handle and output lifetime.
+   */
+  ownsJob(scope: ExecutionScope<Project>): boolean {
+    for (const call of this.jobs.values()) if (call.scope === scope) return true
+    return false
+  }
+
+  /** End invocation authority; only the native registry's still-live Bash job retains its output scope. */
+  private complete(token: ToolExecutionToken): void {
+    const call = this.calls.get(token)
+    if (call === undefined) return
+    call.projected = true
+    if (call.job === undefined && !call.terminal) this.release(token)
+  }
+
+  /** Retain the current terminal dispatch only for its original provider handle.
+   * @param caller Original account service.
+   * @returns Revoker for that exact handle after actual cleanup.
+   */
+  retainTerminal(caller: Context): () => void {
+    const captured = this.capture(caller), call = this.current.getStore()
+    if (call === undefined || call.scope !== captured.scope || call.exec.name !== 'terminal_open' || call.terminal) this.stale()
+    call.terminal = true
+    return () => { this.release(call.token) }
+  }
+
+  /** Native registration is synchronous inside its producer's original dispatch; no returned job id grants authority. */
+  private jobEvent(registry: JobRegistry, event: JobEvent): void {
+    if (event.type === 'registered') {
+      const call = this.current.getStore()
+      if (call === undefined || call.projected || this.calls.get(call.token) !== call
+        || call.exec.name !== 'bash' || call.job !== undefined || event.job.kind !== 'bash'
+        || event.job.owner !== call.scope.sessionId) return
+      this.scopes.assertCurrent(call.scope)
+      call.job = { id: event.job.id, registry, settled: Promise.withResolvers<void>() }
+      this.jobs.set(event.job.id, call)
+    } else if (event.type === 'settled') {
+      const call = this.jobs.get(event.job.id)
+      if (call === undefined || event.job.owner !== call.scope.sessionId) return
+      const job = call.job
+      if (job === undefined || job.id !== event.job.id || job.registry !== registry) return
+      this.jobs.delete(event.job.id)
+      call.job = undefined
+      job.settled.resolve()
+      if (call.projected) this.release(call.token)
+    }
+  }
+
+  /**
    * Revoke after native final output projection or owner disposal; this is not a stop receipt.
    * @param token Registry's original token; duplicate or unrelated releases are harmless.
    */
@@ -193,6 +281,11 @@ export class NativeExecutionCalls<Project> {
     const call = this.calls.get(token)
     if (call === undefined) return
     this.calls.delete(token)
+    for (const child of [...this.calls.values()]) {
+      if (child.exec.parent === token && child.job === undefined && !child.terminal) this.release(child.token)
+    }
+    if (call.job !== undefined) this.jobs.delete(call.job.id)
+    call.revoked.resolve()
     call.detachAbort()
     this.scopes.release(call.scope)
     call.lifetime.abort(new ExecutionStateError('cloud/stale-generation', 'The original native execution owner was released.'))
@@ -211,14 +304,14 @@ export class NativeExecutionCalls<Project> {
   }
 
   /**
-   * Snapshot public native invocation ownership without observing retained process cleanup.
-   * @returns The number of issued native invocations, excluding actual cleanup retained by Root.
+   * Snapshot issued invocation scopes, including those still retained by original native jobs.
+   * @returns Bounded invocation and job scope count, excluding actual cleanup separately retained by Root.
    */
   inspect(): number { return this.calls.size }
 
   /**
    * Observe original invocations without acquiring or revoking execution authority.
-   * @param sessionId Session whose pending native dispatches are observed.
+   * @param sessionId Session whose original invocations or retained native jobs are observed.
    * @returns Whether this issuer retains a call for that exact Session.
    */
   hasSessionCall(sessionId: SessionId): boolean {

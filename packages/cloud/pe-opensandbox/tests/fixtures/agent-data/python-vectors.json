@@ -127,10 +127,10 @@
         "--ro-bind",
         "/opt/session-env",
         "/opt/session-env",
-        "--bind",
+        "--ro-bind",
         "/opt/session-env/home",
         "/opt/session-env/home",
-        "--bind",
+        "--ro-bind",
         "/opt/session-env/venv",
         "/opt/session-env/venv",
         "--bind",
@@ -145,7 +145,7 @@
         "--chdir",
         "/srv/project"
       ],
-      "sha256": "49373d3902fb8e825a273cf8b9ade65c9bb0c4967c37343ef65c77f2c49672dc"
+      "sha256": "9753a1823fe8553747b0fe660cba99f5ca6f2e711845b1e97f7efa852c988922"
     },
     {
       "project": "/srv/\u6848\u4f8b/project",
@@ -201,10 +201,10 @@
         "--ro-bind",
         "/opt/session-env",
         "/opt/session-env",
-        "--bind",
+        "--ro-bind",
         "/opt/session-env/home",
         "/opt/session-env/home",
-        "--bind",
+        "--ro-bind",
         "/opt/session-env/venv",
         "/opt/session-env/venv",
         "--bind",
@@ -219,7 +219,7 @@
         "--chdir",
         "/srv/\u6848\u4f8b/project"
       ],
-      "sha256": "f8740810ca859f98d50c28417a319cbcbf5c132d104fb93b06150e32adbaf01a"
+      "sha256": "d95618b349b48474f0a695f47bcc49c1e6ff75e24b7f30827b63f5d0b05461d4"
     }
   ]
 }

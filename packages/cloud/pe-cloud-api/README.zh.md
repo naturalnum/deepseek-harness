@@ -106,7 +106,7 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 Root 配置还可提供 `approvedConfiguration`：显式 recipe/catalog 版本，有限条目、字符串及完整字节上限，非空固定已安装 DSH 条目或 bundle 目录（禁止安装，未选择下述固定可选控制时禁止启停）、关闭技能、只读凭据及无可写字段。规范解析器先复制并冻结完整值，再由原 `ExposureService` 持有。省略时保留仅开放策略的组合，不产生 catalog。这只是批准元数据；bootstrap 投影公开 id 前，仍必须比对实际账户 Loader 条目、包版本、原模块及配置计划。基础目录不启用安装器、写入者或接口。
 
-[私有 AgentLoop 工厂](src/native-agent-factory.ts) 检查同一实际安装的图绑定，在原生持久化创建或恢复写入 ownership 前，等待共享项目/模型/Preset 准入。安装时只检查已安装的图身份，可信 runtime 装配另行核验准备期权限；创建、恢复与发布都要求独立的业务准入检查。它保留原 setup 及其同步 commit，在 setup 后及 commit 前后核验实际准备的 Agent。普通根 Session 允许省略委托深度或深度为零。child 创建/恢复还要求原 Root 容量回调、共享 `withChildPreparation` guard 及原生 Workspace 准备；省略时 child 继续关闭。该 guard 包裹原 setup Promise，并在完整 Workspace 准备前撤销目录 selection，不结算原 I/O 或 child 容量。seeded 路径、启动 agents 及 direct AgentLoop.create 保持关闭。所属配方声明原生 AgentLoop 依赖，并排除第二个 loop。
+[私有 AgentLoop 工厂](src/native-agent-factory.ts) 检查同一实际安装的图绑定，在原生持久化创建或恢复写入 ownership 前，等待共享项目/模型/Preset 准入。安装时只检查已安装的图身份，可信 runtime 装配另行核验准备期权限；创建、恢复与发布都要求独立的业务准入检查。它保留原 setup 及其同步 commit，在 setup 后及 commit 前后核验实际准备的 Agent。普通根 Session 允许省略委托深度或深度为零。child 创建/恢复还要求原 Root 容量回调、共享 `withChildPreparation` guard 及原生 Workspace 准备；省略时 child 继续关闭。该 guard 包裹原 setup Promise，并在完整 Workspace 准备前撤销目录 selection，不结算原 I/O 或 child 容量。带 seed 的普通根会话、启动 agents 及 direct AgentLoop.create 保持关闭。原生 child fork 通过共享 runtime 准入保留原 provider 产生的 seed、descriptor 和父子关系。所属配方声明原生 AgentLoop 依赖，并排除第二个 loop。
 
 原生持久化 append 可在 setup commit 与 registry 发布之间等待。调用者和图生命周期取消会传入原生事务。原 setup 只 commit 一次；其同步 current 复核在 append 结算后和原生发布检查点运行。成功发布后的调用者取消继续保留原生 creation-only 含义，不取消已提交的 Agent。Runtime 必须在重配置及实际 teardown 中持续持有已准入工作；仅观察者被拒绝不能证明迟到的后端 ownership 已关闭。
 
@@ -148,11 +148,11 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 凭据引用、技能目录和批准插件 Profile 在同一个 `AccountSaves` 中保留各自的编辑 token。技能工作及必需应用/provider 释放继续占用该 turn，阻止独占 paused 插件修改。插件嵌套 writer 加入原 paused turn；顶层技能仍使用普通 live 准入。失败或未知保存阻止重新开放，终态 stop 不能恢复。paused 插件权限不授予原始 Settings、凭据或 manager/package writer 权限。
 
-显式账户配方入口可通过 runtime 私有 builtin 选择原生 Commands、Goals、权限预设、UserQuestions、反馈及 Session 日志导出。这些服务保留原生注册表、投影、修订号、队列与持久化。每个实际 RPC、流或 Fetch 注册都须匹配已审核开放清单及原 provider 身份；浏览器选择控件本身不授权操作。模型目录使用与 prompt 调度相同的批准 provider/model 路由过滤，保留原生 effort 元数据，并在原生选择提交点复核准入。
+显式账户配方入口可通过 runtime 私有 builtin 选择原生 Commands、Goals、Agent 预设、权限预设、UserQuestions、反馈及 Session 日志导出。这些服务保留原生注册表、投影、修订号、队列与持久化。每个实际 RPC、流或 Fetch 注册都须匹配已审核开放清单及原 provider 身份；浏览器选择控件本身不授权操作。模型目录使用与 prompt 调度相同的批准 provider/model 路由过滤，保留原生 effort 元数据，并在原生选择提交点复核准入。
 
-Commands 在附件准入之后、原生 handler 执行之前复核原账户及 Agent。原生问答 waterfall 复用 Remote 投影器及结果协议；已交付但未回答的问答仍占用同一事件条数与完整帧字节预算，直到结算。销毁及请求取消会拒绝未决问答。反馈沿用原生排队 JSONL 写入和账户范围的匿名展示身份；已经开始的写入在准入关闭后仍保留原有 flush/close 责任。
+Commands 在附件准入之后、原生 handler 执行之前复核原账户及 Agent。原生问答及授权 waterfall 复用 Remote 投影器及结果协议；已交付但未回答的请求仍占用同一事件条数与完整帧字节预算，直到结算。结果在结算前复核原账户、Agent 及 Session。原生取消、销毁及重连保留其原有未决请求行为。反馈沿用原生排队 JSONL 写入和账户范围的匿名展示身份；已经开始的写入在准入关闭后仍保留原有 flush/close 责任。
 
-权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。支持原生 read-only、workspace-write、danger-full-access 三档，approval 均为 never，并受账户沙盒约束；保留的命令/服务或实时子 Agent 会阻止切换，子级不得超过祖先模式。完整访问不授予宿主路径、其他账户、可信运行文件的写权限或更大配额。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
+权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。原生 read-only、workspace-write、danger-full-access 三档保留原有名称及 ask/ask/never 授权行为，并受账户沙盒约束；保留的命令/服务或实时子 Agent 会阻止切换，子级不得超过祖先模式。完整访问不授予宿主路径、其他账户、可信运行文件的写权限或更大配额。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
 
 </details>
 
@@ -162,6 +162,8 @@ Commands 在附件准入之后、原生 handler 执行之前复核原账户及 A
 ### Controlled sample publication
 
 `CloudSkillService` 提供九个具体 strict Remote 方法：旧 `current`/`publish`，以及 `installed`、`details`、`install`、`update`、`uninstall`、`download`、`readFile`。可信装配必须提供 `managed` API 上限、实际 files 包上限及原 Workspace 守卫。`skills.mode=managed` 要求九个精确的 authenticated-account 端点和显式 `management` 上限。源码不提供部署默认值。全部 DTO 从 `/types` 导出；Client 声明由这些方法生成。
+
+`details` 在确切版本文件元数据之外，以 `markdown` 返回完整根 `SKILL.md` 正文。两者在原账户目录观察中读取；成功、取消或失败均释放 files 借用，完整序列化答复仍受配置的答复上限约束。strict 结果 codec 要求该字段，服务端与生成客户端须同时更新。
 
 一个 files 所有的 `skills/current.json` 目录和一个 `AccountSaves` 编辑版本覆盖全部安装项。普通读取将 schema1 保留为旧 sample；首次 schema2 修改保留该项及其他不可变版本。`current` 在 sample 不存在时仍观察整个目录 revision；安装、替换、移除和旧 publish 都使旧编辑版本失效。sample 替换仍使用完整两文件 `publish`；通用 `update` 拒绝旧 sample。
 

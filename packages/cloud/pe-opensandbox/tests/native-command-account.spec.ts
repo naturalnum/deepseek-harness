@@ -1,4 +1,5 @@
 /** Account command ownership over synthetic native identities and channels; no Loader, PG or backend qualification. */
+import { Duplex, PassThrough } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -30,7 +31,12 @@ const cancelled = (): CommandSnapshot => ({ ...initial(), commitClosed: true, ra
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 
-function fixture(options: { enforceSessionFilePolicy?: boolean; maxSkillCopiesPerOperation?: number } = {}) {
+function fixture(options: {
+  enforceSessionFilePolicy?: boolean
+  maxSkillCopiesPerOperation?: number
+  pipes?: { controlInputBytes: number; controlOutputBytes: number }
+  allowedTools?: readonly string[]
+} = {}) {
   const ctx = new Context(), generation = new AbortController(), close = Promise.withResolvers<undefined>()
   const binding: AccountBinding = Object.freeze({ accountId: 'command-account' as AccountBinding['accountId'],
     epoch: '1' as AccountBinding['epoch'], recipeVersion: 'synthetic-source-component', lifetime: generation.signal })
@@ -45,11 +51,12 @@ function fixture(options: { enforceSessionFilePolicy?: boolean; maxSkillCopiesPe
   const authority: NativeAccountExecutionAuthority = { assertBusinessCurrent() {
     if (!business) throw new Error('business admission closed')
   }, getAgent: id => agents.get(id), projectForAgent: () => nativeProject, projectForSession: () => nativeProject,
+  assertRetainedExecutionOwner() { throw new Error('No Native job lease is expected in this fixture.') },
   files() { throw new Error('Files/acquisition assembly belongs to the separate Root callback.') } }
   const channels: ReturnType<typeof makeChannel>[] = [], operations: ManagedCommandOperation[] = []
   function makeChannel() {
     const poll = Promise.withResolvers<CommandSnapshot>(), prepare = Promise.withResolvers<CommandSnapshot>()
-    const channel = { prepare: vi.fn(async () => initial()), commit: vi.fn(async () => complete(false)),
+    const channel = { prepare: vi.fn<CommandChannel['prepare']>(async () => initial()), commit: vi.fn(async () => complete(false)),
       poll: vi.fn(() => poll.promise), stop: vi.fn(async () => cancelled()) } satisfies CommandChannel
     return { channel, poll, prepare }
   }
@@ -382,4 +389,60 @@ it('refuses quiet after the original invocation issuer has terminally closed', (
   expect(f.owner.isIdle()).toBe(true)
   f.owner.calls.close()
   expect(f.owner.isIdle()).toBe(false)
+})
+
+it('keeps the original terminal through Native final projection and joins its same range after business admission closes', async () => {
+  const f = fixture({ allowedTools: ['terminal_open'], pipes: { controlInputBytes: 131072, controlOutputBytes: 131072 } })
+  const call = { ...f.exec(), name: 'terminal_open' }, stdout = new PassThrough(), stderr = new PassThrough()
+  const ended = Promise.withResolvers<undefined>(), settled = Promise.withResolvers<undefined>()
+  let revision = 0, stopped = false, buffered = ''
+  const control = new Duplex({ read() {}, write(chunk: Buffer, _encoding, done) {
+    buffered += chunk.toString('utf8')
+    for (;;) {
+      const newline = buffered.indexOf('\n')
+      if (newline < 0) break
+      const request = JSON.parse(buffered.slice(0, newline)) as { id: number; method: string }
+      buffered = buffered.slice(newline + 1)
+      const value = request.method === 'foreground' ? { processGroupId: 123, inputWaiting: true }
+        : request.method === 'activity' ? { state: 'unknown', generation: revision++ } : null
+      control.push(JSON.stringify({ id: request.id, value }) + '\n')
+    }
+    done()
+  } })
+  const stdin = new PassThrough(); stdin.on('data', () => {})
+  const base = f.makeChannel()
+  base.channel.prepare.mockImplementation(async (spec) => {
+    expect(spec).toMatchObject({ executionKind: 'pipes', stream: { terminal: { rows: 24, cols: 80 } } })
+    return initial()
+  })
+  base.channel.commit.mockImplementation(async () => { control.push('{"ready":123}\n'); return { ...initial(), submitted: true } })
+  base.channel.poll.mockImplementation(async () => stopped ? complete() : { ...initial(), submitted: true })
+  base.channel.stop.mockImplementation(async () => {
+    stopped = true; stdout.end(); stderr.end(); control.push(null); ended.resolve(undefined)
+    return complete()
+  })
+  const channel = Object.assign(base.channel, { attach: async () => ({ stdin, stdout, stderr, control,
+    outputEnded: ended.promise, settled: settled.promise, close() { settled.resolve(undefined) } }),
+  whenLocallySettled: () => settled.promise })
+  f.setFactory(() => ({ ...base, channel }))
+  let terminal: import('@deepseek-ai/dsh-subprocess').SubprocessTerminalHandle | undefined
+  await f.owner.calls.run(call, async () => {
+    terminal = await f.owner.createTerminal(f.ctx, { argv: ['/bin/bash', '-i'], cwd: '/project', rows: 24, cols: 80,
+      terminalType: 'dumb', graceMs: 100 })
+    return result
+  })
+  if (terminal === undefined) throw new Error('Original terminal handle absent')
+  f.ctx.emit('tools/result', call, result)
+  expect(f.owner.calls.inspect()).toBe(1)
+  expect(await terminal.inspectForeground()).toEqual({ processGroupId: 123, inputWaiting: true })
+  expect(await terminal.inspectActivity()).toEqual({ state: 'unknown', revision: 0 })
+  await terminal.resize(100, 30)
+  await terminal.write('printf retained\n')
+  f.closeBusiness()
+  await expect(terminal.write('refused')).rejects.toThrow('business admission closed')
+  await terminal.terminate()
+  expect(f.owner.calls.inspect()).toBe(0)
+  expect(f.reservations).toHaveLength(1)
+  expect(f.reservations[0]?.releaseActive).toHaveBeenCalledTimes(1)
+  expect(f.reservations[0]?.releaseResident).toHaveBeenCalledTimes(1)
 })

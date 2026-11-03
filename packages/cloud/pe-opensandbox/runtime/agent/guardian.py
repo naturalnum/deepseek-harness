@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from paths import enter_cwd, verify_skill_world, verify_file_policy
-from wire import LIMITS, file_policy
+from wire import LIMITS, file_policy, stream_spec, environment
 
 RECORD = struct.Struct('!4sB3xii')
 PREPARED, SPAWNED, DIRECT, EMPTY, ERROR = range(1, 6)
@@ -35,7 +35,20 @@ def child_limits():
         resource.setrlimit(kind, (value, value))
 
 
-def main(config, status, gate, stdin, stdout, stderr):
+def install_control_fd(control, descriptors):
+    """Relocate an original private fd7 before exposing only the reviewed control endpoint at child fd7."""
+    descriptors = list(descriptors)
+    if control != 7:
+        if 7 in descriptors:
+            replacement = os.dup(7)
+            descriptors = [replacement if fd == 7 else fd for fd in descriptors]
+            os.close(7)
+        os.dup2(control, 7, inheritable=False)
+        os.close(control)
+    return tuple(descriptors)
+
+
+def main(config, status, gate, stdin, stdout, stderr, control=None):
     stage = 1
     try:
         libc = ctypes.CDLL(None, use_errno=True)
@@ -57,7 +70,14 @@ def main(config, status, gate, stdin, stdout, stderr):
         os.close(config)
         spec = json.loads(raw)
         stdin_mode = spec['stdinMode']
-        assert type(stdin_mode) is str and stdin_mode in ['ignore', 'batch']
+        pipes = spec.get('executionKind') == 'pipes'
+        assert type(stdin_mode) is str and stdin_mode in (['ignore', 'batch', 'pipe'] if pipes else ['ignore', 'batch'])
+        if pipes:
+            fixed = stream_spec(spec['stream'])
+            assert (fixed['control'] == 'pipe') == (control is not None)
+            assert all(value is not None for value in environment(spec['env']).values())
+        else:
+            assert 'executionKind' not in spec and 'stream' not in spec and control is None
         for path, expected in spec['roots'].items():
             st = os.stat(path)
             assert [st.st_dev, st.st_ino] == expected
@@ -69,6 +89,9 @@ def main(config, status, gate, stdin, stdout, stderr):
         if 'skillWorld' in spec:
             verify_skill_world(spec['projectRoot'], spec['roots'][spec['projectRoot']], spec['skillWorld'], mode)
         stage = 4
+        if control is not None:
+            status, gate, stdin, stdout, stderr = install_control_fd(control, (status, gate, stdin, stdout, stderr))
+            control = 7
         live = set()
         for name in os.listdir('/proc/self/fd'):
             try:
@@ -76,7 +99,7 @@ def main(config, status, gate, stdin, stdout, stderr):
                 live.add(int(name))
             except OSError as e:
                 assert e.errno == errno.EBADF
-        assert live == {0, 1, 2, status, gate, stdin, stdout, stderr}
+        assert live == {0, 1, 2, status, gate, stdin, stdout, stderr} | (set() if control is None else {control})
         emit(status, PREPARED)  # Setup and dumpable0 checked; no user child yet.
         if os.read(gate, 1) != b'C':
             emit(status, EMPTY)
@@ -87,10 +110,20 @@ def main(config, status, gate, stdin, stdout, stderr):
         if stdin_mode == 'ignore':
             os.close(stdin)
             user_stdin = subprocess.DEVNULL
-        child = subprocess.Popen(spec['argv'], executable=spec['argv'][0], cwd=None, env=spec['env'],
-                                 stdin=user_stdin, stdout=stdout, stderr=stderr, close_fds=True, pass_fds=(),
+        child_env = dict(spec['env'])
+        if pipes and 'terminal' in fixed:
+            from terminal import run
+            run(spec['argv'], child_env, stdin, stdout, stderr, control, status,
+                fixed['terminal'], child_limits, emit, (SPAWNED, DIRECT, EMPTY))
+            return
+
+        if control is not None:
+            child_env['DSH_SUBPROCESS_CONTROL'] = 'pipe'
+        child = subprocess.Popen(spec['argv'], executable=spec['argv'][0], cwd=None, env=child_env,
+                                 stdin=user_stdin, stdout=stdout, stderr=stderr, close_fds=True,
+                                 pass_fds=() if control is None else (7,),
                                  start_new_session=True, preexec_fn=child_limits)
-        for fd in ([stdin] if stdin_mode == 'batch' else []) + [stdout, stderr]:
+        for fd in ([stdin] if stdin_mode in ['batch', 'pipe'] else []) + [stdout, stderr] + ([] if control is None else [control]):
             os.close(fd)
         emit(status, SPAWNED, child.pid)
         stage = 6
@@ -110,7 +143,7 @@ def main(config, status, gate, stdin, stdout, stderr):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 7 or not __debug__:
+    if len(sys.argv) not in [7, 8] or not __debug__:
         raise SystemExit(125)
     main(*(int(x) for x in sys.argv[1:]))
     os._exit(0)

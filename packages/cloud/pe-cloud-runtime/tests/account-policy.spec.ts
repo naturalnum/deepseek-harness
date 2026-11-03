@@ -35,7 +35,7 @@ it('uses the actual files Workspace, finite registered model and fixed native Pr
   const f = policyFixture(), graph = await f.start()
   const resolved = await graph.guards.sessions.resolveCreate({})
   expect(resolved.workspaceId).toBe(graph.files.project().workspace.id)
-  expect(resolved.agentPreset).toBe(f.config.presetId)
+  expect(resolved.agentPreset).toBe(f.config.defaultPresetId)
   expect(graph.guards.allowedModel('local-text', 'plain-text')).toBe(true)
   expect(graph.guards.allowedModel('local-text', 'unapproved')).toBe(false)
   const created = await graph.ctx.sessionController.create({})
@@ -50,7 +50,7 @@ it('selects the requested original registered project while retaining the bootst
   mkdirSync(secondPath)
   const b = await graph.ctx.workspaceRegistry.create(secondPath, 'Second project')
   await expect(graph.guards.sessions.resolveCreate({ workspaceId: b.id })).resolves.toMatchObject({
-    workspaceId: b.id, agentPreset: f.config.presetId,
+    workspaceId: b.id, agentPreset: f.config.defaultPresetId,
   })
   const created = await graph.ctx.sessionController.create({ workspaceId: b.id })
   const agent = graph.ctx.agents.get(created.sessionId)
@@ -177,12 +177,12 @@ it('runs a native plain-text turn, then cold-observes and resumes the same ordin
   expect(observation.source).toBe('prepared')
   expect(observation.header.id).toBe(created.sessionId)
   expect(observation.header.isSeeded).toBe(false)
-  expect(observation.projections?.values.agentPreset).toBe(f.config.presetId)
+  expect(observation.projections?.values.agentPreset).toBe(f.config.defaultPresetId)
   expect(second.files.project().workspace.id).toBe(workspaceId)
   await second.guards.sessions.assertSessionProject(created.sessionId)
   const resumed = await second.ctx.agents.resume({ resumeSessionId: created.sessionId,
     agentOptions: { provider: 'local-text', model: 'plain-text' },
-    setup: async (ctx) => { await second.ctx.agentPresets.mount(ctx, f.config.presetId) },
+    setup: async (ctx) => { await second.ctx.agentPresets.mount(ctx, f.config.defaultPresetId) },
   })
   expect(resumed.agent.id).toBe(created.sessionId)
   expect(resumed.agent.session.header.id).toBe(created.sessionId)
@@ -207,7 +207,7 @@ async function retainedColdFileSelection() {
   const selection = await graph.guards.getFileProject(caller)
   expect(selection.workspace).toBe(graph.files.project().workspace)
   expect(() => { selection.assertCurrent() }).not.toThrow()
-  return { graph, sessionId, selection, presetId: f.config.presetId }
+  return { graph, sessionId, selection, presetId: f.config.defaultPresetId }
 }
 
 it('rejects the retained cold file selection after account lifetime ends', async () => {
@@ -243,7 +243,7 @@ it('rejects foreign project, unapproved model/Preset and a missing actual Preset
   const f = policyFixture(), graph = await f.start()
   await expect(graph.guards.sessions.resolveCreate({ cwd: f.privateRoot })).rejects.toMatchObject({ code: 'cloud/forbidden' })
   await expect(graph.guards.sessions.resolveCreate({ agentPreset: 'arbitrary-preset' })).rejects.toMatchObject({ code: 'cloud/forbidden' })
-  const options = { sessionId: SessionId('policy-rejected'), meta: { cwd: f.project, agentPreset: f.config.presetId },
+  const options = { sessionId: SessionId('policy-rejected'), meta: { cwd: f.project, agentPreset: f.config.defaultPresetId },
     agentOptions: { provider: 'local-text', model: 'unapproved' } }
   const create = vi.spyOn(graph.ctx.sessionPersistence, 'create')
   await expect(graph.ctx.agents.create(options)).rejects.toMatchObject({ code: 'cloud/model-not-allowed' })
@@ -256,7 +256,7 @@ it('rejects foreign project, unapproved model/Preset and a missing actual Preset
 })
 
 it('rejects a wrong trusted declaration digest against the actual native Preset before opening a Session writer', async () => {
-  const f = policyFixture(), graph = await f.start('1', { ...f.config, presetConfigSha256: '0'.repeat(64) })
+  const f = policyFixture(), graph = await f.start('1', { ...f.config, presets: f.config.presets.map(row => ({ ...row, configSha256: '0'.repeat(64) })) })
   const create = vi.spyOn(graph.ctx.sessionPersistence, 'create')
   await expect(graph.ctx.sessionController.create({})).rejects.toMatchObject({ code: 'cloud/forbidden' })
   expect(create).not.toHaveBeenCalled()
@@ -273,7 +273,7 @@ it('rechecks actual provider availability after the native asynchronous model lo
     return original(...args)
   })
   const checking = graph.guards.agents.assertCreate({ sessionId: SessionId('provider-removed'),
-    meta: { cwd: f.project, agentPreset: f.config.presetId }, agentOptions: { provider: 'local-text', model: 'plain-text' } },
+    meta: { cwd: f.project, agentPreset: f.config.defaultPresetId }, agentOptions: { provider: 'local-text', model: 'plain-text' } },
   new AbortController().signal)
   const rejected = expect(checking).rejects.toMatchObject({ code: 'cloud/model-not-allowed' })
   try { await entered.promise; graph.withdrawProvider() }
@@ -287,7 +287,7 @@ it('reads actual persisted headers and Workspace relationships but rejects unsup
   const f = policyFixture(), graph = await f.start()
   const created = await graph.ctx.sessionController.create({})
   const detached = graph.ctx.sessions.prepare(SessionId('unsupported-child'), { meta: {
-    cwd: f.project, agentPreset: f.config.presetId, origin: 'subagent', parentSession: created.sessionId, delegationDepth: 1,
+    cwd: f.project, agentPreset: f.config.defaultPresetId, origin: 'subagent', parentSession: created.sessionId, delegationDepth: 1,
   } })
   const writer = await graph.ctx.sessionPersistence.create(detached.header)
   await writer.flush(); await writer.close()
@@ -320,7 +320,7 @@ it('rechecks the original files Workspace after asynchronous model validation', 
 it('revokes policy checks after an actual Loader change to the approved Preset declaration', async () => {
   const f = policyFixture(), graph = await f.start()
   await graph.guards.sessions.resolveCreate({})
-  const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === f.config.presetEntryId)
+  const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === f.config.presets[0]?.entryId)
   if (entry === undefined) throw new Error('Actual Preset entry absent')
   await entry.update({ config: { ...f.declaration, name: 'unreviewed change' } })
   await expect(graph.guards.sessions.resolveCreate({})).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
@@ -329,7 +329,10 @@ it('revokes policy checks after an actual Loader change to the approved Preset d
 
 it('requires finite exact route and UTF-8 limits at the configuration parser', () => {
   const f = policyFixture()
-  const short = { ...f.config, presetId: 'p', presetEntryId: 'a', agentLoopEntryId: 'b', maxPolicyStringBytes: 3,
+  const preset = f.config.presets[0]
+  if (preset === undefined) throw new Error('Approved preset absent')
+  const shortPreset = { ...preset, id: 'p', entryId: 'a' }
+  const short = { ...f.config, defaultPresetId: 'p', presets: [shortPreset], agentLoopEntryId: 'b', maxPolicyStringBytes: 3,
     models: [{ provider: '中', model: 'm' }] }
   expect(AccountPolicyConfigSchema(short)).toEqual(short)
   expect(() => AccountPolicyConfigSchema({ ...short, models: [{ provider: '中a', model: 'm' }] })).toThrow()
@@ -337,7 +340,11 @@ it('requires finite exact route and UTF-8 limits at the configuration parser', (
   expect(() => AccountPolicyConfigSchema({ ...short, maxPolicyStringBytes: Infinity })).toThrow()
   expect(() => AccountPolicyConfigSchema({ ...short, models: [...short.models, ...short.models] })).toThrow()
   expect(() => AccountPolicyConfigSchema({ ...short, models: [] })).toThrow()
-  expect(() => AccountPolicyConfigSchema({ ...short, presetConfigSha256: 'unbounded-expectation' })).toThrow()
+  expect(() => AccountPolicyConfigSchema({ ...short, presets: [] })).toThrow()
+  expect(() => AccountPolicyConfigSchema({ ...short, presets: [...short.presets, ...short.presets] })).toThrow()
+  expect(() => AccountPolicyConfigSchema({ ...short, presets: [{ ...shortPreset, selectable: false }] })).toThrow()
+  expect(() => AccountPolicyConfigSchema({ ...short, presets: [{ ...shortPreset, entryId: 'b' }] })).toThrow()
+  expect(() => AccountPolicyConfigSchema({ ...short, presets: [{ ...shortPreset, configSha256: 'unbounded-expectation' }] })).toThrow()
 })
 
 it('hashes canonical preset JSON within the explicit byte budget and rejects executable or unbounded declarations', () => {
@@ -347,6 +354,9 @@ it('hashes canonical preset JSON within the explicit byte budget and rejects exe
   expect(accountPresetConfigDigest(value, bytes)).toBe(createHash('sha256').update(canonical).digest('hex'))
   expect(() => accountPresetConfigDigest(value, bytes - 1)).toThrow()
   expect(() => accountPresetConfigDigest({ plugins: [() => 'unapproved-constructor'] }, 256)).toThrow()
-  expect(() => accountPresetConfigDigest({ plugins: [{ disabled: { __jsExpr: 'true' } }] }, 256)).toThrow()
+  expect(accountPresetConfigDigest({ plugins: [{ disabled: { __jsExpr: 'true' } }] }, 256))
+    .not.toBe(accountPresetConfigDigest({ plugins: [{ disabled: { __jsExpr: 'false' } }] }, 256))
+  expect(() => accountPresetConfigDigest({ plugins: [{ disabled: { __jsExpr: 'true', extra: 1 } }] }, 256)).toThrow()
+  expect(() => accountPresetConfigDigest({ plugins: [{ disabled: { __jsExpr: '(() => { throw Error(1) })()' } }] }, 256)).not.toThrow()
   expect(() => accountPresetConfigDigest({ large: 'x'.repeat(257) }, 256)).toThrow()
 })

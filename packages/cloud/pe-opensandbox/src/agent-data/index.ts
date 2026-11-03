@@ -9,6 +9,8 @@ export type * from './types.ts'
 export * from './constants.ts'
 /** The private role issuer and data carrier use the same fixed version and limits. */
 export { ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS } from './role-protocol.ts'
+/** Exact pipes protocol windows and lifetime byte caps, required in its authenticated handshake. */
+export { STREAM_LIMITS } from './role-protocol.ts'
 /** Secret-free typed failures, documented at each declaring error class. */
 export * from './errors.ts'
 /** Canonical preparation and hashing functions, with parameter/return docs in canonical.ts. */
