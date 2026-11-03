@@ -6,8 +6,9 @@
 
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FileSystem, FsInfo, FsTarget, FsVersion } from '@deepseek-ai/dsh-fs'
+import { FsError } from '@deepseek-ai/dsh-fs'
 import { agentsHomeDisplay, dshHomeDisplay } from '@deepseek-ai/dsh-home-paths'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { resolveConfig, resolveDiscoveryConfig, type ResolvedConfig, type ResolvedDiscoveryConfig } from './config.ts'
@@ -226,7 +227,8 @@ async function existsAsMarker(path: string, fileSystem?: FileSystem, signal?: Ab
  * @param markers - child names that identify a project root.
  * @param fileSystem - optional provider used instead of host filesystem probes.
  * @param signal - cancellation for provider and host probes.
- * @returns the discovered project root, or `cwd` when no marker exists.
+ * @returns the discovered project root, the provider's fixed read boundary when no marker exists
+ * inside it, or `cwd` for an unbounded provider without a marker.
  * @throws the original marker metadata error or cancellation reason when a probe is unavailable.
  */
 export async function findProjectRoot(
@@ -236,10 +238,19 @@ export async function findProjectRoot(
   signal?: AbortSignal,
 ): Promise<string> {
   let current = resolve(cwd)
+  const scoped = await fileSystem?.scopeRoot(signal)
+  const boundary = fileSystem === undefined || scoped === undefined ? undefined : resolve(fileSystem.processPath(scoped))
+  if (boundary !== undefined) {
+    const inside = relative(boundary, current)
+    if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+      throw new FsError('Instruction cwd is outside the filesystem scope root.', 'FS_SANDBOX_DENIED')
+    }
+  }
   for (;;) {
     for (const marker of markers) {
       if (await existsAsMarker(join(current, marker), fileSystem, signal)) return current
     }
+    if (current === boundary) return current
     const parent = dirname(current)
     if (parent === current) return resolve(cwd)
     current = parent

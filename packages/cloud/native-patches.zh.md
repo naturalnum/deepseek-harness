@@ -35,6 +35,8 @@ Root 配方封印执行完整的原生计划校验。准入时，原计划以常
 
 Cloud 账户组合通过固定私有 runtime builtin 复用公开的 Native Cordis 检查注册表和第一方 Host provider，不激活动态插件 runner。Standard 委派消费原生模型选择设置服务并保留关闭的默认值；这些依赖不改变四个 Native 预设声明。
 
+Native `FileSystem.scopeRoot` 提供可选的调用者作用域发现元数据。Cloud 文件系统返回原受保护 Workspace target；原生 agent-instructions 在该边界停止项目标记发现，并保留失败语义。无界 Native provider 继续使用既有搜索，所有文件系统授权仍由原 provider 持有。
+
 ## 升级步骤
 
 1. 修改前记录当前干净源码、实际部署、目标上游修订及可信配置。源码测试与旧运行版本是不同证据。

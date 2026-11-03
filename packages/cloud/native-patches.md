@@ -36,6 +36,8 @@ The native file tree accepts a prepared `workspaceFileManagement` face; selectio
 
 Cloud account composition reuses the public Native Cordis inspection registry and first-party Host providers through its fixed private runtime builtin. It does not activate the dynamic plugin runner. Standard delegation consumes the original Native model-selection settings service with its disabled defaults; these dependencies do not change the four Native preset declarations.
 
+Native `FileSystem.scopeRoot` provides optional caller-scoped discovery metadata. The Cloud filesystem returns its original guarded Workspace target; Native agent-instructions stops project-marker discovery at that boundary and preserves failures. Unbounded Native providers keep their existing search, and all filesystem authorization remains with the original provider.
+
 ## Upgrade procedure
 
 1. Record the current clean source revision, deployment revision, chosen upstream revision and trusted configuration before changing anything. Source tests and an old running release are different evidence.

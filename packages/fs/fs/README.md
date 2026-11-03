@@ -56,6 +56,8 @@ The contract is built on one separation and three commitments:
 - **`editText` stays on the seam.** Version check, literal match, and atomic rewrite share one critical section, so error attribution and one-wins/one-stale concurrency stay correct; a remote backend may implement it as a native compare-and-edit.
 - **Bounds live at this seam.** `readBytes` requires `maxBytes` and fails with `FS_TOO_LARGE` rather than truncating, so no backend ever buffers an unbounded file. `readByteRange` is bounded by its window instead: a backend transfers at most the requested `length` beyond the prefix it skips, so the caller's cap on `length` is the guard.
 
+`scopeRoot(signal)` returns an issued directory target when a provider has a fixed read boundary for the current caller. Unbounded providers return `undefined`. Discovery can stop at that target; the result grants no file access, and known-boundary selection failures propagate.
+
 ### Source map
 
 | File | Role |

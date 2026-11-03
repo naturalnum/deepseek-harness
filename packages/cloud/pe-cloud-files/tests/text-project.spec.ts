@@ -9,6 +9,7 @@ import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import SessionStore from '@deepseek-ai/dsh-session'
+import { loadBaselineInstructions } from '@deepseek-ai/dsh-agent-instructions'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
 import * as DomainStorage from '@deepseek-ai/dsh-storage-domain'
@@ -102,6 +103,19 @@ async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, co
     },
   }
 }
+
+it('bounds Native discovery at the original Workspace root and rejects stale selection', async () => {
+  const test = await fixture()
+  const root = await test.fs.scopeRoot()
+  if (root === undefined) throw new Error('The account filesystem must expose its original scope root')
+  expect(test.fs.processPath(root)).toBe(test.project)
+  const instructions = await loadBaselineInstructions({ cwd: test.project, maxBytes: 4096,
+    dshHome: test.project, agentsHome: test.project }, test.fs)
+  expect(instructions).toBeUndefined()
+  await expect(test.fs.resolve(join(test.project, '..', '.git'))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  test.stale()
+  await expect(test.fs.scopeRoot()).rejects.toThrow('test graph retired')
+})
 
 it('uses the native FS with stable alias targets, guarded create/update outcomes and raw text reads', async () => {
   const test = await fixture()

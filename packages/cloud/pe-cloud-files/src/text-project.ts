@@ -279,6 +279,11 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       })
     }
 
+    /** Select the original caller's Workspace root through the same guarded target issuer. */
+    override scopeRoot(signal?: AbortSignal): Promise<FsTarget> {
+      return this.resolve('.', signal === undefined ? undefined : { signal })
+    }
+
     override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
       this.current(opts?.signal)
       let preparation: DirectoryPreparationState | undefined

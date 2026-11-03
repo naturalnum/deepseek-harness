@@ -56,6 +56,8 @@ kind: "package-reference"
 - **`editText` 留在 seam 上。** 版本校验、字面量匹配与原子重写共享同一个临界区，错误归因与一方胜出/一方陈旧的并发语义因此保持正确；远程后端也可以将其实现为原生比较并编辑操作。
 - **界限制在此 seam 上。** `readBytes` 要求 `maxBytes`，并以 `FS_TOO_LARGE` 失败而不是截断，因此任何后端都不会无界缓冲文件。`readByteRange` 则以窗口为界：后端最多传输所请求的 `length` 字节（外加为到达 `offset` 而跳过的前缀），因此由调用方对 `length` 的上限承担防护。
 
+当 provider 为当前调用者限定了固定读取边界时，`scopeRoot(signal)` 返回原 provider 签发的目录 target。无界 provider 返回 `undefined`。发现器可以在该 target 处停止；结果不授予文件访问权限，已知边界的选择失败仍向上传播。
+
 ### 源码地图
 
 | 文件 | 职责 |

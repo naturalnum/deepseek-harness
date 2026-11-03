@@ -66,7 +66,8 @@
     "@types/yauzl": "2.10.3",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
-    "@deepseek-ai/dsh-session-projection": "workspace:*"
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-agent-instructions": "workspace:*"
   },
   "repository": {
     "type": "git",

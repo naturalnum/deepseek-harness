@@ -12,7 +12,7 @@ import SessionStore, { SessionId, SessionSeq, type SessionEvent, type SurfaceInt
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import AgentRegistry, { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop, { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
-import { FileSystem, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
+import { FileSystem, FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 import type {
   FsDirEntry,
   FsEditOutcome,
@@ -3284,6 +3284,50 @@ describe('workspace context request injection', () => {
       expect(fs.readTargets).toContain(join(root, 'CLAUDE.md'))
       expect(fs.readTargets).not.toContain(join(root, 'AGENTS.md'))
     } finally {
+      vi.unstubAllEnvs()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps native marker discovery and baseline instructions inside the provider scope root', async () => {
+    const root = await tempRepo(), home = await tempRepo(), cwd = join(root, 'child')
+    const probes: string[] = []
+    class BoundedFileSystem extends RecordingFileSystem {
+      override scopeRoot(signal?: AbortSignal): Promise<FsTarget> {
+        return this.resolve(root, signal === undefined ? undefined : { signal })
+      }
+      override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+        const absolute = resolve(opts?.cwd ?? root, path)
+        probes.push(absolute)
+        const inside = relative(root, absolute)
+        if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+          throw new FsError('Outside fixture root', 'FS_PERMISSION_DENIED')
+        }
+        return super.resolve(absolute, opts)
+      }
+    }
+    const ctx = new Context()
+    try {
+      provideWorkingDirectoryFixture(ctx)
+      await ctx.plugin(BoundedFileSystem)
+      const fs = ctx.fs
+      if (!(fs instanceof BoundedFileSystem)) throw new Error('Original bounded provider missing')
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'provider root instruction' })
+      fs.entries.set(join(cwd, 'AGENTS.md'), { type: 'file', content: 'nested instruction' })
+      pinHarnessHome(home)
+      await mountAgentInstructionsPlugin(ctx, { maxBytes: 65536 })
+      const agent = await stubAgent(cwd)
+      await composeBaselinePrefix(ctx, agent)
+      expect(derivedText(agent)).toContain('provider root instruction')
+      expect(derivedText(agent)).toContain('nested instruction')
+      expect([...new Set(probes.filter(path => path.endsWith(`${sep}.git`)))])
+        .toEqual([join(cwd, '.git'), join(root, '.git')])
+      const failure = new Error('Original boundary observation failed')
+      vi.spyOn(fs, 'scopeRoot').mockRejectedValueOnce(failure)
+      await expect(composeBaselinePrefix(ctx, await stubAgent(cwd))).rejects.toBe(failure)
+    } finally {
+      await ctx.fiber.dispose()
       vi.unstubAllEnvs()
       await rm(root, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })

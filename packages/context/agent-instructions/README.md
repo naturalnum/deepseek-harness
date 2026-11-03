@@ -87,6 +87,8 @@ This section explains the design decisions behind the plugin; the observable beh
 
 The plugin is built on one principle: workspace instructions are durable conversation content, owned per agent and per session. Baseline and refresh messages are ordinary sourced `user/message` events, so they replay, compact, and resume exactly like other history, and model-visible state is always reconstructable from the session log. The plugin owns the complete `<system-reminder>` framing and every injected message reaches the model verbatim.
 
+Project-marker discovery respects an explicit filesystem `scopeRoot`: it probes only from cwd through that boundary and uses the boundary when no marker exists. A cwd outside the declared root or an unavailable boundary fails the original preparation. Providers without a boundary retain the existing ancestor search and cwd fallback; denied reads are not reclassified as absence.
+
 ### Source map
 
 | File | Role |

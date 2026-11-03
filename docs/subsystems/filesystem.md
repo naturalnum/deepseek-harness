@@ -293,6 +293,15 @@ Abstract filesystem provider. Targets must preserve identity across aliases; rea
 
 ```ts cordis-catalog
 /**
+ * Return this caller's fixed read boundary for bounded filesystem discovery.
+ * @param signal - cancels boundary selection and observation.
+ * @returns an issued directory target, or undefined for an unbounded provider.
+ * This metadata grants no access; each subsequent operation retains its usual checks.
+ * @throws the original provider or cancellation failure when a known boundary is unavailable.
+ */
+scopeRoot(signal?: AbortSignal): Promise<FsTarget | undefined>
+
+/**
  * Observe one file or a directory's direct entries in this provider's execution world.
  * @param target - resolved file or directory, including an absent path to observe for creation.
  * @param changed - invalidation callback; errors can be reported during or after initialization.
