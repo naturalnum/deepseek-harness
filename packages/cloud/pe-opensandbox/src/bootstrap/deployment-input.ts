@@ -9,7 +9,7 @@ import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
 
 /** Reviewed Native guard accepting direct Session directories inside the original account quota pools. */
-export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:e6c391c54ebca9cd5e958065620177eb8264dfe1a2630bbf33471659778bf90f'
+export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:ef0edcd0efbab13a66c2b334a26aa147d1d4b80fb2a822f5959f20b6142f85c5'
 
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
 export interface SharedPathStorageLimits {
