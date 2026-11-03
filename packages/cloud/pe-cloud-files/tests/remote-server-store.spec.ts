@@ -20,7 +20,7 @@ it('persists each account list and native credential independently without retur
     maxTrackedOperations: 16, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 8, maxWaitersPerAccount: 8 })
   const key = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
   const form = { alias: 'private', host: '127.0.0.1', user: 'fixture', port: 22, description: '', tags: [], alwaysAsk: true }
-  const create = async (name: string, epoch: string) => {
+  const create = async (name: string, epoch: string, bounds = { maxServers: 4, maxReplyBytes: 65536 }) => {
     const ctx = new Context(), lifetime = new AbortController(); contexts.push(ctx)
     const binding: AccountBinding = Object.freeze({ accountId: brandString<AccountBinding['accountId']>(name),
       epoch: brandString<AccountBinding['epoch']>(epoch), recipeVersion: 'private-store-native-test', lifetime: lifetime.signal })
@@ -29,7 +29,7 @@ it('persists each account list and native credential independently without retur
     await ctx.plugin(Domains, { backend: 'json' }); await ctx.plugin(Credentials, { path: join(directory, name,
       'credentials.json'), watch: false })
     const barrier = saves.createAccount(binding)
-    const store = await openRemoteServerStore(ctx, binding, { maxServers: 4, maxReplyBytes: 65536, maxCommandBytes: 2048,
+    const store = await openRemoteServerStore(ctx, binding, { ...bounds, maxCommandBytes: 2048,
       maxPrivateKeyBytes: 2048, maxKnownHostsBytes: 2048, alwaysAsk: false, readOnlyAllowlist: ['hostname'] },
     () => { ctx.fiber.assertActive(); if (ctx.get('peAccount') !== binding) throw new Error('wrong account') },
     () => { lifetime.signal.throwIfAborted() }, task => barrier.admit('remote-server', task))
@@ -71,6 +71,20 @@ it('persists each account list and native credential independently without retur
     expect(() => a.store.collection.list()).toThrow()
     await a.barrier.stopConfigSaves(Date.now() + 1000)
     await b.barrier.stopConfigSaves(Date.now() + 1000)
+    const bounded = await create('bounded', '1', { maxServers: 64, maxReplyBytes: 8192 })
+    let refused = false
+    for (let index = 0; index < 64; index++) {
+      try { await bounded.store.mutate(() => bounded.store.collection.add({ ...form, alias: `entry-${index}`, description: 'x'.repeat(160) })) }
+      catch (_error) { refused = true; break }
+    }
+    expect(refused).toBe(true); expect(bounded.barrier.snapshot().failures).toEqual([])
+    for (const row of bounded.store.collection.list()) bounded.store.collection.observe(row.reference, { kind: 'timeout', timeoutMs: 1,
+      stdout: { text: '', truncated: false, droppedBytes: 0 }, stderr: { text: '', truncated: false, droppedBytes: 0 } })
+    const reply = { servers: bounded.store.collection.states().map(row => ({ ...row, configured: false })),
+      limits: { maxPrivateKeyBytes: 2048, maxKnownHostsBytes: 2048, maxImportBytes: 65536 } }
+    expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThanOrEqual(8192)
+    await bounded.barrier.stopConfigSaves(Date.now() + 1000)
+
   } finally {
     for (const ctx of contexts) await ctx.fiber.dispose()
     await rm(directory, { recursive: true, force: true })

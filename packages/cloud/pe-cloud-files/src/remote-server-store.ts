@@ -81,8 +81,9 @@ export async function openRemoteServerStore(ctx: Context, binding: AccountBindin
     read: () => domain.global.get().servers.map(entry => ({ ...entry, id: brandString<ServerId>(entry.id) })),
     write: async (servers: readonly RemoteServer[]) => {
       check()
-      const minimumReply = { servers: servers.map(entry => ({ entry, reference: '0'.repeat(36), configured: true })),
-        limits: { maxPrivateKeyBytes: limits.maxPrivateKeyBytes, maxKnownHostsBytes: limits.maxKnownHostsBytes, maxImportBytes: 65536 } }
+      const minimumReply = { servers: servers.map(entry => ({ entry, reference: '0'.repeat(36), configured: false, factsOmitted: true,
+        connectivity: { reachable: false, checkedAt: '9999-12-31T23:59:59.999Z', failure: 'unknown' } })),
+      limits: { maxPrivateKeyBytes: limits.maxPrivateKeyBytes, maxKnownHostsBytes: limits.maxKnownHostsBytes, maxImportBytes: 65536 } }
       if (Buffer.byteLength(JSON.stringify(minimumReply)) > limits.maxReplyBytes - 1024) throw new Error('cloud/remote-list-too-large')
       submitted(); await domain.global.set({ accountId: String(binding.accountId), servers: [...servers] }); check()
     },
