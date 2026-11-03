@@ -34,11 +34,12 @@ function isMaintained(file: string): boolean {
 
 /** Exact upstream revision in the generated Office source notice, never prose or an arbitrary JSON field. */
 function officeSourcePin(file: string, source: string): { value: string; line: number; column: number } | undefined {
-  const matched = /^packages\/skill\/skill-office\/assets\/(office(?:-docx|-pptx|-xlsx|-render|-recalculate|-export-pdf)?)\/DSH-SOURCE\.json$/.exec(file)
-  if (matched === null) return undefined
+  const matched = /^packages\/skill\/skill-office\/assets\/([^/]+)\/DSH-SOURCE\.json$/.exec(file)
+  const skillName = matched?.[1]
+  if (skillName === undefined || !/^office(?:-docx|-pptx|-xlsx|-render|-recalculate|-export-pdf)?$/.test(skillName)) return undefined
   let record: unknown
   try { record = JSON.parse(source) } catch { return undefined }
-  if (typeof record !== 'object' || record === null || !('name' in record) || record.name !== matched[1]
+  if (typeof record !== 'object' || record === null || !('name' in record) || record.name !== skillName
     || !('source' in record) || typeof record.source !== 'object' || record.source === null) return undefined
   const origin = record.source
   if (!('repository' in origin) || origin.repository !== 'https://github.com/deepseek-ai/deepseek-harness'

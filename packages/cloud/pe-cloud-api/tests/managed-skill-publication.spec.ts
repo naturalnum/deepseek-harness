@@ -208,7 +208,11 @@ async function fixture(configuredLimits = apiLimits, builtins = false) {
   ctx.skills.registerProvider((control: SkillProviderControl) => {
     providerSignal = control.signal
     const actual = { signal: control.signal, invalidate() { if (failApply) throw Error('Native apply failed'); control.invalidate() } }
-    manager = new AccountManagedSkills(ctx, actual, saves, port, legacy, ctx.skills, { limits: configuredLimits, bundleLimits: builtins ? { ...bundleLimits, maxFiles: 512, maxDirectories: 256, maxFileBytes: 2 * 1024 * 1024, maxContentBytes: 8 * 1024 * 1024, maxArchiveBytes: 4 * 1024 * 1024 } : bundleLimits,
+    manager = new AccountManagedSkills(ctx, actual, saves, port, legacy, ctx.skills, {
+      limits: configuredLimits,
+      bundleLimits: builtins ? { ...bundleLimits, maxFiles: 512, maxDirectories: 256,
+        maxFileBytes: 2 * 1024 * 1024, maxContentBytes: 8 * 1024 * 1024,
+        maxArchiveBytes: 4 * 1024 * 1024 } : bundleLimits,
       assertWorkspace() { throw Error('No workspace authorized in fixture') }, resources }, sampleLimits)
     return manager
   })
@@ -722,7 +726,7 @@ it('projects all thirteen complete built-ins from Loader providers and preserves
   const view = await f.manager.installed({}, f.check, f.signal)
   expect(view.complete).toBe(true)
   expect(view.entries).toHaveLength(13)
-  expect(await f.ctx.skills.list()).not.toContainEqual(expect.objectContaining({ package: expect.anything() }))
+  for (const summary of await f.ctx.skills.list()) expect(summary).not.toHaveProperty('package')
   for (const entry of view.entries) {
     expect(entry).toMatchObject({ source: 'bundled', mutable: false, selection: { kind: 'effective' },
       actions: { update: false, uninstall: false, download: true } })
@@ -730,10 +734,12 @@ it('projects all thirteen complete built-ins from Loader providers and preserves
     expect(detail.markdown).toContain('---')
     expect(detail.files).toHaveLength(entry.fileCount)
     const loaded = await f.ctx.skills.get(entry.name)
-    expect(loaded?.resourceBase).toEqual({ kind: 'directory', path: `/opt/dsh/skills/${entry.provider === 'dsh-office' ? 'office' : 'reports'}/${entry.name}` })
+    expect(loaded?.resourceBase).toEqual({ kind: 'directory',
+      path: `/opt/dsh/skills/${entry.provider === 'dsh-office' ? 'office' : 'reports'}/${entry.name}` })
     expect(loaded?.content).not.toContain('/Users/')
     // The fixture's physical user-upload limit is intentionally small; SKILL.md reads still retain the API byte bound.
-    const inspection = await f.ctx.skills.inspect(), source = inspection.candidates.find(row => row.candidate.name === entry.name)?.candidate.package
+    const inspection = await f.ctx.skills.inspect()
+    const source = inspection.candidates.find(row => row.candidate.name === entry.name)?.candidate.package
     if (source === undefined) throw Error('Missing built-in package')
     const exported = await f.manager.download({ skillId: entry.skillId, contentVersion: entry.contentVersion }, f.check, f.signal)
     expect(exported.sha256).toBe(source.archive.sha256)

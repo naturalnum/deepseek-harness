@@ -96,7 +96,8 @@ function officeRuntime(config: Config): string {
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const assetRoot = config.assetRoot ?? fileURLToPath(new URL('../assets/', import.meta.url))
-  if (config.systemTools !== undefined && (!Object.values(config.systemTools).every(isAbsolute) || config.executionRuntime !== undefined || config.cli === false)) {
+  if (config.systemTools !== undefined && (!Object.values(config.systemTools).every(isAbsolute)
+    || config.executionRuntime !== undefined || config.cli === false)) {
     throw new Error('skill-office: systemTools requires absolute execution paths and cannot be combined with a Kit runtime or disabled CLI')
   }
   if (config.executionRoot !== undefined && !isAbsolute(config.executionRoot)) throw new Error('skill-office: executionRoot must be absolute')
