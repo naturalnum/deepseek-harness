@@ -87,6 +87,8 @@ class Writer:
                     return
                 time.sleep(min(0.05, max(0, until - time.monotonic())))
             raise UnsettledProcess(str(self.directory))
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise UnsettledProcess(str(self.directory)) from error
         finally:
             for signum, handler in handlers.items():
                 signal.signal(signum, handler)

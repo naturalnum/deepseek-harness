@@ -26,7 +26,7 @@ for limit, value in [(resource.RLIMIT_AS, 536870912), (resource.RLIMIT_FSIZE, 67
                      (resource.RLIMIT_CORE, 0), (resource.RLIMIT_CPU, 75)]:
     resource.setrlimit(limit, (value, value))
 sys.path.insert(0, str(args.runtime_directory))
-from refresh_word import refresh, Cancelled
+from refresh_word import refresh, Cancelled, Writer, UnsettledProcess
 from word_catalog import parse_xml, fields, catalogs, tag, NS, xml, write_copy, E, normalized
 out = args.output_directory.resolve()
 out.mkdir()
@@ -76,6 +76,17 @@ with ZipFile(first/'report.docx') as a,ZipFile(repeat/'report.docx') as b:
  assert da.xpath('//w:bookmarkStart/@w:name',namespaces=NS)==db.xpath('//w:bookmarkStart/@w:name',namespaces=NS)
  assert (first/'catalogs.json').read_bytes()==(repeat/'catalogs.json').read_bytes()
 checks['repeatHasNoBookmarkGrowth']=True
+# Reports without figures or tables retain valid empty fields.
+with ZipFile(source) as z: empty_document=parse_xml(z.read('word/document.xml'))
+for field in fields(empty_document):
+ if field['code'].lstrip().startswith('TC ') and any('\\f '+group in field['code'] for group in ['F','T']):
+  begin=field['begin'].getparent();end=field['end'].getparent();paragraph=begin.getparent()
+  assert paragraph is end.getparent()
+  for node in list(paragraph)[paragraph.index(begin):paragraph.index(end)+1]:paragraph.remove(node)
+empty_source=out/'empty-source.docx';write_copy(source,empty_source,{'word/document.xml':xml(empty_document)})
+empty_output=out/'empty';refresh(empty_source,empty_output,args.soffice,180,4);validate(empty_source,empty_output/'report.docx')
+empty_cache=json.loads((empty_output/'catalogs.json').read_text());assert empty_cache['C'] and empty_cache['F']==[] and empty_cache['T']==[]
+checks['emptyFigureAndTableCatalogs']=page_refs(empty_output)
 with ZipFile(source) as z: document=parse_xml(z.read('word/document.xml'))
 body=document.find('w:body',NS);target=next(p for p in body.findall('w:p',NS) if '2 电网状态' in ''.join(p.xpath('.//w:t/text()',namespaces=NS)))
 level=E.Element(tag('pPr'));E.SubElement(level,tag('pStyle')).set(tag('val'),'3')
@@ -113,6 +124,22 @@ for case in ['publication-failure', 'publication-cancel']:
   except (OSError,Cancelled): pass
  assert count[0] == 2 and not dest.exists(),case
 checks['failureAndExistingPublication']=True
+# Missing macro completion fails despite process exit0; unconfirmed cleanup retains evidence.
+zero=out/'zero-exit'
+try: refresh(source,zero,'/bin/true',30,4);raise AssertionError('Accepted missing macro result')
+except RuntimeError: pass
+assert not zero.exists()
+unknown=out/'unconfirmed'
+with patch.object(Writer,'initialize',side_effect=UnsettledProcess('injected unconfirmed process')):
+ try: refresh(source,unknown,args.soffice,30,4);raise AssertionError('Accepted unknown process')
+ except UnsettledProcess: pass
+assert list(unknown.glob('.word-refresh-*')) and not list(unknown.glob('report.*'))
+class ProcessFixture:
+ pid=2147483647
+with patch('refresh_word.os.killpg',side_effect=PermissionError('unconfirmed signal')):
+ try: Writer(args.soffice,out,time.monotonic()+10,1).settle(ProcessFixture());raise AssertionError('Accepted unconfirmed signal')
+ except UnsettledProcess: pass
+checks['unconfirmedCleanupRetainsEvidenceAndMissingMacroRejects']=True
 # Terminate while the real Writer process is live; verify every private-profile process has exited.
 cancel=out/'cancelled'
 p=subprocess.Popen([sys.executable,str(args.runtime_directory/'refresh_word.py'),str(long),str(cancel),'--soffice',args.soffice,'--timeout-seconds','300','--cancel-grace-seconds','4'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)

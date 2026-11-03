@@ -197,7 +197,11 @@ def prepare(source, directory):
         mapping = ','.join(f'{name},{level}' for name, level in selected[group].items()) or 'DSHUnusedStyle,1'
         field['instruction'][0].text = f' TOC \\t "{mapping}" \\h \\z '
         for n in field['instruction'][1:]: n.text = ''
-        replace_cache(field, [{**row, 'page': '1'} for row in groups[group]], toc_styles)
+        if groups[group]:
+            replace_cache(field, [{**row, 'page': '1'} for row in groups[group]], toc_styles)
+        else:
+            # Writer imports empty catalog fields only when their disposable cache is nonempty.
+            replace_cache(field, [{'label': 'DSH_TOC_REFRESH_PENDING'}])
     write_copy(source, directory/'native-working.docx', {'word/document.xml': xml(document), 'word/styles.xml': xml(styles)})
     (directory/'metadata.json').write_text(json.dumps(groups, ensure_ascii=False, indent=2)+'\n')
 
