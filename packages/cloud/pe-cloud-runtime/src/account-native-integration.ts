@@ -42,6 +42,9 @@ import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import ScheduleService from '@deepseek-ai/dsh-schedule'
 import MessageFeedbackService from '@deepseek-ai/dsh-message-feedback'
 import * as CommandFeedback from '@deepseek-ai/dsh-command-feedback'
+import z from '@deepseek-ai/schemastery'
+import { CordisInspectRegistryService } from '@deepseek-ai/dsh-cordis-host-runner'
+import * as NativeCordisInspectProviders from '@deepseek-ai/dsh-tool-cordis/host'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
@@ -150,6 +153,7 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   commandFeedback: 'pe-cloud-command-feedback',
   workspaceFiles: 'pe-cloud-workspace-files', officeToPdf: 'pe-cloud-office-to-pdf',
   attachments: 'pe-cloud-attachment-store', uploads: 'pe-cloud-file-uploads',
+  inspection: 'pe-cloud-cordis-inspection',
 })
 
 /** Additional fixed private builtins selected only with explicit first-screen inputs. */
@@ -637,6 +641,17 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.goals]: goals,
       [ACCOUNT_NATIVE_ENTRIES.sessionExport]: sessionExport,
       [ACCOUNT_NATIVE_ENTRIES.permissions]: permissions,
+      [ACCOUNT_NATIVE_ENTRIES.inspection]: {
+        inject: ['peCloudApi', 'tools'],
+        Config: z.object({ clientQueryTimeoutMs: z.natural().min(1).max(2_147_483_647).required() }),
+        /** Install only the Native read-only registry and providers, owned by this account entry. */
+        async apply(owner: Context, config: { clientQueryTimeoutMs: number }) {
+          api.assertInstalled(owner)
+          new CordisInspectRegistryService(owner, config.clientQueryTimeoutMs)
+          await owner.plugin(NativeCordisInspectProviders)
+          api.assertInstalled(owner)
+        },
+      },
       [ACCOUNT_NATIVE_ENTRIES.pluginInventory]: {
         inject: ['loader', 'peCloudApi', 'peAccount'],
         apply(owner: Context) {

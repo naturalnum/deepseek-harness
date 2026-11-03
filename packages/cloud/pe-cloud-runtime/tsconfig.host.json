@@ -118,6 +118,12 @@
     },
     {
       "path": "../../terminal/terminal"
+    },
+    {
+      "path": "../../extensions/cordis-host-runner"
+    },
+    {
+      "path": "../../extensions/tool-cordis"
     }
   ],
   "exclude": [

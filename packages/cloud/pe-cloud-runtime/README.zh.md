@@ -197,6 +197,8 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。 固定私有 `ACCOUNT_NATIVE_ENTRIES.workspaceFiles` builtin 只在配方显式安装该入口时激活。它保留原生 WorkspaceFiles 的 Config 和全部 inject，额外要求 `peCloudApi`，并经原 API owner 构造不变的原生服务。配方须安装真实 sandbox-policy provider，显式选择部署模式和 fallback root；该 fallback 不授予项目权限。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。受限 files lane 构造原始 `CloudAccountFiles`，其 `/account` 入口持有原生 Registry/default/FS 安装。API 业务准入后，目录准备从原始已登记 Workspace 派生 `projectFor(workspace)`，并在 await 后复核 binding、owner 和 Workspace；新派生能力 wrapper 不要求对象身份相同。指令准备先选择 Agent 的 Workspace，再保留完整 snapshot 预算，并在 reservation 内使用同步共享检查。原生依赖可能在 files 初始化期间激活，必需入口检查与业务准入仍阻止不完整发布。缺 files 或共享 guard 时保持关闭。
 
+显式配方入口 `ACCOUNT_NATIVE_ENTRIES.inspection` 在账户图中安装公开的 Native `CordisInspectRegistryService` 和 `@deepseek-ai/dsh-tool-cordis/host` provider。必填 `clientQueryTimeoutMs` 为正数且有界的计时预算。该入口要求原账户 API 和 Tool registry，不安装动态 Cordis runner。Native Standard 委派还要求原生 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 入口；继承默认值保持模型选择关闭，允许路由为空。缺少预设依赖时仍严格拒绝 bootstrap，并输出有界私有诊断，仅含声明 ID、模块名和缺失服务名。
+
 对三个已准入的 WorkspaceFiles HTTP 读取，原生集成可复用原请求 carrier 和持有的 ready `AccountUse`，执行 Root、代际和 binding 检查。捕获的 Root 检查保留同一个已封口 candidate，并核验原生变更版本、provider 身份与健康、原始存储归属；撤销或替换会使下一次检查拒绝。原认证、Session/Workspace 作用域、取消、await 后及响应头发送前的检查继续生效。其他操作和没有匹配 carrier 的请求保留普通业务准入。该机制不新增缓存、服务或生命周期 owner；参见 [Access](../pe-cloud-access/README.zh.md#understand-the-implementation)。
 
 原认证拥有者提供 Root Fetch 检查时，私有账户准备过程捕获该拥有者，只向 API 传入其只读注册回调。更换或撤回会拒绝下一次检查；账户图中不安装 Root 服务或 Context，此读取也不创建请求或分配。

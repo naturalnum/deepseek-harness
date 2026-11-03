@@ -36,6 +36,8 @@ import NativeController, { type SessionRequestId } from '@deepseek-ai/dsh-api-se
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import SubagentModelSelection from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+import { CordisInspectRegistryService } from '@deepseek-ai/dsh-cordis-host-runner'
 import NativeLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import Agents from '@deepseek-ai/dsh-agent'
@@ -144,6 +146,7 @@ async function fixture(options: {
   verifyBootstrap?: (api: CloudAccountApi) => Promise<void>
   timing?: FileReadTiming
   realFiles?: boolean
+  presetServices?: boolean
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8s-native-integration-')))
   directories.push(directory)
@@ -259,6 +262,10 @@ async function fixture(options: {
     { id: 'editor', name: 'cordis:' + names.editor },
     { id: 'credentials', name: 'cordis:' + names.credentials, config: { path: credentialPath, watch: false } },
     { id: 'dependencies', name: 'cordis:m8s-dependencies' },
+    ...options.presetServices ? [
+      { id: 'cordis-inspection', name: 'cordis:' + names.inspection, config: { clientQueryTimeoutMs: 10000 } },
+      { id: 'subagent-model-selection-settings', name: 'cordis:m8s-model-selection' },
+    ] : [],
     ...options.terminalProbe ? [{ id: 'terminal-probe', name: 'cordis:m8s-terminal-probe', config: { value: 1 } }] : [],
     ...options.modelKey ? [{ id: 'model-key', name: 'cordis:' + names.modelKey }] : [],
     { id: 'llm', name: 'cordis:' + (options.earlyLlmAndController ? 'm8s-early-llm' : names.llm) },
@@ -370,7 +377,7 @@ async function fixture(options: {
       } },
     prepare(ctx) {
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
-        'm8s-sandbox-policy': SandboxPolicyService,
+        'm8s-sandbox-policy': SandboxPolicyService, 'm8s-model-selection': SubagentModelSelection,
         'm8s-terminal-probe': { Config: z.object({ value: z.number().default(1).volatile() }), apply() {} },
         'm8s-working-directory': WorkingDirectory, 'm8ax-settings': Settings, 'm8ax-locale': Locale,
         // A separately guarded native LLM lets all Controller dependencies activate before files/account settles.
@@ -473,6 +480,18 @@ async function fixture(options: {
       return resolveFiles(caller, signal)
     } }
 }
+
+it('mounts Native preset settings and read-only Cordis providers in the actual account Loader', async () => {
+  const f = await fixture({ presetServices: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context
+  expect(ctx.cordisInspect).toBeInstanceOf(CordisInspectRegistryService)
+  expect(ctx.cordisInspect.list().map(row => row.id)).toEqual(['Service', 'Event', 'Config', 'Tool'])
+  expect(ctx.subagentModelSelection.current()).toEqual({ enabled: false, allowedModels: [] })
+  expect(ctx.get('dynamicCordisRunner')).toBeUndefined()
+  expect([...ctx.loader.entries()].every(row => row.fiber?.state === FiberState.ACTIVE)).toBe(true)
+})
 
 it('boots the actual factory NativeLoader with API hooks, guarded native providers and root-issued closed execution', async () => {
   const f = await fixture()

@@ -599,10 +599,11 @@ class AccountPolicy {
           return [{ entryId, moduleName, state: waiting === undefined ? 'failed' : 'pending',
             ...(waiting === undefined ? {} : { missingServices: waiting.split(', ').slice(0, 8) }) }]
         })
-        try {
-          const record = JSON.stringify({ kind: 'cloud/native-preset-unavailable', presetId: selected.id, rows })
-          if (Buffer.byteLength(record) <= 4096) console.error(record)
-        } catch (_cause) { /* Operator diagnostics cannot change the original refusal or its cleanup. */ }
+        const record = JSON.stringify({ kind: 'cloud/native-preset-unavailable', presetId: selected.id, rows })
+        if (Buffer.byteLength(record) <= 4096) {
+          try { console.error(record) }
+          catch (_cause) { /* Operator diagnostics cannot change the original refusal or its cleanup. */ }
+        }
       }
       refuse()
     }
