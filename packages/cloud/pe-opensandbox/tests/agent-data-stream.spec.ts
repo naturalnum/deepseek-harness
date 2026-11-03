@@ -251,11 +251,20 @@ class Transport implements OwnedTransport {
     row.events.data(bytes); row.events.end({})
   }
 }
-it('requires actual attach before commit, authenticates headers, never retries and joins the original transport', async () => {
+it.each(['prepare', 'poll'] as const)('attaches after readiness from %s, requires upgrade before commit and joins the original transport', async (readyRoute) => {
   const transport = new Transport(), client = new DataClient(config(), transport), prepared = reference()
   onTestFinished(async () => { await client.release() })
   const h = client.handshake(); transport.reply(hello()); await h
-  const p = client.prepare(prepared); transport.reply({ protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, operation: facts() }); await p
+  const p = client.prepare(prepared)
+  transport.reply({ protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, operation: { ...facts(), prepared: readyRoute === 'prepare' } }); await p
+  if (readyRoute === 'poll') {
+    expect(() => client.attach(prepared.ref)).toThrow(LocalRefusal)
+    const pending = client.poll(prepared.ref)
+    transport.reply({ protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, operation: { ...facts(), prepared: false } }); await pending
+    expect(() => client.attach(prepared.ref)).toThrow(LocalRefusal)
+    const ready = client.poll(prepared.ref)
+    transport.reply({ protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, operation: facts() }); await ready
+  }
   expect(() => client.commit(prepared.ref)).toThrow(LocalRefusal)
   const attached = client.attach(prepared.ref), upgrade = transport.upgrade
   expect(upgrade?.request.headers).toMatchObject({ 'x-pe-execution-token': TOKEN, 'x-pe-operation-id': 'program',
@@ -284,6 +293,22 @@ it('does not send a pipes prepare or attempt attach after a collect-only handsha
   expect(() => client.prepare(reference())).toThrow(LocalRefusal)
   expect(() => client.attach(reference().ref)).toThrow(LocalRefusal)
   expect(transport.requests).toHaveLength(1)
+  expect(transport.upgrade).toBeUndefined()
+})
+
+it.each(['closed', 'failed', 'attached'] as const)('refuses attachment when polled readiness becomes %s', async (state) => {
+  const transport = new Transport(), client = new DataClient(config(), transport), prepared = reference()
+  onTestFinished(async () => { await client.release() })
+  const h = client.handshake(); transport.reply(hello()); await h
+  const p = client.prepare(prepared)
+  transport.reply({ protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, operation: facts() }); await p
+  const poll = client.poll(prepared.ref)
+  transport.reply({ protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, operation: { ...facts(),
+    ...state === 'closed' ? { commitClosed: true, firstCause: 'owner-stop' } : {},
+    ...state === 'failed' ? { providerFailure: true } : {},
+    ...state === 'attached' ? { stream: { ...facts().stream, attached: true } } : {},
+  } }); await poll
+  expect(() => client.attach(prepared.ref)).toThrow(LocalRefusal)
   expect(transport.upgrade).toBeUndefined()
 })
 

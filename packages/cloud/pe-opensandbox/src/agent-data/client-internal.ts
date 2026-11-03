@@ -262,7 +262,8 @@ export class DataClient implements AgentDataClient {
             need(reference, 'missing_operation_reference')
             snapshot = operation(value.operation, reference)
             need((row?.pipes !== undefined) === (snapshot.executionKind === 'pipes'), 'operation_execution_kind')
-            if (row !== undefined && route === '/prepare') row.prepared = snapshot.prepared && !snapshot.commitClosed
+            // A later poll may be the first reply that confirms guardian preparation.
+            if (row !== undefined && (route === '/prepare' || route === '/poll')) row.prepared = snapshot.prepared && !snapshot.commitClosed
               && !snapshot.physicalStopRequired && !snapshot.providerFailure && snapshot.firstCause === null
               && snapshot.failure === null && snapshot.cleanupFailure === null && !snapshot.stream?.attached
             if (row?.stream !== undefined && route === '/commit' && snapshot.submitted && !snapshot.physicalStopRequired
