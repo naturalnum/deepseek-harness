@@ -4,7 +4,7 @@ FROM ${BASE_IMAGE}
 USER root
 ENV DEBIAN_FRONTEND=noninteractive OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MALLOC_ARENA_MAX=1 SAL_USE_VCLPLUGIN=svp FONTCONFIG_FILE=/opt/dsh/fonts/fonts.conf
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils pandoc \
+    libreoffice-writer libreoffice-calc libreoffice-impress libreoffice-math poppler-utils pandoc \
     texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended tex-gyre \
     fonts-noto-cjk fonts-liberation fonts-texgyre fontconfig ca-certificates \
     && rm -rf /var/lib/apt/lists/*
