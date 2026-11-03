@@ -586,7 +586,11 @@ class AccountPolicy {
     const resolved = await presets.resolve(selected.id)
     control.throwIfAborted()
     this.current()
-    if (resolved.id !== selected.id || resolved.broken !== undefined) refuse()
+    if (resolved.id !== selected.id || resolved.broken !== undefined) {
+      // Operator-only bounded diagnosis; account-facing refusal and strict preset admission stay unchanged.
+      if (resolved.broken !== undefined) this.ctx.logger.warn('Native preset %s failed admission: %s', selected.id, resolved.broken.slice(0, 4096))
+      refuse()
+    }
     const inventory = await presets.compositionInventory()
     control.throwIfAborted()
     this.current()
