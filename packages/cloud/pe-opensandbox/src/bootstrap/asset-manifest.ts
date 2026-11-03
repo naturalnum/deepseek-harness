@@ -2,7 +2,7 @@
 import { BOOTSTRAP_PINS } from './payload-pins.ts'
 
 /** Installation candidate aggregate; Root adoption and target qualification remain required. */
-export const SOURCE_DIGEST = 'b83348df549b3b8c531b2124a1b0460f6b1b871e99872275a2f9130bbe466f9a'
+export const SOURCE_DIGEST = 'fdef1a9d862f0d07a96d10f82b21e988732dfd6ebe00b5912353ec8425234f01'
 /** Installation candidate source hashes and exact byte lengths, shared with the candidate publisher. */
 export const SOURCES = {
   'guardian.py': ['6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e', 6683],
@@ -10,7 +10,7 @@ export const SOURCES = {
   'manager.py': ['f73bb3effd9132ed23dcfe76d2aebe48ba1a9cc52d18b6c5c7a75c35274bfe46', 13544],
   'paths.py': ['718a6818a548a4c766d974d70e9cad4e88cbc184abc722fd4cb85cbc895f903f', 10018],
   'server.py': ['70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32', 19002],
-  'stream.py': ['32a1daf8c61aff586b079b2de6cd00500c05ef7e19552a5385450a123635b4b3', 10218],
+  'stream.py': ['3d74398162ed9ec113c9e5a1b06e878f4aaf42e6533809fc21bfe60ced6db785', 10287],
   'terminal.py': ['e7c3e8e298562a9629f1cefec2f753d34fda1d6285ad14982859c4cd026d8c36', 6830],
   'wire.py': ['f24f61297924fa11d3cf0876c6bbe9ca07c22774555aadc24dfb36acc9a5ab8c', 11322],
 } as const

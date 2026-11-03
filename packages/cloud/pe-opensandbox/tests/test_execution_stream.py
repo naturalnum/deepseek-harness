@@ -348,15 +348,16 @@ class SelectorWebSocketTests(unittest.TestCase):
             self.client.receive_data(chunk)
         return list(self.client.events())
 
-    def attach(self):
+    def attach(self, extensions=()):
         authorization = self.ref['authorization']
         headers = [(b'x-pe-execution-token', TOKEN.encode()), (b'x-pe-operation-id', self.ref['operationId'].encode()),
                    (b'x-pe-spec-hash', self.ref['specHash'].encode()), (b'x-pe-range-role', authorization['role'].encode()),
                    (b'x-pe-registration-id', b'-'), (b'x-pe-role-signature', authorization['signature'].encode())]
         self.push(self.client.send(WS_API[2].Request(host='source-fixture.invalid', target='/stream',
-                  subprotocols=['pe-execution-stream-v1'], extra_headers=headers)))
+                  subprotocols=['pe-execution-stream-v1'], extensions=list(extensions), extra_headers=headers)))
         accepted, = self.flush()
         self.assertIsInstance(accepted, WS_API[2].AcceptConnection)
+        self.assertEqual(accepted.extensions, [])
         self.assertTrue(self.world.manager.records['one']['streamConnected'])
 
     def send(self, kind, channel, payload):
@@ -387,6 +388,23 @@ class SelectorWebSocketTests(unittest.TestCase):
         frames = self.mux(self.flush()); self.assertEqual(frames[0][3], payload)
         self.send(CREDIT, 4, len(payload).to_bytes(4, 'big'))
         self.assertEqual(row['kernel'].stream.rows[4]['credit'], WINDOW_BYTES)
+
+    def test_proxy_compression_offer_is_declined_and_raw_frames_still_work(self):
+        from wsproto.extensions import PerMessageDeflate
+        self.attach([PerMessageDeflate()])
+        self.world.manager.handle('/commit', self.ref)
+        payload = b'proxy-offer-without-compression'
+        self.send(DATA, 4, payload)
+        self.assertEqual(bytes(self.world.manager.records['one']['kernel'].stream.incoming[4]), payload)
+
+    def test_unnegotiated_compressed_frame_refuses_and_keeps_original_stop_responsibility(self):
+        self.attach(); self.world.manager.handle('/commit', self.ref)
+        wire = bytearray(self.client.send(WS_API[2].BytesMessage(data=encode(DATA, 4, 0, b'raw'))))
+        wire[0] |= 0x40
+        with self.assertRaises(Refused): self.push(wire)
+        self.server.close_peer(self.local)
+        self.assertTrue(self.world.manager.records['one']['unknown'])
+        self.assertEqual(self.world.manager.records['one']['kernel'].stops, [('stream-disconnect', True)])
 
     def test_data_before_commit_and_text_messages_refuse_original_holder_retained(self):
         self.attach()

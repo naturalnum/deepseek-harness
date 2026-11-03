@@ -201,9 +201,9 @@ def accept_websocket(head, api, operation):
     requests = list(ws.events())
     require(len(requests) == 1 and isinstance(requests[0], events.Request), 'stream_upgrade')
     request = requests[0]
-    require(request.target == '/stream' and request.subprotocols == [STREAM_VERSION]
-            and not request.extensions, 'stream_upgrade')
-    output = ws.send(events.AcceptConnection(subprotocol=STREAM_VERSION))
+    require(request.target == '/stream' and request.subprotocols == [STREAM_VERSION], 'stream_upgrade')
+    # Decline every offered extension; compression cannot change fixed raw-frame accounting.
+    output = ws.send(events.AcceptConnection(subprotocol=STREAM_VERSION, extensions=[]))
     peer = WebSocketPeer(ws, events, operation)
     peer.wire_pending = True
     return peer, output

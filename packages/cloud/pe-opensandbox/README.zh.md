@@ -153,7 +153,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 - 原生默认 Bash 执行器依据 subprocess 的 `done` 结算，而该值不能证明所有后代均已停止。Shell 准备与作用域完成仍需要显式、兼容的适配器。
 - OpenSandbox 的文本命令流不能提供原生 subprocess 所需的完整原始管道/control 或受管范围观察。collect 通道不提供交互 I/O；独立选择的 pipes provider 提供原生 PTC 与 PTY 字节流。两者均不提供宿主回退或自动恢复。
 - 无法取得正面 shell 生命周期证据时，原生终端活动返回 `unknown`；prompt 与前台处理仍由原生终端消费者负责。
-- 私有[管道源码](runtime/agent/stream.py)在原 Manager 与 guardian fd7 路径上增加一条绑定操作的 WebSocket。准入要求受保护的 WS 依赖及已验证、匹配的协议、源码与资产配置；固定 server 只有加载受保护依赖后才宣告 pipes。[源码测试](tests/test_execution_stream.py)明确区分脚本化内核事实与真实本地管道、socketpair、fd7 继承，不证明已部署 Native PTC、终端或 PID1 完成。
+- 私有[管道源码](runtime/agent/stream.py)在原 Manager 与 guardian fd7 路径上增加一条绑定操作的 WebSocket。准入要求受保护的 WS 依赖及已验证、匹配的协议、源码与资产配置；固定 server 只有加载受保护依赖后才宣告 pipes。扩展请求均不被协商接受，压缩帧仍被拒绝。[源码测试](tests/test_execution_stream.py)明确区分脚本化内核事实与真实本地管道、socketpair、fd7 继承，不证明已部署 Native PTC、终端或 PID1 完成。
 
 <a id="dev-note"></a>
 ### 开发备注
