@@ -28,6 +28,7 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@deepseek-ai/dsh-remote-server-cloud": ["./packages/community/remote-server/src/index.ts"],
       "@deepseek-ai/dsh-message-feedback/types": ["./packages/feedback/message-feedback/src/types.ts"],
       "@deepseek-ai/dsh-permission-presets/types": ["./packages/interaction/permission-presets/src/types.ts"],
       "@deepseek-ai/dsh-pe-account-instructions": ["./packages/cloud/pe-account-instructions/src/index.ts"],

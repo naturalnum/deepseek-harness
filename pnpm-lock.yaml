@@ -7696,6 +7696,26 @@ importers:
         specifier: ^4.0.9
         version: 4.0.9
 
+  packages/community/remote-server:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-pe-cloud-runtime':
+        specifier: workspace:*
+        version: link:../../cloud/pe-cloud-runtime
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:*
+        version: link:../../subprocess/subprocess-local
+
+
   packages/compaction/command-compact:
     devDependencies:
       '@deepseek-ai/cordis':
