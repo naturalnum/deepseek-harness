@@ -6,6 +6,29 @@ import { STREAM_LIMITS } from './role-protocol.ts'
 import { LocalRefusal } from './errors.ts'
 import type { Route } from './types.ts'
 
+function headerPairs(value: NonNullable<Dispatcher.DispatchOptions['headers']>): value is Iterable<[string, string | string[] | undefined]> {
+  return Symbol.iterator in value
+}
+
+/** Decline compression on the caller-to-proxy hop before the original Pool sends Undici's automatic offer. */
+const rawWebSocket: Dispatcher.DispatcherComposeInterceptor = dispatch => (options, handler) => {
+  const source = options.headers, headers: string[] = []
+  if (Array.isArray(source) && typeof source[0] === 'string') {
+    for (let i = 0; i < source.length; i += 2) {
+      const key = source[i], value = source[i + 1]
+      if (key === undefined || value === undefined) throw new LocalRefusal('stream_transport_headers')
+      if (key.toLowerCase() !== 'sec-websocket-extensions') headers.push(key, value)
+    }
+  } else if (source !== undefined && source !== null) {
+    const entries = headerPairs(source) ? source : Object.entries(source)
+    for (const [key, value] of entries) {
+      if (key.toLowerCase() === 'sec-websocket-extensions' || value === undefined) continue
+      for (const item of Array.isArray(value) ? value : [value]) headers.push(key, String(item))
+    }
+  }
+  return dispatch({ ...options, headers }, handler)
+}
+
 /** One bounded request to the fixed origin; arbitrary URLs, retries and user streams are absent. */
 export interface WireRequest { readonly route: Route; readonly headers: Record<string, string>; readonly body: Uint8Array }
 /** One fixed-route stream upgrade with the original private credentials only in headers. */
@@ -109,7 +132,7 @@ export class UndiciOwnedTransport implements OwnedTransport {
     if (this.#closing || this.#streams.size >= 2) throw new LocalRefusal('stream_transport_capacity')
     const url = new URL(this.proxy.prefix + '/stream', this.#origin); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(url, { protocols: [STREAM_LIMITS.version],
-      headers: { ...this.proxy.headers, ...request.headers }, dispatcher: this.#pool })
+      headers: { ...this.proxy.headers, ...request.headers }, dispatcher: this.#pool.compose(rawWebSocket) })
     this.#streams.add(socket)
     socket.binaryType = 'arraybuffer'
     socket.addEventListener('open', () => {

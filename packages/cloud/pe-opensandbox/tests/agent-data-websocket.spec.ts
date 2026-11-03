@@ -8,13 +8,13 @@ import { STREAM_LIMITS } from '../src/agent-data/role-protocol.ts'
 import { encodeStreamFrame } from '../src/agent-data/stream.ts'
 import { LocalRefusal } from '../src/agent-data/errors.ts'
 
-async function server() {
+async function server(compression = false) {
   const pending: { request: IncomingMessage; response: ServerResponse }[] = []
   const gates = new Map<number, () => void>()
   const http = createServer((request, response) => {
     pending.push({ request, response }); gates.get(pending.length)?.()
   })
-  const sockets = new WebSocketServer({ noServer: true, handleProtocols: protocols =>
+  const sockets = new WebSocketServer({ noServer: true, perMessageDeflate: compression, handleProtocols: protocols =>
     protocols.has(STREAM_LIMITS.version) ? STREAM_LIMITS.version : false })
   const peers: { request: IncomingMessage; socket: WebSocket }[] = []
   http.on('upgrade', (request, socket, head) => {
@@ -51,12 +51,14 @@ function events() {
 const privateHeaders = { 'x-pe-execution-token': '1'.repeat(64), 'x-pe-operation-id': 'test-operation',
   'x-pe-spec-hash': '2'.repeat(64), 'x-pe-range-role': 'program', 'x-pe-registration-id': '-', 'x-pe-role-signature': '3'.repeat(64) }
 
-it('uses a fixed secret-free URL, original private headers, binary bytes and actual two-sided close', async () => {
-  const f = await server(), e = events(), wire = f.transport.attach({ headers: privateHeaders }, e.callbacks)
-  await e.open
+it.each([false, true])('keeps raw transport with compression-capable proxy=%s, private headers and actual two-sided close', async (compression) => {
+  const f = await server(compression), e = events(), wire = f.transport.attach({ headers: privateHeaders }, e.callbacks)
+  expect(await Promise.race([e.open.then(() => true), e.error.then(() => false)])).toBe(true)
   const peer = f.peers[0]
   expect(peer?.request.url).toBe('/stream')
   expect(peer?.request.headers).toMatchObject(privateHeaders)
+  expect(peer?.request.headers['sec-websocket-extensions']).toBeUndefined()
+  expect(peer?.socket.extensions).toBe('')
   expect(peer?.socket.protocol).toBe(STREAM_LIMITS.version)
   const incoming = Promise.withResolvers<Buffer>()
   peer?.socket.once('message', (bytes, binary) => {
