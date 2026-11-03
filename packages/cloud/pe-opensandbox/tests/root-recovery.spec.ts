@@ -10,7 +10,8 @@ import { mountRootRecovery } from '../src/root-recovery.ts'
 import { AllocationStoreError, PostgresAllocationStore } from '../src/allocation-store.ts'
 import type { SandboxAllocation } from '../src/allocation-types.ts'
 import type { AccountOwner } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { RootRecoveryWitness, recoveryIntentDigest, PROVIDER_CREATE_REFUSAL_CODE } from '../src/bootstrap/recovery-witness.ts'
+import { RootRecoveryWitness, recoveryIntentDigest, PROVIDER_CREATE_REFUSAL_CODE,
+  PROVIDER_EXECUTION_REJECTION_CODE } from '../src/bootstrap/recovery-witness.ts'
 
 const seam = vi.hoisted(() => ({ open: vi.fn() }))
 vi.mock('../src/bootstrap/recovery-reference.ts', async original => ({
@@ -79,26 +80,36 @@ it('does not start late recovery after Cordis disposal while original runtime st
 })
 
 
-it.each((['fixed-ttl-bounds', 'host-bind-bounds'] as const).flatMap(refusalCode =>
+it.each((['fixed-ttl-bounds', 'host-bind-bounds', 'docker-systempaths-security-option-v1'] as const).flatMap(refusalCode =>
   (['creating', 'failed', 'unknown'] as const).map(initial => ({ refusalCode, initial }))))
 ('audits verified $refusalCode $initial metadata through the original maintenance participant', async ({ refusalCode, initial }) => {
   const f = fixture(), now = Date.parse('2026-10-22T02:15:00.000Z')
   const registeredVerifier = vi.spyOn(f.recovery, 'registerVerifier')
   f.recovery.migrate = vi.fn(); f.recovery.locateInstance = vi.fn(); f.recovery.recoverAccount = vi.fn()
   f.recovery.inspectAccount = vi.fn(); f.recovery.closeInstance = vi.fn(); f.recovery.inspectInstance = vi.fn()
+  const rejected = refusalCode === 'docker-systempaths-security-option-v1'
+  const terminalCode = rejected ? PROVIDER_EXECUTION_REJECTION_CODE : PROVIDER_CREATE_REFUSAL_CODE
+  const refs = rejected ? [1, 2, 3, 4, 5].map(n => 'sha256:' + String(n).repeat(64))
+    : ['test:refusal', 'test:completed', 'test:not-started', 'test:late-loss']
   const intent = { allocationId: 'refused-allocation', accountId: 'refused-account', epoch: '21', sessionId: 'session',
     workspaceId: 'workspace', environmentVersion: 'env', provider: 'opensandbox', projectMountVersion: 'mount',
     requestedAt: '2026-10-22T02:08:13.139Z', createDeadlineAt: '2026-10-22T02:08:43.139Z' } as SandboxAllocation
   let current: SandboxAllocation = { ...intent, state: initial === 'failed' ? 'failed' : 'creating', sandboxId: null, runtimeIdentity: null,
     executionProtocolVersion: null, executionCapabilities: [], lastActivityAt: intent.requestedAt,
-    lastCheckedAt: intent.requestedAt, failureCode: initial === 'failed' ? PROVIDER_CREATE_REFUSAL_CODE : null }
-  const item = { createOutcome: 'rejected-before-provider-create', sandboxId: null, intent, intentDigest: recoveryIntentDigest(intent),
-    refusalCode, knownRefusalEvidenceRef: 'test:refusal', completedRequestEvidenceRef: 'test:completed',
-    providerCreateNotStartedEvidenceRef: 'test:not-started', lateStartsRevokedEvidenceRef: 'test:late-loss' }
+    lastCheckedAt: intent.requestedAt, failureCode: initial === 'failed' ? terminalCode : null }
+  const item = rejected ? { createOutcome: 'provider-rejected-before-execution-resource', sandboxId: null,
+    intent, intentDigest: recoveryIntentDigest(intent), rejectionCode: refusalCode,
+    providerRequestId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', requestBindingEvidenceRef: refs[0],
+    preExecutionRejectionEvidenceRef: refs[1], completedRequestEvidenceRef: refs[2],
+    auxiliarySettlementEvidenceRef: refs[3], lateStartsRevokedEvidenceRef: refs[4] }
+    : { createOutcome: 'rejected-before-provider-create', sandboxId: null, intent, intentDigest: recoveryIntentDigest(intent),
+      refusalCode, knownRefusalEvidenceRef: 'test:refusal', completedRequestEvidenceRef: 'test:completed',
+      providerCreateNotStartedEvidenceRef: 'test:not-started', lateStartsRevokedEvidenceRef: 'test:late-loss' }
   // Publication intent has exactly the original ten immutable fields.
   const originalIntent = Object.fromEntries(['allocationId', 'accountId', 'epoch', 'sessionId', 'workspaceId', 'environmentVersion',
     'provider', 'projectMountVersion', 'requestedAt', 'createDeadlineAt'].map(k => [k, Reflect.get(intent, k)]))
-  const value = { schema: 'pe-local-controlled-recovery-v2', verifierId: 'local-original-process-and-provider-v1',
+  const value = { schema: rejected ? 'pe-local-controlled-recovery-v4' : 'pe-local-controlled-recovery-v2',
+    verifierId: 'local-original-process-and-provider-v1',
     auditRef: 'test:audit', verifiedAt: new Date(now).toISOString(), oldInstanceId: 'old-instance', databaseRole: 'test-role',
     writersVerifiedAt: new Date(now - 1).toISOString(), processEvidenceRef: 'test:process', writersEvidenceRef: 'test:writers',
     oldProcess: { pid: 3456, startTicks: '7890', bootId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', pidNamespace: 'pid:[1234]' },
@@ -106,7 +117,7 @@ it.each((['fixed-ttl-bounds', 'host-bind-bounds'] as const).flatMap(refusalCode 
   const witness = new RootRecoveryWitness({ value: () => value, assertCurrent() {} },
     { maxBytes: 32768, maxAccounts: 2, maxAllocations: 8, maxFieldBytes: 256, maxAgeMs: 30000 },
     i => ({ bootId: i.bootId, pidNamespace: i.pidNamespace, original: 'absent' }), () => now)
-  expect(witness.verifyAllocation(current)).toMatchObject({ refusalCode })
+  expect(witness.verifyAllocation(current)).toMatchObject(rejected ? { rejectionCode: refusalCode } : { refusalCode })
   const close = vi.fn(); seam.open.mockReturnValue({ witness, close })
   vi.spyOn(PostgresAllocationStore.prototype, 'migrate').mockResolvedValue(undefined)
   vi.spyOn(PostgresAllocationStore.prototype, 'get').mockImplementation(async () => current)
@@ -130,7 +141,7 @@ it.each((['fixed-ttl-bounds', 'host-bind-bounds'] as const).flatMap(refusalCode 
     if (verifier === undefined) throw new Error('Original runtime verifier missing')
     const proof = await verifier.verify(expected)
     expect(proof.allocations).toEqual([{ allocationId: intent.allocationId,
-      evidenceRefs: ['test:refusal', 'test:completed', 'test:not-started', 'test:late-loss'] }])
+      evidenceRefs: refs }])
     return { proof, postimage: { ...owner, ownerInstanceId: null, phase: 'unowned' } }
   })
   vi.spyOn(f.recovery, 'inspectAccount').mockResolvedValue({ audit: undefined, current: undefined, matchesPostimage: true, responsibilityRetained: false })

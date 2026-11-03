@@ -8,8 +8,8 @@ import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
 
-/** Reviewed Native guard accepting direct Session directories inside the original account quota pools. */
-export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:ef0edcd0efbab13a66c2b334a26aa147d1d4b80fb2a822f5959f20b6142f85c5'
+/** Reviewed Session-directory guard and explicit Native creation profile, retaining the exact syscall filter and capabilities. */
+export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:7a41332aef7bcc74414b1434c7e10ee057c420e213d082fc79ac791c921af6ba'
 
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
 export interface SharedPathStorageLimits {

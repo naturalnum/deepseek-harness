@@ -90,7 +90,8 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
       const row = await this.store.get(item.intent)
       if (row === undefined) unavailable()
       const selected = this.witness.verifyAllocation(row)
-      if (selected.createOutcome === 'rejected-before-provider-create') {
+      if (selected.createOutcome === 'rejected-before-provider-create'
+        || selected.createOutcome === 'provider-rejected-before-execution-resource') {
         if (terminal && row.state !== 'failed') unavailable()
       } else if (row.state === 'failed' || terminal && row.state !== 'released') unavailable()
     }
@@ -145,6 +146,16 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
             oldWriterWithdrawalRef: facts.writersEvidenceRef, permanentLateCreateSpawnLossRef: publication,
             allocations: snapshot.allocations.map((entry) => {
               const selected = witness.verifyAllocation(entry.row)
+              if (selected.createOutcome === 'provider-rejected-before-execution-resource') {
+                return { allocationId: entry.row.allocationId, rowDigest: entry.digest, intentDigest: entry.intentDigest,
+                  createOutcome: 'provider-rejected-before-execution-resource' as const, sandboxId: null,
+                  rejectionCode: selected.rejectionCode, providerRequestId: selected.providerRequestId,
+                  requestBindingRef: selected.requestBindingEvidenceRef,
+                  preExecutionRejectionRef: selected.preExecutionRejectionEvidenceRef,
+                  completedRequestRef: selected.completedRequestEvidenceRef,
+                  auxiliarySettlementRef: selected.auxiliarySettlementEvidenceRef,
+                  permanentLateCreateSpawnLossRef: selected.lateStartsRevokedEvidenceRef }
+              }
               if (selected.createOutcome === 'rejected-before-provider-create') {
                 return { allocationId: entry.row.allocationId, rowDigest: entry.digest, intentDigest: entry.intentDigest,
                   createOutcome: 'rejected-before-provider-create' as const, sandboxId: null, refusalCode: selected.refusalCode,

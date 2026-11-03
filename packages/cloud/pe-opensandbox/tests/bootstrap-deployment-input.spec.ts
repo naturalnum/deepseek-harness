@@ -51,6 +51,9 @@ it('accepts the reviewed directory-aware guard only for shared-path deployment',
   expect(parseRootDeploymentInput(input).selection.serverImageDigest).toBe(SESSION_DIRECTORY_SERVER_IMAGE_DIGEST)
   expect(() => parseRootDeploymentInput({ ...rootDeploymentFixture(), selection: input.selection }))
     .toThrow('selection.originalPolicy')
+  expect(() => parseRootDeploymentInput({ ...input, selection: { ...input.selection,
+    serverImageDigest: 'sha256:ef0edcd0efbab13a66c2b334a26aa147d1d4b80fb2a822f5959f20b6142f85c5' } }))
+    .toThrow('selection.originalPolicy')
 })
 
 it.each([undefined, null, 'keeper', 'auto', ''])('rejects absent or unsupported shared-path mode %s', (mode) => {

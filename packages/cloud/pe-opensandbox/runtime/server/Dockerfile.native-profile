@@ -1,0 +1,5 @@
+# Root verifies BASE_IMAGE is the original directory-aware Native server image.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY --chown=0:0 native_profile.py /tmp/dsh-native-profile.py
+RUN python /tmp/dsh-native-profile.py && rm /tmp/dsh-native-profile.py

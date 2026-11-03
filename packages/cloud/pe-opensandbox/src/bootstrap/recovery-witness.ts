@@ -75,8 +75,33 @@ export interface RecoveryRefusedAllocationWitness {
   readonly providerCreateNotStartedEvidenceRef: string
   readonly lateStartsRevokedEvidenceRef: string
 }
+
+/** Fixed terminal code for a completed provider request rejected before any execution resource exists. */
+export const PROVIDER_EXECUTION_REJECTION_CODE = 'provider-rejected-before-execution-resource'
+
+/**
+ * A submitted Docker request is distinct from pre-provider admission and accepted creation.
+ * Root's selected verifier must bind the original reservation, exact daemon rejection stage,
+ * completed request, settled auxiliary resources and permanent loss of late starts.
+ * HTTP status, a missing SDK handle, an empty list or process exit alone never supplies these facts.
+ */
+export interface RecoveryRejectedAllocationWitness {
+  readonly createOutcome: 'provider-rejected-before-execution-resource'
+  readonly sandboxId: null
+  readonly intent: AllocationCreateIntent
+  readonly intentDigest: string
+  readonly rejectionCode: 'docker-systempaths-security-option-v1'
+  /** Original server request identifier; it is not an accepted sandbox handle or container id. */
+  readonly providerRequestId: string
+  readonly requestBindingEvidenceRef: string
+  readonly preExecutionRejectionEvidenceRef: string
+  readonly completedRequestEvidenceRef: string
+  readonly auxiliarySettlementEvidenceRef: string
+  readonly lateStartsRevokedEvidenceRef: string
+}
 /** Explicit destruction or non-creation evidence for one original allocation intent. */
 export type RecoveryAllocationWitness = RecoveryCreatedAllocationWitness | RecoveryRefusedAllocationWitness
+  | RecoveryRejectedAllocationWitness
 
 /**
  * Check metadata eligible for a trusted no-create finding; this check alone grants no authority.
@@ -91,11 +116,27 @@ export function isProviderCreateRefusalRow(row: SandboxAllocation): boolean {
 }
 
 /**
+ * Check null execution identity and the exact creating or previously reconciled rejection postimage.
+ * @param row Original durable row; this metadata check supplies no provider evidence.
+ * @returns Whether the row can be checked against a v4 trusted provider rejection witness.
+ */
+export function isProviderExecutionRejectionRow(row: SandboxAllocation): boolean {
+  return row.sandboxId === null && row.runtimeIdentity === null && row.executionProtocolVersion === null
+    && row.executionCapabilities.length === 0
+    && (row.state === 'creating' && row.failureCode === null
+      || row.state === 'failed' && row.failureCode === PROVIDER_EXECUTION_REJECTION_CODE)
+}
+
+/**
  * Preserve destruction or non-creation facts in the original runtime audit.
  * @param item Already verified protected allocation evidence.
  * @returns References for the selected outcome without fabricating physical destruction.
  */
 export function recoveryWitnessEvidenceRefs(item: RecoveryAllocationWitness): readonly string[] {
+  if (item.createOutcome === 'provider-rejected-before-execution-resource') {
+    return [item.requestBindingEvidenceRef, item.preExecutionRejectionEvidenceRef, item.completedRequestEvidenceRef,
+      item.auxiliarySettlementEvidenceRef, item.lateStartsRevokedEvidenceRef]
+  }
   return item.createOutcome === 'accepted-created-and-settled'
     ? [item.acceptedCreateEvidenceRef, item.physicalStopEvidenceRef, item.lateStartsRevokedEvidenceRef]
     : [item.knownRefusalEvidenceRef, item.completedRequestEvidenceRef,
@@ -164,9 +205,9 @@ interface RecoveryWitnessFacts {
   readonly accounts: readonly RecoveryAccountWitness[]
 }
 
-/** Closed protected receipt; v3 requires complete explicit local termination facts, never a restart flag. */
+/** Closed protected receipt; v4 distinguishes submitted provider rejection from v2 pre-provider refusal. */
 export type RecoveryWitness = RecoveryWitnessFacts & (
-  | Readonly<{ schema: 'pe-local-controlled-recovery-v1' | 'pe-local-controlled-recovery-v2' }>
+  | Readonly<{ schema: 'pe-local-controlled-recovery-v1' | 'pe-local-controlled-recovery-v2' | 'pe-local-controlled-recovery-v4' }>
   | Readonly<{ schema: 'pe-local-controlled-recovery-v3'; kernelTermination: RecoveryKernelTermination }>
 )
 
@@ -296,7 +337,7 @@ export function parseRecoveryWitness(value: unknown, limits: RecoveryWitnessLimi
   need(limits.maxBytes <= 131072 && limits.maxFieldBytes <= 4096
     && Buffer.byteLength(JSON.stringify(row)) <= limits.maxBytes)
   need((row.schema === 'pe-local-controlled-recovery-v1' || row.schema === 'pe-local-controlled-recovery-v2'
-    || row.schema === 'pe-local-controlled-recovery-v3')
+    || row.schema === 'pe-local-controlled-recovery-v3' || row.schema === 'pe-local-controlled-recovery-v4')
     && row.verifierId === 'local-original-process-and-provider-v1')
   const process = object(row.oldProcess, ['pid', 'startTicks', 'bootId', 'pidNamespace'])
   need(typeof process.pid === 'number' && Number.isSafeInteger(process.pid) && process.pid > 1 && process.pid <= 2147483647)
@@ -316,16 +357,35 @@ export function parseRecoveryWitness(value: unknown, limits: RecoveryWitnessLimi
       const candidate = raw as Record<string, unknown> | null
       const refusedCreate = row.schema === 'pe-local-controlled-recovery-v2'
         && candidate?.createOutcome === 'rejected-before-provider-create'
-      const fields = refusedCreate
-        ? ['createOutcome', 'sandboxId', 'intent', 'intentDigest', 'refusalCode', 'knownRefusalEvidenceRef', 'completedRequestEvidenceRef',
-          'providerCreateNotStartedEvidenceRef', 'lateStartsRevokedEvidenceRef']
-        : ['intent', 'sandboxId', 'acceptedCreateEvidenceRef', 'physicalStopEvidenceRef', 'lateStartsRevokedEvidenceRef',
-          ...(row.schema === 'pe-local-controlled-recovery-v2' ? ['createOutcome'] : [])]
+      const rejectedExecution = row.schema === 'pe-local-controlled-recovery-v4'
+        && candidate?.createOutcome === 'provider-rejected-before-execution-resource'
+      const fields = rejectedExecution
+        ? ['createOutcome', 'sandboxId', 'intent', 'intentDigest', 'rejectionCode', 'providerRequestId',
+          'requestBindingEvidenceRef', 'preExecutionRejectionEvidenceRef', 'completedRequestEvidenceRef',
+          'auxiliarySettlementEvidenceRef', 'lateStartsRevokedEvidenceRef']
+        : refusedCreate
+          ? ['createOutcome', 'sandboxId', 'intent', 'intentDigest', 'refusalCode', 'knownRefusalEvidenceRef', 'completedRequestEvidenceRef',
+            'providerCreateNotStartedEvidenceRef', 'lateStartsRevokedEvidenceRef']
+          : ['intent', 'sandboxId', 'acceptedCreateEvidenceRef', 'physicalStopEvidenceRef', 'lateStartsRevokedEvidenceRef',
+            ...(row.schema === 'pe-local-controlled-recovery-v2' ? ['createOutcome'] : [])]
       const allocation = object(raw, fields)
       const original = intent(allocation.intent, limits.maxFieldBytes)
       need(original.accountId === accountId && original.epoch === oldEpoch && !allocationIds.has(original.allocationId))
       allocationIds.add(original.allocationId)
       need(allocationIds.size <= limits.maxAllocations)
+      if (rejectedExecution) {
+        need(allocation.sandboxId === null && allocation.intentDigest === recoveryIntentDigest(original)
+          && original.provider === 'opensandbox' && allocation.rejectionCode === 'docker-systempaths-security-option-v1')
+        const providerRequestId = text(allocation.providerRequestId, limits.maxFieldBytes)
+        need(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(providerRequestId))
+        return Object.freeze({ createOutcome: 'provider-rejected-before-execution-resource', sandboxId: null, intent: original,
+          intentDigest: recoveryIntentDigest(original), rejectionCode: allocation.rejectionCode, providerRequestId,
+          requestBindingEvidenceRef: evidenceRef(allocation.requestBindingEvidenceRef, limits.maxFieldBytes),
+          preExecutionRejectionEvidenceRef: evidenceRef(allocation.preExecutionRejectionEvidenceRef, limits.maxFieldBytes),
+          completedRequestEvidenceRef: evidenceRef(allocation.completedRequestEvidenceRef, limits.maxFieldBytes),
+          auxiliarySettlementEvidenceRef: evidenceRef(allocation.auxiliarySettlementEvidenceRef, limits.maxFieldBytes),
+          lateStartsRevokedEvidenceRef: evidenceRef(allocation.lateStartsRevokedEvidenceRef, limits.maxFieldBytes) })
+      }
       if (refusedCreate) {
         need(allocation.sandboxId === null && allocation.intentDigest === recoveryIntentDigest(original)
           && isKnownProviderRefusal(allocation.refusalCode))
@@ -447,7 +507,7 @@ export class RootRecoveryWitness {
   }
 
   /**
-   * Bind one durable row to verified accepted/destruction facts or a completed pre-provider refusal.
+   * Bind one durable row to verified destruction, pre-provider refusal or explicit v4 provider rejection.
    * @param allocation Exact store row; refused creates require null identity and the precise creating/failed metadata.
    * @returns Original protected per-allocation facts; other or changed intents reject without store writes.
    */
@@ -456,8 +516,9 @@ export class RootRecoveryWitness {
     const account = this.facts.accounts.find(value => value.accountId === allocation.accountId && value.epoch === allocation.epoch)
     const selected = account?.allocations.find(value => value.intent.allocationId === allocation.allocationId)
     need(selected !== undefined && recoveryIntentDigest(selected.intent) === recoveryIntentDigest(allocation)
-      && (selected.createOutcome === 'rejected-before-provider-create' ? isProviderCreateRefusalRow(allocation)
-        : allocation.sandboxId === null || allocation.sandboxId === selected.sandboxId))
+      && (selected.createOutcome === 'provider-rejected-before-execution-resource' ? isProviderExecutionRejectionRow(allocation)
+        : selected.createOutcome === 'rejected-before-provider-create' ? isProviderCreateRefusalRow(allocation)
+          : allocation.sandboxId === null || allocation.sandboxId === selected.sandboxId))
     return selected
   }
 }
