@@ -85,6 +85,7 @@ export interface StorageHandleState {
 export class JsonlSessionHandle implements SessionHandle {
   private pendingMutations = 0
   private pendingReads = 0
+  private readsDrained: PromiseWithResolvers<void> | undefined
   private chain: Promise<unknown> = Promise.resolve()
   private closing: Promise<void> | undefined
   private observedLength = 0
@@ -125,7 +126,7 @@ export class JsonlSessionHandle implements SessionHandle {
    * @returns a slice carrying the aliasing state established by its producer.
    */
   async read(offset = 0, length = Number.MAX_SAFE_INTEGER, options?: SessionHandleReadOptions): Promise<SessionHandleReadResult> {
-    this.pendingReads++
+    if (this.pendingReads++ === 0) this.readsDrained = Promise.withResolvers<void>()
     const signal = options?.signal
     const controller = signal === undefined ? undefined : new AbortController()
     const cancelled = new Error('JSONL handle read cancelled')
@@ -147,7 +148,10 @@ export class JsonlSessionHandle implements SessionHandle {
       return result
     } finally {
       signal?.removeEventListener('abort', stop)
-      this.pendingReads--
+      if (--this.pendingReads === 0) {
+        this.readsDrained?.resolve()
+        this.readsDrained = undefined
+      }
     }
   }
 
@@ -249,6 +253,8 @@ export class JsonlSessionHandle implements SessionHandle {
 
   /**
    * Release the handle; see the seam contract. Idempotent and uncancellable.
+   * Already-admitted reads settle before release without being cancelled;
+   * their failures remain with the original read callers.
    * A write handle first drains its routed live buffer through the still-open
    * storage, so backend teardown loses nothing regardless of which fiber
    * unwinds first; a drain or lock-release failure still frees the in-process
@@ -276,6 +282,7 @@ export class JsonlSessionHandle implements SessionHandle {
       }
       // After a drain failure the chain may still hold in-flight mutations.
       await this.chain
+      await this.readsDrained?.promise
       // Free the in-process claim no matter how the kernel-lock release
       // fares: a skipped releaseHandle would wedge the id in this process
       // behind a lock the kernel may already have dropped.
