@@ -124,7 +124,8 @@ export async function openRemoteServerStore(ctx: Context, binding: AccountBindin
       collection.revokeCredential(selected)
       submitted()
       await provider.modifyRecord(key(selected),
-        () => { check(); exists(selected); return Promise.resolve({ kind: 'grant' as const, payload: { version: 1, ...value } }) })
+        () => { check(); exists(selected); return Promise.resolve({ kind: 'grant' as const,
+          payload: { version: 1, privateKey: value.privateKey, knownHosts: value.knownHosts } }) })
       check()
     },
     async withCredential<T>(id: ServerId, consume: (value: RemoteCredential) => Promise<T>): Promise<T> {

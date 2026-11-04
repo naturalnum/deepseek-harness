@@ -78,7 +78,7 @@ Session 目录模式逐字保留旧槽记录。旧 bound Session 必须先完成
 
 -----
 
-远程服务器元数据使用固定的账户私有原生域 `cloud_remote_server_accounts`；密钥和已核实 known_hosts 使用原有凭据授权记录。完整修改共享账户保存屏障。任何 I/O 提交前的校验拒绝不会记录保存失败；实际提交后的失败仍由原保存所有者负责。浏览器字段不提供私有路径或账户标识。
+远程服务器元数据使用固定的账户私有原生域 `cloud_remote_server_accounts`；密钥和已核实 known_hosts 使用原有凭据授权记录。每个凭据载荷仅保存 `version`、`privateKey` 与 `knownHosts`，不保存管理动作及服务器标识；读取方继续拒绝额外字段。完整修改共享账户保存屏障。任何 I/O 提交前的校验拒绝不会记录保存失败；实际提交后的失败仍由原保存所有者负责。浏览器字段不提供私有路径或账户标识。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
