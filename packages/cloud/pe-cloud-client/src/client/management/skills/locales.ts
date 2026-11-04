@@ -1,5 +1,6 @@
 /** Localized Skills presentation copied selectively from the user's management page. */
 const en = {
+  bundledSource: 'Built-in',
   bundleShadowedBy: 'Takes priority: {name} ({source})', bundleSelectionUnknown: 'Native skill selection is unconfirmed',
   bundleRefreshAfterChange: 'The directory changed. Refresh to inspect native skill selection and coverage again.',
   legacySampleEditor: 'Legacy two-file sample editor',
@@ -54,6 +55,7 @@ const en = {
   confirmed: 'The operation was confirmed', loadLabel: 'Loading skills', note: 'Available actions follow this account’s current capabilities',
 }
 const zh: Record<keyof typeof en, string> = {
+  bundledSource: '内置',
   bundleShadowedBy: '优先于此项：{name}（{source}）', bundleSelectionUnknown: '尚未确认原生技能选择',
   bundleRefreshAfterChange: '目录已变更，请刷新后核对原生技能选择与覆盖关系。',
   legacySampleEditor: '兼容的两文件示例编辑',

@@ -19,6 +19,9 @@
     },
     {
       "path": "../skill"
+    },
+    {
+      "path": "../skill-filesystem"
     }
   ]
 }

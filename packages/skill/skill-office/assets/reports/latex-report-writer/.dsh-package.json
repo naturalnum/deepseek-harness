@@ -1,0 +1,69 @@
+{
+  "version": "3ca9c2061cd876d87eb7075285afdc14ab47d6e78875dfa28a5d102b455a9f39",
+  "files": [
+    {
+      "relativePath": "DSH-SOURCE.json",
+      "bytes": 507,
+      "sha256": "98d1f9b2d1236ff6182ffc60cea455af9018fbc71322f72bebc7a18da84bc445"
+    },
+    {
+      "relativePath": "SKILL.md",
+      "bytes": 11719,
+      "sha256": "df6c41e7252ae4b71593221acd3ef671c3a164fb04602783ec55c9cb6dcd2d02"
+    },
+    {
+      "relativePath": "agents/openai.yaml",
+      "bytes": 237,
+      "sha256": "7fb262a605b0e0833c3c5265c19a89a7a3330bb789c8c5a9b3b5fc75ef21fe95"
+    },
+    {
+      "relativePath": "assets/template/example-report.tex",
+      "bytes": 3622,
+      "sha256": "27db0a81fda26bf2be0604dcf2e02bd126604a4a01df004425f943eb9a13679b"
+    },
+    {
+      "relativePath": "assets/template/report-logo.jpeg",
+      "bytes": 29441,
+      "sha256": "46c85be7de20b342b37921266ae1085c8349590c6fb2c50971eb7570e3443ee3"
+    },
+    {
+      "relativePath": "assets/template/techreport.cls",
+      "bytes": 22540,
+      "sha256": "9efa65424c44c4031b29e56e8acb1791246b9dcc6ced34857cc71cb3fd398cae"
+    },
+    {
+      "relativePath": "references/latex-layout-rules.md",
+      "bytes": 6219,
+      "sha256": "63732def3cb81711d1e2e6a334e5df1dd934756146cf36dbe10b7fe914ec2e98"
+    },
+    {
+      "relativePath": "references/technical-report-format.md",
+      "bytes": 11021,
+      "sha256": "138418a74ea2628368f6a8230c5d2bb8d3c979a7d0e271f5fa83941e435067fe"
+    },
+    {
+      "relativePath": "scripts/build_latex_report.py",
+      "bytes": 1775,
+      "sha256": "b366d92196953a5f0dfeac3f3d03e84911b849530205b7d11603b509dcff290d"
+    },
+    {
+      "relativePath": "scripts/markdown_to_latex.py",
+      "bytes": 30055,
+      "sha256": "a10f459dfd26a42e761258c553f05c1f6f9b33bf06123ecbc7adafb7b64015e9"
+    },
+    {
+      "relativePath": "scripts/render_pdf.py",
+      "bytes": 1321,
+      "sha256": "d5afed871dc5aa539080dfe00fe84cd2453ebaea1bf616eb43097e66410de22d"
+    },
+    {
+      "relativePath": "scripts/validate_latex_report.py",
+      "bytes": 4104,
+      "sha256": "5575135e0cbcd2adcbf3831e4534c8ea3d19296b9b27a9ed082df649f97d02da"
+    }
+  ],
+  "archive": {
+    "bytes": 61532,
+    "sha256": "832ef63ef9c198a0b406bc50d5f2bb0640fa485cad25ecb533ab95a78bacd434"
+  }
+}

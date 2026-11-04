@@ -198,6 +198,7 @@
     "@deepseek-ai/dsh-tool-web": "workspace:*",
     "@deepseek-ai/dsh-tool-call-timeout-policy": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
-    "@types/yazl": "3.3.0"
+    "@types/yazl": "3.3.0",
+    "@deepseek-ai/dsh-skill-office": "workspace:*"
   }
 }

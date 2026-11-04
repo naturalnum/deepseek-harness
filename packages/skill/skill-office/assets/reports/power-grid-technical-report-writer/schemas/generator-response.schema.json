@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generator Orchestration Response",
+  "type": "object",
+  "required": [
+    "request_id",
+    "skill_name",
+    "action",
+    "status"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "skill_name": {
+      "const": "power-grid-technical-report-writer"
+    },
+    "action": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "success",
+        "blocked",
+        "failed"
+      ]
+    },
+    "artifact": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "artifact_type": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content": {},
+        "summary": {
+          "type": "string"
+        },
+        "quality_metrics": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "artifact_type",
+        "artifact_id",
+        "version",
+        "content"
+      ],
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "next_required_handoff": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "skill_name": {
+              "const": "report-reviewer"
+            },
+            "action": {
+              "enum": [
+                "review_outline",
+                "review_chapter",
+                "review_report"
+              ]
+            },
+            "reviewed_artifact_id": {
+              "type": "string"
+            },
+            "reviewed_version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "skill_name",
+            "action",
+            "reviewed_artifact_id",
+            "reviewed_version"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "error": {
+      "type": [
+        "object",
+        "string",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "success"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "artifact"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "success"
+          },
+          "action": {
+            "enum": [
+              "generate_outline",
+              "revise_outline"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "required": [
+              "next_required_handoff"
+            ],
+            "properties": {
+              "next_required_handoff": {
+                "type": "object",
+                "required": [
+                  "skill_name",
+                  "action",
+                  "reviewed_artifact_id",
+                  "reviewed_version"
+                ],
+                "properties": {
+                  "skill_name": {
+                    "const": "report-reviewer"
+                  },
+                  "action": {
+                    "const": "review_outline"
+                  },
+                  "reviewed_artifact_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reviewed_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "success"
+          },
+          "action": {
+            "enum": [
+              "generate_chapter",
+              "revise_chapter"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "required": [
+              "next_required_handoff"
+            ],
+            "properties": {
+              "next_required_handoff": {
+                "type": "object",
+                "required": [
+                  "skill_name",
+                  "action",
+                  "reviewed_artifact_id",
+                  "reviewed_version"
+                ],
+                "properties": {
+                  "skill_name": {
+                    "const": "report-reviewer"
+                  },
+                  "action": {
+                    "const": "review_chapter"
+                  },
+                  "reviewed_artifact_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reviewed_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "success"
+          },
+          "action": {
+            "enum": [
+              "assemble_report",
+              "revise_report"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "required": [
+              "next_required_handoff"
+            ],
+            "properties": {
+              "next_required_handoff": {
+                "type": "object",
+                "required": [
+                  "skill_name",
+                  "action",
+                  "reviewed_artifact_id",
+                  "reviewed_version"
+                ],
+                "properties": {
+                  "skill_name": {
+                    "const": "report-reviewer"
+                  },
+                  "action": {
+                    "const": "review_report"
+                  },
+                  "reviewed_artifact_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reviewed_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "success"
+          },
+          "action": {
+            "const": "generate_abstract"
+          }
+        },
+        "required": [
+          "status",
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "artifact": {
+            "properties": {
+              "artifact_type": {
+                "const": "abstract"
+              },
+              "content": {
+                "type": "object",
+                "required": [
+                  "abstract_cn",
+                  "keywords_cn",
+                  "abstract_en",
+                  "keywords_en",
+                  "opening_sentence_candidates_cn",
+                  "selected_opening_sentence_cn",
+                  "assessment_result_coverage",
+                  "supplementary_metrics_used"
+                ],
+                "properties": {
+                  "abstract_cn": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "keywords_cn": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "abstract_en": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "keywords_en": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "opening_sentence_candidates_cn": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 5,
+                    "uniqueItems": true,
+                    "description": "内容摘要第一句的业务需求背景分析候选句。候选只分析电力业务需求、痛点、能力缺口或目标能力，不写方法、指标和结果。",
+                    "items": {
+                      "type": "string",
+                      "minLength": 12
+                    }
+                  },
+                  "selected_opening_sentence_cn": {
+                    "type": "string",
+                    "minLength": 12,
+                    "description": "从 opening_sentence_candidates_cn 中选择的当前推荐首句；最终 abstract_cn 第一完整句必须使用该句，除非用户明确改选另一候选。"
+                  },
+                  "assessment_result_coverage": {
+                    "type": "array",
+                    "description": "任务书考核指标结果覆盖清单。存在任务书时应逐项覆盖范围内定量、定性和混合考核事项；摘要正文可合并同类表述，但不得漏掉定性结果。",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "assessment_item_id",
+                        "assessment_name",
+                        "assessment_kind",
+                        "result_statement",
+                        "evidence_status"
+                      ],
+                      "properties": {
+                        "assessment_item_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "assessment_name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "assessment_kind": {
+                          "type": "string",
+                          "enum": [
+                            "quantitative",
+                            "qualitative",
+                            "mixed"
+                          ]
+                        },
+                        "result_statement": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "摘要可使用的结果化表达。定性指标必须写形成的能力、功能、成果状态、适用性或工程效果，不得只复述要求。"
+                        },
+                        "actual_value_or_finding": {
+                          "type": "string"
+                        },
+                        "comparison_or_effect": {
+                          "type": "string"
+                        },
+                        "test_or_application_condition": {
+                          "type": "string"
+                        },
+                        "evidence_status": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "source_location": {
+                          "type": "string"
+                        },
+                        "research_point_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "supplementary_metrics_used": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "description": "非任务书考核指标的补充结果。任务书存在时仅在确有必要时补1—2个；没有任务书时摘要也只选1—2个最能代表效果的可靠指标。",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "metric_name",
+                        "result_statement"
+                      ],
+                      "properties": {
+                        "metric_name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "result_statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "source_location": {
+                          "type": "string"
+                        },
+                        "evidence_status": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "artifact_type",
+              "content"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

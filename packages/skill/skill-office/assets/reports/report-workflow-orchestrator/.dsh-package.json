@@ -1,0 +1,119 @@
+{
+  "version": "b906c3ac8140800514713ee870faf1e17e8ffb31e35b375982e492958870c7f4",
+  "files": [
+    {
+      "relativePath": "DSH-SOURCE.json",
+      "bytes": 646,
+      "sha256": "f6405b4d424fb45dd473a51b5c50c1121fd475983b4c7a2a25ae1fce9104baf1"
+    },
+    {
+      "relativePath": "SKILL.md",
+      "bytes": 23358,
+      "sha256": "bda270cd1aa95cdea9da745bccb98383cbb6d42fb95751f7e5f6351c81771578"
+    },
+    {
+      "relativePath": "examples/chapter-content-briefs.json",
+      "bytes": 900,
+      "sha256": "3ce91eaff7d9c55cd458ce08b1ffa49e895c9c144d144ac7cfba2e2988a946c0"
+    },
+    {
+      "relativePath": "examples/generator-request.json",
+      "bytes": 768,
+      "sha256": "2f4cfc9c899433b37c8b41121e699e7d7f655adf158ea28c9aec3e3484258e13"
+    },
+    {
+      "relativePath": "examples/generator-response.json",
+      "bytes": 1080,
+      "sha256": "284e362f07a082c090066ffb445841e5a8344d999ab50c3698f8a2a9e9610d92"
+    },
+    {
+      "relativePath": "examples/project-intake.json",
+      "bytes": 481,
+      "sha256": "e19065f1f13f0308a797658cb666e847480ecd66129d578fa96e1d3fa42441cf"
+    },
+    {
+      "relativePath": "examples/word-report-metadata.json",
+      "bytes": 439,
+      "sha256": "39448612f414b998952c6940934c73a3035375cb6f643a620d15229ff0fe590a"
+    },
+    {
+      "relativePath": "references/installation-layout.md",
+      "bytes": 441,
+      "sha256": "dbeb3c4e0891d4d6a447b2cf3ceb1794785b32588030cfe6c097c282ad87cb95"
+    },
+    {
+      "relativePath": "schemas/formatter-response.schema.json",
+      "bytes": 140,
+      "sha256": "94f3684ed437ac21c2aeeb2bc87ac4860205738decb3a6228b2de2b808bcae97"
+    },
+    {
+      "relativePath": "schemas/handoff-request.schema.json",
+      "bytes": 828,
+      "sha256": "52ca2a568be7d981b6417a92cf9aba252cfb55052543fbd265038a9b06bd7eb4"
+    },
+    {
+      "relativePath": "schemas/reviewer-response.schema.json",
+      "bytes": 1883,
+      "sha256": "f4700c78c38a3ec8c5f22adeef5794c7ff17d40b656b7c8a603adab6dd7984c9"
+    },
+    {
+      "relativePath": "schemas/word-report-metadata.schema.json",
+      "bytes": 1034,
+      "sha256": "bf33df7f6a2e1fd7e69ea5bb971e6085866ebd69223470bfe0e93a3e4ce1c5cc"
+    },
+    {
+      "relativePath": "schemas/workflow-state.schema.json",
+      "bytes": 2983,
+      "sha256": "c227bc5fa68051b95d21555ef140d18ddb989f2e72ba404034619073dc7a05d6"
+    },
+    {
+      "relativePath": "scripts/normalize_markdown.py",
+      "bytes": 1614,
+      "sha256": "9f9809dcde735828bf11b8948c200c6790aaebaf84d3f33ec6c397670cfd5b7b"
+    },
+    {
+      "relativePath": "scripts/report_text_utils.py",
+      "bytes": 60147,
+      "sha256": "0541857bcf23488fa5afdd8d6ea86936df6de78c4866665f896f1cfe96fe147f"
+    },
+    {
+      "relativePath": "scripts/run_quality_gate.py",
+      "bytes": 3479,
+      "sha256": "4ea7462c3d36e9ef322cabed334144e335bcbbefb7cd148505a2b6e2d7ff2393"
+    },
+    {
+      "relativePath": "scripts/validate_handoff.py",
+      "bytes": 4139,
+      "sha256": "3e1b423f0ecc52762dc0c084ec6e89d1cea38ecf466e95f50da55e7faf611413"
+    },
+    {
+      "relativePath": "scripts/validate_review_chain.py",
+      "bytes": 4413,
+      "sha256": "2db43cef06d813470b9287a79a5791dadab3aa6c01326ee84be2317e8d50c517"
+    },
+    {
+      "relativePath": "scripts/validate_rule_consistency.py",
+      "bytes": 30706,
+      "sha256": "8ebbf70d82730e896b0b3520f29096ce8ce9dbfc9f8034723200044edaf611db"
+    },
+    {
+      "relativePath": "scripts/workflow_cli.py",
+      "bytes": 5615,
+      "sha256": "bce3d6c13eda356902b43a34314af17e27af4c47c48c1013eb24138102096e9d"
+    },
+    {
+      "relativePath": "scripts/workflow_engine.py",
+      "bytes": 112771,
+      "sha256": "fee4b62f3c161dba1f4d238574fbce0addfab9b43cf243262d02ef886429fd1e"
+    },
+    {
+      "relativePath": "skill-registry.json",
+      "bytes": 5297,
+      "sha256": "7640f48e25fb7ff9cc3d923f0bbd3eed0b5e76503354cc87d9b77ce2daba22b2"
+    }
+  ],
+  "archive": {
+    "bytes": 71171,
+    "sha256": "4fca311c33ba6d730c77c5228eb318c2e9b5c1bc8e2d453ab66af08dac2718fd"
+  }
+}

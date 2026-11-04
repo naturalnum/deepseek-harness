@@ -11,9 +11,11 @@
 
 import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { unwatchFile, watchFile, type Stats } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import chokidar from 'chokidar'
+import { readSkillPackage } from './packaged.ts'
+export { readSkillPackage } from './packaged.ts'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import { parse as parseYaml } from 'yaml'
@@ -71,6 +73,12 @@ export interface Config {
   watchFollowSymlinks?: boolean
   /** Bundled skill root; defaults to `$DSH_BUNDLED_SKILL_DIR` when default roots are included, otherwise mounts none. */
   bundledSkillDir?: string
+  /** Guest-visible mirror of bundledSkillDir; deployment must supply the identical read-only asset tree. */
+  bundledExecutionRoot?: string
+  /** Deployment instructions appended only to loaded bundled bodies and logged by the native skill tool. */
+  bundledInstructions?: string
+  /** Require generated complete-package inventories for the bundled root. */
+  packagedBundles?: boolean
 }
 
 export const Config: Schema<Config> = z.object({
@@ -86,6 +94,9 @@ export const Config: Schema<Config> = z.object({
   watchMaxProjects: z.number().default(DEFAULT_WATCH_MAX_PROJECTS),
   watchFollowSymlinks: z.boolean().default(true),
   bundledSkillDir: z.string(),
+  bundledExecutionRoot: z.string(),
+  packagedBundles: z.boolean(),
+  bundledInstructions: z.string().min(1),
 })
 
 interface SkillRoot {
@@ -191,6 +202,9 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly customSkillDirs: string[]
   private readonly watchManager: SkillWatchManager
   private readonly bundledSkillDir: string | undefined
+  private readonly bundledExecutionRoot: string | undefined
+  private readonly bundledInstructions: string | undefined
+  private readonly packagedBundles: boolean
   private disposal: Promise<void> | undefined
 
   constructor(
@@ -201,6 +215,18 @@ export class FileSystemSkillProvider implements SkillProvider {
   ) {
     if (source !== undefined && (config.includeDefaultRoots !== false || config.watch !== false || config.bundledSkillDir !== undefined)) {
       throw new TypeError('skill-filesystem: an explicit source requires isolated roots, disabled host watching and no bundled host root')
+    }
+    this.bundledInstructions = config.bundledInstructions
+    if (config.bundledInstructions !== undefined && config.bundledSkillDir === undefined) {
+      throw new TypeError('skill-filesystem: bundledInstructions requires an explicit bundledSkillDir')
+    }
+    this.bundledExecutionRoot = config.bundledExecutionRoot
+    this.packagedBundles = config.packagedBundles ?? false
+    if (this.packagedBundles && (config.bundledSkillDir === undefined || !isAbsolute(config.bundledSkillDir))) {
+      throw new TypeError('skill-filesystem: packagedBundles requires an explicit absolute bundledSkillDir')
+    }
+    if (this.bundledExecutionRoot !== undefined && (!isAbsolute(this.bundledExecutionRoot) || config.bundledSkillDir === undefined)) {
+      throw new TypeError('skill-filesystem: bundledExecutionRoot requires an absolute path and explicit bundledSkillDir')
     }
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
@@ -238,7 +264,16 @@ export class FileSystemSkillProvider implements SkillProvider {
         for (const skill of await discoverRoot(
           root, this.ctx, this.name, source?.files, this.source === undefined ? undefined : options.signal,
         )) {
-          if (this.source === undefined) candidates.push(skill)
+          if (this.source === undefined) {
+            if (root.source === 'bundled') {
+              const locator = skill.locator as LocalLocator
+              const base = this.bundledExecutionRoot === undefined ? undefined
+                : join(this.bundledExecutionRoot, relative(root.path, locator.directory))
+              candidates.push({ ...skill,
+                ...base === undefined ? {} : { path: join(base, basename(locator.path)), resourceBase: { kind: 'directory' as const, path: base } },
+                ...this.packagedBundles ? { package: readSkillPackage(locator.directory) } : {} })
+            } else candidates.push(skill)
+          }
           else {
             // The locator is private to this provider; discovery exposes no source path as resource authority.
             const { path: _path, resourceBase: _resourceBase, ...summary } = skill
@@ -261,8 +296,12 @@ export class FileSystemSkillProvider implements SkillProvider {
     return this.withFiles(options, async (source) => {
       const parsed = await parseSkillFile(locator.path, this.ctx, options.signal, candidate.source === 'bundled', source?.files)
       if (parsed === undefined) return undefined
+      const resourceDirectory = candidate.source === 'bundled' && this.bundledExecutionRoot !== undefined && this.bundledSkillDir !== undefined
+        ? join(this.bundledExecutionRoot, relative(this.bundledSkillDir, locator.directory)) : undefined
       const resources = source === undefined
-        ? { resourceBase: { kind: 'directory' as const, path: locator.directory }, path: parsed.path }
+        ? resourceDirectory === undefined
+          ? { resourceBase: { kind: 'directory' as const, path: locator.directory }, path: parsed.path }
+          : { resourceBase: { kind: 'directory' as const, path: resourceDirectory }, path: join(resourceDirectory, basename(parsed.path)) }
         : await source.materialize(locator.directory, options)
       if (source !== undefined) options.signal?.throwIfAborted()
       return {
@@ -274,7 +313,7 @@ export class FileSystemSkillProvider implements SkillProvider {
         provider: this.name,
         ...resources,
         ...parsed.metadata !== undefined ? { metadata: parsed.metadata } : {},
-        content: parsed.content,
+        content: parsed.content + (candidate.source === 'bundled' && this.bundledInstructions !== undefined ? '\n\n' + this.bundledInstructions : '') + (resourceDirectory === undefined ? '' : '\n\nShared resources are read-only paths in the execution environment. Use its Bash tool or interpreter to read referenced files and run scripts; Host file tools do not provide these guest image paths.'),
       }
     })
   }

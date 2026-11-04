@@ -13,6 +13,8 @@ import { PtcRuntime, type PtcRunRequest, type PtcRunSpec } from '@deepseek-ai/ds
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as ToolSkill from '../../tool-skill/src/index.ts'
 import * as SkillOffice from '../src/index.ts'
+import * as SkillFileSystem from '../../skill-filesystem/src/index.ts'
+import { fileURLToPath } from 'node:url'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 const contexts: Context[] = []
@@ -27,7 +29,7 @@ class SkillProgram extends PtcRuntime {
   }
 }
 
-async function setup(mode: 'native' | 'ptc', names: string[]) {
+async function setup(mode: 'native' | 'ptc', names: string[], reportRuntime = false) {
   const ctx = new Context()
   contexts.push(ctx)
   provideWorkingDirectoryFixture(ctx)
@@ -40,7 +42,11 @@ async function setup(mode: 'native' | 'ptc', names: string[]) {
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(ToolSkill)
-  await ctx.plugin(SkillOffice)
+  await ctx.plugin(SkillOffice, reportRuntime ? { systemTools: { soffice: '/usr/bin/soffice',
+    pdftoppm: '/usr/bin/pdftoppm', wordRefresh: '/opt/dsh/runtime/office/refresh_word.py' } } : {})
+  if (reportRuntime) await ctx.plugin(SkillFileSystem, { includeDefaultRoots: false, watch: false,
+    bundledSkillDir: fileURLToPath(new URL('../assets/reports/', import.meta.url)),
+    bundledInstructions: 'Linux report runtime: use /opt/dsh/runtime/office/refresh_word.py for C/F/T catalogs.' })
   if (mode === 'ptc') await ctx.plugin(SkillProgram)
   const adapter = new MockAdapter([
     ...names.map((name, index) => mode === 'native'
@@ -112,4 +118,17 @@ it('loads an explicitly invoked authoring skill without the router', async () =>
   const text = JSON.stringify(adapter.requests[0])
   expect(text).toContain('# Excel workbooks')
   expect(text).not.toMatch(/Office task routing|dsoffice/)
+})
+
+it('records report runtime guidance in native skill results and retains it on resume', async () => {
+  const { ctx, agent, adapter } = await setup('native', ['tech-report-writer', 'office-export-pdf'], true)
+  await send(agent, 'Write a technical report with main, figure and table catalogs.')
+  expect(JSON.stringify(adapter.requests[1])).toContain('Linux report runtime: use /opt/dsh/runtime/office/refresh_word.py')
+  expect(JSON.stringify(adapter.requests[2])).toContain('preserves original field codes and content')
+  const seed = agent.session.snapshotEvents()
+  expect(JSON.stringify(seed)).toContain('/opt/dsh/runtime/office/refresh_word.py')
+  const { agent: resumed } = await ctx.agents.create({ sessionId: SessionId('resumed-linux-report'),
+    agentOptions: { provider: 'mock', model: 'model' }, seed })
+  await send(resumed)
+  expect(JSON.stringify(adapter.requests.at(-1))).toContain('Linux report runtime')
 })

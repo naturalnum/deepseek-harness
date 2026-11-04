@@ -1,0 +1,10 @@
+{
+  "scope": "User-supplied technical-report skill assets for the DSH application",
+  "license": "No license text supplied in the three source archives. Preserved under explicit user instruction for internal integration; no broader redistribution grant inferred.",
+  "archives": [
+    "latex-report-writer.zip",
+    "power-grid-report-skill-suite-v1.1.31-install.zip",
+    "technical-report-pre-review.zip"
+  ],
+  "installation": "Each directory is a native bundled root. Orchestrator and child skills remain siblings."
+}

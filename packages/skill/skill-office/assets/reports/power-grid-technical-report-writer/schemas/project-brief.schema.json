@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project Brief",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_title",
+    "report_type",
+    "application_scenario",
+    "overall_problem",
+    "research_contents",
+    "content_generation_mode",
+    "mode_selection_confirmed",
+    "fixed_intake_confirmed",
+    "task_book_status",
+    "task_book_scope",
+    "specified_report_requirements",
+    "experimental_data_status",
+    "report_theme_type"
+  ],
+  "properties": {
+    "report_title": {
+      "type": "string"
+    },
+    "report_type": {
+      "type": "string",
+      "default": "科技项目结题技术报告",
+      "description": "Default report type. Do not ask for a style preference unless the user explicitly requests another deliverable type or formal template."
+    },
+    "report_theme_type": {
+      "enum": [
+        "evaluation-related",
+        "non-evaluation"
+      ],
+      "description": "模型根据报告核心研究主题自动判断；考核、验收、试验数据本身不能把普通技术研究报告判成评估类。"
+    },
+    "project_background": {
+      "type": "string"
+    },
+    "application_scenario": {
+      "type": "string"
+    },
+    "overall_problem": {
+      "type": "string"
+    },
+    "target_readers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "report_purpose": {
+      "type": "string",
+      "default": "科技项目结题技术总结与成果归档",
+      "description": "Infer from the default report type unless the user explicitly states another purpose."
+    },
+    "research_contents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "available_materials": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "known_data_and_results": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "target_length": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "output_format": {
+      "type": "string",
+      "default": "markdown_file",
+      "description": "Default final deliverable. Use markdown_file unless the user explicitly requests another format."
+    },
+    "special_requirements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "content_generation_mode": {
+      "type": "string",
+      "enum": [
+        "source_grounded",
+        "model_autonomous",
+        "pending_selection"
+      ],
+      "default": "pending_selection",
+      "description": "Choose once before confirming the project brief. source_grounded requests chapter materials before each chapter plan; model_autonomous proceeds without repeated material prompts."
+    },
+    "mode_selection_confirmed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Must be true before the project brief can be treated as confirmed."
+    },
+    "fixed_intake_confirmed": {
+      "type": "boolean",
+      "default": false,
+      "description": "All four fixed project-brief questions have explicit answers, including no/not specified/not available."
+    },
+    "task_book_status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "not_available",
+        "pending"
+      ],
+      "default": "pending"
+    },
+    "task_book_scope": {
+      "type": "string",
+      "enum": [
+        "specific_topic",
+        "total_report",
+        "not_applicable",
+        "pending"
+      ],
+      "default": "pending",
+      "description": "Whether this report corresponds to a specific task-book topic or the total report. total_report maps each task to exactly one technical chapter; specific_topic maps each research-content subpoint to one technical chapter."
+    },
+    "task_book_topic_or_total_report": {
+      "type": "string"
+    },
+    "specified_report_requirements": {
+      "type": "object",
+      "properties": {
+        "target_length": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "template": {
+          "type": "string"
+        },
+        "chapter_count": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "experimental_data_status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "partially_available",
+        "not_available",
+        "pending"
+      ],
+      "default": "pending",
+      "description": "Availability of verified user/project experimental data. not_available does not block experiment planning: the generator may create a clearly labeled reference-only experiment package with simulated/example values."
+    },
+    "experimental_data_inventory": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "chapter_content_briefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "chapter_ref",
+          "summary"
+        ],
+        "properties": {
+          "chapter_ref": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "methods_or_modules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data_and_results": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "focus_or_exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "chapter_content_briefs_confirmed": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode_selection_confirmed": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode_selection_confirmed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "content_generation_mode": {
+            "enum": [
+              "source_grounded",
+              "model_autonomous"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixed_intake_confirmed": {
+            "const": true
+          }
+        },
+        "required": [
+          "fixed_intake_confirmed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "task_book_status": {
+            "enum": [
+              "available",
+              "not_available"
+            ]
+          },
+          "task_book_scope": {
+            "enum": [
+              "specific_topic",
+              "total_report",
+              "not_applicable"
+            ]
+          },
+          "experimental_data_status": {
+            "enum": [
+              "available",
+              "partially_available",
+              "not_available"
+            ]
+          },
+          "mode_selection_confirmed": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

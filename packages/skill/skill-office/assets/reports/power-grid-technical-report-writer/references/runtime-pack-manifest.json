@@ -1,0 +1,225 @@
+{
+  "version": "1.1.31",
+  "policy": {
+    "preserve_all_source_rules": true,
+    "deduplicate_exact_blocks_only": true,
+    "rewrite_rules": false,
+    "source_files_remain_authoritative": true,
+    "current_rule_baseline": "references/current-rule-baseline.md",
+    "historical_files_non_normative": [
+      "CHANGELOG.md"
+    ]
+  },
+  "packs": {
+    "00-control": {
+      "output": "compiled-packs/00-control.md",
+      "sources": [
+        "stages/00-interaction-control.md",
+        "references/interaction-protocol.md",
+        "references/core-principles.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    },
+    "10-project-argument": {
+      "output": "compiled-packs/10-project-argument.md",
+      "sources": [
+        "stages/10-project-and-argument.md",
+        "references/content-generation-mode.md",
+        "references/report-scope-chapter-mapping.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    },
+    "20-outline": {
+      "output": "compiled-packs/20-outline.md",
+      "sources": [
+        "stages/20-outline-and-literature.md",
+        "references/heading-transition.md",
+        "references/chapter-summary.md",
+        "references/report-architecture.md",
+        "references/outline-hard-rules.md",
+        "references/technical-title-naming.md",
+        "references/three-subpoint-and-indicator-coverage.md",
+        "references/research-content-traceability.md",
+        "references/outline-research-innovation-alignment.md",
+        "references/report-scope-chapter-mapping.md"
+      ]
+    },
+    "21-literature": {
+      "output": "compiled-packs/21-literature.md",
+      "sources": [
+        "stages/20-outline-and-literature.md",
+        "references/citation-and-evidence.md",
+        "references/abstract-and-introduction.md"
+      ]
+    },
+    "30-chapter-planning-core": {
+      "output": "compiled-packs/30-chapter-planning-core.md",
+      "sources": [
+        "stages/30-chapter-planning.md",
+        "references/heading-transition.md",
+        "references/chapter-summary.md",
+        "references/chapter-generation-preflight.md",
+        "references/research-content-traceability.md",
+        "references/figure-and-table-guide.md",
+        "references/formula-and-symbol-rules.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    },
+    "40-chapter-writing-core": {
+      "output": "compiled-packs/40-chapter-writing-core.md",
+      "sources": [
+        "stages/40-chapter-writing.md",
+        "references/heading-transition.md",
+        "references/chapter-summary.md",
+        "references/chapter-generation-preflight.md",
+        "references/narrative-and-heading-style.md",
+        "references/style-guide.md",
+        "references/independent-report-voice.md",
+        "references/narrative-focus-and-power-grounding.md",
+        "references/formula-and-symbol-rules.md",
+        "references/power-grid-domain-guide.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    },
+    "50-abstract-finalization": {
+      "output": "compiled-packs/50-abstract-finalization.md",
+      "sources": [
+        "stages/50-abstract-and-finalization.md",
+        "references/abstract-and-introduction.md",
+        "references/conclusion-and-outlook.md",
+        "references/style-guide.md",
+        "references/independent-report-voice.md"
+      ]
+    },
+    "addon-foundation": {
+      "output": "compiled-packs/addon-foundation.md",
+      "sources": [
+        "references/foundation-chapter.md"
+      ]
+    },
+    "addon-technical": {
+      "output": "compiled-packs/addon-technical.md",
+      "sources": [
+        "references/technical-chapter-generation.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    },
+    "addon-result-analysis": {
+      "output": "compiled-packs/addon-result-analysis.md",
+      "sources": [
+        "references/result-analysis-generation.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    },
+    "addon-citation": {
+      "output": "compiled-packs/addon-citation.md",
+      "sources": [
+        "references/citation-and-evidence.md"
+      ]
+    },
+    "addon-figure-table": {
+      "output": "compiled-packs/addon-figure-table.md",
+      "sources": [
+        "references/figure-and-table-guide.md"
+      ]
+    },
+    "type-algorithm": {
+      "output": "compiled-packs/type-algorithm.md",
+      "sources": [
+        "references/chapter-types/algorithm.md"
+      ]
+    },
+    "type-data-knowledge-construction": {
+      "output": "compiled-packs/type-data-knowledge-construction.md",
+      "sources": [
+        "references/chapter-types/data-knowledge-construction.md"
+      ]
+    },
+    "type-engineering-integration": {
+      "output": "compiled-packs/type-engineering-integration.md",
+      "sources": [
+        "references/chapter-types/engineering-integration.md"
+      ]
+    },
+    "type-optimization-module": {
+      "output": "compiled-packs/type-optimization-module.md",
+      "sources": [
+        "references/chapter-types/optimization-module.md"
+      ]
+    },
+    "type-system-design": {
+      "output": "compiled-packs/type-system-design.md",
+      "sources": [
+        "references/chapter-types/system-design.md"
+      ]
+    },
+    "type-theory-and-mechanism": {
+      "output": "compiled-packs/type-theory-and-mechanism.md",
+      "sources": [
+        "references/chapter-types/theory-and-mechanism.md"
+      ]
+    },
+    "addon-experiment-reference": {
+      "output": "compiled-packs/addon-experiment-reference.md",
+      "sources": [
+        "references/experiment-reference-generation.md",
+        "references/result-analysis-generation.md",
+        "references/experiment-evidence-layering.md"
+      ]
+    }
+  },
+  "action_load_map": {
+    "build_project_profile": [
+      "10-project-argument"
+    ],
+    "build_argument_architecture": [
+      "10-project-argument"
+    ],
+    "generate_outline": [
+      "20-outline"
+    ],
+    "revise_outline": [
+      "20-outline"
+    ],
+    "search_references": [
+      "21-literature"
+    ],
+    "prepare_chapter_materials": [
+      "30-chapter-planning-core"
+    ],
+    "generate_chapter_plan": [
+      "30-chapter-planning-core",
+      "<one-type-pack>",
+      "<conditional-addons>"
+    ],
+    "revise_chapter_plan": [
+      "30-chapter-planning-core",
+      "<one-type-pack>",
+      "<conditional-addons>"
+    ],
+    "generate_chapter": [
+      "40-chapter-writing-core",
+      "<one-type-pack>",
+      "<conditional-addons>"
+    ],
+    "revise_chapter": [
+      "40-chapter-writing-core",
+      "<one-type-pack>",
+      "<conditional-addons>"
+    ],
+    "generate_abstract": [
+      "50-abstract-finalization"
+    ],
+    "assemble_report": [
+      "50-abstract-finalization"
+    ],
+    "revise_report": [
+      "50-abstract-finalization",
+      "<affected-type-packs>",
+      "<conditional-addons>"
+    ]
+  },
+  "session_initialization_packs": [
+    "00-control"
+  ]
+}

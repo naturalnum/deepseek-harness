@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verified Reference Registry",
+  "type": "object",
+  "properties": {
+    "internet_access": {
+      "enum": [
+        "available",
+        "unavailable",
+        "unknown"
+      ]
+    },
+    "collection_confirmed": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "reference_type",
+          "verification_status",
+          "supports",
+          "gbt7714_entry"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reference_type": {
+            "enum": [
+              "journal_article",
+              "conference_paper",
+              "standard",
+              "official_document",
+              "dataset",
+              "book",
+              "thesis",
+              "report"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "year": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "venue": {
+            "type": "string"
+          },
+          "volume_issue_pages": {
+            "type": "string"
+          },
+          "doi_or_identifier": {
+            "type": "string"
+          },
+          "official_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "legal_download_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "verification_status": {
+            "enum": [
+              "verified",
+              "partially_verified",
+              "rejected"
+            ]
+          },
+          "verification_sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "supports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "used_in": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "gbt7714_entry": {
+            "type": "string",
+            "minLength": 5,
+            "description": "GB/T 7714—2015 顺序编码制的文后著录字符串，不含 [n] 序号；须包含文献类型标识并以句点结束。"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "internet_access",
+    "collection_confirmed",
+    "items"
+  ]
+}

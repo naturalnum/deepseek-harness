@@ -11,6 +11,8 @@ kind: "package-reference"
 
 组合维护者可以选择原生拒绝提供方，或开发中的 Root 会话执行路径。关闭模式在准备前拒绝每个 Shell 和子进程请求，不创建沙盒或联系后端。受管模式要求原始受保护部署及目标验收；只有空需求列表不能使账户就绪。
 
+可选 [Office guest 资源](../../../docs/user/cloud-builtin-skills.zh.md) 在原受管 Bash 执行下提供 Linux Word 目录操作，不创建账户、执行控制器或额外配额。选定镜像及实际账户配置仍需单独验收。
+
 ## 目录
 
 - [使用本包](#use-this-package)

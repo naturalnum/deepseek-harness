@@ -21,7 +21,7 @@ export interface ManagedSkillRemoteInput {
 }
 
 function row(entry: Entry, applied = true): SkillCard {
-  return Object.freeze({ id: entry.skillId, name: entry.name, description: entry.description, category: 'other', installed: true,
+  return Object.freeze({ id: entry.skillId, name: entry.name, description: entry.description, category: entry.source === 'bundled' ? 'writing-office' : 'other', installed: true,
     recommended: false, status: !applied ? 'catalog-pending' : 'published',
     version: entry.contentVersion, sourceLabel: entry.source, fileCount: entry.fileCount, totalBytes: entry.contentBytes,
     ...entry.selection.kind === 'shadowed' ? { shadowedBy: Object.freeze({ name: entry.selection.by.name, source: entry.selection.by.source }) } : {},

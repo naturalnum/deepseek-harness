@@ -1,0 +1,31 @@
+{
+  "orchestration": {
+    "enabled": true,
+    "request_id": "req_example_001",
+    "caller_skill": "report-workflow-orchestrator"
+  },
+  "skill_name": "power-grid-technical-report-writer",
+  "action": "generate_chapter",
+  "payload": {
+    "report_context": {
+      "title": "示例报告",
+      "goal": "说明技术方案"
+    },
+    "chapter_id": "chapter_3",
+    "chapter_plan": {
+      "artifact_id": "chapter_3_plan",
+      "version": 1,
+      "content": {
+        "target_words": 10000,
+        "minimum_required_words": 8000
+      }
+    },
+    "approved_previous_chapters": [],
+    "length_requirement": {
+      "planned_target_words": 10000,
+      "minimum_ratio": 0.8,
+      "minimum_required_words": 8000,
+      "confirmation_required": true
+    }
+  }
+}

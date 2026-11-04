@@ -9551,7 +9551,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillCandidate',
-    declaration: 'export interface SkillCandidate extends SkillSummary {\n    readonly rank: number;\n    readonly locator: unknown;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
+    declaration: 'export interface SkillCandidate extends SkillSummary {\n    readonly rank: number;\n    readonly locator: unknown;\n    readonly package?: SkillPackage;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
   },
   {
     name: 'SkillCandidateInspection',
@@ -9628,6 +9628,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillLookupOptions',
     declaration: 'export interface SkillLookupOptions {\n    readonly cwd?: string | undefined;\n    readonly signal?: AbortSignal | undefined;\n}',
+  },
+  {
+    name: 'SkillPackage',
+    declaration: 'export interface SkillPackage {\n    readonly version: string;\n    readonly files: readonly {\n        readonly relativePath: string;\n        readonly bytes: number;\n        readonly sha256: string;\n    }[];\n    readonly archive: {\n        readonly bytes: number;\n        readonly sha256: string;\n    };\n    readFile(path: string, signal?: AbortSignal): Promise<Uint8Array>;\n    readArchive(signal?: AbortSignal): Promise<Uint8Array>;\n}',
   },
   {
     name: 'SkillProjectPort',

@@ -477,3 +477,18 @@ it.each(['flat', 'legacy'])('rejects pnpm without a Node.js interpreter in %s me
   const { node: _node, ...input } = manifest
   expect(() => parsePrimaryRuntime(format === 'legacy' ? legacyManifest(input) : input)).toThrow('invalid metadata')
 })
+
+it('returns image-bound guest paths from a foreign-platform manifest without Host installation', async () => {
+  const { source, manifest } = await fixture(), ctx = new Context()
+  const guest = { ...manifest, platform: 'linux', arch: 'arm64' }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(guest))
+  try {
+    await ctx.plugin(AgentRegistry); await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime)
+    await ctx.plugin(workspaceDependencies, { source: '/opt/dsh/runtime', executionManifest: source })
+    const result = await ctx.tools.execute({ signal: new AbortController().signal,
+      name: 'load_workspace_dependencies', arguments: {}, callId: ToolCallId('guest-paths') })
+    expect(result.isError).toBe(false)
+    expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(workspaceDependencyPaths('/opt/dsh/runtime', guest), undefined, 2) }])
+    await expect(ctx.plugin(workspaceDependencies, { source: '/opt/dsh/runtime', executionManifest: source, root: '/tmp/host-install' })).rejects.toThrow()
+  } finally { await ctx.fiber.dispose() }
+})

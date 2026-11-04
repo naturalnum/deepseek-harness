@@ -72,6 +72,29 @@ describe('unique object-name prefix search', () => {
 })
 
 describe('maintained repository reference policy', () => {
+  it('keeps exact Office source pins while rejecting prose, unrelated metadata and extra references', () => {
+    const commit = 'a'.repeat(40), commits = new Set([commit, commit.slice(0, 7)])
+    const file = 'packages/skill/skill-office/assets/office-docx/DSH-SOURCE.json'
+    const record = { name: 'office-docx', source: {
+      repository: 'https://github.com/deepseek-ai/deepseek-harness', commit,
+    } }
+    const text = JSON.stringify(record, undefined, 2)
+    expect(findRepositoryReferences(file, text, commits)).toEqual([])
+    expect(findRepositoryReferences(file, JSON.stringify(record), commits)).toEqual([])
+    for (const path of ['guide.md', 'another/DSH-SOURCE.json', file.replace('office-docx/', 'other/')]) {
+      expect(findRepositoryReferences(path, text, commits)).toHaveLength(1)
+    }
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, note: commit }, undefined, 2), commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, extra: { commit } }, undefined, 2), commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, source: {
+      ...record.source, repository: 'https://example.invalid/other',
+    } }, undefined, 2), commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, name: 'office-xlsx' }), commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, source: {
+      ...record.source, commit: commit.slice(0, 7),
+    } }), commits)).toHaveLength(1)
+  })
+
   it('distinguishes decimal uv artifact sizes from commit references in the same lock file', () => {
     const commit = '6'.repeat(7), commits = new Set([commit]), file = 'python/sdk/uv.lock'
     const size = `{ url = "https://files.example.test/package.whl", size = ${commit} }`

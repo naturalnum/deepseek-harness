@@ -1,0 +1,11 @@
+{
+  "name": "latex-report-writer",
+  "source": {
+    "archive": "latex-report-writer.zip",
+    "sha256": "71b138778f38f0bc30f5b0246350bde05957cc28fa46e76b4631e6109fe95174"
+  },
+  "license": "No license text supplied; preserved under explicit instruction for internal DSH integration. No additional redistribution grant asserted.",
+  "sourceVersion": "unversioned in SKILL.md",
+  "resources": "Shared read-only execution assets; user installations retain native override priority.",
+  "suiteVersion": null
+}

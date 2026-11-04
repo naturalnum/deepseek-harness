@@ -94,6 +94,10 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 -----
 
+`packagedBundles: true` 要求每个内置目录含构建生成的 `.dsh-package.json` 和 `.dsh-package.zip`。`readSkillPackage` 校验每次返回文件/归档的字节数与 SHA256。`bundledExecutionRoot` 将显式 Host `bundledSkillDir` 映射到完全相同的只读 guest 树，不改变发现、优先级或加载；部署方负责两棵树属于同一发布。报告资源保留原始字节及同级结构，内部使用来源见 [来源说明](../skill-office/assets/reports/SOURCES.json)。
+
+`bundledInstructions` 仅在加载内置技能正文时附加显式部署指引，必须配置显式 `bundledSkillDir`。目录描述、下载包字节和自定义/项目/用户技能均保持原样。原生技能工具把附加正文与加载结果一起记录，因此恢复后的 Session 保留该指引。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

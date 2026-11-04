@@ -1,0 +1,1172 @@
+{
+  "title": "电网调度规程知识表征融合与电子规则库构建技术报告",
+  "task_book_scope": "total_report",
+  "report_tasks": [
+    {
+      "task_id": "TASK-01",
+      "task_order": 1,
+      "task_title": "研究调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "normalized_chapter_title": "调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "task_role": "technical-research",
+      "research_point_ids": [
+        "RP-01",
+        "RP-01B"
+      ]
+    },
+    {
+      "task_id": "TASK-02",
+      "task_order": 2,
+      "task_title": "研究调度关联图谱与电子规则库构建技术",
+      "normalized_chapter_title": "调度关联图谱与电子规则库构建技术",
+      "task_role": "technical-research",
+      "research_point_ids": [
+        "RP-02"
+      ]
+    },
+    {
+      "task_id": "TASK-03",
+      "task_order": 3,
+      "task_title": "开展面向调度业务应用的电子规则库服务集成技术研究",
+      "normalized_chapter_title": "面向调度业务应用的电子规则库服务集成技术",
+      "task_role": "engineering-implementation",
+      "research_point_ids": [
+        "RP-03"
+      ]
+    }
+  ],
+  "target_words": 52500,
+  "front_matter": {
+    "chinese_abstract": true,
+    "english_abstract": false,
+    "list_of_figures": true,
+    "list_of_tables": true
+  },
+  "chapters": [
+    {
+      "id": "1",
+      "title": "项目概述",
+      "chapter_type": "project-overview",
+      "target_words": 12000,
+      "structure_archetype": "project-overview",
+      "section_outline": [
+        {
+          "number": "1",
+          "title": "项目概述",
+          "level": 1,
+          "heading_kind": "project-overview"
+        },
+        {
+          "number": "1.1",
+          "title": "项目背景与研究意义",
+          "level": 2,
+          "heading_kind": "project-overview"
+        },
+        {
+          "number": "1.1.1",
+          "title": "项目研究背景",
+          "level": 3,
+          "heading_kind": "project-overview"
+        },
+        {
+          "number": "1.1.2",
+          "title": "项目研究意义",
+          "level": 3,
+          "heading_kind": "project-overview"
+        },
+        {
+          "number": "1.2",
+          "title": "国内外研究现状",
+          "level": 2,
+          "heading_kind": "development-status"
+        },
+        {
+          "number": "1.2.1",
+          "title": "国外研究现状",
+          "level": 3,
+          "heading_kind": "development-status"
+        },
+        {
+          "number": "1.2.2",
+          "title": "国内研究现状",
+          "level": 3,
+          "heading_kind": "development-status"
+        },
+        {
+          "number": "1.3",
+          "title": "主要研究内容及思路",
+          "level": 2,
+          "heading_kind": "project-overview"
+        },
+        {
+          "number": "1.3.1",
+          "title": "主要研究内容",
+          "level": 3,
+          "heading_kind": "project-overview"
+        },
+        {
+          "number": "1.3.2",
+          "title": "研究思路",
+          "level": 3,
+          "heading_kind": "project-overview"
+        }
+      ],
+      "formula_requirement": "exempt",
+      "formula_rationale": "项目概述以背景与意义、国内外研究现状、来源研究内容及总体研究思路说明为主，不承担核心数学模型定义。",
+      "formula_focus": [],
+      "minimum_words": 9600
+    },
+    {
+      "id": "2",
+      "title": "调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "chapter_type": "data-knowledge-construction",
+      "target_words": 13000,
+      "structure_archetype": "data-knowledge",
+      "section_outline": [
+        {
+          "number": "2",
+          "title": "调度通用数据对象与规则约束的多元异构知识表征融合技术",
+          "level": 1,
+          "heading_kind": "technical"
+        },
+        {
+          "number": "2.1",
+          "title": "基于关系类型感知异构图变换注意力的调度知识融合技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-01",
+          "power_element": "调度对象",
+          "schedule_item_ids": [
+            "SP-01"
+          ],
+          "parent_task_id": "TASK-01",
+          "technical_object": "调度对象",
+          "technical_method": "关系类型感知HGT",
+          "technical_role": "形成统一对象表征",
+          "specificity_basis": "采用关系类型感知机制与HGT异构图Transformer结构形成调度知识表征融合路线",
+          "research_subpoint_index": 1,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-01"
+          ],
+          "assessment_item_ids": [],
+          "specific_computing_technology": "关系类型感知HGT",
+          "technology_specificity_basis": "采用关系类型感知机制与HGT异构图Transformer结构形成调度知识表征融合路线",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何将异构调度对象与规程约束转化为一致、可信、可推理的知识表示？",
+          "chain_order": 1,
+          "chain_role": "对象表征",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "统一调度对象表示",
+          "primary_subject_section": true,
+          "primary_technical_subject": "知识表征融合技术",
+          "primary_subject_coverage_role": "overall",
+          "technical_signature": "关系类型感知异构图变换注意力"
+        },
+        {
+          "number": "2.1.1",
+          "title": "基于实体标记鲁棒预训练语言编码的调度对象映射技术",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-01",
+          "technical_object": "调度通用数据对象",
+          "technical_method": "实体标记RoBERTa对象映射模型",
+          "technical_role": "完成通用数据对象到知识结构的映射",
+          "specificity_basis": "以实体标记RoBERTa编码调度对象上下文并完成统一映射",
+          "technical_signature": "实体标记鲁棒预训练语言编码",
+          "named_technology": "实体标记RoBERTa",
+          "named_technology_basis": "以实体标记RoBERTa编码调度对象上下文并完成统一映射"
+        },
+        {
+          "number": "2.1.2",
+          "title": "知识图谱约束原型对比调度本体识别方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-01",
+          "technical_object": "调度知识本体",
+          "technical_method": "知识图谱约束原型对比本体识别方法",
+          "technical_role": "识别规程文本中的本体类型",
+          "specificity_basis": "采用知识图谱约束与原型对比联合识别调度知识本体",
+          "technical_signature": "知识图谱约束原型对比",
+          "named_technology": "知识图谱约束原型对比",
+          "named_technology_basis": "采用知识图谱约束与原型对比联合识别调度知识本体"
+        },
+        {
+          "number": "2.2",
+          "title": "调度规程温度缩放共形置信校准方法",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-01",
+          "power_element": "调度规程",
+          "schedule_item_ids": [
+            "SP-02"
+          ],
+          "parent_task_id": "TASK-01",
+          "technical_object": "调度规程",
+          "technical_method": "温度缩放共形预测",
+          "technical_role": "抽取规则并校准置信度",
+          "specificity_basis": "采用温度缩放与共形预测组合完成调度规程抽取结果的置信校准",
+          "research_subpoint_index": 2,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-02"
+          ],
+          "assessment_item_ids": [],
+          "specific_computing_technology": "温度缩放共形预测",
+          "technology_specificity_basis": "采用温度缩放与共形预测组合完成调度规程抽取结果的置信校准",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何将异构调度对象与规程约束转化为一致、可信、可推理的知识表示？",
+          "chain_order": 2,
+          "chain_role": "规则抽取与校准",
+          "depends_on_previous": true,
+          "handoff_from_previous": "统一调度对象表示",
+          "output_to_next": "带置信度的规则知识",
+          "primary_subject_section": false,
+          "technical_signature": "温度缩放共形预测"
+        },
+        {
+          "number": "2.2.1",
+          "title": "基于关系类型感知异构图注意力的调度关系抽取技术",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-01",
+          "technical_object": "调度实体关系",
+          "technical_method": "关系类型感知异构图注意力关系抽取模型",
+          "technical_role": "抽取调度实体间关联关系",
+          "specificity_basis": "采用关系类型感知与异构图注意力联合完成调度实体关系抽取",
+          "named_technology": "关系类型感知异构图注意力网络",
+          "named_technology_basis": "采用关系类型感知与异构图注意力联合完成调度实体关系抽取",
+          "technical_signature": "关系类型感知异构图注意力网络"
+        },
+        {
+          "number": "2.2.2",
+          "title": "调度知识抽取温度缩放共形预测置信校准方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-01",
+          "technical_object": "知识抽取结果",
+          "technical_method": "温度缩放共形预测置信校准方法",
+          "technical_role": "修正抽取结果的置信度偏差",
+          "specificity_basis": "采用温度缩放与共形预测组合修正知识抽取置信偏差",
+          "technical_signature": "温度缩放共形预测",
+          "named_technology": "温度缩放共形预测",
+          "named_technology_basis": "采用温度缩放与共形预测组合修正知识抽取置信偏差"
+        },
+        {
+          "number": "2.3",
+          "title": "基于原型对比动态负采样的电网知识消歧方法",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-01",
+          "power_element": "电网知识",
+          "schedule_item_ids": [
+            "SP-03"
+          ],
+          "parent_task_id": "TASK-01",
+          "technical_object": "电网知识",
+          "technical_method": "原型对比动态负采样",
+          "technical_role": "完成跨源对齐与冲突消解",
+          "specificity_basis": "采用原型对比与动态负采样组合区分跨源知识冲突消解路线",
+          "research_subpoint_index": 3,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-03"
+          ],
+          "assessment_item_ids": [
+            "AR-01"
+          ],
+          "specific_computing_technology": "原型对比动态负采样",
+          "technology_specificity_basis": "采用原型对比与动态负采样组合区分跨源知识冲突消解路线",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何将异构调度对象与规程约束转化为一致、可信、可推理的知识表示？",
+          "chain_order": 3,
+          "chain_role": "对齐与消解",
+          "depends_on_previous": true,
+          "handoff_from_previous": "统一对象表示与带置信度规则知识",
+          "output_to_next": "一致知识表示",
+          "primary_subject_section": false,
+          "technical_signature": "原型对比动态负采样"
+        },
+        {
+          "number": "2.3.1",
+          "title": "调度多源知识多视图原型对比相似度计算方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-01",
+          "technical_object": "多源知识条目",
+          "technical_method": "多视图原型对比相似度计算方法",
+          "technical_role": "计算候选知识条目的语义接近程度",
+          "specificity_basis": "采用多视图表征与原型对比计算跨源知识语义相似度",
+          "technical_signature": "多视图原型对比",
+          "named_technology": "多视图原型对比",
+          "named_technology_basis": "采用多视图表征与原型对比计算跨源知识语义相似度"
+        },
+        {
+          "number": "2.3.2",
+          "title": "调度异构知识动态负采样原型对比冲突消解技术",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-01",
+          "technical_object": "异构知识冲突",
+          "technical_method": "动态负采样原型对比冲突消解方法",
+          "technical_role": "选择可信知识并保留来源依据",
+          "specificity_basis": "采用动态负采样与原型对比联合区分并消解异构知识冲突",
+          "technical_signature": "动态负采样原型对比",
+          "named_technology": "动态负采样原型对比",
+          "named_technology_basis": "采用动态负采样与原型对比联合区分并消解异构知识冲突"
+        },
+        {
+          "number": "2.4",
+          "title": "本章小结",
+          "level": 2,
+          "heading_kind": "functional"
+        }
+      ],
+      "formula_requirement": "must",
+      "formula_rationale": "需要形式化知识对象、抽取模型、对齐关系和质量指标。",
+      "formula_focus": [
+        "知识对象与关系定义",
+        "抽取置信度",
+        "语义对齐与评价指标"
+      ],
+      "source_research_point_ids": [
+        "RP-01",
+        "RP-01B"
+      ],
+      "source_research_order": 1,
+      "source_research_keywords": [
+        "调度",
+        "知识表征",
+        "规则约束"
+      ],
+      "title_alignment_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "schedule_technology_item_ids": [
+        "SP-01",
+        "SP-02",
+        "SP-03"
+      ],
+      "source_research_subpoint_title": "研究调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "source_research_normalized_title": "调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "title_normalization_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "parent_task_id": "TASK-01",
+      "parent_task_order": 1,
+      "task_role": "technical-research",
+      "assessment_requirement_item_ids": [
+        "AR-01"
+      ],
+      "assessment_coverage_plan": [
+        {
+          "assessment_item_id": "AR-01",
+          "planned_section": "2.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": ""
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "minimum_words": 10400,
+      "title_length_exception_reason": "来源课题名称超过25字，无法在不改变课题技术边界的前提下进一步缩短。",
+      "source_task_title": "研究调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "source_task_normalized_title": "调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "task_title_normalization_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "primary_technical_subject": "知识表征融合技术",
+      "primary_subject_source_text": "研究调度通用数据对象与规则约束的多元异构知识表征融合技术",
+      "primary_subject_section_number": "2.1",
+      "primary_subject_target_share": 0.34,
+      "primary_subject_share_exception_reason": "",
+      "primary_subject_target_words": 3120,
+      "expected_goal_item_ids": [
+        "GO-01"
+      ],
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-01",
+          "source_type": "expected-output",
+          "term": "调度知识融合",
+          "granularity": "broad",
+          "target_heading_number": "2.1"
+        },
+        {
+          "source_item_id": "SP-01",
+          "source_type": "schedule-plan",
+          "term": "实体标记鲁棒预训练语言编码",
+          "granularity": "narrow",
+          "target_heading_number": "2.1.1"
+        },
+        {
+          "source_item_id": "SP-02",
+          "source_type": "schedule-plan",
+          "term": "共形置信校准",
+          "granularity": "broad",
+          "target_heading_number": "2.2"
+        },
+        {
+          "source_item_id": "SP-03",
+          "source_type": "schedule-plan",
+          "term": "电网知识消歧",
+          "granularity": "broad",
+          "target_heading_number": "2.3"
+        },
+        {
+          "source_item_id": "AR-01",
+          "source_type": "assessment-requirement",
+          "term": "动态负采样原型对比冲突消解",
+          "granularity": "narrow",
+          "target_heading_number": "2.3.2"
+        }
+      ],
+      "technology_option_sets": [
+        {
+          "section_number": "2.1",
+          "problem_or_role": "形成统一对象表征",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "2.1-A",
+              "technology_name": "关系类型感知HGT",
+              "technical_signature_cn": "关系类型感知异构图变换注意力",
+              "key_mechanisms": [
+                "采用关系类型感知机制与HGT异构图Transformer结构形成调度知识表征融合路线"
+              ],
+              "fit_reason": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "2.1-A",
+          "selected_candidate_id": "2.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "2.2",
+          "problem_or_role": "抽取规则并校准置信度",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "2.2-A",
+              "technology_name": "温度缩放共形预测",
+              "technical_signature_cn": "温度缩放共形预测",
+              "key_mechanisms": [
+                "采用温度缩放与共形预测组合完成调度规程抽取结果的置信校准"
+              ],
+              "fit_reason": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "2.2-A",
+          "selected_candidate_id": "2.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "2.3",
+          "problem_or_role": "完成跨源对齐与冲突消解",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "2.3-A",
+              "technology_name": "原型对比动态负采样",
+              "technical_signature_cn": "原型对比动态负采样",
+              "key_mechanisms": [
+                "采用原型对比与动态负采样组合区分跨源知识冲突消解路线"
+              ],
+              "fit_reason": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "2.3-A",
+          "selected_candidate_id": "2.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "调度关联图谱与电子规则库构建技术",
+      "chapter_type": "data-knowledge-construction",
+      "target_words": 12500,
+      "structure_archetype": "data-knowledge",
+      "section_outline": [
+        {
+          "number": "3",
+          "title": "调度关联图谱与电子规则库构建技术",
+          "level": 1,
+          "heading_kind": "technical"
+        },
+        {
+          "number": "3.1",
+          "title": "基于时序门控图邻域采样聚合的调度规则库构建技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-02",
+          "power_element": "调度电子规则库",
+          "schedule_item_ids": [
+            "SP-04"
+          ],
+          "parent_task_id": "TASK-02",
+          "technical_object": "调度电子规则库",
+          "technical_method": "时序门控GraphSAGE",
+          "technical_role": "持续构建关联图谱",
+          "specificity_basis": "采用时序门控机制与GraphSAGE完成电子规则库增量图学习与构建",
+          "research_subpoint_index": 1,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-04"
+          ],
+          "assessment_item_ids": [],
+          "specific_computing_technology": "时序门控GraphSAGE",
+          "technology_specificity_basis": "采用时序门控机制与GraphSAGE完成电子规则库增量图学习与构建",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把调度知识持续构造成可推理、可检索、可维护的规则知识底座？",
+          "chain_order": 1,
+          "chain_role": "图谱构建",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "增量关联图谱",
+          "primary_subject_section": true,
+          "primary_technical_subject": "电子规则库构建技术",
+          "primary_subject_coverage_role": "overall",
+          "technical_signature": "时序门控图邻域采样聚合"
+        },
+        {
+          "number": "3.1.1",
+          "title": "关系类型感知异构图变换注意力调度规则图结构学习方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-02",
+          "technical_object": "调度知识关系",
+          "technical_method": "关系类型感知HGT图结构学习方法",
+          "technical_role": "确定实体关系及其图结构",
+          "specificity_basis": "采用关系类型感知机制与HGT学习调度规则图结构",
+          "technical_signature": "关系类型感知异构图变换注意力",
+          "named_technology": "关系类型感知HGT",
+          "named_technology_basis": "采用关系类型感知机制与HGT学习调度规则图结构"
+        },
+        {
+          "number": "3.1.2",
+          "title": "基于时序门控图邻域采样聚合的调度知识更新方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-02",
+          "technical_object": "新增调度知识",
+          "technical_method": "时序门控GraphSAGE知识更新方法",
+          "technical_role": "将新增知识写入已有图谱",
+          "specificity_basis": "采用时序门控GraphSAGE完成新增调度知识的局部传播与更新",
+          "technical_signature": "时序门控图邻域采样聚合",
+          "named_technology": "时序门控GraphSAGE",
+          "named_technology_basis": "采用时序门控GraphSAGE完成新增调度知识的局部传播与更新"
+        },
+        {
+          "number": "3.2",
+          "title": "电网规则约束解耦注意力预训练语言编码神经符号校核技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-02",
+          "power_element": "电网规则",
+          "schedule_item_ids": [
+            "SP-05"
+          ],
+          "parent_task_id": "TASK-02",
+          "technical_object": "电网规则",
+          "technical_method": "规则约束DeBERTa",
+          "technical_role": "执行规则推理与一致性校核",
+          "specificity_basis": "采用规则约束与DeBERTa编码结合神经符号校核，区别于通用神经符号推理",
+          "research_subpoint_index": 2,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-05"
+          ],
+          "assessment_item_ids": [],
+          "specific_computing_technology": "规则约束DeBERTa",
+          "technology_specificity_basis": "采用规则约束与DeBERTa编码结合神经符号校核，区别于通用神经符号推理",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把调度知识持续构造成可推理、可检索、可维护的规则知识底座？",
+          "chain_order": 2,
+          "chain_role": "规则推理",
+          "depends_on_previous": true,
+          "handoff_from_previous": "增量关联图谱",
+          "output_to_next": "校核后的规则知识",
+          "primary_subject_section": false,
+          "technical_signature": "规则约束解耦注意力预训练语言编码"
+        },
+        {
+          "number": "3.2.1",
+          "title": "基于规则约束解耦注意力预训练语言编码的电网校核场景生成方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-02",
+          "technical_object": "电网运行场景",
+          "technical_method": "规则约束DeBERTa校核场景生成方法",
+          "technical_role": "生成用于规则一致性校核的运行场景",
+          "specificity_basis": "采用规则约束DeBERTa编码运行条件并生成校核场景",
+          "technical_signature": "规则约束解耦注意力预训练语言编码",
+          "named_technology": "规则约束DeBERTa",
+          "named_technology_basis": "采用规则约束DeBERTa编码运行条件并生成校核场景"
+        },
+        {
+          "number": "3.2.2",
+          "title": "反事实约束解耦注意力预训练语言编码调度冲突规则识别方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-02",
+          "technical_object": "调度规则",
+          "technical_method": "反事实约束DeBERTa冲突识别方法",
+          "technical_role": "识别同一场景下相互冲突的规则",
+          "specificity_basis": "采用反事实约束与DeBERTa联合识别相互冲突的调度规则",
+          "technical_signature": "反事实约束解耦注意力预训练语言编码",
+          "named_technology": "反事实约束DeBERTa",
+          "named_technology_basis": "采用反事实约束与DeBERTa联合识别相互冲突的调度规则"
+        },
+        {
+          "number": "3.3",
+          "title": "基于混合检索后交互语义重排序的调度规则检索技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-02",
+          "power_element": "调度规则",
+          "schedule_item_ids": [
+            "SP-06"
+          ],
+          "parent_task_id": "TASK-02",
+          "technical_object": "调度规则",
+          "technical_method": "混合检索ColBERT重排序",
+          "technical_role": "提供高召回可解释检索",
+          "specificity_basis": "采用稠密/稀疏混合检索与ColBERT重排序形成电子规则库检索链路",
+          "research_subpoint_index": 3,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-06"
+          ],
+          "assessment_item_ids": [
+            "AR-02"
+          ],
+          "specific_computing_technology": "混合检索ColBERT重排序",
+          "technology_specificity_basis": "采用稠密/稀疏混合检索与ColBERT重排序形成电子规则库检索链路",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把调度知识持续构造成可推理、可检索、可维护的规则知识底座？",
+          "chain_order": 3,
+          "chain_role": "知识检索",
+          "depends_on_previous": true,
+          "handoff_from_previous": "关联图谱与校核规则知识",
+          "output_to_next": "可服务的检索结果",
+          "primary_subject_section": false,
+          "technical_signature": "混合检索后交互语义重排序"
+        },
+        {
+          "number": "3.3.1",
+          "title": "调度电子规则多视图后交互语义检索多索引存储技术",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-02",
+          "technical_object": "电子规则库",
+          "technical_method": "多视图ColBERT多索引存储技术",
+          "technical_role": "组织结构化索引和语义索引",
+          "specificity_basis": "采用多视图ColBERT表征组织电子规则库的多索引协同存储",
+          "technical_signature": "多视图后交互语义检索",
+          "named_technology": "多视图ColBERT",
+          "named_technology_basis": "采用多视图ColBERT表征组织电子规则库的多索引协同存储"
+        },
+        {
+          "number": "3.3.2",
+          "title": "混合检索后交互语义重排序调度规则检索方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-02",
+          "technical_object": "调度规则条目",
+          "technical_method": "混合检索ColBERT重排序语义检索方法",
+          "technical_role": "筛选候选规则并完成语义排序",
+          "specificity_basis": "采用稠密/稀疏混合检索与ColBERT重排序完成调度规则语义检索",
+          "technical_signature": "混合检索后交互语义重排序",
+          "named_technology": "混合检索ColBERT重排序",
+          "named_technology_basis": "采用稠密/稀疏混合检索与ColBERT重排序完成调度规则语义检索"
+        },
+        {
+          "number": "3.4",
+          "title": "本章小结",
+          "level": 2,
+          "heading_kind": "functional"
+        }
+      ],
+      "formula_requirement": "must",
+      "formula_rationale": "需要形式化图结构、校核判定、检索评分和性能指标。",
+      "formula_focus": [
+        "图结构",
+        "一致性校核",
+        "检索评分",
+        "性能指标"
+      ],
+      "source_research_point_ids": [
+        "RP-02"
+      ],
+      "source_research_order": 2,
+      "source_research_keywords": [
+        "调度",
+        "关联图谱",
+        "电子规则库"
+      ],
+      "title_alignment_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "schedule_technology_item_ids": [
+        "SP-04",
+        "SP-05",
+        "SP-06"
+      ],
+      "source_research_subpoint_title": "研究调度关联图谱与电子规则库构建技术",
+      "source_research_normalized_title": "调度关联图谱与电子规则库构建技术",
+      "title_normalization_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "parent_task_id": "TASK-02",
+      "parent_task_order": 2,
+      "task_role": "technical-research",
+      "assessment_requirement_item_ids": [
+        "AR-02"
+      ],
+      "assessment_coverage_plan": [
+        {
+          "assessment_item_id": "AR-02",
+          "planned_section": "3.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": ""
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "minimum_words": 10000,
+      "source_task_title": "研究调度关联图谱与电子规则库构建技术",
+      "source_task_normalized_title": "调度关联图谱与电子规则库构建技术",
+      "task_title_normalization_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "primary_technical_subject": "电子规则库构建技术",
+      "primary_subject_source_text": "研究调度关联图谱与电子规则库构建技术",
+      "primary_subject_section_number": "3.1",
+      "primary_subject_target_share": 0.34,
+      "primary_subject_share_exception_reason": "",
+      "primary_subject_target_words": 3000,
+      "expected_goal_item_ids": [
+        "GO-02"
+      ],
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-02",
+          "source_type": "expected-output",
+          "term": "调度规则库构建",
+          "granularity": "broad",
+          "target_heading_number": "3.1"
+        },
+        {
+          "source_item_id": "SP-04",
+          "source_type": "schedule-plan",
+          "term": "时序门控图邻域采样聚合",
+          "granularity": "narrow",
+          "target_heading_number": "3.1.2"
+        },
+        {
+          "source_item_id": "SP-05",
+          "source_type": "schedule-plan",
+          "term": "神经符号校核",
+          "granularity": "broad",
+          "target_heading_number": "3.2"
+        },
+        {
+          "source_item_id": "SP-06",
+          "source_type": "schedule-plan",
+          "term": "调度规则检索",
+          "granularity": "broad",
+          "target_heading_number": "3.3"
+        },
+        {
+          "source_item_id": "AR-02",
+          "source_type": "assessment-requirement",
+          "term": "混合检索后交互语义重排序",
+          "granularity": "narrow",
+          "target_heading_number": "3.3.2"
+        }
+      ],
+      "technology_option_sets": [
+        {
+          "section_number": "3.1",
+          "problem_or_role": "持续构建关联图谱",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "3.1-A",
+              "technology_name": "时序门控GraphSAGE",
+              "technical_signature_cn": "时序门控图邻域采样聚合",
+              "key_mechanisms": [
+                "采用时序门控机制与GraphSAGE完成电子规则库增量图学习与构建"
+              ],
+              "fit_reason": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "3.1-A",
+          "selected_candidate_id": "3.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "3.2",
+          "problem_or_role": "执行规则推理与一致性校核",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "3.2-A",
+              "technology_name": "规则约束DeBERTa",
+              "technical_signature_cn": "规则约束解耦注意力预训练语言编码",
+              "key_mechanisms": [
+                "采用规则约束与DeBERTa编码结合神经符号校核，区别于通用神经符号推理"
+              ],
+              "fit_reason": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "3.2-A",
+          "selected_candidate_id": "3.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "3.3",
+          "problem_or_role": "提供高召回可解释检索",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "3.3-A",
+              "technology_name": "混合检索ColBERT重排序",
+              "technical_signature_cn": "混合检索后交互语义重排序",
+              "key_mechanisms": [
+                "采用稠密/稀疏混合检索与ColBERT重排序形成电子规则库检索链路"
+              ],
+              "fit_reason": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "3.3-A",
+          "selected_candidate_id": "3.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "title": "面向调度业务应用的电子规则库服务集成技术",
+      "chapter_type": "engineering-integration",
+      "target_words": 14250,
+      "structure_archetype": "integration-application",
+      "section_outline": [
+        {
+          "number": "4",
+          "title": "面向调度业务应用的电子规则库服务集成技术",
+          "level": 1,
+          "heading_kind": "technical"
+        },
+        {
+          "number": "4.1",
+          "title": "调度电子规则库混合检索重排序检索增强生成集成技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-03",
+          "power_element": "调度规则",
+          "schedule_item_ids": [
+            "SP-07"
+          ],
+          "parent_task_id": "TASK-03",
+          "technical_object": "调度规则",
+          "technical_method": "混合检索重排序RAG",
+          "technical_role": "形成知识服务接口与调用链",
+          "specificity_basis": "采用“RAG”中的具体变体/结构或关键机制区分同技术族的常规实现",
+          "research_subpoint_index": 1,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-07"
+          ],
+          "assessment_item_ids": [],
+          "specific_computing_technology": "混合检索重排序RAG",
+          "technology_specificity_basis": "采用混合检索与重排序机制细化通用RAG链路，区分于直接检索增强生成",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何将规则知识可靠接入调度业务并形成可控、可适配的工程服务能力？",
+          "chain_order": 1,
+          "chain_role": "服务编排",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "可调用的规则知识服务",
+          "primary_subject_section": true,
+          "primary_technical_subject": "电子规则库服务集成技术",
+          "primary_subject_coverage_role": "overall"
+        },
+        {
+          "number": "4.1.1",
+          "title": "电子规则库知识检索接口",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-03",
+          "technical_object": "电子规则库",
+          "technical_method": "知识检索接口",
+          "technical_role": "向业务模块提供规则知识检索能力",
+          "specificity_basis": "具体化为检索接口组件"
+        },
+        {
+          "number": "4.1.2",
+          "title": "调度规则一致性校核接口",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-03",
+          "technical_object": "调度规则校核服务",
+          "technical_method": "一致性校核接口",
+          "technical_role": "向业务模块提供规则校核能力",
+          "specificity_basis": "具体化为校核接口组件"
+        },
+        {
+          "number": "4.2",
+          "title": "电网业务贝叶斯不确定性回退模块",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-03",
+          "power_element": "电网业务",
+          "schedule_item_ids": [
+            "SP-08"
+          ],
+          "parent_task_id": "TASK-03",
+          "technical_object": "电网业务",
+          "technical_method": "贝叶斯不确定性",
+          "technical_role": "识别风险并触发安全回退",
+          "specificity_basis": "采用“贝叶斯不确定性”中的具体变体/结构或关键机制区分同技术族的常规实现",
+          "research_subpoint_index": 2,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "SP-08"
+          ],
+          "assessment_item_ids": [],
+          "specific_computing_technology": "贝叶斯不确定性",
+          "technology_specificity_basis": "采用“贝叶斯不确定性”中的具体变体/结构或关键机制区分同技术族的常规实现",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何将规则知识可靠接入调度业务并形成可控、可适配的工程服务能力？",
+          "chain_order": 2,
+          "chain_role": "风险控制",
+          "depends_on_previous": true,
+          "handoff_from_previous": "规则知识服务输出",
+          "output_to_next": "风险受控的服务结果",
+          "primary_subject_section": false
+        },
+        {
+          "number": "4.2.1",
+          "title": "调度智能服务权限控制机制",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-03",
+          "technical_object": "调度智能服务",
+          "technical_method": "权限控制机制",
+          "technical_role": "限制不同角色的服务访问权限",
+          "specificity_basis": "具体化为权限控制组件"
+        },
+        {
+          "number": "4.2.2",
+          "title": "智能服务异常降级与回退方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-03",
+          "technical_object": "智能服务异常状态",
+          "technical_method": "异常降级与回退方法",
+          "technical_role": "在服务异常时切换安全运行方式",
+          "specificity_basis": "具体化为异常处置步骤"
+        },
+        {
+          "number": "4.3",
+          "title": "调度知识角色分工多智能体适配技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "research_point_id": "RP-03",
+          "power_element": "调度知识服务",
+          "schedule_item_ids": [
+            "SP-09"
+          ],
+          "assessment_item_ids": [
+            "AR-03"
+          ],
+          "parent_task_id": "TASK-03",
+          "technical_object": "调度知识服务",
+          "technical_method": "角色分工多智能体协同",
+          "technical_role": "完成多业务流程协同适配",
+          "specificity_basis": "采用“多智能体”中的具体变体/结构或关键机制区分同技术族的常规实现",
+          "research_subpoint_index": 3,
+          "derivation_basis": "依据当前来源研究内容小点、预期目标、进度计划技术和考核要求拆解",
+          "source_item_ids": [
+            "RC-03",
+            "SP-09",
+            "AR-03"
+          ],
+          "specific_computing_technology": "角色分工多智能体协同",
+          "technology_specificity_basis": "采用“角色分工多智能体协同”中的具体变体/结构或关键机制区分同技术族的常规实现",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何将规则知识可靠接入调度业务并形成可控、可适配的工程服务能力？",
+          "chain_order": 3,
+          "chain_role": "业务适配",
+          "depends_on_previous": true,
+          "handoff_from_previous": "风险受控的服务结果",
+          "output_to_next": "业务可用的知识服务",
+          "primary_subject_section": false
+        },
+        {
+          "number": "4.3.1",
+          "title": "调度业务流程知识服务接入接口",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-03",
+          "technical_object": "调度业务流程",
+          "technical_method": "知识服务接入接口",
+          "technical_role": "连接知识服务与业务调用流程",
+          "specificity_basis": "具体化为业务接入接口"
+        },
+        {
+          "number": "4.3.2",
+          "title": "调度业务反馈驱动的规则服务适配模块",
+          "level": 3,
+          "heading_kind": "technical",
+          "parent_task_id": "TASK-03",
+          "technical_object": "调度业务反馈",
+          "technical_method": "规则服务适配模块",
+          "technical_role": "根据业务反馈调整规则服务接入和响应方式",
+          "specificity_basis": "具体化为业务反馈驱动的服务适配组件"
+        },
+        {
+          "number": "4.4",
+          "title": "本章小结",
+          "level": 2,
+          "heading_kind": "functional"
+        }
+      ],
+      "formula_requirement": "should",
+      "formula_rationale": "需要给出服务时延、可用率和资源指标计算关系。",
+      "formula_focus": [
+        "响应时间",
+        "可用率",
+        "吞吐量"
+      ],
+      "source_research_point_ids": [
+        "RP-03"
+      ],
+      "source_research_order": 3,
+      "source_research_keywords": [
+        "调度业务",
+        "规则库服务",
+        "集成"
+      ],
+      "title_alignment_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "schedule_technology_item_ids": [
+        "SP-07",
+        "SP-08",
+        "SP-09"
+      ],
+      "source_research_subpoint_title": "开展面向调度业务应用的电子规则库服务集成技术研究",
+      "source_research_normalized_title": "面向调度业务应用的电子规则库服务集成技术",
+      "title_normalization_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "parent_task_id": "TASK-03",
+      "parent_task_order": 3,
+      "task_role": "engineering-implementation",
+      "assessment_requirement_item_ids": [
+        "AR-03"
+      ],
+      "assessment_coverage_plan": [
+        {
+          "assessment_item_id": "AR-03",
+          "planned_section": "4.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": ""
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "minimum_words": 11400,
+      "source_task_title": "开展面向调度业务应用的电子规则库服务集成技术研究",
+      "source_task_normalized_title": "面向调度业务应用的电子规则库服务集成技术",
+      "task_title_normalization_basis": "删除开头的任务动作词，仅保留原研究内容小点中的对象和技术范围。",
+      "primary_technical_subject": "电子规则库服务集成技术",
+      "primary_subject_source_text": "开展面向调度业务应用的电子规则库服务集成技术研究",
+      "primary_subject_section_number": "4.1",
+      "primary_subject_target_share": 0.34,
+      "primary_subject_share_exception_reason": "",
+      "primary_subject_target_words": 2520,
+      "expected_goal_item_ids": [
+        "GO-03"
+      ],
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-03",
+          "source_type": "expected-output",
+          "term": "调度电子规则库",
+          "granularity": "broad",
+          "target_heading_number": "4.1"
+        },
+        {
+          "source_item_id": "SP-07",
+          "source_type": "schedule-plan",
+          "term": "混合检索重排序检索增强生成",
+          "granularity": "broad",
+          "target_heading_number": "4.1"
+        },
+        {
+          "source_item_id": "SP-08",
+          "source_type": "schedule-plan",
+          "term": "贝叶斯不确定性回退",
+          "granularity": "broad",
+          "target_heading_number": "4.2"
+        },
+        {
+          "source_item_id": "SP-09",
+          "source_type": "schedule-plan",
+          "term": "角色分工多智能体适配",
+          "granularity": "broad",
+          "target_heading_number": "4.3"
+        },
+        {
+          "source_item_id": "AR-03",
+          "source_type": "assessment-requirement",
+          "term": "规则服务适配",
+          "granularity": "narrow",
+          "target_heading_number": "4.3.2"
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "title": "总结与展望",
+      "chapter_type": "conclusion",
+      "target_words": 750,
+      "structure_archetype": "fixed-conclusion",
+      "section_outline": [
+        {
+          "number": "5",
+          "title": "总结与展望",
+          "level": 1,
+          "heading_kind": "conclusion"
+        }
+      ],
+      "formula_requirement": "exempt",
+      "formula_rationale": "总结章不承担核心数学模型定义。",
+      "formula_focus": [],
+      "minimum_words": 700,
+      "maximum_words": 800
+    }
+  ],
+  "references_required": true,
+  "core_level2_power_title_policy": {
+    "denominator": "technical chapters X.1-X.3 core headings only",
+    "all_core_titles_require_power_semantics": true,
+    "scope": "technical_chapters_X.1_to_X.3"
+  },
+  "report_theme_type": "non-evaluation"
+}

@@ -1,0 +1,26 @@
+- insert:
+    - id: skill-office
+      name: '@deepseek-ai/dsh-skill-office'
+      config:
+        assetRoot: !!js process.cwd() + '/office-skills'
+        executionRoot: /opt/dsh/skills/office
+        systemTools:
+          soffice: /usr/bin/soffice
+          pdftoppm: /usr/bin/pdftoppm
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- insert:
+    - id: bundled-report-skills
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: dsh-reports
+        includeDefaultRoots: false
+        watch: false
+        bundledSkillDir: !!js process.cwd() + '/report-skills'
+        bundledExecutionRoot: /opt/dsh/skills/reports
+        packagedBundles: true

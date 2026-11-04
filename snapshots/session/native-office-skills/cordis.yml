@@ -1,0 +1,14 @@
+- insert:
+    - id: skill-office
+      name: '@deepseek-ai/dsh-skill-office'
+      config:
+        assetRoot: !!js process.cwd() + '/office-skills'
+        systemTools:
+          soffice: /usr/bin/soffice
+          pdftoppm: /usr/bin/pdftoppm
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true

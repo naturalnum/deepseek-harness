@@ -94,6 +94,10 @@ A valid skill under any scanned root appears in the session catalog sorted by na
 
 -----
 
+`packagedBundles: true` requires build-generated `.dsh-package.json` and `.dsh-package.zip` carriers in each bundled directory. `readSkillPackage` checks every returned file/archive against its byte count and SHA256. `bundledExecutionRoot` maps an explicit Host `bundledSkillDir` to the identical, read-only guest tree without changing discovery, ranks or loading. Deployment binds both trees to the same release. Report assets retain their source bytes and sibling layout; internal-use origin is recorded in [source notice](../skill-office/assets/reports/SOURCES.json).
+
+`bundledInstructions` appends explicit deployment guidance only when a bundled body is loaded; it requires an explicit `bundledSkillDir`. Catalog descriptions, downloaded package bytes and custom/project/user skills remain unchanged. The native skill tool logs the appended body with the original load result, so resumed Sessions retain it.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

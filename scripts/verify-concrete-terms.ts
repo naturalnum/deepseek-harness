@@ -1,14 +1,23 @@
 /** Reject one ambiguous origin label from maintained tracked files. */
 
-import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { historicalSchemaRegion } from './historical-schema-region.ts'
+import { trackedRepositoryFiles } from './tracked-repository-files.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const blockedTerm = 'prove' + 'nance'
 const excludedPrefixes = ['vendor/', '.agents/notes/archived/'] as const
+const originalReport = 'packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/'
+// Complete imported report packages retain original wording; any edited bytes lose the exemption.
+const originalReportHashes: ReadonlyMap<string, string> = new Map([
+  [originalReport + 'references/rule-migration-manifest-v3.6.0.json',
+    'a98ca676be64c25282a99dec245f03bc8ea90e9bd89c8e2368852b02da6092f5'],
+  [originalReport + 'scripts/validate_rule_restructure.py',
+    'bb2f2943c8942e5497baf85ef38bc8b878f560b563afcf9619d1f6655e5dfaf5'],
+])
 
 /** One blocked term occurrence in a tracked path or text line. */
 export interface ConcreteTermViolation {
@@ -34,10 +43,12 @@ function containsBlockedTerm(value: string): boolean {
  * Find the blocked term in one maintained tracked file.
  * @param file - repository-relative tracked path.
  * @param source - text contents or symlink target.
- * @returns violations outside vendored sources, frozen Agent Notes, historical schemas and their checked generated regions.
+ * @returns violations outside unchanged pinned report resources, vendor, frozen notes and checked historical schema regions.
  */
 export function findConcreteTermViolations(file: string, source: string): ConcreteTermViolation[] {
   if (isExcluded(file)) return []
+  const originalHash = originalReportHashes.get(file)
+  if (originalHash !== undefined && createHash('sha256').update(source).digest('hex') === originalHash) return []
   const violations: ConcreteTermViolation[] = []
   if (containsBlockedTerm(file)) violations.push({ file, line: null })
   const lines = source.split(/\r?\n/u)
@@ -50,9 +61,7 @@ export function findConcreteTermViolations(file: string, source: string): Concre
 }
 
 function trackedFiles(repoRoot: string): string[] {
-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
-    .split('\0')
-    .filter(file => file !== '')
+  const files = trackedRepositoryFiles(repoRoot)
   if (!files.includes('AGENTS.md')
     || !files.some(file => file.startsWith('packages/'))
     || !files.some(file => file.startsWith('docs/'))

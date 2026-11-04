@@ -1,6 +1,9 @@
 /** API coordination with the real Loader, native registry/parser and AccountSaves; files is an explicit in-memory port fixture. */
 import { createHash, randomUUID } from 'node:crypto'
-import { zipSync } from 'fflate'
+import { zipSync, unzipSync } from 'fflate'
+import * as SkillOffice from '@deepseek-ai/dsh-skill-office'
+import * as SkillFilesystem from '@deepseek-ai/dsh-skill-filesystem'
+import { fileURLToPath } from 'node:url'
 import { decodeBundle } from '../../pe-cloud-files/src/bundle-codec.ts'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -37,15 +40,24 @@ function deferred() {
   return { promise, release }
 }
 const own = <T>(value: T) => ({ value, release() {} })
-async function fixture(configuredLimits = apiLimits) {
+async function fixture(configuredLimits = apiLimits, builtins = false) {
   const home = mkdtempSync(join(tmpdir(), 'managed-skills-api-')), profileDir = join(home, 'profiles/test')
   mkdirSync(profileDir, { recursive: true }); initProfile(profileDir, [])
   writeFileSync(join(home, 'package.json'), '{"name":"managed-api-test"}')
-  const config = join(profileDir, 'cordis.yml'); writeFileSync(config, '[{"id":"skills","name":"cordis:skills"}]')
+  const config = join(profileDir, 'cordis.yml')
+  writeFileSync(config, JSON.stringify([{ id: 'skills', name: 'cordis:skills' }, ...!builtins ? [] : [
+    { id: 'office', name: 'cordis:office', config: {
+      assetRoot: fileURLToPath(new URL('../../../skill/skill-office/assets', import.meta.url)),
+      executionRoot: '/opt/dsh/skills/office', packagedBundles: true,
+      executionRuntime: { node: '/opt/dsh/runtime/dependencies/node/bin/node', cli: '/opt/dsh/runtime/dependencies/node/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js' } } },
+    { id: 'reports', name: 'cordis:reports', config: { includeDefaultRoots: false, watch: false, providerName: 'dsh-reports',
+      bundledSkillDir: fileURLToPath(new URL('../../../skill/skill-office/assets/reports', import.meta.url)),
+      bundledExecutionRoot: '/opt/dsh/skills/reports', packagedBundles: true } },
+  ]]))
   const ctx = await boot('managed-api-test', config, [], (owner) => {
     owner.provide('profileContext', { name: 'test', dir: profileDir, patchPath: join(profileDir, 'cordis.patch.yml'),
       installAnchor: join(home, 'package.json'), cwd: home, home, startedBundles: [], overlays: [], telemetryDisabledEnv: undefined })
-    Object.assign(owner.loader.builtins, { skills: SkillRegistry })
+    Object.assign(owner.loader.builtins, { skills: SkillRegistry, office: SkillOffice, reports: SkillFilesystem })
   })
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
   const lifetime = new AbortController(), signal = lifetime.signal
@@ -196,7 +208,11 @@ async function fixture(configuredLimits = apiLimits) {
   ctx.skills.registerProvider((control: SkillProviderControl) => {
     providerSignal = control.signal
     const actual = { signal: control.signal, invalidate() { if (failApply) throw Error('Native apply failed'); control.invalidate() } }
-    manager = new AccountManagedSkills(ctx, actual, saves, port, legacy, ctx.skills, { limits: configuredLimits, bundleLimits,
+    manager = new AccountManagedSkills(ctx, actual, saves, port, legacy, ctx.skills, {
+      limits: configuredLimits,
+      bundleLimits: builtins ? { ...bundleLimits, maxFiles: 512, maxDirectories: 256,
+        maxFileBytes: 2 * 1024 * 1024, maxContentBytes: 8 * 1024 * 1024,
+        maxArchiveBytes: 4 * 1024 * 1024 } : bundleLimits,
       assertWorkspace() { throw Error('No workspace authorized in fixture') }, resources }, sampleLimits)
     return manager
   })
@@ -355,7 +371,8 @@ it('rejects stale versions, unknown installations and nonmember paths before bor
   for (const relativePath of ['../SKILL.md', '/SKILL.md', 'nested/../SKILL.md', 'nested\\scripts\\run.sh', 'missing.py']) {
     await expect(f.manager.readFile({ ...request, relativePath }, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/forbidden' })
   }
-  expect(f.stats().sources).toBe(before); expect(f.stats().sourceResidents).toBe(0)
+  // Unknown ids now inspect the native packaged catalog before refusal; the read settles in the same save turn.
+  expect(f.stats().sources).toBe(before + 1); expect(f.stats().sourceResidents).toBe(0)
   expect(f.saves.snapshot().failures).toEqual([])
 })
 
@@ -702,4 +719,46 @@ it('returns a definite invalid-bundle refusal after real ZIP decoding without ch
   expect(after.entries).toEqual(before.entries)
   const valid = await f.manager.install(after.version, bundle('next'), f.check, f.signal)
   expect(valid).toMatchObject({ persisted: true, applied: true })
+})
+
+it('projects all thirteen complete built-ins from Loader providers and preserves native user precedence', async () => {
+  const f = await fixture({ ...apiLimits, maxReplyBytes: 8 * 1024 * 1024 }, true)
+  const view = await f.manager.installed({}, f.check, f.signal)
+  expect(view.complete).toBe(true)
+  expect(view.entries).toHaveLength(13)
+  for (const summary of await f.ctx.skills.list()) expect(summary).not.toHaveProperty('package')
+  for (const entry of view.entries) {
+    expect(entry).toMatchObject({ source: 'bundled', mutable: false, selection: { kind: 'effective' },
+      actions: { update: false, uninstall: false, download: true } })
+    const detail = await f.manager.details(entry.skillId, f.check, f.signal)
+    expect(detail.markdown).toContain('---')
+    expect(detail.files).toHaveLength(entry.fileCount)
+    const loaded = await f.ctx.skills.get(entry.name)
+    expect(loaded?.resourceBase).toEqual({ kind: 'directory',
+      path: `/opt/dsh/skills/${entry.provider === 'dsh-office' ? 'office' : 'reports'}/${entry.name}` })
+    expect(loaded?.content).not.toContain('/Users/')
+    // The fixture's physical user-upload limit is intentionally small; SKILL.md reads still retain the API byte bound.
+    const inspection = await f.ctx.skills.inspect()
+    const source = inspection.candidates.find(row => row.candidate.name === entry.name)?.candidate.package
+    if (source === undefined) throw Error('Missing built-in package')
+    const exported = await f.manager.download({ skillId: entry.skillId, contentVersion: entry.contentVersion }, f.check, f.signal)
+    expect(exported.sha256).toBe(source.archive.sha256)
+    const member = await f.manager.readFile({ skillId: entry.skillId, contentVersion: entry.contentVersion, relativePath: 'SKILL.md' }, f.check, f.signal)
+    expect(Buffer.from(member.dataBase64, 'base64').toString()).toBe(detail.markdown)
+    await expect(f.manager.readFile({ skillId: entry.skillId, contentVersion: entry.contentVersion, relativePath: '../SKILL.md' }, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+    const archive = unzipSync(Buffer.from(exported.dataBase64, 'base64'))
+    expect(Object.keys(archive).sort()).toEqual(detail.files.map(file => file.relativePath).sort())
+    for (const file of detail.files) {
+      const bytes = archive[file.relativePath]
+      if (bytes === undefined) throw Error('Missing archive member')
+      expect(hash(bytes)).toBe(file.sha256)
+    }
+    await expect(f.manager.uninstall(entry.skillId, view.version, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  }
+  const installation = await f.manager.install(view.version, bundle('office-docx', 'User-owned override'), f.check, f.signal)
+  expect(installation.persisted).toBe(true)
+  expect((await f.ctx.skills.get('office-docx', { scope: f.ctx }))?.content).toContain('User-owned override')
+  const changed = await f.manager.installed({}, f.check, f.signal)
+  expect(changed.entries.filter(entry => entry.name === 'office-docx')).toHaveLength(2)
+  expect(changed.entries.find(entry => entry.name === 'office-docx' && !entry.mutable)?.selection).toMatchObject({ kind: 'shadowed' })
 })

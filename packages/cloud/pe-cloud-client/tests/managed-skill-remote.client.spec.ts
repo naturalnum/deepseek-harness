@@ -131,3 +131,17 @@ it('distinguishes the dedicated invalid bundle refusal from uncertain outcomes w
   await expect(list.install?.(zip(), signal())).rejects.toThrow()
   expect(f.install).toHaveBeenCalledTimes(1)
 })
+
+it('projects immutable built-ins into Office categories and offers complete reads without edit capabilities', async () => {
+  const f = remoteFixture(), entry = { ...f.entry, source: 'bundled', mutable: false,
+    actions: { update: false, uninstall: false, download: true } }
+  f.installed.mockResolvedValue({ ok: true, value: { ...f.state, entries: [entry] } })
+  f.details.mockResolvedValue({ ok: true, value: { entry, markdown: 'instructions', version: directoryVersion('builtins'),
+    files: [{ relativePath: 'SKILL.md', bytes: 12, sha256: 'a'.repeat(64) }] } })
+  const api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
+  expect(list.items[0]).toMatchObject({ category: 'writing-office', sourceLabel: 'bundled', installed: true })
+  const detail = await api.details(entry.skillId, signal())
+  expect(detail.update).toBeUndefined(); expect(detail.uninstall).toBeUndefined()
+  expect(detail.download).toBeTypeOf('function')
+  expect(await detail.readFile?.('SKILL.md', signal())).toEqual({ kind: 'text', text: 'instructions' })
+})

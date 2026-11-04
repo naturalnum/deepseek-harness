@@ -72,6 +72,8 @@ Skill summaries retain the winning provider’s optional instruction-file `path`
 
 -----
 
+Bundled providers may attach a Host-only `SkillPackage` to candidates for complete inventory, versioned file reads and archive downloads. The native registry still selects duplicate names; packages do not enter model-visible summaries.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

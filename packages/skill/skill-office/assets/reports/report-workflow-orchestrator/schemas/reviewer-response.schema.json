@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reviewer Response",
+  "type": "object",
+  "required": [
+    "request_id",
+    "skill_name",
+    "action",
+    "status"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "skill_name": {
+      "const": "report-reviewer"
+    },
+    "action": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "success",
+        "blocked",
+        "failed"
+      ]
+    },
+    "review_result": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "reviewed_artifact_id",
+        "reviewed_version",
+        "decision",
+        "overall_score",
+        "issues",
+        "must_fix",
+        "revision_instruction"
+      ],
+      "properties": {
+        "reviewed_artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewed_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision": {
+          "enum": [
+            "pass",
+            "minor_revision",
+            "major_revision",
+            "revise",
+            "blocked"
+          ]
+        },
+        "overall_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "issues": {
+          "type": "array"
+        },
+        "must_fix": {
+          "type": "array"
+        },
+        "revision_instruction": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "error": {
+      "type": [
+        "object",
+        "string",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "success"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "review_result"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

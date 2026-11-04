@@ -1,0 +1,179 @@
+{
+  "version": "213dce66549548733a27c5a510c7b7bad777ece67e34bf3c1aef2a4b0d51427d",
+  "files": [
+    {
+      "relativePath": "DSH-SOURCE.json",
+      "bytes": 536,
+      "sha256": "9e962cb70f563f808986dc4913748765dfc9a702fbdd0b91b7dc8e656e49f026"
+    },
+    {
+      "relativePath": "SKILL.md",
+      "bytes": 18428,
+      "sha256": "13e18971796663a14d933134c876f98ca0226a7ab35bddfab67d7fa47f16290e"
+    },
+    {
+      "relativePath": "agents/openai.yaml",
+      "bytes": 296,
+      "sha256": "8b23f2e6d32aad143a2a7929a26eda13a9a7824f4cd15afb3277cb4af8c60051"
+    },
+    {
+      "relativePath": "assets/report.docx",
+      "bytes": 93802,
+      "sha256": "b693357a98630900cc59acecd8c47d8b1d4dbb3781b485e4b02a31e9246f7c31"
+    },
+    {
+      "relativePath": "references/guide.md",
+      "bytes": 19951,
+      "sha256": "e7872db0d73620fb8e309484e928ac6e1cf7b484642a02ff8e2e9e609d55e919"
+    },
+    {
+      "relativePath": "references/technical-report-format.md",
+      "bytes": 12636,
+      "sha256": "c859e5b38c117a61a3d7d694871463cfa4daa3ba0ed633990ff841f50e960ecf"
+    },
+    {
+      "relativePath": "requirements.txt",
+      "bytes": 94,
+      "sha256": "2870d564321feef69a523863a17f85fa2bf8284dfcdb9e979e378ba4e81d4202"
+    },
+    {
+      "relativePath": "schemas/formatter-response.schema.json",
+      "bytes": 4635,
+      "sha256": "33558f95ce43d3735f588d86e6868102c3b51bbabc9abc3b99d73b416eb8102d"
+    },
+    {
+      "relativePath": "schemas/orchestration-request.schema.json",
+      "bytes": 792,
+      "sha256": "96e8c0770b0cf890f89b8d3d6f509a0bb167bee3600e9c8062b9f9dfc9f754e7"
+    },
+    {
+      "relativePath": "scripts/check_environment.py",
+      "bytes": 3412,
+      "sha256": "9d1d4676cc905ae82b7fde5d425550fd7d59099409d1c9768ae39cdbac3ea222"
+    },
+    {
+      "relativePath": "scripts/config.py",
+      "bytes": 1061,
+      "sha256": "501a5f6b5e7c64a1340a495e4e25d49cbd8b3c0ad6a492e46504fbaa1138ddb3"
+    },
+    {
+      "relativePath": "scripts/cover_bottom_layout.py",
+      "bytes": 11070,
+      "sha256": "219a886e0944471260c561828c1b98d20836f0a93e80fc85b6f7016877c277c3"
+    },
+    {
+      "relativePath": "scripts/cover_layout.py",
+      "bytes": 2709,
+      "sha256": "7bc7ca6495aa844732475e95afc04309ebad4744e8caabf42eee6429f756a06a"
+    },
+    {
+      "relativePath": "scripts/engine/__init__.py",
+      "bytes": 40368,
+      "sha256": "6a8a0d137b3737c80f4f60889287f67a68de2d87419a0112361b1257b7de0c0b"
+    },
+    {
+      "relativePath": "scripts/engine/chart_renderer.py",
+      "bytes": 415,
+      "sha256": "56e2dab3a5e23d80219e99c32cb6f20a7dde270be34b6b4560593f9527636d8e"
+    },
+    {
+      "relativePath": "scripts/engine/image_handler.py",
+      "bytes": 14902,
+      "sha256": "5343664c3a1a477925772f9c799a4aa146f6e6404ad8f1b12e437999759596f5"
+    },
+    {
+      "relativePath": "scripts/engine/parser.py",
+      "bytes": 8769,
+      "sha256": "42be3961d7be4cf82a7670ea3a1072b4f3251eb5291ff2375b90a922682ab7a2"
+    },
+    {
+      "relativePath": "scripts/engine/request_client.py",
+      "bytes": 1011,
+      "sha256": "ff2ab89d1978ee3b7c5023f6369269ca696f1b790812d1aa2a2eecd8327e169e"
+    },
+    {
+      "relativePath": "scripts/engine/style_mapper.py",
+      "bytes": 17670,
+      "sha256": "968676adbea54ca02223fa3ddeb38cbf99b6733218b027bead4a88642b92f6d3"
+    },
+    {
+      "relativePath": "scripts/engine/tag_style.py",
+      "bytes": 19015,
+      "sha256": "ba42101ea28a2fe43985a101887521d271d4328c0ffee4462d35f58425351f8c"
+    },
+    {
+      "relativePath": "scripts/engine/utils.py",
+      "bytes": 20225,
+      "sha256": "694caf9ef4cfdc0503f1989cc900260991885c231ef1a81568dec30ce064a1fb"
+    },
+    {
+      "relativePath": "scripts/engine/word_builder.py",
+      "bytes": 39104,
+      "sha256": "46847eac9913fb60fac3b3c9197ecd3d73a45edef2ab8701e873df9fac05badd"
+    },
+    {
+      "relativePath": "scripts/format_existing_report.py",
+      "bytes": 53965,
+      "sha256": "a9aad3019e2ad412311040a3e373cfa26283fea4611b15b27b90cbc227e754b8"
+    },
+    {
+      "relativePath": "scripts/main.py",
+      "bytes": 17034,
+      "sha256": "9721275f89d29c2a68b9ad2299ef6ee4493d4d41d8a49371c1d8f20963f4ac40"
+    },
+    {
+      "relativePath": "scripts/markdown_math.py",
+      "bytes": 9525,
+      "sha256": "2cf88052813af6198068ccd193679e2ae6a235d9e498c602bd6b4a4a96e802e2"
+    },
+    {
+      "relativePath": "scripts/normalize_report_template.py",
+      "bytes": 18453,
+      "sha256": "65d218457a81d5efd0c22c5c3515443924ced9f7ac93080a18a150dd1c6de778"
+    },
+    {
+      "relativePath": "scripts/orchestration_adapter.py",
+      "bytes": 23053,
+      "sha256": "697d479686d09c90fd8f04f77c3c9281cd75225f29c4f31307bebdc3fb35d509"
+    },
+    {
+      "relativePath": "scripts/render_for_visual_qa.py",
+      "bytes": 5308,
+      "sha256": "b252e803f72579d5ba911e1bbaa437cdf2d987571034c514d4618eaa560c57b6"
+    },
+    {
+      "relativePath": "scripts/repair_json.py",
+      "bytes": 2462,
+      "sha256": "d35fd4b6f963372cd513e250e2a48bb53a4c9bd3c7b24d076080371cf0787a24"
+    },
+    {
+      "relativePath": "scripts/report_generator.py",
+      "bytes": 14971,
+      "sha256": "a7c0a37e2a87140b23e3007932e78007ef64501c47cf87eab1c2e67390bf8f84"
+    },
+    {
+      "relativePath": "scripts/report_validator.py",
+      "bytes": 46093,
+      "sha256": "e17cbcaec7ea270ecd4d6df28d1cc05e7a81faf26a2c567271ddfd894f8c81f0"
+    },
+    {
+      "relativePath": "scripts/toc_styles.py",
+      "bytes": 16193,
+      "sha256": "0ea5cd492788cd2da05d15ec1820d9ad80d8973275bb348bacce1f4aadc231f9"
+    },
+    {
+      "relativePath": "scripts/utils.py",
+      "bytes": 5272,
+      "sha256": "63d26e8f43602277384df655dd518e8363062440caed4d2fab355db3b01a88bc"
+    },
+    {
+      "relativePath": "scripts/word_field_refresh.py",
+      "bytes": 6822,
+      "sha256": "9b3ec354241b67b2d7a1f5492a3398969a9df0054853392fdc72ab2c6ae552b2"
+    }
+  ],
+  "archive": {
+    "bytes": 232560,
+    "sha256": "5e255306b52b03e73f91c542917de3f6553c0e8f448f21a86290743f5d0b59ad"
+  }
+}

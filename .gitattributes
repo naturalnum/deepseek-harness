@@ -13,3 +13,14 @@ docs/persistence-schema.json linguist-generated=true
 docs/persistence-changes/*.schema.json linguist-generated=true
 docs/persistence-changes/releases/*.schema.json linguist-generated=true
 docs/persistence-changes/historical-formats/*.schema.json linguist-generated=true
+
+# Preserve inherited whitespace in byte-identical imported report resources.
+packages/skill/skill-office/assets/reports/latex-report-writer/scripts/markdown_to_latex.py whitespace=-blank-at-eol
+packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/references/chapter-generation-preflight.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/references/figure-and-table-guide.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/references/technical-chapter-generation.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/stages/30-chapter-planning.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/stages/50-abstract-and-finalization.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/report-reviewer/SKILL.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/technical-report-pre-review/references/authoritative_sources.md whitespace=-blank-at-eof
+packages/skill/skill-office/assets/reports/technical-report-pre-review/scripts/extract_materials.py whitespace=-blank-at-eof

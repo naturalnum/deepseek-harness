@@ -1,12 +1,23 @@
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { findConcreteTermViolations, readTrackedSource } from './verify-concrete-terms.ts'
 
 const blockedTerm = 'prove' + 'nance'
 
 describe('concrete terminology policy', () => {
+  it.each([
+    'references/rule-migration-manifest-v3.6.0.json',
+    'scripts/validate_rule_restructure.py',
+  ])('preserves only the unchanged original report resource %s', (suffix) => {
+    const file = 'packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/' + suffix
+    const source = readFileSync(resolve(import.meta.dirname, '..', file), 'utf8')
+    expect(findConcreteTermViolations(file, source)).toEqual([])
+    expect(findConcreteTermViolations(file, source + '\n' + blockedTerm)).not.toEqual([])
+    expect(findConcreteTermViolations('another/' + suffix, source)).not.toEqual([])
+  })
+
   it('rejects case variants in paths, prose, and identifiers', () => {
     expect(findConcreteTermViolations(`docs/${blockedTerm}-notes.md`, [
       'origin metadata',

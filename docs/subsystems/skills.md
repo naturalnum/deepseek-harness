@@ -189,6 +189,8 @@ interface SkillCatalogSnapshot {
 
 `ctx.skills.inspect(options)` returns a Host-only `SkillCatalogInspection` from the same collection and winner map as `snapshot()` and `get()`. Its name-sorted `candidates` contain each original borrowed `candidate`, a `selected` flag, and `overriddenBy` on covered rows. Source metadata and the opaque locator are retained without loading a body or granting resource authority. `complete` has the snapshot meaning; incomplete relationships describe only observed candidates. Consumers must authorize and bound a public projection instead of serializing private paths or locators.
 
+`SkillPackage` carries the complete versioned inventory and hash-verified file/archive readers for immutable bundled sources. These Host-only capabilities are excluded from model catalogs and wire metadata.
+
 `SkillCandidate` is the provider-to-registry shape. `locator` is opaque provider-owned state retained for the winning provider's `get()` and Host-only inspection; it is not a resource capability.
 
 ```ts type-equiv
@@ -198,6 +200,8 @@ interface SkillCandidate extends SkillSummary {
   readonly rank: number
   /** Opaque provider-owned handle passed back to `provider.get()`. */
   readonly locator: unknown
+  /** Optional immutable package capability for management consumers; loading and precedence remain provider-owned. */
+  readonly package?: SkillPackage
   /** Parsed optional metadata object from provider-specific skill frontmatter. */
   readonly metadata?: Readonly<Record<string, unknown>>
 }

@@ -1,0 +1,19 @@
+{
+  "version": "6e636562fef0d0b953bba877516b04cf16492375516f6d529cd13362e8298488",
+  "files": [
+    {
+      "relativePath": "DSH-SOURCE.json",
+      "bytes": 367,
+      "sha256": "cab5033e31ae43a5c375aad3a47b2e4a8e996444d9c49814e04bf0c78480638c"
+    },
+    {
+      "relativePath": "SKILL.md",
+      "bytes": 3725,
+      "sha256": "5c18a4368834b83494e45eef813143de6d723a2f348b54b013e4779ee3832b24"
+    }
+  ],
+  "archive": {
+    "bytes": 2194,
+    "sha256": "13c111449820c06aa40d3421239a3f0520a562264a24ab4c707723ab75f1f0ef"
+  }
+}

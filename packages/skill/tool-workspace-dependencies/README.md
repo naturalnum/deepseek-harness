@@ -56,6 +56,8 @@ A container can copy both directories into an immutable image layer and set `DSH
 
 -----
 
+`executionManifest` selects a Host-side copy of the selected guest image's `runtime.json`. In that mode `source` names the guest payload root, Host installation is forbidden, and the query returns guest paths without comparing the guest and Host platforms. Deployment verifies and binds this immutable manifest and payload to the selected image; the query does not establish live Session readiness or bypass permissions.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

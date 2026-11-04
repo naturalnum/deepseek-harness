@@ -1,0 +1,10 @@
+version: 1
+scenario: native-office-skills
+profile: headless
+composition: native-office-skills
+recording: authored
+header:
+  class: native-office-skills
+  pin: true
+workspace:
+  setup: office-skills

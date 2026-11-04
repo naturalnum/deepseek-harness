@@ -153,7 +153,7 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
     <p className={css.cardDescription} id={descriptionId}>{skill.description}</p>
     <div className={css.cardFooter}>
       <small>{t(skill.status)}</small>
-      {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel}</small>}
+      {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel === 'bundled' ? t('bundledSource') : skill.sourceLabel}</small>}
       {skill.version === undefined ? null : <small>{t('version')} {skill.version}</small>}
     </div>
     {skill.installed && skill.shadowed === undefined ? <small className={css.cardNotice}>{t('bundleSelectionUnknown')}</small> : null}
