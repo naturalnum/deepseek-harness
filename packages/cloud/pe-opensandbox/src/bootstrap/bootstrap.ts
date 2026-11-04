@@ -16,8 +16,7 @@ import type { AgentDataClient, ClientOptions, RootGrant } from '../agent-data/ty
 import { DataClient } from '../agent-data/client-internal.ts'
 import { AGENT_SOURCE_SHA256, BWRAP_SHA256, digest, expectedWorldHash } from '../agent-data/index.ts'
 import { checkOptions } from '../agent-data/validate.ts'
-
-const IMAGE = 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a'
+import { isPinnedWorkloadImageDigest } from './workload-images.ts'
 
 /** Failure messages stay secret-free; only Root's private cause retains bounded tagged HTTP diagnostics. */
 export class BootstrapFailure extends Error {
@@ -237,7 +236,7 @@ export class TrustedSdkBootstrap {
     const selected = config.lifecycle, url = new URL(selected.lifecycleBaseUrl)
     const sourceDigest = digest(Object.fromEntries(Object.entries(SOURCES).map(([name, pin]) => [name, pin[0]])))
     need(url.protocol === 'http:' && !url.username && !url.password && !url.search && !url.hash
-      && selected.imageDigest === IMAGE
+      && isPinnedWorkloadImageDigest(selected.imageDigest)
       && [selected.payloadSha256, AGENT_SOURCE_SHA256, SOURCE_DIGEST].every(pin => pin === sourceDigest)
       && JSON.stringify(selected.entrypoint) === JSON.stringify(['/usr/bin/tail', '-f', '/dev/null']), 'binding')
     need(hash(Buffer.from(payload.prep)) === BOOTSTRAP_PINS['prep.py'].sha256

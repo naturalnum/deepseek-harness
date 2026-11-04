@@ -65,6 +65,8 @@ Trusted bootstrap assembly may call `assertClosedAccountExecution(ctx)` to requi
 
 Explicit `managed.commands.remoteServers: true` adds only `remote_exec` and `remote_server_info` to the fixed original native consumer list and requires Session file-policy enforcement. SSH runs through the original managed Subprocess range with unchanged carrier bounds. The readonly workload image must contain the configured Python and OpenSSH executables. Sealed memory descriptors hold key and known_hosts within that range's private PID namespace; no key file is placed in the project, command arguments or model log. Local timeout/cancellation does not establish remote descendant termination.
 
+Root and SDK bootstrap share an [exact workload-image list](src/bootstrap/workload-images.ts): the original Native supplier or its [pinned OpenSSH client layer](runtime/remote-client/Dockerfile). Tags and other digests are rejected. The SSH supplier preserves the original Native layers and does not establish Office capability. Deployment must explicitly select it and qualify actual original SDK/account execution with the original protections before advertising remote execution.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

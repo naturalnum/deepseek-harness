@@ -7,6 +7,7 @@ import type { ExecutionExportLimits } from '../export-share.ts'
 import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
+import { isPinnedWorkloadImageDigest } from './workload-images.ts'
 
 /** Reviewed Session-directory guard and explicit Native creation profile, retaining the exact syscall filter and capabilities. */
 export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:7a41332aef7bcc74414b1434c7e10ee057c420e213d082fc79ac791c921af6ba'
@@ -60,7 +61,7 @@ function lifecycle(value: unknown): SdkLifecycleConfig {
   const endpoint = text(v.lifecycleBaseUrl, 'lifecycle.lifecycleBaseUrl', 2048), url = new URL(endpoint)
   need(url.protocol === 'http:' && url.pathname === '/v1' && !url.username && !url.password && !url.search && !url.hash
     && url.href === endpoint, 'lifecycle.lifecycleBaseUrl')
-  need(v.imageDigest === 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a'
+  need(isPinnedWorkloadImageDigest(v.imageDigest)
     && v.payloadSha256 === SOURCE_DIGEST && v.platform === 'arm64'
     && Array.isArray(v.entrypoint) && JSON.stringify(v.entrypoint) === '["/usr/bin/tail","-f","/dev/null"]', 'lifecycle.fixedSelection')
   need(typeof v.cpuCores === 'number' && Number.isFinite(v.cpuCores) && v.cpuCores > 0 && v.cpuCores <= 2147483647, 'lifecycle.cpuCores')
