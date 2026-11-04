@@ -17,6 +17,8 @@ export type ManagedSkillFileContent = { readonly kind: 'text'; readonly text: st
 /** Native detail projection; file paths are relative display data, never private source paths. */
 export interface ManagedSkillDetail {
   readonly item: SkillCard
+  /** Actual native mutability; absence never establishes an immutable bundled snapshot. */
+  readonly mutable?: boolean
   readonly markdown?: string
   readonly files: readonly { readonly path: string; readonly bytes: number }[]
   readonly readFile?: (path: string, signal: AbortSignal) => Promise<ManagedSkillFileContent>
@@ -95,7 +97,13 @@ export function attachManagedSkillEditing(store: SnapshotStore<SkillManagementVi
     try {
       const list = await input.installed(signal)
       signal.throwIfAborted()
-      update({ needsRefresh: false, limits: list.limits, canInstall: list.install !== undefined }, { phase: 'ready', items: list.items })
+      const detail = prepared?.detail, selected = list.items.find(item => item.id === detail?.item.id)
+      const revoked = detail?.mutable === false && detail.item.source === 'bundled'
+        && (selected === undefined || selected.source !== 'bundled' || selected.contentId !== detail.item.contentId)
+      if (revoked) prepared = undefined
+      update({ needsRefresh: false, limits: list.limits, canInstall: list.install !== undefined,
+        ...revoked ? { editNumber: current().editNumber + 1, phase: 'idle', selection: undefined, detail: undefined } : {},
+      }, { phase: 'ready', items: list.items })
     } catch (error) {
       try { update({}, { phase: 'unavailable' }) } catch (_withdrawn) { /* The retired source keeps its last confirmed rows. */ }
       throw error
@@ -116,8 +124,19 @@ export function attachManagedSkillEditing(store: SnapshotStore<SkillManagementVi
       } else {
         const detail = await input.details(id, signal)
         signal.throwIfAborted()
-        prepared = { selection: id, detail, ...detail.update === undefined ? {} : { publish: detail.update } }
-        update({ phase: 'editing', outcome: undefined, detail, canPublish: detail.update !== undefined })
+        const captured = { selection: id, detail, ...detail.update === undefined ? {} : { publish: detail.update } }
+        prepared = captured
+        const read = detail.readFile
+        const displayed = detail.mutable !== false || detail.item.source !== 'bundled' || read === undefined ? detail
+          : Object.freeze({ ...detail, readFile: async (path: string, observer: AbortSignal) => {
+            if (path !== 'SKILL.md') return read(path, observer)
+            const check = (): void => { current(); observer.throwIfAborted(); if (prepared !== captured) throw new ClientFailure('closed') }
+            check()
+            const content = await read(path, observer)
+            check()
+            return content
+          } })
+        update({ phase: 'editing', outcome: undefined, detail: displayed, canPublish: detail.update !== undefined })
       }
       const captured = prepared
       const check = (): void => { current(); if (prepared !== captured) throw new ClientFailure('closed') }

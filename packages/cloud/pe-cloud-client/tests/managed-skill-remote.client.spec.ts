@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Generated-method aliases with scripted replies; browser effects do not claim server or disk persistence. */
 import { afterEach, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-pe-cloud-api'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { managedSkillCallbacks, type ManagedSkillRemote } from '../src/client/managed-skill-remote.ts'
@@ -137,7 +138,7 @@ it.each(['dsh-office', 'dsh-reports'])('projects immutable %s built-ins into Wri
     actions: { update: false, uninstall: false, download: true } }
   f.installed.mockResolvedValue({ ok: true, value: { ...f.state, entries: [entry] } })
   f.details.mockResolvedValue({ ok: true, value: { entry, markdown: 'instructions', version: directoryVersion('builtins'),
-    files: [{ relativePath: 'SKILL.md', bytes: 12, sha256: 'a'.repeat(64) }] } })
+    files: [{ relativePath: 'SKILL.md', bytes: 12, sha256: createHash('sha256').update('instructions').digest('hex') }] } })
   const api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
   expect(list.items[0]).toMatchObject({ category: 'writing-office', source: 'bundled', installed: true })
   const detail = await api.details(entry.skillId, signal())

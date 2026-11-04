@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 /** Actual management presentation and original stable source, with explicit backend callback answers. */
 import { afterEach, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
@@ -537,4 +541,32 @@ it.each(['en', 'zh'] as const)('keeps a native restricted report download disabl
   expect(native.download).not.toHaveBeenCalled()
   expect(within(dialog).getByText(copy.invocationNone)).toBeTruthy()
   expect(within(dialog).queryByRole('switch')).toBeNull()
+})
+
+
+it.each(['en', 'zh'] as const)('shows the complete18428-byte immutable root in the %s file view and revokes it on observed version replacement', async (locale) => {
+  const f = page(), native = remoteFixture(), copy = skillsManagementDictionaries[locale]
+  const markdown = readFileSync(resolve(import.meta.dirname, '../../../skill/skill-office/assets/reports/tech-report-writer/SKILL.md'), 'utf8')
+  const entry = { ...native.entry, name: 'tech-report-writer', source: 'bundled', mutable: false,
+    actions: { update: false, uninstall: false, download: false } }
+  const state = { ...native.state, entries: [entry], limits: { ...native.state.limits, maxFileBytes: 8192 } }
+  native.installed.mockResolvedValue({ ok: true, value: state })
+  native.details.mockResolvedValue({ ok: true, value: { entry, markdown, version: state.version,
+    files: [{ relativePath: 'SKILL.md', bytes: Buffer.byteLength(markdown), sha256: createHash('sha256').update(markdown).digest('hex') }] } })
+  const api = managedSkillCallbacks(native.remote, native.input)
+  f.installed.mockImplementation(api.installed); f.details.mockImplementation(api.details)
+  render(<SkillsPage {...f.props} t={makeTranslate(copy)}/>)
+  fireEvent.click(screen.getByRole('button', { name: copy.refresh }))
+  fireEvent.click(await screen.findByRole('button', { name: entry.name }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: copy.details }))
+  const document = within(dialog).getByRole('region', { name: copy.document })
+  await within(document).findByRole('heading', { name: 'JSON 写入要求' })
+  expect(within(dialog).getByRole('button', { name: 'SKILL.md (18428)' })).toBeTruthy()
+  expect(within(document).queryByRole('alert')).toBeNull()
+  expect(native.readFile).not.toHaveBeenCalled()
+  native.installed.mockResolvedValue({ ok: true, value: { ...state,
+    entries: [{ ...entry, contentVersion: brandString<typeof entry.contentVersion>('replaced') }] } })
+  await act(async () => { await f.editor().refresh(new AbortController().signal) })
+  expect(screen.queryByRole('dialog')).toBeNull()
 })

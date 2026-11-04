@@ -5,6 +5,7 @@ import type { ManagedSkillBundle, ManagedSkillDetail, ManagedSkillEditingInput, 
 import type { SkillCard } from './management/skills/types.ts'
 import { encodeManagedSkillBundle } from './managed-skill-files.ts'
 import { ClientFailure } from './errors.ts'
+import { hash as sha256 } from 'fast-sha256'
 
 /** Actual generated namespace; no alternative RemoteMap, wire envelope, or callable backend is declared here. */
 export type ManagedSkillRemote = Pick<TypertClientRemote['cloudSkills'],
@@ -109,11 +110,23 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
         ? await input.prepareBundledDownload({ skillId, contentVersion: value.entry.contentVersion }, observer) : undefined
       check(observer)
       let used = false
-      return Object.freeze({ item: row(value.entry), markdown: value.markdown,
+      return Object.freeze({ item: row(value.entry), markdown: value.markdown, mutable: value.entry.mutable,
         files: Object.freeze(value.files.map(file => Object.freeze({ path: file.relativePath, bytes: file.bytes }))),
         readFile: async (path: string, signal: AbortSignal) => {
+          check(signal)
           const file = value.files.find(file => file.relativePath === path)
-          if (file === undefined || file.bytes > limits.maxFileBytes) throw new ClientFailure('closed')
+          if (file === undefined) throw new ClientFailure('closed')
+          if (path === 'SKILL.md' && value.entry.source === 'bundled' && !value.entry.mutable) {
+            if (value.markdown.length > state.maxReplyBytes) throw new ClientFailure('closed')
+            const bytes = new TextEncoder().encode(value.markdown)
+            if (bytes.byteLength !== file.bytes || bytes.byteLength > state.maxReplyBytes
+              || new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) !== value.markdown) throw new ClientFailure('closed')
+            const digest = Array.from(sha256(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
+            check(signal)
+            if (digest !== file.sha256) throw new ClientFailure('closed')
+            return value.markdown.includes('\u0000') ? { kind: 'binary' as const } : { kind: 'text' as const, text: value.markdown }
+          }
+          if (file.bytes > limits.maxFileBytes) throw new ClientFailure('closed')
           const contentVersion = value.entry.contentVersion
           const answer = await request(current => readFile({ skillId, contentVersion, relativePath: file.relativePath }, current), signal)
           if (!answer.ok || answer.value.skillId !== skillId || answer.value.contentVersion !== contentVersion
