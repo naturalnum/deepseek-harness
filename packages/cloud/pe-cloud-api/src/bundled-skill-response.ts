@@ -122,6 +122,8 @@ async function send(response: ServerResponse, bytes: Uint8Array | undefined, hea
 
 /** Only original ingress-owned request/response facts; the actual access contract also retains binding/context/Peer. */
 export interface BundledSkillResponseBorrow {
+  /** Exact query field names validated by the original ingress; no values or authentication authority. */
+  readonly navigationQueryNames?: readonly [account: string, generation: string]
   readonly request: IncomingMessage
   readonly response: ServerResponse
   readonly signal: AbortSignal
@@ -146,10 +148,14 @@ export async function consumeBundledSkillResponse(borrow: BundledSkillResponseBo
   const { request, response, signal } = borrow
   try {
     borrow.assertCurrent(); signal.throwIfAborted()
-    const url = new URL(request.url ?? '', 'http://cloud.invalid')
+    const url = new URL(request.url ?? '', 'http://cloud.invalid'), names = borrow.navigationQueryNames
+    if (names !== undefined && (names.some(name => !name || name === 'skillId' || name === 'contentVersion')
+      || names[0] === names[1] || names.some(name => url.searchParams.getAll(name).length !== 1))) {
+      throw new Error('Invalid release navigation binding.')
+    }
     if (!Number.isSafeInteger(maxRequestBytes) || maxRequestBytes < 1 || Buffer.byteLength(request.url ?? '') > maxRequestBytes
       || url.pathname !== '/api/skills/release-archive' || !['GET', 'HEAD'].includes(request.method ?? '')
-      || [...url.searchParams.keys()].some(key => key !== 'skillId' && key !== 'contentVersion')
+      || [...url.searchParams.keys()].some(key => key !== 'skillId' && key !== 'contentVersion' && !names?.includes(key))
       || url.searchParams.getAll('skillId').length !== 1 || url.searchParams.getAll('contentVersion').length !== 1) throw new Error('Invalid release selector.')
     const id = url.searchParams.get('skillId'), version = url.searchParams.get('contentVersion')
     if (id === null || version === null || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id) || !/^[a-f0-9]{64}$/.test(version)) throw new Error('Invalid release identity.')

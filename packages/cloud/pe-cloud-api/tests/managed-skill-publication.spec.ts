@@ -790,7 +790,7 @@ it('projects all thirteen complete built-ins from Loader providers and preserves
 })
 
 async function binaryServer(f: Awaited<ReturnType<typeof fixture>>, owner: BundledSkillResponseOwner = f.manager,
-  prepare?: (response: ServerResponse) => void) {
+  prepare?: (response: ServerResponse) => void, navigationQueryNames?: readonly [string, string]) {
   const budget = new ReleaseSkillBinaryBudget({ maxArchiveBytes: 635241, chunkBytes: 16384,
     maxResidentBytes: 651625, maxConcurrent: 1, timeoutMs: 30000 })
   const tasks = new Set<Promise<BundledSkillResponseSettlement>>(), settlements: BundledSkillResponseSettlement[] = []
@@ -801,7 +801,7 @@ async function binaryServer(f: Awaited<ReturnType<typeof fixture>>, owner: Bundl
     response.once('close', () => { if (!response.writableFinished) observer.abort(new Error('Client disconnected')) })
     response.once('finish', () => { if (response.statusCode === 200) finishHeld.push(
       budget.snapshot().active === 1 && f.saves.snapshot().pending.some(row => row.kind === 'skill-projection')) })
-    const task = consumeBundledSkillResponse({ request, response, signal: observer.signal,
+    const task = consumeBundledSkillResponse({ request, response, signal: observer.signal, navigationQueryNames,
       assertCurrent() { if (request.headers['x-test-account'] !== 'a') throw Error('Foreign original account borrow') } }, owner, budget, 4096)
     tasks.add(task)
     void task.then((value) => { settlements.push(value); tasks.delete(task) })
@@ -915,4 +915,53 @@ it('retains original save failure and files credits when physical response clean
   expect(f.saves.snapshot().failures).toMatchObject([{ kind: 'skill-projection', outcome: 'unknown' }])
   vi.restoreAllMocks(); response?.destroy(); request.destroy()
   expect(http.budget.snapshot().cleanupUnknown).toBe(1)
+})
+
+it('keeps exact skill/version selectors and only original ingress query names on the real Loader package response', async () => {
+  const f = await fixture(apiLimits, true)
+  const installed = await f.manager.installed({}, f.check, f.signal)
+  const entry = installed.entries.find(row => row.name === 'tech-report-writer')
+  if (entry === undefined) throw Error('Original readonly provider missing')
+  const http = await binaryServer(f, f.manager, undefined, ['peAccount', 'peGeneration'])
+  const path = http.path(entry), query = '&peAccount=a&peGeneration=original'
+  const response = await fetch(http.origin + path + query, { headers: { 'x-test-account': 'a' } })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-disposition')).toContain('attachment;')
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  expect(hash(bytes)).toBe(response.headers.get('x-content-sha256'))
+  expect(Object.keys(unzipSync(bytes))).toContain('SKILL.md')
+  expect((await fetch(http.origin + path + query, { method: 'HEAD', headers: { 'x-test-account': 'a' } })).status).toBe(200)
+  for (const suffix of ['&peAccount=a', '&contentVersion=' + entry.contentVersion, '&path=/etc/passwd', '&other=unreviewed']) {
+    expect((await fetch(http.origin + path + query + suffix, { headers: { 'x-test-account': 'a' } })).status).toBe(403)
+  }
+  expect((await fetch(http.origin + path + '&peAccount=a', { headers: { 'x-test-account': 'a' } })).status).toBe(403)
+  expect((await fetch(http.origin + path.replace(entry.contentVersion, '0'.repeat(64)) + query, { headers: { 'x-test-account': 'a' } })).status).toBe(403)
+  expect((await fetch(http.origin + path + query, { headers: { 'x-test-account': 'b' } })).status).toBe(403)
+  const headerOnly = await binaryServer(f)
+  expect((await fetch(headerOnly.origin + path + query, { headers: { 'x-test-account': 'a' } })).status).toBe(403)
+  expect((await fetch(headerOnly.origin + path, { headers: { 'x-test-account': 'a' } })).status).toBe(200)
+  for (const names of [['skillId', 'peGeneration'], ['peAccount', 'peAccount'], ['', 'peGeneration']] as const) {
+    const invalid = await binaryServer(f, f.manager, undefined, names)
+    expect((await fetch(invalid.origin + path + query, { headers: { 'x-test-account': 'a' } })).status).toBe(403)
+  }
+})
+
+it.each(['truncated', 'oversized', 'wrong-hash'] as const)('refuses %s native archive bytes on the navigation response before any attachment headers', async (kind) => {
+  const f = await fixture(apiLimits, true)
+  const owner: BundledSkillResponseOwner = { withBundledArchive: (request, consume, check, signal) =>
+    f.manager.withBundledArchive(request, (bundle, name) => consume({ ...bundle, async readArchive(control) {
+      const bytes = await bundle.readArchive(control)
+      if (kind === 'truncated') return bytes.slice(0, -1)
+      if (kind === 'oversized') return new Uint8Array(bytes.length + 1)
+      return new Uint8Array(bytes.length)
+    } }, name), check, signal) }
+  const entry = (await f.manager.installed({}, f.check, f.signal)).entries[0]!
+  const http = await binaryServer(f, owner, undefined, ['peAccount', 'peGeneration'])
+  const response = await fetch(http.origin + http.path(entry) + '&peAccount=a&peGeneration=original', { headers: { 'x-test-account': 'a' } })
+  expect(response.status).toBe(403)
+  expect(response.headers.get('content-disposition')).toBeNull()
+  expect((await response.arrayBuffer()).byteLength).toBe(0)
+  await http.join()
+  expect(http.budget.snapshot().active).toBe(0)
+  expect(f.saves.snapshot().pending).toHaveLength(0)
 })

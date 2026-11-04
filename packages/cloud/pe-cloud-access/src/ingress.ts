@@ -394,7 +394,8 @@ export class CloudIngress {
         operation.stage = 'request.binding'
         const fields = this.config.bindingFields
         const downloadNavigation = (request.method === 'GET' && url.pathname === SESSION_LOG_EXPORT_PATH
-          || (request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/workspace-files/download')
+          || (request.method === 'GET' || request.method === 'HEAD')
+            && (url.pathname === '/api/workspace-files/download' || url.pathname === '/api/skills/release-archive'))
           && (url.searchParams.has(fields.accountQuery) || url.searchParams.has(fields.generationQuery))
         if (downloadNavigation && request.rawHeaders.some((value, index) => index % 2 === 0
           && (value.toLowerCase() === fields.accountHeader || value.toLowerCase() === fields.generationHeader))) {
@@ -439,6 +440,7 @@ export class CloudIngress {
                 current()
                 operation.holdNormalFinish = true
                 const borrow = { request, response,
+                  ...archive && downloadNavigation ? { navigationQueryNames: [fields.accountQuery, fields.generationQuery] as const } : {},
                   signal: AbortSignal.any([operation.observer.signal, use.binding.lifetime]), assertCurrent: current,
                 } satisfies import('./types.ts').BorrowedBinaryResponse
                 const result: import('./types.ts').BinaryResponseSettlement = archive

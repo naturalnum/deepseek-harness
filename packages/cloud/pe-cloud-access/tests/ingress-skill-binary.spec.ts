@@ -107,13 +107,17 @@ async function fixture(workspace = false) {
       return { cleanup: 'confirmed', outcome: 'cancelled' }
     })
   })
-  const call = (extra: Record<string, string> = {}) => new Promise<{ status: number; body: string }>((resolve, reject) => {
-    const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method, agent: false,
-      headers: { ...headers, ...extra } }, (response) => {
-      let body = ''; response.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') }); response.on('error', reject)
-      response.on('end', () => { resolve({ status: response.statusCode ?? 0, body }) })
-    }); request.on('error', reject); request.end()
-  })
+  const call = (extra: Record<string, string> = {},
+    navigation?: { query: string; method?: string; headers?: boolean; path?: string }) =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const request = httpRequest({ host: '127.0.0.1', port: address.port,
+        path: navigation === undefined ? path : `${navigation.path ?? path}?${navigation.query}`, method: navigation?.method ?? method, agent: false,
+        headers: { ...navigation !== undefined && !navigation.headers
+          ? { Host: headers.Host, Origin: headers.Origin, Cookie: headers.Cookie } : headers, ...extra } }, (response) => {
+        let body = ''; response.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') }); response.on('error', reject)
+        response.on('end', () => { resolve({ status: response.statusCode ?? 0, body }) })
+      }); request.on('error', reject); request.end()
+    })
   const cancel = () => {
     const received = Promise.withResolvers<undefined>()
     const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method, agent: false, headers }, (response) => {
@@ -121,6 +125,7 @@ async function fixture(workspace = false) {
     }); request.on('error', () => {}); request.end(); return received.promise
   }
   return { ingress, peers, pending, budget, consume, acquirePeer, call, cancel,
+    query: `peAccount=${encodeURIComponent(graph.binding.accountId)}&peGeneration=${encodeURIComponent(generation)}`,
     uses: () => uses, sourceSettled: () => sourceSettled,
     setMode(value: typeof mode) { mode = value; gate = Promise.withResolvers<undefined>(); entered = Promise.withResolvers<undefined>() },
     entered: () => entered.promise, settle: () => { gate.resolve(undefined) },
@@ -173,4 +178,27 @@ it.each([false, true])('retains original cause, positive bytes and blocked owner
   expect(f.budget.snapshot()).toMatchObject({ active: 1, residentBytes: 66560, cleanupUnknown: 1 })
   expect(f.peers.reservedCarriers).toBe(1); expect(f.peers.reservedPeers).toBe(1); expect(f.uses()).toBe(2)
   expect(f.ingress.observe().state).toBe('unknown')
+})
+
+it('borrows only the exact skill attachment GET/HEAD query through the original Loader/API Peer and revokes that login', async () => {
+  const f = await fixture()
+  for (const method of ['GET', 'HEAD']) {
+    expect((await f.call({}, { query: f.query, method })).status).toBe(200)
+    expect(f.consume.mock.calls.at(-1)?.[0].navigationQueryNames).toEqual(['peAccount', 'peGeneration'])
+  }
+  expect((await f.call()).status).toBe(200)
+  expect(f.consume.mock.calls.at(-1)?.[0].navigationQueryNames).toBeUndefined()
+  const count = f.consume.mock.calls.length
+  for (const query of [f.query + '&peAccount=binary-A', f.query.replace(/peGeneration=[^&]+/, 'peGeneration=stale'),
+    f.query.replace('peAccount=binary-A', 'peAccount=binary-B'), 'peAccount=binary-A', 'peGeneration=stale']) {
+    expect((await f.call({}, { query })).status).toBe(409)
+  }
+  expect((await f.call({}, { query: f.query, headers: true })).status).toBe(409)
+  expect((await f.call({}, { query: f.query, method: 'POST' })).status).toBe(409)
+  expect((await f.call({}, { query: f.query, path: '/api/skills/release-archive/other' })).status).toBe(409)
+  expect((await f.call({ Cookie: 'better-auth.session_token=foreign' }, { query: f.query })).status).toBe(409)
+  expect((await f.call({ Cookie: '' }, { query: f.query })).status).toBe(401)
+  expect(f.consume).toHaveBeenCalledTimes(count)
+  await f.logout()
+  expect((await f.call({}, { query: f.query })).status).toBe(401)
 })

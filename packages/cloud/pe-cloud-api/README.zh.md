@@ -165,7 +165,7 @@ Commands 在附件准入之后、原生 handler 执行之前复核原账户及 A
 
 `CloudSkillService` 提供九个具体 strict Remote 方法：旧 `current`/`publish`，以及 `installed`、`details`、`install`、`update`、`uninstall`、`download`、`readFile`。可信装配必须提供 `managed` API 上限、实际 files 包上限及原 Workspace 守卫。`skills.mode=managed` 要求九个精确的 authenticated-account 端点和显式 `management` 上限。源码不提供部署默认值。全部 DTO 从 `/types` 导出；Client 声明由这些方法生成。
 
-可选的只读发布包二进制响应在 `AccountManagedSkills.withBundledArchive()` 内复用原生 `SkillPackage.readArchive()` 原能力，持有原目录读取轮次、files 所有的完整包及发送块额度，直到原 ingress 响应实际 finish 或 close。Access 必须显式安装并审计 GET/HEAD 路由、绑定原已认证账户／Peer／Use 借用，并传入 Root 选定的有限二进制限额。默认不启用路由或预算；现有 JSON 归档／答复上限、可修改导入和账户存储配额保持不变。已确认拒绝及取消返回普通结算；未知清理保留原 cause、保存失败和字节额度。
+可选的只读发布包二进制响应在 `AccountManagedSkills.withBundledArchive()` 内复用原生 `SkillPackage.readArchive()` 原能力，持有原目录读取轮次、files 所有的完整包及发送块额度，直到原 ingress 响应实际 finish 或 close。Access 必须显式安装并审计 GET/HEAD 路由、绑定原已认证账户／Peer／Use 借用，并传入 Root 选定的有限二进制限额。经 ingress 认证的附件导航可包含两个确切绑定 query 字段；技能 id 和内容版本仍须唯一且必填，其他字段均拒绝。头部绑定请求只接受这两个技能选择器。默认不启用路由或预算；现有 JSON 归档／答复上限、可修改导入和账户存储配额保持不变。已确认拒绝及取消返回普通结算；未知清理保留原 cause、保存失败和字节额度。
 
 `details` 在确切版本文件元数据之外，以 `markdown` 返回完整根 `SKILL.md` 正文。两者在原账户目录观察中读取；成功、取消或失败均释放 files 借用，完整序列化答复仍受配置的答复上限约束。strict 结果 codec 要求该字段，服务端与生成客户端须同时更新。
 

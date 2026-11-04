@@ -28,7 +28,10 @@ export function installCloudSkillSettings(ctx: Context, page: PreparedCloudPage)
     const input = { signal, timeoutMs: config.requestTimeoutMs, assertCurrent: () => { page.assertSkillSettingsCurrent(owner) },
       ...release === undefined || fetch === undefined ? {} : { prepareBundledDownload:
         (selector: { readonly skillId: string; readonly contentVersion: string }, observer: AbortSignal) => prepareBundledSkillDownload({
-          fetch, signal, assertCurrent: () => { page.assertSkillSettingsCurrent(owner) }, ...release,
+          fetch, signal, navigationUrl: (path) => {
+            page.assertSkillSettingsCurrent(owner); return page.lifetime.transport.navigationUrl(path)
+          },
+          assertCurrent: () => { page.assertSkillSettingsCurrent(owner) }, ...release,
         }, selector, observer) },
     }
     owner.effect(() => page.attachManagedSkills(owner, managedSkillCallbacks(remote, input), {

@@ -5,6 +5,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** Original authenticated response; Access retains its AccountUse, Peer and carrier until actual settlement. */
 export interface BorrowedBinaryResponse {
+  /** Exact binding query names already authenticated by ingress; absent for header-bound requests. */
+  readonly navigationQueryNames?: readonly [account: string, generation: string]
   readonly request: IncomingMessage
   readonly response: ServerResponse
   readonly signal: AbortSignal
