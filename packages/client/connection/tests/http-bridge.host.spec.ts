@@ -10,7 +10,7 @@ import { Peer } from '../src/peer.ts'
 const PEER = new Peer(new Context(), { principal: { kind: 'owner' } })
 
 describe('HTTP bridge abort', () => {
-  it.each(['success', 'failure'])('retains cancelled intake until original request destruction reports %s', async (outcome) => {
+  it.each(['success', 'failure'])('flushes refusal and retains the bridge until original request destruction reports %s', async (outcome) => {
     const started = Promise.withResolvers<undefined>()
     const failure = new Error('original intake destruction failed')
     let finish!: () => void
@@ -21,7 +21,8 @@ describe('HTTP bridge abort', () => {
     Object.assign(request, { url: '/api/session/uploadFileBinary', method: 'POST', headers: {} })
     let headers = 0, settled = false
     const response = Object.assign(new EventEmitter(), { destroyed: false, writableEnded: false,
-      writeHead() { headers++; return this }, write() { return true }, end() { this.writableEnded = true; return this } })
+      writeHead() { headers++; return this }, write() { return true },
+      end(this: EventEmitter & { writableEnded: boolean }) { this.writableEnded = true; this.emit('finish'); return this } })
     const actual = bridge(request, response, {
       requestBodyMode: () => 'streaming', fetch: async (input) => {
         await input.body?.cancel()
@@ -30,11 +31,11 @@ describe('HTTP bridge abort', () => {
     }, PEER).then(() => undefined, (error: unknown) => error).finally(() => { settled = true })
     await started.promise
     expect(settled).toBe(false)
-    expect(headers).toBe(0)
+    expect(headers).toBe(1)
     finish()
     expect(await actual).toBe(outcome === 'failure' ? failure : undefined)
     expect(request.closed).toBe(true)
-    expect(headers).toBe(outcome === 'failure' ? 0 : 1)
+    expect(headers).toBe(1)
   })
 
   it.each(['unread', 'reading'])('joins an %s upload cancelled while Node delivers its final data event', (phase) => {
@@ -48,7 +49,8 @@ describe('HTTP bridge abort', () => {
       Object.assign(request, { url: '/api/session/uploadFileBinary', method: 'POST', headers: {} });
       let status;
       const response = Object.assign(new EventEmitter(), { destroyed: false, writableEnded: false,
-        writeHead(code) { status = code; }, write() { return true; }, end() { this.writableEnded = true; } });
+        writeHead(code) { status = code; }, write() { return true; },
+        end() { this.writableEnded = true; this.emit('finish'); } });
       await bridge(request, response, { requestBodyMode: () => 'streaming', fetch: async (input) => {
         const reader = input.body.getReader();
         if (${JSON.stringify(phase)} === 'reading') {
@@ -274,13 +276,11 @@ describe('HTTP bridge abort', () => {
   })
 
   it('closes an unread streaming request after returning an early validation response', async () => {
-    const destroyed: true[] = []
     const request = new Readable({ read() {} }) as IncomingMessage
     Object.assign(request, {
       url: '/api/session/uploadFileBinary',
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      destroy: () => { destroyed.push(true) },
     })
     let status: number | undefined
     let headers: unknown
@@ -288,7 +288,7 @@ describe('HTTP bridge abort', () => {
       writableEnded: false,
       writeHead(code: number, values?: unknown) { status = code; headers = values; return this },
       write() { return true },
-      end(this: { writableEnded: boolean }) { this.writableEnded = true; return this },
+      end(this: EventEmitter & { writableEnded: boolean }) { this.writableEnded = true; this.emit('finish'); return this },
     }) as unknown as ServerResponse
 
     await bridge(request, response, {
@@ -297,6 +297,6 @@ describe('HTTP bridge abort', () => {
     }, PEER, 1)
     expect(status).toBe(415)
     expect(headers).toMatchObject({ connection: 'close' })
-    expect(destroyed).toEqual([true])
+    expect(request.closed).toBe(true)
   })
 })

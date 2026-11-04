@@ -24,34 +24,66 @@ interface BridgeServerResponse {
   readonly destroyed: boolean
   readonly writableEnded: boolean
   on(event: 'close', listener: () => void): this
-  off(event: 'close' | 'drain', listener: () => void): this
-  once(event: 'close' | 'drain', listener: () => void): this
+  off(event: 'close' | 'drain' | 'finish', listener: () => void): this
+  once(event: 'close' | 'drain' | 'finish', listener: () => void): this
   writeHead(statusCode: number, headers?: Record<string, string>): unknown
   write(chunk: Uint8Array): boolean
   end(): unknown
 }
 
-/** Keep cancelled intake closed while joining the original Node request's destruction. */
+/** Stop intake without destroying the HTTP socket before its response can be flushed. */
 function requestBody(req: IncomingMessage): ReadableStream<Uint8Array> {
-  const chunks = req.iterator({ destroyOnReturn: false })
   let cancelled = false
+  let stopRead: (() => void) | undefined
   return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const chunk = await chunks.next()
-        if (cancelled) return
-        if (chunk.done) controller.close()
-        else controller.enqueue(chunk.value as Buffer)
-      } catch (error) {
-        if (!cancelled) controller.error(error)
-      }
+    pull(controller) {
+      return new Promise<void>((resolve) => {
+        const done = (): void => {
+          req.off('readable', read)
+          req.off('end', read)
+          req.off('error', failed)
+          req.off('close', closed)
+          stopRead = undefined
+          resolve()
+        }
+        const failed = (error: Error): void => { done(); if (!cancelled) controller.error(error) }
+        const read = (): void => {
+          if (cancelled) { done(); return }
+          try {
+            const chunk = req.read() as Buffer | null
+            if (chunk !== null) { done(); controller.enqueue(chunk) }
+            else if (req.readableEnded) { done(); controller.close() }
+          } catch (error) { done(); controller.error(error) }
+        }
+        const closed = (): void => {
+          if (req.readableEnded) read()
+          else failed(req.errored ?? new Error('The HTTP request closed before its body ended.'))
+        }
+        stopRead = done
+        req.on('readable', read)
+        req.once('end', read)
+        req.once('error', failed)
+        req.once('close', closed)
+        if (req.closed && !req.readableEnded) closed()
+        else read()
+      })
     },
-    async cancel() {
+    cancel() {
       cancelled = true
-      await req[Symbol.asyncDispose]()
-      await chunks.return?.()
+      stopRead?.()
     },
   }, { highWaterMark: 0 })
+}
+
+/** Response completion precedes destruction of an unread request on the same socket. */
+async function finishResponse(res: BridgeServerResponse): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const done = (): void => { res.off('finish', done); res.off('close', done); resolve() }
+    res.once('finish', done)
+    res.once('close', done)
+    res.end()
+    if (res.destroyed) done()
+  })
 }
 
 /**
@@ -125,47 +157,49 @@ export async function bridge(
       duplex: 'half',
     } as RequestInit & { duplex: 'half' })
   }
-  const response = await apiHandler.fetch(request, peer)
-  if (beforeResponse !== undefined) {
-    try { beforeResponse() } catch (error) {
-      abort.abort(error)
-      try {
-        await response.body?.cancel(error)
-      } catch (cleanup) {
-        throw new ResponseCleanupError(error, cleanup)
-      } finally {
-        if (bodyMode === 'streaming' && !req.readableEnded) req.destroy()
-      }
-      throw error
-    }
-  }
-  const requestUnread = bodyMode === 'streaming' && !req.readableEnded
-  const responseHeaders = Object.fromEntries(response.headers.entries())
-  res.writeHead(response.status, requestUnread ? { ...responseHeaders, connection: 'close' } : responseHeaders)
-  if (response.body === null) {
-    res.end()
-    if (requestUnread) req.destroy()
-    return
-  }
-  for await (const chunk of response.body) {
-    // Drain without writing after disconnect: cancelling Node multipart bodies
-    // can race their producer and reject with ERR_INVALID_STATE.
-    if (abort.signal.aborted) continue
-    // Backpressure: a false return means the socket buffer is full — wait for drain
-    // instead of buffering unboundedly (slow or suspended consumers). 'close' also
-    // resolves so a mid-wait disconnect cannot park this loop forever.
-    if (!res.write(chunk) && !res.destroyed) {
-      await new Promise<void>((resolve) => {
-        const done = (): void => {
-          res.off('drain', done)
-          res.off('close', done)
-          resolve()
+  try {
+    const response = await apiHandler.fetch(request, peer)
+    if (beforeResponse !== undefined) {
+      try { beforeResponse() } catch (error) {
+        abort.abort(error)
+        try {
+          await response.body?.cancel(error)
+        } catch (cleanup) {
+          throw new ResponseCleanupError(error, cleanup)
         }
-        res.once('drain', done)
-        res.once('close', done)
-      })
+        throw error
+      }
     }
+    const requestUnread = bodyMode === 'streaming' && !req.readableEnded
+    const responseHeaders = Object.fromEntries(response.headers.entries())
+    res.writeHead(response.status, requestUnread ? { ...responseHeaders, connection: 'close' } : responseHeaders)
+    if (response.body === null) {
+      if (requestUnread) await finishResponse(res)
+      else res.end()
+      return
+    }
+    for await (const chunk of response.body) {
+      // Drain without writing after disconnect: cancelling Node multipart bodies
+      // can race their producer and reject with ERR_INVALID_STATE.
+      if (abort.signal.aborted) continue
+      // Backpressure: a false return means the socket buffer is full — wait for drain
+      // instead of buffering unboundedly (slow or suspended consumers). 'close' also
+      // resolves so a mid-wait disconnect cannot park this loop forever.
+      if (!res.write(chunk) && !res.destroyed) {
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            res.off('drain', done)
+            res.off('close', done)
+            resolve()
+          }
+          res.once('drain', done)
+          res.once('close', done)
+        })
+      }
+    }
+    if (requestUnread) await finishResponse(res)
+    else res.end()
+  } finally {
+    if (bodyMode === 'streaming' && !req.readableEnded) await req[Symbol.asyncDispose]()
   }
-  res.end()
-  if (requestUnread) req.destroy()
 }

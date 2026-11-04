@@ -16,6 +16,8 @@ Status: implemented
 
 默认模式、激活的 Plan Mode 与 active goal 共用普通 queue、follow-up 和 steer 的附件准入。`/goal` create 和 edit 以及 `/plan` 进入接受同一套有序图片与文件批量；携带附件的控制子命令会在状态变更前拒绝。命令提交引用已完成暂存的文件凭证，不会再次读取或复制通用文件字节。Session Controller 先把每个文件凭证解析为持久引用，再由 `ctx.attachments.admitPromptContent()` 接收完整有序内容列表；附件准入会持久化图片，并让文件引用原样通过。原 Agent 已销毁时，Host 会拒绝发布上传完成凭证，并按 `rpcId` 去重已经存在的 prompt 重试。prompt 凭证在失败恢复期间保持可用，已接受的 queue 或历史 occurrence 被观察后才退休；只被命令使用的凭证保留到 Session 销毁。提交回显在序列化前经 `beginSubmission` 注册，通过 `pendingSubmissions` 携带混合附件，以 `rpcId` 关联，在 queue 或历史观察后只退休一次，并在失败时保留草稿。发送前，composer 把有序附件放进同一条不换行的横向附件栏：图片使用 64 乘 64 像素缩略图，通用文件使用 240 乘 64 像素卡片，带 16 像素圆角、蓝色文档图标、文件名加扩展名与大小，以及悬停或键盘操作时可用的移除按钮。QueueDock 使用相同顺序以及紧凑的缩略图和文件卡。发送后，Chat 把有序附件放进同一个右对齐、可换行的附件区域。只有一张图片时保留图片画廊的大图样式；一条消息含有多个附件时，图片使用 64 乘 64 像素缩略图，文件使用 240 乘 64 像素卡片，文件与图片在可用宽度内共用一行，空间不足时再换行。Trajectory 保持紧凑的用户消息预览，并增加本地化的通用文件数量。回形针、拖拽和粘贴按 MIME 分类；发送会等待每个文件上传完成。continuable 子代理 composer 禁用附件入口，Host 会拒绝收到的任何子会话文件块。
 
+Node bridge 分别拥有请求体接收和 HTTP socket 关闭。取消操作移除待完成的有界读取，并阻止迟到的请求体数据；提前拒绝响应先刷出，再销毁原始未读请求并等待销毁完成。它不会排空由客户端控制的剩余字节。即使响应字节已经刷出，销毁失败仍是 bridge 失败。
+
 ## 考虑过的替代方案
 
 - **把上传存进项目根目录**（OpenHands / ChatGPT `/mnt/data` 的形态）。拒绝：用户目录里的文件可能被编辑、移动或删除，会打断会话日志的稳定引用，污染 `git status`，还要求工作区必须存在。`DSH_HOME` 用内容寻址保存冻结的只读字节；执行世界可见性由投影路径提供，之后还可以补一步拷贝进工作区。
@@ -29,6 +31,8 @@ Status: implemented
 - **任何命令成功都消费附件。** 拒绝：`/goal pause` 或 `/plan off` 会清除无关卡片。只有生产方明确成功才消费附件；无法使用附件的语法形式返回错误。
 - **只在客户端执行声明。** 拒绝：直接 RPC 调用方可以绕过 composer。`CommandRuntime` 在处理器运行前强制检查声明、存储可用性、同一 Session 的文件凭证解析、图片 base64 准入与图片限制。
 - **通过 `ctx.connection` 暴露上传并沿 Session 构造器传递该对象。** 拒绝：Connection 不拥有文件传输，中间对象层也不使用这项依赖。独立上传服务直接接收 Session 标识，并允许普通浏览器与 Worker-hosted 页面替换载体，无需扩大 Connection 或 Session。
+
+- **在取消请求体时销毁 Node 请求。** 拒绝：请求和响应共用 socket，销毁未完成的上传可能使存储拒绝原因变成连接重置。延后到响应完成再销毁，可以保留拒绝原因，同时 bridge 仍拥有关闭操作并等待其完成。
 
 ## 后果
 
@@ -46,6 +50,8 @@ Status: implemented
 - 声明、存储缺失、未知凭证与图片限制拒绝发生在处理器运行前。生产方语法拒绝和图片准入后的取消可能留下无引用的内容寻址对象，由后续附件垃圾回收处理。
 
 ## 测试
+
+真实 HTTP 连接保留未完成的声明为 64MiB 的上传，验证完整存储拒绝、有界接收和原请求关闭。取消竞态与原始销毁失败保留各自的结果。
 
 单元与集成覆盖原样与流式存储、文件名清洗、声明为 2.19 GiB 的请求通过流式 bridge 且不发生总量缓冲、原始字节与 RPC wire 准入、Blob 与可转移 `ReadableStream` 载体、后台上传并发上限、进度与取消、跨 Session 上传常驻、命令通过文件凭证提交且不再次读取字节、read-only 与 workspace-write 权限下的 native 和 PTC 投影、上传暂存、有序 queue 与 steer 提交、队列转 steer、pending 回显退休与失败恢复、active plan 和 goal 的附件入口、`/plan` 与 `/goal` 混合附件、子代理拒绝、composer 与 Chat 附件布局，以及 Trajectory 文件摘要。keyless `file-upload-round` 快照记录浏览器上传、模型读取文件与答案呈现。
 
