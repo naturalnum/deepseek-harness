@@ -147,14 +147,16 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
   /**
    * Read the original runtime's known lifetime boundary without opening a channel or renewing a clock.
    * @param prepared Exact previously bound original allocation result.
-   * @returns Whether a quiescent physical retirement is needed before any new operation can be issued.
+   * @returns Whether quiescent physical retirement is needed to leave the next operation its full prepare, run and stop budgets.
    * Unknown work, failed cleanup and outstanding remote references never authorize ordinary continuation.
    */
   needsContinuation(prepared: PreparedSandbox): boolean {
     const record = this.ready.get(prepared)
     if (record === undefined || record.client === undefined || record.fenced || record.physicalStopped
       || record.failure !== undefined) unavailable()
-    const due = record.commands >= SLICE_LIMITS.lifetimeOperations || performance.now() >= record.residentDeadlineAtMs
+    const operationMs = SLICE_LIMITS.prepareMs + SLICE_LIMITS.runMs + SLICE_LIMITS.stopMs
+    const due = record.commands >= SLICE_LIMITS.lifetimeOperations
+      || performance.now() + operationMs >= record.residentDeadlineAtMs
     if (!due) return false
     const facts = record.client.responsibility()
     if (facts.inFlight !== 0 || facts.remoteUnresolved.length !== 0 || facts.cleanupFailure

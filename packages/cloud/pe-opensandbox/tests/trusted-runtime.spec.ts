@@ -315,6 +315,10 @@ it('reports only known quiescent lifetime boundaries without opening another cha
     const expired = fixture()
     vi.spyOn(expired.client, 'responsibility').mockReturnValue(healthy)
     const original = expired.registry.bindPrepared(await expired.registry.handshake(expired.selected, new AbortController().signal))
+    now = 145099
+    expect(expired.registry.needsContinuation(original)).toBe(false)
+    now = 145100
+    expect(expired.registry.needsContinuation(original)).toBe(true)
     now = 300100
     expect(expired.registry.needsContinuation(original)).toBe(true)
     expect(expired.client.prepare).not.toHaveBeenCalled()
