@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-terminal'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, resolveConfig, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -425,7 +425,7 @@ class AccountPolicy {
       const schema = installed.fiber.runtime?.Config
       if (installed.entry.options.name !== expected.name || schema === undefined
         || !isDeepStrictEqual(installed.entry.options.config, expected.config)
-        || !isDeepStrictEqual(installed.fiber.config, schema(structuredClone(expected.config)))) refuse()
+        || !isDeepStrictEqual(installed.fiber.config, resolveConfig({ Config: schema }, structuredClone(expected.config)))) refuse()
       return installed
     }) ?? []
     const facts = [...declarations, loop, registry, ...office]

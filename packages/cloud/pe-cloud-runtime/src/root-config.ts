@@ -1,5 +1,6 @@
 /** Complete Host-only deployment inputs; account identity/types never depend on this composition. */
 import z from '@deepseek-ai/schemastery'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ReleaseSkillBinaryLimits } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ConfigSaveLimits } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { AccountId, RuntimeConfig } from './types.ts'
@@ -148,7 +149,7 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
   }).required(),
   paths: z.object({ sharedAccountsRoot: text(), localCacheRoot: text(), maxPathBytes: positive() }).required(),
   officeCanary: z.union([z.object({
-    accountId: text(),
+    accountId: z.transform(text(), brandString<AccountId>),
     office: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
     reports: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
   }).required()]),
