@@ -3249,6 +3249,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-filesystem`
 
 - `inject`: `skills`
+- `refs`: [`SkillInvocationPolicy`](../packages/skill/skill/src/index.ts)
 - `source`: [`packages/skill/skill-filesystem/src/index.ts:51`](../packages/skill/skill-filesystem/src/index.ts)
 
 ```ts config-catalog
@@ -3282,6 +3283,8 @@ export interface Config {
   bundledExecutionRoot?: string
   /** Deployment instructions appended only to loaded bundled bodies and logged by the native skill tool. */
   bundledInstructions?: string
+  /** Optional invocation ceiling for an explicit bundled root; never enables a source-disabled entry point. */
+  bundledInvocation?: SkillInvocationPolicy
   /** Require generated complete-package inventories for the bundled root. */
   packagedBundles?: boolean
 }
@@ -3294,11 +3297,14 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-office`
 
 - `inject`: `skills`
+- `refs`: [`SkillInvocationPolicy`](../packages/skill/skill/src/index.ts)
 - `source`: [`packages/skill/skill-office/src/index.ts:17`](../packages/skill/skill-office/src/index.ts)
 
 ```ts config-catalog
 /** Office skill resource location. */
 export interface Config {
+  /** Deployment invocation ceiling; omission preserves normal model and user invocation. */
+  invocation?: SkillInvocationPolicy
   /** Absolute assets directory containing skill folders; defaults to packaged assets. */
   assetRoot?: string
   /** Standalone Node executable; defaults to the current executable outside Electron and SEA. */
