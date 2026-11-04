@@ -801,7 +801,8 @@ async function binaryServer(f: Awaited<ReturnType<typeof fixture>>, owner: Bundl
     response.once('close', () => { if (!response.writableFinished) observer.abort(new Error('Client disconnected')) })
     response.once('finish', () => { if (response.statusCode === 200) finishHeld.push(
       budget.snapshot().active === 1 && f.saves.snapshot().pending.some(row => row.kind === 'skill-projection')) })
-    const task = consumeBundledSkillResponse({ request, response, signal: observer.signal, navigationQueryNames,
+    const task = consumeBundledSkillResponse({ request, response, signal: observer.signal,
+      ...navigationQueryNames === undefined ? {} : { navigationQueryNames },
       assertCurrent() { if (request.headers['x-test-account'] !== 'a') throw Error('Foreign original account borrow') } }, owner, budget, 4096)
     tasks.add(task)
     void task.then((value) => { settlements.push(value); tasks.delete(task) })

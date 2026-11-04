@@ -184,10 +184,13 @@ it('borrows only the exact skill attachment GET/HEAD query through the original 
   const f = await fixture()
   for (const method of ['GET', 'HEAD']) {
     expect((await f.call({}, { query: f.query, method })).status).toBe(200)
-    expect(f.consume.mock.calls.at(-1)?.[0].navigationQueryNames).toEqual(['peAccount', 'peGeneration'])
+    const borrowed = f.consume.mock.calls.at(-1)?.[0]
+    expect(borrowed !== undefined && 'navigationQueryNames' in borrowed ? borrowed.navigationQueryNames : undefined)
+      .toEqual(['peAccount', 'peGeneration'])
   }
   expect((await f.call()).status).toBe(200)
-  expect(f.consume.mock.calls.at(-1)?.[0].navigationQueryNames).toBeUndefined()
+  const borrowed = f.consume.mock.calls.at(-1)?.[0]
+  expect(borrowed !== undefined && 'navigationQueryNames' in borrowed ? borrowed.navigationQueryNames : undefined).toBeUndefined()
   const count = f.consume.mock.calls.length
   for (const query of [f.query + '&peAccount=binary-A', f.query.replace(/peGeneration=[^&]+/, 'peGeneration=stale'),
     f.query.replace('peAccount=binary-A', 'peAccount=binary-B'), 'peAccount=binary-A', 'peGeneration=stale']) {

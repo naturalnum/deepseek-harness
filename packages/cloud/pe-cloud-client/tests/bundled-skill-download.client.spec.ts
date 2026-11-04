@@ -14,7 +14,7 @@ function fixture(body: Uint8Array = data, responseHeaders = headers) {
   const create = vi.fn(() => 'blob:release'), revoke = vi.fn()
   vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }))
   const clicked: string[] = []
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { clicked.push(this.href) })
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this.href) })
   const fetch = vi.fn<FileUploadFetch>(async (_path, init) => new Response(init.method === 'HEAD' ? null : body.slice().buffer, { headers: responseHeaders }))
   const signal = new AbortController().signal, assertCurrent = vi.fn()
   const navigationUrl = vi.fn((path: string) => `http://localhost/${path}&peAccount=a&peGeneration=generation`)
