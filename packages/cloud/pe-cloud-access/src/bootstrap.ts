@@ -82,6 +82,12 @@ class Decoder {
     return input
   }
 
+  private positive(input: unknown, maximum = Number.MAX_SAFE_INTEGER): number {
+    if (typeof input !== 'number' || !Number.isSafeInteger(input) || input < 1 || input > maximum) invalid()
+    this.spend(String(input).length)
+    return input
+  }
+
   private disabled(input: unknown): false {
     if (this.boolean(input)) invalid()
     return false
@@ -144,13 +150,20 @@ class Decoder {
     const hasRemote = input !== null && typeof input === 'object' && Object.hasOwn(input, 'remoteServers')
     const value = this.record(input, ['catalogVersion', 'plugins', 'skills', 'credentials', 'fields',
       ...hasRemote ? ['remoteServers'] : []])
-    const skills = this.record(value['skills'], ['manage'])
+    const rawSkills = value['skills']
+    const hasArchive = object(rawSkills) && Object.hasOwn(rawSkills, 'releaseArchive')
+    const skills = this.record(rawSkills, ['manage', ...hasArchive ? ['releaseArchive'] : []])
+    const archive = hasArchive ? this.record(skills['releaseArchive'], ['maxArchiveBytes', 'timeoutMs']) : undefined
+    const manage = this.boolean(skills['manage'])
+    if (archive !== undefined && !manage) invalid()
     const credentials = this.record(value['credentials'], ['write'])
     return Object.freeze({
       ...hasRemote ? { remoteServers: Object.freeze({ manage: this.boolean(this.record(value['remoteServers'],
         ['manage'])['manage']) }) } : {},
       catalogVersion: this.token(value['catalogVersion']), plugins: this.list(value['plugins'], item => this.plugin(item)),
-      skills: Object.freeze({ manage: this.boolean(skills['manage']) }),
+      skills: Object.freeze({ manage, ...archive === undefined ? {} : { releaseArchive: Object.freeze({
+        maxArchiveBytes: this.positive(archive['maxArchiveBytes']), timeoutMs: this.positive(archive['timeoutMs'], 2_147_483_647),
+      }) } }),
       credentials: Object.freeze({ write: this.boolean(credentials['write']) }),
       fields: this.list(value['fields'], item => this.field(item)),
     })

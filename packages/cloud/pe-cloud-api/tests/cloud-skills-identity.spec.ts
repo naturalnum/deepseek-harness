@@ -10,7 +10,7 @@ import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import * as TypertLoader from '@deepseek-ai/dsh-typert-loader'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
-import { CloudAccountFiles, type AccountFilesPreparation, type SkillBundlePort, type SkillVersionPort } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, ReleaseSkillBinaryBudget, type AccountFilesPreparation, type SkillBundlePort, type SkillVersionPort } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import { expect, it, onTestFinished } from 'vitest'
@@ -42,7 +42,7 @@ function providerSignal(service: CloudSkillService): AbortSignal {
   return signal
 }
 
-async function fixture(scopedFiles = false) {
+async function fixture(scopedFiles = false, binary = false) {
   const home = mkdtempSync(join(tmpdir(), 'cloud-skills-identity-')), profileDir = join(home, 'profiles', 'test')
   mkdirSync(profileDir, { recursive: true }); initProfile(profileDir, [])
   writeFileSync(join(home, 'package.json'), JSON.stringify({
@@ -125,6 +125,8 @@ async function fixture(scopedFiles = false) {
               maxExpandedArchiveBytes: 16384, maxInputBytes: 65536, maxManifestBytes: 8192,
               maxCatalogBytes: 8192, maxDownloadBytes: 32768, maxRequestBytes: 65536, maxReplyBytes: 131072,
               maxStagingBytes: 65536, reservationBytes: 65536 }, assertWorkspace: deny },
+          ...!binary ? {} : { releaseBinary: new ReleaseSkillBinaryBudget({ maxArchiveBytes: 1048576,
+            maxResidentBytes: 1114112, maxConcurrent: 1, chunkBytes: 65536, timeoutMs: 30000 }) },
           withModelKeyPeerUse: deny })
       } },
     })
@@ -140,15 +142,15 @@ it.each([false, true])('keeps raw and contextual calls live with scoped files=%s
   expect(original(proxy)).toBe(f.raw)
   for (const service of [f.raw, proxy]) {
     expect(() => { service.assertCurrent() }).not.toThrow()
-    expect(service.inspect().rpcEndpoints.map(row => row.endpoint)).toEqual(['current','publish','installed','details','install','update','uninstall','download'].map(method => 'cloudSkills/'+method))
+    expect(service.inspect().rpcEndpoints.map(row => row.endpoint)).toEqual(['current','publish','installed','details','install','update','uninstall','download','readFile'].map(method => 'cloudSkills/'+method))
     await expect(service.restore()).resolves.toBeUndefined()
   }
   expect(f.currentReads).toBe(2)
   const captured: unknown = Reflect.get(f.raw, 'registry')
   expect(captured).toBe(original(f.ctx.skills))
-  expect(remoteMethods(proxy).map(row => row.method)).toEqual(['current','publish','installed','details','install','update','uninstall','download'])
+  expect(remoteMethods(proxy).map(row => row.method)).toEqual(['current','publish','installed','details','install','update','uninstall','download','readFile'])
   expect(proxy.typertRemote.service).toBe(f.raw)
-  for (const method of ['current','publish','installed','details','install','update','uninstall','download']) {
+  for (const method of ['current','publish','installed','details','install','update','uninstall','download','readFile']) {
     const descriptor = f.ctx.typert.local.get(`cloudSkills/${method}`)
     if (descriptor === undefined) throw new Error('Original Typert registration absent')
     expect(descriptor).toMatchObject({ service: 'cloudSkills', namespace: 'cloudSkills', method,
@@ -195,4 +197,16 @@ it('rejects withdrawn actual Typert descriptors while the original capability re
     expect(() => { service.assertCurrent() }).not.toThrow()
     expect(() => { service.inspect() }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
   }
+})
+
+
+it('reports readonly binary routes only when the original Root provides an explicit finite allowance', async () => {
+  const absent = await fixture()
+  expect(absent.raw.releaseArchivePolicy()).toBeUndefined()
+  expect(absent.raw.inspect().exactFetchRoutes).toEqual([])
+  const enabled = await fixture(false, true)
+  expect(enabled.raw.releaseArchivePolicy()).toEqual({ maxArchiveBytes: 1048576, timeoutMs: 30000 })
+  expect(enabled.raw.inspect().exactFetchRoutes).toEqual(['GET', 'HEAD'].map(method => ({ method,
+    path: '/api/skills/release-archive', handlerId: 'cloud:bundledSkillArchive', guard: 'authenticated-account' })))
+  expect(remoteMethods(enabled.raw).map(row => row.method)).not.toContain('consumeReleaseArchive')
 })

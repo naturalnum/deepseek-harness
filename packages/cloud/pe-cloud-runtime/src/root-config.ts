@@ -1,5 +1,6 @@
 /** Complete Host-only deployment inputs; account identity/types never depend on this composition. */
 import z from '@deepseek-ai/schemastery'
+import type { ReleaseSkillBinaryLimits } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ConfigSaveLimits } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { RuntimeConfig } from './types.ts'
 import { SubagentCapacityLimitsSchema } from './subagent-capacity-schema.ts'
@@ -52,6 +53,8 @@ export interface RuntimeRootConfig extends RuntimeConfig {
     /** Explicit optional readonly budgets; Root supplies the actual per-account profile home. */
     readonly firstScreen?: Omit<NonNullable<AccountNativePreparation['firstScreen']>, 'home'>
     readonly workspaceTransfers?: NonNullable<AccountNativePreparation['workspaceTransfers']>
+    /** Explicit Root-wide readonly release binary allowance; omission keeps the route disabled. */
+    readonly skillReleaseBinary?: ReleaseSkillBinaryLimits
     readonly attachments?: NonNullable<AccountNativePreparation['attachments']>
   }
 }
@@ -147,6 +150,8 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
     }).required()]),
     workspaceTransfers: z.union([z.object({ maxFileBytes: positive(), maxFiles: positive(), maxTotalBytes: positive(),
       chunkBytes: positive(), maxPathBytes: positive(), timeoutMs: timer() }).required()]),
+    skillReleaseBinary: z.union([z.object({ maxArchiveBytes: positive(), maxResidentBytes: positive(),
+      maxConcurrent: positive(), chunkBytes: positive(), timeoutMs: timer() }).required()]),
     attachments: z.union([z.object({
       maxSurfaceNodes: positive(), maxRefs: positive(), maxRefBytes: positive(),
       maxPromptFiles: positive(), maxFileBytes: positive(), maxUploadChunkBytes: positive(),

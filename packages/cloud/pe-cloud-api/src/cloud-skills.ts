@@ -16,6 +16,8 @@ import { skillCodecs, skillPublicationLimits } from './skill-json.ts'
 import type { ExposureInventory } from './types.ts'
 import type { SkillCurrentRequest, SkillCurrentState, SkillPublicationLimits, SkillPublishRequest, SkillPublishResult } from './skill-types.ts'
 import { CloudApiError } from './errors.ts'
+import { consumeBundledSkillResponse, type BundledSkillBinaryBudget, type BundledSkillResponseBorrow,
+  type BundledSkillResponseSettlement } from './bundled-skill-response.ts'
 import type { SkillResourcePreparation } from './skill-source.ts'
 
 /** Trusted assembly only. The existing login consumer's historical name remains unchanged. */
@@ -24,6 +26,8 @@ export interface CloudSkillPreparation extends ModelKeyPeerConsumer {
   readonly limits: SkillPublicationLimits
   readonly resources?: SkillResourcePreparation
   readonly managed: ManagedSkillPreparation
+  /** Original Root's one finite readonly release allowance; absence keeps binary downloads closed. */
+  readonly releaseBinary?: BundledSkillBinaryBudget
 }
 declare module '@deepseek-ai/cordis' { interface Context { cloudSkills: CloudSkillService } }
 const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile'] as const
@@ -206,7 +210,34 @@ export class CloudSkillService extends TypertRemoteService {
     }
     return { recipeVersion: this.api.binding.recipeVersion, rpcEndpoints: methods.map(method =>
       ({ endpoint: `cloudSkills/${method}`, handlerId: 'native:cloudSkills', guard: 'authenticated-account' })),
-    streamEndpoints: [], exactFetchRoutes: [] }
+    streamEndpoints: [], exactFetchRoutes: this.input.releaseBinary === undefined ? [] : ['GET', 'HEAD'].map(method =>
+      ({ method, path: '/api/skills/release-archive', handlerId: 'cloud:bundledSkillArchive', guard: 'authenticated-account' })) }
+  }
+
+  /**
+   * Inspect the installed readonly release allowance without starting a read.
+   * @returns Explicit binary client bounds, or undefined while this route is disabled.
+   */
+  releaseArchivePolicy(): Readonly<{ maxArchiveBytes: number; timeoutMs: number }> | undefined {
+    this.assertCurrent()
+    const limits = this.input.releaseBinary?.limits
+    return limits === undefined ? undefined : { maxArchiveBytes: limits.maxArchiveBytes, timeoutMs: limits.timeoutMs }
+  }
+
+  /**
+   * Consume only an original access response inside this account's existing directory read turn.
+   * @param borrow Original authenticated account/Peer/Use response.
+   * @param maxRequestBytes Original ingress URL allowance.
+   * @returns Confirmed source/transfer settlement or the retained unknown cause.
+   */
+  consumeReleaseArchive(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement> {
+    const budget = this.input.releaseBinary
+    if (budget === undefined) unavailable()
+    return consumeBundledSkillResponse({ ...borrow, assertCurrent: () => {
+      borrow.assertCurrent(); this.assertCurrent()
+      const row = this.api.requireFetch(borrow.request.method ?? '', '/api/skills/release-archive')
+      if (row.handlerId !== 'cloud:bundledSkillArchive' || row.guard !== 'authenticated-account') unavailable()
+    } }, this.publication, budget, maxRequestBytes)
   }
 
   /** Require this exact installed account service and files binding; does not grant public readiness. */

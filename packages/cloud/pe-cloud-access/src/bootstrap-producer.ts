@@ -144,7 +144,7 @@ export async function produceCloudBootstrap(
     if (!approvedSettingsMatch(catalog.fields, settings)
       || settingsWrites && (settingsWriter === undefined
         || settingsWriter.handlerId !== 'native:settingsController' || settingsWriter.guard !== 'authenticated-account')
-      || manifest.exactFetchRoutes.length > 7) unavailable()
+      || manifest.exactFetchRoutes.length > 9) unavailable()
     const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
       const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
@@ -155,8 +155,11 @@ export async function produceCloudBootstrap(
       const workspaceTransfer = row.handlerId === 'native:workspaceFiles' && (
         ((row.method === 'GET' || row.method === 'HEAD') && row.path === '/api/workspace-files/download')
         || row.method === 'POST' && row.path === '/api/workspace-files/directory')
+      const skillArchive = catalog.skills.mode === 'managed' && (row.method === 'GET' || row.method === 'HEAD')
+        && row.path === '/api/skills/release-archive' && row.handlerId === 'cloud:bundledSkillArchive'
+        && row.guard === 'authenticated-account'
       const key = `${row.method} ${row.path}`
-      if ((!upload && !preview && !sessionExport && !workspaceTransfer) || row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
+      if ((!skillArchive && !upload && !preview && !sessionExport && !workspaceTransfer) || !skillArchive && row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
       selectedFetch.add(key)
       // Original API checks its audited manifest and freshly inspects actual native + Root inventory.
       const actual = api.requireFetch(row.method, row.path)
@@ -208,6 +211,7 @@ export async function produceCloudBootstrap(
     nativeCurrent()
     if (generation() !== token) unavailable()
   }
+  const releaseArchive = api.skillReleaseBinaryPolicy()
   const disabled = Object.freeze({ state: 'disabled', reason: 'not-approved' } as const)
   const value = decodeCloudBootstrap({ account, recipeVersion: binding.recipeVersion, connectionGeneration: token,
     capabilities: { projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
@@ -216,7 +220,9 @@ export async function produceCloudBootstrap(
       servicePreview: services.servicePreview && previewRouteSelected ? { state: 'available' } : disabled, sandboxScope: 'session', backgroundJobs: false,
       localDesktop: false, arbitraryBackendPlugins: false,
       subprocess: { spawn: false, pipes: false, control: false, inherit: false, terminal: false, consumers: [] },
-      configuration: inventory.configuration,
+      configuration: { ...inventory.configuration, skills: { ...inventory.configuration.skills,
+        ...releaseArchive === undefined ? {} : { releaseArchive },
+      } },
     },
   }, { maxBodyBytes: maximum, maxStringBytes: maximum, maxListItems: Math.min(maximum, catalog.maxEntries) })
   const body = JSON.stringify(value)

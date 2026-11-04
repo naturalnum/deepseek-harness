@@ -42,6 +42,8 @@ kind: "package-reference"
 
 实际根配置包括 `recipeVersion`、`internalAddress`、明确的心跳/启动/停止/账户观察预算、凭据解析时间和字节限制、PostgreSQL 连接字段及 `passwordRef`、有限 `pg`/`factory`/`saves` 容量、规范化的共享/本地路径，以及固定原生配方位置、必需条目和诊断上限。根要求正式 `credentials` 服务，先预检引用，再为每次实际 PG 连接重新解析；不读取 `process.env`，不使用账户凭据提供者。等待被放弃后，解析仍计入容量直至实际结算。
 
+可选 `native.skillReleaseBinary` 显式指定 `maxArchiveBytes`、`maxResidentBytes`、`maxConcurrent`、`chunkBytes` 和 `timeoutMs`；省略时关闭只读技能二进制下载。Root 控制持有一个 files 预算，供所有账户共用。每次传输按归档实际字节加一个分块计费，保留到响应和源实际结清；未知清理继续保留占用。可审阅示例为归档1048576字节、分块65536字节、驻留1114112字节、并发响应1个、时限30000毫秒。此独立只读发布预算不改变可变 ZIP、JSON 回复、上传或账户存储限额。
+
 临时排查文件延迟时，可信 Root 配置可显式设置 `fileReadTiming: true`；省略或 `false` 不创建采集器或计时器。原 runtime 持有采集器，销毁时关闭；计时器每五秒汇总数值，结束时补充尾批。`nominalIntervalMs` 是计时器的标称周期，不是实际墙钟时间或速率分母。仅记录固定阶段名、次数及同步累计/最大微秒数，不记录路径、账户、参数、内容或凭据。父阶段包含子阶段，不能将其相加；重叠请求共用实例汇总。采集保留原检查与失败语义，不代表性能已改善。
 
 函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。原生准备期间，factory 从精确安装的 binding 签发该 coordinator 的屏障，并在实际保存及其余账户排空检查完成前持续持有。

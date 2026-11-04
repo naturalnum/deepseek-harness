@@ -352,6 +352,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   CloudProjectCreateRequest: 'cloud.md',
   CloudProjectsPreparation: 'cloud.md',
   CloudProjectsService: 'cloud.md',
+  BundledSkillResponseBorrow: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  BundledSkillResponseSettlement: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   CloudSkillPreparation: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   CloudSkillService: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   ManagedSkillDetails: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',

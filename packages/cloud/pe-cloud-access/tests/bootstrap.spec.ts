@@ -177,3 +177,20 @@ describe('access-owned C-11 decoder', () => {
     expect(() => decodeCloudBootstrap(change(['profile'], nested), limits)).toThrow(TypeError)
   })
 })
+
+
+it('decodes finite readonly release bounds only with managed skills and charges all numeric JSON bytes', () => {
+  const wire = input()
+  Reflect.set(wire.capabilities.configuration, 'skills', { manage: true, releaseArchive: { maxArchiveBytes: 1048576, timeoutMs: 30000 } })
+  const decoded = decodeCloudBootstrap(wire, limits)
+  expect(decoded.capabilities.configuration.skills.releaseArchive).toEqual({ maxArchiveBytes: 1048576, timeoutMs: 30000 })
+  const exact = new TextEncoder().encode(JSON.stringify(wire)).byteLength
+  expect(() => decodeCloudBootstrap(wire, { ...limits, maxBodyBytes: exact })).not.toThrow()
+  expect(() => decodeCloudBootstrap(wire, { ...limits, maxBodyBytes: exact - 1 })).toThrow()
+  for (const value of [0, -1, 1.5, '1048576', Number.MAX_SAFE_INTEGER + 1]) {
+    Reflect.set(wire.capabilities.configuration, 'skills', { manage: true, releaseArchive: { maxArchiveBytes: value, timeoutMs: 30000 } })
+    expect(() => decodeCloudBootstrap(wire, limits)).toThrow()
+  }
+  Reflect.set(wire.capabilities.configuration, 'skills', { manage: false, releaseArchive: { maxArchiveBytes: 1048576, timeoutMs: 30000 } })
+  expect(() => decodeCloudBootstrap(wire, limits)).toThrow()
+})

@@ -21,3 +21,21 @@ it('preserves old native configuration while requiring every selected first-scre
     }
   }
 })
+
+it('keeps readonly release binary disabled without all explicit Root-wide limits', () => {
+  const config = rootConfig('/release-binary-component')
+  expect(RuntimeRootConfigSchema(config).native.skillReleaseBinary).toBeUndefined()
+  const skillReleaseBinary = { maxArchiveBytes: 1048576, maxResidentBytes: 1114112, maxConcurrent: 1,
+    chunkBytes: 65536, timeoutMs: 30000 }
+  const selected = { ...config, native: { ...config.native, skillReleaseBinary } }
+  expect(RuntimeRootConfigSchema(selected).native.skillReleaseBinary).toEqual(skillReleaseBinary)
+  for (const key of Object.keys(skillReleaseBinary)) {
+    const absent = { ...skillReleaseBinary }; Reflect.deleteProperty(absent, key)
+    expect(() => RuntimeRootConfigSchema({ ...selected, native: { ...selected.native, skillReleaseBinary: absent } })).toThrow()
+    for (const value of [0, -1, 0.5, Infinity]) {
+      expect(() => RuntimeRootConfigSchema({ ...selected, native: { ...selected.native,
+        skillReleaseBinary: { ...skillReleaseBinary, [key]: value },
+      } })).toThrow()
+    }
+  }
+})

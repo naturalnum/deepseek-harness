@@ -1,5 +1,7 @@
 /** Cloud files public service failures and file-owned types; Loader uses /root and /account. */
 export { FilesFailure } from './error.ts'
+export { ReleaseSkillBinaryBudget } from './release-skill-binary-budget.ts'
+export type { ReleaseSkillBinaryLimits } from './release-skill-binary-budget.ts'
 export type { FilesFailureCode } from './error.ts'
 export type { FilesLimits, NativeFilesRequirement } from './types.ts'
 export { CloudAccountFiles } from './account-service.ts'

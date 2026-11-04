@@ -101,6 +101,7 @@ interface Operation {
   use: AccountUse | undefined
   releaseFault: boolean
   cleanupUnknown: boolean
+  cleanupCause: unknown
   stage: GuardStage
 }
 
@@ -414,6 +415,45 @@ export class CloudIngress {
           operation.stage = 'peer.generation'
           this.pinGeneration(peer, operation.id)
           operation.stage = 'peer.http'
+          if (url.pathname === '/api/skills/release-archive') {
+            const api = this.accountApi(use.context, use.binding)
+            const current = (): void => {
+              this.assertOperation(operation); this.assertPeer(peer, operation.id); use.assertCurrent()
+              assertExpectedAccount(expected, principal.accountId, operation.id)
+              assertExpectedGeneration(expected, this.generations.current(use.binding, operation.id), operation.id)
+              const actual = this.accountApi(use.context, use.binding)
+              if ((Reflect.get(actual, symbols.original) ?? actual) !== (Reflect.get(api, symbols.original) ?? api)) {
+                throw new AuthAccessError('cloud/account-unavailable', operation.id)
+              }
+              const row = api.requireFetch(request.method ?? '', url.pathname)
+              if (row.handlerId !== 'cloud:bundledSkillArchive' || row.guard !== 'authenticated-account') {
+                throw new AuthAccessError('cloud/forbidden', operation.id)
+              }
+            }
+            await this.peers.runCarrier(peer, request, operation.id, {
+              authenticate: () => this.auth.authenticate(request, operation.id), actual: operation.actual,
+              destroy: () => { operation.observer.abort(); request.destroy(); response.destroy() },
+              consume: async () => {
+                current()
+                operation.holdNormalFinish = true
+                const result: import('./types.ts').BinaryResponseSettlement = await api.consumeSkillReleaseResponse({
+                  request, response, signal: AbortSignal.any([operation.observer.signal, use.binding.lifetime]),
+                  assertCurrent: current,
+                } satisfies import('./types.ts').BorrowedBinaryResponse, this.limits.maxRequestBodyBytes)
+                if (result.cleanup === 'unknown') throw new AuthAccessError('cloud/stop-unconfirmed', operation.id, { cause: result.cause })
+                // Source cleanup is confirmed. Closing this response cannot reauthorize more reads or fault the whole Peer.
+                if (!response.closed && !response.writableFinished) {
+                  try { response.destroy() }
+                  catch (cause) { throw new AuthAccessError('cloud/stop-unconfirmed', operation.id, { cause }) }
+                }
+                await operation.transferred
+                if (!response.closed && !response.writableFinished) {
+                  throw new AuthAccessError('cloud/stop-unconfirmed', operation.id)
+                }
+              },
+            })
+            return
+          }
           await this.peers.handleNodeRequest(peer, request, response, this.limits.maxRequestBodyBytes, operation.id, () => {
             this.assertOperation(operation)
             this.assertPeer(peer, operation.id)
@@ -659,7 +699,8 @@ export class CloudIngress {
     const operation: Operation = {
       id, request, response, socket, observer, transferred: transferred.promise, actual: Promise.resolve(), accountId: undefined,
       deadlineAtMs: Date.now() + this.limits.requestTimeoutMs, holdNormalFinish: false,
-      timedOut: false, upgraded: false, configurationUseReleased: false, use: undefined, releaseFault: false, cleanupUnknown: false,
+      timedOut: false, upgraded: false, configurationUseReleased: false, use: undefined,
+      releaseFault: false, cleanupUnknown: false, cleanupCause: undefined,
       stage: 'run.start',
       head, authChecks: new Set(), principal: undefined, hop: undefined, forwarding: false, forwardTransfer: undefined,
       recheckTimer: undefined, rechecking: undefined,
@@ -695,6 +736,7 @@ export class CloudIngress {
       catch (error) {
         if (this.failure(error, id).code === 'cloud/stop-unconfirmed') {
           operation.cleanupUnknown = true
+          operation.cleanupCause = error
           this.state = 'unknown'
           this.accepting = false
           this.ctx.logger.error('Cloud ingress body cleanup is unconfirmed; admission remains closed.')
@@ -714,7 +756,9 @@ export class CloudIngress {
         observer.abort()
         request.destroy()
         clearTimeout(timer)
-        if (operation.cleanupUnknown) throw new AuthAccessError('cloud/stop-unconfirmed', operation.id)
+        if (operation.cleanupUnknown) {
+          throw new AuthAccessError('cloud/stop-unconfirmed', operation.id, { cause: operation.cleanupCause })
+        }
         this.releaseUse(operation)
         this.operations.delete(operation)
         this.requests.delete(request)

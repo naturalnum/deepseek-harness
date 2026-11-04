@@ -1,6 +1,21 @@
 /** Wire consistency inputs and authentication-library output consumed by access. */
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+
+/** Original authenticated response; Access retains its AccountUse, Peer and carrier until actual settlement. */
+export interface BorrowedBinaryResponse {
+  readonly request: IncomingMessage
+  readonly response: ServerResponse
+  readonly signal: AbortSignal
+  /** Recheck the original login, account generation, retained Use and installed response exposure. */
+  assertCurrent(): void
+}
+
+/** Confirmed source cleanup is separate from transfer outcome; unknown cleanup retains the original cause. */
+export type BinaryResponseSettlement =
+  | { readonly cleanup: 'confirmed'; readonly outcome: 'completed' | 'cancelled' | 'rejected' }
+  | { readonly cleanup: 'unknown'; readonly cause: unknown }
 
 /** Client expectations confer no identity, resource scope, or native capability. */
 export interface RequestExpectation {
@@ -96,7 +111,10 @@ export interface BootstrapConfiguration {
   readonly catalogVersion: string
   readonly remoteServers?: Readonly<{ manage: boolean }>
   readonly plugins: readonly BootstrapPlugin[]
-  readonly skills: Readonly<{ manage: boolean }>
+  readonly skills: Readonly<{ manage: boolean
+    /** Actual installed readonly binary routes; absence preserves the original JSON download limits. */
+    releaseArchive?: Readonly<{ maxArchiveBytes: number; timeoutMs: number }>
+  }>
   readonly credentials: Readonly<{ write: boolean }>
   readonly fields: readonly BootstrapConfigurationField[]
 }

@@ -78,6 +78,8 @@ kind: "package-reference"
 
 Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.sessionRecheckLeadMs`，再发起原 Cookie 的下一次复查。pending 检查不延长登录最大验证年龄；慢查询仍由原同步守卫拒绝。提前量不改变 `authCheckTimeoutMs`。HTTP 和 upgrade 准入先预留有限 carrier 容量，再加入正在进行或已到期的 Peer 原 Cookie 查库复核。派发仍须通过复核时效及原请求/账户检查；WS 逻辑流打开保留同步守卫。
 
+精确的 `GET`、`HEAD /api/skills/release-archive` 使用原认证 `/api` 入口、头部账户/代际绑定及 Peer 载体。API 核验实际安装的只读包拥有者和显式 Root 全局 files 预算。原读取轮次及 AccountUse 保留到源清理和响应完成/关闭；已确认拒绝或取消只释放此载体，不使 Peer 失败；未知清理保留原始原因、Use 和容量。只有两个精确方法均通过实际清单审计后，bootstrap 才描述二进制限额。
+
 可选的固定预览入口沿用原数据库登录、C02 预期和 AccountUse。请求只选择原生 Session 与服务句柄；原执行拥有者补齐五项分配身份，不准备新工作。应用路径固定为 `/`，端口为8000；响应为有界惰性文本，不传递上游 Cookie、重定向或活动内容。正常预览响应完成后，原消费者继续保留到实际结算；取消和错误仍由同一操作持有到实际关闭。`PeAuthService.inspectRootFetch()` 只向可信账户清单报告当前实际注册；配置和此观察均不发布 bootstrap 可用状态。
 
 ### Bootstrap 元数据

@@ -1,4 +1,5 @@
 /** Graph-owned API preparation and native providers consumed by trusted runtime assembly. */
+import type { BundledSkillResponseBorrow, BundledSkillResponseSettlement } from './bundled-skill-response.ts'
 import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
 import type { WorkspaceTransferLimits } from './types.ts'
@@ -471,6 +472,34 @@ export class CloudAccountApi extends Service {
     const row = this.installation.exposure.requireFetch(method, pathname)
     this.assertFetchCurrent(row, this.inspectFetchRoutes())
     return row
+  }
+
+  /**
+   * Inspect this installed account's optional exact readonly release routes.
+   * @returns Explicit binary client bounds after both method registrations pass the original inventory audit.
+   */
+  skillReleaseBinaryPolicy(): Readonly<{ maxArchiveBytes: number; timeoutMs: number }> | undefined {
+    this.admit()
+    const policy = this.skills.native?.releaseArchivePolicy()
+    if (policy === undefined) return undefined
+    for (const method of ['GET', 'HEAD']) {
+      const row = this.requireFetch(method, '/api/skills/release-archive')
+      if (row.handlerId !== 'cloud:bundledSkillArchive' || row.guard !== 'authenticated-account') this.nativeUnavailable()
+    }
+    return policy
+  }
+
+  /**
+   * Forward the original access response to this account's actual skill owner.
+   * @param borrow Original authenticated response, retained by Access through cleanup.
+   * @param maxRequestBytes Original ingress URL allowance.
+   * @returns Confirmed completion/cancel/refusal, or the original unknown cleanup cause.
+   */
+  consumeSkillReleaseResponse(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement> {
+    this.admit()
+    const skills = this.skills.native
+    if (skills === undefined) this.nativeUnavailable()
+    return skills.consumeReleaseArchive(borrow, maxRequestBytes)
   }
 
   /**
@@ -1050,7 +1079,7 @@ export class CloudAccountApi extends Service {
     const root = this.rootFetch?.() ?? []
     if (root.length > maximum) this.nativeUnavailable()
     const native = [...this.fileTransfers, ...this.uploads.native?.inspect().exactFetchRoutes ?? [],
-      ...this.sessionExport.native?.inspect().exactFetchRoutes ?? []]
+      ...this.sessionExport.native?.inspect().exactFetchRoutes ?? [], ...this.skills.native?.inspect().exactFetchRoutes ?? []]
     if (native.length > maximum - root.length) this.nativeUnavailable()
     return { native, root }
   }

@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { ClientFailure } from './errors.ts'
 import type { PreparedCloudPage } from './prepared-page.ts'
+import { prepareBundledSkillDownload } from './bundled-skill-download.ts'
 import { managedSkillCallbacks } from './managed-skill-remote.ts'
 import { prepareCloudSkillEdit } from './skill-edit.ts'
 import { SKILLS_MANAGEMENT_NAMESPACE } from './management/skills/locales.ts'
@@ -22,7 +23,14 @@ export function installCloudSkillSettings(ctx: Context, page: PreparedCloudPage)
     signal.throwIfAborted()
     if (owner.get('peCloudPage') !== page) throw new ClientFailure('closed')
     const remote = owner.remote.cloudSkills
-    const input = { signal, timeoutMs: config.requestTimeoutMs, assertCurrent: () => { page.assertSkillSettingsCurrent(owner) } }
+    const release = page.bootstrap.capabilities.configuration.skills.releaseArchive
+    const fetch = page.lifetime.transport.hooks.fetch
+    const input = { signal, timeoutMs: config.requestTimeoutMs, assertCurrent: () => { page.assertSkillSettingsCurrent(owner) },
+      ...release === undefined || fetch === undefined ? {} : { prepareBundledDownload:
+        (selector: { readonly skillId: string; readonly contentVersion: string }, observer: AbortSignal) => prepareBundledSkillDownload({
+          fetch, signal, assertCurrent: () => { page.assertSkillSettingsCurrent(owner) }, ...release,
+        }, selector, observer) },
+    }
     owner.effect(() => page.attachManagedSkills(owner, managedSkillCallbacks(remote, input), {
       prepare: observer => prepareCloudSkillEdit(remote, input, observer),
       title: () => owner.locale.bind(SKILLS_MANAGEMENT_NAMESPACE)('sampleTitle'),

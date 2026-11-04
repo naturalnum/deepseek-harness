@@ -7,6 +7,7 @@ import { ConfigSaveCoordinator, AccountModelKeyEnvironment, type ModelKeyPeerCon
   type ConfigurationPeerConsumer, type CloudPluginPreparation, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-pe-cloud-files/root'
+import { ReleaseSkillBinaryBudget } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { RuntimeRootConfig } from './root-config.ts'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObservation } from './account-factory.ts'
@@ -64,6 +65,7 @@ interface RootControl {
   readonly owners: PostgresOwnerStore
   readonly factory: AccountFactory
   readonly saves: ConfigSaveCoordinator
+  readonly releaseSkillBinary?: ReleaseSkillBinaryBudget
   readonly requests: Map<AccountId, AccountFactoryRequest>
   readonly secrets: Set<Promise<string>>
   ownerResolver?: RootOwnerResolver
@@ -503,6 +505,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   }
 
   private startControl(config: RuntimeRootConfig, credentials: CredentialProvider): Promise<void> {
+    const releaseSkillBinary = config.native.skillReleaseBinary === undefined ? undefined
+      : new ReleaseSkillBinaryBudget(config.native.skillReleaseBinary)
     const secrets = new Set<Promise<string>>()
     const password = (): Promise<string> => this.resolvePassword(config, credentials, secrets)
     const executor = new PgOwnerExecutor({ ...config.database, password }, config.pg)
@@ -520,6 +524,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const saves = new ConfigSaveCoordinator(config.saves)
     const control: RootControl = {
       config, executor, database, instance, owners, factory, saves, requests: new Map(), secrets,
+      ...releaseSkillBinary === undefined ? {} : { releaseSkillBinary },
       phase: 'starting', starting: Promise.resolve(),
     }
     this.control = control
@@ -757,6 +762,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           } },
           ...skills?.mode !== 'managed' || bundleLimits === undefined ? {} : { skills: {
             limits: skills.limits, managed: { limits: skills.management, bundleLimits },
+            ...control.releaseSkillBinary === undefined ? {} : { releaseBinary: control.releaseSkillBinary },
             withModelKeyPeerUse: (peer, consume) => {
               const current: unknown = this.ctx.root.get('peAuth')
               if (!hasModelKeyPeerConsumer(current) || !hasModelKeyPeerConsumer(selectedAuth)

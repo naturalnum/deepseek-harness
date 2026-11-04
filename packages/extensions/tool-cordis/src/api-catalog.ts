@@ -865,6 +865,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Exact unary inventory.',
       },
       {
+        signature: 'releaseArchivePolicy(): Readonly<{ maxArchiveBytes: number; timeoutMs: number }> | undefined',
+        description: 'Inspect the installed readonly release allowance without starting a read.',
+        parameters: [],
+        returns: 'Explicit binary client bounds, or undefined while this route is disabled.',
+      },
+      {
+        signature: 'consumeReleaseArchive(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement>',
+        description: 'Consume only an original access response inside this account\'s existing directory read turn.',
+        parameters: [{ name: 'borrow', description: 'Original authenticated account/Peer/Use response.' }, { name: 'maxRequestBytes', description: 'Original ingress URL allowance.' }],
+        returns: 'Confirmed source/transfer settlement or the retained unknown cause.',
+      },
+      {
         signature: 'assertCurrent(): void',
         description: 'Require this exact installed account service and files binding; does not grant public readiness.',
         parameters: [],
@@ -2230,6 +2242,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Require an exact reviewed Fetch route after business admission.',
         parameters: [{ name: 'method', description: 'Original HTTP method.' }, { name: 'pathname', description: 'Original canonical pathname.' }],
         returns: 'Its exact audited declaration after business admission.',
+      },
+      {
+        signature: 'skillReleaseBinaryPolicy(): Readonly<{ maxArchiveBytes: number; timeoutMs: number }> | undefined',
+        description: 'Inspect this installed account\'s optional exact readonly release routes.',
+        parameters: [],
+        returns: 'Explicit binary client bounds after both method registrations pass the original inventory audit.',
+      },
+      {
+        signature: 'consumeSkillReleaseResponse(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement>',
+        description: 'Forward the original access response to this account\'s actual skill owner.',
+        parameters: [{ name: 'borrow', description: 'Original authenticated response, retained by Access through cleanup.' }, { name: 'maxRequestBytes', description: 'Original ingress URL allowance.' }],
+        returns: 'Confirmed completion/cancel/refusal, or the original unknown cleanup cause.',
       },
       {
         signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen',
@@ -6249,6 +6273,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
   {
+    name: 'BundledSkillBinaryBudget',
+    declaration: 'export interface BundledSkillBinaryBudget {\n    readonly limits: Readonly<{\n        maxArchiveBytes: number;\n        chunkBytes: number;\n        timeoutMs: number;\n    }>;\n    withArchive<T>(bytes: number, consume: (retainUnknown: (cause: unknown) => void) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'BundledSkillResponseBorrow',
+    declaration: 'export interface BundledSkillResponseBorrow {\n    readonly request: IncomingMessage;\n    readonly response: ServerResponse;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
+  },
+  {
+    name: 'BundledSkillResponseSettlement',
+    declaration: 'export type BundledSkillResponseSettlement = {\n    readonly cleanup: \'confirmed\';\n    readonly outcome: \'completed\' | \'cancelled\' | \'rejected\';\n} | {\n    readonly cleanup: \'unknown\';\n    readonly cause: unknown;\n};',
+  },
+  {
     name: 'BundleInfo',
     declaration: 'export interface BundleInfo {\n    name: string;\n    official: boolean;\n    availability: \'installation\' | \'profile\' | \'missing\';\n    installTarget?: {\n        spec: string;\n        version: string;\n    };\n    version?: string;\n    meta?: PluginLocalizedMeta;\n    description?: string;\n    enabled: boolean;\n    installed: boolean;\n    source?: string;\n    optional: boolean;\n    removable: boolean;\n    readOnlyReason?: ReadOnlyReason;\n    error?: ManagementError;\n    rows: BundleRowInfo[];\n    overrides: string[];\n}',
   },
@@ -6270,7 +6306,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    async prepareCloudRemoteServers(owner: Context, input:  /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    skillReleaseBinaryPolicy(): Readonly<{\n        maxArchiveBytes: number;\n        timeoutMs: number;\n    }> | undefined;\n    consumeSkillReleaseResponse(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement>;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): Native /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
@@ -6322,11 +6358,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudSkillPreparation',
-    declaration: 'export interface CloudSkillPreparation extends ModelKeyPeerConsumer {\n    readonly files: CloudAccountFiles;\n    readonly limits: SkillPublicationLimits;\n    readonly resources?: SkillResourcePreparation;\n    readonly managed: ManagedSkillPreparation;\n}',
+    declaration: 'export interface CloudSkillPreparation extends ModelKeyPeerConsumer {\n    readonly files: CloudAccountFiles;\n    readonly limits: SkillPublicationLimits;\n    readonly resources?: SkillResourcePreparation;\n    readonly managed: ManagedSkillPreparation;\n    readonly releaseBinary?: BundledSkillBinaryBudget;\n}',
   },
   {
     name: 'CloudSkillService',
-    declaration: 'export class CloudSkillService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudSkillPreparation, saves: ConfigSaveBarrier);\n    restore(): Promise<void>;\n    @Remote(\'current\')\n    current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>;\n    @Remote(\'publish\')\n    publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>;\n    @Remote(\'installed\')\n    installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>;\n    @Remote(\'details\')\n    details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>;\n    @Remote(\'install\')\n    install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'update\')\n    update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'uninstall\')\n    uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'download\')\n    download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>;\n    @Remote(\'readFile\')\n    readFile(request: ManagedSkillReadFileRequest, signal: AbortSignal): Promise<ManagedSkillFileContent>;\n    inspect(): ExposureInventory;\n    assertCurrent(): void;\n}',
+    declaration: 'export class CloudSkillService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, private readonly input: CloudSkillPreparation, saves: ConfigSaveBarrier);\n    restore(): Promise<void>;\n    @Remote(\'current\')\n    current(request: SkillCurrentRequest, signal: AbortSignal): Promise<SkillCurrentState>;\n    @Remote(\'publish\')\n    publish(request: SkillPublishRequest, signal: AbortSignal): Promise<SkillPublishResult>;\n    @Remote(\'installed\')\n    installed(request: ManagedSkillsInstalledRequest, signal: AbortSignal): Promise<ManagedSkillsInstalled>;\n    @Remote(\'details\')\n    details(request: ManagedSkillDetailsRequest, signal: AbortSignal): Promise<ManagedSkillDetails>;\n    @Remote(\'install\')\n    install(request: ManagedSkillInstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'update\')\n    update(request: ManagedSkillUpdateRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'uninstall\')\n    uninstall(request: ManagedSkillUninstallRequest, signal: AbortSignal): Promise<ManagedSkillMutationResult>;\n    @Remote(\'download\')\n    download(request: ManagedSkillDownloadRequest, signal: AbortSignal): Promise<ManagedSkillDownload>;\n    @Remote(\'readFile\')\n    readFile(request: ManagedSkillReadFileRequest, signal: AbortSignal): Promise<ManagedSkillFileContent>;\n    inspect(): ExposureInventory;\n    releaseArchivePolicy(): Readonly<{\n        maxArchiveBytes: number;\n        timeoutM /* …truncated — full shape in source */',
   },
   {
     name: 'CollectedOutput',
