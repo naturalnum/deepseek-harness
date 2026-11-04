@@ -34,6 +34,7 @@ import type { AccountBinding, AccountUse, SubagentCapacityReservation } from './
 import { AccountAttachments, type AccountAttachmentLimits } from './account-attachments.ts'
 import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
 import { observeStartup, type StartupObserver } from './startup-observation.ts'
+import { assertStandardRemoteAgent } from './account-remote-standard.ts'
 import { FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 import { prepareAccountSkillResources } from './account-skills.ts'
 import GoalService from '@deepseek-ai/dsh-goal'
@@ -619,6 +620,7 @@ export class AccountNativeIntegration {
             assertToolCurrent: (exec) => {
               if (exec.agent === undefined) throw new AccountRuntimeError('cloud/stale-generation', 'Remote execution requires the original Agent')
               exec.signal.throwIfAborted(); requireGuards(owner).projectForAgent(exec.agent)
+              assertStandardRemoteAgent(owner, exec.agent)
             },
           })
         },

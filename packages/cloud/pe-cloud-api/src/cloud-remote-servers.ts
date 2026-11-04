@@ -37,8 +37,12 @@ export class CloudRemoteServerService extends TypertRemoteService {
       assertCurrent: (exec) => { this.current(); input.assertBusinessCurrent(); input.assertToolCurrent(exec) },
       approval: exec => remoteServerApproval(ctx, api.binding, exec,
         () => { input.assertBusinessCurrent(); input.assertToolCurrent(exec) }),
-      run: (exec, target, command, current, probe) => data.withCredential(target.id,
-        secret => runRemoteSsh(ctx, target, secret, command, exec.signal, input.execution, current, probe)),
+      run: (exec, target, command, current, probe) => data.withCredential(target.id, (secret) => {
+        const executionCurrent = (): void => {
+          current(); this.current(); input.assertBusinessCurrent(); input.assertToolCurrent(exec)
+        }
+        return runRemoteSsh(ctx, target, secret, command, exec.signal, input.execution, executionCurrent, probe)
+      }),
     })
     ctx.effect(() => () => { api.invalidate() }, 'pe-cloud-api: revoke remote-server management and tools')
   }
