@@ -3,6 +3,7 @@ import type { BundledSkillResponseBorrow, BundledSkillResponseSettlement } from 
 import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
 import type { WorkspaceTransferLimits } from './types.ts'
+import { inventoryMethodMatches } from './inventory-method.ts'
 import { approvedSettingsMatch } from './approved-settings.ts'
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -311,10 +312,7 @@ export class CloudAccountApi extends Service {
           if (typert.local.hasSeen(row.endpoint)) this.nativeUnavailable()
           continue // Actual Gateway source discovery reads these same original native markers.
         }
-        const separator = row.endpoint.indexOf('/'), namespace = row.endpoint.slice(0, separator)
-        const method = row.endpoint.slice(separator + 1), service = row.handlerId.slice('native:'.length)
-        if (descriptor.service !== service || descriptor.namespace !== namespace || descriptor.method !== method
-          || (descriptor.implementation ?? descriptor.method) !== method || (descriptor.mode ?? 'rpc') !== mode) this.nativeUnavailable()
+        if (!inventoryMethodMatches(row, mode, descriptor)) this.nativeUnavailable()
       }
     }
     try {
