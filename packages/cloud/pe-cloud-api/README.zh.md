@@ -192,6 +192,8 @@ provider 选择、源借用及完整资源准备在原保存准入后开始。pr
 
 Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFiles`、`maxTotalBytes`、`chunkBytes`、`maxPathBytes` 和 `timeoutMs`。需加入 GET、HEAD `/api/workspace-files/download` 及 POST `/api/workspace-files/directory` 的确切 account-session Fetch 声明，handler 均为 `native:workspaceFiles`。每次请求通过原生 Session 归属及已注册工作区选择，分段读取反复核对当前选择。GET 通过现有 HTTP bridge 及套接字背压流式发送原文件或延迟打开条目的 ZIP64；ZIP 保留工作区相对目录，内容不进入 Remote JSON 或整包缓冲。HEAD 做授权及元数据预检，无 `path` 的 HEAD 返回选择器限制。选择路径还受服务器及代理请求行长度限制。上传另受原生附件接收及 staging 限制，真实磁盘配额可拒绝写入。下载进度与取消交给浏览器下载界面；响应头发出后失败会中断响应，应用无法确认浏览器已保存。新建目录失败时可能已有发布结果，应先刷新再重试。
 
+可选的[工作区上传 consumer](src/workspace-upload.ts) 要求 Access 持有精确的二进制响应路由，并将原账户／Peer／Use 借用保留到 HTTP finish／close。其选择器捕获原生 Session／项目策略，并提供同一 files owner 的 `stageWorkspaceUploads` 操作。请求提供 `sessionId`、`directory`、`name`、精确 `Content-Length` 及 `x-content-sha256`；声明不授予存储或账户权限。成功结果是 Cloud 工作区文件发布回执，包含实际重名处理路径、已核验 SHA-256 与字节数，不是原生对话附件收据。提前拒绝会保留套接字，直到完整响应 finish。已确认取消会等待源及 worker 清理，未知结算则保留原责任。注册本 consumer 不会改变对话上传限制、开放路由或迁移历史附件。
+
 ## Model Experience
 
 ### Model-call admission

@@ -22,19 +22,68 @@ export interface StageFileResult extends FdStageResult {
   readonly relativePath: string
 }
 
+/** Untrusted declared comparison values; neither a Native attachment reference nor project authority. */
+export interface WorkspaceUploadClaim {
+  readonly sha256: string
+  readonly name: string
+  readonly bytes: number
+}
+
+/** Access-issued bytes for one account-selected workspace directory. */
+export interface WorkspaceUploadSource {
+  readonly claim: WorkspaceUploadClaim
+  readonly workspaceDirectory: string
+  open(this: void, signal: AbortSignal): AsyncIterable<Uint8Array>
+}
+
+/** Closed Cloud file publication; it cannot be submitted as a Native prompt receipt. */
+export interface WorkspaceUploadResult extends FdStageResult {
+  readonly kind: 'workspace-upload'
+  readonly claim: WorkspaceUploadClaim
+  readonly relativePath: string
+}
+
+type NativeMetadata = { readonly ref: FileAttachmentRef }
+type UploadMetadata = { readonly kind: 'workspace-upload'; readonly claim: WorkspaceUploadClaim }
+type Publication<M extends object> = FdStageResult & M & { readonly relativePath: string }
+
 /** Earlier closed publications survive a later batch failure; they are never represented as rolled back. */
-export class StageBatchFailure extends FdStageFailure {
-  constructor(failure: FdStageFailure, readonly completed: readonly StageFileResult[]) {
+export class StageBatchFailure<M extends object = NativeMetadata> extends FdStageFailure {
+  constructor(failure: FdStageFailure, readonly completed: readonly Publication<M>[]) {
     super(failure.outcome, failure.code, failure.facts, { cause: failure })
   }
 }
 
 /** Complete positive reservation and copied, bounded input descriptors fixed before queue admission. */
-export interface StageBatchPlan {
+export interface StageBatchPlan<M extends object = NativeMetadata> {
   readonly reservationBytes: number
   readonly modeledBytes: number
   readonly overheadAllowanceBytes: number
-  readonly files: readonly { readonly source: StageSource; readonly file: FdStageFile; readonly relativePath: string }[]
+  readonly files: readonly {
+    readonly source: {
+      readonly metadata: M
+      readonly open: StageSource['open']
+    }
+    readonly file: FdStageFile
+    readonly relativePath: string
+  }[]
+}
+
+interface StageBounds {
+  readonly maxPathBytes: number
+  readonly readChunkBytes: number
+  readonly replyOverheadBytes: number
+  readonly maxResidentBytesPerLane: number
+}
+
+interface StageInput<M extends object> {
+  readonly digest: string
+  readonly name: string
+  readonly bytes: number
+  readonly metadata: M
+  readonly workspaceDirectory?: string
+  readonly directoryOnly?: boolean
+  readonly open: StageSource['open']
 }
 
 /**
@@ -65,47 +114,67 @@ export function validateStagingLimits(limits: FdStagingLimits, pathLimit: number
  */
 export function planStageBatch(
   sources: readonly StageSource[], root: Pick<FdRootIdentity, 'rootPath' | 'rootMountId'>, limits: FdStagingLimits,
-  bounds: {
-    readonly maxPathBytes: number
-    readonly readChunkBytes: number
-    readonly replyOverheadBytes: number
-    readonly maxResidentBytesPerLane: number
-  },
+  bounds: StageBounds,
 ): StageBatchPlan {
+  const inputs = sources.map((source) => {
+    const { ref } = source
+    const digest = /^sha256:([a-f0-9]{64})$/.exec(String(ref.attachmentId))?.[1]
+    if (digest === undefined) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+    return { ...source, digest, name: ref.name, bytes: ref.bytes,
+      metadata: Object.freeze({ ref: Object.freeze({ attachmentId: ref.attachmentId, name: ref.name, bytes: ref.bytes }) }) }
+  })
+  return planInputs(inputs, root, limits, bounds)
+}
+
+/**
+ * Plan raw upload claims through the same staging transaction, without manufacturing Native attachment references.
+ * @param sources Authorized project selections and Access-owned streams with untrusted declared digest/length.
+ * @param root Original selected account project anchor.
+ * @param limits Existing staging limits, unchanged for raw uploads.
+ * @param bounds Existing worker/resident frame limits.
+ * @returns Same bounded staging plan; only a fully verified closed transaction can produce its Cloud file receipt.
+ */
+export function planWorkspaceUploadBatch(sources: readonly WorkspaceUploadSource[],
+  root: Pick<FdRootIdentity, 'rootPath' | 'rootMountId'>, limits: FdStagingLimits, bounds: StageBounds): StageBatchPlan<UploadMetadata> {
+  return planInputs(sources.map(source => ({ digest: source.claim.sha256, name: source.claim.name, bytes: source.claim.bytes,
+    workspaceDirectory: source.workspaceDirectory, open: source.open,
+    metadata: Object.freeze({ kind: 'workspace-upload' as const, claim: Object.freeze({ sha256: source.claim.sha256,
+      name: source.claim.name, bytes: source.claim.bytes }) }) })), root, limits, bounds, 5)
+}
+
+function planInputs<M extends object>(sources: readonly StageInput<M>[], root: Pick<FdRootIdentity, 'rootPath' | 'rootMountId'>,
+  limits: FdStagingLimits, bounds: StageBounds, sourceCopies = 3): StageBatchPlan<M> {
   validateStagingLimits(limits, bounds.maxPathBytes, bounds.readChunkBytes)
   if (!Array.isArray(sources) || sources.length < 1 || sources.length > limits.maxBatchRefs
     || sources.length * 2048 > bounds.maxResidentBytesPerLane || root.rootMountId === undefined
     || Buffer.byteLength(root.rootPath) > bounds.maxPathBytes) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
   let total = 0, strings = 2 * bounds.maxPathBytes
-  const files = sources.map((source: StageSource) => {
-    const { ref } = source
-    const match = /^sha256:([a-f0-9]{64})$/.exec(String(ref.attachmentId))
-    const digest = match?.[1]
-    if (digest === undefined || typeof ref.name !== 'string' || !validStageName(ref.name) || typeof source.open !== 'function') {
+  const files = sources.map((source: StageInput<M>) => {
+    const { digest, name, bytes } = source
+    if (!/^[a-f0-9]{64}$/u.test(digest) || typeof name !== 'string' || !validStageName(name) || typeof source.open !== 'function') {
       throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
     }
-    total += ref.bytes
-    if (!Number.isSafeInteger(ref.bytes) || ref.bytes < 0 || ref.bytes > limits.maxFileBytes
+    total += bytes
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > limits.maxFileBytes
       || !Number.isSafeInteger(total) || total > limits.maxBatchBytes) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
-    const relativePath = source.workspaceDirectory === undefined ? `.pe/attachments/${digest}/${ref.name}`
-      : `${source.workspaceDirectory}/${ref.name}`
+    const relativePath = source.workspaceDirectory === undefined ? `.pe/attachments/${digest}/${name}`
+      : `${source.workspaceDirectory}/${name}`
     if (source.workspaceDirectory !== undefined && (source.workspaceDirectory.startsWith('/')
       || source.workspaceDirectory.split('/').some(part => part !== '.' && (!validStageName(part) || part === '.pe')))) {
       throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
     }
     if (Buffer.byteLength(`${root.rootPath}/${relativePath}`) > bounds.maxPathBytes) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
-    const copied = Object.freeze({ attachmentId: ref.attachmentId, name: ref.name, bytes: ref.bytes })
-    const file = Object.freeze({ digest, name: ref.name, expectedBytes: ref.bytes,
+    const file = Object.freeze({ digest, name, expectedBytes: bytes,
       ...source.workspaceDirectory === undefined ? {} : { workspaceDirectory: source.workspaceDirectory },
       ...source.directoryOnly === undefined ? {} : { directoryOnly: source.directoryOnly } })
     // Input/output metadata must fit their complete frame ceiling, including bounded native facts.
-    if (Buffer.byteLength(JSON.stringify({ file, relativePath, ref: copied })) + 1024 > bounds.replyOverheadBytes) {
+    if (Buffer.byteLength(JSON.stringify({ file, relativePath, metadata: source.metadata })) + 1024 > bounds.replyOverheadBytes) {
       throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
     }
-    strings += Buffer.byteLength(digest) + Buffer.byteLength(ref.name) + Buffer.byteLength(relativePath)
-    return Object.freeze({ source: Object.freeze({ ref: copied, open: source.open }), file, relativePath })
+    strings += Buffer.byteLength(digest) + Buffer.byteLength(name) + Buffer.byteLength(relativePath)
+    return Object.freeze({ source: Object.freeze({ metadata: source.metadata, open: source.open }), file, relativePath })
   })
-  const modeledBytes = 3 * limits.maxSourceChunkBytes + 2 * bounds.readChunkBytes + 12 * (bounds.maxPathBytes + 1)
+  const modeledBytes = sourceCopies * limits.maxSourceChunkBytes + 2 * bounds.readChunkBytes + 12 * (bounds.maxPathBytes + 1)
     + 8 * strings + 8 * files.length * bounds.replyOverheadBytes + bounds.replyOverheadBytes
   const reservationBytes = limits.reservationBytes
   if (!Number.isSafeInteger(modeledBytes) || modeledBytes >= reservationBytes || reservationBytes > bounds.maxResidentBytesPerLane) {
@@ -131,11 +200,11 @@ export interface StageTransport {
  * @param signal Original actual work signal, separate from the observer.
  * @returns Complete closed publication facts; failures join both sides before rejecting.
  */
-export async function executeStageBatch(
-  transport: StageTransport, root: FdRootIdentity, plan: StageBatchPlan, limits: FdStagingLimits,
+export async function executeStageBatch<M extends object = NativeMetadata>(
+  transport: StageTransport, root: FdRootIdentity, plan: StageBatchPlan<M>, limits: FdStagingLimits,
   chunkBytes: number, current: () => void, signal: AbortSignal,
-): Promise<readonly StageFileResult[]> {
-  const results: StageFileResult[] = []
+): Promise<readonly Publication<M>[]> {
+  const results: Publication<M>[] = []
   for (const entry of plan.files) {
     try {
       current()
@@ -185,11 +254,13 @@ export async function executeStageBatch(
           }
         }
         if (total !== entry.file.expectedBytes) throw new FdStageFailure('not-published', 'FS_IO_ERROR')
+        await iterator.return?.()
+        iterator = undefined
         // Worker6's native iterator done includes actual source close and final integrity verification.
         await sink.finishSource()
       }
       const result = await sink.settled
-      results.push(Object.freeze({ ...result, ref: entry.source.ref, relativePath: resultPath(entry, result) }))
+      results.push(Object.freeze({ ...result, ...entry.source.metadata, relativePath: resultPath(entry, result) }))
     } catch (error) {
       const cancelled = actualSignal.aborted
       // Request sink cleanup before waiting on a possibly blocked native source return.
@@ -205,7 +276,7 @@ export async function executeStageBatch(
       }
       if (destination.status === 'fulfilled') {
         // A closed durable result stays committed even if observation cancellation arrives afterwards.
-        results.push(Object.freeze({ ...destination.value, ref: entry.source.ref, relativePath: resultPath(entry, destination.value) }))
+        results.push(Object.freeze({ ...destination.value, ...entry.source.metadata, relativePath: resultPath(entry, destination.value) }))
         if (results.length === plan.files.length) return Object.freeze(results)
       }
       const failure = error instanceof FdStageFailure ? error : new FdStageFailure('not-published',
@@ -217,7 +288,7 @@ export async function executeStageBatch(
   return Object.freeze(results)
 }
 
-function resultPath(entry: StageBatchPlan['files'][number], result: FdStageResult): string {
+function resultPath(entry: Pick<StageBatchPlan<object>['files'][number], 'file' | 'relativePath'>, result: FdStageResult): string {
   if (entry.file.workspaceDirectory === undefined) return entry.relativePath
   if (result.facts.publishedName === undefined) throw new FdStageFailure('unknown', 'FS_IO_ERROR', result.facts)
   return `${entry.file.workspaceDirectory}/${result.facts.publishedName}`

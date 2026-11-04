@@ -1,6 +1,6 @@
 /** TEST ONLY Node protocol transport; no companion ABI, namespace, quota or durability certificate. */
 import { parentPort, workerData } from 'node:worker_threads'
-import { closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 const { mode = 'normal', gate, staging } = workerData
@@ -29,10 +29,12 @@ parentPort.on('message', request => {
   }
   if (request.kind === 'stage-begin') {
     Atomics.add(counters, 0, 1)
-    const parent = join(request.root.rootPath, '.pe', 'attachments', request.file.digest)
+    const workspace = request.file.workspaceDirectory !== undefined
+    const parent = workspace ? join(request.root.rootPath, request.file.workspaceDirectory)
+      : join(request.root.rootPath, '.pe', 'attachments', request.file.digest)
     mkdirSync(parent, { recursive: true })
     const path = join(parent, request.file.name)
-    if (existsSync(path)) {
+    if (!workspace && existsSync(path)) {
       const bytes = readFileSync(path), digest = createHash('sha256').update(bytes).digest('hex')
       const valid = digest === request.file.digest && bytes.byteLength === request.file.expectedBytes
       parentPort.postMessage(valid ? { kind: 'stage-result', id: request.id, result: { outcome: 'reused',
@@ -42,7 +44,7 @@ parentPort.on('message', request => {
     }
     const temp = `${path}.${request.id}.tmp`
     active = { id: request.id, file: request.file, path, temp, fd: openSync(temp, 'wx'), cancel: new Int32Array(request.cancel),
-      total: 0, sequence: 0, hash: createHash('sha256'), source: false }
+      workspace, parent, total: 0, sequence: 0, hash: createHash('sha256'), source: false }
     parentPort.postMessage({ kind: 'stage-ready', id: request.id }); return
   }
   if (active === undefined && request.kind === 'stage-abort' && request.id === ended) return
@@ -75,10 +77,23 @@ parentPort.on('message', request => {
     if (!active.source || active.total !== active.file.expectedBytes || active.hash.digest('hex') !== active.file.digest) {
       fail('FS_IO_ERROR'); return
     }
-    fsyncSync(active.fd); closeSync(active.fd); renameSync(active.temp, active.path)
+    fsyncSync(active.fd); closeSync(active.fd)
+    let publishedName
+    if (active.workspace) {
+      const dot = active.file.name.lastIndexOf('.')
+      const stem = dot > 0 ? active.file.name.slice(0, dot) : active.file.name
+      const extension = dot > 0 ? active.file.name.slice(dot) : ''
+      for (let suffix = 0; ; suffix++) {
+        publishedName = suffix ? `${stem}_${suffix}${extension}` : active.file.name
+        try { linkSync(active.temp, join(active.parent, publishedName)); break }
+        catch (error) { if (error.code !== 'EEXIST') throw error }
+      }
+      unlinkSync(active.temp)
+    } else renameSync(active.temp, active.path)
     Atomics.add(counters, 5, 1)
     parentPort.postMessage({ kind: 'stage-result', id: active.id,
-      result: { outcome: 'published', facts: facts('published', true, true, 'published') } })
+      result: { outcome: 'published', facts: { ...facts('published', true, true, 'published'),
+        ...publishedName === undefined || mode === 'omit-published-name' ? {} : { publishedName } } } })
     ended = active.id; active = undefined; return
   }
   throw new Error('Fixture stage command mismatch')

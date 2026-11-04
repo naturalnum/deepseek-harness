@@ -45,8 +45,8 @@ import type { StaticStorageConfig } from './storage-types.ts'
 import { staticStorageReservation } from './storage-probe.ts'
 import { runInstructionReadWork } from './instruction-read-work.ts'
 import type { InstructionReadReaders } from './instruction-read-work.ts'
-import { executeStageBatch, planStageBatch, validateStagingLimits } from './stage-bridge.ts'
-import type { StageSources, StageFileResult, StageBatchPlan } from './stage-bridge.ts'
+import { executeStageBatch, planStageBatch, planWorkspaceUploadBatch, validateStagingLimits } from './stage-bridge.ts'
+import type { StageSources, StageFileResult, StageBatchPlan, WorkspaceUploadSource, WorkspaceUploadResult } from './stage-bridge.ts'
 import { environmentQuota, environmentWorkBytes, prepareEnvironmentSlot } from './environment-bank.ts'
 import { prepareSessionEnvironmentDirectory } from './environment-directories.ts'
 import type { EnvironmentBankAuthority, EnvironmentBankState, EnvironmentSessionId, ExecutionMountGrant } from './environment-bank.ts'
@@ -127,6 +127,9 @@ export interface PoolReadPort {
   stageFiles(
     workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal,
   ): Promise<ResidentResult<readonly StageFileResult[]>>
+  /** Stage declared raw upload claims on the same mutation owner, without issuing Native attachment receipts. */
+  stageWorkspaceUploads(workspace: Workspace, sources: readonly WorkspaceUploadSource[],
+    assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly WorkspaceUploadResult[]>>
   /**
    * Controlled native intake work on this same mutation owner; no intake business or receipt service is supplied here.
    * @param reservationBytes Complete Root-reviewed source/storage/result/cleanup reservation.
@@ -855,6 +858,68 @@ export class LinuxFilesPool implements DrainParticipant {
         }) })
       } })
     }
+    const stagePublications = async <M extends object>(workspace: Workspace,
+      prepare: (selection: Pick<FdRootIdentity, 'rootPath' | 'rootMountId'>, staging: FdStagingLimits) => StageBatchPlan<M> | undefined,
+      lazy: boolean, assertRegistered: () => void, signal?: AbortSignal, joinCancellation = false) => {
+      const current = (): void => { checkCurrent(); assertRegistered() }
+      current()
+      assertStagingAvailable()
+      const staging = this.config.staging
+      if (staging === undefined) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+      const leaf = projectLeaf(workspace)
+      if (!Number.isSafeInteger(staging.reservationBytes) || staging.reservationBytes < 1
+        || staging.reservationBytes > this.config.maxResidentBytesPerLane) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
+      const selection = { rootPath: workspace.path,
+        ...fixedRoot.rootMountId === undefined ? {} : { rootMountId: fixedRoot.rootMountId } }
+      const supplied = lazy ? undefined : prepare(selection, staging)
+      const execution = { entered: false }
+      const result = await runMutation(staging.reservationBytes, current, async (client, queueSignal) => {
+        execution.entered = true
+        const control = joinCancellation && signal !== undefined ? AbortSignal.any([queueSignal, signal]) : queueSignal
+        if (control.aborted) throw new FdStageFailure('not-published', 'FS_ABORTED')
+        let plan: StageBatchPlan<M> | undefined
+        try {
+          plan = lazy ? prepare(selection, staging) : supplied
+          if (plan === undefined) return Object.freeze([])
+        } catch (error) {
+          // Collection and planning have opened neither source nor sink; no publication or cleanup is pending.
+          throw new FdStageFailure('not-published', error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined,
+            { cause: error })
+        }
+        // Derive the real project identity inside this same reservation/slot, never via another lane run.
+        let selected: FdRootIdentity
+        try {
+          const directory = await client.directory(fixedRoot, leaf, this.config.maxPathBytes, control)
+          current()
+          if (!directory.directory || directory.canonicalPath !== workspace.path) throw new FdStageFailure('not-published',
+            'FS_PERMISSION_DENIED')
+          const info = await client.stat(fixedRoot, leaf, control)
+          current()
+          if (info?.type !== 'directory') throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+          const [device, inode] = info.identity.split(':')
+          if (device === undefined || inode === undefined || fixedRoot.rootMountId === undefined) {
+            throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+          }
+          selected = Object.freeze({ rootPath: workspace.path, rootDevice: device, rootInode: inode, rootMountId: fixedRoot.rootMountId })
+        } catch (error) {
+          if (error instanceof DirectoryMetadataFailure || error instanceof FdWorkerFailure || error instanceof FilesFailure) {
+            throw error instanceof FdMutationFailure ? error : new FdStageFailure('not-published',
+              error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined, { cause: error })
+          }
+          throw error
+        }
+        return await executeStageBatch({ beginStage: (root, file, chunk, actual) =>
+          client.beginStage(root, file, chunk, this.config.replyOverheadBytes, actual) }, selected, plan, staging,
+        this.config.readChunkBytes, current, control)
+      }, (outcome, code, cause) => new FdStageFailure(outcome, code, undefined,
+        cause === undefined ? undefined : { cause }), joinCancellation ? undefined : signal, 'retained-result').catch((error: unknown) => {
+        if (joinCancellation && !execution.entered && error instanceof FilesFailure) {
+          throw new FdStageFailure('not-published', signal?.aborted === true ? 'FS_ABORTED' : 'FS_IO_ERROR', undefined, { cause: error })
+        }
+        throw error
+      })
+      try { current(); return result } catch (error) { result.release(); throw error }
+    }
     return Object.freeze({
       reader,
       directory,
@@ -981,59 +1046,14 @@ export class LinuxFilesPool implements DrainParticipant {
         return runMutation(reservationBytes, () => { checkCurrent(); assertOwner() }, (_client, actual) => execute(actual),
           (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, cause === undefined ? undefined : { cause }), signal)
       },
-      stageFiles: async (workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal) => {
-        const current = (): void => { checkCurrent(); assertRegistered() }
-        current()
-        assertStagingAvailable()
-        const staging = this.config.staging
-        if (staging === undefined) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
-        const leaf = projectLeaf(workspace)
-        if (!Number.isSafeInteger(staging.reservationBytes) || staging.reservationBytes < 1
-          || staging.reservationBytes > this.config.maxResidentBytesPerLane) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
-        const selection = { rootPath: workspace.path,
-          ...fixedRoot.rootMountId === undefined ? {} : { rootMountId: fixedRoot.rootMountId } }
-        const supplied = typeof sources === 'function' || sources.length === 0
-          ? undefined : planStageBatch(sources, selection, staging, this.config)
-        const result = await runMutation(staging.reservationBytes, current, async (client, control) => {
-          let plan: StageBatchPlan
-          try {
-            const collected = typeof sources === 'function' ? sources() : sources
-            if (Array.isArray(collected) && collected.length === 0) return Object.freeze([])
-            plan = supplied ?? planStageBatch(collected, selection, staging, this.config)
-          } catch (error) {
-            // Collection and planning have opened neither source nor sink; no publication or cleanup is pending.
-            throw new FdStageFailure('not-published', error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined,
-              { cause: error })
-          }
-          // Derive the real project identity inside this same reservation/slot, never via another lane run.
-          let selected: FdRootIdentity
-          try {
-            const directory = await client.directory(fixedRoot, leaf, this.config.maxPathBytes, control)
-            current()
-            if (!directory.directory || directory.canonicalPath !== workspace.path) throw new FdStageFailure('not-published',
-              'FS_PERMISSION_DENIED')
-            const info = await client.stat(fixedRoot, leaf, control)
-            current()
-            if (info?.type !== 'directory') throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
-            const [device, inode] = info.identity.split(':')
-            if (device === undefined || inode === undefined || fixedRoot.rootMountId === undefined) {
-              throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
-            }
-            selected = Object.freeze({ rootPath: workspace.path, rootDevice: device, rootInode: inode, rootMountId: fixedRoot.rootMountId })
-          } catch (error) {
-            if (error instanceof DirectoryMetadataFailure || error instanceof FdWorkerFailure || error instanceof FilesFailure) {
-              throw error instanceof FdMutationFailure ? error : new FdStageFailure('not-published',
-                error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined, { cause: error })
-            }
-            throw error
-          }
-          return await executeStageBatch({ beginStage: (root, file, chunk, actual) =>
-            client.beginStage(root, file, chunk, this.config.replyOverheadBytes, actual) }, selected, plan, staging,
-          this.config.readChunkBytes, current, control)
-        }, (outcome, code, cause) => new FdStageFailure(outcome, code, undefined,
-          cause === undefined ? undefined : { cause }), signal, 'retained-result')
-        try { current(); return result } catch (error) { result.release(); throw error }
-      },
+      stageFiles: (workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal) =>
+        stagePublications(workspace, (selection, staging) => {
+          const collected = typeof sources === 'function' ? sources() : sources
+          return collected.length === 0 ? undefined : planStageBatch(collected, selection, staging, this.config)
+        }, typeof sources === 'function', assertRegistered, signal),
+      stageWorkspaceUploads: (workspace: Workspace, sources: readonly WorkspaceUploadSource[],
+        assertRegistered: () => void, signal?: AbortSignal) => stagePublications(workspace,
+        (selection, staging) => planWorkspaceUploadBatch(sources, selection, staging, this.config), false, assertRegistered, signal, true),
       derivePreparedLeaf,
       createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
         const defaultPort = derivePreparedLeaf(defaultGrant)
