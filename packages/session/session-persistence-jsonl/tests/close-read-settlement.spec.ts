@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { symbols } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
-import { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import { SessionHandleClosedError } from '@deepseek-ai/dsh-session-persistence'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -18,7 +18,7 @@ async function fixture(compression: JsonlCompression) {
   const ctx = await boot('dsh', config, [], (owner) => { owner.loader.builtins['close-read'] = JsonlPersistence })
   const persistence = ctx.sessionPersistence
   const backend = (Reflect.get(persistence, symbols.original) ?? persistence) as SessionPersistence & JsonlHandleStorage
-  const header = { version: SESSION_FORMAT_VERSION, id: SessionId('close-read'), createdAt: 1000, isSeeded: false, cwd: '/work' }
+  const header: SessionHeader = { version: SESSION_FORMAT_VERSION, id: SessionId('close-read'), createdAt: 1000, isSeeded: false, cwd: '/work' }
   const writer = await persistence.create(header)
   await writer.flush(); await writer.close()
   const reader = await persistence.open(header.id, 'read')

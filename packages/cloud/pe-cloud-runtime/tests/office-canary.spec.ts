@@ -42,7 +42,7 @@ function fixture(accountId = 'office-canary', mutate?: (rows: { id: string; name
   const owner = policyFixture([], { maxHomeBytes: 4096, maxCollectionItems: 64, maxFrameBytes: 131072,
     maxQueuedEvents: 16, maxQueuedBytes: 262144 }, accountId, undefined, undefined, undefined, undefined, undefined, [], true, undefined, {
     defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', config: { id: 'cloud-chat', plugins: [] }, selectable: true }],
-    office: selected, baseEntries: base,
+    ...selected === undefined ? {} : { office: selected }, baseEntries: base,
     sourceModules: { '@deepseek-ai/dsh-skill': SkillRegistry, '@deepseek-ai/dsh-skill-office': Office,
       '@deepseek-ai/dsh-skill-filesystem': Reports, '@deepseek-ai/dsh-tool-skill': SkillTool, 'office:probe': { default: NativeAccountProbe } },
     extraEntries: [{ id: 'skills', name: '@deepseek-ai/dsh-skill' }, { id: 'skill-tool', name: '@deepseek-ai/dsh-tool-skill' },
