@@ -6,7 +6,7 @@ import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SkillProjectGrant } from '../src/skill-files-types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRetainedExecutionExports, createSharedPathExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
-import { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
+import { REMOTE_CLIENT_SERVER_IMAGE_DIGEST, SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
 
 interface Directory { readonly path: string; readonly device: string; readonly inode: string; readonly mountId: string }
 type Opened = { readonly kind: 'directory'; readonly value: Directory } | { readonly kind: 'proc'; readonly bytes: Buffer; offset: number }
@@ -265,6 +265,19 @@ it.each([undefined, 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847
     expect(fs.open).not.toHaveBeenCalled()
   },
 )
+
+it('retains the original Session-directory grant and descriptors with the paired SSH server', async () => {
+  const f = fixture('shared-path', true)
+  const selected = createSharedPathExecutionExports(f.planBytes, f.digest, f.planCurrent, f.limits,
+    REMOTE_CLIENT_SERVER_IMAGE_DIGEST)
+  const share = await selected.share(f.grant, f.current)
+  expect(share.value.grant).toBe(f.grant)
+  expect(share.value.exports.environment).toBe(f.environmentAlias)
+  expect(f.opened.size).toBeGreaterThan(0)
+  share.release()
+  expect(f.opened.size).toBe(0)
+  expect(() => { selected.assertEpochReleased(f.grant.binding) }).not.toThrow()
+})
 
 it.each(['account', 'recipe', 'slot', 'quota', 'project'] as const)('refuses shared-path %s mismatch before opening sources', async (changed) => {
   const f = fixture('shared-path')

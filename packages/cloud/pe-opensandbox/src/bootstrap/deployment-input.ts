@@ -7,10 +7,22 @@ import type { ExecutionExportLimits } from '../export-share.ts'
 import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
-import { isPinnedWorkloadImageDigest } from './workload-images.ts'
+import { isPinnedWorkloadImageDigest, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST } from './workload-images.ts'
 
 /** Reviewed Session-directory guard and explicit Native creation profile, retaining the exact syscall filter and capabilities. */
 export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:7a41332aef7bcc74414b1434c7e10ee057c420e213d082fc79ac791c921af6ba'
+
+/** The original directory-aware Native server plus its exact two-workload policy patch. */
+export const REMOTE_CLIENT_SERVER_IMAGE_DIGEST = 'sha256:6497790ee3398569aef7d8f35d442e76c33c9be08633a6a2732dbcb2ee1fe01e'
+
+/**
+ * Identify the reviewed server implementations of the original Session-directory guard.
+ * @param image Explicit protected server selection, absent for legacy callers.
+ * @returns Whether the selected immutable server includes that same directory guard.
+ */
+export function isSessionDirectoryServerImageDigest(image: string | undefined): boolean {
+  return image === SESSION_DIRECTORY_SERVER_IMAGE_DIGEST || image === REMOTE_CLIENT_SERVER_IMAGE_DIGEST
+}
 
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
 export interface SharedPathStorageLimits {
@@ -142,10 +154,12 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
   const serverImage = text(s.serverImageDigest, 'selection.serverImageDigest', 71)
   need((schema === 'pe-opensandbox-root-deployment-v2'
     ? serverImage === 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'
-      || serverImage === SESSION_DIRECTORY_SERVER_IMAGE_DIGEST
+      || isSessionDirectoryServerImageDigest(serverImage)
     : serverImage === 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17')
     && s.execdImageDigest === 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
+  need((life.imageDigest === REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST)
+    === (serverImage === REMOTE_CLIENT_SERVER_IMAGE_DIGEST), 'selection.workloadImagePair')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')
   let copies: RootDeploymentInput['skillCopies']

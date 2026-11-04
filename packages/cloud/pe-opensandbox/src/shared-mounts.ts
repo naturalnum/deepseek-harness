@@ -10,7 +10,7 @@ import type { SkillProjectGrant } from './skill-files-types.ts'
 import type { ExecutionExportShare, ManagedExecutionDeployment } from './managed-coordinator.ts'
 import type { RetainedExecutionExports } from './export-share.ts'
 import { ExecutionStateError } from './errors.ts'
-import { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from './bootstrap/deployment-input.ts'
+import { isSessionDirectoryServerImageDigest } from './bootstrap/deployment-input.ts'
 
 /** Private Root failure; native callers receive the existing secret-free execution classification. */
 export class ExecutionExportFailure extends ExecutionStateError {
@@ -401,7 +401,7 @@ export function createSharedPathExecutionExports(bytes: Uint8Array, digest: stri
   catch (cause) { throw new ExecutionExportFailure('manifest', cause) }
   if (plan.version !== 2) invalid('manifest')
   if (plan.accounts.some(account => account.environmentBank.mode === 'session-directories')
-    && serverImageDigest !== SESSION_DIRECTORY_SERVER_IMAGE_DIGEST) invalid('selection')
+    && !isSessionDirectoryServerImageDigest(serverImageDigest)) invalid('selection')
   assertPlanCurrent()
   return createExecutionMountShares(limits.maxShares, {
     assertCurrent: assertPlanCurrent,

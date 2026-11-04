@@ -2,7 +2,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { loadBootstrapPayload, TrustedSdkBootstrap } from '../src/bootstrap/bootstrap.ts'
-import { parseRootDeploymentInput, SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
+import { parseRootDeploymentInput, REMOTE_CLIENT_SERVER_IMAGE_DIGEST,
+  SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
 import { NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST } from '../src/bootstrap/workload-images.ts'
 import { sharedPathDeploymentFixture } from './fixtures/root-deployment.ts'
 
@@ -11,9 +12,10 @@ it('selects the exact reviewed SSH layer without changing the original lifecycle
   input.selection.serverImageDigest = SESSION_DIRECTORY_SERVER_IMAGE_DIGEST
   const previous = parseRootDeploymentInput(input)
   input.lifecycle.imageDigest = REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST
+  input.selection.serverImageDigest = REMOTE_CLIENT_SERVER_IMAGE_DIGEST
   const selected = parseRootDeploymentInput(input)
   expect({ ...selected.lifecycle, imageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST }).toEqual(previous.lifecycle)
-  expect(selected.selection).toEqual(previous.selection)
+  expect({ ...selected.selection, serverImageDigest: SESSION_DIRECTORY_SERVER_IMAGE_DIGEST }).toEqual(previous.selection)
   expect(selected.bootstrap).toEqual(previous.bootstrap)
   expect(selected.schema).toBe('pe-opensandbox-root-deployment-v2')
 })
@@ -24,6 +26,7 @@ it.each([NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST])(
     const payload = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
     const input = sharedPathDeploymentFixture()
     input.lifecycle.imageDigest = imageDigest
+    if (imageDigest === REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST) input.selection.serverImageDigest = REMOTE_CLIENT_SERVER_IMAGE_DIGEST
     const parsed = parseRootDeploymentInput(input)
     expect(() => new TrustedSdkBootstrap({ ...parsed.bootstrap, lifecycle: parsed.lifecycle,
       assertDeploymentCurrent() {} }, payload, () => { throw new Error('Construction must not start a transport') }))
@@ -36,4 +39,15 @@ it.each(['dsh-remote-client:20261104-01', REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST.sl
   const input = sharedPathDeploymentFixture()
   input.lifecycle.imageDigest = imageDigest
   expect(() => parseRootDeploymentInput(input)).toThrow('lifecycle.fixedSelection')
+})
+
+it.each([
+  [REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, SESSION_DIRECTORY_SERVER_IMAGE_DIGEST],
+  [NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_SERVER_IMAGE_DIGEST],
+  [REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'],
+])('rejects workload %s paired with incompatible server %s before Root allocation', (imageDigest, serverImageDigest) => {
+  const input = sharedPathDeploymentFixture()
+  input.lifecycle.imageDigest = imageDigest
+  input.selection.serverImageDigest = serverImageDigest
+  expect(() => parseRootDeploymentInput(input)).toThrow('selection.workloadImagePair')
 })

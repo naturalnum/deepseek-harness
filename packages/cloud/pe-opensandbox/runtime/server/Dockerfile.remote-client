@@ -1,0 +1,3 @@
+FROM sha256:7a41332aef7bcc74414b1434c7e10ee057c420e213d082fc79ac791c921af6ba
+COPY --chown=0:0 remote_client_profile.py /tmp/dsh-remote-client-profile.py
+RUN python /tmp/dsh-remote-client-profile.py && rm /tmp/dsh-remote-client-profile.py
