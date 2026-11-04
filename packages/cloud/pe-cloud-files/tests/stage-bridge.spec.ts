@@ -291,3 +291,57 @@ it('retains unknown workspace publication when a worker omits its actual collisi
     .rejects.toMatchObject({ outcome: 'unknown', code: 'FS_IO_ERROR' })
   expect(test.pool.inspect().work.pending).toBe(1)
 })
+
+it.each(['queued', 'pre-aborted', 'before-invoke'] as const)(
+  'classifies uninvoked raw-upload cancellation from original queue evidence (%s)', async (phase) => {
+    const test = await fixture(), bytes = Uint8Array.of(137), digest = createHash('sha256').update(bytes).digest('hex')
+    for (const reason of [undefined, new Error('original caller reason'), 'non-Error caller reason']) {
+      const caller = new AbortController(), gate = Promise.withResolvers<undefined>(), started = Promise.withResolvers<undefined>()
+      let opened = 0, busy: ReturnType<typeof test.port.runNativeMutation> | undefined
+      try {
+        if (phase === 'queued') {
+          busy = test.port.runNativeMutation(4096, test.assertCurrent, async () => { started.resolve(undefined); await gate.promise })
+          await started.promise
+        }
+        if (phase === 'pre-aborted') caller.abort(reason)
+        const before = Atomics.load(test.counters, 0)
+        const upload = test.port.stageWorkspaceUploads(test.workspace, [{ workspaceDirectory: '.',
+          claim: { name: 'never-opened.bin', sha256: digest, bytes: bytes.length },
+          open: async function* () { opened++; yield bytes } }], test.assertCurrent, caller.signal)
+        const observed = upload.catch((error: unknown) => error)
+        if (phase === 'queued') expect(test.pool.inspect().work.queued).toBe(1)
+        if (phase !== 'pre-aborted') caller.abort(reason)
+        const error = await observed
+        expect(error).toBeInstanceOf(FdMutationFailure)
+        expect(error).toMatchObject({ outcome: 'not-published', code: 'FS_ABORTED' })
+        const actual = error instanceof Error ? error.cause : undefined
+        const originalReason: unknown = caller.signal.reason
+        if (originalReason instanceof Error) expect(actual).toBe(originalReason)
+        else expect(actual).toMatchObject({ cause: originalReason })
+        expect(opened).toBe(0)
+        expect(Atomics.load(test.counters, 0)).toBe(before)
+        expect(test.pool.inspect().work).toMatchObject({ queued: 0,
+          running: phase === 'queued' ? 1 : 0, pending: phase === 'queued' ? 1 : 0,
+          residentBytes: phase === 'queued' ? 4096 : 0 })
+      } finally { gate.resolve(undefined); if (busy !== undefined) (await busy).release() }
+    }
+    const held = await test.port.stageWorkspaceUploads(test.workspace, [{ workspaceDirectory: '.',
+      claim: { name: 'after-known-cancel.bin', sha256: digest, bytes: bytes.length },
+      open: async function* () { yield bytes } }], test.assertCurrent)
+    expect(held.value[0]?.outcome).toBe('published'); held.release()
+  },
+)
+
+it('keeps an entered unknown raw mutation charged when a later caller is already aborted', async () => {
+  const test = await fixture(), bytes = Uint8Array.of(137), digest = createHash('sha256').update(bytes).digest('hex')
+  const source = { workspaceDirectory: '.', claim: { name: 'unknown.bin', sha256: digest, bytes: bytes.length },
+    open: async function* () { yield bytes } }
+  await expect(test.port.stageWorkspaceUploads(test.workspace, [source], test.assertCurrent))
+    .rejects.toMatchObject({ outcome: 'unknown' })
+  const before = Atomics.load(test.counters, 0), caller = new AbortController()
+  caller.abort()
+  await expect(test.port.stageWorkspaceUploads(test.workspace, [source], test.assertCurrent, caller.signal))
+    .rejects.toMatchObject({ outcome: 'unknown' })
+  expect(Atomics.load(test.counters, 0)).toBe(before)
+  expect(test.pool.inspect().work).toMatchObject({ running: 1, pending: 1, residentBytes: staging.reservationBytes })
+})

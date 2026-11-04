@@ -605,6 +605,11 @@ export class LinuxFilesPool implements DrainParticipant {
         if (delivery !== 'native-handoff') answer.resolve(result)
         else result.release()
       }, (error: unknown) => {
+        // This original queue callback has never run; no mutation executor or source acquired responsibility.
+        if (!invoked && delivery === 'joined-result') {
+          answer.reject(failure('not-published', signal?.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR', error))
+          return
+        }
         if (!invoked || delivery !== 'native-handoff') answer.reject(signal?.aborted && delivery === 'native-handoff'
           ? failure('not-published', 'FS_ABORTED', error) : error)
       })
