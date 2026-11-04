@@ -7,7 +7,7 @@ import { isSea } from 'node:sea'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { BUNDLED_SKILL_RANK, type SkillCandidate, type SkillProvider } from '@deepseek-ai/dsh-skill'
+import { BUNDLED_SKILL_RANK, type SkillCandidate, type SkillInvocationPolicy, type SkillProvider } from '@deepseek-ai/dsh-skill'
 import { parse as parseYaml } from 'yaml'
 import { readSkillPackage } from '@deepseek-ai/dsh-skill-filesystem'
 
@@ -15,6 +15,8 @@ const SKILL_NAMES = ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'off
 
 /** Office skill resource location. */
 export interface Config {
+  /** Deployment invocation ceiling; omission preserves normal model and user invocation. */
+  invocation?: SkillInvocationPolicy
   /** Absolute assets directory containing skill folders; defaults to packaged assets. */
   assetRoot?: string
   /** Standalone Node executable; defaults to the current executable outside Electron and SEA. */
@@ -45,6 +47,7 @@ export interface Config {
 
 /** Validated resource configuration. */
 export const Config: z<Config> = z.object({
+  invocation: z.union([z.object({ modelInvocable: z.boolean().required(), userInvocable: z.boolean().required() }).required()]),
   assetRoot: z.string().min(1),
   executionRoot: z.string().min(1),
   executionRuntime: z.union([z.object({ node: z.string().min(1).required(), cli: z.string().min(1).required() }).required()]),
@@ -112,7 +115,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     const { description } = parseSkill(readFileSync(path, 'utf8'), path)
     return {
       name: skillName, description,
-      invocation: { modelInvocable: true, userInvocable: true },
+      invocation: { modelInvocable: config.invocation?.modelInvocable ?? true,
+        userInvocable: config.invocation?.userInvocable ?? true },
       provider: 'dsh-office', source: 'bundled', rank: BUNDLED_SKILL_RANK,
       resourceBase: { kind: 'directory', path: join(config.executionRoot ?? assetRoot, skillName).split(sep).join('/') }, locator: path,
       ...config.packagedBundles ? { package: readSkillPackage(directory) } : {},

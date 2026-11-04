@@ -38,6 +38,7 @@ Mount the skill provider beside the skill registry and `dsh-tool-skill`. The pro
 | `assetRoot` | Carrier resources or packaged `assets/` | Absolute directory containing the seven skill folders. |
 | `node` | Host Node.js | Standalone Node executable for operation skills; packaged carriers supply it explicitly. |
 | `cli` | Installed Kit CLI | Absolute CLI entry; `false` disables operation execution. |
+| `invocation` | Model and user invocation allowed | Deployment ceiling for `modelInvocable` and `userInvocable`; restricted skills remain inspectable with their complete packages. |
 
 Invalid skill assets reject registration. Authoring instructions do not resolve renderer paths; loading operation instructions validates existing interpreter and CLI files without preparing engines. Bash or PowerShell owns approvals, sandboxing, cancellation, and output management. Resources and execution tools must refer to the same host.
 

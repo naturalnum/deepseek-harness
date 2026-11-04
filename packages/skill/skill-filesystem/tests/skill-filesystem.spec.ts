@@ -181,6 +181,39 @@ describe('dsh-skill-filesystem plugin exports', () => {
 })
 
 describe('FileSystemSkillProvider', () => {
+  it.each([false, true])('restricts only bundled invocation without enabling source-disabled skills (%s)', async (allowed) => {
+    const home = await tempDir('skill-invocation-ceiling')
+    const bundled = join(home, 'builtin'), custom = join(home, 'custom')
+    await writeSkill(bundled, 'builtin-report', 'Bundled report')
+    await writeSkill(custom, 'user-report', 'User report')
+    await writeSkill(bundled, 'source-disabled', 'Disabled report')
+    const path = join(bundled, 'source-disabled/SKILL.md')
+    const original = (await readFile(path, 'utf8')).replace('description: Disabled report',
+      'description: Disabled report\ndisable-model-invocation: true\nuser-invocable: false')
+    await writeFile(path, original)
+    const ctx = await setupLocal(home, { includeDefaultRoots: false, bundledSkillDir: bundled,
+      customSkillDirs: [custom], bundledInvocation: { modelInvocable: allowed, userInvocable: allowed } })
+    try {
+      const catalog = await ctx.skills.list()
+      for (const [name, expected] of [['builtin-report', allowed], ['user-report', true], ['source-disabled', false]] as const) {
+        const invocation = { modelInvocable: expected, userInvocable: expected }
+        expect(catalog.find(skill => skill.name === name)?.invocation).toEqual(invocation)
+        expect((await ctx.skills.get(name))?.invocation).toEqual(invocation)
+      }
+      expect(await readFile(path, 'utf8')).toBe(original)
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('requires an explicit bundled root for a deployment invocation restriction', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SkillRegistry)
+      await expect(ctx.plugin(SkillFileSystem, {
+        bundledInvocation: { modelInvocable: false, userInvocable: false },
+      })).rejects.toThrow('bundledInvocation')
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it.each([undefined, '/opt/dsh/shared-skills'])('keeps bundled filenames in catalog and loaded paths (%s)', async (executionRoot) => {
     const home = await tempDir('skill-bundled-path-home')
     const bundled = await tempDir('skill-bundled-path-assets')

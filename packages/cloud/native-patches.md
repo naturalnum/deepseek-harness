@@ -38,6 +38,8 @@ Cloud account composition reuses the public Native Cordis inspection registry an
 
 Native `FileSystem.scopeRoot` provides optional caller-scoped discovery metadata. The Cloud filesystem returns its original guarded Workspace target; Native agent-instructions stops project-marker discovery at that boundary and preserves failures. Unbounded Native providers keep their existing search, and all filesystem authorization remains with the original provider.
 
+Native bundled skill providers accept optional deployment invocation ceilings: `skill-office.invocation` and `skill-filesystem.bundledInvocation`. Cloud can expose complete immutable packages for inspection and download while withholding model and user invocation until the execution environment is qualified. The filesystem ceiling cannot enable source-disabled invocation or affect other roots; omission preserves Native behavior. Original skill consumers enforce invocation policy, and package bytes remain unchanged.
+
 ## Upgrade procedure
 
 1. Record the current clean source revision, deployment revision, chosen upstream revision and trusted configuration before changing anything. Source tests and an old running release are different evidence.

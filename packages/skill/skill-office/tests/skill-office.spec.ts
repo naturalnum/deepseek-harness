@@ -17,6 +17,26 @@ const assets = fileURLToPath(new URL('../assets/', import.meta.url))
 const names = ['office', 'office-docx', 'office-export-pdf', 'office-pptx', 'office-recalculate', 'office-render', 'office-xlsx']
 
 describe('bundled Office skills', () => {
+  it('keeps complete Office packages inspectable while deployment invocation is restricted', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SkillRegistry)
+      await ctx.plugin(SkillOffice, { packagedBundles: true, cli: false,
+        invocation: { modelInvocable: false, userInvocable: false } })
+      const catalog = await ctx.skills.list()
+      expect(catalog.map(skill => skill.name)).toEqual(names)
+      for (const skill of catalog) {
+        expect(skill.invocation).toEqual({ modelInvocable: false, userInvocable: false })
+        expect((await ctx.skills.get(skill.name))?.invocation).toEqual(skill.invocation)
+      }
+      const inspection = await ctx.skills.inspect()
+      for (const row of inspection.candidates) {
+        expect(row.candidate.package?.files.some(file => file.relativePath === 'SKILL.md')).toBe(true)
+        expect((await row.candidate.package!.readArchive(new AbortController().signal)).byteLength).toBeGreaterThan(0)
+      }
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('keeps routing and authoring within the progressive context budgets', async () => {
     const ctx = new Context()
     try {

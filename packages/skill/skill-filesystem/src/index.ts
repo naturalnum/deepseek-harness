@@ -77,6 +77,8 @@ export interface Config {
   bundledExecutionRoot?: string
   /** Deployment instructions appended only to loaded bundled bodies and logged by the native skill tool. */
   bundledInstructions?: string
+  /** Optional invocation ceiling for an explicit bundled root; never enables a source-disabled entry point. */
+  bundledInvocation?: SkillInvocationPolicy
   /** Require generated complete-package inventories for the bundled root. */
   packagedBundles?: boolean
 }
@@ -97,6 +99,7 @@ export const Config: Schema<Config> = z.object({
   bundledExecutionRoot: z.string(),
   packagedBundles: z.boolean(),
   bundledInstructions: z.string().min(1),
+  bundledInvocation: z.union([z.object({ modelInvocable: z.boolean().required(), userInvocable: z.boolean().required() }).required()]),
 })
 
 interface SkillRoot {
@@ -204,6 +207,7 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly bundledSkillDir: string | undefined
   private readonly bundledExecutionRoot: string | undefined
   private readonly bundledInstructions: string | undefined
+  private readonly bundledInvocation: SkillInvocationPolicy | undefined
   private readonly packagedBundles: boolean
   private disposal: Promise<void> | undefined
 
@@ -217,6 +221,10 @@ export class FileSystemSkillProvider implements SkillProvider {
       throw new TypeError('skill-filesystem: an explicit source requires isolated roots, disabled host watching and no bundled host root')
     }
     this.bundledInstructions = config.bundledInstructions
+    this.bundledInvocation = config.bundledInvocation
+    if (config.bundledInvocation !== undefined && config.bundledSkillDir === undefined) {
+      throw new TypeError('skill-filesystem: bundledInvocation requires an explicit bundledSkillDir')
+    }
     if (config.bundledInstructions !== undefined && config.bundledSkillDir === undefined) {
       throw new TypeError('skill-filesystem: bundledInstructions requires an explicit bundledSkillDir')
     }
@@ -270,6 +278,7 @@ export class FileSystemSkillProvider implements SkillProvider {
               const base = this.bundledExecutionRoot === undefined ? undefined
                 : join(this.bundledExecutionRoot, relative(root.path, locator.directory))
               candidates.push({ ...skill,
+                invocation: this.restrictInvocation(skill.invocation),
                 ...base === undefined ? {} : { path: join(base, basename(locator.path)), resourceBase: { kind: 'directory' as const, path: base } },
                 ...this.packagedBundles ? { package: readSkillPackage(locator.directory) } : {} })
             } else candidates.push(skill)
@@ -308,7 +317,7 @@ export class FileSystemSkillProvider implements SkillProvider {
         name: parsed.name,
         description: parsed.description,
         ...parsed.whenToUse !== undefined ? { whenToUse: parsed.whenToUse } : {},
-        invocation: parsed.invocation,
+        invocation: candidate.source === 'bundled' ? this.restrictInvocation(parsed.invocation) : parsed.invocation,
         source: candidate.source,
         provider: this.name,
         ...resources,
@@ -320,6 +329,13 @@ export class FileSystemSkillProvider implements SkillProvider {
 
   private withFiles<T>(options: SkillViewOptions, read: (source: FileSystemSkillRead | undefined) => Promise<T>): Promise<T> {
     return this.source === undefined ? read(undefined) : this.source.withFiles(read, options)
+  }
+
+  private restrictInvocation(policy: SkillInvocationPolicy): SkillInvocationPolicy {
+    return this.bundledInvocation === undefined ? policy : {
+      modelInvocable: policy.modelInvocable && this.bundledInvocation.modelInvocable,
+      userInvocable: policy.userInvocable && this.bundledInvocation.userInvocable,
+    }
   }
 
   /**

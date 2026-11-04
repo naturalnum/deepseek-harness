@@ -38,6 +38,7 @@ kind: "package-reference"
 | `assetRoot` | 载体资源或包内 `assets/` | 包含七个技能目录的绝对路径。 |
 | `node` | 宿主 Node.js | 操作技能使用的独立 Node 可执行程序；打包载体显式提供。 |
 | `cli` | 已安装 Kit CLI | CLI 入口的绝对路径；`false` 禁用操作执行。 |
+| `invocation` | 允许模型和用户调用 | 部署方对 `modelInvocable` 和 `userInvocable` 的调用上限；受限技能及其完整包仍可检查。 |
 
 无效技能资源会阻止注册。创作说明不解析渲染器路径；操作说明加载时校验现有解释器和 CLI 文件，不准备引擎。Bash 或 PowerShell 负责审批、沙箱、取消和输出管理。资源与执行工具必须位于同一主机。
 

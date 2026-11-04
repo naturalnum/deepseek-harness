@@ -37,6 +37,8 @@ Cloud 账户组合通过固定私有 runtime builtin 复用公开的 Native Cord
 
 Native `FileSystem.scopeRoot` 提供可选的调用者作用域发现元数据。Cloud 文件系统返回原受保护 Workspace target；原生 agent-instructions 在该边界停止项目标记发现，并保留失败语义。无界 Native provider 继续使用既有搜索，所有文件系统授权仍由原 provider 持有。
 
+Native 内置技能提供方接收可选部署调用上限：`skill-office.invocation` 与 `skill-filesystem.bundledInvocation`。Cloud 可展示完整不可变包供检查和下载，同时在执行环境合格前关闭模型和用户调用。文件系统上限不会启用来源已关闭的调用入口，也不影响其他根目录；省略配置时保留 Native 行为。原技能消费者执行调用策略，包字节保持原样。
+
 ## 升级步骤
 
 1. 修改前记录当前干净源码、实际部署、目标上游修订及可信配置。源码测试与旧运行版本是不同证据。
