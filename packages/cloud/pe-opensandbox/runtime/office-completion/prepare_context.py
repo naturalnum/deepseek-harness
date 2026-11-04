@@ -8,7 +8,6 @@ import tarfile
 
 MANIFEST_SHA256 = '4ee30a9d242ce4c39544500c992220412dafb9905dcc9b1d18584aa9af5db7e3'
 SSH_BASE_IMAGE = 'sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d'
-MINIMUM_BUILD_FREE_BYTES = 4 * 1024**3
 DOCKERFILE = 'packages/cloud/pe-opensandbox/runtime/office/Dockerfile'
 PREFIXES = ('packages/cloud/pe-opensandbox/runtime/office/', 'packages/skill/skill-office/assets/')
 
@@ -49,23 +48,26 @@ def verify_context(context, manifest_bytes):
     return sorted(result)
 
 
-def capacity_plan(builder_free_bytes, production_free_bytes):
+def capacity_plan(builder_free_bytes, production_free_bytes, required_builder_free_bytes):
     """Keep builder admission separate from the still-unknown production image import size."""
-    if any(type(value) is not int or value < 0 for value in (builder_free_bytes, production_free_bytes)):
+    if any(type(value) is not int or value < 0 for value in (builder_free_bytes, production_free_bytes, required_builder_free_bytes)):
         raise ValueError('Actual nonnegative free byte measurements are required')
+    if required_builder_free_bytes == 0:
+        raise ValueError('An explicit positive reviewed builder allowance is required')
     return {
         'builderAvailableBytes': builder_free_bytes,
-        'builderMinimumFreeBytes': MINIMUM_BUILD_FREE_BYTES,
-        'builderShortfallBytes': max(0, MINIMUM_BUILD_FREE_BYTES - builder_free_bytes),
-        'buildCapacityAdmitted': builder_free_bytes >= MINIMUM_BUILD_FREE_BYTES,
+        'builderMinimumFreeBytes': required_builder_free_bytes,
+        'builderShortfallBytes': max(0, required_builder_free_bytes - builder_free_bytes),
+        'buildCapacityAdmitted': builder_free_bytes >= required_builder_free_bytes,
         'productionAvailableBytes': production_free_bytes,
         'productionImportAdmitted': False,
         'productionImportReason': 'Actual unique image-layer bytes and import peak must be measured after the build; remote build success alone is insufficient.',
     }
 
 
-def prepare(context, manifest, output, builder_free_bytes, production_free_bytes):
+def prepare(context, manifest, output, builder_free_bytes, production_free_bytes, required_builder_free_bytes):
     """Create only a new owned output directory; no source, engine, image or account is mutated."""
+    capacity = capacity_plan(builder_free_bytes, production_free_bytes, required_builder_free_bytes)
     members = verify_context(context.resolve(strict=True), manifest.read_bytes())
     output.mkdir(mode=0o700)
     archive = output / 'office-v5-context.tar'
@@ -86,7 +88,7 @@ def prepare(context, manifest, output, builder_free_bytes, production_free_bytes
         'baseImage': SSH_BASE_IMAGE,
         'dockerfile': DOCKERFILE,
         'baseSelectionReason': 'Preserve the qualified SSH dependency layer when adding Office; the final Office image still requires its own exact admission and qualification.',
-        'capacity': capacity_plan(builder_free_bytes, production_free_bytes),
+        'capacity': capacity,
         'builderStarted': False,
         'productionChanged': False,
         'officeExecutionAccepted': False,
@@ -115,9 +117,10 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--builder-free-bytes', required=True, type=int)
     parser.add_argument('--production-free-bytes', required=True, type=int)
+    parser.add_argument('--required-builder-free-bytes', required=True, type=int)
     args = parser.parse_args()
     plan = prepare(args.context, args.manifest, args.output,
-                   args.builder_free_bytes, args.production_free_bytes)
+                   args.builder_free_bytes, args.production_free_bytes, args.required_builder_free_bytes)
     print(json.dumps({'handoff': str(args.output / 'handoff.json'),
                       'buildCapacityAdmitted': plan['capacity']['buildCapacityAdmitted'],
                       'productionImportAdmitted': False}))

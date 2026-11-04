@@ -9,21 +9,29 @@ import prepare_context as subject
 
 class HandoffTests(unittest.TestCase):
     def test_current_store_refuses_build_and_never_admits_import(self):
-        result = subject.capacity_plan(1341444096, 1341444096)
+        result = subject.capacity_plan(1341444096, 1341444096, 4 * 1024**3)
         self.assertFalse(result['buildCapacityAdmitted'])
         self.assertEqual(result['builderShortfallBytes'], 2953523200)
         self.assertFalse(result['productionImportAdmitted'])
 
     def test_exact_builder_capacity_still_requires_import_measurement(self):
-        result = subject.capacity_plan(4 * 1024**3, 1341444096)
+        result = subject.capacity_plan(4 * 1024**3, 1341444096, 4 * 1024**3)
         self.assertTrue(result['buildCapacityAdmitted'])
         self.assertEqual(result['builderShortfallBytes'], 0)
         self.assertFalse(result['productionImportAdmitted'])
 
+    def test_reviewed_allowance_has_no_implicit_four_gib_default(self):
+        self.assertTrue(subject.capacity_plan(200, 0, 200)['buildCapacityAdmitted'])
+        self.assertFalse(subject.capacity_plan(199, 0, 200)['buildCapacityAdmitted'])
+
+    def test_zero_allowance_cannot_admit_builder(self):
+        with self.assertRaises(ValueError):
+            subject.capacity_plan(1000, 1000, 0)
+
     def test_invalid_measurements_are_not_capacity(self):
         for value in (-1, 1.5, True):
             with self.assertRaises(ValueError):
-                subject.capacity_plan(value, 0)
+                subject.capacity_plan(value, 0, 1)
 
     def test_unapproved_manifest_refuses_before_context_read(self):
         with self.assertRaisesRegex(ValueError, 'manifest digest'):
