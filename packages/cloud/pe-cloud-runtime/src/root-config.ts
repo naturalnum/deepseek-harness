@@ -50,6 +50,8 @@ export interface RuntimeRootConfig extends RuntimeConfig {
     readonly office: { readonly baselineConfigSha256: string; readonly configJson: string }
     readonly reports: { readonly baselineConfigSha256: string; readonly configJson: string }
   }
+  /** Root-only qualified two-provider policy for every authenticated account; excludes officeCanary. */
+  readonly officeOrdinary?: Omit<NonNullable<RuntimeRootConfig['officeCanary']>, 'accountId'>
   readonly native: {
     readonly configPath: string
     readonly installAnchor: string
@@ -109,8 +111,12 @@ export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(acc
   return config
 }).required()
 
-/** Actual root deployment schema; no component configuration or absent field enables production. */
-export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
+const officeRows = {
+  office: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
+  reports: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
+}
+
+const rootFields: z<RuntimeRootConfig> = z.object({
   fileReadTiming: z.union([z.boolean()]),
   recovery: z.union([z.object({
     verifierId: z.const('local-original-process-and-provider-v1').required(),
@@ -150,9 +156,9 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
   paths: z.object({ sharedAccountsRoot: text(), localCacheRoot: text(), maxPathBytes: positive() }).required(),
   officeCanary: z.union([z.object({
     accountId: z.transform(text(), brandString<AccountId>),
-    office: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
-    reports: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
+    ...officeRows,
   }).required()]),
+  officeOrdinary: z.union([z.object(officeRows).required()]),
   native: z.object({
     configPath: text(), installAnchor: text(), bareModuleBaseUrl: text(),
     requiredEntryIds: z.array(z.string().pattern(/\S/)).required(), maxObservedEvents: positive(), maxEntries: positive(),
@@ -170,4 +176,14 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
       intakeReservationBytes: positive(), maxPendingReceipts: positive(),
     }).required()]),
   }).required(),
+})
+
+/** Actual root deployment schema; no component configuration or absent field enables production. */
+export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.transform(rootFields, (config) => {
+  if (config.officeCanary !== undefined && config.officeOrdinary !== undefined
+    || config.officeOrdinary !== undefined && (Object.keys(config.officeOrdinary).length !== 2
+      || [config.officeOrdinary.office, config.officeOrdinary.reports].some(row => Object.keys(row).length !== 2))) {
+    throw new AccountRuntimeError('cloud/invalid-config', 'Choose only one Root Office policy with its exact two declarations.')
+  }
+  return config
 })

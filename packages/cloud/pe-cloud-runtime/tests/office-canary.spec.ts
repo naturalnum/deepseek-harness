@@ -1,5 +1,5 @@
 /** Actual Native Loader/providers/tool and model dispatch; no image or production AccountFactory qualification. */
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -11,6 +11,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { AccountId } from '../src/types.ts'
 import { accountPresetConfigDigest } from '../src/account-policy.ts'
 import { selectOfficeProfile } from '../src/office-profile.ts'
+import { RuntimeRootConfigSchema } from '../src/root-config.ts'
 import { rootConfig } from './root-control-fixture.ts'
 import { policyFixture } from './account-policy-fixture.ts'
 import NativeAccountProbe from './fixtures/native-probe.ts'
@@ -34,8 +35,15 @@ function deployment() {
       office: { baselineConfigSha256: accountPresetConfigDigest(ordinaryOffice, 8192), configJson: JSON.stringify(office) },
       reports: { baselineConfigSha256: accountPresetConfigDigest(ordinaryReports, 8192), configJson: JSON.stringify(reports) } } }
 }
-function fixture(accountId = 'office-canary', mutate?: (rows: { id: string; name: string; config: object }[]) => void) {
-  const config = deployment(), selected = selectOfficeProfile(config, brandString<AccountId>(accountId))
+function ordinaryDeployment() {
+  const { officeCanary, ...config } = deployment()
+  const { accountId: _canary, ...officeOrdinary } = officeCanary
+  return { ...config, officeOrdinary }
+}
+function fixture(accountId = 'office-canary', mutate?: (rows: { id: string; name: string; config: object }[]) => void,
+  mode: 'canary' | 'ordinary' = 'canary') {
+  const config = mode === 'ordinary' ? ordinaryDeployment() : deployment()
+  const selected = selectOfficeProfile(config, brandString<AccountId>(accountId))
   const base = [{ id: 'skill-office', name: '@deepseek-ai/dsh-skill-office', config: ordinaryOffice },
     { id: 'bundled-report-skills', name: '@deepseek-ai/dsh-skill-filesystem', config: ordinaryReports }]
   mutate?.(base)
@@ -94,14 +102,16 @@ it('uses the actual base file with two real providers, original skill tool and t
   expect(await call(canary, other)).toMatchObject({ isError: true })
   await model(canary); expect(canary.adapter.calls).toBe(1)
 })
-it.each(['baseline-version', 'asset-change', 'module-change', 'duplicate', 'ordinary-enable'] as const)('refuses actual base+patch %s before a new Session is admitted', (bad) => {
+it.each((['canary', 'ordinary'] as const).flatMap(mode =>
+  (['baseline-version', 'asset-change', 'module-change', 'duplicate', 'ordinary-enable'] as const).map(bad => [mode, bad] as const),
+))('refuses actual %s base+patch %s before a new Session is admitted', (mode, bad) => {
   const f = fixture('office-canary', (rows) => {
     if (bad === 'baseline-version') rows[0]!.config = { ...ordinaryOffice, packagedBundles: false }
     if (bad === 'asset-change') rows[0]!.config = { ...ordinaryOffice, assetRoot: assets + 'changed' }
     if (bad === 'module-change') rows[0]!.name = '@deepseek-ai/dsh-skill-filesystem'
     if (bad === 'duplicate') rows.push({ ...rows[0]! })
     if (bad === 'ordinary-enable') rows[0]!.config = { ...ordinaryOffice, invocation: { modelInvocable: true, userInvocable: true } }
-  })
+  }, mode)
   return expect(f.owner.start().then(graph => graph.guards.sessions.resolveCreate({}))).rejects.toThrow()
 })
 it.each(['skill-office', 'bundled-report-skills'])('withdraws original API/model/tool authority after Native entry update of %s', async (id) => {
@@ -167,4 +177,70 @@ it('rejects original settings, model and tool consumers after a rejected Fiber u
   await expect(model(graph)).rejects.toThrow()
   expect(await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal, callId: ToolCallId('invalid-fiber-gap'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
+})
+
+it('keeps Root omission unchanged, preserves the canary schema and rejects simultaneous or account-selected ordinary policies', () => {
+  const plain = rootConfig('/root-only-fixture')
+  expect(RuntimeRootConfigSchema(plain)).toEqual(plain)
+  expect(RuntimeRootConfigSchema(deployment()).officeCanary).toEqual(deployment().officeCanary)
+  const config = ordinaryDeployment()
+  expect(RuntimeRootConfigSchema(config).officeOrdinary).toEqual(config.officeOrdinary)
+  const both = { ...config, officeCanary: deployment().officeCanary }
+  expect(() => RuntimeRootConfigSchema(both)).toThrow()
+  expect(() => selectOfficeProfile(both, brandString<AccountId>('ordinary-A'))).toThrow()
+  for (const officeOrdinary of [{ ...config.officeOrdinary, accountId: 'ordinary-A' },
+    { ...config.officeOrdinary, extraProvider: {} },
+    { ...config.officeOrdinary, office: { ...config.officeOrdinary.office, quota: 1 } }]) {
+    expect(() => RuntimeRootConfigSchema({ ...config, officeOrdinary })).toThrow()
+  }
+})
+
+it('selects the same original13 resources for two independent ordinary account graphs without a canary identity', async () => {
+  const a = fixture('ordinary-A', undefined, 'ordinary'), b = fixture('ordinary-B', undefined, 'ordinary')
+  const first = await a.owner.start(), second = await b.owner.start(), agent = await session(first), other = await session(second)
+  expect(first.binding.accountId).not.toBe(second.binding.accountId)
+  for (const graph of [first, second]) {
+    expect((await graph.ctx.skills.list()).filter(row => row.invocation?.modelInvocable && row.invocation.userInvocable)).toHaveLength(13)
+    await model(graph); expect(graph.adapter.calls).toBe(1)
+  }
+  expect(await first.ctx.tools.execute({ agent, signal: first.lifetime.signal, callId: ToolCallId('ordinary-own'),
+    name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: false })
+  expect(await first.ctx.tools.execute({ agent: other, signal: first.lifetime.signal, callId: ToolCallId('ordinary-other'),
+    name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
+  expect((await first.ctx.skills.inspect()).candidates.map(row => row.candidate.package?.version))
+    .toEqual((await second.ctx.skills.inspect()).candidates.map(row => row.candidate.package?.version))
+})
+
+it('overlays historical saved false provider rows through the original composition and rejects an old ordinary epoch', async () => {
+  const f = fixture('ordinary-saved-false', undefined, 'ordinary'), first = await f.owner.start(), old = await session(first)
+  await first.close()
+  // Only this stopped fixture Profile is seeded; no production/private account file is read or migrated.
+  const saved = JSON.parse(readFileSync(f.owner.patchPath, 'utf8')) as object[]
+  saved.push({ id: 'skill-office', config: ordinaryOffice }, { id: 'bundled-report-skills', config: ordinaryReports })
+  const bytes = JSON.stringify(saved)
+  writeFileSync(f.owner.patchPath, bytes)
+  const second = await f.owner.start('2'), current = await session(second)
+  expect(readFileSync(f.owner.patchPath, 'utf8')).toBe(bytes)
+  expect((await second.ctx.skills.list()).filter(row => row.invocation?.modelInvocable)).toHaveLength(13)
+  expect(await second.ctx.tools.execute({ agent: current, signal: second.lifetime.signal, callId: ToolCallId('ordinary-saved'),
+    name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: false })
+  expect(await second.ctx.tools.execute({ agent: old, signal: second.lifetime.signal, callId: ToolCallId('ordinary-old'),
+    name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
+})
+
+it('retains the original ordinary provider plan and withdrawal checks for model, settings, tools and Session admission', async () => {
+  const f = fixture('ordinary-revoked', undefined, 'ordinary'), graph = await f.owner.start(), agent = await session(graph)
+  await model(graph); const calls = graph.adapter.calls
+  const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === 'skill-office')
+  if (entry === undefined) throw Error('Original ordinary provider absent')
+  await expect(graph.ctx.configEditor.edit(entry, value => ({ ...value, cli: false }))).rejects.toThrow()
+  await entry.update({ config: { ...entry.options.config as Record<string, unknown>,
+    invocation: { modelInvocable: false, userInvocable: false } } })
+  await graph.ctx.loader.await()
+  expect(() => graph.ctx.settingsController.describe()).toThrow()
+  await expect(graph.invoke('create', { requestId: 'ordinary-revoked' })).rejects.toThrow()
+  await expect(model(graph)).rejects.toThrow()
+  expect(await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal, callId: ToolCallId('ordinary-revoked'),
+    name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
+  expect(graph.adapter.calls).toBe(calls)
 })

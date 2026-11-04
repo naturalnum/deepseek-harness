@@ -16,7 +16,7 @@ const targets = [
   { id: 'bundled-report-skills', name: '@deepseek-ai/dsh-skill-filesystem', selection: 'reports', invocation: 'bundledInvocation',
     mutable: ['bundledInvocation', 'bundledExecutionRoot', 'bundledInstructions'] },
 ] as const
-function refuse(): never { throw new AccountRuntimeError('cloud/invalid-config', 'Office canary requires its exact original two-provider declaration.') }
+function refuse(): never { throw new AccountRuntimeError('cloud/invalid-config', 'Root Office selection requires its exact original two-provider declaration.') }
 function record(value: unknown): value is Json {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     && Object.getPrototypeOf(value) === Object.prototype
@@ -51,11 +51,13 @@ export interface OfficeProfileSelection {
  * @returns Detached two-entry selection, or undefined when the Root opt-in is absent.
  */
 export function selectOfficeProfile(config: RuntimeRootConfig, accountId: AccountId): OfficeProfileSelection | undefined {
-  const selected = config.officeCanary
+  if (config.officeCanary !== undefined && config.officeOrdinary !== undefined) refuse()
+  const selected = config.officeOrdinary ?? config.officeCanary
   if (selected === undefined) return undefined
   const maximum = config.accountPolicy.maxPresetConfigBytes, maxEntries = config.native.maxEntries
-  const enabled = selected.accountId === accountId
-  if (selected.accountId.length === 0 || Buffer.byteLength(selected.accountId) > config.accountPolicy.maxPolicyStringBytes) refuse()
+  const enabled = config.officeOrdinary !== undefined || config.officeCanary?.accountId === accountId
+  if (config.officeCanary !== undefined && (config.officeCanary.accountId.length === 0
+    || Buffer.byteLength(config.officeCanary.accountId) > config.accountPolicy.maxPolicyStringBytes)) refuse()
   const values = targets.map((target) => {
     const row = selected[target.selection]
     if (Buffer.byteLength(row.configJson) > maximum) refuse()
