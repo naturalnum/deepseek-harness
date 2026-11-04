@@ -1,0 +1,14 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS office-system
+USER root
+ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MALLOC_ARENA_MAX=1 SAL_USE_VCLPLUGIN=svp
+COPY packages/cloud/pe-opensandbox/runtime/office-completion/v6-build /opt/office-build
+RUN python3 /opt/office-build/install.py apt-office
+
+FROM office-system AS office-apt
+RUN python3 /opt/office-build/install.py apt-tex
+
+FROM office-apt AS office-complete
+COPY packages/skill/skill-office/assets /opt/dsh/skills/office
+RUN python3 /opt/office-build/install.py payload && rm -rf /opt/office-build
+ENV FONTCONFIG_FILE=/opt/dsh/fonts/fonts.conf
