@@ -51,6 +51,7 @@ import { remoteMethods, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typ
 import { onTestFinished, vi } from 'vitest'
 import { accountPresetConfigDigest, createAccountPolicy, type AccountPolicyConfig } from '../src/account-policy.ts'
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
+import type { OfficeProfileSelection } from '../src/office-profile.ts'
 import { ACCOUNT_NATIVE_ENTRIES } from '../src/account-native-integration.ts'
 import { startNativeAccountBoot } from '../src/native-boot.ts'
 import { nativeProjectDeriver } from './native-project-fixture.ts'
@@ -92,6 +93,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     readonly inheritedDefaultId?: string
     readonly legacyDefaultPresetId?: string
     readonly legacyRegistryId?: boolean
+    readonly office?: OfficeProfileSelection
+    readonly baseEntries?: readonly { readonly id: string; readonly name: string; readonly config?: object }[]
     readonly sourceModules?: Readonly<Record<string, unknown>>
     readonly extraEntries?: readonly { readonly id: string; readonly name: string; readonly config?: object }[]
     readonly prepare?: (ctx: Context, binding: AccountBinding, guards: ReturnType<typeof createAccountPolicy>) => void
@@ -106,7 +109,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
   mkdirSync(project, { recursive: true }); initProfile(profileRoot, [])
   const patchPath = join(profileRoot, 'cordis.patch.yml'), configPath = join(profileRoot, 'cordis.yml')
-  writeFileSync(configPath, '[]\n'); writeFileSync(patchPath, '[]\n')
+  writeFileSync(configPath, JSON.stringify(presetOptions?.baseEntries ?? []) + '\n'); writeFileSync(patchPath, '[]\n')
   writeFileSync(join(home, 'package.json'), '{"name":"m8z-policy-component","private":true}\n')
   writeFileSync(credentials, 'version: 1\nrefs: {}\n', { mode: 0o600 })
   if (bootstrapCatalog !== undefined) {
@@ -290,7 +293,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       binding: { accountId: brandString<AccountId>(accountId), epoch: brandString<OwnerEpoch>(epoch),
         recipeVersion: 'm8z', lifetime: lifetime.signal },
       profile: { name: 'component', dir: profileRoot, patchPath, home: privateRoot, cwd: project,
-        installAnchor: join(home, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined },
+        installAnchor: join(home, 'package.json'), startedBundles: [], overlays: presetOptions?.office?.overlays ?? [], telemetryDisabledEnv: undefined },
       ...presetOptions?.legacyRegistryId ? { legacyDefaultPresetId: presetOptions.legacyDefaultPresetId } : {},
       configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
       environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: privateRoot, DSH_HOME: privateRoot } }]),
@@ -351,7 +354,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
             if (entry?.fiber?.state === FiberState.ACTIVE) throw new Error('Component registration window ended')
           } }
         files = new CloudAccountFiles(owner, input)
-        guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries, undefined, businessGraph)
+        guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries, undefined, businessGraph,
+          undefined, presetOptions?.office)
         if (firstScreen !== undefined) {
           const localeWrites: ModelKeyPeerConsumer | undefined = (bootstrapCatalog?.fields.length ?? 0) !== 0 ? {
             withModelKeyPeerUse: (actual, consume) => {

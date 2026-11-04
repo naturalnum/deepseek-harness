@@ -30,6 +30,7 @@ import type { AccountBinding } from './types.ts'
 import { ACCOUNT_NATIVE_ENTRIES, type AccountNativeGuards } from './account-native-integration.ts'
 import { createAccountFileMutationGuard } from './account-permissions.ts'
 import type { FileReadTiming } from './file-read-timing.ts'
+import type { OfficeProfileSelection } from './office-profile.ts'
 
 /** One Root-approved native declaration; nonselectable rows retain historical Session recovery only. */
 export interface AccountPresetPolicy {
@@ -53,7 +54,7 @@ export interface AccountPolicyConfig {
 }
 
 type Entry = NonNullable<Fiber['entry']>
-type EntryFact = { readonly entry: Entry; readonly fiber: Fiber; readonly plan: ReturnType<Entry['prepareConfigUpdate']>; readonly module: unknown }
+type EntryFact = { readonly id: string; readonly entry: Entry; readonly fiber: Fiber; readonly plan: ReturnType<Entry['prepareConfigUpdate']>; readonly module: unknown }
 type Agent = Parameters<AccountNativeGuards['agents']['assertPrepared']>[0]
 type Selection = { readonly provider?: string; readonly model?: string }
 type Header = Pick<SessionHeader, 'cwd' | 'origin' | 'parentSession' | 'delegationDepth'> & { readonly isSeeded?: boolean }
@@ -191,8 +192,25 @@ class AccountPolicy {
     private readonly provisionableModel?: (provider: string, model: string) => void,
     private readonly assertBusinessCurrent?: (binding: AccountBinding) => void,
     private readonly fileReadTiming?: FileReadTiming,
+    private readonly office?: OfficeProfileSelection,
   ) {
     if (config.presets.length === 0 || config.presets.length > maxEntries) refuse()
+    if (office !== undefined) {
+      const revoke = (entry?: Entry, fiber?: Fiber): void => {
+        if (this.facts?.some(fact => (fact.id === 'skill-office' || fact.id === 'bundled-report-skills')
+          && (fact.entry === entry || fact.fiber === fiber)
+          && (fact.fiber.uid === null || fact.fiber.state !== FiberState.ACTIVE
+            || !fact.entry.isConfigPlanVersionCurrent(fact.plan)))) ctx.get('peCloudApi')?.invalidate()
+      }
+      ctx.on('loader/partial-dispose', (entry) => { revoke(entry) })
+      ctx.on('loader/volatile-update', function (this: Fiber) { revoke(undefined, this) }, { global: true })
+      ctx.on('internal/plugin', (fiber) => { revoke(undefined, fiber) })
+      ctx.on('internal/status', (fiber) => { revoke(undefined, fiber) })
+      ctx.on('internal/update', function (this: Fiber, _config, _noSave, next) {
+        revoke(undefined, this)
+        next()
+      }, { global: true, prepend: true })
+    }
   }
 
   current(): void {
@@ -379,7 +397,7 @@ class AccountPolicy {
       if (matches.length !== 1 || entry === undefined || fiber?.state !== FiberState.ACTIVE) unavailable()
       const plan = entry.prepareConfigUpdate(entry.options.config)
       if (plan.impact !== 'none') unavailable()
-      return { entry, fiber, plan, module: entry.moduleNamespace }
+      return { id, entry, fiber, plan, module: entry.moduleNamespace }
     }
     const declarations = this.config.presets.map((selected) => {
       const preset = fact(selected.entryId)
@@ -402,7 +420,15 @@ class AccountPolicy {
     if (!(nativePresets instanceof AgentPresets) || registryEntries.length !== 1 || registryEntry === undefined
       || registryEntry.options.id !== 'agent-preset-registry') unavailable()
     const registry = fact(registryEntry.options.id)
-    const facts = [...declarations, loop, registry]
+    const office = this.office?.assertEntries(this.ctx).map((expected) => {
+      const installed = fact(expected.id)
+      const schema = installed.fiber.runtime?.Config
+      if (installed.entry.options.name !== expected.name || schema === undefined
+        || !isDeepStrictEqual(installed.entry.options.config, expected.config)
+        || !isDeepStrictEqual(installed.fiber.config, schema(structuredClone(expected.config)))) refuse()
+      return installed
+    }) ?? []
+    const facts = [...declarations, loop, registry, ...office]
     try { for (const fact of facts) {
       if (fact.entry.fiber !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
         || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
@@ -416,6 +442,7 @@ class AccountPolicy {
         || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
     }
     this.facts = facts
+
   }
 
   /** Read the actual native inherited setting; the registry's absent override resolves through its approved default. */
@@ -921,7 +948,7 @@ class AccountPolicy {
         || !modules.some(row => row.moduleName === entry.options.name && row.baseUrl === entry.parent.tree.ctx.baseUrl)) refuse()
       const plan = entry.prepareConfigUpdate(entry.options.config)
       if (plan.impact !== 'none') refuse()
-      facts.push({ entry, fiber, plan, module: namespace })
+      facts.push({ id: entry.options.id, entry, fiber, plan, module: namespace })
     }
     const prior = this.facts ?? []
     this.facts = [...prior, ...facts.filter(fact => !prior.some(existing => existing.entry === fact.entry))]
@@ -1203,6 +1230,7 @@ class AccountPolicy {
  * @param provisionableModel Optional original audited provider check for first-key bootstrap; actual model dispatch is unchanged.
  * @param assertBusinessCurrent Original business admission check; required for children and rechecked after awaits.
  * @param fileReadTiming Optional original Root's numerical guard observations.
+ * @param office Optional Root-selected two-provider declaration, checked against actual original profile composition.
  * @returns Shared concrete Controller/factory/LLM guards; no account, Session or ready identity is created here.
  */
 export function createAccountPolicy(
@@ -1211,9 +1239,20 @@ export function createAccountPolicy(
   provisionableModel?: (provider: string, model: string) => void,
   assertBusinessCurrent?: (binding: AccountBinding) => void,
   fileReadTiming?: FileReadTiming,
+  office?: OfficeProfileSelection,
 ): AccountNativeGuards {
   const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries,
-    provisionableModel, assertBusinessCurrent, fileReadTiming)
+    provisionableModel, assertBusinessCurrent, fileReadTiming, office)
+  if (office !== undefined) ctx.inject(['tools'], (owner) => {
+    const tools = owner.get('tools')
+    if (tools === undefined) unavailable()
+    tools.guard((exec) => {
+      policy.current()
+      if (exec.agent === undefined) refuse()
+      policy.prepared(exec.agent, true)
+      return undefined
+    })
+  })
   return {
     presets: {
       assertCurrent: () => { policy.current() },

@@ -40,6 +40,7 @@ function hasReadCarrier(value: unknown): value is {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'readOperationCurrent') === 'function'
 }
 import { createAccountPolicy } from './account-policy.ts'
+import { selectOfficeProfile } from './office-profile.ts'
 import { createFileReadTiming, type FileReadTiming } from './file-read-timing.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
@@ -729,6 +730,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     storage.assertRootCurrent()
     const instanceId = control.instance.identity.instanceId
     const layout = deriveAccountLayout(accountId, instanceId, config.paths)
+    const office = selectOfficeProfile(config, accountId)
     const environment = createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }])
     return Object.freeze({
       accountId, instanceId, recipeVersion: config.recipeVersion, deployment: config.paths,
@@ -739,7 +741,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         profile: {
           name: 'pe-cloud-account', dir: layout.profileRoot, patchPath: layout.patchPath, installAnchor: config.native.installAnchor,
           cwd: defaultProjectLayout(layout, config.paths.maxPathBytes).root, home: layout.privateRoot,
-          startedBundles: [], overlays: [], telemetryDisabledEnv: undefined,
+          startedBundles: [], overlays: office?.overlays ?? [], telemetryDisabledEnv: undefined,
         },
         configPath: config.native.configPath, bareModuleBaseUrl: config.native.bareModuleBaseUrl,
         requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
@@ -792,7 +794,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
               api.assertProvisionableModel(provider, model)
             },
             (current) => { this.assertBusinessCurrent(current) },
-            this.fileReadTiming,
+            this.fileReadTiming, office,
           ),
           ...!hasReadCarrier(selectedAuth) ? {} : { readCurrent: (caller, binding, endpoint) => {
             const peer = caller.invocation?.peer

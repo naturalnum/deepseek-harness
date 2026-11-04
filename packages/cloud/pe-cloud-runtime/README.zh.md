@@ -44,6 +44,8 @@ kind: "package-reference"
 
 可选 `native.skillReleaseBinary` 显式指定 `maxArchiveBytes`、`maxResidentBytes`、`maxConcurrent`、`chunkBytes` 和 `timeoutMs`；省略时关闭只读技能二进制下载。Root 控制持有一个 files 预算，供所有账户共用。每次传输按归档实际字节加一个分块计费，保留到响应和源实际结清；未知清理继续保留占用。可审阅示例为归档1048576字节、分块65536字节、驻留1114112字节、并发响应1个、时限30000毫秒。此独立只读发布预算不改变可变 ZIP、JSON 回复、上传或账户存储限额。
 
+仅 Root 可配置的 `officeCanary` 选择一个精确的已认证 `accountId`，并为固定的 `skill-office` 和 `bundled-report-skills` 条目提供完整 JSON 配置及各自原始 `baselineConfigSha256`。两份 JSON 均受既有 `accountPolicy.maxPresetConfigBytes` 限制。实际基础配置与已保存补丁的合成结果必须匹配摘要、保持调用关闭，并保留全部非执行字段。只有指定账户获得两个不可变启动覆盖；普通账户仍关闭调用。原生保存保留这些覆盖，代际重建沿用原配方与存储路径。直接更新 provider 会撤销 Session、模型和工具准入。此选项不证明镜像合格；只有精确共享镜像/server 资格及独立账户验收通过后才能启用。
+
 临时排查文件延迟时，可信 Root 配置可显式设置 `fileReadTiming: true`；省略或 `false` 不创建采集器或计时器。原 runtime 持有采集器，销毁时关闭；计时器每五秒汇总数值，结束时补充尾批。`nominalIntervalMs` 是计时器的标称周期，不是实际墙钟时间或速率分母。仅记录固定阶段名、次数及同步累计/最大微秒数，不记录路径、账户、参数、内容或凭据。父阶段包含子阶段，不能将其相加；重叠请求共用实例汇总。采集保留原检查与失败语义，不代表性能已改善。
 
 函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。原生准备期间，factory 从精确安装的 binding 签发该 coordinator 的屏障，并在实际保存及其余账户排空检查完成前持续持有。

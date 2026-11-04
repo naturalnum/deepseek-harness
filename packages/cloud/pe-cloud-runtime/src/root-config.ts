@@ -2,7 +2,7 @@
 import z from '@deepseek-ai/schemastery'
 import type { ReleaseSkillBinaryLimits } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ConfigSaveLimits } from '@deepseek-ai/dsh-pe-cloud-api/types'
-import type { RuntimeConfig } from './types.ts'
+import type { AccountId, RuntimeConfig } from './types.ts'
 import { SubagentCapacityLimitsSchema } from './subagent-capacity-schema.ts'
 import type { AccountFactoryLimits } from './account-factory.ts'
 import type { OwnerPgLimits } from './owner-pg-executor.ts'
@@ -42,6 +42,12 @@ export interface RuntimeRootConfig extends RuntimeConfig {
     readonly sharedAccountsRoot: string
     readonly localCacheRoot: string
     readonly maxPathBytes: number
+  }
+  /** Root-only two-provider canary; omission preserves the original account composition. */
+  readonly officeCanary?: {
+    readonly accountId: AccountId
+    readonly office: { readonly baselineConfigSha256: string; readonly configJson: string }
+    readonly reports: { readonly baselineConfigSha256: string; readonly configJson: string }
   }
   readonly native: {
     readonly configPath: string
@@ -141,6 +147,11 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
     maxNestedPerOperation: positive(), maxWaitersPerAccount: positive(),
   }).required(),
   paths: z.object({ sharedAccountsRoot: text(), localCacheRoot: text(), maxPathBytes: positive() }).required(),
+  officeCanary: z.union([z.object({
+    accountId: text(),
+    office: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
+    reports: z.object({ baselineConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(), configJson: text() }).required(),
+  }).required()]),
   native: z.object({
     configPath: text(), installAnchor: text(), bareModuleBaseUrl: text(),
     requiredEntryIds: z.array(z.string().pattern(/\S/)).required(), maxObservedEvents: positive(), maxEntries: positive(),
