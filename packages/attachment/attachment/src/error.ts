@@ -46,6 +46,8 @@ const ATTACHMENT_ERROR_CODE_SET: ReadonlySet<string> = new Set(ATTACHMENT_ERROR_
 export class AttachmentError extends Error {
   /** Stable machine-routing failure code. */
   readonly code: AttachmentErrorCode
+  /** Unconfirmed resource cleanup or publication; omission retains ordinary failure handling. */
+  declare readonly settlement?: 'unknown'
 
   /**
    * @param message - human-readable failure description without raw bytes or host paths.

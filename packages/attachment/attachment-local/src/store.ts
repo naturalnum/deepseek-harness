@@ -29,6 +29,8 @@ const durableHomes = new Set<string>()
  * Callers must retain cleanup responsibility; this error never authorizes retrying close or rolling back a published object.
  */
 export class AttachmentCleanupError extends AttachmentError {
+  override readonly settlement = 'unknown' as const
+
   /** @param cause Original close/unlink failure, or bounded operation and cleanup failures together. */
   constructor(cause: unknown) {
     super('Attachment resource cleanup is unconfirmed.', 'ATTACHMENT_WRITE_FAILED', { cause })
@@ -38,6 +40,8 @@ export class AttachmentCleanupError extends AttachmentError {
 
 /** Native file object publication was attempted; its outcome cannot be inferred from an error. */
 export class AttachmentPublicationUnconfirmedError extends AttachmentError {
+  override readonly settlement = 'unknown' as const
+
   /** @param cause Original native publication or post-publication failure. */
   constructor(cause: unknown) {
     super('File attachment publication is unconfirmed.', 'ATTACHMENT_WRITE_FAILED', { cause })

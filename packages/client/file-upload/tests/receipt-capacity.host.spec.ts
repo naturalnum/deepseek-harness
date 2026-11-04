@@ -3,7 +3,8 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import LocalAttachmentStore, { AttachmentCleanupError, AttachmentPublicationUnconfirmedError } from '@deepseek-ai/dsh-attachment-local'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
@@ -248,6 +249,33 @@ it('retains an unconfirmed slot, closes admission, and reports unconfirmed owner
   await f.ctx.fiber.dispose()
   // Cordis reports effect-disposal errors through its structured logger, not the outer promise.
   expect(f.logger.buffer.some(message => message.args.some(arg => arg instanceof FileUploadIntakeUnconfirmedError))).toBe(true)
+})
+
+it.each([
+  ['cleanup', () => new AttachmentCleanupError(new Error('original descriptor close failed'))],
+  ['publication', () => new AttachmentPublicationUnconfirmedError(new Error('original publication failed'))],
+] as const)('retains the native intake after original attachment %s becomes unknown', async (_kind, failure) => {
+  const f = await fixture(1), cause = failure()
+  const save = vi.spyOn(f.store, 'saveFileStream').mockRejectedValueOnce(cause)
+  f.cleanup.unconfirmed = true
+  const error = await f.track(f.empty()).then(() => undefined, (error: unknown) => error)
+  expect(cause.settlement).toBe('unknown')
+  expect(error).toBeInstanceOf(FileUploadIntakeUnconfirmedError)
+  expect((error as Error).cause).toBe(cause)
+  expect(Reflect.get(f.uploads, 'state')).toMatchObject({ occupied: 1, closed: true })
+  await expect(f.track(f.empty())).rejects.toMatchObject(full)
+  expect(save).toHaveBeenCalledOnce()
+  expect(f.uploads.calls).toBe(1)
+})
+
+it('releases a native intake when the original attachment store confirms an ordinary rejection', async () => {
+  const f = await fixture(1), failure = new AttachmentError('Source failed after confirmed cleanup.', 'ATTACHMENT_WRITE_FAILED')
+  const save = vi.spyOn(f.store, 'saveFileStream').mockRejectedValueOnce(failure)
+  await expect(f.track(f.empty())).rejects.toMatchObject({ code: 'session/attachment-invalid' })
+  expect(failure.settlement).toBeUndefined()
+  expect(Reflect.get(f.uploads, 'state')).toMatchObject({ occupied: 0, closed: false })
+  await expect(f.track(f.empty())).resolves.toMatchObject({ file: { name: 'empty.bin', bytes: 0 } })
+  expect(save).toHaveBeenCalledTimes(2)
 })
 
 it('joins the actual unfinished native save during owner disposal', async () => {

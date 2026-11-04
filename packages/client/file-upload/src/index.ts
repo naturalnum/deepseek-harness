@@ -311,6 +311,7 @@ export class FileUploads extends TypertRemoteService {
           'File exceeds the upload size limit.', { reason: 'FILE_UPLOAD_TOO_LARGE' } as never)
       }
       if (attachments.isAttachmentError(error)) {
+        if (error.settlement === 'unknown') throw new FileUploadIntakeUnconfirmedError({ cause: error })
         throw new RemoteError('session/attachment-invalid' as never, error.message, { reason: error.code } as never)
       }
       throw new RemoteError(
