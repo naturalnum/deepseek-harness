@@ -98,7 +98,10 @@ it.each(['caller', 'lifetime'] as const)('passes %s cancellation to the original
   const request: FileUploadFetch = async (_url, init) => new Promise((_resolve, reject) => {
     const signal = init.signal
     if (signal == null) throw new Error('missing upload signal')
-    signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+    signal.addEventListener('abort', () => {
+      const reason: unknown = signal.reason
+      reject(reason instanceof Error ? reason : new Error('Unexpected fixture abort reason'))
+    }, { once: true })
     entered.resolve(undefined)
   })
   const operation = uploadWorkspaceFile({ ...f.input, fetch: request })
