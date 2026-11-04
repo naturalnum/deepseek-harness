@@ -107,7 +107,10 @@ export class AccountManagedSkills implements SkillProvider {
       const inspection = await this.registry.inspect(options)
       check()
       return { value: { entries: [...catalog.entries.map(entry => this.row(this.handle(entry), inspection)),
-        ...inspection.candidates.flatMap((row) => { const entry = bundledSkillEntry(row); return entry === undefined ? [] : [entry] })],
+        ...inspection.candidates.flatMap((row) => {
+          const entry = bundledSkillEntry(row, this.publicLimits)
+          return entry === undefined ? [] : [entry]
+        })],
       complete: inspection.complete, actions: { install: catalog.entries.length < this.publicLimits.maxSkills
           && this.providers.size < this.input.limits.maxRetainedProviders }, limits: this.publicLimits }, revision: catalog.revision }
     }, () => { this.active(); check() })
@@ -455,7 +458,7 @@ export class AccountManagedSkills implements SkillProvider {
   private bundled(inspection: SkillCatalogInspection, skillId: ManagedSkillId) {
     if (!inspection.complete) throw refused('The native skill catalog is incomplete.')
     for (const row of inspection.candidates) {
-      const entry = bundledSkillEntry(row), bundle = row.candidate.package
+      const entry = bundledSkillEntry(row, this.publicLimits), bundle = row.candidate.package
       if (entry?.skillId === skillId && bundle !== undefined) return { entry, bundle }
     }
     return undefined

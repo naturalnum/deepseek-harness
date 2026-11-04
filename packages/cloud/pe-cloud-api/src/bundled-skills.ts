@@ -2,22 +2,28 @@
 import { createHash } from 'node:crypto'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SkillCandidateInspection } from '@deepseek-ai/dsh-skill'
-import type { ManagedSkillEntry, ManagedSkillId, ManagedSkillContentVersion } from './managed-skill-types.ts'
+import type { ManagedSkillEntry, ManagedSkillId, ManagedSkillContentVersion, ManagedSkillPublicLimits } from './managed-skill-types.ts'
 
 /**
  * Project immutable built-in metadata without source paths or callbacks.
  * @param row Native inspection row.
+ * @param limits Actual installed archive and complete reply limits.
  * @returns Read-only metadata, or undefined for a candidate without a bundled package.
  */
-export function bundledSkillEntry(row: SkillCandidateInspection): ManagedSkillEntry | undefined {
+export function bundledSkillEntry(row: SkillCandidateInspection,
+  limits: Pick<ManagedSkillPublicLimits, 'maxZipBytes' | 'maxReplyBytes'>): ManagedSkillEntry | undefined {
   const candidate = row.candidate, bundle = candidate.package
   if (candidate.source !== 'bundled' || bundle === undefined) return undefined
   const hex = createHash('sha256').update(`${candidate.provider}/${candidate.name}`).digest('hex')
   const skillId = brandString<ManagedSkillId>(`${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`)
+  const contentVersion = brandString<ManagedSkillContentVersion>(bundle.version)
+  const replyBytes = Buffer.byteLength(JSON.stringify({ skillId, contentVersion, fileName: `${candidate.name}.skill`,
+    mediaType: 'application/zip', ...bundle.archive, dataBase64: '' })) + 4 * Math.ceil(bundle.archive.bytes / 3)
   return { skillId, name: candidate.name, description: candidate.description, invocation: candidate.invocation,
-    provider: candidate.provider, source: candidate.source, contentVersion: brandString<ManagedSkillContentVersion>(bundle.version),
+    provider: candidate.provider, source: candidate.source, contentVersion,
     fileCount: bundle.files.length, contentBytes: bundle.files.reduce((sum, file) => sum + file.bytes, 0),
-    legacySample: false, mutable: false, actions: { update: false, uninstall: false, download: true },
+    legacySample: false, mutable: false, actions: { update: false, uninstall: false,
+      download: bundle.archive.bytes <= limits.maxZipBytes && replyBytes <= limits.maxReplyBytes },
     selection: row.selected ? { kind: 'effective' } : row.overriddenBy === undefined ? { kind: 'incomplete' }
       : { kind: 'shadowed', by: { name: row.overriddenBy.name, provider: row.overriddenBy.provider, source: row.overriddenBy.source } } }
 }

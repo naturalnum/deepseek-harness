@@ -721,6 +721,22 @@ it('returns a definite invalid-bundle refusal after real ZIP decoding without ch
   expect(valid).toMatchObject({ persisted: true, applied: true })
 })
 
+it('advertises built-in downloads only when their complete existing reply fits the installed budget', async () => {
+  const f = await fixture(apiLimits, true)
+  const view = await f.manager.installed({}, f.check, f.signal)
+  expect(view.entries).toHaveLength(13)
+  const blocked = ['power-grid-technical-report-writer', 'tech-report-writer', 'technical-report-pre-review']
+  for (const entry of view.entries) {
+    expect(entry.actions.download).toBe(!blocked.includes(entry.name))
+    const detail = await f.manager.details(entry.skillId, f.check, f.signal)
+    expect(detail.entry.actions.download).toBe(entry.actions.download)
+    const read = f.manager.download({ skillId: entry.skillId, contentVersion: entry.contentVersion }, f.check, f.signal)
+    if (entry.actions.download) {
+      expect(Buffer.byteLength(JSON.stringify(await read))).toBeLessThanOrEqual(apiLimits.maxReplyBytes)
+    } else await expect(read).rejects.toMatchObject({ code: 'cloud/capacity' })
+  }
+})
+
 it('projects all thirteen complete built-ins from Loader providers and preserves native user precedence', async () => {
   const f = await fixture({ ...apiLimits, maxReplyBytes: 8 * 1024 * 1024 }, true)
   const view = await f.manager.installed({}, f.check, f.signal)
