@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/cloud/pe-opensandbox/runtime/office-completion/README.md
 /office-image-handoff:
-  en: a035224757d69470
-  zh: 333dc38db5d25894
+  en: 4a62f7fe250133c4
+  zh: d436db9a944bc16a

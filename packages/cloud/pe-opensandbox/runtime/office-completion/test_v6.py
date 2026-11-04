@@ -252,6 +252,30 @@ class V6Tests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     owner_inputs(root)
 
+    def test_only_new_copy_destination_root_is_normalized_before_unchanged_payload(self):
+        recipe = Path(__file__).with_name('Dockerfile.v6').read_text()
+        payload = [line for line in recipe.splitlines() if line.startswith('RUN ') and 'payload' in line]
+        self.assertEqual(payload, ['RUN chmod 0555 /opt/dsh/skills/office && python3 /opt/office-build/install.py payload && rm -rf /opt/office-build'])
+        self.assertEqual(recipe.count('chmod'), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'office'
+            root.mkdir(mode=0o755)
+            child = root / 'skill'
+            child.mkdir(mode=0o755)
+            asset = child / 'SKILL.md'
+            asset.write_bytes(b'original-resource')
+            asset.chmod(0o444)
+            child.chmod(0o555)
+            self.assertTrue(root.stat().st_mode & 0o222)
+            root.chmod(0o555)
+            self.assertFalse(any(path.stat().st_mode & 0o222 for path in (root, child, asset)))
+            self.assertEqual(asset.read_bytes(), b'original-resource')
+            asset.chmod(0o644)
+            self.assertTrue(asset.stat().st_mode & 0o222)
+            self.assertFalse(root.stat().st_mode & 0o222)
+            child.chmod(0o755)
+            root.chmod(0o755)
+
     def test_asset_modes_are_frozen_before_copy_without_changing_bytes(self):
         name = ASSETS + 'office/SKILL.md'
         data = archive_bytes([(name, b'original bytes\n', 0o644)])
