@@ -168,6 +168,71 @@ describe('files actual-work ownership', () => {
     queue.close()
   })
 
+  it('lets a joined transfer use its executor deadline after bounded queue admission', async () => {
+    vi.useFakeTimers()
+    const queue = new FilesWorkQueue({ ...limits, waitTimeoutMs: 25 }), lane = queue.openLane()
+    const actual = deferred<string>(), started = deferred<AbortSignal>(), observed = vi.fn()
+    const wait = lane.run(10, async (signal) => { started.resolve(signal); return actual.promise }, undefined, undefined, 'joined')
+    void wait.then(observed)
+    const signal = await started.promise
+    await vi.advanceTimersByTimeAsync(100)
+    expect(observed).not.toHaveBeenCalled()
+    expect(signal.aborted).toBe(false)
+    expect(queue.inspect()).toMatchObject({ running: 1, residentBytes: 10, pending: 1 })
+    actual.resolve('published')
+    const held = await wait
+    expect(held.value).toBe('published')
+    expect(queue.inspect()).toMatchObject({ running: 0, residentBytes: 10, pending: 1 })
+    held.release(); queue.close()
+  })
+
+  it('joins cancellation cleanup before rejecting a running transfer and releasing its charge', async () => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), caller = new AbortController()
+    const started = deferred<AbortSignal>(), actual = deferred<never>(), observed = vi.fn()
+    const closedFailure = new Error('Closed original source and sink')
+    const wait = lane.run(10, async (signal) => { started.resolve(signal); return actual.promise }, caller.signal, undefined, 'joined')
+    void wait.catch(observed)
+    const signal = await started.promise
+    caller.abort()
+    await Promise.resolve()
+    expect(signal.aborted).toBe(true)
+    expect(observed).not.toHaveBeenCalled()
+    expect(queue.inspect()).toMatchObject({ running: 1, residentBytes: 10, pending: 1 })
+    actual.reject(closedFailure)
+    await expect(wait).rejects.toBe(closedFailure)
+    expect(queue.inspect()).toMatchObject({ running: 0, residentBytes: 0, pending: 0 })
+    queue.close()
+  })
+
+  it('retains a durable joined result when cancellation races its final observation', async () => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), caller = new AbortController()
+    const started = deferred<null>(), actual = deferred<string>()
+    const wait = lane.run(10, async () => { started.resolve(null); return actual.promise }, caller.signal, undefined, 'joined')
+    await started.promise
+    caller.abort(); actual.resolve('original durable publication')
+    const held = await wait
+    expect(held.value).toBe('original durable publication')
+    expect(queue.inspect()).toMatchObject({ running: 0, residentBytes: 10, pending: 1 })
+    lane.close()
+    expect(lane.pending()).toHaveLength(1)
+    held.release(); expect(lane.pending()).toEqual([]); queue.close()
+  })
+
+  it('expires a queued joined transfer without opening its source or destination', async () => {
+    vi.useFakeTimers()
+    const queue = new FilesWorkQueue({ ...limits, waitTimeoutMs: 25 }), lane = queue.openLane()
+    const started = deferred<null>(), actual = deferred<null>(), source = vi.fn(async () => 'unexpected')
+    const first = lane.run(10, async () => { started.resolve(null); return actual.promise }, undefined, undefined, 'joined')
+    await started.promise
+    const queued = lane.run(5, source, undefined, undefined, 'joined')
+    const rejected = expect(queued).rejects.toMatchObject({ code: 'files/deadline' })
+    await vi.advanceTimersByTimeAsync(25)
+    await rejected
+    expect(source).not.toHaveBeenCalled()
+    expect(queue.inspect()).toMatchObject({ running: 1, queued: 0, residentBytes: 10, pending: 1 })
+    actual.resolve(null); (await first).release(); queue.close()
+  })
+
   it('does not start queued work when the root closes', async () => {
     const queue = new FilesWorkQueue(limits)
     const lane = queue.openLane()

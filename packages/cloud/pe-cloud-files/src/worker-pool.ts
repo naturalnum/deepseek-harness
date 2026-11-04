@@ -555,7 +555,7 @@ export class LinuxFilesPool implements DrainParticipant {
       reservation: number, assertProject: () => void,
       execute: (client: FdWorkerClient, control: AbortSignal) => Promise<T>,
       failure: (outcome: 'not-published' | 'unknown', code: FsErrorCode, cause?: unknown) => FdMutationFailure,
-      signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' | 'retained-lease' = 'native-handoff',
+      signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' | 'joined-result' | 'retained-lease' = 'native-handoff',
     ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
@@ -597,10 +597,10 @@ export class LinuxFilesPool implements DrainParticipant {
             throw error
           }
         } catch (error) {
-          answer.reject(error)
+          if (delivery !== 'joined-result') answer.reject(error)
           throw error
         } finally { turn.resolve() }
-      }, signal, delivery === 'retained-lease' ? 'lease' : undefined)
+      }, signal, delivery === 'retained-lease' ? 'lease' : undefined, delivery === 'joined-result' ? 'joined' : undefined)
       void work.then((result) => {
         if (delivery !== 'native-handoff') answer.resolve(result)
         else result.release()
@@ -912,7 +912,7 @@ export class LinuxFilesPool implements DrainParticipant {
           client.beginStage(root, file, chunk, this.config.replyOverheadBytes, actual) }, selected, plan, staging,
         this.config.readChunkBytes, current, control)
       }, (outcome, code, cause) => new FdStageFailure(outcome, code, undefined,
-        cause === undefined ? undefined : { cause }), joinCancellation ? undefined : signal, 'retained-result').catch((error: unknown) => {
+        cause === undefined ? undefined : { cause }), signal, joinCancellation ? 'joined-result' : 'retained-result').catch((error: unknown) => {
         if (joinCancellation && !execution.entered && error instanceof FilesFailure) {
           throw new FdStageFailure('not-published', signal?.aborted === true ? 'FS_ABORTED' : 'FS_IO_ERROR', undefined, { cause: error })
         }

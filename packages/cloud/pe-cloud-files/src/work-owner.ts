@@ -11,9 +11,12 @@ import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork, Di
 export interface BoundFilesWork {
   readonly stopping: AbortSignal
   assertCurrent(): void
-  /** Lease is reserved for inert grants whose later files I/O reenters this original lane; budgets survive until release. */
+  /**
+   * Lease is reserved for inert grants whose later files I/O reenters this original lane; budgets survive until release.
+   * Joined completion requires an executor deadline and waits for actual cleanup.
+   */
   run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
-    retention?: 'lease'): Promise<ResidentResult<T>>
+    retention?: 'lease', completion?: 'joined'): Promise<ResidentResult<T>>
   /** Register a bounded private responsibility on this same lane; this does not authorize directory writes. */
   prepareDirectory(
     intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
@@ -71,9 +74,10 @@ export class FilesWorkOwner implements DrainParticipant {
       assertCurrent: () => {
         current()
       },
-      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, retention?: 'lease') => {
+      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+        retention?: 'lease', completion?: 'joined') => {
         current()
-        return lane.run(bytes, work, signal, retention)
+        return lane.run(bytes, work, signal, retention, completion)
       },
       prepareDirectory: (
         intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
