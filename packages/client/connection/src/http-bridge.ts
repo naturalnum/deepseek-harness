@@ -5,7 +5,6 @@
 
 import type { IncomingMessage } from 'node:http'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import { Readable } from 'node:stream'
 import type { ConnectionFetchHandler } from './rpc.ts'
 
 /** Default carrier cap for all HTTP RPC bodies: sized for the default
@@ -30,6 +29,29 @@ interface BridgeServerResponse {
   writeHead(statusCode: number, headers?: Record<string, string>): unknown
   write(chunk: Uint8Array): boolean
   end(): unknown
+}
+
+/** Keep cancelled intake closed while joining the original Node request's destruction. */
+function requestBody(req: IncomingMessage): ReadableStream<Uint8Array> {
+  const chunks = req.iterator({ destroyOnReturn: false })
+  let cancelled = false
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await chunks.next()
+        if (cancelled) return
+        if (chunk.done) controller.close()
+        else controller.enqueue(chunk.value as Buffer)
+      } catch (error) {
+        if (!cancelled) controller.error(error)
+      }
+    },
+    async cancel() {
+      cancelled = true
+      await req[Symbol.asyncDispose]()
+      await chunks.return?.()
+    },
+  }, { highWaterMark: 0 })
 }
 
 /**
@@ -98,7 +120,7 @@ export async function bridge(
     request = new Request(url, {
       method,
       headers,
-      body: Readable.toWeb(req) as ReadableStream<Uint8Array>,
+      body: requestBody(req),
       signal: abort.signal,
       duplex: 'half',
     } as RequestInit & { duplex: 'half' })

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { spawnSync } from 'node:child_process'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
@@ -9,6 +10,62 @@ import { Peer } from '../src/peer.ts'
 const PEER = new Peer(new Context(), { principal: { kind: 'owner' } })
 
 describe('HTTP bridge abort', () => {
+  it.each(['success', 'failure'])('retains cancelled intake until original request destruction reports %s', async (outcome) => {
+    const started = Promise.withResolvers<undefined>()
+    const failure = new Error('original intake destruction failed')
+    let finish!: () => void
+    const request = new Readable({ read() {}, destroy(error, callback) {
+      finish = () => { callback(outcome === 'failure' ? failure : error) }
+      started.resolve(undefined)
+    } }) as IncomingMessage
+    Object.assign(request, { url: '/api/session/uploadFileBinary', method: 'POST', headers: {} })
+    let headers = 0, settled = false
+    const response = Object.assign(new EventEmitter(), { destroyed: false, writableEnded: false,
+      writeHead() { headers++; return this }, write() { return true }, end() { this.writableEnded = true; return this } })
+    const actual = bridge(request, response, {
+      requestBodyMode: () => 'streaming', fetch: async (input) => {
+        await input.body?.cancel()
+        return new Response(null, { status: 400 })
+      },
+    }, PEER).then(() => undefined, (error: unknown) => error).finally(() => { settled = true })
+    await started.promise
+    expect(settled).toBe(false)
+    expect(headers).toBe(0)
+    finish()
+    expect(await actual).toBe(outcome === 'failure' ? failure : undefined)
+    expect(request.closed).toBe(true)
+    expect(headers).toBe(outcome === 'failure' ? 0 : 1)
+  })
+
+  it.each(['unread', 'reading'])('joins an %s upload cancelled while Node delivers its final data event', (phase) => {
+    const script = `
+      import { EventEmitter } from 'node:events';
+      import { Readable } from 'node:stream';
+      import { bridge } from ${JSON.stringify(new URL('../src/http-bridge.ts', import.meta.url).href)};
+      const request = new Readable({ read() {}, destroy(error, callback) {
+        queueMicrotask(() => { this.emit('data', Buffer.from('late')); callback(error); });
+      }});
+      Object.assign(request, { url: '/api/session/uploadFileBinary', method: 'POST', headers: {} });
+      let status;
+      const response = Object.assign(new EventEmitter(), { destroyed: false, writableEnded: false,
+        writeHead(code) { status = code; }, write() { return true; }, end() { this.writableEnded = true; } });
+      await bridge(request, response, { requestBodyMode: () => 'streaming', fetch: async (input) => {
+        const reader = input.body.getReader();
+        if (${JSON.stringify(phase)} === 'reading') {
+          const first = reader.read(); request.push(Buffer.from('first')); await first;
+        }
+        await reader.cancel();
+        return new Response('refused', { status: 400 });
+      }}, {});
+      if (status !== 400 || !response.writableEnded || !request.closed) throw new Error('unsettled intake');
+    `
+    const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
+      encoding: 'utf8', timeout: 15_000,
+    })
+    expect(child.error).toBeUndefined()
+    expect(child.status, child.stderr).toBe(0)
+  })
+
   it('holds a refused response until body cancellation settles and retains cleanup failure', async () => {
     const request = Readable.from([]) as IncomingMessage
     Object.assign(request, { url: '/api/workspaceFiles/readBytes', method: 'POST', headers: {} })
@@ -212,7 +269,7 @@ describe('HTTP bridge abort', () => {
     request.push(null)
     await pending
     expect(status).toBe(200)
-    expect(received).toEqual([Uint8Array.of(1, 2), Uint8Array.of(3, 4)])
+    expect(Buffer.concat(received)).toEqual(Buffer.from([1, 2, 3, 4]))
     expect(Buffer.concat(responseBytes).toString()).toBe('stored')
   })
 
