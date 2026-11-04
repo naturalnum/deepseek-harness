@@ -50,6 +50,22 @@ function relative(path: string): string | undefined {
   return value
 }
 
+function destination(actual: string, expected: string): boolean {
+  const path = relative(actual)
+  if (path === undefined) return false
+  const slash = expected.lastIndexOf('/')
+  if (path.lastIndexOf('/') !== slash || path.slice(0, slash + 1) !== expected.slice(0, slash + 1)) return false
+  const name = expected.slice(slash + 1), published = path.slice(slash + 1)
+  if (new TextEncoder().encode(published).byteLength > 255) return false
+  if (published === name) return true
+  // Native staging inserts a canonical uint64 counter before the final extension; an initial dot is not an extension.
+  const dot = name.lastIndexOf('.'), split = dot > 0 ? dot : name.length
+  const prefix = `${name.slice(0, split)}_`, extension = name.slice(split)
+  if (!published.startsWith(prefix) || !published.endsWith(extension)) return false
+  const suffix = published.slice(prefix.length, extension ? -extension.length : undefined)
+  return /^[1-9][0-9]{0,19}$/u.test(suffix) && BigInt(suffix) <= 18446744073709551615n
+}
+
 async function digest(file: File, readChunkBytes: number, signal: AbortSignal): Promise<string> {
   const hash = new Hash()
   try {
@@ -71,7 +87,7 @@ function receipt(value: unknown, path: string, sha256: string, bytes: number): W
   }
   const file = value.value
   if (!('kind' in file) || file.kind !== 'workspace-upload' || !('path' in file) || typeof file.path !== 'string'
-    || relative(file.path) !== path || !('sha256' in file) || file.sha256 !== sha256
+    || !destination(file.path, path) || !('sha256' in file) || file.sha256 !== sha256
     || !('bytes' in file) || file.bytes !== bytes || !('outcome' in file)
     || file.outcome !== 'published' && file.outcome !== 'reused') {
     throw new WorkspaceFileUploadFailure('upload-unconfirmed', 'unknown')

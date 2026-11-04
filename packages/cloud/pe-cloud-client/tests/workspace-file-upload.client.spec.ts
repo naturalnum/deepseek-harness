@@ -170,6 +170,62 @@ it.each([
   await expect(uploadWorkspaceFile(f.input)).rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown' })
 })
 
+it.each([
+  ['report.txt', 'report_1.txt'], ['report.txt', 'report_2.txt'],
+  ['archive.tar.gz', 'archive.tar_1.gz'], ['archive.tar.gz', 'archive.tar_2.gz'],
+  ['.env', '.env_1'], ['.env', '.env_2'], ['.env.local', '.env_1.local'],
+  ['report_1.txt', 'report_1_1.txt'], ['report_1.txt', 'report_1_2.txt'],
+  ['report', 'report_1'], ['a[b].txt', 'a[b]_1.txt'], ['报告.txt', '报告_2.txt'],
+  ['report.txt', 'report_18446744073709551615.txt'],
+])('retains the actual Native collision path for %s → %s', async (name, published) => {
+  const f = fixture()
+  f.reply({ ok: true, value: { kind: 'workspace-upload', path: `./folder/${published}`,
+    sha256: createHash('sha256').update('abc').digest('hex'), bytes: 3, outcome: 'published' } })
+  const receipt = await uploadWorkspaceFile({ ...f.input, name })
+  expect(receipt.path).toBe(`./folder/${published}`)
+  expect(receipt).not.toHaveProperty('receiptId')
+  expect(receipt).not.toHaveProperty('file')
+})
+
+it('accepts the Native collision path at the selected workspace root', async () => {
+  const f = fixture()
+  f.reply({ ok: true, value: { kind: 'workspace-upload', path: './name_2.txt',
+    sha256: createHash('sha256').update('abc').digest('hex'), bytes: 3, outcome: 'published' } })
+  expect((await uploadWorkspaceFile({ ...f.input, directory: '.' })).path).toBe('./name_2.txt')
+})
+
+it.each([
+  ['report.txt', './folder/report_0.txt'], ['report.txt', './folder/report_01.txt'],
+  ['report.txt', './folder/report_-1.txt'], ['report.txt', './folder/report_+1.txt'],
+  ['report.txt', './folder/report_1.0.txt'], ['report.txt', './folder/report_1a.txt'],
+  ['report.txt', './folder/report_1_2.txt'], ['report.txt', './folder/report_.txt'],
+  ['report.txt', './folder/report_18446744073709551616.txt'], ['report.txt', './folder/report_999999999999999999999.txt'],
+  ['report.txt', './folder/report_1.txt.extra'], ['report.txt', './folder/report.txt_1'],
+  ['archive.tar.gz', './folder/archive_1.tar.gz'], ['.env', './folder/_1.env'],
+  ['.env.local', './folder/.env.local_1'], ['report_1.txt', './folder/report_2.txt'],
+  ['report.txt', './other/report_1.txt'], ['report.txt', './folder/nested/report_1.txt'],
+  ['report.txt', './folder/../folder/report_1.txt'], ['report.txt', './folder/report_1.txt/extra'],
+  ['中'.repeat(84) + '.t', `./folder/${'中'.repeat(84)}_1.t`],
+])('rejects names outside the Native collision rule for %s → %s', async (name, path) => {
+  const f = fixture()
+  f.reply({ ok: true, value: { kind: 'workspace-upload', path,
+    sha256: createHash('sha256').update('abc').digest('hex'), bytes: 3, outcome: 'published' } })
+  await expect(uploadWorkspaceFile({ ...f.input, name }))
+    .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown' })
+})
+
+it('keeps an otherwise valid collision receipt unconfirmed when its page is cancelled during metadata delivery', async () => {
+  const f = fixture(), reason = new Error('page cancelled with collision receipt')
+  const bytes = new TextEncoder().encode(JSON.stringify({ ok: true, value: { kind: 'workspace-upload',
+    path: './folder/name_1.txt', sha256: createHash('sha256').update('abc').digest('hex'), bytes: 3, outcome: 'published' } }))
+  const body = new ReadableStream<Uint8Array>({ pull(controller) {
+    controller.enqueue(bytes)
+    f.lifetime.abort(reason)
+  } }, { highWaterMark: 0 })
+  await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => new Response(body) }))
+    .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown', cause: reason })
+})
+
 it.each([null, {}, { ok: false }, { ok: true }, { ok: true, value: null }, { ok: true, value: [] }])
 ('rejects an incomplete receipt %j', async (value) => {
   const f = fixture()
