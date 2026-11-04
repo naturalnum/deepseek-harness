@@ -6295,7 +6295,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BundledSkillResponseBorrow',
-    declaration: 'export interface BundledSkillResponseBorrow {\n    readonly request: IncomingMessage;\n    readonly response: ServerResponse;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
+    declaration: 'export interface BundledSkillResponseBorrow {\n    readonly navigationQueryNames?: readonly [\n        account: string,\n        generation: string\n    ];\n    readonly request: IncomingMessage;\n    readonly response: ServerResponse;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'BundledSkillResponseSettlement',
