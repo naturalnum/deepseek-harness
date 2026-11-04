@@ -15,6 +15,30 @@ const account: StaticStorageAccount = { accountId, storageKey, accountRoot: '/ac
   private: { ...domain, rootPath: '/account/private' } }
 const observed = { pid: 12345, startTicks: '123' }, hash = 'b'.repeat(64)
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+
+it('accepts a recovered nonzero process exit only with complete physical, writer and owner retirement evidence', () => {
+  const original = skillRestartProof(account)
+  const recovered = { ...original, schema: 4,
+    retirement: { ...original.retirement,
+      processExit: { ...original.retirement.processExit, kind: 'process-exit', exitCode: 1 } },
+    lineage: { ...original.lineage, kind: 'recovered-restart' } }
+  expect(() => parseRootSkillRevalidation(encode(recovered), observed, hash)).not.toThrow()
+  for (const exitCode of [-1, 256, 1.5, null, '1']) {
+    expect(() => parseRootSkillRevalidation(encode({ ...recovered, retirement: { ...recovered.retirement,
+      processExit: { ...recovered.retirement.processExit, exitCode } } }), observed, hash)).toThrow()
+  }
+  for (const changed of [
+    { ...recovered, schema: 3 },
+    { ...recovered, lineage: { ...recovered.lineage, kind: 'normal-restart' } },
+    { ...recovered, retirement: { ...recovered.retirement, ownerRecoverySha256: '' } },
+    { ...recovered, retirement: { ...recovered.retirement,
+      filesTerminal: { ...recovered.retirement.filesTerminal, kind: 'lane-joined' } } },
+    { ...recovered, retirement: { ...recovered.retirement,
+      filesTerminal: { ...recovered.retirement.filesTerminal, pendingOperationIds: ['unknown'] } } },
+    { ...recovered, retirement: { ...recovered.retirement,
+      writersTerminal: { ...recovered.retirement.writersTerminal, kind: 'unknown' } } },
+  ]) expect(() => parseRootSkillRevalidation(encode(changed), observed, hash)).toThrow()
+})
 function input(): AccountMountInput {
   return { binding: { accountId, epoch: brandString<AccountMountInput['binding']['epoch']>('2'), recipeVersion: 'recipe',
     lifetime: new AbortController().signal }, instanceId: brandString<AccountMountInput['instanceId']>('fixture-instance'),

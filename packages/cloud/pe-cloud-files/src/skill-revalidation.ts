@@ -102,16 +102,20 @@ export function parseRootSkillRevalidation(bytes: Uint8Array, observed: StorageP
 function parseProof(raw: unknown, observed: StorageProcessIdentity, planSha256: string): RootSkillRevalidationProof {
   const v = object(raw, ['schema', 'accountId', 'storageKey', 'workspaceId', 'recordSha256', 'recordRevision',
     'previous', 'retirement', 'lineage'])
-  if (v.schema !== 1 && v.schema !== 3) reject()
+  if (v.schema !== 1 && v.schema !== 3 && v.schema !== 4) reject()
   const previous = generation(v.previous)
   const recipient = Object.freeze({ process: processIdentity(observed), planSha256: digest(planSha256) })
   if (isDeepStrictEqual(previous.process, recipient.process)) reject()
   const retirement = object(v.retirement, ['processExit', 'filesTerminal', 'writersTerminal', 'ownerRecoverySha256'])
   const exit = object(retirement.processExit, ['process', 'kind', 'exitCode', 'receiptSha256'])
-  if (exit.kind !== 'normal-exit' || exit.exitCode !== 0 || !isDeepStrictEqual(processIdentity(exit.process), previous.process)) reject()
+  if (v.schema === 4
+    ? exit.kind !== 'process-exit' || typeof exit.exitCode !== 'number' || !Number.isSafeInteger(exit.exitCode)
+      || exit.exitCode < 0 || exit.exitCode > 255
+    : exit.kind !== 'normal-exit' || exit.exitCode !== 0) reject()
+  if (!isDeepStrictEqual(processIdentity(exit.process), previous.process)) reject()
   digest(exit.receiptSha256); digest(retirement.ownerRecoverySha256)
   const files = object(retirement.filesTerminal, ['kind', 'instanceId', 'epoch', 'pendingOperationIds', 'receiptSha256'])
-  if ((v.schema === 3 ? files.kind !== 'physical-terminal' : files.kind !== 'lane-joined' && files.kind !== 'physical-terminal')
+  if ((v.schema !== 1 ? files.kind !== 'physical-terminal' : files.kind !== 'lane-joined' && files.kind !== 'physical-terminal')
     || files.instanceId !== previous.instanceId
     || files.epoch !== previous.epoch || !Array.isArray(files.pendingOperationIds) || files.pendingOperationIds.length !== 0) reject()
   digest(files.receiptSha256)
@@ -131,7 +135,7 @@ function parseProof(raw: unknown, observed: StorageProcessIdentity, planSha256: 
       || !isDeepStrictEqual(volume(before.projects), volumes.projects)) reject()
   } else {
     const lineage = object(v.lineage, ['kind', 'beforeReceiptSha256', 'afterReceiptSha256', 'before', 'after'])
-    if (lineage.kind !== 'normal-restart') reject()
+    if (lineage.kind !== (v.schema === 4 ? 'recovered-restart' : 'normal-restart')) reject()
     digest(lineage.beforeReceiptSha256); digest(lineage.afterReceiptSha256)
     const before = object(lineage.before, ['controller', 'private', 'projects'])
     const after = object(lineage.after, ['controller', 'private', 'projects'])
