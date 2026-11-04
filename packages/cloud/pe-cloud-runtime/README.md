@@ -177,6 +177,8 @@ Ordinary active Roots expose `ownerResolver?.resolve(accountId)` to trusted Host
 
 An explicit approved Settings field policy requires `native.firstScreen` and the same original authentication consumer used by model-key and skill operations. Runtime passes the immutable approved fields into the shared native Settings adapter; the native schema, revision and none/live update plan still decide each save. It joins the existing mutable-save containment path even when selected alone; it adds no participant, owner or queue.
 
+Remote-server activation requires the approved catalog's `remoteServers` policy, the audited `cloudRemoteServers/action` endpoint, an account recipe entry using `cordis:pe-cloud-remote-servers`, and the original managed execution opt-in. Runtime prepares the original files, saves, approval and Session guards before publishing the account; a missing entry fails the existing inventory audit.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

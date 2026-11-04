@@ -64,6 +64,8 @@ Ordinary plugin-field replacement policy belongs to this package. Its internal `
 
 A finite-value field normally rejects `unset`. A Runtime-owned settings transaction may permit one reset only after checking the original native inherited value against that field's approved values; it remains inside the original Peer, save and Loader plan checks. Missing Runtime policy keeps that reset closed. The original save owner commits the policy after all enrolled children settle; failed final checks retain an unknown save outcome. Its bounded event queue waits for the settings turn before delivery.
 
+Optional remote-server management exposes one strict `cloudRemoteServers/action` Remote for list, CRUD, ordering, key upload and uploaded config import. Its browser-safe DTOs use the package's `/types` entry. It uses the original authenticated Peer/Use and save barrier, returns bounded metadata and actual observations, and never exposes execution or credential reads. The two chat tools use exact current references and original native approval; mandatory requests fail closed under native `never`.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -153,10 +153,13 @@ function serviceLimits(value: unknown, limits: CommandOperationLimits): ManagedS
 function commandLimits(value: unknown): ManagedNativeCommandConfig {
   // Select the exact key list without reading a possible services accessor or inherited property.
   const hasServices = value !== null && typeof value === 'object' && Object.hasOwn(value, 'services')
+  const hasRemote = value !== null && typeof value === 'object' && Object.hasOwn(value, 'remoteServers')
   const hasPipes = value !== null && typeof value === 'object' && Object.hasOwn(value, 'pipes')
-  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : [])], 'commands')
+  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : []), ...(hasRemote ? ['remoteServers'] : [])], 'commands')
   const tools = row['allowedTools']
-  const expectedTools = ['bash', ...hasServices ? ['dev_service'] : [], ...hasPipes ? ['run_code', 'terminal_open'] : []]
+  if (hasRemote && row['remoteServers'] !== true) refuse('commands.remoteServers')
+  const expectedTools = ['bash', ...hasServices ? ['dev_service'] : [], ...hasPipes ? ['run_code', 'terminal_open'] : [],
+    ...hasRemote ? ['remote_exec', 'remote_server_info'] : []]
   if (!Array.isArray(tools) || Object.getPrototypeOf(tools) !== Array.prototype
     || tools.length !== expectedTools.length || Reflect.ownKeys(tools).length !== expectedTools.length + 1) refuse('commands.allowedTools')
   for (const [index, tool] of expectedTools.entries()) {
@@ -185,7 +188,7 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   const rawPipes = hasPipes ? object(row['pipes'], ['controlInputBytes', 'controlOutputBytes'], 'commands.pipes') : undefined
   const pipes = rawPipes === undefined ? undefined : Object.freeze({ controlInputBytes: integer(rawPipes, 'controlInputBytes', 'commands.pipes', 8388608),
     controlOutputBytes: integer(rawPipes, 'controlOutputBytes', 'commands.pipes', 8388608) })
-  return Object.freeze({ ...pipes === undefined ? {} : { pipes }, allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
+  return Object.freeze({ ...hasRemote ? { remoteServers: true as const } : {}, ...pipes === undefined ? {} : { pipes }, allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
     commandLimits: limits, ...(services === undefined ? {} : { services }) })
 }
 

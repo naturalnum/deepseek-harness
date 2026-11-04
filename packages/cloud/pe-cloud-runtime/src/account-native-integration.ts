@@ -22,7 +22,8 @@ import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
 import * as InstructionsSession from '@deepseek-ai/dsh-pe-account-instructions/session'
-import { assertAccountExecutionProviders, accountTerminalLimits, installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
+import { assertAccountExecutionProviders, accountTerminalLimits, installAccountExecutionPort,
+  type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -50,7 +51,8 @@ import * as NativeCordisInspectProviders from '@deepseek-ai/dsh-tool-cordis/host
 export interface AccountNativeGuards {
   /** Shared Native registry policy; only explicitly selectable declarations admit new work. */
   readonly presets: NativePresetGuards & {
-    /** Require the original attached Agent and its committed Native composition. @param agent Actual account Agent. */
+    /** Require the original attached Agent and its committed Native composition.
+ * @param agent Actual account Agent. */
     assertSession(agent: Agent): void
   }
   /** Original account policy transaction for an approved native settings write. */
@@ -79,7 +81,8 @@ export interface AccountNativeGuards {
   /** Shared Agent or original file-RPC selection, with native cold observation when needed. */
   readonly getFileProject: ResolveAccountFileProject
   /** Resolve only an original member Session before Gateway can read its persisted header. */
-  readonly resolveFileTransfer?: (id: SessionId, signal: AbortSignal) => Promise<import('@deepseek-ai/dsh-pe-cloud-files').AccountFileSelection>
+  readonly resolveFileTransfer?: (id: SessionId,
+    signal: AbortSignal) => Promise<import('@deepseek-ai/dsh-pe-cloud-files').AccountFileSelection>
   readonly resolveFileScope: (id: SessionId) => Promise<{ sessionId: SessionId; workspaceRoot: string }>
   readonly sessions: Omit<Parameters<CloudAccountApi['createController']>[1], 'projectDirectory'>
   readonly agents: Parameters<CloudAccountApi['createAgentLoop']>[1]
@@ -97,6 +100,8 @@ export interface AccountNativePreparation {
   /** Original Root capacity closure; unknown must retain its slot and synchronously close original business admission.
    * Omission keeps child factory and native admission wiring closed. It is never provided by a Peer or Settings. */
   readonly reserveSubagent?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation
+  readonly remoteServers?: Omit<import('@deepseek-ai/dsh-pe-cloud-api').CloudRemoteServerPreparation,
+    'files' | 'assertBusinessCurrent' | 'assertToolCurrent'>
   readonly modelKey?: CloudModelKeyPreparation
   readonly skills?: Omit<CloudSkillPreparation, 'files' | 'resources' | 'managed'> & {
     readonly managed: Omit<ManagedSkillPreparation, 'assertWorkspace' | 'resources'>
@@ -140,8 +145,10 @@ export interface AccountNativePreparation {
 
 /** Fixed private builtin names for the native account recipe, not additional package Loader exports. */
 export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
-  runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account', execution: 'pe-cloud-execution-account',
-  instructions: 'pe-account-instructions-session', modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
+  runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account',
+  execution: 'pe-cloud-execution-account',
+  remoteServers: 'pe-cloud-remote-servers', instructions: 'pe-account-instructions-session',
+  modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', presets: 'pe-cloud-agent-presets', llm: 'pe-cloud-llm',
   commands: 'pe-cloud-commands',
@@ -211,7 +218,7 @@ export class AccountNativeIntegration {
     mountCurrent(binding)
     const modelKey = this.input.modelKey
     const mutable = modelKey !== undefined || this.input.skills !== undefined
-      || this.input.settingsWrites !== undefined || this.input.plugins !== undefined
+      || this.input.settingsWrites !== undefined || this.input.plugins !== undefined || this.input.remoteServers !== undefined
     if (mutable && containSaveFailure === undefined) {
       throw new AccountRuntimeError('cloud/account-unavailable', 'Mutable account preparation requires original factory containment')
     }
@@ -603,6 +610,19 @@ export class AccountNativeIntegration {
     const entries = {
       [ACCOUNT_NATIVE_ENTRIES.runtime]: RuntimeAccount,
       [ACCOUNT_NATIVE_ENTRIES.api]: ApiAccount,
+      ...input.remoteServers === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.remoteServers]: {
+        inject: ['peCloudApi', 'peCloudFiles', 'storageDomain', 'credentials', 'tools', 'subprocess', 'shell', 'typert'],
+        apply: async (owner: Context) => {
+          if (filesOwner === undefined || input.remoteServers === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Remote storage is unavailable')
+          await api.prepareCloudRemoteServers(owner, { ...input.remoteServers, files: filesOwner,
+            assertBusinessCurrent: () => { this.input.assertRootCurrent(); rootBusinessCurrent(binding) },
+            assertToolCurrent: (exec) => {
+              if (exec.agent === undefined) throw new AccountRuntimeError('cloud/stale-generation', 'Remote execution requires the original Agent')
+              exec.signal.throwIfAborted(); requireGuards(owner).projectForAgent(exec.agent)
+            },
+          })
+        },
+      } },
       ...modelKey === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.modelKey]: {
         inject: ['peCloudApi', 'typert', 'credentials', 'settings', 'llm'],
         apply(owner: Context) { api.prepareCloudModelKey(owner, modelKey) },

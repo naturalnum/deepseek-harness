@@ -134,6 +134,8 @@ Ingress 失败也向 stderr 写入有界请求 id、阶段、错误码及最多�
 
 Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{namespace,path,application:"live"}`。此元数据不授予写权限；原生 Settings 准入负责精确值、版本及当前 Peer 检查。
 
+可选远程服务器引导能力仅开放账户管理。`cloudRemoteServers/action` 复用其他账户管理所用的已认证登录 Peer 和原有 AccountUse；请求 JSON 与服务器引用均不能选择账户或执行范围。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

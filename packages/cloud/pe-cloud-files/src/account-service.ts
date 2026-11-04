@@ -1,3 +1,4 @@
+import { openRemoteServerStore, type RemoteStoreLimits, type AccountRemoteServerStore } from './remote-server-store.ts'
 /** Graph-owned preparation installs the native Registry and its selected restricted filesystem in one account fiber. */
 import type { SkillProjectPort } from './skill-project-work.ts'
 import type { SkillProjectGrant, SkillWorkingCopyGrant, SkillOperationCopies } from './skill-projection.ts'
@@ -194,6 +195,18 @@ export class CloudAccountFiles extends Service {
     const prepare = this.providers.skillVersions
     if (prepare === undefined) throw new FilesFailure('files/prerequisite-missing', 'Private skill storage is unavailable')
     return prepare()
+  }
+
+  /** Prepare only this files owner's installed private native storage and credential providers.
+   * @param owner Original account entry.
+ * @param limits Root bounds.
+   * @param current Original business admission.
+ * @param submit Original save barrier.
+   * @returns Private account metadata/credential capability. */
+  remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void,
+    submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore> {
+    this.assertInstalled(owner)
+    return openRemoteServerStore(owner, this.binding, limits, () => { this.assertInstalled(owner) }, current, submit)
   }
 
   private skillBundlePort(): SkillBundlePort {
@@ -425,7 +438,8 @@ export class CloudAccountFiles extends Service {
    * @param signal Actual HTTP lifetime.
    * @returns The original project backend; reads retain their storage reservation until released.
    */
-  workspaceContent(workspace: Workspace, authorized: () => void, signal?: AbortSignal): Promise<import('./text-project.ts').TextProjectBackend> {
+  workspaceContent(workspace: Workspace, authorized: () => void,
+    signal?: AbortSignal): Promise<import('./text-project.ts').TextProjectBackend> {
     const port = this.providers.attachments
     if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace content is unavailable.')
     return port.workspaceContent(workspace, () => { this.assertWorkspace(workspace); authorized() }, signal)

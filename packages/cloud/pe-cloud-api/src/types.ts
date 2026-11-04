@@ -4,6 +4,7 @@ export type * from './save-hooks.ts'
 export type * from './skill-types.ts'
 export type * from './managed-skill-types.ts'
 export type * from './plugin-types.ts'
+export type * from './remote-server-types.ts'
 import type { PluginControlLimits } from './plugin-types.ts'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LlmProviderInfo, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm/types'
@@ -130,6 +131,7 @@ export interface ApprovedConfigurationCatalog {
   readonly skills: Readonly<{ mode: 'closed' }> | Readonly<{ mode: 'sample'; limits: Readonly<SkillPublicationLimits> }>
     | Readonly<{ mode: 'managed'; limits: Readonly<SkillPublicationLimits>; management: Readonly<ManagedSkillApiLimits> }>
   readonly credentials: Readonly<{ mode: 'read-only' }>
+  readonly remoteServers?: import('./remote-server-policy.ts').ApprovedRemoteServers
   readonly modelKey?: ApprovedModelKeyConfiguration
   readonly pluginControl?: Readonly<PluginControlLimits>
   readonly fields: readonly ApprovedConfigurationField[]

@@ -54,6 +54,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   cloudPlugins: 'cloud.md',
   cloudProjects: 'cloud.md',
   cloudSkills: 'cloud.md',
+  cloudRemoteServers: 'cloud.md',
   peAccount: 'cloud.md',
   peAccountExecution: 'cloud.md',
   peAccountInstructions: 'cloud.md',
@@ -314,6 +315,13 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * ambiguous short name to that service's signatures.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  RemoteServerReply: 'cloud.md#remote-server-management',
+  RemoteServerRequest: 'cloud.md#remote-server-management',
+  CloudRemoteServerPreparation: 'cloud.md#remote-server-management',
+  CloudRemoteServerService: 'cloud.md#remote-server-management',
+  AccountRemoteServerStore: 'cloud.md#remote-server-management',
+  RemoteStoreLimits: 'cloud.md#remote-server-management',
+
   ConfigEditControl: 'boot.md#native-edit-controls',
   PluginSelectionGuard: 'boot.md#native-edit-controls',
   ProfileConfigUpdatePlan: 'boot.md#native-edit-controls',

@@ -9,7 +9,11 @@ export type { AccountFileSelection, ResolveAccountFileProject } from './text-pro
 export { FdMutationFailure, InvalidSkillBundleFailure } from './worker-client.ts'
 export type { StageFileResult } from './stage-bridge.ts'
 export type { ExecutionMountGrant, EnvironmentSessionId } from './environment-bank.ts'
-export type { SkillVersionLimits, SkillVersion, SkillVersionId, SkillVersionInput, SkillVersionSource, SkillVersionPort, SkillCurrent } from './skill-versions.ts'
+export type { SkillVersionLimits, SkillVersion, SkillVersionId, SkillVersionInput, SkillVersionSource,
+  SkillVersionPort, SkillCurrent } from './skill-versions.ts'
 export type { SkillInstallationId, SkillBundleInput, SkillBundleFile, SkillBundleVersion, SkillBundleSource,
   SkillCatalogEntry, SkillCatalog, SkillCatalogChange, SkillCatalogCommit, SkillBundleLimits,
   SkillBundlePort, SkillBundleWorkingCopy, SkillBundleOperationCopies } from './skill-bundles.ts'
+
+export { openRemoteServerStore } from './remote-server-store.ts'
+export type { RemoteStoreLimits, RemoteCredential, AccountRemoteServerStore } from './remote-server-store.ts'

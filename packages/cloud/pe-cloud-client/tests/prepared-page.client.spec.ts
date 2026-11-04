@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 /** Canonical preparation consumed by real Loader entries before native cache/Connection use. */
+import { InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/src/client/service.ts'
+import type { RemoteServerReply } from '@deepseek-ai/dsh-pe-cloud-api/types'
+import type { RemoteServersInjected } from '../src/client/remote-servers/ServersSection.tsx'
 import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 import * as modulesClient from '@deepseek-ai/dsh-client-modules/client'
 import type { ClientBundleRegistration, ClientModuleLoaderTarget, DshWindow } from '@deepseek-ai/dsh-client-modules/client'
@@ -792,4 +795,48 @@ it('rejects a preinstalled foreign export integration before native page activat
   onTestFinished(async () => { await Promise.allSettled([preparation.dispose(), app.entry.dispose()]); reports.mockRestore() })
   await expect(page.start(app.entry)).rejects.toThrow('export carrier is already bound')
   expect(app.mounted()).toBe(false)
+})
+
+it('withdraws the real server section and mention registration with the original prepared account page', async () => {
+  const base = bootstrap()
+  const payload = { ...base, capabilities: { ...base.capabilities, configuration: {
+    ...base.capabilities.configuration, remoteServers: { manage: true },
+  } } }
+  const f = fixture(payload), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const page = await preparation.ready, graph = native(page)
+  onTestFinished(async () => { await preparation.dispose(); await graph.entry.dispose() })
+  await graph.ctx.plugin(SlotRegistry).await()
+  graph.ctx.provide('locale', new LocaleRuntime(graph.ctx))
+  const triggers = new InputTriggerService(graph.ctx), registrations = vi.spyOn(triggers, 'registerSource')
+  const reply: RemoteServerReply = { servers: [], limits: { maxPrivateKeyBytes: 2048, maxKnownHostsBytes: 1024, maxImportBytes: 4096 } }
+  const action = vi.fn(async () => ({ ok: true as const, value: reply }))
+  graph.ctx.provide('remote', { cloudRemoteServers: { action } } as never)
+  graph.ctx.provide('remote.cloudRemoteServers', { action } as never)
+  await page.start(graph.entry)
+  const host = ({ renderSlot }: PropsRenderSlots<'settings.section'>) => renderSlot('settings.section', { close() {} })
+  const remove = graph.ctx.slots.register({ name: 'root', children: {
+    'settings.section': { kind: 'list', scope: 'root' },
+  } }, host)
+  expect(page.bootstrap.capabilities.configuration.remoteServers?.manage).toBe(true)
+  for (const service of ['remote', 'remote.cloudRemoteServers', 'slots', 'locale', 'inputTriggers']) expect(graph.ctx.get(service)).toBeDefined()
+  await vi.waitFor(() => { expect(registrations).toHaveBeenCalledTimes(1) })
+  await vi.waitFor(() => { expect(graph.ctx.slots.entries('settings.section').map(row => row.options.id)).toContain('cloud-remote-servers') })
+  const entry = graph.ctx.slots.entries('settings.section').find(row => row.options.id === 'cloud-remote-servers')
+  const inject = entry?.inject as (() => RemoteServersInjected) | undefined
+  if (inject === undefined) throw new Error('Original server settings contribution absent')
+  const captured = inject()
+  expect(await captured.call({ action: 'list' })).toEqual(reply)
+  const source = registrations.mock.calls[0]?.[0]
+  if (source === undefined) throw new Error('Native mention registration absent')
+  const dependency = [...graph.ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
+    .find(fiber => Object.hasOwn(fiber.inject, 'inputTriggers'))
+  if (dependency === undefined) throw new Error('Original server dependency absent')
+  await dependency.dispose()
+  expect(graph.ctx.slots.entries('settings.section').map(row => row.options.id)).not.toContain('cloud-remote-servers')
+  await expect(captured.call({ action: 'list' })).rejects.toThrow()
+  // Native duplicate-name admission observes removal of the original registration before any replacement.
+  const withdraw = triggers.registerSource(source); withdraw(); remove()
+  await preparation.dispose()
+  expect(page.lifetime.transport.signal.aborted).toBe(true)
+  expect(graph.ctx.get('inputTriggers')).toBeUndefined()
 })

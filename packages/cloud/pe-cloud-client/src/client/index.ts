@@ -1,3 +1,4 @@
+import { installCloudRemoteServers } from './remote-servers/install.ts'
 /** Browser Loader entry consuming the exact pre-Cordis prepared page owner. */
 import { installCloudApprovedSettings } from './approved-settings.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -32,6 +33,7 @@ export function apply(ctx: Context, config: Config): void {
   if (Object.keys(config).length !== 0) throw new Error('pe-cloud-client/client requires empty Loader configuration; limits belong to preparation')
   owner.activate(ctx)
   installCloudSubagentSettings(ctx, owner)
+  installCloudRemoteServers(ctx, owner)
   installCloudProjects(ctx)
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)

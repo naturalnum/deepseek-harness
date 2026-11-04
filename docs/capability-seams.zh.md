@@ -15,6 +15,7 @@ flowchart LR
   pkg_pe_cloud_client["pe-cloud-client"]
   pkg_pe_cloud_runtime["pe-cloud-runtime"]
   svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
+  svc_cloudRemoteServers["ctx.cloudRemoteServers<br/>Account remote-server management"]
   svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
   svc_peAccount["ctx.peAccount<br/>Installed account generation"]
   pkg_pe_cloud_files["pe-cloud-files"]
@@ -404,6 +405,7 @@ flowchart LR
   pkg_pe_cloud_api --> svc_cloudModelKey
   pkg_pe_cloud_api --> svc_cloudPlugins
   pkg_pe_cloud_api --> svc_cloudProjects
+  pkg_pe_cloud_api --> svc_cloudRemoteServers
   pkg_pe_cloud_api --> svc_cloudSkills
   pkg_pe_cloud_api --> svc_peCloudApi
   pkg_pe_cloud_api --> svc_peExposure
@@ -511,6 +513,8 @@ flowchart LR
   svc_cloudPlugins --> pkg_pe_cloud_runtime
   svc_cloudProjects --> pkg_pe_cloud_api
   svc_cloudProjects --> pkg_pe_cloud_runtime
+  svc_cloudRemoteServers --> pkg_pe_cloud_client
+  svc_cloudRemoteServers --> pkg_pe_cloud_runtime
   svc_cloudSkills --> pkg_pe_cloud_api
   svc_cloudSkills --> pkg_pe_cloud_client
   svc_cloudSkills --> pkg_pe_cloud_runtime
@@ -678,6 +682,7 @@ flowchart LR
 | `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | 通过原 Peer Use 和原生配置保存所有者公开已批准的账户模型密钥 RPC。 |
 | `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 把固定插件编辑接入原 Peer 准入、账户保存和原生 profile 应用。 |
 | `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 将原生 Workspace 操作接入当前账户文件所有者和已批准的项目根目录。 |
+| `ctx.cloudRemoteServers` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 复用原有认证 Peer、私有文件及凭据和保存所有者；执行仍使用原生 Session 工具。 |
 | `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 通过原 Peer 准入、账户保存和 files 拥有的 catalog/version CAS 管理账户技能安装及完整技能包。 |
 | `ctx.peAccount` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | 为独立账户 Context 提供不可变的账户绑定和生命周期。 |
 | `ctx.peAccountExecution` | `service` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 仅暴露原 Root 签发的账户能力；关闭模式拒绝原生命令执行。 |

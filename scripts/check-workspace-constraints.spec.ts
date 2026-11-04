@@ -556,3 +556,20 @@ it('requires the standalone shortcut protocol and rejects unrelated runtime file
       .toEqual([expect.stringContaining('package.json files must be')])
   }
 })
+
+it('keeps the SSH derivative private and uses the standard Cloud API types export', () => {
+  const dir = 'packages/community/remote-server'
+  const manifest = JSON.parse(readFileSync(new URL('../' + dir + '/package.json', import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } })).not.toEqual([])
+  const api = { name: '@deepseek-ai/dsh-pe-cloud-api', exports: {
+    './root': { types: './lib/types/root.d.ts', default: './lib/root.js' },
+    './account': { types: './lib/types/account.d.ts', default: './lib/account.js' },
+    './types': { types: './lib/types/types.d.ts', default: './lib/types/types.js' },
+  } }
+  expect(checkCloudLoaderEntries(api)).toEqual([])
+  expect(checkCloudLoaderEntries({ ...api, exports: { ...api.exports,
+    './remote-server-types': { types: './lib/types/remote-server-types.d.ts', default: './lib/types/remote-server-types.js' },
+  } })).not.toEqual([])
+  expect(checkCloudLoaderEntries({ ...api, exports: { ...api.exports, './execute': './lib/index.js' } })).not.toEqual([])
+})

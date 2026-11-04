@@ -78,6 +78,8 @@ Full-tree protected copy records use schema2 and preserve legacy schema1 readers
 
 -----
 
+Remote-server metadata uses the fixed account-private `cloud_remote_server_accounts` native domain; keys and verified known_hosts use original credential grant records. Complete mutations share the account save barrier. Validation before any submitted I/O refuses without recording a failed save; failures after actual submission retain the original save owner's responsibility. No browser field supplies a private path or account id.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

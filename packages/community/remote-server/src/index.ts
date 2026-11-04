@@ -1,0 +1,11 @@
+/** Cloud derivative primitives; no Host route, process launcher or automatic activation. */
+export { AccountRemoteServers } from './account.ts'
+export type { AccountRemotePorts, RemoteServer, RemoteTarget, ServerId, ServerReference } from './account.ts'
+export { decide, matchRiskRule, isAllowlisted } from './gate.ts'
+export { PROBE_SCRIPT, parseProbe } from './probe.ts'
+export { sshArgv } from './transport.ts'
+export { uploadedSshConfig } from './import.ts'
+export { remoteServerRecord } from './account.ts'
+export { installRemoteServerTools } from './tools.ts'
+export type { RemoteToolPorts } from './tools.ts'
+export type { RemoteExecOutcome, BoundedOutput } from './types.ts'

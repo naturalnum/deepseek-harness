@@ -64,6 +64,8 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 有限值字段通常拒绝 `unset`。Runtime 持有的设置事务只有在核实原生继承值属于该字段获批值后才可允许一次重置；重置仍受原 Peer、保存和 Loader plan 检查。缺少 Runtime 策略时重置保持关闭。原保存所有者在所有登记子任务结束后提交策略；最终检查失败时保留结果未知的保存记录。有界事件队列在设置事务结束后再投递。
 
+可选远程服务器管理通过严格的 `cloudRemoteServers/action` Remote 提供列表、增删改、排序、密钥上传及上传配置导入。浏览器可用的 DTO 从本包 `/types` 入口导出。它使用原有认证 Peer/Use 和保存屏障，返回有界元数据与实际观测，不开放执行或凭据读取。两个聊天工具使用当前精确引用与原生审批；原生 `never` 下强制审批请求失败关闭。
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

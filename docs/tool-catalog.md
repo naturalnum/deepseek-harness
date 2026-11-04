@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-remote-server-cloud` | `remote_exec`, `remote_server_info` | `ctx.tools`, `original account binding, approval and managed execution` | `native tool result`, `approval audit events`, `actual probe observations` | - | Optional cloud integration only; native never policy refuses mandatory approval. Local SSH cleanup does not certify remote descendant termination. |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -48,6 +49,59 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-remote-server-cloud"></a>
+
+## `@deepseek-ai/dsh-remote-server-cloud`
+
+### `remote_exec`
+
+Execute one command on the remote server reference selected by the user. Copy the exact reference from the server mention. Mandatory or high-risk requests use human approval. Native never policy refuses those requests; use an existing permission setting that permits asking. Cancellation stops the local SSH operation and does not prove remote descendant termination.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "server": {
+      "type": "string",
+      "description": "Exact current server reference from the selected mention."
+    },
+    "command": {
+      "type": "string",
+      "description": "One command passed verbatim to the remote shell."
+    }
+  },
+  "required": [
+    "server",
+    "command"
+  ]
+}
+```
+
+Source: [`packages/community/remote-server/src/tools.ts`](../packages/community/remote-server/src/tools.ts)
+
+### `remote_server_info`
+
+Collect current hostname, OS, CPU, memory, disk and uptime from the selected remote server over SSH. Use the exact server reference from the mention. The original approval and cancellation rules apply.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "server": {
+      "type": "string",
+      "description": "Exact current server reference from the selected mention."
+    }
+  },
+  "required": [
+    "server"
+  ]
+}
+```
+
+Source: [`packages/community/remote-server/src/tools.ts`](../packages/community/remote-server/src/tools.ts)
+
+Optional cloud integration only; native never policy refuses mandatory approval. Local SSH cleanup does not certify remote descendant termination.
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

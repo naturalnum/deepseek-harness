@@ -775,6 +775,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'cloudRemoteServers',
+    summary: 'Fixed audited management endpoint; it cannot execute an SSH command or select an account/path from JSON.',
+    description: 'Fixed audited management endpoint; it cannot execute an SSH command or select an account/path from JSON.',
+    methods: [
+      {
+        signature: '@Remote(\'action\') action(request: RemoteServerRequest, signal: AbortSignal): Promise<RemoteServerReply>',
+        description: 'Dispatch only strict account-local management JSON through the original authenticated Peer borrow.',
+        parameters: [{ name: 'request', description: 'Bounded untrusted wire request.' }, { name: 'signal', description: 'Original observer lifetime.' }],
+        returns: 'Sanitized metadata and actual observations; key material is never returned.',
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Exact service/method identity inventory for the original complete account audit.',
+        parameters: [],
+        returns: 'Installed audited endpoint only; no metadata or credential read is performed.',
+      },
+    ],
+  },
+  {
     key: 'cloudSkills',
     summary: 'One concrete business capability; it registers no additional persistence or lifecycle owner.',
     description: 'One concrete business capability; it registers no additional persistence or lifecycle owner.',
@@ -2231,6 +2250,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Concrete native Remote. Restore before business opening; resource loads require original caller/project preparation.',
       },
       {
+        signature: 'async prepareCloudRemoteServers(owner: Context, input: CloudRemoteServerPreparation): Promise<CloudRemoteServerService>',
+        description: 'Prepare account-private remote-server management and its original native tool consumers.',
+        parameters: [{ name: 'owner', description: 'Original selected account entry.' }, { name: 'input', description: 'Trusted Root capabilities and limits.' }],
+        returns: 'Actual installed Remote before full native auditing.',
+      },
+      {
         signature: 'prepareCloudPlugins(owner: Context): CloudPluginService',
         description: 'Prepare the fixed plugin Remote after its original guarded manager and editor activate.',
         parameters: [{ name: 'owner', description: 'Actual original account Loader entry.' }],
@@ -2445,6 +2470,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Return this installed graph\'s original fixed private skill port; no model or raw-file entry is exposed.',
         parameters: [],
         returns: 'The original bound port, rejecting when static storage or the native capability is absent.',
+      },
+      {
+        signature: 'remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>',
+        description: 'Prepare only this files owner\'s installed private native storage and credential providers.',
+        parameters: [{ name: 'owner', description: 'Original account entry.' }, { name: 'limits', description: 'Root bounds.' }, { name: 'current', description: 'Original business admission.' }, { name: 'submit', description: 'Original save barrier.' }],
+        returns: 'Private account metadata/credential capability.',
       },
       {
         signature: 'prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>',
@@ -5846,6 +5877,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AccountProfile {\n    readonly id: AccountUserId | null;\n    readonly name: string | null;\n    readonly contact: string | null;\n    readonly avatarUrl?: string | null;\n}',
   },
   {
+    name: 'AccountRemotePorts',
+    declaration: 'export interface AccountRemotePorts {\n    readonly maxServers: number;\n    readonly maxCommandBytes: number;\n    readonly policy: RemoteApprovalPolicy;\n    assertCurrent(): void;\n    read(): readonly RemoteServer[];\n    write(rows: readonly RemoteServer[]): Promise<void>;\n    deleteCredential(id: ServerId): Promise<void>;\n}',
+  },
+  {
+    name: 'AccountRemoteServers',
+    declaration: 'export class AccountRemoteServers {\n    constructor(private readonly ctx: Context, private readonly binding: AccountBinding, private readonly ports: AccountRemotePorts);\n    list(): RemoteTarget[];\n    states(): Array<RemoteTarget & {\n        connectivity?: ConnectivityResult;\n        facts?: ServerFacts;\n    }>;\n    observe(reference: string, outcome: RemoteExecOutcome): void;\n    add(input: unknown): Promise<RemoteServer>;\n    addMany(inputs: readonly unknown[]): Promise<number>;\n    update(id: string, input: unknown): Promise<RemoteServer>;\n    remove(id: string): Promise<void>;\n    reorder(ids: readonly string[]): Promise<void>;\n    async execute(reference: string, command: string, approval: ApprovalAsker | undefined, signal: AbortSignal, run: (entry: RemoteServer, signal: AbortSignal, assertCurrent: () => void) => Promise<RemoteExecOutcome>): Promise<{\n        decision: GateDecision;\n        outcome?: RemoteExecOutcome;\n    }>;\n    revokeCredential(id: ServerId): void;\n}',
+  },
+  {
+    name: 'AccountRemoteServerStore',
+    declaration: 'export interface AccountRemoteServerStore {\n    readonly collection: AccountRemoteServers;\n    readonly mutate: <T>(work: () => Promise<T>) => Promise<T>;\n    readonly configured: (id: string) => Promise<boolean>;\n    readonly setCredential: (id: string, value: RemoteCredential) => Promise<void>;\n    readonly withCredential: <T>(id: ServerId, consume: (value: RemoteCredential) => Promise<T>) => Promise<T>;\n}',
+  },
+  {
     name: 'AccountUserId',
     declaration: 'export type AccountUserId = Branded<\'AccountUserId\'>;',
   },
@@ -5974,6 +6017,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ApiSessionAgentResult = {\n    readonly agent: Agent;\n} | {\n    readonly error: ApiSessionAgentError;\n};',
   },
   {
+    name: 'ApprovalAsker',
+    declaration: 'export interface ApprovalAsker {\n    denialReason?(): string | undefined;\n    ask(reason: string): Promise<boolean>;\n}',
+  },
+  {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
   },
@@ -5995,7 +6042,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApprovedConfigurationCatalog',
-    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly bundles?: readonly ApprovedConfigurationBundle[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }> | Readonly<{\n        mode: \'sample\';\n        limits: Readonly<SkillPublicationLimits>;\n    }> | Readonly<{\n        mode: \'managed\';\n        limits: Readonly<SkillPublicationLimits>;\n        management: Readonly<ManagedSkillApiLimits>;\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly modelKey?: ApprovedModelKeyConfiguration;\n    readonly pluginControl?: Readonly<PluginControlLimits>;\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
+    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly bundles?: readonly ApprovedConfigurationBundle[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }> | Readonly<{\n        mode: \'sample\';\n        limits: Readonly<SkillPublicationLimits>;\n    }> | Readonly<{\n        mode: \'managed\';\n        limits: Readonly<SkillPublicationLimits>;\n        management: Readonly<ManagedSkillApiLimits>;\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly remoteServers?: import(\'./remote-server-policy.ts\').ApprovedRemoteServers;\n    readonly modelKey?: ApprovedModelKeyConfiguration;\n    readonly pluginControl?: Readonly<PluginControlLimits>;\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
   },
   {
     name: 'ApprovedConfigurationField',
@@ -6016,6 +6063,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovedPluginControl',
     declaration: 'export interface ApprovedPluginControl {\n    readonly selectionTarget: Readonly<{\n        kind: \'entry\';\n        id: string;\n    }> | Readonly<{\n        kind: \'bundle\';\n        name: string;\n    }>;\n    readonly operations: readonly (\'enabled\' | \'configure\' | \'selected\')[];\n    readonly maxImpact: \'live\' | \'local\' | \'graph\';\n    readonly fields: readonly (readonly string[])[];\n}',
+  },
+  {
+    name: 'ApprovedRemoteServers',
+    declaration: 'export interface ApprovedRemoteServers {\n    readonly limits: RemoteStoreLimits & {\n        readonly maxRequestBytes: number;\n        readonly maxReplyBytes: number;\n        readonly maxImportBytes: number;\n    };\n    readonly execution: RemoteSshConfig;\n}',
   },
   {
     name: 'ArchiveSessionOptions',
@@ -6178,6 +6229,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
   },
   {
+    name: 'BoundedOutput',
+    declaration: 'export interface BoundedOutput {\n    readonly text: string;\n    readonly truncated: boolean;\n    readonly droppedBytes: number;\n}',
+  },
+  {
     name: 'BoxProps',
     declaration: 'export interface BoxProps {\n    readonly flexDirection?: \'row\' | \'column\' | undefined;\n    readonly paddingX?: number | undefined;\n    readonly paddingY?: number | undefined;\n    readonly padding?: number | undefined;\n    readonly gap?: number | undefined;\n    readonly border?: boolean | string | undefined;\n    readonly borderColor?: string | undefined;\n    readonly children?: UiNode | undefined;\n}',
   },
@@ -6215,11 +6270,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    prepareCloudPlugins(owner: Context): CloudPluginService /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen;\n    prepareCloudModelKey(owner: Context, input: CloudModelKeyPreparation): CloudModelKeyService;\n    prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillService;\n    async prepareCloudRemoteServers(owner: Context, input:  /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
-    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal): Promise<ResidentResult<SkillWorkingCopyGrant>>;\n    borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorkingCopyGrant | SkillBundleWorkingCopy)[], signal: AbortSignal): Promise<ResidentResult<SkillBundleOperationCopies>>;\n    borrowAllBundleWorkingCopies(project: SkillProjectG /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal): Promise<ResidentResult<SkillWorkingCopyGrant>>;\n    borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorking /* …truncated — full shape in source */',
   },
   {
     name: 'CloudApiError',
@@ -6256,6 +6311,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CloudProjectsService',
     declaration: 'export class CloudProjectsService extends TypertRemoteService {\n    constructor(ctx: Context, private readonly api: CloudAccountApi, input: CloudProjectsPreparation);\n    @Remote(\'create\')\n    async create(request: CloudProjectCreateRequest, signal: AbortSignal): Promise<WorkspaceValue>;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'CloudRemoteServerPreparation',
+    declaration: 'export interface CloudRemoteServerPreparation extends ModelKeyPeerConsumer {\n    readonly files: CloudAccountFiles;\n    readonly limits: RemoteStoreLimits & {\n        readonly maxRequestBytes: number;\n        readonly maxReplyBytes: number;\n        readonly maxImportBytes: number;\n    };\n    readonly execution: RemoteSshConfig;\n    readonly assertBusinessCurrent: () => void;\n    readonly assertToolCurrent: (exec: ToolRunContext) => void;\n}',
+  },
+  {
+    name: 'CloudRemoteServerService',
+    declaration: 'export class CloudRemoteServerService extends TypertRemoteService {\n    static async prepare(ctx: Context, api: CloudAccountApi, input: CloudRemoteServerPreparation, saves: ConfigSaveBarrier): Promise<CloudRemoteServerService>;\n    @Remote(\'action\')\n    action(request: RemoteServerRequest, signal: AbortSignal): Promise<RemoteServerReply>;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'CloudSkillPreparation',
@@ -6375,7 +6438,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConfigSaveKind',
-    declaration: 'export type ConfigSaveKind = \'default-model\' | \'settings\' | \'config-editor\' | \'plugin-selection\' | \'credentials\' | \'skill-publish\' | \'skill-projection\';',
+    declaration: 'export type ConfigSaveKind = \'default-model\' | \'settings\' | \'config-editor\' | \'plugin-selection\' | \'credentials\' | \'skill-publish\' | \'skill-projection\' | \'remote-server\';',
   },
   {
     name: 'ConfigSaveOperation',
@@ -6404,6 +6467,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConfinedSandboxMode',
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
+  },
+  {
+    name: 'ConnectFailure',
+    declaration: 'export type ConnectFailure = \'dns\' | \'refused\' | \'auth\' | \'timeout\' | \'unknown\';',
   },
   {
     name: 'ConnectionAdmission',
@@ -6472,6 +6539,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectionTrustRequest',
     declaration: 'export interface ConnectionTrustRequest {\n    readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>;\n}',
+  },
+  {
+    name: 'ConnectivityResult',
+    declaration: 'export interface ConnectivityResult {\n    readonly reachable: boolean;\n    readonly checkedAt: string;\n    readonly failure?: ConnectFailure;\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -7008,6 +7079,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FsWriteOutcome',
     declaration: 'export interface FsWriteOutcome {\n    operation: \'create\' | \'update\';\n    version: FsVersion;\n    before: string | null;\n    after: string;\n}',
+  },
+  {
+    name: 'GateDecision',
+    declaration: 'export type GateDecision = {\n    readonly kind: \'auto\';\n    readonly path: GatePath;\n    readonly reason: string;\n} | {\n    readonly kind: \'approved\';\n    readonly path: GatePath;\n    readonly reason: string;\n} | {\n    readonly kind: \'denied\';\n    readonly path: GatePath;\n    readonly reason: string;\n};',
+  },
+  {
+    name: 'GatePath',
+    declaration: 'export type GatePath = \'unregistered\' | \'allowlist\' | \'ruleset\' | \'classified-auto\' | \'classified-human\' | \'always-ask\';',
   },
   {
     name: 'GenerateOptions',
@@ -8534,6 +8613,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteAccessRole<K extends RemoteAccessResourceKind> {\n    readonly name: string;\n    readonly resource: K;\n    readonly actions: readonly RemoteAccessAction[];\n}',
   },
   {
+    name: 'RemoteApprovalPolicy',
+    declaration: 'export interface RemoteApprovalPolicy {\n    readonly alwaysAsk: boolean;\n    readonly readOnlyAllowlist: readonly string[];\n}',
+  },
+  {
+    name: 'RemoteCredential',
+    declaration: 'export interface RemoteCredential {\n    readonly privateKey: string;\n    readonly knownHosts: string;\n}',
+  },
+  {
     name: 'RemoteError',
     declaration: 'export class RemoteError<Code extends RemoteErrorCode = RemoteErrorCode> extends Error {\n    readonly isDSHRemoteError: true;\n    constructor(readonly code: Code, message: string, readonly details: RemoteErrorDetailsMap[Code], options?: ErrorOptions);\n}',
   },
@@ -8554,12 +8641,48 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteEventQueueLimits {\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
   },
   {
+    name: 'RemoteExecOutcome',
+    declaration: 'export type RemoteExecOutcome = {\n    readonly kind: \'completed\';\n    readonly exitCode: number;\n    readonly stdout: BoundedOutput;\n    readonly stderr: BoundedOutput;\n} | {\n    readonly kind: \'connect-failed\';\n    readonly failure: ConnectFailure;\n    readonly detail: string;\n} | {\n    readonly kind: \'timeout\';\n    readonly timeoutMs: number;\n    readonly stdout: BoundedOutput;\n    readonly stderr: BoundedOutput;\n} | {\n    readonly kind: \'cancelled\';\n    readonly stdout: BoundedOutput;\n    readonly stderr: BoundedOutput;\n} | {\n    readonly kind: \'ambiguous\';\n    readonly exitCode: 255;\n    readonly detail: string;\n};',
+  },
+  {
     name: 'RemoteInvocation',
     declaration: 'export interface RemoteInvocation {\n    readonly request: {\n        readonly namespace: string;\n        readonly method: string;\n        readonly args: Readonly<Record<string, unknown>>;\n    };\n    readonly service: string;\n    readonly peer: PeerScope;\n    readonly signal: AbortSignal;\n    readonly uplinkWindow?: RemoteUplinkWindow | undefined;\n    uplink<In = unknown>(): AsyncIterable<In>;\n}',
   },
   {
+    name: 'RemoteServer',
+    declaration: 'export interface RemoteServer extends z.infer<typeof serverInput> {\n    readonly id: ServerId;\n}',
+  },
+  {
+    name: 'RemoteServerForm',
+    declaration: 'export interface RemoteServerForm {\n    readonly alias: string;\n    readonly host: string;\n    readonly user: string;\n    readonly port: number;\n    readonly description: string;\n    readonly tags: string[];\n    readonly alwaysAsk: boolean;\n}',
+  },
+  {
+    name: 'RemoteServerReply',
+    declaration: 'export interface RemoteServerReply {\n    readonly limits: {\n        readonly maxPrivateKeyBytes: number;\n        readonly maxKnownHostsBytes: number;\n        readonly maxImportBytes: number;\n    };\n    readonly servers: readonly RemoteServerView[];\n    readonly imported?: number;\n}',
+  },
+  {
+    name: 'RemoteServerRequest',
+    declaration: 'export type RemoteServerRequest = {\n    readonly action: \'list\';\n} | {\n    readonly action: \'add\';\n    readonly entry: RemoteServerForm;\n} | {\n    readonly action: \'update\';\n    readonly id: string;\n    readonly entry: RemoteServerForm;\n} | {\n    readonly action: \'remove\';\n    readonly id: string;\n} | {\n    readonly action: \'reorder\';\n    readonly ids: readonly string[];\n} | {\n    readonly action: \'credential\';\n    readonly id: string;\n    readonly privateKey: string;\n    readonly knownHosts: string;\n} | {\n    readonly action: \'import\';\n    readonly text: string;\n};',
+  },
+  {
+    name: 'RemoteServerView',
+    declaration: 'export interface RemoteServerView {\n    readonly entry: RemoteServerForm & {\n        readonly id: string;\n    };\n    readonly reference: string;\n    readonly configured: boolean;\n    readonly factsOmitted?: boolean;\n    readonly connectivity?: {\n        readonly reachable: boolean;\n        readonly checkedAt: string;\n        readonly failure?: string;\n    };\n    readonly facts?: {\n        readonly hostname: string | null;\n        readonly os: string | null;\n        readonly kernel: string | null;\n        readonly arch: string | null;\n        readonly cpuModel: string | null;\n        readonly cpuCores: number | null;\n        readonly memTotalKb: number | null;\n        readonly memAvailableKb: number | null;\n        readonly diskTotalKb: number | null;\n        readonly diskAvailableKb: number | null;\n        readonly uptimeSeconds: number | null;\n        readonly collectedAt: string;\n    };\n}',
+  },
+  {
+    name: 'RemoteSshConfig',
+    declaration: 'export interface RemoteSshConfig {\n    readonly pythonPath: string;\n    readonly sshPath: string;\n    readonly timeoutMs: number;\n    readonly probeTimeoutMs: number;\n    readonly connectTimeoutSeconds: number;\n    readonly outputMaxBytes: number;\n    readonly stopWaitMs: number;\n}',
+  },
+  {
+    name: 'RemoteStoreLimits',
+    declaration: 'export interface RemoteStoreLimits {\n    readonly maxServers: number;\n    readonly maxReplyBytes: number;\n    readonly maxCommandBytes: number;\n    readonly maxPrivateKeyBytes: number;\n    readonly maxKnownHostsBytes: number;\n    readonly alwaysAsk: boolean;\n    readonly readOnlyAllowlist: readonly string[];\n}',
+  },
+  {
     name: 'RemoteStream',
     declaration: 'export type RemoteStream<Out, In = never> = AsyncIterable<Out> & {\n    readonly [STREAM_UPLINK]?: In;\n};',
+  },
+  {
+    name: 'RemoteTarget',
+    declaration: 'export interface RemoteTarget {\n    readonly entry: RemoteServer;\n    readonly reference: ServerReference;\n}',
   },
   {
     name: 'RemoteUplinkWindow',
@@ -8840,6 +8963,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SerializedNode',
     declaration: 'export type SerializedNode = SerializedElement | string;',
+  },
+  {
+    name: 'ServerFacts',
+    declaration: 'export interface ServerFacts {\n    readonly hostname: string | null;\n    readonly os: string | null;\n    readonly kernel: string | null;\n    readonly arch: string | null;\n    readonly cpuModel: string | null;\n    readonly cpuCores: number | null;\n    readonly memTotalKb: number | null;\n    readonly memAvailableKb: number | null;\n    readonly diskTotalKb: number | null;\n    readonly diskAvailableKb: number | null;\n    readonly uptimeSeconds: number | null;\n    readonly collectedAt: string;\n}',
+  },
+  {
+    name: 'ServerId',
+    declaration: 'export type ServerId = Branded<\'CloudRemoteServerId\'>;',
+  },
+  {
+    name: 'ServerReference',
+    declaration: 'export type ServerReference = Branded<\'CloudRemoteServerReference\'>;',
   },
   {
     name: 'ServerResponse',

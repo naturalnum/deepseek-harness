@@ -53,6 +53,10 @@ const publicNativePackages = new Set([
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/node-addon-system': ['src/main.c', 'src/flock.c'],
 }
+/** Independent upstream derivative retained privately with its MIT attribution. */
+const privateRemoteDerivative = { directory: 'packages/community/remote-server', name: '@deepseek-ai/dsh-remote-server-cloud',
+  files: ['lib/index.js', 'lib/types/**/*.d.ts', 'LICENSE', 'UPSTREAM.json'] } as const
+
 /** Public source home recorded in maintained package manifests. */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
 /** Packages that participate in the experimental policy. */
@@ -298,6 +302,7 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
  * @returns the icon and deduplicated locale targets followed by runtime and declaration payloads.
  */
 export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
+  if (manifest.name === privateRemoteDerivative.name) return privateRemoteDerivative.files
   const cloud = manifest.name !== undefined && Object.hasOwn(cloudLoaderEntries, manifest.name)
   const localeFiles = new Set<string>()
   for (const resource of Object.keys(manifest.exports ?? {})) {
@@ -455,7 +460,7 @@ export function checkExperimentalNameExceptions(manifests: readonly WorkspaceMan
 
 function isReleaseMemberDirectory(dir: string): boolean {
   // The SSH carrier is distributed as executable archives, never as an npm application.
-  if (dir === 'packages/ssh/ssh-helper-runtime') return false
+  if (dir === 'packages/ssh/ssh-helper-runtime' || dir === privateRemoteDerivative.directory) return false
   return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
 }
 
@@ -488,6 +493,9 @@ export function checkDshFamilyVersion(manifest: PackageManifest, expected: strin
  */
 export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): string[] {
   const errors = [...checkExperimentalManifest({ dir, manifest }), ...checkCloudLoaderEntries(manifest)]
+  if (dir === privateRemoteDerivative.directory && (manifest.name !== privateRemoteDerivative.name || manifest.private !== true)) {
+    errors.push('The independent remote-server derivative must retain its private package identity.')
+  }
   const label = manifest.name ?? dir
   const familyVersionError = checkDshFamilyVersion(manifest, repositoryVersion)
   if (familyVersionError !== undefined) errors.push(familyVersionError)

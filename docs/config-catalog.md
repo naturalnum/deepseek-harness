@@ -4973,6 +4973,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-pe-opensandbox` | — | [`packages/cloud/pe-opensandbox/src/index.ts`](../packages/cloud/pe-opensandbox/src/index.ts) |
 | `@deepseek-ai/dsh-plugin-market-index` | — | [`packages/util/plugin-market-index/src/index.ts`](../packages/util/plugin-market-index/src/index.ts) |
 | `@deepseek-ai/dsh-remote-mock` | — | [`packages/test-support/remote-mock/src/index.ts`](../packages/test-support/remote-mock/src/index.ts) |
+| `@deepseek-ai/dsh-remote-server-cloud` | — | [`packages/community/remote-server/src/index.ts`](../packages/community/remote-server/src/index.ts) |
 | `@deepseek-ai/dsh-sandbox-windows-acl` | — | [`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts) |
 | `@deepseek-ai/dsh-scope` | — | [`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts) |
 | `@deepseek-ai/dsh-sdk-client` | — | [`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts) |

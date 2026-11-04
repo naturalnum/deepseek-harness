@@ -64,7 +64,8 @@
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-timeout": "workspace:*",
     "@deepseek-ai/dsh-host-plugin-inventory": "workspace:*",
-    "yazl": "3.3.1"
+    "yazl": "3.3.1",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -109,7 +110,10 @@
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
-    "@deepseek-ai/dsh-user-approval": "workspace:*"
+    "@deepseek-ai/dsh-user-approval": "workspace:*",
+    "@deepseek-ai/dsh-remote-server-cloud": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-pe-opensandbox": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -199,6 +203,8 @@
     "@deepseek-ai/dsh-tool-call-timeout-policy": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
     "@types/yazl": "3.3.0",
-    "@deepseek-ai/dsh-skill-office": "workspace:*"
+    "@deepseek-ai/dsh-skill-office": "workspace:*",
+    "@deepseek-ai/dsh-remote-server-cloud": "workspace:*",
+    "@deepseek-ai/dsh-pe-opensandbox": "workspace:*"
   }
 }

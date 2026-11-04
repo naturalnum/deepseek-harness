@@ -134,6 +134,8 @@ Missing, revoked or expired login returns `cloud/unauthenticated`/401; trust rej
 
 Bootstrap projects each reviewed native field as `{namespace,path,application:"live"}` after the same original inventory checks. This metadata supplies no mutation authority; the native Settings admission owns exact values, revision and current Peer checks.
 
+The optional remote-server bootstrap capability enables account management only. `cloudRemoteServers/action` uses the same authenticated login Peer and retained AccountUse as other account management; neither request JSON nor a server reference selects an account or execution scope.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

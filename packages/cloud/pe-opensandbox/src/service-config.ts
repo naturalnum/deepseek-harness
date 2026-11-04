@@ -20,4 +20,5 @@ export interface ManagedServiceConfig {
 /** Parsed native consumers; absent services explicitly keeps the service consumer closed at configuration resolution. */
 export interface ManagedNativeCommandConfig extends Omit<NativeCommandAccountLimits, 'services'> {
   readonly services?: ManagedServiceConfig
+  readonly remoteServers?: true
 }

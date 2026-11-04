@@ -89,6 +89,13 @@
     "@types/pg": "8.15.5",
     "@types/ws": "^8.18.1",
     "ws": "^8.21.3",
-    "@deepseek-ai/dsh-session-log-export": "workspace:*"
+    "@deepseek-ai/dsh-session-log-export": "workspace:*",
+    "@deepseek-ai/dsh-storage": "workspace:*",
+    "@deepseek-ai/dsh-storage-json": "workspace:*",
+    "@deepseek-ai/dsh-storage-domain": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "zod": "^4.4.3"
   }
 }

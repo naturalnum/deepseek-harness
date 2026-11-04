@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`uses real native tool tokens, approvals and original range reservations for key-only SSH and a facts probe > original native SSH tool result 1`] = `
+[
+  {
+    "text": "{"kind":"completed","exitCode":0,"stdout":{"text":"native-model-ssh","truncated":false,"droppedBytes":0},"stderr":{"text":"","truncated":false,"droppedBytes":0}}",
+    "type": "text",
+  },
+]
+`;

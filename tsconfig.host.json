@@ -239,6 +239,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/community/remote-server" },
     { "path": "./packages/cloud/pe-account-instructions" },
     { "path": "./packages/cloud/pe-cloud-access" },
     { "path": "./packages/cloud/pe-cloud-api" },

@@ -16,6 +16,7 @@ export interface ProductPackagePolicy {
  * Optional integrations may be reached by an optional bundle without becoming default capabilities.
  */
 export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
+  'packages/community/remote-server': { category: 'optional', reason: 'Private upstream-derived cloud library; activation requires explicit account and managed-execution policy.' },
   'packages/cloud/pe-account-instructions': { category: 'optional', reason: 'Account instruction snapshots selected only by an explicit cloud composition.' },
   'packages/cloud/pe-cloud-access': { category: 'optional', reason: 'Cloud ingress requires explicit database-backed authentication and routing configuration.' },
   'packages/cloud/pe-cloud-api': { category: 'optional', reason: 'Cloud endpoint policy is selected by an audited cloud composition.' },

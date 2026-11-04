@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/MRZHUH/dsh-remote-server",
+  "commit": "b75205eafeda207432e9e77f93883036ef11a50c",
+  "version": "0.2.1-alpha.1",
+  "license": "MIT",
+  "copyright": "2026 MRZHUH",
+  "files": {
+    "gate.ts": "dc53b85fbecf8ba2e488aca0d2c542c75f6ec5bb2f3a546e265a51e922349138",
+    "probe.ts": "95eb616fa294ac96396a38a05e0d7c7a353c23aac847bb730bdefa2b787649f5",
+    "types.ts": "ab2344aa97f85fa034d3bf25e9d3c79c885b5e85705927a6465048eaffce4082",
+    "ssh-config.ts": "95e300847449ca6b0a4477b91b406fff0063efe12837c0222591955dfb90f95b"
+  },
+  "changes": {
+    "gate.ts": "Remove full-access bypass; recheck cancellation around approval/classification; unavailable approval rejects.",
+    "types.ts": "Retain probe, outcome and gate types; remove legacy global/local-path server entries and the full-access gate path.",
+    "import.ts": "New uploaded-text adapter discards identity paths and rejects Include, Match, proxy and forwarding directives.",
+    "probe.ts": "Repository formatting only; original behavior retained.",
+    "tools.ts": "Native tool registrations consume account-bound records, original approval and injected native execution; no upstream global routes.",
+    "account.ts": "New account-private collection, revocable generation references and actual probe observations."
+  },
+  "activation": "explicit cloud catalog, account recipe and original managed execution opt-in; no default activation"
+}

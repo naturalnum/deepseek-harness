@@ -6760,6 +6760,21 @@ importers:
       '@deepseek-ai/dsh-settings':
         specifier: workspace:*
         version: link:../../settings/settings
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:*
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:*
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-json':
+        specifier: workspace:*
+        version: link:../../storage/storage-json
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
       '@deepseek-ai/dsh-typert-generator':
         specifier: workspace:*
         version: link:../../typert/generator
@@ -6772,6 +6787,9 @@ importers:
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:*
         version: link:../../typert/registry
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
@@ -6781,6 +6799,9 @@ importers:
       ws:
         specifier: ^8.21.3
         version: 8.21.3
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/cloud/pe-cloud-api:
     dependencies:
@@ -6799,10 +6820,10 @@ importers:
       yazl:
         specifier: 3.3.1
         version: 3.3.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
-      '@deepseek-ai/dsh-skill-office':
-        specifier: workspace:*
-        version: link:../../skill/skill-office
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -6929,12 +6950,18 @@ importers:
       '@deepseek-ai/dsh-pe-cloud-runtime':
         specifier: workspace:*
         version: link:../pe-cloud-runtime
+      '@deepseek-ai/dsh-pe-opensandbox':
+        specifier: workspace:*
+        version: link:../pe-opensandbox
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../../interaction/permission-presets
       '@deepseek-ai/dsh-plugin-manager':
         specifier: workspace:*
         version: link:../../boot/plugin-manager
+      '@deepseek-ai/dsh-remote-server-cloud':
+        specifier: workspace:*
+        version: link:../../community/remote-server
       '@deepseek-ai/dsh-repeat-tool-reminder':
         specifier: workspace:*
         version: link:../../guard/repeat-tool-reminder
@@ -6977,6 +7004,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:*
         version: link:../../skill/skill-filesystem
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:*
+        version: link:../../skill/skill-office
       '@deepseek-ai/dsh-storage':
         specifier: workspace:*
         version: link:../../storage/storage
@@ -7242,6 +7272,9 @@ importers:
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:*
         version: link:../../typert/registry
+      '@deepseek-ai/dsh-util-crypto':
+        specifier: workspace:*
+        version: link:../../util/crypto
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:*
         version: link:../../util/values
@@ -7272,6 +7305,9 @@ importers:
       yauzl:
         specifier: 3.4.0
         version: 3.4.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~
@@ -7291,12 +7327,18 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:*
+        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-fs':
         specifier: workspace:*
         version: link:../../fs/fs
       '@deepseek-ai/dsh-pe-cloud-runtime':
         specifier: workspace:*
         version: link:../pe-cloud-runtime
+      '@deepseek-ai/dsh-remote-server-cloud':
+        specifier: workspace:*
+        version: link:../../community/remote-server
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:*
         version: link:../../sandbox/sandbox
@@ -7638,6 +7680,9 @@ importers:
       '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:*
         version: link:../../ptc-runtime/ptc-runtime-node
+      '@deepseek-ai/dsh-remote-server-cloud':
+        specifier: workspace:*
+        version: link:../../community/remote-server
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:*
         version: link:../../sandbox/sandbox
@@ -7710,6 +7755,28 @@ importers:
       ws:
         specifier: ^8.21.3
         version: 8.21.3
+
+  packages/community/remote-server:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-pe-cloud-runtime':
+        specifier: workspace:*
+        version: link:../../cloud/pe-cloud-runtime
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:*
+        version: link:../../subprocess/subprocess-local
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
 
   packages/compaction/command-compact:
     devDependencies:

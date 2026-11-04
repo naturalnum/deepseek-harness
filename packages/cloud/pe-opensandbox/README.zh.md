@@ -63,6 +63,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 -----
 
+显式 `managed.commands.remoteServers: true` 仅向固定原生消费者列表加入 `remote_exec` 和 `remote_server_info`，并要求执行 Session 文件策略。SSH 通过原有受管 Subprocess 范围运行，沿用原有载体上限。只读工作负载镜像必须包含所配置的 Python 和 OpenSSH 可执行文件。密钥与 known_hosts 保存在该范围私有 PID 命名空间中的密封内存描述符中，不写入项目、命令参数或模型日志。本地超时或取消不代表远程后代进程终止。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

@@ -33,7 +33,8 @@ it('rejects malformed or accessor Session file-policy flags without invoking cod
     expect(() => parseManagedCoordinatorConfig(raw)).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
   }
   const raw = input()
-  Object.defineProperty(raw.shell, 'enforceSessionFilePolicy', { enumerable: true, get() { throw new Error('Do not execute configuration accessors') } })
+  Object.defineProperty(raw.shell, 'enforceSessionFilePolicy', { enumerable: true,
+    get() { throw new Error('Do not execute configuration accessors') } })
   expect(() => parseManagedCoordinatorConfig(raw)).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
 })
 
@@ -167,5 +168,22 @@ it('requires the Native consumers, enforced policy and whole raw-stream reservat
   expect(parseManagedCoordinatorConfig({ ...reserved, maxResidentBytesPerAccount: 472064 }).maxResidentBytesPerAccount).toBe(472064)
   expect(() => parseManagedCoordinatorConfig({ ...reserved, maxResidentBytesPerAccount: 472063 })).toThrow('maxResidentBytesPerAccount')
   expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, maxScopes: 1 } })).toThrow('maxScopes')
-  expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, allowedTools: ['bash', 'run_code'] } })).toThrow('allowedTools')
+  expect(() => parseManagedCoordinatorConfig({ ...reserved, commands: { ...commands, allowedTools: ['bash',
+    'run_code'] } })).toThrow('allowedTools')
+})
+
+it('enables exactly the two remote consumers without changing original command or capacity limits', () => {
+  const before = parseManagedCoordinatorConfig(input()), raw = input()
+  Object.assign(raw.commands, { remoteServers: true, allowedTools: ['bash', 'remote_exec', 'remote_server_info'] })
+  Object.assign(raw.shell, { enforceSessionFilePolicy: true })
+  const after = parseManagedCoordinatorConfig(raw)
+  expect(after.commands.remoteServers).toBe(true)
+  expect(after.commands.allowedTools).toEqual(['bash', 'remote_exec', 'remote_server_info'])
+  expect(after.commands.commandLimits).toEqual(before.commands.commandLimits)
+  expect(after.maxActiveCommands).toBe(before.maxActiveCommands)
+  expect(after.maxResidentCommands).toBe(before.maxResidentCommands)
+  for (const value of [false, undefined, 'true', 1]) {
+    Object.assign(raw.commands, { remoteServers: value })
+    expect(() => parseManagedCoordinatorConfig(raw)).toThrow()
+  }
 })

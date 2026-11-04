@@ -1,0 +1,12 @@
+Port 2222
+ListenAddress 0.0.0.0
+HostKey /fixture/host_key
+AuthorizedKeysFile /fixture/authorized_keys
+StrictModes no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AllowUsers fixture
+UsePAM no
+PidFile /tmp/sshd.pid
+LogLevel ERROR

@@ -4,7 +4,8 @@ export { assessExecution } from './capabilities.ts'
 export { SandboxCoordinator } from './coordinator.ts'
 export type { NativeAccountExecutionAuthority } from './coordinator.ts'
 export { installAccountExecutionPort, assertClosedAccountExecution } from './closed-owner.ts'
-export { assertAccountExecutionProviders, accountExecutionMode, accountServiceAvailability, accountTerminalLimits, withAccountApplicationService } from './account-port.ts'
+export { assertAccountExecutionProviders, accountExecutionMode, accountServiceAvailability, accountTerminalLimits,
+  withAccountApplicationService } from './account-port.ts'
 export type { AccountExecutionPort } from './account-port.ts'
 export type {
   ExecutionAvailability,
@@ -12,3 +13,6 @@ export type {
   ExecutionPrerequisite,
   ExecutionRequirements,
 } from './types.ts'
+
+export { runRemoteSsh, assertRemoteSshAvailable } from './remote-ssh.ts'
+export type { RemoteSshConfig } from './remote-ssh.ts'
