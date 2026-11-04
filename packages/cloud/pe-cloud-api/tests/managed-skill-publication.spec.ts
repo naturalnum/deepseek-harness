@@ -20,6 +20,7 @@ import { FdMutationFailure, FilesFailure, type SkillBundlePort, type SkillBundle
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { AccountManagedSkills } from '../src/managed-skill-publication.ts'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
+import { bundledSkillEntry } from '../src/bundled-skills.ts'
 
 const apiLimits = { maxRequestBytes: 65536, maxReplyBytes: 131072, maxMetadataBytes: 4096, maxRetainedProviders: 8 }
 const bundleLimits = { maxInstallations: 4, maxFiles: 8, maxDirectories: 6, maxDepth: 5, maxPathBytes: 256,
@@ -735,6 +736,11 @@ it('advertises built-in downloads only when their complete existing reply fits t
       expect(Buffer.byteLength(JSON.stringify(await read))).toBeLessThanOrEqual(apiLimits.maxReplyBytes)
     } else await expect(read).rejects.toMatchObject({ code: 'cloud/capacity' })
   }
+  const lowerArchiveLimit = (await f.ctx.skills.inspect()).candidates.flatMap((row) => {
+    const entry = bundledSkillEntry(row, { maxReplyBytes: apiLimits.maxReplyBytes, maxZipBytes: bundleLimits.maxArchiveBytes })
+    return entry?.actions.download === false ? [entry.name] : []
+  })
+  expect(lowerArchiveLimit.sort()).toEqual([...blocked, 'latex-report-writer', 'report-workflow-orchestrator'].sort())
 })
 
 it('projects all thirteen complete built-ins from Loader providers and preserves native user precedence', async () => {
