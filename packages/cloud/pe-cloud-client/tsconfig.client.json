@@ -67,6 +67,7 @@
     "src/client/management/skills/ManagedSkillEditor.tsx",
     "src/client/managed-skill-files.ts",
     "src/client/managed-skill-remote.ts",
+    "src/client/bundled-skill-download.ts",
     "src/client/management/plugins/types.ts",
     "src/client/management/plugins/catalog.ts",
     "src/client/management/plugins/locales.ts",

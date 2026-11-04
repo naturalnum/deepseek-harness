@@ -86,6 +86,8 @@ Remote-server metadata uses the fixed account-private `cloud_remote_server_accou
 <details>
 <summary>Implementation internals — click to expand</summary>
 
+`ReleaseSkillBinaryBudget` explicitly bounds complete readonly release ZIP residence, one outgoing chunk and concurrent transfers. Root must share the selected finite budget across installed account routes. Credits remain held through physical response settlement; unknown cleanup retains its cause and credits. This optional operation supplies no default policy and changes no user upload, mutable archive, JSON or account storage quota.
+
 The account filesystem exposes its selected original Workspace as the Native `scopeRoot` through its existing guarded target issuer. Native instruction discovery stops there instead of probing host parents. The same account/Agent selection, target identity, cancellation and stale-generation checks apply; this method adds no reader or authority.
 
 The [work queue](src/work-queue.ts) reserves global and per-lane bytes before admission, bounds concurrent and queued work, cancels queued work without starting it, and keeps running work after its caller aborts or times out. Every operation requires a positive safe-integer reservation that includes its overhead. Zero is refused before backend invocation, so retained records cannot bypass the resident budget. A settled successful result retains its reservation until its consumer releases it. Closing a lane stops new work while preserving unresolved records; closing the queue stops all lanes. Each callback runs in its submitting async context; the queue drops its scheduling snapshot when invocation begins.

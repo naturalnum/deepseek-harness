@@ -17,6 +17,9 @@ type MutationReply = ReturnType<ManagedSkillRemote['install']>
 export interface ManagedSkillRemoteInput {
   readonly signal: AbortSignal
   readonly timeoutMs: number
+  /** Explicit installed readonly binary capability; absence preserves the existing JSON action limits. */
+  readonly prepareBundledDownload?: (selector: { readonly skillId: string; readonly contentVersion: string },
+    signal: AbortSignal) => Promise<((signal: AbortSignal) => Promise<void>) | undefined>
   readonly assertCurrent: () => void
 }
 
@@ -102,10 +105,13 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
       const answer = await request(signal => details({ skillId }, signal), observer)
       if (!answer.ok || answer.value.entry.skillId !== skillId) throw new ClientFailure('closed')
       const value = answer.value, version = Object.freeze({ ...value.version }), limits = uiLimits(state)
+      const binary = value.entry.source === 'bundled' && !value.entry.mutable && input.prepareBundledDownload !== undefined
+        ? await input.prepareBundledDownload({ skillId, contentVersion: value.entry.contentVersion }, observer) : undefined
+      check(observer)
       let used = false
       return Object.freeze({ item: row(value.entry), markdown: value.markdown,
         files: Object.freeze(value.files.map(file => Object.freeze({ path: file.relativePath, bytes: file.bytes }))),
-        ...!value.entry.actions.download ? {} : { readFile: async (path: string, signal: AbortSignal) => {
+        readFile: async (path: string, signal: AbortSignal) => {
           const file = value.files.find(file => file.relativePath === path)
           if (file === undefined || file.bytes > limits.maxFileBytes) throw new ClientFailure('closed')
           const contentVersion = value.entry.contentVersion
@@ -120,7 +126,7 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
           try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
           catch { return { kind: 'binary' as const } }
           return text.includes('\u0000') ? { kind: 'binary' as const } : { kind: 'text' as const, text }
-        } },
+        },
         ...!value.entry.mutable || !value.entry.actions.update ? {} : { update: async (bundle: ManagedSkillBundle, signal: AbortSignal) => {
           check(signal)
           if (used) throw new ClientFailure('closed')
@@ -137,7 +143,7 @@ export function managedSkillCallbacks(remote: ManagedSkillRemote, input: Managed
           bounded(body, state)
           return result(current => uninstall(body, current), signal, true)
         } },
-        ...!value.entry.actions.download ? {} : { download: async (signal: AbortSignal) => {
+        ...binary !== undefined ? { download: binary } : !value.entry.actions.download ? {} : { download: async (signal: AbortSignal) => {
           const contentVersion = value.entry.contentVersion
           const answer = await request(current => download({ skillId, contentVersion }, current), signal)
           if (!answer.ok || answer.value.skillId !== skillId || answer.value.contentVersion !== contentVersion

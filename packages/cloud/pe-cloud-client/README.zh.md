@@ -118,6 +118,8 @@ Subagent 卡片使用该命名空间及当前账户已声明的字段。读取�
 
 本包将 bootstrap 请求结果和原生载体生命周期与权威账户、Session 状态分开。原生 Agent 预设适配器通过已注入的 Remote 拥有者读取清单。依赖缺失或被替换时，适配器保持只读，并拒绝待完成的读取，直到当前拥有者可用。
 
+显式安装并绑定账户的发布包二进制能力可先检查精确版本，再提供下载回调。消费者限制完整长度并验证 SHA-256，随后才请求浏览器保存。能力缺失或被拒绝时保留不可用提示和现有 JSON 操作限额。独立受限的清单文件读取不要求归档可下载。
+
 `/client` 为 Cordis 启动前的拥有者导出 `PreparedCloudPage`，以及它复用的既有 `CloudPageLifetime` 和 `CloudPagePersistence` 组件。准备流程调用 access 的正式 `decodeCloudBootstrap`，只创建一个固定生命周期和缓存端口，并提供包含必需端口、激活前 owner 绑定和销毁前同步撤销存储与 carrier 准入的原生选项。真实 Loader 的 `apply` 核验 owner 后，以捕获的 hooks 调用公开 `installConnection`；不写全局当前账户或全局 transport。
 
 Web 入口通过可选准备回调 `signOut` 提供现有的等待清理完成与 Cookie 注销流程。账号入口占用侧栏底部原生 `settings.launcher` 插槽，显示正式 bootstrap 中的用户名与默认头像。向上展开的原生菜单仅含“设置”和“退出登录”；设置打开同一个 shell 拥有的弹窗。退出前核验原页面与活跃依赖，并在调用前锁定单次请求；页面撤销时同步移除入口。不增加 DeepSeek 账户登录服务。原生页面正常运行时隐藏顶部独立退出入口，停止或失败的入口页面保留现有恢复控件。未提供回调的准备流程保留原有设置按钮。

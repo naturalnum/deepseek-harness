@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type SkillRegistry from '@deepseek-ai/dsh-skill'
-import type { SkillCandidate, SkillCatalogInspection, SkillDefinition, SkillProvider, SkillProviderControl,
+import type { SkillCandidate, SkillCatalogInspection, SkillDefinition, SkillPackage, SkillProvider, SkillProviderControl,
   SkillProviderObservation, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import { FdMutationFailure, FilesFailure, InvalidSkillBundleFailure, type SkillBundleFile, type SkillBundlePort, type SkillBundleVersion,
   type SkillCatalog, type SkillCatalogCommit, type SkillCatalogEntry, type SkillInstallationId,
@@ -234,6 +234,27 @@ export class AccountManagedSkills implements SkillProvider {
           mediaType: 'application/zip', bytes: held.value.byteLength,
           sha256: createHash('sha256').update(held.value).digest('hex'), dataBase64: Buffer.from(held.value).toString('base64') })
       } finally { held.release() }
+    })
+  }
+
+  /**
+   * Retain the original directory read turn through the physical readonly binary response.
+   * @param request Exact current immutable release selectors, never a Host path.
+   * @param consume Files reservation, original package read and actual HTTP finish/close, never only a stream handoff.
+   * @param check Original account/Peer/Use and installed-route authority.
+   * @param signal Original request observer and account lifetime.
+   * @returns Actual response settlement, without changing existing JSON or mutable-skill limits.
+   */
+  withBundledArchive<T>(request: ManagedSkillDownloadRequest, consume: (bundle: SkillPackage, name: string) => Promise<T>,
+    check: () => void, signal: AbortSignal): Promise<T> {
+    return this.read(async () => {
+      signal.throwIfAborted(); check()
+      await this.observeCurrent(signal)
+      const builtin = this.visible.has(request.skillId) ? undefined : this.bundled(await this.registry.inspect({ signal }), request.skillId)
+      if (builtin === undefined) throw refused('The readonly release package is unavailable.')
+      if (builtin.entry.contentVersion !== request.contentVersion) throw refused('The release changed; refresh before downloading.', true)
+      check(); signal.throwIfAborted()
+      return consume(builtin.bundle, builtin.entry.name)
     })
   }
 
@@ -561,7 +582,8 @@ export class AccountManagedSkills implements SkillProvider {
         return { ok: true as const, value: await submit() }
       }
       catch (error) {
-        if (error instanceof ConfigSaveOutcomeUnknown || error instanceof FdMutationFailure && error.outcome === 'unknown') throw new ConfigSaveOutcomeUnknown()
+        if (error instanceof ConfigSaveOutcomeUnknown) throw error
+        if (error instanceof FdMutationFailure && error.outcome === 'unknown') throw new ConfigSaveOutcomeUnknown({ cause: error })
         // Known read/projection refusal performs no directory write; actual files failures remain files-owned.
         return { ok: false as const, error }
       }

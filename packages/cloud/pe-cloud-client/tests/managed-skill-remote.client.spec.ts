@@ -178,3 +178,20 @@ it.each([
   expect(list.items[0]?.enabled).toBeUndefined()
   expect(list.items[0]?.canToggle).toBeUndefined()
 })
+
+it('uses the installed binary callback without changing JSON flags or bounded file reads', async () => {
+  const f = remoteFixture(), entry = { ...f.entry, source: 'bundled', mutable: false,
+    actions: { update: false, uninstall: false, download: false } }
+  f.installed.mockResolvedValue({ ok: true, value: { ...f.state, entries: [entry] } })
+  f.details.mockResolvedValue({ ok: true, value: { entry, version: directoryVersion('readonly'), files: [], markdown: 'instructions' } })
+  const download = vi.fn(async (_signal: AbortSignal) => {})
+  const prepareBundledDownload = vi.fn(async (_selector: { skillId: string; contentVersion: string }, _signal: AbortSignal) => download)
+  const api = managedSkillCallbacks(f.remote, { ...f.input, prepareBundledDownload })
+  await api.installed(signal()); const detail = await api.details(entry.skillId, signal())
+  expect(prepareBundledDownload).toHaveBeenCalledExactlyOnceWith(
+    { skillId: entry.skillId, contentVersion: entry.contentVersion }, expect.any(AbortSignal))
+  expect(detail.readFile).toBeTypeOf('function')
+  await detail.download?.(signal())
+  expect(download).toHaveBeenCalledTimes(1); expect(f.download).not.toHaveBeenCalled()
+  expect(detail.update).toBeUndefined(); expect(detail.uninstall).toBeUndefined()
+})

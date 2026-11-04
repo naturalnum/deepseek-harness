@@ -1,5 +1,9 @@
 /** API coordination with the real Loader, native registry/parser and AccountSaves; files is an explicit in-memory port fixture. */
 import { createHash, randomUUID } from 'node:crypto'
+import { createServer, get, type ServerResponse } from 'node:http'
+import { once } from 'node:events'
+import { consumeBundledSkillResponse, type BundledSkillResponseOwner, type BundledSkillResponseSettlement } from '../src/bundled-skill-response.ts'
+import { ReleaseSkillBinaryBudget } from '../../pe-cloud-files/src/release-skill-binary-budget.ts'
 import { zipSync, unzipSync } from 'fflate'
 import * as SkillOffice from '@deepseek-ai/dsh-skill-office'
 import * as SkillFilesystem from '@deepseek-ai/dsh-skill-filesystem'
@@ -41,7 +45,7 @@ function deferred() {
   return { promise, release }
 }
 const own = <T>(value: T) => ({ value, release() {} })
-async function fixture(configuredLimits = apiLimits, builtins = false) {
+async function fixture(configuredLimits = apiLimits, builtins = false, archiveLimit = 4 * 1024 * 1024) {
   const home = mkdtempSync(join(tmpdir(), 'managed-skills-api-')), profileDir = join(home, 'profiles/test')
   mkdirSync(profileDir, { recursive: true }); initProfile(profileDir, [])
   writeFileSync(join(home, 'package.json'), '{"name":"managed-api-test"}')
@@ -213,7 +217,7 @@ async function fixture(configuredLimits = apiLimits, builtins = false) {
       limits: configuredLimits,
       bundleLimits: builtins ? { ...bundleLimits, maxFiles: 512, maxDirectories: 256,
         maxFileBytes: 2 * 1024 * 1024, maxContentBytes: 8 * 1024 * 1024,
-        maxArchiveBytes: 4 * 1024 * 1024 } : bundleLimits,
+        maxArchiveBytes: archiveLimit } : bundleLimits,
       assertWorkspace() { throw Error('No workspace authorized in fixture') }, resources }, sampleLimits)
     return manager
   })
@@ -783,4 +787,132 @@ it('projects all thirteen complete built-ins from Loader providers and preserves
   const changed = await f.manager.installed({}, f.check, f.signal)
   expect(changed.entries.filter(entry => entry.name === 'office-docx')).toHaveLength(2)
   expect(changed.entries.find(entry => entry.name === 'office-docx' && !entry.mutable)?.selection).toMatchObject({ kind: 'shadowed' })
+})
+
+async function binaryServer(f: Awaited<ReturnType<typeof fixture>>, owner: BundledSkillResponseOwner = f.manager,
+  prepare?: (response: ServerResponse) => void) {
+  const budget = new ReleaseSkillBinaryBudget({ maxArchiveBytes: 635241, chunkBytes: 16384,
+    maxResidentBytes: 651625, maxConcurrent: 1, timeoutMs: 30000 })
+  const tasks = new Set<Promise<BundledSkillResponseSettlement>>(), settlements: BundledSkillResponseSettlement[] = []
+  const finishHeld: boolean[] = []
+  const server = createServer((request, response) => {
+    const observer = new AbortController()
+    prepare?.(response)
+    response.once('close', () => { if (!response.writableFinished) observer.abort(new Error('Client disconnected')) })
+    response.once('finish', () => { if (response.statusCode === 200) finishHeld.push(
+      budget.snapshot().active === 1 && f.saves.snapshot().pending.some(row => row.kind === 'skill-projection')) })
+    const task = consumeBundledSkillResponse({ request, response, signal: observer.signal,
+      assertCurrent() { if (request.headers['x-test-account'] !== 'a') throw Error('Foreign original account borrow') } }, owner, budget, 4096)
+    tasks.add(task)
+    void task.then((value) => { settlements.push(value); tasks.delete(task) })
+  })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw Error('Missing unique HTTP listener')
+  const origin = `http://127.0.0.1:${address.port}`
+  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => {
+    server.close((error) => { if (error !== undefined) reject(error); else resolve() })
+  }); await Promise.all(tasks) })
+  const path = (entry: { skillId: string; contentVersion: string }) => `/api/skills/release-archive?${new URLSearchParams({ skillId: entry.skillId, contentVersion: entry.contentVersion })}`
+  return { server, budget, settlements, finishHeld, origin, path,
+    request: (entry: { skillId: string; contentVersion: string }, method = 'GET', account = 'a') =>
+      fetch(origin + path({ skillId: entry.skillId, contentVersion: entry.contentVersion }), { method, headers: { 'x-test-account': account } }),
+    join: () => Promise.all(tasks) }
+}
+
+it('sends all thirteen original release archives over real HTTP while unchanged JSON limits still refuse five', async () => {
+  const f = await fixture(apiLimits, true, 32768), http = await binaryServer(f)
+  const list = await f.manager.installed({}, f.check, f.signal)
+  expect(list.entries.filter(entry => !entry.actions.download)).toHaveLength(5)
+  let total = 0
+  for (const entry of list.entries) {
+    const original = (await f.ctx.skills.inspect()).candidates.find(row => row.candidate.name === entry.name)?.candidate.package
+    if (original === undefined) throw Error('Missing original native package')
+    const head = await http.request(entry, 'HEAD')
+    expect(head.status).toBe(200); expect(await head.text()).toBe('')
+    expect(Number(head.headers.get('content-length'))).toBe(original.archive.bytes)
+    const response = await http.request(entry), bytes = new Uint8Array(await response.arrayBuffer())
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('application/zip')
+    expect(response.headers.get('x-content-sha256')).toBe(original.archive.sha256)
+    expect(bytes.length).toBe(original.archive.bytes); expect(hash(bytes)).toBe(original.archive.sha256)
+    const members = unzipSync(bytes)
+    expect(Object.keys(members).sort()).toEqual(original.files.map(file => file.relativePath).sort())
+    for (const file of original.files) expect(hash(members[file.relativePath]!)).toBe(file.sha256)
+    total += bytes.length
+    if (!entry.actions.download) await expect(f.manager.download(entry, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/capacity' })
+  }
+  await http.join()
+  expect(total).toBe(1276983)
+  expect(http.finishHeld).toHaveLength(26); expect(http.finishHeld.every(Boolean)).toBe(true)
+  expect(http.settlements.every(value => value.cleanup === 'confirmed' && value.outcome === 'completed')).toBe(true)
+  expect(http.budget.snapshot()).toEqual({ active: 0, residentBytes: 0, cleanupUnknown: 0 })
+  expect(f.saves.snapshot().pending).toHaveLength(0)
+})
+
+it('refuses stale, foreign and Host-path selectors without increasing the old archive allowance', async () => {
+  const f = await fixture(apiLimits, true, 32768), http = await binaryServer(f)
+  const entry = (await f.manager.installed({}, f.check, f.signal)).entries[0]!
+  expect((await http.request({ ...entry, contentVersion: '0'.repeat(64) })).status).toBe(403)
+  expect((await http.request(entry, 'GET', 'foreign')).status).toBe(403)
+  expect((await fetch(http.origin + '/api/skills/release-archive?path=/etc/passwd', { headers: { 'x-test-account': 'a' } })).status).toBe(403)
+  expect((await http.request(entry)).status).toBe(200)
+  await http.join(); expect(http.budget.snapshot().active).toBe(0)
+})
+
+it('retains original read-turn and bytes during TCP cancellation until the actual package read settles, then admits another request', async () => {
+  const f = await fixture(apiLimits, true, 32768), read = deferred(), release = deferred(), aborted = deferred()
+  let first = true
+  const owner: BundledSkillResponseOwner = { withBundledArchive: (request, consume, check, signal) =>
+    f.manager.withBundledArchive(request, (bundle, name) => consume({ ...bundle, async readArchive(control) {
+      if (control === undefined) throw Error('Original observer required')
+      const bytes = await bundle.readArchive(control)
+      if (first) {
+        first = false; read.release()
+        const abort = () => { aborted.release() }
+        control.addEventListener('abort', abort, { once: true })
+        try { await release.promise; control.throwIfAborted() }
+        finally { control.removeEventListener('abort', abort) }
+      }
+      return bytes
+    } }, name), check, signal) }
+  const http = await binaryServer(f, owner), entry = (await f.manager.installed({}, f.check, f.signal)).entries[0]!
+  const request = get(http.origin + http.path({ skillId: entry.skillId, contentVersion: entry.contentVersion }), { headers: { 'x-test-account': 'a' } })
+  request.on('error', () => {})
+  onTestFinished(() => { release.release(); request.destroy() })
+  await read.promise; request.destroy(); await aborted.promise
+  expect(http.budget.snapshot().active).toBe(1)
+  expect(f.saves.snapshot().pending.some(row => row.kind === 'skill-projection')).toBe(true)
+  release.release(); await http.join()
+  expect(http.settlements[0]).toEqual({ cleanup: 'confirmed', outcome: 'cancelled' })
+  expect(http.budget.snapshot()).toEqual({ active: 0, residentBytes: 0, cleanupUnknown: 0 })
+  const next = await http.request(entry); expect(next.status).toBe(200); await next.arrayBuffer(); await http.join()
+  expect(http.settlements.at(-1)).toEqual({ cleanup: 'confirmed', outcome: 'completed' })
+})
+
+
+it('retains original save failure and files credits when physical response cleanup is unknown', async () => {
+  const f = await fixture(apiLimits, true, 32768)
+  let response: ServerResponse | undefined
+  const http = await binaryServer(f, f.manager, (actual) => {
+    response = actual
+    vi.spyOn(actual, 'writeHead').mockImplementation(() => { throw Error('Controlled response commit failure') })
+    vi.spyOn(actual, 'destroy').mockImplementation(() => { throw Error('Controlled physical close failure') })
+  })
+  const entry = (await f.manager.installed({}, f.check, f.signal)).entries[0]!
+  const arrived = once(http.server, 'request')
+  const request = get(http.origin + http.path(entry), { headers: { 'x-test-account': 'a' } })
+  request.on('error', () => {})
+  onTestFinished(() => { vi.restoreAllMocks(); response?.destroy(); request.destroy() })
+  await arrived; await http.join()
+  const unknown = http.settlements[0]
+  expect(unknown?.cleanup).toBe('unknown')
+  if (unknown?.cleanup !== 'unknown') throw Error('Expected retained original unknown cause')
+  if (!(unknown.cause instanceof Error)) throw Error('Expected original cleanup error')
+  expect(unknown.cause.cause).toBeInstanceOf(AggregateError)
+  expect(http.budget.snapshot().active).toBe(1)
+  expect(http.budget.snapshot().cleanupUnknown).toBe(1)
+  expect(f.saves.snapshot().failures).toMatchObject([{ kind: 'skill-projection', outcome: 'unknown' }])
+  vi.restoreAllMocks(); response?.destroy(); request.destroy()
+  expect(http.budget.snapshot().cleanupUnknown).toBe(1)
 })
