@@ -1,6 +1,11 @@
 /** Localized Skills presentation copied selectively from the user's management page. */
 const en = {
   bundledSource: 'Built-in',
+  importedSource: 'Personal import', userSource: 'Personal', projectSource: 'Project', runtimeSource: 'Runtime',
+  contentId: 'Content identifier', packageMetadata: 'Package information', nativeSource: 'Native source', nativeProvider: 'Provider',
+  invocationBoth: 'Model and manual invocation', invocationModel: 'Model invocation only',
+  invocationUser: 'Manual invocation only', invocationNone: 'Currently not invocable',
+  invocationReadOnly: 'Invocation follows the package or deployment policy. Changing this policy is not available here.',
   bundleShadowedBy: 'Takes priority: {name} ({source})', bundleSelectionUnknown: 'Native skill selection is unconfirmed',
   bundleRefreshAfterChange: 'The directory changed. Refresh to inspect native skill selection and coverage again.',
   legacySampleEditor: 'Legacy two-file sample editor',
@@ -9,6 +14,7 @@ const en = {
   bundleDirectory: 'Complete skill folder', bundleLooseFiles: 'Complete files from one folder', bundleFiles: 'Opened version files',
   bundleUpdate: 'Update complete version', bundleDownload: 'Download', bundleDownloadStarted: 'The browser download was requested. File persistence is not confirmed.',
   bundleDownloadFailed: 'Could not download this version. Please try again.',
+  bundleDownloadUnavailable: 'Download is currently unavailable for this version.',
   bundleEdit: 'Update package', backToSummary: 'Back to skill',
   fileLoading: 'Reading file…', fileReadFailed: 'Could not read this file. Try again or download the ZIP.',
   binaryFile: 'This is a binary file. Download the version ZIP to view it.',
@@ -56,6 +62,11 @@ const en = {
 }
 const zh: Record<keyof typeof en, string> = {
   bundledSource: '内置',
+  importedSource: '个人导入', userSource: '个人', projectSource: '项目', runtimeSource: '运行时',
+  contentId: '内容标识', packageMetadata: '技能包信息', nativeSource: '原始来源', nativeProvider: '提供者',
+  invocationBoth: '允许模型与手动调用', invocationModel: '仅允许模型调用',
+  invocationUser: '仅允许手动调用', invocationNone: '当前不可调用',
+  invocationReadOnly: '调用范围由技能包或部署策略决定，此处暂不支持修改。',
   bundleShadowedBy: '优先于此项：{name}（{source}）', bundleSelectionUnknown: '尚未确认原生技能选择',
   bundleRefreshAfterChange: '目录已变更，请刷新后核对原生技能选择与覆盖关系。',
   legacySampleEditor: '兼容的两文件示例编辑',
@@ -64,6 +75,7 @@ const zh: Record<keyof typeof en, string> = {
   bundleDirectory: '完整技能目录', bundleLooseFiles: '同一目录中的完整文件', bundleFiles: '打开编辑时的版本文件',
   bundleUpdate: '更新完整版本', bundleDownload: '下载', bundleDownloadStarted: '已请求浏览器下载，尚不能确认文件已保存。',
   bundleDownloadFailed: '无法下载此版本，请重试。',
+  bundleDownloadUnavailable: '当前暂不可下载此版本。',
   bundleEdit: '更新技能包', backToSummary: '返回技能简介',
   fileLoading: '正在读取文件…', fileReadFailed: '无法读取此文件，请重试或下载版本 ZIP。',
   binaryFile: '这是二进制文件，请下载版本 ZIP 查看。',

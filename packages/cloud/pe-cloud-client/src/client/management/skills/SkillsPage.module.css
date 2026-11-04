@@ -34,6 +34,7 @@
 .managedModal > div { min-height: 0; }
 .managedModal > div > :first-child { flex-shrink: 0; }
 .managedModal > div > :last-child { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.downloadHint { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.7; }
 .detailActions { display: flex; flex-wrap: wrap; gap: 8px; }
 .form .skillDescription { font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .fileBrowser { display: grid; grid-template-columns: minmax(160px, 26%) minmax(0, 1fr); min-height: 280px; overflow: hidden; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); }
@@ -51,6 +52,7 @@
 .formModal { width: min(560px, calc(100vw - 24px)); }
 .detailBody, .form { display: grid; gap: 16px; }
 .detailHead { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; }
+.detailBody .detailStatus { margin: 0; padding: 12px 14px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .detailHead strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
 .detailHead p, .form p { margin: 5px 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.7; }
 .detailHead small { display: block; color: var(--dsw-alias-label-secondary); font-size: 11px; overflow-wrap: anywhere; }
@@ -69,7 +71,7 @@
 .markdown h1 { font-size: 20px; }
 .markdown h2 { font-size: 16px; }
 .markdown h3 { font-size: 14px; }
-.markdown p { margin: .55em 0; }
+.markdown p { margin: .55em 0; color: inherit; font-size: inherit; line-height: inherit; }
 .markdown code { padding: .1em .35em; background: var(--dsw-alias-bg-layer-2); border-radius: 4px; font-family: monospace; }
 .markdown pre { padding: 12px; overflow: auto; background: var(--dsw-alias-bg-layer-2); border-radius: var(--dsw-radius-sm); }
 .markdown pre code { padding: 0; background: none; }

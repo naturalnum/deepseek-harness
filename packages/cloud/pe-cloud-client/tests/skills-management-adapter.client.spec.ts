@@ -37,6 +37,8 @@ it('uses actual current facts and original opaque version while keeping original
   expect(Object.isFrozen(f.sample().source)).toBe(true)
   expect(f.store.getSnapshot().items).toEqual([expect.objectContaining({ id: 'sample', installed: true, status: 'published' })])
   expect(f.store.getSnapshot().items[0]?.enabled).toBeUndefined()
+  expect(f.store.getSnapshot().items[0]?.contentId).toBe(metadata.id)
+  expect(f.store.getSnapshot().items[0]?.version).toBeUndefined()
   f.sample().copyFiles({ markdown: 'Original local instructions', resourceBase64: 'AP8B' })
   const original = f.sample().draft?.original
   f.sample().editMarkdown('Edited complete instructions')

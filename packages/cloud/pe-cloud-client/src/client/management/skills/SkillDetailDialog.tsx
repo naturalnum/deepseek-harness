@@ -5,6 +5,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SkillCard, SkillDetail, SkillManagementActions, SkillAction, SkillActionOutcome } from './types.ts'
 import { SkillMarkdown } from './SkillMarkdown.tsx'
 import { useSkillAction } from './use-skill-action.ts'
+import { skillInvocationLabel, skillSourceLabel } from './skill-presentation.ts'
 import css from './SkillsPage.module.css'
 
 /** Render one stable selection; the parent keys this interaction by the actual row identity.
@@ -32,6 +33,7 @@ export function SkillDetailDialog({ skill, actions, t, onClose }: {
   const run = (name: SkillAction, operation: (signal: AbortSignal) => Promise<SkillActionOutcome>): void => {
     void action.run(operation).then((outcome) => { if (outcome !== undefined) actions.report(name, outcome) })
   }
+  const source = skillSourceLabel(skill.source ?? skill.sourceLabel, t), invocation = skillInvocationLabel(skill.invocation, t)
   const canAct = action.state === 'idle' || action.state === 'confirmed'
   const close = (): void => { if (!busy) onClose() }
   return <Modal open onClose={close} title={skill.name} closeLabel={t('close')} className={`${css.detailModal}`}
@@ -61,13 +63,16 @@ export function SkillDetailDialog({ skill, actions, t, onClose }: {
       <header className={css.detailHead}>
         <span className={css.glyph} aria-hidden="true"><IconSkillOutlineRegular size={24}/></span>
         <div><strong>{skill.name}</strong><p>{skill.description}</p>
+          {source === undefined ? null : <small>{source}</small>}
           {skill.version === undefined ? null : <small>{t('version')} {skill.version}</small>}
           {skill.publisher === undefined ? null : <small>{t('publisher')} {skill.publisher}</small>}
         </div>
         {skill.enabled === undefined ? null : <Switch checked={skill.enabled} label={`${skill.name} ${t('toggle')}`}
           disabled={!canAct || !skill.canToggle || actions.toggle === undefined}
           onChange={(value) => { const toggle = actions.toggle; if (toggle !== undefined) run('toggle', signal => toggle(skill.id, value, signal)) }}/>}</header>
-      <p className={css.note}>{t(skill.status)}</p>
+      <p className={css.detailStatus}>{t(skill.status)}{invocation === undefined ? null : <> · <span title={t('invocationReadOnly')}>{invocation}</span></>}</p>
+      {skill.contentId === undefined ? null : <details className={css.source}><summary>{t('packageMetadata')}</summary>
+        <dl><dt>{t('contentId')}</dt><dd>{skill.contentId}</dd></dl></details>}
       {action.state !== 'idle' && action.state !== 'pending' && action.state !== 'confirmed'
         ? <p className={css.error} role="alert">{t(action.state === 'unavailable' ? 'actionUnavailable' : action.state)}</p> : null}
       {busy ? <p role="status">{t('pending')}</p> : null}

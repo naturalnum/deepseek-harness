@@ -21,9 +21,12 @@ export interface ManagedSkillRemoteInput {
 }
 
 function row(entry: Entry, applied = true): SkillCard {
-  return Object.freeze({ id: entry.skillId, name: entry.name, description: entry.description, category: entry.source === 'bundled' ? 'writing-office' : 'other', installed: true,
+  const category = entry.source === 'bundled' && (entry.provider === 'dsh-office' || entry.provider === 'dsh-reports') ? 'writing-office'
+    : entry.source === 'custom' && entry.mutable ? 'imported' : 'other'
+  return Object.freeze({ id: entry.skillId, name: entry.name, description: entry.description, category, installed: true,
     recommended: false, status: !applied ? 'catalog-pending' : 'published',
-    version: entry.contentVersion, sourceLabel: entry.source, fileCount: entry.fileCount, totalBytes: entry.contentBytes,
+    contentId: entry.contentVersion, source: entry.source, provider: entry.provider,
+    invocation: Object.freeze({ ...entry.invocation }), fileCount: entry.fileCount, totalBytes: entry.contentBytes,
     ...entry.selection.kind === 'shadowed' ? { shadowedBy: Object.freeze({ name: entry.selection.by.name, source: entry.selection.by.source }) } : {},
     ...entry.selection.kind === 'incomplete' ? {} : { shadowed: entry.selection.kind === 'shadowed' } })
 }

@@ -68,7 +68,7 @@ export function attachSkillVersionEditing(store: SnapshotStore<SkillManagementVi
   }
   const rows = (source: SkillSourceMetadata | null, applied: boolean): readonly SkillCard[] => source === null ? Object.freeze([])
     : Object.freeze([Object.freeze({ id: 'sample', name: input.title(), description: '', category: 'other' as const,
-      installed: true, recommended: false, status: applied ? 'published' as const : 'catalog-pending' as const, version: source.id })])
+      installed: true, recommended: false, status: applied ? 'published' as const : 'catalog-pending' as const, contentId: source.id })])
   const update = (patch: Partial<SampleSkillEditing>, phase?: SkillManagementView['phase']): void => {
     const before = current(), sample = Object.freeze({ ...before, ...patch })
     const view = store.getSnapshot(), changed = patch.outcome?.kind === 'persisted' && view.managed !== undefined

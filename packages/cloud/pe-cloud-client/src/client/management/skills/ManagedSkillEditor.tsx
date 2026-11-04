@@ -1,5 +1,5 @@
 /** Complete-package input and actual detail/result presentation on the original page's managed skill source. */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { IconSkillOutlineRegular, Modal, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ManagedSkillEditing, ManagedSkillFileContent, ManagedSkillOutcome } from '../../managed-skill-editing.ts'
@@ -7,6 +7,7 @@ import { readSelectedSkillBundle } from './selected-bundle.ts'
 import type { SkillManagementActions } from './types.ts'
 import { SkillMarkdown } from './SkillMarkdown.tsx'
 import { useSkillAction } from './use-skill-action.ts'
+import { skillInvocationLabel, skillSourceLabel } from './skill-presentation.ts'
 import css from './SkillsPage.module.css'
 
 /**
@@ -19,7 +20,7 @@ export function ManagedSkillEditor({ editor, actions, t }: {
   readonly actions: SkillManagementActions
   readonly t: TranslateNS<'cloud-skill-management'>
 }): ReactNode {
-  const report = actions.report, toggleAction = useSkillAction()
+  const report = actions.report, toggleAction = useSkillAction(), downloadHintId = useId()
   const observer = useRef<AbortController>()
   const fileRead = useRef<AbortController>()
   const [copying, setCopying] = useState(false), [invalid, setInvalid] = useState(false)
@@ -109,6 +110,8 @@ export function ManagedSkillEditor({ editor, actions, t }: {
       ? <p className={css.error} role="alert">{t(editor.outcome.kind === 'unknown' ? 'sampleUnknown' : 'sampleConflict')}</p> : null}
   </>
   const item = detail?.item
+  const source = skillSourceLabel(item?.source ?? item?.sourceLabel, t), invocation = skillInvocationLabel(item?.invocation, t)
+  const downloadUnavailable = detail !== undefined && detail.download === undefined
   const close = (): void => { if (!busy) { fileRead.current?.abort(); editor.close() } }
   const download = (): void => {
     const control = observer.current
@@ -120,8 +123,11 @@ export function ManagedSkillEditor({ editor, actions, t }: {
   return <Modal open title={selection === null ? t('importTitle') : item?.name ?? t('details')}
     closeLabel={t('close')} onClose={close} className={`${view === 'summary' ? css.detailModal : css.managedModal}`}
     footer={<div className={css.footer}>
-      {selection === null ? null : <button type="button" className={css.button}
-        disabled={busy || editor.phase !== 'editing' || detail?.download === undefined} onClick={download}>{t('bundleDownload')}</button>}
+      {selection === null ? null : <>
+        {downloadUnavailable ? <small id={downloadHintId} className={css.downloadHint}>{t('bundleDownloadUnavailable')}</small> : null}
+        <button type="button" className={css.button} aria-describedby={downloadUnavailable ? downloadHintId : undefined}
+          disabled={busy || editor.phase !== 'editing' || detail?.download === undefined} onClick={download}>{t('bundleDownload')}</button>
+      </>}
       {detail?.uninstall === undefined ? null : <>
         {confirmRemove ? <span>{t('bundleRemoveHint')}</span> : null}
         <button type="button" className={css.button} disabled={busy || editor.phase !== 'editing'}
@@ -137,7 +143,7 @@ export function ManagedSkillEditor({ editor, actions, t }: {
         <header className={css.detailHead}>
           <span className={css.glyph} aria-hidden="true"><IconSkillOutlineRegular size={24}/></span>
           <div><strong>{item.name}</strong><p>{item.description}</p>
-            {item.sourceLabel === undefined ? null : <small>{item.sourceLabel === 'bundled' ? t('bundledSource') : item.sourceLabel}</small>}
+            {source === undefined ? null : <small>{source}</small>}
             {item.version === undefined ? null : <small>{t('version')} {item.version}</small>}
             {item.publisher === undefined ? null : <small>{t('publisher')} {item.publisher}</small>}
           </div>
@@ -150,9 +156,12 @@ export function ManagedSkillEditor({ editor, actions, t }: {
                 .then((outcome) => { if (outcome !== undefined) report('toggle', outcome) })
             }}/>}
         </header>
-        <p className={css.note}>{t(item.status)} · {item.shadowedBy === undefined
-          ? t(item.shadowed === undefined ? 'bundleSelectionUnknown' : item.shadowed ? 'bundleShadowed' : 'bundleSelected')
-          : t('bundleShadowedBy', item.shadowedBy)}</p>
+        <p className={css.detailStatus}>{t(item.status)}
+          {invocation === undefined ? null : <> · <span title={t('invocationReadOnly')}>{invocation}</span></>}
+          {item.shadowedBy !== undefined ? <> · {t('bundleShadowedBy', {
+            name: item.shadowedBy.name, source: skillSourceLabel(item.shadowedBy.source, t) ?? item.shadowedBy.source,
+          })}</> : item.shadowed === true ? <> · {t('bundleShadowed')}</> : item.shadowed === undefined ? <> · {t('bundleSelectionUnknown')}</> : null}
+        </p>
       </>}
       {detail === undefined ? null : <>
         {view !== 'summary' ? null : <section className={css.document} aria-label={t('document')}>
@@ -160,6 +169,13 @@ export function ManagedSkillEditor({ editor, actions, t }: {
           <div className={css.documentReader}>{detail.markdown === undefined ? <p>{t('documentUnavailable')}</p>
             : <SkillMarkdown document={detail.markdown}/>}</div>
         </section>}
+        {item?.contentId === undefined ? null : <details className={css.source}>
+          <summary>{t('packageMetadata')}</summary><dl>
+            <dt>{t('contentId')}</dt><dd>{item.contentId}</dd>
+            {item.source === undefined ? null : <><dt>{t('nativeSource')}</dt><dd>{item.source}</dd></>}
+            {item.provider === undefined ? null : <><dt>{t('nativeProvider')}</dt><dd>{item.provider}</dd></>}
+          </dl>
+        </details>}
         <div className={css.detailActions}>
           <button type="button" className={css.button} aria-pressed={view === 'files'} disabled={busy}
             onClick={() => { changeView(view === 'files' ? 'summary' : 'files') }}>{t(view === 'files' ? 'backToSummary' : 'details')}</button>
