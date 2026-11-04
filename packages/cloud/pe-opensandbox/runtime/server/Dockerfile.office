@@ -1,0 +1,2 @@
+FROM sha256:6497790ee3398569aef7d8f35d442e76c33c9be08633a6a2732dbcb2ee1fe01e
+COPY --chown=0:0 completion_view.py /usr/local/lib/python3.12/site-packages/opensandbox_server/services/docker/completion_view.py

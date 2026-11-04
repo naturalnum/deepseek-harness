@@ -4,6 +4,9 @@ export const NATIVE_WORKLOAD_IMAGE_DIGEST = 'sha256:62016189c3c5cec1c88d10af21b5
 /** Original Native layers plus the pinned OpenSSH client dependency layer; no Office capability is implied. */
 export const REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST = 'sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d'
 
+/** Immutable Office dependency supplier; declaration does not enable providers or certify actual CLI/model execution. */
+export const OFFICE_WORKLOAD_IMAGE_DIGEST = 'sha256:3690da1fbb1faaabaf7265927b8b21a0fef0c4c988d83a8b1e321a2e82d43140'
+
 /**
  * Restrict protected selection and SDK bootstrap to reviewed immutable workload images.
  * @param value Untrusted decoded image selector.
@@ -11,4 +14,5 @@ export const REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST = 'sha256:c75632ff5ced1d239c688
  */
 export function isPinnedWorkloadImageDigest(value: unknown): value is string {
   return value === NATIVE_WORKLOAD_IMAGE_DIGEST || value === REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST
+    || value === OFFICE_WORKLOAD_IMAGE_DIGEST
 }

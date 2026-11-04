@@ -7,13 +7,16 @@ import type { ExecutionExportLimits } from '../export-share.ts'
 import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
-import { isPinnedWorkloadImageDigest, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST } from './workload-images.ts'
+import { isPinnedWorkloadImageDigest, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, OFFICE_WORKLOAD_IMAGE_DIGEST } from './workload-images.ts'
 
 /** Reviewed Session-directory guard and explicit Native creation profile, retaining the exact syscall filter and capabilities. */
 export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:7a41332aef7bcc74414b1434c7e10ee057c420e213d082fc79ac791c921af6ba'
 
 /** The original directory-aware Native server plus its exact two-workload policy patch. */
 export const REMOTE_CLIENT_SERVER_IMAGE_DIGEST = 'sha256:6497790ee3398569aef7d8f35d442e76c33c9be08633a6a2732dbcb2ee1fe01e'
+
+/** Exact Office-only creation policy over the original server; retained old images remain readonly audit inputs. */
+export const OFFICE_SERVER_IMAGE_DIGEST = 'sha256:d2b79b4297bb2e8d0f11349000269aa0e7b600b02aed59d35c6d168b875b1034'
 
 /**
  * Identify the reviewed server implementations of the original Session-directory guard.
@@ -22,6 +25,7 @@ export const REMOTE_CLIENT_SERVER_IMAGE_DIGEST = 'sha256:6497790ee3398569aef7d8f
  */
 export function isSessionDirectoryServerImageDigest(image: string | undefined): boolean {
   return image === SESSION_DIRECTORY_SERVER_IMAGE_DIGEST || image === REMOTE_CLIENT_SERVER_IMAGE_DIGEST
+    || image === OFFICE_SERVER_IMAGE_DIGEST
 }
 
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
@@ -160,6 +164,8 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
   need((life.imageDigest === REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST)
     === (serverImage === REMOTE_CLIENT_SERVER_IMAGE_DIGEST), 'selection.workloadImagePair')
+  need((life.imageDigest === OFFICE_WORKLOAD_IMAGE_DIGEST)
+    === (serverImage === OFFICE_SERVER_IMAGE_DIGEST), 'selection.workloadImagePair')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')
   let copies: RootDeploymentInput['skillCopies']

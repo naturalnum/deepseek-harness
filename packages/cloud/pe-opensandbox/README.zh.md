@@ -53,6 +53,8 @@ kind: "package-reference"
 
 部署 v2 显式选择 `storage.mode: shared-path`，引用 files 既有的受保护存储计划。[共享挂载拥有者](src/shared-mounts.ts) 根据该计划选择稳定的项目和 Session 环境来源，测量当前源目录身份及硬配额，并将目录描述符保留到 allocation 释放借用。此模式不收养 keeper 或 FIFO，也不发布导出清单。计划租约检查受保护配置，每次借用还必须通过原 files/native 当前授权回调。授权失效会拒绝新执行，但保留物理停止责任及未结算借用。持久挂载由部署持有，账户销毁不卸载用户卷；实际原生及网页执行仍须验收。 共享路径 v2 要求单独固定的 Native 服务镜像，支持同一账户的 `projects/<leaf>` 与 `environments/slot-0` 或 `slot-1` 布局；旧 v1 保留原镜像。两者都保留认证的代际及 socket 绑定与物理删除完成检查。受保护的环境池选择 `mode: session-directories` 时，Root 只接受 `bootstrap/deployment-input.ts` 固定的新镜像；Native 守卫还检查环境路径是同一账户原环境池下的直接 UUID 子目录。[目录守卫覆盖层](runtime/server/Dockerfile)及[显式 Native 创建覆盖层](runtime/server/Dockerfile.native-profile)保留原 SDK 引导、工作负载镜像及配额。创建覆盖层核对精确源码摘要，移除不受支持的重复系统路径选项，并在请求隔离时保留精确 Native seccomp 配置及能力；旧分支保留既有行为。
 
+Office 工作负载及其服务端在 `bootstrap/workload-images.ts` 和 `bootstrap/deployment-input.ts` 中按精确摘要配对。[离线上下文生成器](runtime/server/prepare_office_context.py) 要求原 SSH 服务端策略源码的精确字节，并生成[仅 COPY 的覆盖层](runtime/server/Dockerfile.office)。其 Native 创建策略只接受 Office 工作负载；关闭创建准入时，仍保留原工作负载的精确摘要用于只读历史验证。原系统调用过滤、capabilities、资源限额及删除责任拥有者保持不变。摘要声明不代表 CLI 行为合格，不会启用 Office provider 或发布账户就绪。
+
 每次成功的共享路径 Root 当前性检查，通过共享挂载拥有者各验证一次受保护的部署选择和存储计划，保留原文件描述符、路径身份、只读挂载及完整文件摘要检查。
 
 files 的 `staticStorage.maxMountInfoBytes` 与 `rootDeployment` 所引用受保护输入中的 `storage.limits.maxMountInfoBytes` 是两份独立预算，均须覆盖各实际 Node 挂载命名空间中的 `/proc/self/mountinfo`。对应的 `staticStorage.rootProbeReservationBytes` 与 `storage.limits.maxResidentBytes` 必须分别满足 [files 探针](../pe-cloud-files/src/storage-probe.ts)与[共享挂载](src/shared-mounts.ts)的预留公式。宜从同一部署来源生成这两个上限，保持更新一致。
