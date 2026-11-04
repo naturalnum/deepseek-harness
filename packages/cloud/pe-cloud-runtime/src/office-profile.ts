@@ -45,7 +45,11 @@ export interface OfficeProfileSelection {
   assertEntries(ctx: Context): readonly { readonly id: string; readonly name: string; readonly config: Json }[]
 }
 
-/** Resolve one immutable Root-only selection; this does not certify an image or publish an account. */
+/** Resolve one immutable Root-only selection; this does not certify an image or publish an account.
+ * @param config Validated Root deployment inputs and existing finite account limits.
+ * @param accountId Original authenticated account selected for the Factory recipe.
+ * @returns Detached two-entry selection, or undefined when the Root opt-in is absent.
+ */
 export function selectOfficeProfile(config: RuntimeRootConfig, accountId: AccountId): OfficeProfileSelection | undefined {
   const selected = config.officeCanary
   if (selected === undefined) return undefined
