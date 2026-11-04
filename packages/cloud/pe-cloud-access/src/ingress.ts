@@ -415,7 +415,8 @@ export class CloudIngress {
           operation.stage = 'peer.generation'
           this.pinGeneration(peer, operation.id)
           operation.stage = 'peer.http'
-          if (url.pathname === '/api/skills/release-archive') {
+          if (url.pathname === '/api/skills/release-archive' || url.pathname === '/api/workspace-files/upload') {
+            const archive = url.pathname === '/api/skills/release-archive'
             const api = this.accountApi(use.context, use.binding)
             const current = (): void => {
               this.assertOperation(operation); this.assertPeer(peer, operation.id); use.assertCurrent()
@@ -426,7 +427,8 @@ export class CloudIngress {
                 throw new AuthAccessError('cloud/account-unavailable', operation.id)
               }
               const row = api.requireFetch(request.method ?? '', url.pathname)
-              if (row.handlerId !== 'cloud:bundledSkillArchive' || row.guard !== 'authenticated-account') {
+              if (row.handlerId !== (archive ? 'cloud:bundledSkillArchive' : 'cloud:workspaceUpload')
+                || row.guard !== (archive ? 'authenticated-account' : 'account-session')) {
                 throw new AuthAccessError('cloud/forbidden', operation.id)
               }
             }
@@ -436,10 +438,12 @@ export class CloudIngress {
               consume: async () => {
                 current()
                 operation.holdNormalFinish = true
-                const result: import('./types.ts').BinaryResponseSettlement = await api.consumeSkillReleaseResponse({
-                  request, response, signal: AbortSignal.any([operation.observer.signal, use.binding.lifetime]),
-                  assertCurrent: current,
-                } satisfies import('./types.ts').BorrowedBinaryResponse, this.limits.maxRequestBodyBytes)
+                const borrow = { request, response,
+                  signal: AbortSignal.any([operation.observer.signal, use.binding.lifetime]), assertCurrent: current,
+                } satisfies import('./types.ts').BorrowedBinaryResponse
+                const result: import('./types.ts').BinaryResponseSettlement = archive
+                  ? await api.consumeSkillReleaseResponse(borrow, this.limits.maxRequestBodyBytes)
+                  : await api.consumeWorkspaceUploadResponse(borrow)
                 if (result.cleanup === 'unknown') throw new AuthAccessError('cloud/stop-unconfirmed', operation.id, { cause: result.cause })
                 // Source cleanup is confirmed. Closing this response cannot reauthorize more reads or fault the whole Peer.
                 if (!response.closed && !response.writableFinished) {

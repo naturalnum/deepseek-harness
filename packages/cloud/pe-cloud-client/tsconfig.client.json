@@ -85,6 +85,7 @@
     "src/client/management/plugins/PluginEditPanel.tsx",
     "src/client/management/plugins/plugin-schema.ts",
     "src/client/workspace-management.ts",
+    "src/client/workspace-file-upload.ts",
     "src/client/remote-servers/install.ts",
     "src/client/remote-servers/ServersSection.tsx",
     "src/client/remote-servers/locales.ts"

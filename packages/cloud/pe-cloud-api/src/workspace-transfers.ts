@@ -10,7 +10,10 @@ import type { WorkspaceTransferLimits } from './types.ts'
 import type {} from '@deepseek-ai/dsh-client-connection'
 
 /** Trusted native Session selection and exact files owner, repeated at actual I/O. */
-export type WorkspaceTransferSelection = AccountFileSelection & { readonly files: CloudAccountFiles }
+export type WorkspaceTransferSelection = AccountFileSelection & { readonly files: CloudAccountFiles
+  /** Installed Cloud upload metadata, supplied only after the same original Session/project selection. */
+  readonly workspaceUpload?: Readonly<{ protocol: 'workspace-upload-v1'; root: string; chunkBytes: number }>
+}
 /** Existing API account and storage admission; request paths confer no authority. */
 export type SelectWorkspaceTransfer = (id: SessionId, signal: AbortSignal) => Promise<WorkspaceTransferSelection>
 
@@ -67,7 +70,13 @@ export function registerWorkspaceTransfers(ctx: Context, limits: WorkspaceTransf
       const paths = url.searchParams.getAll('path')
       if (paths.length === 0 && request.method === 'HEAD') return new Response(null, { headers: {
         'x-workspace-max-files': String(limits.maxFiles), 'x-workspace-max-total-bytes': String(limits.maxTotalBytes),
-        'x-workspace-max-file-bytes': String(limits.maxFileBytes), 'cache-control': 'no-store' } })
+        'x-workspace-max-file-bytes': String(limits.maxFileBytes), 'cache-control': 'no-store',
+        ...selected.workspaceUpload === undefined ? {} : {
+          'x-workspace-upload-protocol': selected.workspaceUpload.protocol,
+          'x-workspace-upload-root': encodeURIComponent(selected.workspaceUpload.root),
+          'x-workspace-upload-chunk-bytes': String(selected.workspaceUpload.chunkBytes),
+        },
+      } })
       if (paths.length < 1 || paths.length > limits.maxFiles) throw new Error('invalid-request')
       const backend = await selected.files.workspaceContent(selected.workspace, check, signal)
       const entries: { path: string; size: number; version: string }[] = []

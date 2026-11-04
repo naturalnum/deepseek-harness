@@ -2256,6 +2256,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Confirmed completion/cancel/refusal, or the original unknown cleanup cause.',
       },
       {
+        signature: 'consumeWorkspaceUploadResponse(borrow: WorkspaceUploadBorrow): Promise<WorkspaceUploadSettlement>',
+        description: 'Retain the original Access response through the current Session-selected project publication.',
+        parameters: [{ name: 'borrow', description: 'Original account-bound request, Peer/Use lifetime and response.' }],
+        returns: 'Confirmed source/worker/wire result, or its original unknown cleanup cause.',
+      },
+      {
         signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): NativeFirstScreen',
         description: 'Prepare fixed readonly native constructors; original Loader activation and complete auditing still follow.',
         parameters: [{ name: 'owner', description: 'Independent graph\'s prepare scope.' }, { name: 'input', description: 'Actual files-owned project, shared Session metadata check and explicit native limits.' }],
@@ -2616,6 +2622,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Publish a verified native attachment into the selected registered workspace directory.',
         parameters: [{ name: 'workspace', description: 'Exact account Registry object after Session admission.' }, { name: 'ref', description: 'Closed native attachment; the original store supplies and verifies the source stream.' }, { name: 'directory', description: 'Workspace-relative directory; no Host/Guest path conversion is performed here.' }, { name: 'authorized', description: 'Current native Agent/Session admission.' }, { name: 'signal', description: 'Cancellation joins source closure and temporary cleanup.' }],
         returns: 'Actual published relative filename, atomically deduplicated on disk.',
+      },
+      {
+        signature: 'assertWorkspaceUploadAvailable(workspace: Workspace): void',
+        description: 'Require the original selected project\'s healthy staging companion before advertising or consuming upload.',
+        parameters: [{ name: 'workspace', description: 'Exact account Registry object after original Session admission.' }],
+      },
+      {
+        signature: 'stageWorkspaceUpload(workspace: Workspace, source: import(\'./stage-bridge.ts\').WorkspaceUploadSource, authorized: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly import(\'./stage-bridge.ts\').WorkspaceUploadResult[]>>',
+        description: 'Stage an untrusted raw-upload claim after original Session/workspace selection.',
+        parameters: [{ name: 'workspace', description: 'Exact registered project.' }, { name: 'source', description: 'Access-issued source and declared comparison values.' }, { name: 'authorized', description: 'Original Session/project guard, independent of response-disconnect observation.' }, { name: 'signal', description: 'Cancellation joined through actual source and worker settlement.' }],
+        returns: 'Closed Cloud file result retained until its response owner releases it.',
       },
       {
         signature: 'async createWorkspaceDirectory(workspace: Workspace, directory: string, name: string, authorized: () => void, signal?: AbortSignal): Promise<string>',
@@ -5878,7 +5895,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountFilesPreparation',
-    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'runNativeMutation\' | \'workspaceContent\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n    readonly withInstruction /* …truncated — full shape in source */',
+    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'stageWorkspaceUploads\' | \'runNativeMutation\' | \'workspaceContent\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n   /* …truncated — full shape in source */',
   },
   {
     name: 'AccountFilesProject',
@@ -6306,7 +6323,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    skillReleaseBinaryPolicy(): Readonly<{\n        maxArchiveBytes: number;\n        timeoutMs: number;\n    }> | undefined;\n    consumeSkillReleaseResponse(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement>;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\' | \'assertSettingsFields\' | \'beginModelSettingsUpdate\' | \'settingsSave\'>): Native /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    skillReleaseBinaryPolicy(): Readonly<{\n        maxArchiveBytes: number;\n        timeoutMs: number;\n    }> | undefined;\n    consumeSkillReleaseResponse(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement>;\n    consumeWorkspaceUploadResponse(borrow: WorkspaceUploadBorrow): Promise<WorkspaceUploadSettlement>;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeIn /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
@@ -8354,7 +8371,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PoolReadPort',
-    declaration: 'export interface PoolReadPort {\n    workspaceContent(workspace: Workspace, current: () => void, signal?: AbortSignal): Promise<TextProjectBackend>;\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>;\n    withInstructionReaders<T>(this: void, workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReader /* …truncated — full shape in source */',
+    declaration: 'export interface PoolReadPort {\n    workspaceContent(workspace: Workspace, current: () => void, signal?: AbortSignal): Promise<TextProjectBackend>;\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    stageWorkspaceUploads(workspace: Workspace, sources: readonly WorkspaceUploadSource[], assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly WorkspaceUploadResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, asser /* …truncated — full shape in source */',
   },
   {
     name: 'PostToolDecision',
@@ -11102,7 +11119,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceTransferSelection',
-    declaration: 'export type WorkspaceTransferSelection = AccountFileSelection & {\n    readonly files: CloudAccountFiles;\n};',
+    declaration: 'export type WorkspaceTransferSelection = AccountFileSelection & {\n    readonly files: CloudAccountFiles;\n    readonly workspaceUpload?: Readonly<{\n        protocol: \'workspace-upload-v1\';\n        root: string;\n        chunkBytes: number;\n    }>;\n};',
   },
   {
     name: 'WorkspaceUnarchiveSessionRequest',
@@ -11111,6 +11128,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceUnpinSessionRequest',
     declaration: 'export interface WorkspaceUnpinSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceUploadBorrow',
+    declaration: 'export interface WorkspaceUploadBorrow {\n    readonly request: IncomingMessage;\n    readonly response: ServerResponse;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
+  },
+  {
+    name: 'WorkspaceUploadClaim',
+    declaration: 'export interface WorkspaceUploadClaim {\n    readonly sha256: string;\n    readonly name: string;\n    readonly bytes: number;\n}',
+  },
+  {
+    name: 'WorkspaceUploadResult',
+    declaration: 'export interface WorkspaceUploadResult extends FdStageResult {\n    readonly kind: \'workspace-upload\';\n    readonly claim: WorkspaceUploadClaim;\n    readonly relativePath: string;\n}',
+  },
+  {
+    name: 'WorkspaceUploadSettlement',
+    declaration: 'export type WorkspaceUploadSettlement = {\n    readonly cleanup: \'confirmed\';\n    readonly outcome: \'completed\' | \'cancelled\' | \'rejected\';\n} | {\n    readonly cleanup: \'unknown\';\n    readonly cause: unknown;\n};',
+  },
+  {
+    name: 'WorkspaceUploadSource',
+    declaration: 'export interface WorkspaceUploadSource {\n    readonly claim: WorkspaceUploadClaim;\n    readonly workspaceDirectory: string;\n    open(this: void, signal: AbortSignal): AsyncIterable<Uint8Array>;\n}',
   },
   {
     name: 'WorkspaceValue',

@@ -136,6 +136,7 @@ export function planStageBatch(
  */
 export function planWorkspaceUploadBatch(sources: readonly WorkspaceUploadSource[],
   root: Pick<FdRootIdentity, 'rootPath' | 'rootMountId'>, limits: FdStagingLimits, bounds: StageBounds): StageBatchPlan<UploadMetadata> {
+  if (sources.some(source => source.claim.name === '.pe')) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
   return planInputs(sources.map(source => ({ digest: source.claim.sha256, name: source.claim.name, bytes: source.claim.bytes,
     workspaceDirectory: source.workspaceDirectory, open: source.open,
     metadata: Object.freeze({ kind: 'workspace-upload' as const, claim: Object.freeze({ sha256: source.claim.sha256,

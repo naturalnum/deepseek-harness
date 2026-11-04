@@ -144,7 +144,7 @@ export async function produceCloudBootstrap(
     if (!approvedSettingsMatch(catalog.fields, settings)
       || settingsWrites && (settingsWriter === undefined
         || settingsWriter.handlerId !== 'native:settingsController' || settingsWriter.guard !== 'authenticated-account')
-      || manifest.exactFetchRoutes.length > 9) unavailable()
+      || manifest.exactFetchRoutes.length > 10) unavailable()
     const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
       const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
@@ -155,6 +155,7 @@ export async function produceCloudBootstrap(
       const workspaceTransfer = row.handlerId === 'native:workspaceFiles' && (
         ((row.method === 'GET' || row.method === 'HEAD') && row.path === '/api/workspace-files/download')
         || row.method === 'POST' && row.path === '/api/workspace-files/directory')
+        || row.method === 'POST' && row.path === '/api/workspace-files/upload' && row.handlerId === 'cloud:workspaceUpload'
       const skillArchive = catalog.skills.mode === 'managed' && (row.method === 'GET' || row.method === 'HEAD')
         && row.path === '/api/skills/release-archive' && row.handlerId === 'cloud:bundledSkillArchive'
         && row.guard === 'authenticated-account'
@@ -169,17 +170,20 @@ export async function produceCloudBootstrap(
     if (manifest.rpcEndpoints.length + manifest.streamEndpoints.length > budget) unavailable()
     if (skillRpcEndpoints.some(endpoint => !manifest.rpcEndpoints.some(row => row.endpoint === endpoint))) unavailable()
     if (pluginRpcEndpoints.some(endpoint => !manifest.rpcEndpoints.some(row => row.endpoint === endpoint))) unavailable()
+    if (catalog.remoteServers !== undefined && !manifest.rpcEndpoints.some(row => row.endpoint === 'cloudRemoteServers/action')) unavailable()
     for (const row of manifest.rpcEndpoints) {
       const settingsMutation = settingsWrites && row === settingsWriter
       const plugins = catalog.pluginControl !== undefined && PLUGIN_RPC_ENDPOINTS.includes(row.endpoint)
         && row.handlerId === 'native:cloudPlugins' && row.guard === 'authenticated-account'
+      const remoteServers = catalog.remoteServers !== undefined && row.endpoint === 'cloudRemoteServers/action'
+        && row.handlerId === 'cloud:remote-servers' && row.guard === 'authenticated-account'
       const modelKey = catalog.modelKey !== undefined && MODEL_KEY_RPC_ENDPOINTS.includes(row.endpoint)
         && row.handlerId === 'native:cloudModelKey' && row.guard === 'authenticated-account'
       const skills = catalog.skills.mode !== 'closed' && (
         skillRpcEndpoints.includes(row.endpoint)
           && row.handlerId === 'native:cloudSkills' && row.guard === 'authenticated-account'
         || row.endpoint === 'skills/list' && row.handlerId === 'native:sessionSkillCatalog' && row.guard === 'account-session')
-      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !settingsMutation) unavailable()
+      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !remoteServers && !settingsMutation) unavailable()
       const actual = api.requireRpc(row.endpoint)
       if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }

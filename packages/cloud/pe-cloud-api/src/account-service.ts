@@ -3,6 +3,7 @@ import type { BundledSkillResponseBorrow, BundledSkillResponseSettlement } from 
 import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
 import type { WorkspaceTransferLimits } from './types.ts'
+import { createWorkspaceUploadConsumer, type WorkspaceUploadBorrow, type WorkspaceUploadSettlement } from './workspace-upload.ts'
 import { inventoryMethodMatches } from './inventory-method.ts'
 import { approvedSettingsMatch } from './approved-settings.ts'
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
@@ -124,6 +125,7 @@ export class CloudAccountApi extends Service {
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
   private fileTransfers: readonly import('./types.ts').ExactFetchExposure[] = []
+  private workspaceUpload: ReturnType<typeof createWorkspaceUploadConsumer> | undefined
   private readonly office: { native?: NativeOffice } = {}
   private readonly uploads: { native?: NativeUploads } = {}
   private readonly commands: { native?: NativeCommands } = {}
@@ -501,6 +503,17 @@ export class CloudAccountApi extends Service {
   }
 
   /**
+   * Retain the original Access response through the current Session-selected project publication.
+   * @param borrow Original account-bound request, Peer/Use lifetime and response.
+   * @returns Confirmed source/worker/wire result, or its original unknown cleanup cause.
+   */
+  consumeWorkspaceUploadResponse(borrow: WorkspaceUploadBorrow): Promise<WorkspaceUploadSettlement> {
+    this.admit()
+    if (this.workspaceUpload === undefined) this.nativeUnavailable()
+    return this.workspaceUpload(borrow)
+  }
+
+  /**
    * Prepare fixed readonly native constructors; original Loader activation and complete auditing still follow.
    * @param owner Independent graph's prepare scope.
    * @param input Actual files-owned project, shared Session metadata check and explicit native limits.
@@ -671,8 +684,34 @@ export class CloudAccountApi extends Service {
    */
   installWorkspaceTransfers(owner: Context, limits: WorkspaceTransferLimits, select: SelectWorkspaceTransfer): void {
     this.assertInstalled(owner)
-    this.fileTransfers = registerWorkspaceTransfers(owner, limits, select,
-      (method, path) => { this.assertInstalled(owner); this.requireFetch(method, path) }, this.binding.lifetime)
+    const uploadPath = '/api/workspace-files/upload'
+    const approved = this.installation.exposure.manifest.exactFetchRoutes.some(row => row.method === 'POST' && row.path === uploadPath)
+    const current = (): void => { this.assertInstalled(owner); this.requireFetch('POST', uploadPath) }
+    if (approved) this.workspaceUpload = createWorkspaceUploadConsumer({ maxFileBytes: limits.maxFileBytes,
+      maxSourceChunkBytes: limits.chunkBytes, maxPathBytes: limits.maxPathBytes }, async (id, signal) => {
+      current()
+      const selected = await select(id, signal)
+      const authorized = (): void => {
+        current()
+        if (selected.files.binding !== this.binding) this.nativeUnavailable()
+        selected.files.assertInstalled(owner)
+        selected.assertCurrent()
+      }
+      authorized(); selected.files.assertWorkspaceUploadAvailable(selected.workspace)
+      return { assertCurrent: authorized,
+        publish: (source, control) => selected.files.stageWorkspaceUpload(selected.workspace, source, authorized, control) }
+    })
+    this.fileTransfers = registerWorkspaceTransfers(owner, limits, async (id, signal) => {
+      const selected = await select(id, signal)
+      if (!approved) return selected
+      current()
+      if (selected.files.binding !== this.binding) this.nativeUnavailable()
+      selected.files.assertInstalled(owner); selected.assertCurrent(); selected.files.assertWorkspaceUploadAvailable(selected.workspace)
+      if (Buffer.byteLength(selected.workspace.path) > limits.maxPathBytes) this.nativeUnavailable()
+      return { ...selected, workspaceUpload: { protocol: 'workspace-upload-v1', root: selected.workspace.path, chunkBytes: limits.chunkBytes } }
+    }, (method, path) => { this.assertInstalled(owner); this.requireFetch(method, path) }, this.binding.lifetime)
+    if (approved) this.fileTransfers = [...this.fileTransfers,
+      { method: 'POST', path: uploadPath, handlerId: 'cloud:workspaceUpload', guard: 'account-session' }]
   }
 
   private installOffice(owner: Context, nativeConfig: Parameters<AccountOfficeLifecycle['install']>[1]): void {

@@ -239,7 +239,7 @@ it('keeps one native attachment constructor identity through real caller-scoped 
   const unavailable = () => Promise.reject(new Error('This identity fixture opens no attachment I/O'))
   const graph = await account.start({
     attachments: { workspaceContent: unavailable, assertStagingAvailable: () => {},
-      stageFiles: unavailable, runNativeMutation: unavailable },
+      stageFiles: unavailable, stageWorkspaceUploads: unavailable, runNativeMutation: unavailable },
     attachmentProjection: { mapFileHostPath: () => undefined, mapProcessPath: () => undefined },
   })
   const Store = graph.owner().attachmentStore(), constructors: (typeof Store)[] = []

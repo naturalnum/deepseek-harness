@@ -19,3 +19,6 @@ export type { SkillInstallationId, SkillBundleInput, SkillBundleFile, SkillBundl
 
 export { openRemoteServerStore } from './remote-server-store.ts'
 export type { RemoteStoreLimits, RemoteCredential, AccountRemoteServerStore } from './remote-server-store.ts'
+
+export type { WorkspaceUploadClaim, WorkspaceUploadSource, WorkspaceUploadResult } from './stage-bridge.ts'
+export type { ResidentResult } from './work-queue.ts'

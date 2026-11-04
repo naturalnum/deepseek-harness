@@ -15,12 +15,15 @@ import { BetterAuthAccess } from '../src/auth.ts'
 import { CloudIngress } from '../src/ingress.ts'
 import { LoginPeerRegistry } from '../src/peers.ts'
 import { ConnectionGenerations } from '../src/generations.ts'
+import type { BorrowedBinaryResponse, BinaryResponseSettlement } from '../src/types.ts'
 import { accessConfig, ingressConfig } from './ingress-fixture.ts'
 
-async function fixture() {
-  const path = '/api/skills/release-archive'
-  const reviewed = ['GET', 'HEAD'].map(method => ({ method, path,
-    handlerId: 'cloud:bundledSkillArchive', guard: 'authenticated-account' as const }))
+async function fixture(workspace = false) {
+  const path = workspace ? '/api/workspace-files/upload' : '/api/skills/release-archive'
+  const method = workspace ? 'POST' : 'GET'
+  const reviewed = (workspace ? ['POST'] : ['GET', 'HEAD']).map(method => ({ method, path,
+    handlerId: workspace ? 'cloud:workspaceUpload' : 'cloud:bundledSkillArchive',
+    guard: workspace ? 'account-session' as const : 'authenticated-account' as const }))
   const native = policyFixture([], undefined, 'binary-A', { selected: reviewed, inspectRootFetch: () => reviewed })
   const graph = await native.start('1', native.config, true, { maxNativeInventoryEntries: 256 })
   await graph.ctx.plugin({ inject: connectionInject, apply: applyConnection })
@@ -84,7 +87,7 @@ async function fixture() {
   let mode: 'complete' | 'cancel' | 'unknown' = 'complete', sourceSettled = 0
   let gate = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
   const cause = new Error('original source cleanup unknown')
-  const consume = vi.spyOn(graph.api, 'consumeSkillReleaseResponse').mockImplementation(async (borrow) => {
+  const consume = vi.spyOn(graph.api, workspace ? 'consumeWorkspaceUploadResponse' : 'consumeSkillReleaseResponse').mockImplementation(async (borrow: BorrowedBinaryResponse): Promise<BinaryResponseSettlement> => {
     if (mode === 'unknown') {
       await budget.withArchive(1024, async (retain) => { retain(cause) })
       borrow.response.end(); await once(borrow.response, 'finish')
@@ -105,7 +108,7 @@ async function fixture() {
     })
   })
   const call = (extra: Record<string, string> = {}) => new Promise<{ status: number; body: string }>((resolve, reject) => {
-    const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method: 'GET', agent: false,
+    const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method, agent: false,
       headers: { ...headers, ...extra } }, (response) => {
       let body = ''; response.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') }); response.on('error', reject)
       response.on('end', () => { resolve({ status: response.statusCode ?? 0, body }) })
@@ -113,7 +116,7 @@ async function fixture() {
   })
   const cancel = () => {
     const received = Promise.withResolvers<undefined>()
-    const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method: 'GET', agent: false, headers }, (response) => {
+    const request = httpRequest({ host: '127.0.0.1', port: address.port, path, method, agent: false, headers }, (response) => {
       response.on('error', () => {}); response.once('data', () => { response.destroy(); request.destroy(); received.resolve(undefined) })
     }); request.on('error', () => {}); request.end(); return received.promise
   }
@@ -124,8 +127,8 @@ async function fixture() {
     logout: async () => { loggedIn = false; await ingress.invalidateLogin(login.session.id as Parameters<CloudIngress['invalidateLogin']>[0]) } }
 }
 
-it('keeps the same real Peer after confirmed TCP cancellation and releases only after source cleanup joins', async () => {
-  const f = await fixture()
+it.each([false, true])('keeps the same real Peer after confirmed TCP cancellation and releases only after source cleanup joins (workspace=%s)', async (workspace) => {
+  const f = await fixture(workspace)
   expect((await f.call()).body).toBe('complete')
   const peer: unknown = await f.acquirePeer.mock.results[0]!.value
   f.setMode('cancel')
@@ -139,8 +142,8 @@ it('keeps the same real Peer after confirmed TCP cancellation and releases only 
   expect(await f.acquirePeer.mock.results.at(-1)!.value).toBe(peer)
 })
 
-it('rejects foreign-account and stale-generation carriers before the binary source', async () => {
-  const f = await fixture()
+it.each([false, true])('rejects foreign-account and stale-generation carriers before the binary source (workspace=%s)', async (workspace) => {
+  const f = await fixture(workspace)
   expect((await f.call({ 'x-pe-generation': 'stale' })).status).toBe(409)
   expect((await f.call({ Cookie: 'better-auth.session_token=foreign' })).status).toBe(409)
   expect((await f.call({ Cookie: '' })).status).toBe(401)
@@ -148,8 +151,8 @@ it('rejects foreign-account and stale-generation carriers before the binary sour
   expect((await f.call()).status).toBe(200)
 })
 
-it('closes a revoked Peer while confirmed source cleanup releases its old operation and all uses', async () => {
-  const f = await fixture(); f.setMode('cancel')
+it.each([false, true])('closes a revoked Peer while confirmed source cleanup releases its old operation and all uses (workspace=%s)', async (workspace) => {
+  const f = await fixture(workspace); f.setMode('cancel')
   await f.cancel(); await f.entered()
   const logout = f.logout()
   f.settle(); await logout; await Promise.all(f.pending)
@@ -160,8 +163,8 @@ it('closes a revoked Peer while confirmed source cleanup releases its old operat
   expect((await f.call()).status).toBe(401)
 })
 
-it('retains original cause, positive bytes and blocked owners when source cleanup is unknown', async () => {
-  const f = await fixture(); f.setMode('unknown')
+it.each([false, true])('retains original cause, positive bytes and blocked owners when source cleanup is unknown (workspace=%s)', async (workspace) => {
+  const f = await fixture(workspace); f.setMode('unknown')
   await f.call()
   const settled = await Promise.allSettled(f.pending)
   expect(settled[0]).toMatchObject({ status: 'rejected', reason: { code: 'cloud/stop-unconfirmed', cause: {

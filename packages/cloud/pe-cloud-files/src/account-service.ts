@@ -46,7 +46,7 @@ export interface AccountFilesPreparation {
     mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean,
   ) => Promise<S2ProjectPort['FileSystem']>
   /** Original lane mutation capabilities; omission keeps attachment intake and staging closed. */
-  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'runNativeMutation' | 'workspaceContent'>
+  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'stageWorkspaceUploads' | 'runNativeMutation' | 'workspaceContent'>
   /** Trusted synchronous lookup of an active request's verified copies; never a private-root prefix grant. */
   readonly attachmentProjection?: Pick<AccountAttachmentBackend, 'mapFileHostPath'> & {
     mapProcessPath(caller: Context, hostPath: string): string | undefined
@@ -471,6 +471,35 @@ export class CloudAccountFiles extends Service {
       if (result === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace publication returned no result.')
       return result.relativePath
     } finally { held.release() }
+  }
+
+  /** Require the original selected project's healthy staging companion before advertising or consuming upload.
+   * @param workspace Exact account Registry object after original Session admission.
+   */
+  assertWorkspaceUploadAvailable(workspace: Workspace): void {
+    this.assertWorkspace(workspace)
+    const port = this.providers.attachments
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace upload is unavailable.')
+    port.assertStagingAvailable()
+  }
+
+  /** Stage an untrusted raw-upload claim after original Session/workspace selection.
+   * @param workspace Exact registered project.
+   * @param source Access-issued source and declared comparison values.
+   * @param authorized Original Session/project guard, independent of response-disconnect observation.
+   * @param signal Cancellation joined through actual source and worker settlement.
+   * @returns Closed Cloud file result retained until its response owner releases it.
+   */
+  stageWorkspaceUpload(workspace: Workspace, source: import('./stage-bridge.ts').WorkspaceUploadSource,
+    authorized: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly import('./stage-bridge.ts').WorkspaceUploadResult[]>> {
+    const port = this.providers.attachments
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Workspace upload is unavailable.')
+    const current = (): void => { this.assertWorkspace(workspace); authorized() }
+    this.assertWorkspaceUploadAvailable(workspace)
+    current()
+    const directory = posix.isAbsolute(source.workspaceDirectory)
+      ? posix.relative(workspace.path, source.workspaceDirectory) || '.' : source.workspaceDirectory
+    return port.stageWorkspaceUploads(workspace, [{ ...source, workspaceDirectory: directory }], current, signal)
   }
 
   /**

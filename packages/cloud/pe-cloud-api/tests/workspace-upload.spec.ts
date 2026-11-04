@@ -13,7 +13,7 @@ import { LinuxFilesPool } from '../../pe-cloud-files/src/worker-pool.ts'
 import { createWorkspaceUploadConsumer, type WorkspaceUploadSettlement } from '../src/workspace-upload.ts'
 import { CloudApiError } from '../src/errors.ts'
 
-async function fixture(maxFileBytes = 67108864) {
+async function fixture(maxFileBytes = 67108864, releaseFailure?: Error) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'workspace-upload-tcp-')))
   const projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   mkdirSync(project, { recursive: true })
@@ -38,7 +38,10 @@ async function fixture(maxFileBytes = 67108864) {
   const consumer = createWorkspaceUploadConsumer({ maxFileBytes, maxSourceChunkBytes: Math.min(65536, maxFileBytes), maxPathBytes: 4096 },
     async (id) => {
       if (id !== 'owned') throw new CloudApiError('cloud/forbidden', 'Foreign Session')
-      return { assertCurrent: current, publish: (source, signal) => port.stageWorkspaceUploads(workspace, [source], current, signal) }
+      return { assertCurrent: current, publish: async (source, signal) => {
+        const held = await port.stageWorkspaceUploads(workspace, [source], current, signal)
+        return releaseFailure === undefined ? held : { value: held.value, release() { throw releaseFailure } }
+      } }
     })
   const pending: Promise<WorkspaceUploadSettlement>[] = [], results: WorkspaceUploadSettlement[] = []
   const server = createServer((request, response) => {
@@ -188,4 +191,24 @@ it('returns a confirmed queue-capacity refusal and admits the next request after
   gate.resolve(undefined); (await busy).release()
   await vi.waitFor(() => { expect(f.pool.inspect().work.residentBytes).toBe(0) })
   expect(JSON.parse((await f.call(4096, digest(4096), 'after-capacity.bin').response).body)).toMatchObject({ ok: true })
+})
+
+
+it('retains a post-response release failure and its positive charge instead of treating HTTP success as cleanup', async () => {
+  const cause = new Error('Original result release is unconfirmed'), f = await fixture(67108864, cause)
+  expect((await f.call(4096, digest(4096), 'release-unknown.bin').response).status).toBe(200)
+  await Promise.all(f.pending)
+  expect(f.results).toEqual([{ cleanup: 'unknown', cause }])
+  expect(f.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+})
+
+
+it('rejects the protected project metadata name before opening any raw upload source', async () => {
+  const f = await fixture(), response = await f.call(4096, digest(4096), '.pe').response
+  expect(response.status).toBe(400)
+  expect(JSON.parse(response.body)).toMatchObject({ ok: false, error: { outcome: 'not-published' } })
+  await Promise.all(f.pending)
+  expect(Atomics.load(f.counters, 0)).toBe(0)
+  expect(readdirSync(f.project)).toEqual([])
+  expect(f.pool.inspect().work.residentBytes).toBe(0)
 })

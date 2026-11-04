@@ -25,6 +25,8 @@ import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import * as NativeFiles from '../src/native-files.ts'
+import * as WorkspaceUpload from '../src/workspace-upload.ts'
+import type { WorkspaceTransferSelection } from '../src/workspace-transfers.ts'
 
 const ref = credentialRef('ACCOUNT_API_SERVICE_FIXTURE')
 const nativeFileConfig = {
@@ -46,7 +48,7 @@ function observeNativeFiles() {
   } }
 }
 
-function fixture(projects?: CloudProjectsPreparation, files = false) {
+function fixture(projects?: CloudProjectsPreparation, files = false, upload = false) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'account-api-service-')))
   const saves = new ConfigSaveCoordinator({ maxAccounts: 4, maxRunning: 2, maxQueued: 4, maxQueuedPerAccount: 2,
     maxTrackedOperations: 8, maxTrackedOperationsPerAccount: 4, maxNestedPerOperation: 2, maxWaitersPerAccount: 2 })
@@ -55,7 +57,7 @@ function fixture(projects?: CloudProjectsPreparation, files = false) {
     ...files ? ['read', 'stat', 'list', 'readBytes'].map(method => ({ endpoint: 'workspaceFiles/' + method,
       handlerId: 'native:workspaceFiles', guard: 'account-session' as const })) : [],
   ], streamEndpoints: files ? [{ endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' }] : [],
-  exactFetchRoutes: [], allowedSettings: [] })
+  exactFetchRoutes: upload ? [{ method: 'POST', path: '/api/workspace-files/upload', handlerId: 'cloud:workspaceUpload', guard: 'account-session' }] : [], allowedSettings: [] })
   const accounts: Array<{ ctx: Context; api: CloudAccountApi; barrier: ConfigSaveBarrier }> = []
   onTestFinished(async () => {
     try {
@@ -108,7 +110,7 @@ function fixture(projects?: CloudProjectsPreparation, files = false) {
       const barrier = saves.createAccount(binding)
       input = { binding, rootExposure: root, selected: root.manifest, saves: barrier,
         assertMountCurrent: mountCurrent, assertBusinessCurrent: businessCurrent,
-        ...files ? { maxNativeInventoryEntries: 512 } : {} }
+        ...files || upload ? { maxNativeInventoryEntries: 512 } : {} }
       api = new CloudAccountApi(scope, input)
       if (projects !== undefined) {
         expect(scope.get('typert')).toBeUndefined()
@@ -292,4 +294,67 @@ it('rejects a removed or replaced original filesystem provider before native fil
   await f.ctx.plugin(LocalFileSystem, { cwd: f.ctx.sandboxPolicy.workspaceRoot })
   expect(() => f.api.requireRpc('workspaceFiles/readBytes')).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
   expect(() => native.inspect()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+})
+
+
+it('carries actual API admission through the original workspace publisher commit callback', async () => {
+  // The real Loader/API installation supplies authority; only the storage target is a typed timing fixture.
+  const f = await fixture(undefined, false, true).account('upload')
+  f.businessCurrent.mockImplementation(() => {})
+  f.ctx.provide('connection', { fetch: { register: () => async () => {} } } as never)
+  let choose: Parameters<typeof WorkspaceUpload.createWorkspaceUploadConsumer>[1] | undefined
+  const factory = vi.spyOn(WorkspaceUpload, 'createWorkspaceUploadConsumer').mockImplementation((_limits, select) => {
+    choose = select
+    return async () => ({ cleanup: 'confirmed', outcome: 'completed' })
+  })
+  onTestFinished(() => { factory.mockRestore() })
+  const staged: Array<() => void> = [], sessionCurrent = vi.fn()
+  const selected: WorkspaceTransferSelection = { workspace: { path: '/registered' }, assertCurrent: sessionCurrent, files: {
+    binding: f.api.binding, assertInstalled: vi.fn(), assertWorkspaceUploadAvailable: vi.fn(),
+    stageWorkspaceUpload: vi.fn((_workspace, _source, authorized: () => void) => {
+      staged.push(authorized)
+      return Promise.resolve({ value: [], release() {} })
+    }),
+  } } as unknown as WorkspaceTransferSelection
+  f.api.installWorkspaceTransfers(f.ctx, { maxFileBytes: 1024, maxFiles: 2, maxTotalBytes: 2048,
+    chunkBytes: 64, maxPathBytes: 512, timeoutMs: 1000 }, async () => selected)
+  f.api.audit(f.input.selected)
+  if (choose === undefined) throw new Error('Upload consumer was not installed')
+  const target = await choose(SessionId('upload-session'), f.lifetime.signal)
+  await target.publish({} as never, f.lifetime.signal)
+  const commit = staged[0]
+  if (commit === undefined) throw new Error('Storage did not retain the original authorization callback')
+  commit()
+  expect(sessionCurrent).toHaveBeenCalled()
+  f.businessCurrent.mockImplementation(() => { throw f.businessClosed })
+  // Session itself remains current: the exact API admission still blocks actual commit.
+  expect(() => { commit() }).toThrow(f.businessClosed)
+  expect(() => { target.assertCurrent() }).toThrow(f.businessClosed)
+  f.businessCurrent.mockImplementation(() => {})
+  commit()
+  f.api.invalidate()
+  expect(() => { commit() }).toThrow('not been audited')
+})
+
+it('rejects a foreign files binding before the workspace upload target is returned', async () => {
+  const f = await fixture(undefined, false, true).account('upload-foreign')
+  f.businessCurrent.mockImplementation(() => {})
+  f.ctx.provide('connection', { fetch: { register: () => async () => {} } } as never)
+  let choose: Parameters<typeof WorkspaceUpload.createWorkspaceUploadConsumer>[1] | undefined
+  const factory = vi.spyOn(WorkspaceUpload, 'createWorkspaceUploadConsumer').mockImplementation((_limits, select) => {
+    choose = select
+    return async () => ({ cleanup: 'confirmed', outcome: 'completed' })
+  })
+  onTestFinished(() => { factory.mockRestore() })
+  const publish = vi.fn()
+  const selected = { workspace: { path: '/foreign' }, assertCurrent: vi.fn(), files: {
+    binding: { ...f.api.binding }, assertInstalled: vi.fn(), assertWorkspaceUploadAvailable: vi.fn(),
+    stageWorkspaceUpload: publish,
+  } } as unknown as WorkspaceTransferSelection
+  f.api.installWorkspaceTransfers(f.ctx, { maxFileBytes: 1024, maxFiles: 2, maxTotalBytes: 2048,
+    chunkBytes: 64, maxPathBytes: 512, timeoutMs: 1000 }, async () => selected)
+  f.api.audit(f.input.selected)
+  if (choose === undefined) throw new Error('Upload consumer was not installed')
+  await expect(choose(SessionId('foreign'), f.lifetime.signal)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(publish).not.toHaveBeenCalled()
 })

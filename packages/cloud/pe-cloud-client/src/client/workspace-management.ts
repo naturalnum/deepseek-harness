@@ -1,3 +1,4 @@
+import { uploadWorkspaceFile } from './workspace-file-upload.ts'
 import { readResponse } from './read-response.ts'
 /** Page-owned binary HTTP operations for the original native workspace tree. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -51,6 +52,27 @@ export function prepareWorkspaceManagement(ctx: Context, fetch: FileUploadFetch,
       if (!policy.ok || ![maximum, totalMaximum, fileMaximum].every(value => Number.isSafeInteger(value) && value > 0)
         || files.length > maximum || total > totalMaximum
         || files.some(item => item.file.size > Math.min(maxFileBytes, fileMaximum))) throw new Error('upload-too-large')
+      const protocol = policy.headers.get('x-workspace-upload-protocol')
+      const upload = protocol === null ? undefined : (() => {
+        if (protocol !== 'workspace-upload-v1') throw new Error('upload-unconfirmed')
+        const encodedRoot = policy.headers.get('x-workspace-upload-root')
+        const chunk = policy.headers.get('x-workspace-upload-chunk-bytes')
+        const metadataBytes = new TextEncoder().encode([...policy.headers].map(([key, value]) => `${key}:${value}`).join('\n')).byteLength
+        if (encodedRoot === null || chunk === null || metadataBytes > maxMetadataBytes || !/^[1-9][0-9]*$/u.test(chunk)) {
+          throw new Error('upload-unconfirmed')
+        }
+        const root = decodeURIComponent(encodedRoot), chunkBytes = Number(chunk)
+        if (!root.startsWith('/') || /[\\\u0000-\u001f\u007f]/u.test(root)
+          || !Number.isSafeInteger(chunkBytes) || chunkBytes < 1) throw new Error('upload-unconfirmed')
+        return { root: root.replace(/\/+$/u, '') || '/', chunkBytes }
+      })()
+      const relativeDirectory = (value: string): string => {
+        if (upload === undefined || !value.startsWith('/')) return value
+        if (value === upload.root) return '.'
+        const prefix = upload.root === '/' ? '/' : `${upload.root}/`
+        if (!value.startsWith(prefix)) throw new Error('invalid-path')
+        return value.slice(prefix.length)
+      }
       const directories = new Map<string, string>([['', directory]])
       const ensure = async (parts: string[]): Promise<string> => {
         let key = '', parent = directory
@@ -73,12 +95,19 @@ export function prepareWorkspaceManagement(ctx: Context, fetch: FileUploadFetch,
         const name = parts.pop()
         if (name === undefined) throw new Error('invalid-path')
         const parent = await ensure(parts)
-        const query = new URLSearchParams({ sessionId: id, name, directory: parent, workspaceOnly: 'true' })
-        const response = await fetch(`api/session/uploadFileBinary?${query}`, { method: 'POST',
-          headers: { 'content-type': 'application/octet-stream' }, body: item.file, signal: control })
-        const result: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readResponse(response, maxMetadataBytes, control)))
-        if (!response.ok || result === null || typeof result !== 'object' || !('ok' in result) || result.ok !== true) {
-          throw new Error('upload-unconfirmed')
+        if (upload !== undefined) {
+          const maximum = Math.min(maxFileBytes, fileMaximum)
+          await uploadWorkspaceFile({ sessionId: id, directory: relativeDirectory(parent), name, file: item.file,
+            fetch, lifetime, signal: control, maxFileBytes: maximum, maxMetadataBytes,
+            readChunkBytes: Math.min(upload.chunkBytes, maxMetadataBytes, maximum) })
+        } else {
+          const query = new URLSearchParams({ sessionId: id, name, directory: parent, workspaceOnly: 'true' })
+          const response = await fetch(`api/session/uploadFileBinary?${query}`, { method: 'POST',
+            headers: { 'content-type': 'application/octet-stream' }, body: item.file, signal: control })
+          const result: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readResponse(response, maxMetadataBytes, control)))
+          if (!response.ok || result === null || typeof result !== 'object' || !('ok' in result) || result.ok !== true) {
+            throw new Error('upload-unconfirmed')
+          }
         }
         complete += item.file.size
         progress(complete, total)

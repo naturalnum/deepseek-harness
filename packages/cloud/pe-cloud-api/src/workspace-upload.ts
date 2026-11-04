@@ -3,8 +3,7 @@ import { on } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceUploadSource, WorkspaceUploadResult } from '@deepseek-ai/dsh-pe-cloud-files/src/stage-bridge.ts'
-import type { ResidentResult } from '@deepseek-ai/dsh-pe-cloud-files/src/work-queue.ts'
+import type { WorkspaceUploadSource, WorkspaceUploadResult, ResidentResult } from '@deepseek-ai/dsh-pe-cloud-files'
 import { FdMutationFailure } from '@deepseek-ai/dsh-pe-cloud-files'
 import { CloudApiError } from './errors.ts'
 
@@ -80,7 +79,7 @@ export function createWorkspaceUploadConsumer(limits: {
 }, select: (id: SessionId, signal: AbortSignal) => Promise<WorkspaceUploadTarget>): WorkspaceUploadConsumer {
   if (Object.values(limits).some(value => !Number.isSafeInteger(value) || value < 1)
     || limits.maxSourceChunkBytes > limits.maxFileBytes) throw new RangeError('Invalid explicit workspace upload limits.')
-  return async (borrow) => {
+  const consume = async (borrow: WorkspaceUploadBorrow): Promise<WorkspaceUploadSettlement> => {
     const { request, response, signal } = borrow
     request.pause()
     let held: ResidentResult<readonly WorkspaceUploadResult[]> | undefined
@@ -164,5 +163,9 @@ export function createWorkspaceUploadConsumer(limits: {
       if (finished && !request.destroyed) request.destroy()
       if (held !== undefined && (!sourceState.opened || sourceState.closed) && (finished || response.destroyed)) held.release()
     }
+  }
+  return async (borrow) => {
+    try { return await consume(borrow) }
+    catch (cause) { return { cleanup: 'unknown', cause } }
   }
 }

@@ -6,7 +6,7 @@ import { unzipSync } from 'fflate'
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from '../src/workspace-transfers.ts'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 
-function fixture() {
+function fixture(upload = false) {
   const ctx = new Context(), routes = new Map<string, ConnectionFetchRoute>()
   ctx.provide('connection', { fetch: { register: (route: ConnectionFetchRoute) => {
     routes.set(route.path, route); return async () => { routes.delete(route.path) }
@@ -24,10 +24,11 @@ function fixture() {
   }
   const select: SelectWorkspaceTransfer = async (id) => {
     if (id !== SessionId('account-a-session')) throw new Error('foreign-session')
-    return { workspace: { path: '/project-a' }, assertCurrent() {}, files: {
-      workspaceContent: async () => backend,
-      createWorkspaceDirectory: async () => 'folder_1',
-    } } as never
+    return { workspace: { path: '/project-a' }, assertCurrent() {},
+      ...!upload ? {} : { workspaceUpload: { protocol: 'workspace-upload-v1', root: '/project-a', chunkBytes: 2 } }, files: {
+        workspaceContent: async () => backend,
+        createWorkspaceDirectory: async () => 'folder_1',
+      } } as never
   }
   const life = new AbortController()
   registerWorkspaceTransfers(ctx, { maxFileBytes: 2 ** 32, maxFiles: 100, maxTotalBytes: 2 ** 34,
@@ -67,4 +68,18 @@ it('returns configured policy without buffering content during a picker prefligh
     expect(response.body).toBeNull()
     expect(f.held.peak).toBe(0)
   } finally { f.life.abort(); await f.ctx.fiber.dispose() }
+})
+
+
+it('projects only the original selected workspace upload metadata on the existing HEAD preflight', async () => {
+  const f = fixture(true)
+  try {
+    const head = await f.request('/api/workspace-files/download?sessionId=account-a-session', 'HEAD')
+    expect(head.headers.get('x-workspace-upload-protocol')).toBe('workspace-upload-v1')
+    expect(head.headers.get('x-workspace-upload-root')).toBe(encodeURIComponent('/project-a'))
+    expect(head.headers.get('x-workspace-upload-chunk-bytes')).toBe('2')
+    const foreign = await f.request('/api/workspace-files/download?sessionId=foreign-session', 'HEAD')
+    expect(foreign.ok).toBe(false)
+    expect(foreign.headers.get('x-workspace-upload-root')).toBeNull()
+  } finally { await f.ctx.fiber.dispose() }
 })
