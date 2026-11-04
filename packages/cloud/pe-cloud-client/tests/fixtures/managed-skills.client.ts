@@ -1,7 +1,7 @@
 /** Explicit native-operation answers for new managed-skill client checks; no actual account or transport. */
 import { vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { attachManagedSkillEditing, type ManagedSkillDetail, type ManagedSkillLimits, type ManagedSkillList } from '../../src/client/managed-skill-editing.ts'
+import { attachManagedSkillEditing, type ManagedSkillDetail, type ManagedSkillEditingInput, type ManagedSkillLimits, type ManagedSkillList } from '../../src/client/managed-skill-editing.ts'
 import type { SkillCard, SkillManagementView } from '../../src/client/management/skills/types.ts'
 
 export const selectionLimits: ManagedSkillLimits = { maxFiles: 8, maxEntries: 16, maxDirectories: 8, maxPathDepth: 4,
@@ -16,7 +16,7 @@ export function managedFixture() {
   const uninstall = vi.fn<NonNullable<ManagedSkillDetail['uninstall']>>(async () => ({ kind: 'persisted', applied: true, item: null }))
   const download = vi.fn<NonNullable<ManagedSkillDetail['download']>>(async () => {})
   const installed = vi.fn(async (_signal: AbortSignal): Promise<ManagedSkillList> => ({ items: [card('first'), card('second')], limits: selectionLimits, install }))
-  const details = vi.fn(async (id: string): Promise<ManagedSkillDetail> => ({ item: card(id),
+  const details = vi.fn<ManagedSkillEditingInput['details']>(async id => ({ item: card(id),
     files: [{ path: 'SKILL.md', bytes: 20 }, { path: 'references/guide.md', bytes: 20 }], update, uninstall, download }))
   const parent = new AbortController()
   let current = true

@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
 import { skillsManagementDictionaries } from '../src/client/management/skills/locales.ts'
+import { managedSkillCallbacks } from '../src/client/managed-skill-remote.ts'
+import { remoteFixture } from './fixtures/managed-remote.client.ts'
 import { managedFixture } from './fixtures/managed-skills.client.ts'
 import type { ManagedSkillDetail, ManagedSkillFileContent } from '../src/client/managed-skill-editing.ts'
 
@@ -25,7 +27,7 @@ function file(path: string, text: string): File {
 function withFiles(f: ReturnType<typeof page>, readFile: NonNullable<ManagedSkillDetail['readFile']>): void {
   const original = f.details.getMockImplementation()
   if (original === undefined) throw new Error('Missing fixture detail callback')
-  f.details.mockImplementation(async id => ({ ...await original(id), readFile, files: [
+  f.details.mockImplementation(async (id, signal) => ({ ...await original(id, signal), readFile, files: [
     { path: 'SKILL.md', bytes: 20 }, { path: 'scripts/run.py', bytes: 35 }, { path: 'resource.bin', bytes: 3 },
   ] }))
 }
@@ -413,7 +415,7 @@ it('renders supplied root Markdown in the summary and keeps complete-package dow
   const f = page(), readFile = vi.fn<NonNullable<ManagedSkillDetail['readFile']>>()
   const original = f.details.getMockImplementation()
   if (original === undefined) throw new Error('Missing fixture detail callback')
-  f.details.mockImplementation(async id => ({ ...await original(id), readFile,
+  f.details.mockImplementation(async (id, signal) => ({ ...await original(id, signal), readFile,
     markdown: '# Installed instructions\n\n**Read** `references/guide.md`\n\n<script>never_execute()</script>' }))
   render(<SkillsPage {...f.props}/>)
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
@@ -440,4 +442,99 @@ it('aborts import preparation on scope replacement without publishing a late sel
     maxPathBytes: 128, maxFileBytes: 4096, maxTotalBytes: 8192, maxArchiveBytes: 8192 }, install: f.install }); await held.promise })
   expect(f.install).not.toHaveBeenCalled()
   expect(f.props.report).not.toHaveBeenCalled()
+})
+
+it.each(['en', 'zh'] as const)('renders actual managed import metadata in %s and filters it as personal import', async (locale) => {
+  const f = page(), native = remoteFixture(), copy = skillsManagementDictionaries[locale]
+  const api = managedSkillCallbacks(native.remote, native.input)
+  f.installed.mockImplementation(api.installed)
+  f.details.mockImplementation(api.details)
+  render(<SkillsPage {...f.props} t={makeTranslate(copy)}/>)
+  fireEvent.click(screen.getByRole('button', { name: copy.refresh }))
+  const title = await screen.findByRole('button', { name: native.entry.name })
+  const card = screen.getByRole('article')
+  expect(within(card).getByText(copy.importedSource)).toBeTruthy()
+  expect(within(card).queryByText(native.entry.contentVersion)).toBeNull()
+  expect(within(card).getByText(copy.invocationBoth)).toBeTruthy()
+  expect(within(card).queryByRole('switch')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: copy.imported }))
+  expect(screen.getAllByRole('article')).toHaveLength(1)
+  fireEvent.click(title)
+  const dialog = await screen.findByRole('dialog', { name: native.entry.name })
+  expect(within(dialog).getByText(copy.importedSource)).toBeTruthy()
+  expect(within(dialog).queryByText(`${copy.version} ${native.entry.contentVersion}`)).toBeNull()
+  fireEvent.click(within(dialog).getByText(copy.packageMetadata))
+  expect(within(dialog).getByText(copy.contentId)).toBeTruthy()
+  expect(within(dialog).getByText(native.entry.contentVersion)).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: copy.bundleDownload })).toHaveProperty('disabled', false)
+  expect(within(dialog).getByRole('button', { name: copy.bundleEdit })).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: copy.remove })).toBeTruthy()
+  expect(within(dialog).queryByRole('switch')).toBeNull()
+})
+
+it.each(['en', 'zh'] as const)('shows bundled deployment restrictions in %s without an editable switch or claiming dependency availability', async (locale) => {
+  const f = page(), native = remoteFixture(), copy = skillsManagementDictionaries[locale]
+  const entry = { ...native.entry, name: 'office-docx', source: 'bundled', provider: 'dsh-office', mutable: false,
+    invocation: { modelInvocable: false, userInvocable: false }, actions: { update: false, uninstall: false, download: true } }
+  native.installed.mockResolvedValue({ ok: true, value: { ...native.state, entries: [entry] } })
+  native.details.mockResolvedValue({ ok: true, value: { entry, files: [], markdown: '# Native package instructions', version: { ...native.state.version } } })
+  const api = managedSkillCallbacks(native.remote, native.input)
+  f.installed.mockImplementation(api.installed); f.details.mockImplementation(api.details)
+  render(<SkillsPage {...f.props} t={makeTranslate(copy)}/>)
+  fireEvent.click(screen.getByRole('button', { name: copy.refresh }))
+  const title = await screen.findByRole('button', { name: 'office-docx' })
+  const card = screen.getByRole('article')
+  expect(within(card).getByText(copy.bundledSource)).toBeTruthy()
+  expect(within(card).getByText(copy.invocationNone)).toBeTruthy()
+  expect(within(card).queryByRole('switch')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: copy['writing-office'] }))
+  expect(screen.getAllByRole('article')).toHaveLength(1)
+  fireEvent.click(title)
+  const dialog = await screen.findByRole('dialog', { name: 'office-docx' })
+  expect(within(dialog).getByText(copy.invocationNone)).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: copy.bundleDownload })).toHaveProperty('disabled', false)
+  expect(within(dialog).queryByRole('button', { name: copy.bundleEdit })).toBeNull()
+  expect(within(dialog).queryByRole('button', { name: copy.remove })).toBeNull()
+  expect(within(dialog).queryByRole('switch')).toBeNull()
+})
+
+it.each(['incomplete', 'shadowed'] as const)('preserves %s selection separately from invocation policy', async (kind) => {
+  const f = page(), native = remoteFixture()
+  const selection = kind === 'incomplete' ? { kind: 'incomplete' as const }
+    : { kind: 'shadowed' as const, by: { name: 'office', source: 'bundled', provider: 'dsh-office' } }
+  native.installed.mockResolvedValueOnce({ ok: true, value: { ...native.state, entries: [{ ...native.entry, selection }] } })
+  f.installed.mockImplementation(managedSkillCallbacks(native.remote, native.input).installed)
+  render(<SkillsPage {...f.props} t={makeTranslate(skillsManagementDictionaries.zh)}/>)
+  fireEvent.click(screen.getByRole('button', { name: skillsManagementDictionaries.zh.refresh }))
+  await screen.findByRole('button', { name: native.entry.name })
+  const card = screen.getByRole('article')
+  expect(within(card).getByText(skillsManagementDictionaries.zh.invocationBoth)).toBeTruthy()
+  expect(within(card).queryByRole('switch')).toBeNull()
+  expect(within(card).getByText(kind === 'incomplete' ? skillsManagementDictionaries.zh.bundleSelectionUnknown
+    : '优先于此项：office（内置）')).toBeTruthy()
+})
+
+
+it.each(['en', 'zh'] as const)('keeps a native restricted report download disabled with a generic hint in %s', async (locale) => {
+  const f = page(), native = remoteFixture(), copy = skillsManagementDictionaries[locale]
+  const entry = { ...native.entry, name: 'technical-report', source: 'bundled', provider: 'dsh-reports', mutable: false,
+    invocation: { modelInvocable: false, userInvocable: false }, actions: { update: false, uninstall: false, download: false } }
+  native.installed.mockResolvedValue({ ok: true, value: { ...native.state, entries: [entry] } })
+  native.details.mockResolvedValue({ ok: true, value: { entry, files: [], markdown: '# Native report instructions', version: { ...native.state.version } } })
+  const api = managedSkillCallbacks(native.remote, native.input)
+  f.installed.mockImplementation(api.installed); f.details.mockImplementation(api.details)
+  render(<SkillsPage {...f.props} t={makeTranslate(copy)}/>)
+  fireEvent.click(screen.getByRole('button', { name: copy.refresh }))
+  await screen.findByRole('button', { name: entry.name })
+  fireEvent.click(screen.getByRole('button', { name: copy['writing-office'] }))
+  fireEvent.click(screen.getByRole('button', { name: entry.name }))
+  const dialog = await screen.findByRole('dialog', { name: entry.name })
+  const download = within(dialog).getByRole('button', { name: copy.bundleDownload })
+  expect(download).toHaveProperty('disabled', true)
+  expect(within(dialog).getByText(copy.bundleDownloadUnavailable)).toBeTruthy()
+  expect(download.getAttribute('aria-describedby')).toBe(within(dialog).getByText(copy.bundleDownloadUnavailable).id)
+  fireEvent.click(download)
+  expect(native.download).not.toHaveBeenCalled()
+  expect(within(dialog).getByText(copy.invocationNone)).toBeTruthy()
+  expect(within(dialog).queryByRole('switch')).toBeNull()
 })

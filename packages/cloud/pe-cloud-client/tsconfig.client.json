@@ -56,6 +56,7 @@
     "src/client/management/skills/SkillsPage.tsx",
     "src/client/management/skills/locales.ts",
     "src/client/management/skills/types.ts",
+    "src/client/management/skills/skill-presentation.ts",
     "src/client/management/skills/use-skill-action.ts",
     "src/client/management/locales.ts",
     "src/client/management/ManagementActionToast.tsx",

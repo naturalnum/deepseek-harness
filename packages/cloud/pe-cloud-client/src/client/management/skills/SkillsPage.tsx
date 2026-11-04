@@ -8,6 +8,7 @@ import { SkillDetailDialog } from './SkillDetailDialog.tsx'
 import { useSkillAction } from './use-skill-action.ts'
 export type {} from './locales.ts'
 export type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { skillInvocationLabel, skillSourceLabel } from './skill-presentation.ts'
 import css from './SkillsPage.module.css'
 
 /** Original main-slot shares and a renderer-bound, account-scoped display source. */
@@ -128,6 +129,7 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
   readonly ready: boolean
   readonly onOpen: () => void
 }): ReactNode {
+  const source = skillSourceLabel(skill.source ?? skill.sourceLabel, t), invocation = skillInvocationLabel(skill.invocation, t)
   const descriptionId = useId(), action = useSkillAction(), canAct = ready && (action.state === 'idle' || action.state === 'confirmed')
   const install = (): void => {
     const submit = actions.installCatalog
@@ -153,11 +155,12 @@ function SkillCardView({ skill, actions, t, ready, onOpen }: {
     <p className={css.cardDescription} id={descriptionId}>{skill.description}</p>
     <div className={css.cardFooter}>
       <small>{t(skill.status)}</small>
-      {skill.sourceLabel === undefined ? null : <small>{skill.sourceLabel === 'bundled' ? t('bundledSource') : skill.sourceLabel}</small>}
+      {source === undefined ? null : <small>{source}</small>}
       {skill.version === undefined ? null : <small>{t('version')} {skill.version}</small>}
+      {invocation === undefined ? null : <small title={t('invocationReadOnly')}>{invocation}</small>}
     </div>
     {skill.installed && skill.shadowed === undefined ? <small className={css.cardNotice}>{t('bundleSelectionUnknown')}</small> : null}
-    {skill.shadowed === true ? <small className={css.cardNotice}>{skill.shadowedBy === undefined ? t('bundleShadowed') : t('bundleShadowedBy', skill.shadowedBy)}</small> : null}
+    {skill.shadowed === true ? <small className={css.cardNotice}>{skill.shadowedBy === undefined ? t('bundleShadowed') : t('bundleShadowedBy', { name: skill.shadowedBy.name, source: skillSourceLabel(skill.shadowedBy.source, t) ?? skill.shadowedBy.source })}</small> : null}
     {action.state === 'unknown' || action.state === 'conflict' || action.state === 'unavailable'
       ? <p className={css.error} role="alert">{t(action.state === 'unavailable' ? 'actionUnavailable' : action.state)}</p> : null}
   </article>

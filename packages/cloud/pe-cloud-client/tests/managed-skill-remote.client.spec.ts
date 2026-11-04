@@ -132,16 +132,49 @@ it('distinguishes the dedicated invalid bundle refusal from uncertain outcomes w
   expect(f.install).toHaveBeenCalledTimes(1)
 })
 
-it('projects immutable built-ins into Office categories and offers complete reads without edit capabilities', async () => {
-  const f = remoteFixture(), entry = { ...f.entry, source: 'bundled', mutable: false,
+it.each(['dsh-office', 'dsh-reports'])('projects immutable %s built-ins into Writing & office and offers complete reads without edit capabilities', async (provider) => {
+  const f = remoteFixture(), entry = { ...f.entry, source: 'bundled', provider, mutable: false,
     actions: { update: false, uninstall: false, download: true } }
   f.installed.mockResolvedValue({ ok: true, value: { ...f.state, entries: [entry] } })
   f.details.mockResolvedValue({ ok: true, value: { entry, markdown: 'instructions', version: directoryVersion('builtins'),
     files: [{ relativePath: 'SKILL.md', bytes: 12, sha256: 'a'.repeat(64) }] } })
   const api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
-  expect(list.items[0]).toMatchObject({ category: 'writing-office', sourceLabel: 'bundled', installed: true })
+  expect(list.items[0]).toMatchObject({ category: 'writing-office', source: 'bundled', installed: true })
   const detail = await api.details(entry.skillId, signal())
   expect(detail.update).toBeUndefined(); expect(detail.uninstall).toBeUndefined()
   expect(detail.download).toBeTypeOf('function')
   expect(await detail.readFile?.('SKILL.md', signal())).toEqual({ kind: 'text', text: 'instructions' })
+})
+
+it('keeps personal-import metadata separate from opaque content selectors and package release versions', async () => {
+  const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input)
+  const list = await api.installed(signal()), item = list.items[0]
+  expect(item).toMatchObject({ category: 'imported', source: 'custom', provider: f.entry.provider,
+    contentId: f.entry.contentVersion, invocation: f.entry.invocation })
+  expect(item?.version).toBeUndefined()
+  expect(item?.enabled).toBeUndefined()
+  expect(item?.canToggle).toBeUndefined()
+  const detail = await api.details(f.entry.skillId, signal())
+  expect(detail.item).toEqual(item)
+  expect(f.details).toHaveBeenCalledExactlyOnceWith({ skillId: f.entry.skillId }, expect.any(AbortSignal))
+})
+
+it('does not classify every bundled provider as Office', async () => {
+  const f = remoteFixture()
+  f.installed.mockResolvedValueOnce({ ok: true, value: { ...f.state, entries: [{ ...f.entry, source: 'bundled', provider: 'another-bundle',
+    mutable: false, actions: { update: false, uninstall: false, download: true } }] } })
+  const api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
+  expect(list.items[0]).toMatchObject({ source: 'bundled', category: 'other' })
+})
+
+it.each([
+  { modelInvocable: true, userInvocable: true }, { modelInvocable: true, userInvocable: false },
+  { modelInvocable: false, userInvocable: true }, { modelInvocable: false, userInvocable: false },
+])('projects native invocation policy %j without synthesizing an enablement mutation', async (invocation) => {
+  const f = remoteFixture()
+  f.installed.mockResolvedValueOnce({ ok: true, value: { ...f.state, entries: [{ ...f.entry, invocation }] } })
+  const api = managedSkillCallbacks(f.remote, f.input), list = await api.installed(signal())
+  expect(list.items[0]?.invocation).toEqual(invocation)
+  expect(list.items[0]?.enabled).toBeUndefined()
+  expect(list.items[0]?.canToggle).toBeUndefined()
 })

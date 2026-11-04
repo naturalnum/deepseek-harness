@@ -14,7 +14,15 @@ export interface SkillCard {
   readonly installed: boolean
   readonly recommended: boolean
   readonly status: 'available' | 'published' | 'catalog-pending' | 'disabled' | 'unavailable'
+  /** Actual package release version, when supplied; never an immutable content selector. */
   readonly version?: string
+  /** Immutable content identity, displayed only in detail metadata. */
+  readonly contentId?: string
+  /** Native source and provider, retained separately from an optional source display label. */
+  readonly source?: string
+  readonly provider?: string
+  /** Native invocation policy; its presence grants no mutation callback or tool availability. */
+  readonly invocation?: { readonly modelInvocable: boolean; readonly userInvocable: boolean }
   readonly publisher?: string
   readonly enabled?: boolean
   readonly canToggle?: boolean
