@@ -57,6 +57,10 @@ Office 工作负载及其服务端在 `bootstrap/workload-images.ts` 和 `bootst
 
 当前 Office 供应者保留 UTF-8 目录文本及 Markdown 显式二、三级标题编号。其配对服务端仅接受该工作负载的新建请求；此前 Office 及原始工作负载的摘要仅供关闭创建准入后的只读审计。原始发布归档、模板及内容版本保持不变。
 
+[Guest 上下文生成器](runtime/office-completion/heading-numbering/prepare_context.py) 是当前保留标题编号的 Office 工作负载的重建入口。在仓库根目录调用 `python3 packages/cloud/pe-opensandbox/runtime/office-completion/heading-numbering/prepare_context.py <retained-context-v6.tar> <exclusive-output-directory>`。须保留 SHA256 为 `4f17e2e7f6c92c9a5ce0c3b5e018e43c9d312d8a5bcb51f9d318f87e32962a90`、大小为 5,099,520 字节的原始上下文，以及外部不可变 UTF-8 Office 基础镜像 `sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97`；生成器拒绝不同的上下文字节。[单文件 COPY 配方](runtime/office-completion/heading-numbering/Dockerfile) 直接使用该基础镜像。仅执行 v6 依赖配方不会应用此修正。
+
+生成器校验原始归档及适配脚本，应用[两表达式补丁](runtime/office-completion/heading-numbering/heading-numbering.patch)，并在新输出目录写入 `context.tar` 和 `MANIFEST.json`。清单分别记录原始、补丁和运行时摘要。仅规范路径下的运行时适配脚本与原包不同；其余资源均须保留原字节，包括归档、模板和许可。源码准备不启动镜像构建，不代表执行合格，不激活已选配对或启用调用；实际构建与部署仍由唯一运行负责人执行。
+
 每次成功的共享路径 Root 当前性检查，通过共享挂载拥有者各验证一次受保护的部署选择和存储计划，保留原文件描述符、路径身份、只读挂载及完整文件摘要检查。
 
 files 的 `staticStorage.maxMountInfoBytes` 与 `rootDeployment` 所引用受保护输入中的 `storage.limits.maxMountInfoBytes` 是两份独立预算，均须覆盖各实际 Node 挂载命名空间中的 `/proc/self/mountinfo`。对应的 `staticStorage.rootProbeReservationBytes` 与 `storage.limits.maxResidentBytes` 必须分别满足 [files 探针](../pe-cloud-files/src/storage-probe.ts)与[共享挂载](src/shared-mounts.ts)的预留公式。宜从同一部署来源生成这两个上限，保持更新一致。
