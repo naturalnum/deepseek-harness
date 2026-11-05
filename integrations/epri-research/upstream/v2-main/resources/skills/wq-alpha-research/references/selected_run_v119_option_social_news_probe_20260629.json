@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v119_option_breakeven_1080_150_eventful",
+    "family": "nonpcr_option_term_social",
+    "hypothesis": "A farther 1080d-vs-150d option breakeven term structure may differ from zq92joQo's 720d-vs-60d sleeve while keeping the long-horizon convexity idea.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.300 * group_rank(ts_rank((option_breakeven_1080 - option_breakeven_150) / close, 90), industry) + 0.170 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.180 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.130 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.090 * rank(-(close / open - 1)), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v119_option_forward_convexity_social",
+    "family": "forward_option_convexity_social",
+    "hypothesis": "Forward-curve convexity combined with long option breakeven and social confirmation may be a different option surface path from both forward/short and call-put 60d sleeves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.240 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.190 * group_rank(ts_rank((option_breakeven_360 - option_breakeven_90) / close, 90), industry) + 0.180 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v119_skew_social_no_vwap_eventful",
+    "family": "social_skew_no_vwap",
+    "hypothesis": "RRplYRpo used VWAP pressure in a low-volume regime; removing VWAP and moving to eventful days tests whether the social/skew signal can stand on a different timing path.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.220 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.240 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_30 - implied_volatility_mean_skew_180), 90), industry) + 0.150 * rank(-(close / open - 1)) + 0.130 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v119_skew_social_no_vwap_largecap",
+    "family": "social_skew_no_vwap_largecap",
+    "hypothesis": "A large-cap gate may stabilize social/skew without VWAP and reduce overlap with RRplYRpo's low-volume VWAP timing.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.250 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.220 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.240 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_30 - implied_volatility_mean_skew_180), 90), industry) + 0.150 * rank(-(close / open - 1)) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v119_news18_qep_social_eventful",
+    "family": "news18_social_eventful",
+    "hypothesis": "QEP/BEE news18 matrix fields are not the same as QMB/editorial; combining them with social/skew in eventful regimes may create a non-QMB news path.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(vec_avg(nws18_qep_fast_d1), 60), industry) + 0.210 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 60), industry) + 0.170 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.150 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.120 * group_rank(ts_rank(-1 * implied_volatility_mean_skew_20, 60), industry) + 0.090 * rank(-(close / open - 1)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v119_news18_bam_skew_lowvol",
+    "family": "news18_mna_social_skew",
+    "hypothesis": "M&A sentiment plus option skew and social buzz under low-volume days may avoid the crowded editorial/QMB route while testing non-earnings news.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.300 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 90), industry) + 0.210 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_20 - implied_volatility_mean_skew_120), 90), industry) + 0.170 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.140 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 60), industry) + 0.100 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v119_news12_rank_probe_largecap",
+    "family": "news12_event_transform_probe",
+    "hypothesis": "News12 event fields failed with ts_rank; a minimal rank-only large-cap probe tests whether event fields can enter expressions through cross-sectional rank without time-series operators.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(rank(position_advantage_flag), industry) + 0.220 * group_rank(rank(performance_vs_benchmark), industry) + 0.180 * group_rank(rank(main_session_volume_stddev), industry) + 0.160 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.100 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v124_totassets_netprofita_largecap_breadth",
+    "family": "annual_balance_netprofita_visibility",
+    "hypothesis": "Annual total-asset restraint may still have capacity when confirmed by adjusted net-profit visibility and broad analyst participation rather than the v123 netprofit/reversal sleeve.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), subindustry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofita_number, 63), 126), industry) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_totassets_cfo_eventful_confidence",
+    "family": "annual_balance_cfo_visibility",
+    "hypothesis": "If asset restraint is real, it should pair with annual operating-cash-flow confidence on eventful days without relying on BVPS, netdebt, option, or news-product parents.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.250 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cfo_std / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.120 * rank(-(close / open - 1)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_actual_delivery_netprofita_restraint",
+    "family": "annual_actual_delivery_balance",
+    "hypothesis": "Actual assets below annual consensus and adjusted net profit above consensus should capture balance-sheet delivery, not just expectation level; this tests a different surface from v123.",
+    "expression": "0.240 * group_rank(ts_rank(-1 * (anl4_fs_actuals_advanced_af_nd_totassets_value - anl4_fs_detail_estimates_advanced_af_nd_totassets_mean) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_actuals_advanced_af_nd_totassets_value - anl4_fs_detail_estimates_advanced_af_nd_totassets_mean) / assets, 63), 126), industry) + 0.220 * group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_netprofita_value - anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean) / assets, 126), industry) + 0.160 * group_rank(ts_rank(ts_delta((anl4_fs_actuals_advanced_af_nd_netprofita_value - anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean) / assets, 63), 126), industry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofita_number, 63), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_totassets_special_items_aux_eventful",
+    "family": "annual_balance_special_items_aux",
+    "hypothesis": "FND6 special-item shocks were too weak alone but had return content; using them as a small eventful auxiliary may change timing while preserving annual balance expectation strength.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.240 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.160 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / assets, 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_number, 63), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.070 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_rcaq)) / assets, 126), industry) + 0.070 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_tfvceq)) / assets, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_totassets_sga_cost_discipline",
+    "family": "annual_balance_cost_discipline",
+    "hypothesis": "Asset restraint combined with expected SG&A discipline should capture operating leverage and balance discipline without using BVPS, netdebt, or ordinary EPSR parents.",
+    "expression": "0.260 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high - anl4_fs_detail_estimates_advanced_af_nd_sga_low) / abs(sales), 126), industry) + 0.120 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_cfo_cff_balance_pressure",
+    "family": "annual_cashflow_balance_pressure",
+    "hypothesis": "Annual asset discipline should be stronger when expected operating cash flow is positive and financing-cash-flow magnitude is low, which avoids the occupied book-value and netdebt surfaces.",
+    "expression": "0.240 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cff_std / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.100 * rank(-1 * ts_rank(volume / adv20, 20)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_netprofit_visibility_no_asset_parent",
+    "family": "annual_netprofit_visibility",
+    "hypothesis": "Annual net-profit level, falling dispersion, and rising breadth may have standalone value if it is not forced through the v123 total-assets parent or a low-correlation trade gate.",
+    "expression": "0.310 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofit_std / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_number, 63), 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v124_intersegment_netprofita_largecap",
+    "family": "intersegment_complexity_netprofita",
+    "hypothesis": "Lower intersegment and FX accounting complexity plus annual adjusted net-profit visibility tests a more off-path fundamental disclosure channel if annual balance siblings become crowded.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.250 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.190 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v233_rd_guidance_range_discipline",
+    "family": "rd_guidance_discipline",
+    "source": "v233_rd_leasehold_rp_theme_probe_20260701",
+    "hypothesis": "Firms guiding lower and tighter R&D expense relative to assets may be controlling innovation spend more predictably; this tests an analyst-guidance expense surface separate from SG&A and ordinary profitability.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.420 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance + anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance) / (2 * abs(assets)), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance - anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance + anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance) / (2 * abs(assets)), 126), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Reject if it behaves like SG&A/R&D expense visibility, has UNITS warnings, LSUS fail, or high corr to xAxGJjNn / expense-quality actives."
+  },
+  {
+    "name": "v233_rd_actual_under_guidance",
+    "family": "rd_actual_delivery",
+    "source": "v233_rd_leasehold_rp_theme_probe_20260701",
+    "hypothesis": "Actual R&D spending below guided/expected R&D may signal near-term expense discipline; the sign is deliberately cost-discipline rather than growth-investment.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(-1 * (anl4_fs_actuals_advanced_af_nd_rd_exp_value - (anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance + anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance) / 2) / abs(assets), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance - anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_rd_exp_number, 126), industry) + 0.180 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One-shot probe for low-crowding R&D actual/guidance fields. Reject on sparse coverage, UNITS warning, LSUS, or correlation with SG&A/option-award/expense clusters."
+  },
+  {
+    "name": "v233_leasehold_improvement_capital_light",
+    "family": "leasehold_capital_light",
+    "source": "v233_rd_leasehold_rp_theme_probe_20260701",
+    "hypothesis": "Low and falling leasehold-improvement capitalization relative to assets may proxy asset-light expansion without using lease payment obligations or PPE age fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.430 * group_rank(ts_rank(-1 * leasehold_improvements_gross_value / abs(assets), 126), industry) + 0.270 * group_rank(ts_rank(-1 * ts_delta(leasehold_improvements_gross_value / abs(assets), 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(leasehold_improvements_gross_value) / abs(ppe_gross_value), 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Reject if it maps to lease/PPE/fixed-commitment actives or fails LSUS; do not repair with lease maturities, PPE age, or fixed commitment fields."
+  },
+  {
+    "name": "v233_price_target_sentiment_pure",
+    "family": "rp_price_target_theme",
+    "source": "v233_rd_leasehold_rp_theme_probe_20260701",
+    "hypothesis": "Price-target news sentiment may capture analyst communication tone distinct from EPS estimate levels if kept free of recommendation vectors and option/news-chain stabilizers.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.340 * group_rank(ts_rank(rp_nip_ptg, 90), industry) + 0.260 * group_rank(ts_rank(rp_ess_ptg, 90), industry) + 0.200 * group_rank(ts_rank(rp_css_ptg, 90), industry) + 0.200 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry), -1)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Diagnostic control. Reject if weak, high turnover, LSUS fail, or high corr to O0pNbJ17 / LLpKoQPa / e7OQoveE news actives."
+  },
+  {
+    "name": "v233_credit_ratings_sentiment_pure",
+    "family": "rp_credit_ratings_theme",
+    "source": "v233_rd_leasehold_rp_theme_probe_20260701",
+    "hypothesis": "Pure credit-rating news tone may differ from the existing M&A+credit+legal basket if legal and M&A fields are excluded, but it must pass correlation strictly.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.360 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.260 * group_rank(ts_rank(rp_ess_credit_ratings, 90), industry) + 0.200 * group_rank(ts_rank(rp_css_credit_ratings, 90), industry) + 0.180 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Diagnostic control. Reject if it collides with e7OQoveE / 3q7J5J1e or becomes a generic legal-credit news sibling."
+  }
+]

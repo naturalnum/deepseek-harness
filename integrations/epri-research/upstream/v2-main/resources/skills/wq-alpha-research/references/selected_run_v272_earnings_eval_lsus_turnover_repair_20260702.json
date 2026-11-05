@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v272_earnings_eval_product_slow180",
+    "family": "earnings_eval_lsus_turnover_repair",
+    "hypothesis": "The vector earnings-evaluation fade had good Sharpe but excessive turnover; smoothing the event sentiment and ranking over 180 days should lower turnover without changing the core mechanism.",
+    "field_notes": "Direct slow-window repair of d5xrYOvJ using verified callable pv13_hierarchy_min5_3000_513_sector.",
+    "expression": "group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), pv13_hierarchy_min5_3000_513_sector)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v272_earnings_eval_industry_slow180",
+    "family": "earnings_eval_lsus_turnover_repair",
+    "hypothesis": "If the product taxonomy group is causing sub-universe fragility, the same slow earnings-evaluation fade may be more robust under ordinary industry grouping.",
+    "field_notes": "Standard group control for d5xrYOvJ, designed to diagnose whether PV13 grouping drives LSUS.",
+    "expression": "group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v272_earnings_eval_product_largecap_slow",
+    "family": "earnings_eval_lsus_turnover_repair",
+    "hypothesis": "LOW_SUB_UNIVERSE_SHARPE may come from small-cap event noise; gating to larger-cap names should improve robustness while the longer window controls turnover.",
+    "field_notes": "Uses rank(cap) gate, not Universe fields, to avoid the top1000 unit error seen in v270.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), pv13_hierarchy_min5_3000_513_sector), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v272_earnings_eval_industry_largecap_slow",
+    "family": "earnings_eval_lsus_turnover_repair",
+    "hypothesis": "A large-cap industry-ranked version is the cleanest robustness test for whether the high Sharpe survives without product-group small-cap effects.",
+    "field_notes": "Cap-gated standard grouping control for the near-miss.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v272_earnings_eval_product_sga_stabilized",
+    "family": "earnings_eval_lsus_turnover_repair",
+    "hypothesis": "A small low-turnover SG&A investment-intensity sleeve may stabilize the high-turnover earnings-evaluation fade, but this is a final mixed test because standalone SG&A was weak.",
+    "field_notes": "Uses only 35% SG&A sign-flip sleeve from XgpAVb08; abandon if Fitness/LSUS does not clear.",
+    "expression": "0.65 * group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), pv13_hierarchy_min5_3000_513_sector) + 0.35 * group_rank(ts_rank(rank(anl4_fs_actual_1qf_v4_nd_sga_value) - rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median), 126), pv13_hierarchy_f2_sector)",
+    "decay": 20,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  }
+]

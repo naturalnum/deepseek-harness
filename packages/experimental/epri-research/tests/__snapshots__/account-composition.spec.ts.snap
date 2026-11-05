@@ -1,0 +1,26 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`replays a keyless research tool turn through the native loop and records the model-visible result 1`] = `
+[
+  {
+    "message": {
+      "content": [
+        {
+          "text": "{"protocols":[],"records":[],"artifacts":[],"conversationMigration":1,"tasks":[],"validationLevel":"AIMD structural + required-field completeness; explicitly bound records additionally use approved Airalogy assigners"}",
+          "type": "text",
+        },
+      ],
+      "id": "<generated-message-id>",
+      "isError": false,
+      "role": "tool",
+      "source": {
+        "callId": "research-state",
+        "kind": "tool",
+      },
+      "toolCallId": "research-state",
+    },
+    "step": 1,
+    "turn": 1,
+  },
+]
+`;

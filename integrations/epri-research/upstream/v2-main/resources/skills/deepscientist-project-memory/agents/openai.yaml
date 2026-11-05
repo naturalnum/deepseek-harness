@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Git Project Memory'
+  short_description: 'Curate durable Git-backed project knowledge'
+  default_prompt: 'Use $deepscientist-project-memory only when relevant prior project knowledge or a durable new lesson can change future work.'

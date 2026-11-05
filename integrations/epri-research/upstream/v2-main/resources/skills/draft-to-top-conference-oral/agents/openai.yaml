@@ -1,0 +1,4 @@
+interface:
+  display_name: "Draft to Top Conference Oral"
+  short_description: "Upgrade a draft into an oral paper"
+  default_prompt: "Use $draft-to-top-conference-oral to turn this existing draft into a top-conference oral-quality manuscript."

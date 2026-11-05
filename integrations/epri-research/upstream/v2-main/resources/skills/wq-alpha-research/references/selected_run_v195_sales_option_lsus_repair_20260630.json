@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v195_sales_option_largecap_gate",
+    "family": "sales_option_lsus_repair",
+    "hypothesis": "akdGGj9w missed the sub-universe Sharpe check by only 0.01. A stricter large-cap gate may remove unstable small-cap names while preserving sales delivery plus short-option confirmation.",
+    "expression": "trade_when(rank(cap) > 0.58, 0.34 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.24 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.18 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.14 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Minimal LSUS repair for akdGGj9w; reject if corr to A1wLWmwY/P0pYj5Px is high."
+  },
+  {
+    "name": "v195_sales_option_subindustry_rank",
+    "family": "sales_option_lsus_repair",
+    "hypothesis": "Moving the sales-delivery and option-risk sleeves to subindustry ranking may improve cross-subuniverse stability without adding crowded EPS/value or quality legs.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), subindustry) + 0.24 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), subindustry) + 0.18 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), subindustry) + 0.14 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Targets LSUS with local peer ranking rather than new factors."
+  },
+  {
+    "name": "v195_sales_option_subindustry_neut",
+    "family": "sales_option_lsus_repair",
+    "hypothesis": "Subindustry neutralization may stabilize the almost-passing akdGGj9w by removing industry concentration while retaining the same economic parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.24 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.18 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.14 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Same expression as akdGGj9w with tighter neutralization."
+  },
+  {
+    "name": "v195_sales_option_lower_option_weight",
+    "family": "sales_option_lsus_repair",
+    "hypothesis": "LSUS failure may come from the option sleeves. Lowering short-option exposure and emphasizing sales delivery plus risk relief may pass sub-universe while staying below correlation limits.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.42 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.18 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.14 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.16 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "If this passes LSUS but maps to A1wLWmwY, do not submit."
+  },
+  {
+    "name": "v195_sales_option_no_corr_leg",
+    "family": "sales_option_lsus_repair",
+    "hypothesis": "The correlation relief sleeve can create uneven exposure across subuniverses. Removing it and modestly increasing sales delivery may improve LSUS.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.40 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.24 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.20 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.16 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No correlation_last_90_days_spy leg; tests if the stabilizer caused LSUS fragility."
+  },
+  {
+    "name": "v195_sales_option_low_turnover",
+    "family": "sales_option_lsus_repair",
+    "hypothesis": "A slower decay and lower truncation may smooth the nearly passing sales-option alpha enough to pass LSUS while retaining Fitness.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.24 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.18 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.14 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.04,
+    "neutralization": "INDUSTRY",
+    "notes": "Only setting-level smoothing; reject if correlation remains too high or Fitness falls."
+  }
+]

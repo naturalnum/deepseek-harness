@@ -1,0 +1,38 @@
+[
+  {
+    "name": "v291_eval_quality_minus_fscore_balanced",
+    "family": "compressed_active_pnl_composite",
+    "hypothesis": "Compress the v289 over-operator candidate into a clean three-leg composite: earnings-evaluation pessimism plus quality/reversal, with negative fscore-contra exposure to remove a crowded timing/style component.",
+    "expression": "0.33 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) + 0.32 * (trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)) - 0.35 * (0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v291_eval_quality_minus_fscore_higher_sharpe",
+    "family": "compressed_active_pnl_composite",
+    "hypothesis": "A higher-quality and higher-evaluation weight version tests whether the same compressed three-leg mechanism can retain more return while staying below the strict self-correlation gate.",
+    "expression": "0.35 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) + 0.35 * (trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)) - 0.30 * (0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v291_eval_quality_minus_fscore_low_eval",
+    "family": "compressed_active_pnl_composite",
+    "hypothesis": "A lower earnings-evaluation exposure version gives more correlation buffer against the existing earnings-evaluation ACTIVE while preserving the quality-minus-fscore structure.",
+    "expression": "0.35 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) + 0.30 * (trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)) - 0.35 * (0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v291_ber_quality_minus_fscore",
+    "family": "compressed_active_pnl_composite",
+    "hypothesis": "Replace earnings-evaluation with broad BER news fade to test a neighboring but distinct non-EPS news/quality-minus-fscore composite without recreating the option-heavy MPpvN2jr structure.",
+    "expression": "0.34 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) + 0.34 * (trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_ber_fast_d1), 5), 180), industry), -1)) - 0.32 * (0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

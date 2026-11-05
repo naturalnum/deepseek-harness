@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.data/
+.env
+.env.*
+connection.json
+.credentials.yaml
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+verification/
+provenance/build-inputs.json
+desktop/runtime/
+harness-runtime/node_modules/

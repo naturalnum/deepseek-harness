@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v35_ebit_actual_consensus_improvement",
+    "family": "actual_consensus_surprise",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Companies whose reported EBIT is improving relative to the current-quarter consensus may benefit from post-report underreaction without relying on EPS yield or accounting payout anchors.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_qf_nd_ebit_value / anl4_fs_detail_estimate_1qf_v4_nd_ebit_mean, 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_qf_nd_ebit_value / anl4_fs_detail_estimate_1qf_v4_nd_ebit_mean, 63), 126), industry) + 0.15 * group_rank(ts_rank(num_ebit_est, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary new direction: actual-vs-consensus EBIT surprise/improvement; no close/open, EPS yield, sales dispersion, graph, credit capacity, or earnings news."
+  },
+  {
+    "name": "v35_ebitda_actual_agreement",
+    "family": "actual_consensus_surprise",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Reported EBITDA above consensus, especially when estimate dispersion is low, can capture cleaner operating surprise with lower overlap to raw analyst-yield alphas.",
+    "expression": "0.55 * group_rank(ts_rank(ebitda_reported_value / ebitda_median, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(ebitda_reported_value / ebitda_median, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * ebitda_stddev / abs(ebitda_median), 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses reported-vs-median surprise and low disagreement, avoiding EBITDA/EV yield that is already crowded."
+  },
+  {
+    "name": "v35_netprofit_actual_consensus_breadth",
+    "family": "actual_consensus_surprise",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Net profit actuals above current-quarter consensus with broad analyst participation may identify resilient earnings delivery after uncertainty resolves.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_qf_nd_netprofit_value / anl4_fs_detail_estimate_1qf_v4_nd_netprofit_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_qf_nd_netprofit_value / anl4_fs_detail_estimate_1qf_v4_nd_netprofit_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(num_net_income_est, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Net-profit actual surprise, distinct from adjusted-income range rescue that correlated with akdb1ZqR."
+  },
+  {
+    "name": "v35_pretax_actual_low_dispersion",
+    "family": "actual_consensus_surprise",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Pretax profit delivery versus consensus may capture operating and tax-neutral earnings surprise; low pretax dispersion is a stabilizer rather than the main signal.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_qf_nd_ptp_value / anl4_fs_detail_estimate_1qf_v4_nd_ptp_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_qf_nd_ptp_value / anl4_fs_detail_estimate_1qf_v4_nd_ptp_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * pretax_income_stddev / abs(anl4_fs_detail_estimate_1qf_v4_nd_ptp_mean), 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pretax actual/estimate surprise; tests a non-sales analyst actual channel."
+  },
+  {
+    "name": "v35_gross_income_actual_margin_surprise",
+    "family": "actual_consensus_surprise",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Gross-income beats relative to consensus can reflect margin resilience before it appears in broader profitability-yield factors.",
+    "expression": "0.55 * group_rank(ts_rank(gross_income_reported_value / gross_income_avg, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(gross_income_reported_value / gross_income_avg, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * stddev_gross_income_quarterly_estimate / abs(gross_income_avg), 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Gross-income actual surprise; lower coverage but less direct overlap with existing sales-dispersion ACTIVE."
+  },
+  {
+    "name": "v35_reported_eps_surprise_risk_relief",
+    "family": "actual_consensus_surprise_control",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Reported EPS beats with low estimate dispersion and improving market-risk state may work as an earnings delivery signal, but it is a control because EPS channels can collide with akd1nQMW.",
+    "expression": "0.50 * group_rank(ts_rank(earnings_per_share_reported_value / eps_reported_median, 126), industry) + 0.25 * group_rank(ts_rank(-1 * stddev_reported_eps_quarterly_estimate / abs(eps_reported_median), 126), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Control candidate; submit only if correlation to EPS/yield ACTIVE names is safely below gate."
+  },
+  {
+    "name": "v35_sales_actual_surprise_without_dispersion",
+    "family": "actual_consensus_surprise_control",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "Sales actuals above consensus may be a cleaner actual-surprise route than dispersion resolution, but this is a control because akdb1ZqR already occupies sales uncertainty.",
+    "expression": "0.60 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(actual_sales_value_quarterly / sales_estimate_average_quarterly, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sales surprise control; reject if it maps to akdb1ZqR or sales-count/dispersion path."
+  },
+  {
+    "name": "v35_netprofit_actual_subindustry",
+    "family": "actual_consensus_surprise",
+    "source": "actual_consensus_surprise_v35_20260626",
+    "hypothesis": "A tighter subindustry comparison for net-profit actual surprise may reduce sector accounting mix and improve sub-universe stability.",
+    "expression": "0.60 * group_rank(ts_rank(anl4_fs_actuals_advanced_qf_nd_netprofit_value / anl4_fs_detail_estimate_1qf_v4_nd_netprofit_mean, 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * net_income_stddev / abs(anl4_fs_detail_estimate_1qf_v4_nd_netprofit_mean), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), subindustry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Only deliberate group variant in v35; tests whether net-profit actual surprise survives a stricter peer set."
+  }
+]

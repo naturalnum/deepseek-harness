@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v134_mna_bam_no_social_iv",
+    "family": "mna_news_fast_no_social_iv",
+    "hypothesis": "Fast M&A acceptance news may capture a different event-digestion path than the existing social/IV-skew sleeve if social, PCR, breakeven, and IV terms are removed.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.62, 0.420 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 90), industry) + 0.220 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.150 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed: 0m7NKnR1 was strong but too close to RRplYRpo. This removes social_value, buzz, and IV-skew terms; strict-check against e7OQoveE."
+  },
+  {
+    "name": "v134_ppe_age_no_issuance",
+    "family": "ppe_asset_age_reinvestment_quality",
+    "hypothesis": "Aged capital stock with restrained PPE expansion can proxy for disciplined reinvestment quality, distinct from annual total-assets and EBIT delivery.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.430 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.230 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(ppe_gross_value / assets, 252), 126), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed: QPaWZ39X had good metrics but high corr to issuance/dilution. This removes explicit correlation relief and avoids issuance fields."
+  },
+  {
+    "name": "v134_employee_sbp_pure_burden",
+    "family": "human_capital_compensation_quality",
+    "hypothesis": "Lower employee benefit liabilities and share-based compensation burden can represent cleaner human-capital cost structure, especially when not mixed with value/EBITDA legs.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.260 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.170 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / sales, 126), industry) + 0.120 * group_rank(ts_rank(-1 * share_award_expense_total / sales, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.100 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed: A1wQr2QQ had value legs and correlated with FCF/value actives. This tests the compensation parent alone; strict-check against omKoPEb6, LLpKELr9, and akda9EW9."
+  },
+  {
+    "name": "v134_customer_count_signal_no_auth",
+    "family": "customer_network_non_authority",
+    "hypothesis": "Broad customer base plus positive customer-return sign may be a different customer-network mechanism from authority/page-rank plus operating-income actives.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.240 * group_rank(ts_rank(pv13_custretsig_retsig, 60), industry) - 0.180 * group_rank(ts_rank(pv13_ustomergraphrank_hub_rank, 126), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.130 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids customer authority/page-rank as the dominant parent and avoids competitor relationship terms. Strict-check against RRpmO2xb, gJ1rA9VO, and 58wgxOM1."
+  },
+  {
+    "name": "v134_writedown_restructuring_no_social",
+    "family": "writedown_restructuring_cleanliness",
+    "hypothesis": "Low writedown and restructuring charges can capture accounting cleanliness if social/news-volume additives are removed.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.330 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqv1300_rcpq)), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_rcpq)), 126), industry) + 0.130 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.090 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed: blLjPpoK was near but below fitness; omKoPEb6 active uses writedown plus social/buzz. This removes social terms and tests pure accounting event cleanliness."
+  },
+  {
+    "name": "v134_intangible_gp_no_goodwill_cashflow",
+    "family": "intangible_burden_gross_profit",
+    "hypothesis": "Lower total intangible burden paired with better gross profit may capture asset-light quality without using goodwill, cashflow_op, or acquired-goodwill legs.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.390 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(fnd6_intan / assets, 252), 126), industry) + 0.090 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed: akd7vaO9 was close but still near goodwill/cashflow active sleeves. This keeps fnd6_intan and gross profit while avoiding goodwill and cashflow_op."
+  },
+  {
+    "name": "v134_repurchase_authorization_low_dilution",
+    "family": "shareholder_yield_low_dilution",
+    "hypothesis": "Low-dilution shareholder yield using underused repurchase authorization and reacquired-share fields may differ from the existing common_stock_buyback_payments sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * group_rank(ts_rank(authorized_stock_repurchase_amount / cap, 126), industry) + 0.200 * group_rank(ts_rank(value_of_shares_reacquired_during_period / cap, 126), industry) + 0.170 * group_rank(ts_rank(shares_reacquired_during_period / common_stock_shares_outstanding_count, 126), industry) + 0.160 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.130 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.120 * rank(-(close / open - 1)), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses low-alphaCount authorization/reacquired-share fields rather than common_stock_buyback_payments. Strict-check against MPpGzqwr, 88zpWZ1X, KPbgz6xp, and j2ZaGlVE."
+  },
+  {
+    "name": "v134_pension_compensation_lowcrowd",
+    "family": "pension_compensation_footnote",
+    "hypothesis": "Low pension adjustment noise plus controlled employee compensation burden may be a low-crowding footnote quality signal.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncwippq)), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncipq)), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncwiepq)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Fresh low-alphaCount footnote probe; abandon if sparse coverage causes LSUS or weak Sharpe."
+  }
+]

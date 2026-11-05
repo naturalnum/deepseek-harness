@@ -170,7 +170,7 @@ export async function produceCloudBootstrap(
         skillRpcEndpoints.includes(row.endpoint)
           && row.handlerId === 'native:cloudSkills' && row.guard === 'authenticated-account'
         || row.endpoint === 'skills/list' && row.handlerId === 'native:sessionSkillCatalog' && row.guard === 'account-session')
-      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !settingsMutation) unavailable()
+      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !settingsMutation && !api.isFeatureRpc(row)) unavailable()
       const actual = api.requireRpc(row.endpoint)
       if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }

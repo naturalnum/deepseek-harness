@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=debian:bookworm-slim
+FROM ${BASE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends python3 poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim && rm -rf /var/lib/apt/lists/*
+COPY src/server/document-extract.py /opt/document-extract.py
+ENTRYPOINT ["python3", "/opt/document-extract.py"]

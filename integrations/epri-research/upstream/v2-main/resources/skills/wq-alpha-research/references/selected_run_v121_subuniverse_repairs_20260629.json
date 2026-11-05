@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v121_call_put_convexity_cap65_subindustry",
+    "family": "option_call_put_convexity_lsus_repair",
+    "hypothesis": "The v120 call/put convexity seed was strong but failed sub-universe; restricting to the top-cap slice and using subindustry neutralization may stabilize the TOP1000 check.",
+    "expression": "trade_when(rank(cap) > 0.65, 0.360 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), subindustry) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), subindustry) + 0.170 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.150 * rank(cashflow_efficiency_rank_derivative) + 0.140 * rank(-(close / open - 1)), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v121_call_put_convexity_cap70_simplified",
+    "family": "option_call_put_convexity_lsus_repair",
+    "hypothesis": "Removing the direct IV-spread leg and using an even stricter top-cap gate may preserve the convexity signal while avoiding the unstable sub-universe component.",
+    "expression": "trade_when(rank(cap) > 0.70, 0.420 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_120 - put_breakeven_120)) / close, 126), industry) + 0.180 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.160 * rank(cashflow_efficiency_rank_derivative) + 0.140 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry), -1)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v121_call_put_convexity_cap65_market",
+    "family": "option_call_put_convexity_lsus_repair",
+    "hypothesis": "A MARKET-neutral top-cap variant tests whether industry/subindustry neutralization itself is hurting the sub-universe profile of the call/put convexity seed.",
+    "expression": "trade_when(rank(cap) > 0.65, 0.320 * group_rank(ts_rank(((call_breakeven_360 - put_breakeven_360) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.220 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_360 - historical_volatility_180), 90), industry) + 0.180 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.160 * rank(-(close / open - 1)) + 0.120 * rank(cashflow_efficiency_rank_derivative), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v121_option_award_subindustry_cap70",
+    "family": "option_award_lsus_repair",
+    "hypothesis": "The v120 option-award/forward seed had good Sharpe and very low turnover but weak sub-universe; a top-cap/subindustry version with fewer sparse legs may be more robust.",
+    "expression": "trade_when(rank(cap) > 0.70, 0.280 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_stock_shares_outstanding_count, 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_stock_options / assets, 126), subindustry) + 0.180 * group_rank(ts_rank((forward_price_720 + forward_price_90 - 2 * forward_price_270) / close, 90), industry) + 0.150 * rank(cashflow_efficiency_rank_derivative) + 0.100 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v121_option_award_callput_cap65",
+    "family": "option_award_lsus_repair",
+    "hypothesis": "Pairing option-award overhang with the stronger call/put convexity parent may improve sub-universe robustness without returning to EPS/value or buyback sleeves.",
+    "expression": "trade_when(rank(cap) > 0.65, 0.240 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_stock_shares_outstanding_count, 126), industry) + 0.190 * group_rank(ts_rank(-1 * option_awards_granted_count / common_stock_shares_outstanding_count, 126), industry) + 0.220 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.150 * rank(cashflow_efficiency_rank_derivative) + 0.120 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v121_news18_labor_partner_vecavg_cap50",
+    "family": "news18_event_transform_probe",
+    "hypothesis": "v120 showed rp_ess_partner behaves like an event/vector input; vec_avg conversion should test whether labor/partner news can be used safely before more complex news work.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * group_rank(ts_rank(rp_nip_labor, 90), industry) + 0.200 * group_rank(ts_rank(rp_css_labor, 90), industry) + 0.220 * group_rank(ts_rank(vec_avg(rp_ess_partner), 90), industry) + 0.120 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) + 0.100 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.100 * rank(-(close / open - 1)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v121_risk_volume_absorption_topcap",
+    "family": "risk_volume_absorption_lsus_repair",
+    "hypothesis": "The v120 risk-volume candidate was weak but close to platform Fitness; a stricter top-cap gate may reduce sub-universe instability and test this as a small non-news/non-option edge.",
+    "expression": "trade_when(rank(cap) > 0.65, 0.300 * group_rank(ts_rank(-1 * ts_corr(returns, volume / adv20, 20), 90), industry) + 0.210 * group_rank(ts_rank(-1 * abs(returns) * volume / adv20, 20), industry) + 0.190 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), industry) + 0.150 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 90), industry) + 0.090 * rank(-(close / open - 1)) + 0.060 * rank(cashflow_efficiency_rank_derivative), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

@@ -1,0 +1,8 @@
+import React,{useEffect,useState} from 'react';
+import {api} from './adapters/api';
+export default function RecordCalculationSetup({record,disabled,onBound}:any){
+ const [packages,setPackages]=useState<any[]>([]),[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ useEffect(()=>{let active=true;void api('engine_packages').then(items=>{if(active)setPackages(items.filter((p:any)=>p.kind==='protocol'&&p.approved));}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[record.id]);
+ if(record.status!=='draft')return null;
+ return <details className="record-calculation-setup"><summary>{record.calculationBinding?'计算方法与版本':'为这条记录连接自动计算'}</summary>{record.calculationBinding&&<p>当前方法：{record.calculationBinding.packageId} / {record.calculationBinding.version}</p>}<p>选择已经审阅的协议计算包。源码中的 protocol.aimd 必须与本记录完全一致；计算字段需声明为自动生成。</p><div><select aria-label="自动计算协议包" value={selected} disabled={disabled||busy} onChange={e=>setSelected(e.target.value)}><option value="">请选择已批准的协议包</option>{packages.map(p=><option key={p.id+'@'+p.version} value={p.id+'@'+p.version}>{p.title} · {p.version}</option>)}</select><button disabled={disabled||busy||!selected} onClick={()=>{const p=packages.find(p=>p.id+'@'+p.version===selected);setBusy(true);setError('');void api('record_bind_engine',{id:record.id,expectedRevision:record.revision,packageId:p.id,version:p.version,requestId:crypto.randomUUID()}).then(onBound).catch(e=>setError(e.message)).finally(()=>setBusy(false));}}>{busy?'正在连接…':'绑定自动计算'}</button></div><small>尚未导入计算包时，先到“实验与结果”导入并审阅。</small>{error&&<p role="alert">{error}</p>}</details>;
+}

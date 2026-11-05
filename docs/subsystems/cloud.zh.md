@@ -6,7 +6,8 @@
 
 `ApprovedConfigurationField` 选择有限的原生命名空间／字段对及可选标量取值。获批字段必须存在于原活动 Settings schema；保存仍受原生 revision 与 none/live 更新计划约束。`locale.preference` 保留精确的 `zh`／`en` 策略。写入由原登录 Use 和账户保存 owner 执行；bootstrap 元数据不授予写能力。见 [cloud API](../../packages/cloud/pe-cloud-api/README.zh.md)。
 
-<a id="account-identities"></a>
+`AccountFeatureAdmission` 由原云端 API owner 为尚未开放的具体 Remote 注册签发。它检查当前账号的业务开放状态，通过原生 Controller 和项目守卫解析既有 Session，核对原 Agent 身份，并通过原有托管文件服务投影可信技能包。注册卸载会使该准入能力失效；Root 对精确 endpoint 的选择仍是独立要求。参见[账号功能注册](../../packages/cloud/pe-cloud-api/src/account-feature.ts)。
+
 ## 账户身份
 
 runtime 包持有[账户身份及生命周期类型](../../packages/cloud/pe-cloud-runtime/src/types.ts)。`AccountId` 标识经过认证的数据库账户。`OwnerEpoch` 保留 PostgreSQL 十进制值，不转换为 JavaScript number。`InstanceId` 标识一次服务进程启动，`OperationId` 标识其处理责任可能超过请求生命周期的实际工作。
@@ -336,6 +337,62 @@ assertCurrent(): void
 Types: [ManagedSkillDetails](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillDetailsRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillDownload](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillDownloadRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillInstallRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillMutationResult](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillUninstallRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillUpdateRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillsInstalled](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ManagedSkillsInstalledRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [SkillCurrentRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [SkillCurrentState](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [SkillPublishRequest](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [SkillPublishResult](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication)
 
 Source: [`packages/cloud/pe-cloud-api/src/cloud-skills.ts`](../../packages/cloud/pe-cloud-api/src/cloud-skills.ts)
+
+<a id="ctxepriresearch--researchservice"></a>
+
+### `ctx.epriResearch` — `ResearchService`
+
+One research database beneath this account's private, physically capped storage.
+
+```ts cordis-catalog
+/** Install the fixed research contribution into this account's Loader scope.
+ * @param kind Fixed backend contribution selected by a package entry.
+ * @param ctx Actual account or Preset Loader scope.
+ */
+install(kind: 'tools' | 'skills' | 'workbench', ctx: Context): void
+
+/** Project immutable bundled resources using the platform's existing skill files owner.
+ * @param args Complete trusted skill bundle and native scoped lookup.
+ * @returns Actual account/project resource location.
+ */
+materializeSkill(...args: Parameters<AccountFeatureAdmission['materializeSkill']>): ReturnType<AccountFeatureAdmission['materializeSkill']>
+
+/** Read this account's human-published lab skills for the original native Agent.
+ * @param agent Original native skill lookup scope.
+ * @param signal Original lookup cancellation.
+ * @returns Published research methods within this account only.
+ */
+labSkills(agent: Agent, signal?: AbortSignal): Promise<unknown>
+
+/** Execute a research operation for the authenticated browser's current Session.
+ * @param sessionId Existing Session selected in the platform.
+ * @param operation Research operation name, validated by the backend.
+ * @param argsJson Operation arguments, validated by the backend schema.
+ * @param signal Original browser-call cancellation.
+ * @returns Research result serialized as JSON within the configured limit.
+ */
+@Remote({ resources: { session: (sessionId: SessionId) => sessionId } }) async execute(sessionId: SessionId, operation: string, argsJson: string, signal: AbortSignal): Promise<string>
+
+/** Execute a model operation under the original native tool's Agent.
+ * Human decisions are supplied only by the native conversation review continuation.
+ * @param operation Backend operation name.
+ * @param args Validated research tool arguments.
+ * @param execution Original native tool execution.
+ * @returns Research operation result; no caller-provided actor field is used.
+ */
+async tool(operation: string, args: unknown, execution: ToolRunContext): Promise<unknown>
+
+/** Run the reviewed native question continuation without exposing a human actor on the wire.
+ * @param execution Original tool Agent and cancellation.
+ * @param review Trusted plugin's native question/revision comparison; it calls human only after an explicit answer.
+ * @returns Decline or the exact reviewed mutation result.
+ */
+async review(execution: ToolRunContext, review: (port: { read: (operation: string, args: unknown) => Promise<unknown> human: (operation: string, args: unknown) => Promise<unknown> }) => Promise<unknown>): Promise<unknown>
+```
+
+Types: [Agent](core.zh.md) · [SessionId](core.zh.md) · [ToolRunContext](tools.zh.md)
+
+Source: [`packages/experimental/epri-research/src/service.ts`](../../packages/experimental/epri-research/src/service.ts)
 
 <a id="ctxpeaccount--accountbinding"></a>
 
@@ -774,6 +831,20 @@ async stopFirstScreenEvents(): Promise<void>
  */
 createController( owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1], ): SessionController
 
+/** Register a reviewed feature's concrete Remote methods during unpublished account assembly.
+ * Methods remain denied unless the Root manifest selects their exact endpoint, owner and guard.
+ * @param owner Feature's original Loader scope.
+ * @param service Installed feature service, whose namespace equals its Cordis service key.
+ * @returns Existing account/Session admission; registration is withdrawn with its Loader fiber.
+ */
+registerFeature(owner: Context, service: TypertRemoteService): AccountFeatureAdmission
+
+/** Check a selected feature endpoint against its actual registered methods.
+ * @param row Root-selected unary exposure.
+ * @returns Whether the original feature currently owns this exact Session-guarded endpoint.
+ */
+isFeatureRpc(row: EndpointExposure): boolean
+
 /**
  * Construct the sole original native upload owner with controlled streamed persistence.
  * @param owner Actual Loader entry, with native dependencies ready.
@@ -933,7 +1004,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
+Types: [AgentLoop](core.zh.md) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [CloudPluginService](cloud.zh.md#approved-plugin-controls) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.zh.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.zh.md#actual-work-and-capacity) · [FileUploads](attachment.zh.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [PluginRebuildIntent](cloud.zh.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.zh.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.zh.md#approved-plugin-controls) · [SessionController](session.zh.md) · [SubagentCapacityReservation](cloud.zh.md#actual-work-and-capacity) · [TypertRemoteService](typert.zh.md) · [WorkspaceFiles](workspace.zh.md) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.zh.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 

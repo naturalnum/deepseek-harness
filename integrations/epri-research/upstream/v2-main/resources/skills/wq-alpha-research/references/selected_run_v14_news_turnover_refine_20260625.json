@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v14_earnings_news_slow_cash_quality",
+    "family": "earnings_news_turnover_refine",
+    "source": "news_turnover_refine_v14_20260625",
+    "hypothesis": "v13 earnings news impact was strong but too high turnover. Increase decay and lower news weight while keeping cashflow quality.",
+    "expression": "0.45 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.20 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary target: reduce turnover below 25% while preserving the v13 earnings-news signal."
+  },
+  {
+    "name": "v14_earnings_news_slow_goodwill_quality",
+    "family": "earnings_news_goodwill_quality",
+    "source": "news_turnover_refine_v14_20260625",
+    "hypothesis": "Earnings-news impact may diversify better when anchored by the newly validated low-goodwill quality branch.",
+    "expression": "0.45 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.20 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses mL8j98w9 mechanism as slow anchor; watch correlation with mL8j98w9 and RRpmOAWj."
+  },
+  {
+    "name": "v14_earnings_css_slow_cash_quality",
+    "family": "earnings_news_turnover_refine",
+    "source": "news_turnover_refine_v14_20260625",
+    "hypothesis": "Composite sentiment score may be smoother than news-impact projection and therefore lower turnover.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.20 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests a smoother Ravenpack earnings field."
+  },
+  {
+    "name": "v14_earnings_news_no_reversal_cash_goodwill",
+    "family": "earnings_news_slow_quality",
+    "source": "news_turnover_refine_v14_20260625",
+    "hypothesis": "If the intraday reversal component drives turnover and correlation, remove it and combine two slow anchors.",
+    "expression": "0.50 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open reversal; may reduce correlation but could lower Sharpe."
+  },
+  {
+    "name": "v14_earnings_news_long_window_cash_quality",
+    "family": "earnings_news_turnover_refine",
+    "source": "news_turnover_refine_v14_20260625",
+    "hypothesis": "A longer earnings-news ranking window should smooth event noise and reduce turnover.",
+    "expression": "0.50 * group_rank(ts_rank(rp_nip_earnings, 126), industry) + 0.20 * rank(-(close / open - 1)) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Most conservative turnover-control variant."
+  },
+  {
+    "name": "v14_earnings_news_low_trunc_cash_quality",
+    "family": "earnings_news_turnover_refine",
+    "source": "news_turnover_refine_v14_20260625",
+    "hypothesis": "Lower truncation may reduce concentrated news-event exposure while preserving the signal.",
+    "expression": "0.50 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.20 * rank(-(close / open - 1)) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether lower truncation improves stability and sub-universe behavior."
+  }
+]

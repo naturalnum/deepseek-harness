@@ -1,0 +1,7 @@
+interface:
+  display_name: "Research Figure Diagram"
+  short_description: "Create paper-ready figures and diagrams"
+  brand_color: "#2A9D8F"
+  default_prompt: "Use $research-figure-diagram to create a publication-ready scientific figure or an editable workflow diagram."
+policy:
+  allow_implicit_invocation: true

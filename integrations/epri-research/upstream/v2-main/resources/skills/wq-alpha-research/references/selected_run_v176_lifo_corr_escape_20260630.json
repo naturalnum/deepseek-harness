@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v176_lifo_pure_subindustry_no_risk",
+    "family": "lifo_corr_escape",
+    "hypothesis": "If v175 LIFO strength is truly an inventory-accounting signal, it should survive without beta/reversal/risk sleeves and with peer-localized subindustry ranking. This is the clean standalone residual test.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(fnd6_lifr / abs(inventory), 126), subindustry) + 0.260 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(inventory), 252), 126), subindustry) + 0.220 * group_rank(ts_rank((fnd6_invrm - fnd6_invfg) / abs(inventory), 126), subindustry) + 0.180 * group_rank(ts_rank(inventory_turnover, 126), subindustry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "No beta/reversal, no receivable, no writedown/AQI, no buyback/operating-income, no SG&A. If weak, pure LIFO is not enough."
+  },
+  {
+    "name": "v176_lifo_cost_pressure_regime",
+    "family": "lifo_cost_pressure",
+    "hypothesis": "LIFO conservatism should matter most when cost pressure is visible in COGS/sales. A cost-pressure gate changes timing away from continuous quality/reversal exposure and tests whether LIFO helps in inflationary inventory regimes.",
+    "expression": "trade_when(ts_rank(ts_delta(cogs / abs(sales), 126), 126) > 0.55, 0.300 * group_rank(ts_rank(fnd6_lifr / abs(inventory), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(inventory), 252), 126), industry) + 0.190 * group_rank(ts_rank((fnd6_invrm - fnd6_invfg) / abs(inventory), 126), subindustry) + 0.150 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * fnd6_invfg / abs(sales), 126), subindustry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Regime-timed LIFO, no explicit quality/reversal/beta. Watch for gross-margin/quality correlation."
+  },
+  {
+    "name": "v176_lifo_low_volume_path",
+    "family": "lifo_inventory_path_change",
+    "hypothesis": "The v175 LIFO candidates may collide because their daily path refreshes like existing quality sleeves. Trading the same LIFO accounting signal only in low-volume regimes may alter PnL timing without adding old blockers.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.45, 0.320 * group_rank(ts_rank(fnd6_lifr / abs(inventory), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(inventory), 252), 126), industry) + 0.210 * group_rank(ts_rank((inventory_raw_materials_value - inventory_value_finished_goods) / abs(inventory), 126), subindustry) + 0.150 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.080 * group_rank(ts_rank(-1 * fnd6_invfg / abs(sales), 126), subindustry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Path-change test; low-volume gate only. Strict-check against MPpGzqwr/xAxGJjNn/qMAGvOe2 and PV/VWAP actives."
+  },
+  {
+    "name": "v176_lifo_anti_quality_blockers",
+    "family": "lifo_blocker_residual",
+    "hypothesis": "A compact subtraction of the main local blockers can reveal whether LIFO has residual capacity beyond buyback/operating-quality, SG&A/option-dividend discipline, and writedown/AQI cleanliness.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.310 * group_rank(ts_rank(fnd6_lifr / abs(inventory), 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(inventory), 252), 126), industry) + 0.190 * group_rank(ts_rank((fnd6_invrm - fnd6_invfg) / abs(inventory), 126), subindustry) + 0.130 * group_rank(ts_rank(inventory_turnover, 126), subindustry) - 0.045 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.045 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.035 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) - 0.035 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) - 0.030 * group_rank(ts_rank(fnd6_aqi / abs(assets), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One explicit anti-blocker residual test. If metrics collapse, v175 strength is mostly occupied quality/accounting capacity."
+  },
+  {
+    "name": "v176_lifo_largecap_pure",
+    "family": "lifo_largecap_robustness",
+    "hypothesis": "A stricter large-cap gate may reduce the broad quality/reversal correlation and test whether LIFO reserve information is robust in the TOP1000-like slice.",
+    "expression": "trade_when(rank(cap) > 0.62, 0.350 * group_rank(ts_rank(fnd6_lifr / abs(inventory), 126), subindustry) + 0.250 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(inventory), 252), 126), subindustry) + 0.220 * group_rank(ts_rank((fnd6_newqv1300_invrmq - fnd6_newqv1300_invfgq) / abs(fnd6_newqv1300_invtq), 126), subindustry) + 0.180 * group_rank(ts_rank(inventory_turnover, 126), subindustry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Large-cap pure LIFO/inventory mix, no risk/reversal. Reject if Fitness collapses or corr remains high."
+  },
+  {
+    "name": "v176_lifo_change_only_shock",
+    "family": "lifo_change_only",
+    "hypothesis": "Using only changes in LIFO reserve and inventory mix may avoid static quality exposure. If this fails, LIFO alpha is likely a level-quality proxy rather than a distinct accounting-change signal.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(inventory), 252), 126), industry) + 0.250 * group_rank(ts_rank(ts_delta((fnd6_invrm - fnd6_invfg) / abs(inventory), 252), 126), subindustry) + 0.180 * group_rank(ts_rank(ts_delta(inventory_turnover, 252), 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(fnd6_invfg / abs(sales), 252), 126), subindustry) + 0.090 * group_rank(ts_rank(-1 * abs(inventory_valuation_write_down) / abs(assets), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Change-only accounting signal. Small writedown term is a penalty, not the parent; strict-check against qMAGvOe2."
+  }
+]

@@ -1,0 +1,92 @@
+[
+  {
+    "name": "v139_debt_delta90_user_baseline",
+    "family": "debt_decrease_baseline",
+    "hypothesis": "Companies reducing debt over the recent quarter should have improving balance-sheet risk; this directly tests the user's proposed debt-decrease idea before adding confirmations.",
+    "expression": "rank(-1 * ts_delta(debt, 90))",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct baseline for rank(-ts_delta(debt,90)); TOP3000 delay1 via settings, industry neutralization via settings."
+  },
+  {
+    "name": "v139_total_debt_asset_slope_clean",
+    "family": "debt_decrease_slope",
+    "hypothesis": "Debt reduction should be measured relative to the asset base rather than nominal balance-sheet scale. A one-year debt/assets slope may isolate true deleveraging from firm-size effects.",
+    "expression": "0.560 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(debt_lt / assets, 252), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids static debt/assets dominance already present in multiple ACTIVE alphas; uses change in total and long-term debt ratios."
+  },
+  {
+    "name": "v139_short_debt_pressure_relief",
+    "family": "short_debt_deleveraging",
+    "hypothesis": "Reduction in current debt and interest paid is a sharper solvency improvement than total debt level alone, especially when short-maturity refinancing pressure is easing.",
+    "expression": "0.430 * group_rank(ts_rank(-1 * ts_delta(debt_st / assets, 126), 126), industry) + 0.250 * group_rank(ts_rank(-1 * debt_st / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests short-debt pressure rather than ordinary low total debt; strict-check against static debt/assets actives."
+  },
+  {
+    "name": "v139_netdebt_delivery_surprise",
+    "family": "analyst_netdebt_delivery",
+    "hypothesis": "Actual annual net debt below analyst consensus, plus downward net-debt estimate revision, indicates delivered deleveraging that analysts did not fully price.",
+    "expression": "0.430 * group_rank(ts_rank(-1 * (anl4_fs_actuals_advanced_af_nd_netdebt_value - anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean) / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 63), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 63), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses annual actual-vs-estimate net-debt delivery, not the 1QF net-debt estimate parent occupied by d5xK1kmg."
+  },
+  {
+    "name": "v139_netdebt_guidance_tightening",
+    "family": "netdebt_guidance_decrease",
+    "hypothesis": "Management guiding lower and tighter net-debt ranges is a forward-looking deleveraging signal distinct from historical debt balances.",
+    "expression": "0.420 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_netdebt_maxguidance + anl4_fs_guidances_advanced_af_nd_netdebt_minguidance) / (2 * assets), 63), 126), industry) + 0.220 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_netdebt_maxguidance + anl4_fs_guidances_advanced_af_nd_netdebt_minguidance) / (2 * assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_netdebt_maxguidance - anl4_fs_guidances_advanced_af_nd_netdebt_minguidance) / assets, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Forward-looking net-debt guidance; strict-check against QPaze5zX because guidance sleeves can share slow-quality PnL."
+  },
+  {
+    "name": "v139_net_debt_paydown_flow",
+    "family": "debt_repayment_minus_issuance",
+    "hypothesis": "Repaying debt while avoiding new debt issuance is cleaner than raw repayment amount. The net financing flow should capture active balance-sheet repair.",
+    "expression": "0.440 * group_rank(ts_rank((debt_repayments_total_2 - debt_issuance_proceeds_2) / assets, 126), industry) + 0.260 * group_rank(ts_rank(-1 * ts_delta(debt_carrying_amount_total / assets, 126), 126), industry) + 0.170 * group_rank(ts_rank(-1 * debt_instrument_interest_rate_percent, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fixes v138 debt repayment weakness by subtracting issuance proceeds and using debt carrying-amount decline."
+  },
+  {
+    "name": "v139_interest_coverage_improvement",
+    "family": "interest_burden_relief",
+    "hypothesis": "Debt reduction is most investable when it improves interest coverage. Rising operating income per interest burden and falling interest/assets should identify lower financial stress.",
+    "expression": "0.410 * group_rank(ts_rank(ts_delta(operating_income / abs(interest_expense), 126), 126), subindustry) + 0.300 * group_rank(ts_rank(-1 * ts_delta(interest_expense / assets, 126), 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Coverage improvement instead of debt level; avoid FCF/value-sales legs to reduce overlap with existing quality/value actives."
+  },
+  {
+    "name": "v139_social_deleveraging_calm",
+    "family": "social_balance_sheet_calm_deleveraging",
+    "hypothesis": "A calm social/buzz regime can help distinguish underreacted balance-sheet repair from crowded low-debt quality. The parent change from v137 is debt-ratio slope, not static net debt.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.66, 0.320 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.250 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.210 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry), -1)",
+    "decay": 36,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair of social+netdebt near miss using net-debt slope instead of static level; strict-check against social and net-debt actives."
+  },
+  {
+    "name": "v139_model_cashflow_deleveraging",
+    "family": "model_cashflow_debt_relief",
+    "hypothesis": "Cashflow efficiency rank should matter more when leverage is actively falling and interest payments are restrained; this tests a model/fundamental hybrid distinct from pure debt or pure cashflow.",
+    "expression": "0.360 * rank(cashflow_efficiency_rank_derivative) + 0.300 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.190 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Touches model16 after scanning dataset families, but only as a confirmer for deleveraging and interest burden relief."
+  }
+]

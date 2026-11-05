@@ -1,0 +1,2 @@
+# Preserve upstream resource formatting; local integration code uses the root checks.
+upstream/** -whitespace

@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v15_acquisition_payment_discipline",
+    "family": "acquisition_discipline_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Large acquisition cash outflows can proxy empire-building and integration risk. Prefer firms with lower acquisition payments, backed by operating profitability and a small intraday reversal stabilizer.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * business_acquisition_payments_net / assets, 126), industry) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Different from low goodwill level: tests acquisition cash-payment discipline directly."
+  },
+  {
+    "name": "v15_acquired_goodwill_intensity",
+    "family": "acquired_goodwill_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Goodwill newly acquired during deals may be a cleaner acquisition-risk signal than the total goodwill stock. Lower acquired-goodwill intensity should be preferable when operating cash flow is solid.",
+    "expression": "0.65 * group_rank(ts_rank(-1 * fnd6_acqgdwl / assets, 126), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Watch correlation with mL8j98w9, but acquired-goodwill flow should differ from goodwill/assets level."
+  },
+  {
+    "name": "v15_goodwill_growth_discipline",
+    "family": "goodwill_change_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Rising goodwill can indicate acquisition accounting risk even when the level is not yet extreme. Penalize goodwill growth relative to assets and require operating quality.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Change-based sibling of low goodwill; only submit if correlation to mL8j98w9 stays safely below 0.68."
+  },
+  {
+    "name": "v15_acquisition_income_contribution",
+    "family": "acquisition_contribution_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Acquisitions with positive income contribution may be higher quality than acquisition avoidance alone. This tests the positive contribution side of the M&A accounting family.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Positive M&A-quality variant; included to avoid only testing negative acquisition exposure."
+  },
+  {
+    "name": "v15_deferred_tax_valuation_allowance_quality",
+    "family": "tax_accounting_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Higher deferred-tax valuation allowance can indicate weaker future taxable income expectations or lower accounting quality. Penalize it and pair with profitability.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "New tax-accounting mechanism; not a near-neighbor of receivables/deferred revenue/goodwill."
+  },
+  {
+    "name": "v15_unrecognized_tax_benefit_risk",
+    "family": "tax_uncertainty_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Unrecognized tax benefits can proxy tax-position uncertainty. Prefer lower tax uncertainty when cashflow quality is strong.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * fn_unrecognized_tax_benefits_a / assets, 126), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tax-risk branch; strict sub-universe and correlation gate."
+  },
+  {
+    "name": "v15_mna_news_slow_discipline",
+    "family": "mna_news_acquisition_discipline",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "M&A news impact is a different Ravenpack event type from earnings news. Combine slow M&A news with acquisition payment discipline and only a small profitability anchor.",
+    "expression": "0.55 * group_rank(ts_rank(rp_nip_mna, 90), industry) + 0.30 * group_rank(ts_rank(-1 * business_acquisition_payments_net / assets, 126), industry) + 0.15 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open component; intended to avoid the news+reversal correlation wall."
+  },
+  {
+    "name": "v15_product_news_margin",
+    "family": "product_news_quality",
+    "source": "mechanism_shift_v15_20260625",
+    "hypothesis": "Product and service news may capture demand/product-cycle information not present in earnings news. Gross margin helps filter low-quality hype.",
+    "expression": "0.60 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-earnings Ravenpack test; correlation should be checked against RRpmOAWj and reversal-heavy actives."
+  }
+]

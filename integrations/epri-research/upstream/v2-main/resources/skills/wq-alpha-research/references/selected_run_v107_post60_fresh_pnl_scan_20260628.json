@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v107_compraw_nip_cashflow_mix",
+    "family": "post60_compraw_earnings_mix",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "Raw competitor reversal still has independent timing, but direct residuals have failed; mixing it with NIP earnings/cashflow may create a cross-path profile rather than a pure comp-return sibling.",
+    "expression": "0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.225 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.175 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: 0.5*1Y7jwanz + 0.5*RRp7Ldae; target max corr ~0.64 but watch O0pNbJ17/1Y7WOx9W."
+  },
+  {
+    "name": "v107_compraw_css_cashflow_mix",
+    "family": "post60_compraw_earnings_mix",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "CSS earnings/cashflow is a parallel earnings surface; combine with raw competitor reversal to see whether it is less tied to NIP/news blockers.",
+    "expression": "0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.225 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.175 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: 0.5*1Y7jwanz + 0.5*E5wlANAm; target max corr ~0.65."
+  },
+  {
+    "name": "v107_compraw_intangible_margin_mix_040",
+    "family": "post60_compraw_intangible_mix",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "Low intangible burden plus gross margin is a distinct balance-sheet quality sleeve; using only 40% raw competitor may avoid becoming a kq3Jjmrk/2r7Gzlnw sibling.",
+    "expression": "0.200 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.120 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.300 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.210 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: 0.4*1Y7jwanz + 0.6*akd7vaO9; target max corr ~0.63."
+  },
+  {
+    "name": "v107_compraw_goodwill_earnings_mix",
+    "family": "post60_compraw_goodwill_mix",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "NIP earnings + low goodwill has strong but crowded profile; pairing with raw competitor reversal may diversify enough while not using the new forward/option sleeve.",
+    "expression": "0.300 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.140 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: 0.6*1Y7jwanz + 0.4*1Y7w57YK; target max corr ~0.62."
+  },
+  {
+    "name": "v107_goodwill_option_minus_social_050",
+    "family": "post60_goodwill_option_residual",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "The v105 goodwill-option residual remained high-corr; a lower-complexity 0.5 subtraction should test whether option/volume information survives without social-goodwill overlap.",
+    "expression": "0.124 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.055 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.041 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.056 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.036 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.045 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Retest of local synthetic mL8YaxNK - 0.5*E5wVN6gm; target max corr ~0.66."
+  },
+  {
+    "name": "v107_goodwill_option_minus_social_060",
+    "family": "post60_goodwill_option_residual",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "Stronger social-goodwill subtraction may lower correlation enough if the 0.5 version is still blocked.",
+    "expression": "0.093 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.042 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.033 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.067 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.043 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.054 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate mL8YaxNK - 0.6*E5wVN6gm, compressed; local synthetic max corr ~0.62."
+  },
+  {
+    "name": "v107_news_qmb_minus_product_050",
+    "family": "post60_news_vector_residual",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "News QMB/editorial has recurring strength; subtracting product/business-news ACTIVE proxy more directly may preserve editorial information while changing the sub-universe path.",
+    "expression": "0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.180 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.140 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.140 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.150 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.125 * group_rank(ts_rank(rp_css_product, 90), industry) - 0.100 * group_rank(ts_rank(rp_nip_business, 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual 78wooKa1 - 0.5*Vkp0P130; target max corr ~0.64, but LOW_SUB_UNIVERSE risk remains."
+  },
+  {
+    "name": "v107_aqi_range_absorption_mix",
+    "family": "post60_aqi_range_absorption_mix",
+    "source": "v107_post60_fresh_pnl_scan_20260628",
+    "hypothesis": "AQI + value is crowded, but range/volume absorption has a different timing profile; a small absorption sleeve may lower AQI/value correlation without using new v105/v106 parents.",
+    "expression": "0.300 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.167 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.132 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.099 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.102 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: 0.67*d5xj87YE + 0.33*E5wRYVQR; target max corr ~0.656."
+  }
+]

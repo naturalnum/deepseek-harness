@@ -544,6 +544,18 @@ it('requires both physical Client entries only for opted-in packages', () => {
   }
 })
 
+it('requires every research Loader bundle and rejects unrelated runtime files', () => {
+  const dir = 'packages/experimental/epri-research'
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  for (const omitted of ['lib/tools.js', 'lib/skills.js', 'lib/workbench.js', 'lib/web.js']) {
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(file => file !== omitted) } }))
+      .toEqual([expect.stringContaining('package.json files must be')])
+  }
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files!, 'lib/extra.js'] } }))
+    .toEqual([expect.stringContaining('package.json files must be')])
+})
+
 it('requires the standalone shortcut protocol and rejects unrelated runtime files', () => {
   const dir = 'packages/client/shortcuts'
   const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']

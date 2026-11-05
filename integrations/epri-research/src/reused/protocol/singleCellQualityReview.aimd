@@ -1,0 +1,39 @@
+# 单细胞样本质量评估
+
+评估一批单细胞数据是否适合进入下游分析，并形成可复核的质量结论。
+
+本评估适用于已经取得表达矩阵、细胞注释和样本元数据，但尚未开始正式差异分析的数据批次；原始测序文件或样本制备失败的排查不在本流程内。
+
+## 1. 样本与来源
+
+{{step|register_inputs, level=1, title="确认样本与数据来源", check=True, duration="3m"}}
+
+{{var|sample_id: str, title="样本编号", description="实验室或样本库中的稳定编号", examples=["PBMC-024"]}}、{{var|batch_id: str, title="批次编号", examples=["RUN-2026-08"]}}、{{var|operator: str, title="执行人", examples=["Research Agent"]}}、{{var|platform: Literal["10x 3' v3", "10x 5'", "Smart-seq3"], title="测序平台"}}
+
+## 2. 质量判断
+
+{{step|inspect_metrics, level=1, title="检查关键质量指标", check=True, duration="8m"}}
+
+{{var|cell_count: int, title="有效细胞数", unit="cells", examples=["18542"]}}、{{var|median_genes: int, title="中位基因数", unit="genes/cell", examples=["2140"]}}、{{var|mitochondrial_rate: float, title="线粒体比例", unit="%", examples=["6.8"]}}
+
+{{var_table|sample_metrics: list, subvars=[var(sample_name: str, title="样本"), var(retained_cells: int, title="有效细胞"), var(median_genes: int, title="中位基因数"), var(mitochondrial_rate: float, title="线粒体比例")], title="样本质量明细"}}
+
+```quiz
+id: qc_decision
+type: choice
+mode: single
+stem: "当前数据是否可以进入下游分析？"
+options:
+  - key: pass
+    text: "通过，进入正式分析"
+  - key: revise
+    text: "补充清洗后复核"
+  - key: stop
+    text: "停止，返回样本制备环节"
+```
+
+## 3. 评估结论
+
+{{step|seal_record, level=1, title="确认质量结论", check=True, duration="2m", result=True}}
+
+结论可导出并写入关联报告，供后续分析与复核使用。

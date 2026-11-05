@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v157_option_dividend_fcf_cap55_subindustry",
+    "family": "option_dividend_fcf_lsus_repair",
+    "hypothesis": "The v156 FCF-breadth fusion was strong but LOW_SUB_UNIVERSE blocked. A moderate cap gate and subindustry ranking may preserve cashflow-visibility information while reducing small-cap dependence.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.290 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), subindustry) + 0.250 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_fcf_low / abs(assets)), 126), subindustry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair of Jjpz9zWO; stop if metrics collapse."
+  },
+  {
+    "name": "v157_option_dividend_fcf_light_option_market",
+    "family": "option_dividend_fcf_lsus_repair",
+    "hypothesis": "If the option-dividend leg drives small-cap fragility, lowering its weight and using MARKET neutralization may keep the FCF breadth edge with a different risk profile.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.300 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_fcf_low / abs(assets)), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests whether FCF breadth, not option-dividend, can carry the route while avoiding LSUS."
+  },
+  {
+    "name": "v157_option_dividend_ebit_cap60_subindustry",
+    "family": "option_dividend_ebit_lsus_repair",
+    "hypothesis": "The v156 EBIT-visibility fusion had the highest Sharpe but severe LSUS. A stricter cap60/SUBINDUSTRY version tests whether the operating-visibility signal survives in larger, more stable names.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.280 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), subindustry) + 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebit_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_ebit_low / abs(assets)), 126), subindustry) + 0.080 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair of xAxGZEeJ; likely collapse if signal is TOP3000-specific."
+  },
+  {
+    "name": "v157_option_dividend_ebit_no_dispersion_error",
+    "family": "option_dividend_ebit_lsus_repair",
+    "hypothesis": "Removing the high-low dispersion-error term may reduce sparse analyst-estimate noise while preserving option-dividend and EBIT coverage/certainty.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.320 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.280 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.220 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Noise-reduction ablation for xAxGZEeJ. If LSUS remains, close EBIT repair."
+  },
+  {
+    "name": "v157_option_dividend_sga_return_lift",
+    "family": "option_dividend_sga_cleancheck_repair",
+    "hypothesis": "The SG&A fusion had clean checks but Fitness 1.09. Slightly increasing cost-discipline and reversal weights may lift return/Fitness while keeping the parent distinct from payout and buyback fields.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.280 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.260 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high / abs(sales) - anl4_fs_detail_estimates_advanced_af_nd_sga_low / abs(sales)), 126), industry) + 0.110 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One micro-repair of gJ1G2lWQ. Do not continue if it misses again."
+  }
+]

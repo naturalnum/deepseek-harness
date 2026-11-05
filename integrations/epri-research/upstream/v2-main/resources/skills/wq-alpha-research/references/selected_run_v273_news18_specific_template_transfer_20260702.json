@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v273_mna_sentiment_largecap_fade",
+    "family": "news18_specific_template_transfer",
+    "hypothesis": "M&A sentiment can be over-extrapolated by investors; applying the successful large-cap slow fade template to M&A-specific sentiment tests a corporate-action route distinct from earnings-evaluation sentiment.",
+    "field_notes": "Template transfer from npg5egk8, replacing earnings_evaluation_sentiment with low-use merger_acquisition_sentiment.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(merger_acquisition_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v273_mna_sentiment_largecap_follow",
+    "family": "news18_specific_template_transfer",
+    "hypothesis": "If M&A-specific sentiment represents real corporate-action information rather than overreaction, the follow direction should outperform the fade direction.",
+    "field_notes": "Single sign ablation for the M&A-specific route.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(vec_avg(merger_acquisition_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v273_technical_impact_largecap_fade",
+    "family": "news18_specific_template_transfer",
+    "hypothesis": "Technical-analysis news impact may be a crowded attention signal; fading it in large caps after smoothing may produce a lower-correlation behavioral alpha.",
+    "field_notes": "Uses low-use rp_nip_technical with vector-safe transform. If vec_avg is incompatible, close this field form.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(rp_nip_technical), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v273_society_impact_largecap_fade",
+    "family": "news18_specific_template_transfer",
+    "hypothesis": "Society-related projected news impact may be slow-moving and less overlapped with existing accounting/analyst alphas; a fade tests whether public-attention spikes mean-revert.",
+    "field_notes": "Uses low-use rp_nip_society with the successful cap-gated slow industry template.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(rp_nip_society), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v273_society_event_sentiment_largecap_fade",
+    "family": "news18_specific_template_transfer",
+    "hypothesis": "Event sentiment for society-related news may differ from projected impact; this tests a second society-specific news surface under the same robust template.",
+    "field_notes": "Uses rp_ess_society, which is low-use but may be event/vector typed.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(rp_ess_society), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v273_earnings_release_indicator_largecap_fade",
+    "family": "news18_specific_template_transfer",
+    "hypothesis": "The earnings-release event indicator may capture post-event attention rather than sentiment; a large-cap slow fade tests whether repeated release-event attention mean-reverts without reusing earnings-evaluation sentiment.",
+    "field_notes": "Uses low-use nws18_ber_fast_d1 indicator, intentionally distinct from earnings_evaluation_sentiment.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_ber_fast_d1), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

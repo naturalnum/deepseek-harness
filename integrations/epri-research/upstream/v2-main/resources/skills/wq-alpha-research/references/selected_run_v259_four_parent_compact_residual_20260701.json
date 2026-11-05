@@ -1,0 +1,72 @@
+[
+  {
+    "name": "v259_drc_goodwill_authority_anti_buyback",
+    "family": "four_parent_compact_residual",
+    "hypothesis": "Deferred-revenue delivery, relationship authority, and low-goodwill quality may retain strength after subtracting the buyback/profitability sleeve, while avoiding direct OI/equity exposure.",
+    "pre_estimated_top_abs_corr": 0.451,
+    "pre_estimated_qpa_corr": -0.016,
+    "pre_estimated_wjp2_corr": -0.044,
+    "pre_estimated_synthetic_sharpe": 1.64,
+    "source_alpha_ids": ["MPpGzqwr", "d5xj5W5v", "RRp7Q9Le", "mL8j98w9"],
+    "expression": "-1.00 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 0.75 * (0.75 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 1.00 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.50 * (0.60 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1)))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v259_receivable_aqi_authority_anti_buyback",
+    "family": "four_parent_compact_residual",
+    "hypothesis": "Receivable discipline plus AQI/cashflow and relationship authority may add enough independent accounting-quality breadth after removing buyback/profitability.",
+    "pre_estimated_top_abs_corr": 0.468,
+    "pre_estimated_qpa_corr": -0.018,
+    "pre_estimated_wjp2_corr": 0.032,
+    "pre_estimated_synthetic_sharpe": 1.91,
+    "source_alpha_ids": ["MPpGzqwr", "LLp7PRmM", "d5xj5W5v", "9qwXgvQd"],
+    "expression": "-1.00 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 1.00 * (0.65 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 0.75 * (0.75 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 1.00 * (0.55 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1)))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v259_drc_aqi_opprofit_anti_buyback",
+    "family": "four_parent_compact_residual",
+    "hypothesis": "Deferred-revenue delivery, AQI/cashflow, and operating-profit-to-EV value may diversify away from the direct buyback/profitability sleeve.",
+    "pre_estimated_top_abs_corr": 0.477,
+    "pre_estimated_qpa_corr": -0.094,
+    "pre_estimated_wjp2_corr": 0.089,
+    "pre_estimated_synthetic_sharpe": 1.71,
+    "source_alpha_ids": ["RRpm5LEo", "MPpGzqwr", "RRp7Q9Le", "9qwXgvQd"],
+    "expression": "0.50 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) - 1.00 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 1.00 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.50 * (0.55 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1)))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v259_receivable_peer_value_capex_residual",
+    "family": "four_parent_compact_residual",
+    "hypothesis": "Receivable discipline and relationship authority may combine with peer-value while subtracting capex/CFO exposure, producing a less direct quality-core value signal.",
+    "pre_estimated_top_abs_corr": 0.485,
+    "pre_estimated_qpa_corr": 0.240,
+    "pre_estimated_wjp2_corr": 0.082,
+    "pre_estimated_synthetic_sharpe": 1.81,
+    "source_alpha_ids": ["LLp7PRmM", "d5xj5W5v", "MPp7RPxn", "E5wRq3ZG"],
+    "expression": "1.00 * (0.65 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 0.75 * (0.75 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) - 1.00 * (0.55 * group_rank(ts_rank(-1 * capital_expenditure_amount / assets, 126), industry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * rank(-(close / open - 1))) + 0.50 * (0.55 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.45 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v259_actual_sales_aqi_value_residual",
+    "family": "four_parent_compact_residual",
+    "hypothesis": "Actual sales delivery and AQI/cashflow may add an operational-quality angle to EPS yield after subtracting crowded FCF/value exposure.",
+    "pre_estimated_top_abs_corr": 0.488,
+    "pre_estimated_qpa_corr": 0.117,
+    "pre_estimated_wjp2_corr": 0.317,
+    "pre_estimated_synthetic_sharpe": 1.79,
+    "source_alpha_ids": ["akd1nQMW", "9qwXgvQd", "rKoO0M89", "omKJ5nLl"],
+    "expression": "0.50 * (group_rank(ts_rank(est_eps / close, 126), industry)) + 0.50 * (0.55 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 0.75 * (0.60 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.25 * group_rank(ts_rank(-1 * sales_estimate_standard_deviation_quarterly / abs(sales), 126), industry) + 0.15 * rank(-(close / open - 1))) - 0.75 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

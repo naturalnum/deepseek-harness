@@ -1,0 +1,83 @@
+[
+  {
+    "name": "v88_fscore_contra_same_decay16",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "The low-correlation fscore contrarian parent is strong; increasing decay may lower turnover enough without changing the return path.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_same_decay24",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "A stronger decay version of the same fscore contrarian signal may keep the low-correlation profile while crossing the turnover gate.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_lower_reversal_decay16",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "Reducing the daily open-close reversal sleeve should lower turnover while leaving the contrarian model-style parent dominant.",
+    "expression": "0.33 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.24 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.21 * group_rank(ts_rank(fscore_value, 126), industry) + 0.10 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_lower_reversal_decay24",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "Lower daily reversal plus higher decay tests whether the fscore parent alone can carry a submit-quality low-turnover variant.",
+    "expression": "0.33 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.24 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.21 * group_rank(ts_rank(fscore_value, 126), industry) + 0.10 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_slow_reversal",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "Replacing open-close reversal with a slower 5-day return reversal should reduce turnover while preserving timing.",
+    "expression": "0.32 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.24 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.12 * rank(-1 * ts_mean(returns, 5)) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.06 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_no_daily_reversal",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "If the fscore contrarian effect is real, a no-daily-reversal version should retain moderate Sharpe with much lower turnover.",
+    "expression": "0.38 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.27 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.23 * group_rank(ts_rank(fscore_value, 126), industry) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_smoothed_model_inputs",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "Smoothing the model components directly should reduce rank churn while keeping the same contrarian style signal.",
+    "expression": "0.31 * group_rank(ts_rank(-1 * ts_mean(fscore_surface_accel, 20), 126), industry) + 0.23 * group_rank(ts_rank(-1 * ts_mean(fscore_growth, 20), 126), industry) + 0.18 * group_rank(ts_rank(ts_mean(fscore_value, 20), 126), industry) + 0.16 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_subindustry_decay16",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "Subindustry ranking may reduce sector/style churn while preserving the same low-correlation fscore contrarian mechanism.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), subindustry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), subindustry) + 0.18 * group_rank(ts_rank(fscore_value, 126), subindustry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v88_fscore_contra_volume_dryup",
+    "family": "fscore_contrarian_turnover_repair",
+    "hypothesis": "A small volume dry-up sleeve may replace part of daily reversal with a slower exhaustion signal and reduce turnover.",
+    "expression": "0.32 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.24 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.20 * group_rank(ts_rank(fscore_value, 126), industry) + 0.10 * rank(-(close / open - 1)) + 0.08 * rank(-1 * ts_rank(volume / adv20, 20)) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

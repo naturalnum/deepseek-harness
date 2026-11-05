@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v105_tax_comp_minus_stockcomp_value_050",
+    "family": "tax_competitor_residual",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Deferred-tax allowance plus raw competitor reversal is strong but now collides with stockcomp/value residuals; subtracting the LLpKELr9 stockcomp/value overlap may leave a cleaner tax-competitor sleeve.",
+    "expression": "0.230 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.080 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) - 0.070 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) - 0.100 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.080 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.040 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL synthetic: 9qwllbEo minus about 0.5*LLpKELr9, compressed below the operator cap to main stockcomp/value/FCF terms; target max ACTIVE corr ~0.66."
+  },
+  {
+    "name": "v105_forward_curve_aqi_credit_mix",
+    "family": "forward_curve_accounting_credit_mix",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Forward-curve carry alone sits on the competitor/reversal boundary; adding AQI plus credit-rating news may change the payoff path without reusing the forward no-dividend rescue that collapsed.",
+    "expression": "0.168 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.120 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.108 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.084 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.120 * group_rank(ts_rank(rp_ess_credit_ratings, 90), industry) + 0.080 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: 0.6*QPa033rr + 0.4*pw6jJ8aq; target max ACTIVE corr ~0.65."
+  },
+  {
+    "name": "v105_option_tax_residual_mix",
+    "family": "option_tax_competitor_residual",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Option/IV sentiment was just over the option-risk correlation wall; mixing it with the tax-competitor residual may lower both option and tax cluster exposure.",
+    "expression": "0.160 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.060 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) - 0.090 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.060 * group_rank(ts_rank(-1 * debt / assets, 126), industry) - 0.090 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.050 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.050 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry)",
+    "decay": 23,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL synthetic: about 0.33*N1peJ8vg + 0.67*omKaRZ9E, compressed to 10 terms; target max ACTIVE corr ~0.64."
+  },
+  {
+    "name": "v105_customer_pagerank_minus_authority",
+    "family": "relationship_graph_residual",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Customer PageRank and customer authority are not identical graph measures; subtracting the authority ACTIVE proxy may isolate demand-network breadth rather than the occupied authority + reversal sleeve.",
+    "expression": "0.450 * group_rank(ts_rank(pv13_ustomergraphrank_page_rank, 60), industry) - 0.180 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.210 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Compact residual: rKo2xOoj minus about 0.4*RRpmO2xb; local synthetic target max ACTIVE corr ~0.66."
+  },
+  {
+    "name": "v105_comp_hub_minus_earnings_news",
+    "family": "competitor_graph_residual",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Competitor hub + reversal was very strong but overlapped with the earnings-news competitor ACTIVE; subtracting that news/count proxy may leave a cleaner graph hub residual.",
+    "expression": "0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.298 * rank(-(close / open - 1)) + 0.200 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Compact residual: rKo2xMQa minus about 0.35*O0pNbJ17; local synthetic target max ACTIVE corr ~0.676, so strict corr gate is decisive."
+  },
+  {
+    "name": "v105_goodwill_option_minus_social_goodwill",
+    "family": "goodwill_option_volume_residual",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Goodwill decline plus option/volume was strong but hit the social-goodwill ACTIVE; subtracting social-goodwill terms may retain option/volume information with lower correlation.",
+    "expression": "0.124 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.055 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.041 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.056 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.036 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.045 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL synthetic: mL8YaxNK minus about 0.5*E5wVN6gm, compressed to avoid the operator cap; target max ACTIVE corr ~0.66 but option-cluster risk remains."
+  },
+  {
+    "name": "v105_sales_surprise_forward_option_mix",
+    "family": "sales_surprise_forward_option_mix",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Sales surprise + option confirmation is strong but a sales-surprise sibling; adding forward carry may diversify the timing path enough to pass the strict correlation gate.",
+    "expression": "0.160 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.120 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.080 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.040 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.168 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.120 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.108 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.084 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL synthetic: about 0.4*O0pNRMmJ + 0.6*QPa033rr; target max ACTIVE corr ~0.67, but reject if it remains a sales-surprise sibling."
+  },
+  {
+    "name": "v105_forward_value_ptp_mix",
+    "family": "forward_value_ptp_mix",
+    "source": "v105_local_pnl_residual_fusion_20260628",
+    "hypothesis": "Forward carry and PTP forecast confidence have different low-turnover analyst surfaces; mixing them may avoid the single-route blockers that stopped each standalone parent.",
+    "expression": "0.140 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.100 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.090 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.070 * rank(-(close / open - 1)) + 0.050 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.125 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.075 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Local PnL synthetic: roughly 0.5*QPa033rr + 0.5*1Y7Zoj2J; use as a final low-turnover analyst-surface probe."
+  }
+]

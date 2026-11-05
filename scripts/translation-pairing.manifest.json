@@ -1,5 +1,6 @@
 {
   "excluded": [
+    "integrations/epri-research/upstream/",
     ".agents/notes/AGENTS.md",
     ".agents/notes/implemented/AGENTS.md",
     ".agents/notes/implemented/CLAUDE.md",

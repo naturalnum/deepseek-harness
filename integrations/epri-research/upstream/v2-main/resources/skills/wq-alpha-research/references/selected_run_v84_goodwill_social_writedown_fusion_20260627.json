@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v84_goodwill_social_stability_core",
+    "family": "goodwill_social_stability_fusion",
+    "source": "local_pnl_fusion_v84_20260627",
+    "hypothesis": "Falling goodwill/assets is strong but too close to existing accounting-quality alphas when paired with option or plain reversal; slow social-sentiment stability should reshape the PnL without reusing the v83 option/AQI route.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.175 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.105 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.09 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.045 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.045 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Direct v84 rebuild of RRp70j8d + wpRbXmNp at about 70/30. Local PnL blend after omKoaQMl sync: Sharpe about 2.56, max ACTIVE corr about 0.64."
+  },
+  {
+    "name": "v84_goodwill_social_stability_social_heavy",
+    "family": "goodwill_social_stability_fusion",
+    "source": "local_pnl_fusion_v84_20260627",
+    "hypothesis": "A more social-heavy goodwill cleanup blend may sacrifice some parent strength while moving farther away from RRp7Q9Le/MPpGzqwr and the new AQI-option ACTIVE.",
+    "expression": "0.39 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.1625 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.0975 * rank(-(close / open - 1)) + 0.14 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.105 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.0525 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.0525 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRp70j8d + wpRbXmNp at about 65/35. Local blend had lower max corr than the core version; useful if the core fails self-corr."
+  },
+  {
+    "name": "v84_goodwill_social_relief_no_option",
+    "family": "goodwill_social_relief_fusion",
+    "source": "local_pnl_fusion_v84_20260627",
+    "hypothesis": "Replace the v83 option/volume sleeve with slow negative-buzz relief and social-volume confirmation around the goodwill-delta cleanup parent.",
+    "expression": "0.36 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.15 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.09 * rank(-(close / open - 1)) + 0.14 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(snt_social_volume_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRp70j8d + QPaKmZP5 at about 60/40. No option, PCR, AQI, or fast editorial field."
+  },
+  {
+    "name": "v84_acquired_goodwill_social_relief",
+    "family": "acquired_goodwill_social_relief",
+    "source": "local_pnl_fusion_v84_20260627",
+    "hypothesis": "Acquired-goodwill burden is a different cleanup lens from goodwill delta; pairing it with slow social relief may lift the old near-miss without falling back to option or AQI.",
+    "expression": "0.39 * group_rank(ts_rank(-1 * fnd6_acqgdwl / assets, 126), industry) + 0.15 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.06 * rank(-(close / open - 1)) + 0.14 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(snt_social_volume_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Based on d5xjqoMY + QPaKmZP5; local blend had about 1.9 Sharpe and max ACTIVE corr around 0.55-0.60."
+  },
+  {
+    "name": "v84_ptp_value_confidence_ev",
+    "family": "ptp_value_confidence_fusion",
+    "source": "local_pnl_fusion_v84_20260627",
+    "hypothesis": "PTP estimate confidence has acceptable standalone quality but sits near analyst-quality alphas; a modest EV valuation sleeve may add enough return/Fitness while keeping the PTP hierarchy parent distinct.",
+    "expression": "0.26 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.1625 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.13 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.0975 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.175 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "1Y7Zoj2J + omKNPNO5 at about 65/35. Local blend: Sharpe about 2.18, max ACTIVE corr about 0.64."
+  },
+  {
+    "name": "v84_writedown_social_relief",
+    "family": "writedown_social_relief",
+    "source": "local_pnl_fusion_v84_20260627",
+    "hypothesis": "The writedown vector was a low-corr near-miss with Fitness just below gate; slow social relief and risk compression may improve Fitness without AQI or credit-capacity sleeves.",
+    "expression": "0.27 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.21 * group_rank(ts_rank(-1 * news_low_exc_stddev, 60), industry) + 0.12 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.14 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(snt_social_volume_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "YPp72gxA + QPaKmZP5 at about 60/40. Probe only; close the route if Fitness stays below 1.10 or it maps back to MPpGzqwr/Vkp0P130."
+  }
+]

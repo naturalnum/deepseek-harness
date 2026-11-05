@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v171_award_authorized_incremental_relief",
+    "family": "equity_award_capacity_residual",
+    "hypothesis": "Prior non-option award forfeiture was strong but mapped to fixed-commitment and stock-comp actives. Low authorized and incremental share-award capacity may capture a cleaner dilution-capacity parent, using fields not present in the strong v158 grant-forfeit candidate.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.260 * group_rank(ts_rank(-1 * sbp_shares_authorized_count / common_stock_shares_outstanding_count, 126), industry) + 0.220 * group_rank(ts_rank(-1 * incremental_shares_sbp_arrangements / common_stock_shares_outstanding_count, 126), industry) + 0.180 * group_rank(ts_rank(-1 * incremental_shares_share_award_total / common_stock_shares_outstanding_count, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "New share-award capacity fields; no nonvested/unrecognized-cost/grant-forfeit term. Strict-check against 3q7PkXGN, akda9EW9, j2ZaGlVE, A1wmZ22l, and LLpKELr9."
+  },
+  {
+    "name": "v171_award_value_vesting_quality",
+    "family": "equity_award_value_vesting",
+    "hypothesis": "Grant-date fair value and vested award value may measure compensation quality rather than share-count overhang. High vested value with low forfeited/nonvested fair value tests a different award-value parent from forfeiture-count and unrecognized-cost signals.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.260 * group_rank(ts_rank(nonoption_equity_award_vested_avg_grant_fair_value, 126), industry) + 0.210 * group_rank(ts_rank(-1 * non_option_equity_awards_forfeited_avg_grant_fair_value, 126), industry) + 0.190 * group_rank(ts_rank(-1 * nonvested_equity_awards_avg_grant_fair_value_2, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Award value path avoids share-count ratio terms and unrecognized compensation cost. Reject if it becomes the v158 equity-award PnL."
+  },
+  {
+    "name": "v171_award_capacity_minus_fixed_commitment",
+    "family": "equity_award_anti_fixed_commitment",
+    "hypothesis": "The strongest v158 award candidate was highly correlated with 3q7PkXGN. Explicitly subtracting the lease/fixed-commitment proxy may test whether award-capacity information has residual alpha after removing the fixed-commitment channel.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.250 * group_rank(ts_rank(-1 * sbp_shares_authorized_count / common_stock_shares_outstanding_count, 126), industry) + 0.210 * group_rank(ts_rank(-1 * incremental_shares_sbp_arrangements / common_stock_shares_outstanding_count, 126), industry) + 0.160 * group_rank(ts_rank(nonoption_equity_award_vested_avg_grant_fair_value, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.090 * group_rank(ts_rank(-1 * operating_leases_minimum_payments_due_thereafter / assets, 126), industry) - 0.060 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Blocker-aware residual against 3q7PkXGN components; not submit-worthy if the subtraction only destroys signal or shifts correlation to akda9EW9/j2ZaGlVE."
+  },
+  {
+    "name": "v171_news18_qep_low_attention_no_social",
+    "family": "news18_semantic_low_attention",
+    "hypothesis": "QEP/BEE news18 was strong but crowded when mixed with social/skew. A no-social, low-attention semantic version tests whether positive earnings-evaluation tone under fewer story records can separate from existing news sleeves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.260 * group_rank(ts_rank(vec_avg(nws18_qep_fast_d1), 60), industry) + 0.220 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 60), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 60), industry) + 0.130 * group_rank(ts_rank(-1 * abs(mean_earnings_evaluation_sentiment), 90), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No social/skew/VWAP/QMB/editorial. Strict-check against LLpml6oL, Vkp0P130, e7OQoveE, LLpKoQPa, and d5xo7gvE."
+  },
+  {
+    "name": "v171_news18_ber_sentiment_absorption",
+    "family": "news18_earnings_release_absorption",
+    "hypothesis": "Earnings-release flags may be useful only when sentiment is positive but attention and market beta are low. This tests a BER/QEP/BEE absorption parent distinct from social and product-news routes.",
+    "expression": "trade_when(ts_rank(vec_avg(nws18_ber_fast_d1), 20) > 0.20, 0.250 * group_rank(ts_rank(vec_avg(nws18_qep_fast_d1), 60), industry) + 0.220 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 60), industry) + 0.160 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 60), industry) + 0.150 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 60), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Earnings-release-conditioned semantic probe; stop if it maps to generic news/event actives."
+  },
+  {
+    "name": "v171_ebit_delivery_award_decorr",
+    "family": "ebit_delivery_award_decorr",
+    "hypothesis": "EBIT actual delivery is occupied by e7OVEPxp, but the high-quality LSUS-failing variants had strong headline metrics. Adding small award-capacity residuals and reducing delivery-error weight tests whether the parent can become materially different rather than another cap/neutralization sibling.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.190 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.130 * group_rank(ts_rank(-1 * sbp_shares_authorized_count / common_stock_shares_outstanding_count, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A materially changed EBIT-delivery rescue; reject if it is just e7OVEPxp/j2ZPM55j correlation or loses LSUS."
+  }
+]

@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v53_rec_detail_upgrade_lowcorr",
+    "family": "analyst_recommendation_vector",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Improving broker recommendation detail may capture analyst opinion drift through a channel different from EPS yield, sales dispersion, news events, option flow, and intraday pressure.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses high-coverage low-alphaCount recommendation-detail vector; negative sign assumes lower recommendation score is better."
+  },
+  {
+    "name": "v53_rec_buy_under_breadth",
+    "family": "analyst_recommendation_vector",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "A higher buy share and lower underweight share among recommendations can represent broad analyst sponsorship without relying on EPS or sales estimates.",
+    "expression": "0.35 * group_rank(ts_rank(vec_avg(anl4_buy) / (vec_avg(anl4_total_rec) + 1), 126), industry) + 0.30 * group_rank(ts_rank(-1 * vec_avg(anl4_under) / (vec_avg(anl4_total_rec) + 1), 126), industry) + 0.15 * group_rank(ts_rank(-1 * vec_avg(anl4_hold) / (vec_avg(anl4_total_rec) + 1), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Recommendation composition rather than recommendation level; denominator stabilizes sparse recommendation counts."
+  },
+  {
+    "name": "v53_rec_upgrade_breadth_delta",
+    "family": "analyst_recommendation_vector",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Rising buy-share and falling underweight-share over a medium window should capture analyst upgrade breadth while avoiding news18 recommendation-change crowding.",
+    "expression": "0.35 * group_rank(ts_rank(ts_delta(vec_avg(anl4_buy) / (vec_avg(anl4_total_rec) + 1), 63), 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_under) / (vec_avg(anl4_total_rec) + 1), 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_hold) / (vec_avg(anl4_total_rec) + 1), 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Delta form should be less like static analyst-yield alphas; strict corr gate against e7OQoveE and akdb1ZqR."
+  },
+  {
+    "name": "v53_price_target_sentiment_rec",
+    "family": "price_target_news_recommendation",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Positive price-target news sentiment confirmed by recommendation detail may identify analyst optimism that is not the M&A/credit/legal news basket.",
+    "expression": "0.35 * group_rank(ts_rank(rp_nip_ptg, 90), industry) + 0.25 * group_rank(ts_rank(rp_ess_ptg, 90), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Matrix RavenPack price-target fields only; reject if it maps to e7OQoveE news capacity."
+  },
+  {
+    "name": "v53_adjusted_income_visibility_rec",
+    "family": "analyst_visibility_rec_cross",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Adjusted-income forecast agreement plus improving recommendation detail may improve the weak non-sales analyst uncertainty seed without falling back to sales-dispersion.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * adj_net_income_stddev / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(num_adj_net_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Small recommendation upgrade term tries to lift v32 adjusted-income visibility without adding sales-count or event/news parents."
+  },
+  {
+    "name": "v53_net_income_visibility_rec",
+    "family": "analyst_visibility_rec_cross",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Net-income estimate agreement and recommendation improvement can capture cleaner analyst confidence away from sales actual surprise and EPS yield.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * net_income_stddev / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(num_net_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-sales, non-EPS-level analyst confidence probe; watch akdb1ZqR and rKoO0M89 correlations."
+  },
+  {
+    "name": "v53_realized_vol_compression",
+    "family": "risk_regime_residual",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Stocks whose realized volatility and absolute-return pressure are low relative to recent history may represent calmer residual risk, distinct from close-location or VWAP pressure.",
+    "expression": "0.35 * rank(-1 * ts_rank(ts_std_dev(returns, 20), 90)) + 0.25 * rank(-1 * ts_rank(abs(returns), 20)) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 90), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure unit-clean risk/volatility residual probe; no close-location, vwap, option, news, graph, or accounting fields."
+  },
+  {
+    "name": "v53_idio_risk_term_structure",
+    "family": "risk_regime_residual",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Idiosyncratic-risk compression and falling beta/correlation slopes may capture de-risking episodes outside existing accounting and event families.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 90), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), industry) + 0.15 * rank(-1 * ts_rank(ts_std_dev(returns, 20), 90))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Risk-term-structure only; likely weak, included as a far-mechanism control after v31 risk slope was weak."
+  },
+  {
+    "name": "v53_news_reaction_speed_calm",
+    "family": "news12_matrix_reaction_speed",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Slower extreme post-news threshold moves with mild outperformance may identify less overreactive names using matrix news12 fields rather than unsupported event inputs.",
+    "expression": "0.35 * group_rank(ts_rank(news_mins_4_chg, 60), industry) + 0.25 * group_rank(ts_rank(news_indx_perf, 60), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(anl4_under) / (vec_avg(anl4_total_rec) + 1), 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses news12 fields confirmed MATRIX, not event inputs. Included as a small orthogonal news microstructure probe."
+  },
+  {
+    "name": "v53_insider_sentiment_rec_calm",
+    "family": "insider_news_recommendation",
+    "source": "recommendation_risk_residual_v53_20260627",
+    "hypothesis": "Positive insider-trading news impact combined with favorable analyst recommendation composition may be different from the M&A/credit/legal event basket.",
+    "expression": "0.35 * group_rank(ts_rank(rp_nip_insider, 90), industry) + 0.20 * group_rank(ts_rank(rp_ess_insider, 90), industry) + 0.25 * group_rank(ts_rank(vec_avg(anl4_buy) / (vec_avg(anl4_total_rec) + 1), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Insider-event sentiment was weak as a stabilizer in v30, but not tested as a dedicated slow matrix basket with recommendation composition."
+  }
+]

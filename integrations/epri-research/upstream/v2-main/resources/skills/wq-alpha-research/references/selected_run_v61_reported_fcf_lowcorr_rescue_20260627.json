@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v61_reported_fcf_equity_market_calm",
+    "family": "reported_fcf_lowcorr_rescue",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "The reported FCF/equity seed is low-correlation but low Fitness; adding only a market-correlation calmness term may improve Sharpe without moving into EV/EBITDA value.",
+    "expression": "0.70 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.30 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Direct mL85VLr2 repair; no EV, EBITDA, PV13, close/open, option, or news."
+  },
+  {
+    "name": "v61_reported_fcf_equity_subindustry",
+    "family": "reported_fcf_lowcorr_rescue",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "A narrower peer group may improve the reported FCF/equity signal's cross-sectional comparability and lift Fitness.",
+    "expression": "0.75 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Subindustry peer version of the reported FCF/equity seed, with only a risk term."
+  },
+  {
+    "name": "v61_reported_fcf_equity_improvement",
+    "family": "reported_fcf_lowcorr_rescue",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "The level signal may need a modest improvement term to increase returns enough for the Fitness threshold.",
+    "expression": "0.55 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(free_cash_flow_reported_value / equity, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Adds a ratio-improvement term; watch turnover and corr vs analyst/FCF actives."
+  },
+  {
+    "name": "v61_reported_fcf_equity_breadth",
+    "family": "reported_fcf_estimate_breadth",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "Reported FCF/equity may be more reliable when analyst FCF estimate breadth is expanding, without using EV valuation.",
+    "expression": "0.50 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses FCF detail estimate breadth as a confirmation, but keeps reported FCF/equity as main signal."
+  },
+  {
+    "name": "v61_reported_fcf_capex_guidance",
+    "family": "reported_fcf_capex_guidance",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "Reported FCF/equity should be more valuable when forward capex guidance is conservative and FCF estimates are positive.",
+    "expression": "0.45 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Combines the low-corr FCF/equity seed with the low-corr d5x18bgY capex-guidance seed."
+  },
+  {
+    "name": "v61_reported_fcf_capex_actual_light",
+    "family": "reported_fcf_capex_actual",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "Reported FCF/equity plus low capital expenditure intensity may capture cash generation after reinvestment needs, without using the active capex/CFO/reversal pattern.",
+    "expression": "0.55 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Historical capex is only 25%; strict corr gate vs MPp7RPxn."
+  },
+  {
+    "name": "v61_fcfps_reported_yield",
+    "family": "reported_fcf_per_share",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "Reported FCF per share over price may be a cleaner yield expression than reported FCF over book equity, though coverage is lower.",
+    "expression": "0.45 * group_rank(ts_rank(free_cash_flow_per_share_reported_value / close, 126), industry) + 0.30 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Per-share reported FCF sign/coverage probe; compare to mL85VLr2."
+  },
+  {
+    "name": "v61_reported_fcf_social_confirm",
+    "family": "reported_fcf_social_filter",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "The weak-but-low-correlation social value signal may act as a confirmation filter for reported FCF/equity without becoming the main driver.",
+    "expression": "0.55 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses social only as 35% combined confirmation; strict corr gate vs Vkp0P130 and E5wRq3ZG."
+  },
+  {
+    "name": "v61_reported_fcf_vwap_absorption",
+    "family": "reported_fcf_technical_filter",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "Reported FCF/equity may benefit from a small transient-pressure filter, but the technical term must remain too small to recreate mL86Jle1.",
+    "expression": "0.60 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.20 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.20 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Small VWAP pressure term; stop if corr approaches mL86Jle1."
+  },
+  {
+    "name": "v61_reported_fcf_netprofit_confirm",
+    "family": "reported_fcf_profit_confirm",
+    "source": "reported_fcf_lowcorr_rescue_v61_20260627",
+    "hypothesis": "Reported FCF/equity may need a simple reported net-profit confirmation rather than EV or EBITDA valuation.",
+    "expression": "0.55 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(net_profit_reported_value / equity, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Reported profit confirmation; no EBITDA, EV, PV13, or close/open."
+  }
+]

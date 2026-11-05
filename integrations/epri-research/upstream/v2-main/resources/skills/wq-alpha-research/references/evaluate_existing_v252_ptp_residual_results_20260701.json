@@ -1,0 +1,158 @@
+[
+  {
+    "alpha_id": "N1pKM19g",
+    "status": "UNSUBMITTED",
+    "metrics": {
+      "is": {
+        "pnl": 3219381,
+        "bookSize": 20000000,
+        "longCount": 1644,
+        "shortCount": 1496,
+        "turnover": 0.0599,
+        "returns": 0.0651,
+        "drawdown": 0.0561,
+        "margin": 0.002171,
+        "sharpe": 1.63,
+        "fitness": 1.18,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.63
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.18
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0599
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0599
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.71,
+            "value": 0.58
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "fails": [
+      "LOW_SUB_UNIVERSE_SHARPE"
+    ],
+    "warns": [],
+    "metric_gate": "blocking_checks_LOW_SUB_UNIVERSE_SHARPE",
+    "submission": {
+      "submitted": false,
+      "reason": "blocking_checks_LOW_SUB_UNIVERSE_SHARPE"
+    }
+  },
+  {
+    "alpha_id": "npga5Zwd",
+    "status": "UNSUBMITTED",
+    "metrics": {
+      "is": {
+        "pnl": 3258937,
+        "bookSize": 20000000,
+        "longCount": 1649,
+        "shortCount": 1491,
+        "turnover": 0.0604,
+        "returns": 0.0659,
+        "drawdown": 0.059,
+        "margin": 0.002179,
+        "sharpe": 1.57,
+        "fitness": 1.14,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.57
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.14
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0604
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0604
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.68,
+            "value": 0.66
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "fails": [
+      "LOW_SUB_UNIVERSE_SHARPE"
+    ],
+    "warns": [],
+    "metric_gate": "blocking_checks_LOW_SUB_UNIVERSE_SHARPE",
+    "submission": {
+      "submitted": false,
+      "reason": "blocking_checks_LOW_SUB_UNIVERSE_SHARPE"
+    }
+  }
+]

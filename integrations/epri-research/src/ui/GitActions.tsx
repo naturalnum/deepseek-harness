@@ -1,0 +1,20 @@
+import React,{useEffect,useState} from 'react';
+import {api} from './adapters/api';
+export default function GitActions({onChanged}:any){
+ const [state,setState]=useState<any>(null),[worktreeId,setTree]=useState(''),[selected,setSelected]=useState<string[]>([]),[message,setMessage]=useState(''),[branch,setBranch]=useState(''),[revert,setRevert]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
+ const refresh=async()=>{const s=await api('project_git_working',worktreeId?{worktreeId}:{});setState(s);setSelected([]);};
+ const task=async(fn:()=>Promise<void>)=>{setBusy(true);setError('');setNotice('');try{await fn();await refresh();await onChanged();}catch(e:any){setError(e.message);await refresh().catch(()=>{});}finally{setBusy(false);}};
+ useEffect(()=>{void refresh().catch(e=>setError(e.message));},[worktreeId]);
+ const base=()=>({expectedToken:state.token,requestId:crypto.randomUUID()});
+ const checkpoint=()=>void task(async()=>{const r=await api('project_git_checkpoint',{...base(),...(worktreeId?{worktreeId}:{}),files:selected,message,stage:'analysis'});setNotice('检查点已保存：'+r.sha.slice(0,8));setMessage('');});
+ return <details className="graph-reference git-actions"><summary>保存检查点与管理研究分支</summary><p>每次写入前检查仓库状态，仅提交勾选文件。分支使用独立工作目录，便于与其他开发工作并行。</p>
+ {error&&<p role="alert" className="compact-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
+ {state&&<><label>工作目录<select disabled={busy} value={worktreeId} onChange={e=>setTree(e.target.value)}><option value="">主工作目录</option>{state.worktrees.map((w:any)=><option key={w.id} value={w.id}>{w.branch}</option>)}</select></label><p className="graph-mono">{state.path}</p><button disabled={busy} onClick={()=>void task(refresh)}>刷新变更</button>
+ <div className="git-file-list">{state.changes.map((c:any)=><label key={c.path}><input type="checkbox" disabled={busy} checked={selected.includes(c.path)} onChange={e=>setSelected(e.target.checked?[...selected,c.path]:selected.filter(p=>p!==c.path))}/><code>{c.code}</code> {c.path}</label>)}{!state.changes.length&&<p>工作目录没有未提交修改。</p>}</div>
+ <label>检查点说明<input disabled={busy} value={message} onChange={e=>setMessage(e.target.value)} maxLength={500}/></label><button disabled={busy||!selected.length||!message.trim()} onClick={checkpoint}>提交所选文件</button>
+ {worktreeId&&<><p>自动检查点：在研究阶段完成时，提交此工作目录中已授权文件的变更。</p><button disabled={busy||!selected.length} onClick={()=>{if(confirm('允许后续完成的研究阶段自动提交所选文件？仅对当前独立分支生效。'))void task(async()=>{await api('project_git_policy',{enabled:true,worktreeId,files:selected});setNotice('自动检查点已开启。');});}}>用所选文件开启自动检查点</button>{state.policy.enabled&&<button disabled={busy} onClick={()=>void task(async()=>{await api('project_git_policy',{worktreeId:state.policy.worktreeId,files:state.policy.files,enabled:false});setNotice('自动检查点已关闭。');})}>关闭自动检查点</button>}</>}
+ {!worktreeId&&<><label>新研究分支名称（字母、数字或连字符）<input disabled={busy} value={branch} pattern="[a-zA-Z0-9][a-zA-Z0-9-]*" onChange={e=>setBranch(e.target.value)}/></label><button disabled={busy||!branch.trim()} onClick={()=>void task(async()=>{const w=await api('project_git_branch',{...base(),name:branch});setBranch('');setNotice('已创建独立目录：'+w.path);})}>创建独立分支工作区</button>
+ {state.worktrees.map((w:any)=><p key={w.id}><strong>{w.branch}</strong> · <span className="graph-mono">{w.path}</span> <button disabled={busy} onClick={()=>void task(async()=>{const source=await api('project_git_working',{worktreeId:w.id});if(!confirm('将 '+w.branch+' 合并到当前主工作目录？有冲突时会保留现场供处理。'))return;const r=await api('project_git_merge',{...base(),worktreeId:w.id,sourceSha:source.head});setNotice('合并完成：'+r.sha.slice(0,8));})}>检查并合并</button></p>)}
+ <label>撤销普通提交（完整 SHA）<input value={revert} disabled={busy} onChange={e=>setRevert(e.target.value)}/></label><button disabled={busy||!revert.trim()} onClick={()=>{if(confirm('以新提交撤销这一普通提交？历史记录将保留。'))void task(async()=>{const r=await api('project_git_revert',{...base(),sha:revert});setNotice('撤销提交已创建：'+r.sha.slice(0,8));setRevert('');});}}>创建撤销提交</button></>}
+ </>}{busy&&<p role="status">正在执行 Git 操作…</p>}</details>;
+}

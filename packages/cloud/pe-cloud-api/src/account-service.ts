@@ -2,6 +2,10 @@ import { approvedSettingsMatch } from './approved-settings.ts'
 /** Graph-owned API preparation and native providers consumed by trusted runtime assembly. */
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { remoteMethods, type TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { AccountFeatureAdmission } from './account-feature.ts'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
@@ -107,10 +111,12 @@ export class CloudAccountApi extends Service {
   private readonly startupPhase: AccountApiPreparation['observeStartupPhase']
   // These cells retain original installations across caller-scoped Cordis proxies.
   private readonly native: Partial<Record<NativeKey, NativeInstallation>> = {}
+  private readonly features = new Map<string, { inspect: () => readonly EndpointExposure[] }>()
+  private sessionGuards: NativeSessionGuards | undefined
   private readonly streamGuard: { dispose?: () => void } = {}
   private readonly firstScreen: { native?: NativeFirstScreen; events?: FirstScreenEvents } = {}
   private readonly modelKey: { native?: CloudModelKeyService } = {}
-  private readonly skills: { native?: CloudSkillService } = {}
+  private readonly skills: { native?: CloudSkillService; preparation?: CloudSkillPreparation } = {}
   private readonly plugins: { control?: AccountPluginControl; native?: CloudPluginService } = {}
   /** Actual installed managed Shell limits, read through the account's original execution owner. */
   readonly readTerminalLimits: AccountApiPreparation['readTerminalLimits']
@@ -283,6 +289,7 @@ export class CloudAccountApi extends Service {
         ...pluginInventory?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
         ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
+        ...[...this.features.values()].flatMap(feature => feature.inspect()),
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [], ...questions?.streamEndpoints ?? [],
@@ -337,6 +344,7 @@ export class CloudAccountApi extends Service {
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireRpc(endpoint)
+    this.features.get(endpoint.slice(0, endpoint.indexOf('/')))?.inspect()
     if (endpoint === '$events/result' && this.firstScreen.events?.inspect().resultEndpoint !== endpoint) this.nativeUnavailable()
     if (endpoint.startsWith('commands/')) {
       if (this.commands.native === undefined) this.nativeUnavailable()
@@ -506,6 +514,7 @@ export class CloudAccountApi extends Service {
     if (this.skills.native !== undefined) this.duplicateNative()
     const native = new CloudSkillService(owner, this, input, this.saves)
     this.skills.native = native
+    this.skills.preparation = input
     return native
   }
 
@@ -660,7 +669,102 @@ export class CloudAccountApi extends Service {
     this.requireUninstalled(owner, 'sessionController')
     const controller = createNativeController(owner, this.binding, this.businessCurrent, this.installation.exposure, guards, config)
     this.native.sessionController = { value: original(controller), fiber: owner.fiber }
+    this.sessionGuards = guards
     return controller
+  }
+
+  /** Register a reviewed feature's concrete Remote methods during unpublished account assembly.
+   * Methods remain denied unless the Root manifest selects their exact endpoint, owner and guard.
+   * @param owner Feature's original Loader scope.
+   * @param service Installed feature service, whose namespace equals its Cordis service key.
+   * @returns Existing account/Session admission; registration is withdrawn with its Loader fiber.
+   */
+  registerFeature(owner: Context, service: TypertRemoteService): AccountFeatureAdmission {
+    this.assertInstalled(owner)
+    if (this.unpublished === undefined || this.maxNativeInventoryEntries === undefined) this.nativeUnavailable()
+    this.unpublished()
+    const remote = service.typertRemote, key = remote.serviceKey, value = original(service)
+    const markers = remoteMethods(service), maximum = this.maxNativeInventoryEntries
+    const registeredCount = [...this.features.values()].reduce((count, feature) => count + feature.inspect().length, 0)
+    if (remote.namespace !== key || original(remote.service) !== value || this.features.has(key)
+      || markers.length === 0 || markers.length + registeredCount > maximum) this.nativeUnavailable()
+    const methods = markers.map((marker) => {
+      const implementation: unknown = Reflect.get(service, marker.method)
+      if ((marker.mode ?? 'rpc') !== 'rpc' || typeof implementation !== 'function') this.nativeUnavailable()
+      return { method: marker.method, implementation,
+        endpoint: key + '/' + (marker.exportName ?? marker.method), handlerId: 'native:' + key, guard: 'account-session' as const }
+    })
+    const inspect = (): readonly EndpointExposure[] => {
+      this.assertInstalled(owner)
+      const local: unknown = owner.get(key), root: unknown = owner.root.get(key)
+      if (local === null || typeof local !== 'object' || root === null || typeof root !== 'object') this.nativeUnavailable()
+      if (owner.fiber.state !== FiberState.ACTIVE || owner.root !== this.ctx.root
+        || original(local) !== value || original(root) !== value
+        || this.features.get(key)?.inspect !== inspect) this.nativeUnavailable()
+      const actual = remoteMethods(service)
+      if (service.typertRemote !== remote || actual.length !== methods.length) this.nativeUnavailable()
+      for (const [index, method] of methods.entries()) {
+        const marker = actual[index]
+        if (marker === undefined || (marker.mode ?? 'rpc') !== 'rpc' || marker.method !== method.method
+          || key + '/' + (marker.exportName ?? marker.method) !== method.endpoint
+          || Reflect.get(service, method.method) !== method.implementation) this.nativeUnavailable()
+      }
+      return methods.map(({ endpoint, handlerId, guard }) => ({ endpoint, handlerId, guard }))
+    }
+    owner.effect(() => {
+      this.features.set(key, { inspect })
+      return () => { this.features.delete(key); this.invalidate() }
+    }, 'pe-cloud-api: account feature ' + key)
+    const current = (): void => { this.admit(); inspect() }
+    const assertAgent = (agent: Agent): void => {
+      current()
+      if (this.sessionGuards === undefined || agent.ctx.root !== owner.root
+        || agent.ctx.get('peAccount') !== this.binding || owner.get('agents')?.get(agent.id) !== agent) this.nativeUnavailable()
+      this.sessionGuards.assertActiveScope(agent)
+      current()
+    }
+    return Object.freeze({ assertCurrent: current, assertAgent,
+      materializeSkill: async (...[input, options]: Parameters<AccountFeatureAdmission['materializeSkill']>) => {
+        current()
+        const prepared = this.skills.preparation, resources = prepared?.managed.resources
+        if (prepared === undefined || resources === undefined) this.nativeUnavailable()
+        resources.assertCaller(options)
+        const signal = AbortSignal.any([this.binding.lifetime, ...options.signal === undefined ? [] : [options.signal]])
+        signal.throwIfAborted()
+        const version = await prepared.files.prepareBundle(input, signal)
+        try {
+          current(); resources.assertCaller(options)
+          const result = await prepared.files.withBundleSource(version.value,
+            (source, control) => resources.materialize(source.version, { ...options, signal: control }), signal)
+          try { current(); resources.assertCaller(options); signal.throwIfAborted(); return result.value }
+          finally { result.release() }
+        } finally { version.release() }
+      },
+      resolveAgent: async (id: SessionId, signal: AbortSignal): Promise<Agent> => {
+        const control = AbortSignal.any([signal, this.binding.lifetime])
+        current(); control.throwIfAborted()
+        if (this.sessionGuards === undefined) this.nativeUnavailable()
+        await this.sessionGuards.assertSessionProject(id)
+        current(); control.throwIfAborted()
+        const controller = owner.get('sessionController')
+        if (controller === undefined) this.nativeUnavailable()
+        const result = await controller.resolveAgent(id)
+        current(); control.throwIfAborted()
+        if ('error' in result) this.nativeUnavailable()
+        assertAgent(result.agent)
+        return result.agent
+      },
+    })
+  }
+
+  /** Check a selected feature endpoint against its actual registered methods.
+   * @param row Root-selected unary exposure.
+   * @returns Whether the original feature currently owns this exact Session-guarded endpoint.
+   */
+  isFeatureRpc(row: EndpointExposure): boolean {
+    this.assertInstalled()
+    return this.features.get(row.endpoint.slice(0, row.endpoint.indexOf('/')))?.inspect()
+      .some(actual => actual.endpoint === row.endpoint && actual.handlerId === row.handlerId && actual.guard === row.guard) ?? false
   }
 
   /**
@@ -1065,6 +1169,7 @@ export class CloudAccountApi extends Service {
     this.schedule.native?.inspect()
     this.sessionFeedback.native?.inspect()
     this.messageFeedback.native?.inspect()
+    for (const feature of this.features.values()) feature.inspect()
     if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)

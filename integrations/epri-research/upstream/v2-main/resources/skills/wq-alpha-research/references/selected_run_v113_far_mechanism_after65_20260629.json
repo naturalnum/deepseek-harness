@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v113_fcf_compvalue_pair_060_040",
+    "family": "fcf_value_compact_pair",
+    "hypothesis": "A dominant free-cash-flow yield parent mixed with a small sales/value/competitor-quality parent may preserve the cashflow edge while reducing correlation to the pure FCF active sleeve.",
+    "expression": "0.600 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.116 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.084 * rank(-(close / open - 1)) + 0.052 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.072 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.060 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.024 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.020 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.028 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) - 0.016 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) - 0.012 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v113_fcf_sales_eps_value_065_035",
+    "family": "fcf_sales_eps_value",
+    "hypothesis": "Free-cash-flow yield combined with analyst sales and EPS value may produce a more value-quality path than pure FCF or pure analyst EPS.",
+    "expression": "0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v113_fscore_inventory_credit_base",
+    "family": "fscore_inventory_credit",
+    "hypothesis": "Improving style surface, lean inventories, and unused credit capacity can capture operational resilience outside the crowded competitor and option sleeves.",
+    "expression": "0.28 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.20 * group_rank(ts_rank(-1 * inventory_finished_goods_value / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * inventory_wip_amount / assets, 126), industry) + 0.16 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.12 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v113_employee_stockcomp_value_market",
+    "family": "employee_stockcomp_value",
+    "hypothesis": "Low employee-compensation liabilities and low stock-based compensation expense, paired with operating and sales value, may measure cleaner human-capital cost discipline.",
+    "expression": "0.2280 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.1920 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.1200 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.0600 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.2000 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.2000 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v113_lease_employee_reversal_clean",
+    "family": "lease_employee_discipline",
+    "hypothesis": "Companies with lower lease obligations and lower employee-benefit liabilities may have cleaner fixed-cost structures; a small reversal component keeps turnover alive.",
+    "expression": "0.350 * group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * current_minimum_operating_lease_payment / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.150 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v113_unrecognized_tax_liability_reversal",
+    "family": "tax_uncertainty_quality",
+    "hypothesis": "Lower unrecognized tax benefits and deferred tax liabilities can identify cleaner tax-risk profiles, with a light reversal term for timing.",
+    "expression": "0.450 * group_rank(ts_rank(-1 * fn_unrecognized_tax_benefits_a / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * future_tax_liabilities / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(net_deferred_tax_assets_liabilities) / assets, 126), industry) + 0.150 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v113_short_forward_dividend_risk",
+    "family": "short_interest_forward_curve",
+    "hypothesis": "Forward curve dislocation, lower short interest, dividend yield, and beta relief may form a credit/expectation path not covered by recent competitor-news or acquired-goodwill successes.",
+    "expression": "0.260 * group_rank(ts_rank((close - forward_price_180) / close, 90), industry) + 0.180 * group_rank(ts_rank((forward_price_60 - forward_price_360) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

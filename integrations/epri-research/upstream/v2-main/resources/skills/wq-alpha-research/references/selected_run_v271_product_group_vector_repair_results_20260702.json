@@ -1,0 +1,532 @@
+[
+  {
+    "name": "v271_vec_earnings_eval_fade",
+    "family": "product_group_vector_repair",
+    "expression": "group_rank(ts_rank(-1 * vec_avg(earnings_evaluation_sentiment), 90), pv13_hierarchy_min5_3000_513_sector)",
+    "idx": 4,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "d5xrYOvJ",
+      "sim_data": {
+        "id": "2X50mPbmu5cg9d77AkJntcT",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 10,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "group_rank(ts_rank(-1 * vec_avg(earnings_evaluation_sentiment), 90), pv13_hierarchy_min5_3000_513_sector)",
+        "status": "COMPLETE",
+        "alpha": "d5xrYOvJ"
+      }
+    },
+    "metrics": {
+      "id": "d5xrYOvJ",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 10,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "group_rank(ts_rank(-1 * vec_avg(earnings_evaluation_sentiment), 90), pv13_hierarchy_min5_3000_513_sector)",
+        "description": null,
+        "operatorCount": 4
+      },
+      "dateCreated": "2026-07-01T15:22:24-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T15:22:25-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 3491976,
+        "bookSize": 20000000,
+        "longCount": 1492,
+        "shortCount": 1421,
+        "turnover": 0.3768,
+        "returns": 0.0706,
+        "drawdown": 0.0465,
+        "margin": 0.000375,
+        "sharpe": 1.55,
+        "fitness": 0.67,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.55
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.67
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.3768
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.3768
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.67,
+            "value": 0.59
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "fitness_below_1.1"
+    }
+  },
+  {
+    "name": "v271_product_group_sga_surprise_flip",
+    "family": "product_group_vector_repair",
+    "expression": "group_rank(ts_rank(rank(anl4_fs_actual_1qf_v4_nd_sga_value) - rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median), 126), pv13_hierarchy_f2_sector)",
+    "idx": 6,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "XgpAVb08",
+      "sim_data": {
+        "id": "1MUv6SbP74Q3bniS8Oipgv3",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 4,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "group_rank(ts_rank(rank(anl4_fs_actual_1qf_v4_nd_sga_value) - rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median), 126), pv13_hierarchy_f2_sector)",
+        "status": "COMPLETE",
+        "alpha": "XgpAVb08"
+      }
+    },
+    "metrics": {
+      "id": "XgpAVb08",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 4,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "group_rank(ts_rank(rank(anl4_fs_actual_1qf_v4_nd_sga_value) - rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median), 126), pv13_hierarchy_f2_sector)",
+        "description": null,
+        "operatorCount": 5
+      },
+      "dateCreated": "2026-07-01T15:22:41-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T15:22:41-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 1915452,
+        "bookSize": 20000000,
+        "longCount": 1004,
+        "shortCount": 1879,
+        "turnover": 0.0884,
+        "returns": 0.0387,
+        "drawdown": 0.0657,
+        "margin": 0.000876,
+        "sharpe": 1.08,
+        "fitness": 0.6,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 1.08
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.6
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0884
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0884
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.47,
+            "value": 0.61
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "name": "v271_product_comp_slow60",
+    "family": "product_group_vector_repair",
+    "expression": "group_rank(ts_rank(ts_mean(-1 * rel_ret_comp, 5), 60), pv13_rha2_min5_3000_513_sector)",
+    "idx": 1,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "d5xrYQe2",
+      "sim_data": {
+        "id": "Q3XRfb0k4W3b2T8E8WoV3x",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 30,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.05,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "group_rank(ts_rank(ts_mean(-1 * rel_ret_comp, 5), 60), pv13_rha2_min5_3000_513_sector)",
+        "status": "COMPLETE",
+        "alpha": "d5xrYQe2"
+      }
+    },
+    "metrics": {
+      "id": "d5xrYQe2",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 30,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.05,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "group_rank(ts_rank(ts_mean(-1 * rel_ret_comp, 5), 60), pv13_rha2_min5_3000_513_sector)",
+        "description": null,
+        "operatorCount": 4
+      },
+      "dateCreated": "2026-07-01T15:20:33-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T15:20:33-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [
+        {
+          "id": "DATA_USAGE:SINGLE_DATA_SET",
+          "name": "Single Data Set Alpha"
+        }
+      ],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": -953622,
+        "bookSize": 20000000,
+        "longCount": 1440,
+        "shortCount": 1477,
+        "turnover": 0.1845,
+        "returns": -0.0193,
+        "drawdown": 0.1293,
+        "margin": -0.000209,
+        "sharpe": -0.69,
+        "fitness": -0.22,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": -0.69
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": -0.22
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.1845
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.1845
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": -0.3,
+            "value": -0.48
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "name": "v271_product_comp_earnings_slow",
+    "family": "product_group_vector_repair",
+    "expression": "0.65 * group_rank(ts_rank(ts_mean(-1 * rel_ret_comp, 5), 60), pv13_rha2_min5_3000_513_sector) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), pv13_hierarchy_min10_3000_513_sector)",
+    "idx": 2,
+    "sim": {
+      "status": "ERROR",
+      "sim_data": {
+        "id": "3FoNZC6km4h8b1eMpRBbs2t",
+        "type": "REGULAR",
+        "status": "ERROR",
+        "message": "Attempted to use unknown variable \"pv13_hierarchy_min10_3000_513_sector\". <linkToCommonErrorMessages>Learn more</linkToCommonErrorMessages>",
+        "location": {
+          "line": 1,
+          "start": 144,
+          "end": 180,
+          "property": "regular"
+        },
+        "links": {
+          "linkToCommonErrorMessages": "https://support.worldquantbrain.com/hc/en-us/articles/18423410021783--BRAIN-TIPS-Troubleshooting-common-error-messages"
+        }
+      }
+    }
+  },
+  {
+    "name": "v271_vec_mna_product_group",
+    "family": "product_group_vector_repair",
+    "expression": "group_rank(ts_rank(vec_avg(merger_acquisition_sentiment), 90), pv13_hierarchy_min20_3000_513_sector)",
+    "idx": 3,
+    "sim": {
+      "status": "ERROR",
+      "sim_data": {
+        "id": "4iZBEa3qs5bP9F86Oqg99Sb",
+        "type": "REGULAR",
+        "status": "ERROR",
+        "message": "Attempted to use unknown variable \"pv13_hierarchy_min20_3000_513_sector\". <linkToCommonErrorMessages>Learn more</linkToCommonErrorMessages>",
+        "location": {
+          "line": 1,
+          "start": 63,
+          "end": 99,
+          "property": "regular"
+        },
+        "links": {
+          "linkToCommonErrorMessages": "https://support.worldquantbrain.com/hc/en-us/articles/18423410021783--BRAIN-TIPS-Troubleshooting-common-error-messages"
+        }
+      }
+    }
+  },
+  {
+    "name": "v271_generic_revision_vecavg",
+    "family": "product_group_vector_repair",
+    "expression": "group_rank(ts_rank(vec_avg(anl4_eaz2lafv110_estvalue) - vec_avg(anl4_eaz2lafv110_prevval), 126), pv13_hierarchy_min10_3000_513_sector)",
+    "idx": 5,
+    "sim": {
+      "status": "ERROR",
+      "sim_data": {
+        "id": "37O8sU5pK4A1a7xF6VjBTTg",
+        "type": "REGULAR",
+        "status": "ERROR",
+        "message": "Attempted to use unknown variable \"pv13_hierarchy_min10_3000_513_sector\". <linkToCommonErrorMessages>Learn more</linkToCommonErrorMessages>",
+        "location": {
+          "line": 1,
+          "start": 97,
+          "end": 133,
+          "property": "regular"
+        },
+        "links": {
+          "linkToCommonErrorMessages": "https://support.worldquantbrain.com/hc/en-us/articles/18423410021783--BRAIN-TIPS-Troubleshooting-common-error-messages"
+        }
+      }
+    }
+  }
+]

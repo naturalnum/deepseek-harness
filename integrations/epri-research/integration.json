@@ -1,0 +1,30 @@
+{
+  "schema": "epri.research.handoff.v2",
+  "version": "0.2.1-cloud.20261105.1",
+  "status": "local-review",
+  "productionReady": false,
+  "deploymentMode": "platform-cloud-multiuser",
+  "multiuserRequired": true,
+  "platformSsoConnected": false,
+  "nativeLoaderGatewayTested": true,
+  "keylessSessionReplayTested": true,
+  "linuxExecutorTested": true,
+  "targetRuntimeTested": false,
+  "targetRepository": "https://github.com/naturalnum/deepseek-harness",
+  "targetBranch": "power-evolve/cloud-keeperless",
+  "validatedHarnessVersion": "0.2.1-rc.2",
+  "modePolicy": "extend the existing approved preset; preserve its id and recompute its digest",
+  "identityContract": "examples/integration/platform-contract.json",
+  "deploymentInputsRequired": [
+    "actual Root/account configuration",
+    "approved OpenSandbox base image and runtime user",
+    "test environment with two platform accounts"
+  ],
+  "excluded": [
+    "runtime user data",
+    "secrets",
+    "node_modules",
+    "Docker image layers"
+  ],
+  "sourceRevision": "See the outside-repository review manifest for the exact base revision."
+}

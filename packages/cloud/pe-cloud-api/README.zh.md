@@ -67,6 +67,8 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+经审核的账号功能在尚未开放的 Loader 装配阶段，通过 `CloudAccountApi.registerFeature()` 注册具体的单次 Remote 方法。注册保留原服务、方法实现和所属 fiber，不会自行开放接口；Root 必须选择精确 endpoint、handler 和 `account-session` 守卫。返回的准入能力复用原有 Session/项目检查及托管技能资源投影。服务替换、卸载或账号关闭都会拒绝后续操作。参见可选的[科研接入插件](../../experimental/epri-research/README.zh.md)。
+
 需要在冷会话列表展示持久标题的 Cloud 部署，在同一账户的 `sessions`、`sessionProjections` 和 `storageDomain` 上装配 `@deepseek-ai/dsh-session-projection-cache`，使用原生 `writeEveryEvents: 200`、`writeIntervalMs: 5000` 配置，并将该条目保留在该部署 Runtime 的 `requiredEntryIds` 中。原生列表直接读取检查点，不打开会话正文；写入失败只使缓存提示陈旧或缺失，不改变权威标题。已有未缓存会话通过正常的原生恢复、写入和释放生命周期建立检查点；安装缓存不会扫描旧日志，含未提交恢复事件的只读观察结果不能发布为检查点。派生缓存仍位于账户既有私有存储及配额内，不安装新的存储所有者或标题生成器。
 
 <details>

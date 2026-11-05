@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v132_event_reaction_acceptance_novelty",
+    "family": "event_micro_reaction",
+    "hypothesis": "A positive first-five-minute event reaction with low subsequent downside and high novelty may indicate real information acceptance rather than generic news sentiment.",
+    "expression": "trade_when(ts_rank(vec_avg(current_to_average_volume_ratio_2), 20) > 0.45, 0.300 * group_rank(ts_rank(vec_avg(five_minute_price_change_pct_all), 60), industry) + 0.220 * group_rank(ts_rank(-1 * vec_avg(max_pct_decrease_post_news), 60), industry) + 0.180 * group_rank(ts_rank(vec_avg(event_novelty_score_2), 60), industry) + 0.160 * group_rank(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 60), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_event_reaction_contrarian_lownovelty",
+    "family": "event_micro_reaction",
+    "hypothesis": "Low-novelty event price spikes may mean overreaction; fading the first reaction and maximum upside tests an event-specific reversal path distinct from close-open reversal.",
+    "expression": "trade_when(ts_rank(vec_avg(current_to_average_volume_ratio_2), 20) > 0.40, 0.340 * group_rank(ts_rank(-1 * vec_avg(five_minute_price_change_pct_all), 45), industry) + 0.220 * group_rank(ts_rank(-1 * vec_avg(max_pct_increase_post_news), 45), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(global_event_novelty_score_2), 60), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_event_downside_resilience_qep",
+    "family": "event_micro_reaction",
+    "hypothesis": "Stocks with lower post-news downside excursions and positive fast polarity may have cleaner event absorption without using competitor/news low-volume sleeves.",
+    "expression": "0.320 * group_rank(ts_rank(-1 * vec_avg(low_price_excursion_stddev), 60), industry) + 0.240 * group_rank(ts_rank(-1 * vec_avg(max_pct_decrease_post_news), 60), industry) + 0.180 * group_rank(ts_rank(vec_avg(nws18_qep_fast_d1), 60), industry) + 0.140 * group_rank(ts_rank(vec_avg(event_novelty_score_2), 60), industry) + 0.120 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_event_vwap_followthrough",
+    "family": "event_micro_reaction",
+    "hypothesis": "Event-time VWAP follow-through after relevant news may capture intraday information absorption that is not the old GHC/SSC low-volume news route.",
+    "expression": "trade_when(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 20) > 0.50, 0.300 * group_rank(ts_rank(vec_avg(main_end_of_day_vwap) / close - 1, 45), industry) + 0.240 * group_rank(ts_rank(vec_avg(five_minute_price_change_percent), 45), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 60), industry) + 0.160 * group_rank(ts_rank(vec_avg(global_event_novelty_score_2), 60), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_customer_intangible_clean_harvest",
+    "family": "customer_intangible_footnote",
+    "hypothesis": "Low customer-related intangible burden with already-amortized customer assets may identify firms less dependent on purchased customer relationships.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.340 * group_rank(ts_rank(-1 * net_customer_intangible_assets / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * customer_related_intangibles_gross_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(accumulated_amortization_customer_intangibles_2 / assets, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_customer_intangible_durable_relation",
+    "family": "customer_intangible_footnote",
+    "hypothesis": "The opposite sign tests whether booked customer relationships are durable assets when paired with customer authority and low competitive breadth.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank(net_customer_intangible_assets / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * accumulated_amortization_customer_intangibles_2 / assets, 126), industry) + 0.200 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.140 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_sales_actual_delivery_cap50",
+    "family": "sales_actual_delivery",
+    "hypothesis": "Annual sales actual delivery versus consensus may be a cleaner operating-topline version of actual-delivery alpha if kept away from option/PCR timing.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.280 * group_rank(ts_rank(anl4_fs_actuals_basic_af_nd_sales_value / assets, 126), industry) + 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_basic_af_nd_sales_value - anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_af_v4_nd_sales_std / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_sales_number, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v132_sales_delivery_event_confirm",
+    "family": "sales_actual_delivery",
+    "hypothesis": "Sales actual delivery should matter more on novel/relevant event days; adding event micro confirmation tests a non-option sales route.",
+    "expression": "trade_when(ts_rank(vec_avg(event_novelty_score_2), 20) > 0.50, 0.250 * group_rank(ts_rank(anl4_fs_actuals_basic_af_nd_sales_value / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_basic_af_nd_sales_value - anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_af_v4_nd_sales_std / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(vec_avg(five_minute_price_change_pct_all), 45), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(max_pct_decrease_post_news), 45), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

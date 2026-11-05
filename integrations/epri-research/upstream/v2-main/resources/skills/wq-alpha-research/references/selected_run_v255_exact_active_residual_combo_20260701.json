@@ -1,0 +1,50 @@
+[
+  {
+    "name": "v255_exact_dilution_news_comp_residual",
+    "family": "active_exact_residual_combo",
+    "hypothesis": "A low-correlation residual of dilution pressure, legal/credit/M&A sentiment, and competitor authority may keep the broad event-quality component while canceling the existing payout/profitability carrier.",
+    "pre_estimated_top_abs_corr": 0.397,
+    "pre_estimated_synthetic_sharpe": 1.56,
+    "source_alpha_ids": ["j2ZaGlVE", "e7OQoveE", "2r7Gzlnw"],
+    "expression": "-1.00 * (0.24 * group_rank(ts_rank(-1 * antidilutive_securities_eps_exclusion_count / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(-1 * fn_antidilutive_securities_excl_from_eps_a / common_stock_shares_outstanding_count, 126), industry) + 0.16 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.10 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.13 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.13 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 0.75 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)) + 0.75 * (0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.291 * rank(-(close / open - 1)) + 0.195 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.008 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v255_exact_option_social_news_minus_intangible",
+    "family": "active_exact_residual_combo",
+    "hypothesis": "Option/social convexity and relationship-news timing may remain useful after subtracting the intangible-sale quality component that often maps to occupied asset-quality capacity.",
+    "pre_estimated_top_abs_corr": 0.417,
+    "pre_estimated_synthetic_sharpe": 1.76,
+    "source_alpha_ids": ["QPa0gl0W", "A1wrAX3E", "O0p2bElq"],
+    "expression": "0.50 * (0.22 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.14 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.15 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.12 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.02 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) + 1.00 * (trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.160 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.120 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.110 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)) - 1.00 * (trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v255_exact_quality_news_anti_buyback_profit",
+    "family": "active_exact_residual_combo",
+    "hypothesis": "Classic operating quality plus event/competitor timing, explicitly offset by the occupied buyback-profit sleeve, may produce a cleaner residual with lower daily-PnL overlap.",
+    "pre_estimated_top_abs_corr": 0.432,
+    "pre_estimated_synthetic_sharpe": 1.41,
+    "source_alpha_ids": ["QPaGVa3K", "A1wrAX3E", "MPpGzqwr"],
+    "expression": "0.50 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 1.00 * (trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.160 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.120 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.110 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)) - 1.00 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v255_exact_comp_fcf_minus_capex_cfo",
+    "family": "active_exact_residual_combo",
+    "hypothesis": "A compact competitor-authority plus free-cash-flow/value residual, subtracting the capex/CFO sleeve, may keep value-quality strength without replaying the usual operating-income or capex carrier.",
+    "pre_estimated_top_abs_corr": 0.474,
+    "pre_estimated_synthetic_sharpe": 1.68,
+    "source_alpha_ids": ["2r7Gzlnw", "P0pgZllw", "MPp7RPxn"],
+    "expression": "0.50 * (0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.291 * rank(-(close / open - 1)) + 0.195 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.008 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)) + 0.50 * (0.55 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(net_profit_reported_value / equity, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)) - 0.75 * (0.55 * group_rank(ts_rank(-1 * capital_expenditure_amount / assets, 126), industry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * rank(-(close / open - 1)))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

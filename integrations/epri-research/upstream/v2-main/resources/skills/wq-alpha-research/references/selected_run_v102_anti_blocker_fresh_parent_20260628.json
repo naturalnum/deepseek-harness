@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v102_ghc_ssc_minus_product_qmb_035",
+    "family": "news_vector_anti_blocker",
+    "source": "v102_after_v101_highcorr",
+    "hypothesis": "GHC/SSC conditional news is strong but blocked by product/business and QMB/editorial sleeves; a compact subtraction of both blockers may preserve a distinct GHC/relevance residual.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.390 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.220 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.120 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.130 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.100 * group_rank(ts_rank(rp_css_product, 90), industry) - 0.090 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) - 0.060 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Anti Vkp0P130 + anti LLpKoQPa proxy; high risk of losing strength."
+  },
+  {
+    "name": "v102_ghc_ssc_minus_ma_credit_030",
+    "family": "news_vector_anti_blocker",
+    "source": "v102_after_v101_highcorr",
+    "hypothesis": "If GHC/SSC maps to the broad fast-event news basket, subtracting M&A/credit/legal risk may reduce e7OQoveE overlap more directly than changing gates.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.400 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.230 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.120 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.090 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) - 0.075 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) - 0.075 * group_rank(ts_rank(rp_nip_legal, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Anti e7OQoveE proxy without QMB terms."
+  },
+  {
+    "name": "v102_ghc_ssc_subindustry_residual",
+    "family": "news_vector_anti_blocker",
+    "source": "v102_after_v101_highcorr",
+    "hypothesis": "Subindustry neutralization may change the product/business exposure of GHC/SSC after explicit product subtraction, even if prior news-vector subindustry variants failed.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.420 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), subindustry) + 0.240 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), subindustry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), subindustry) - 0.120 * group_rank(ts_rank(rp_nip_product, 90), subindustry) - 0.080 * group_rank(ts_rank(rp_nip_business, 90), subindustry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Subindustry residual test; submit only if both LSUS and corr improve."
+  },
+  {
+    "name": "v102_fscore_contrarian_slow_lowturnover",
+    "family": "fresh_parent_fscore_contrarian",
+    "source": "v87_lowcorr_highturnover_rescue",
+    "hypothesis": "Fscore contrarian value had clean low-correlation alpha but turnover was too high; a slower window, lower reversal weight, and higher decay may keep the fresh parent while meeting turnover gate.",
+    "expression": "0.360 * group_rank(ts_rank(-1 * fscore_surface_accel, 252), industry) + 0.260 * group_rank(ts_rank(-1 * fscore_growth, 252), industry) + 0.220 * group_rank(ts_rank(fscore_value, 252), industry) + 0.080 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue QPaYg0EQ by lowering turnover; likely Fitness-risk but genuinely fresh parent."
+  },
+  {
+    "name": "v102_fscore_contrarian_trade_slow",
+    "family": "fresh_parent_fscore_contrarian",
+    "source": "v87_lowcorr_highturnover_rescue",
+    "hypothesis": "Trading fscore contrarian only in low absolute-return regimes may reduce turnover without adding crowded payout or news auxiliaries.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.360 * group_rank(ts_rank(-1 * fscore_surface_accel, 252), industry) + 0.260 * group_rank(ts_rank(-1 * fscore_growth, 252), industry) + 0.220 * group_rank(ts_rank(fscore_value, 252), industry) + 0.080 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Conditional fscore contrarian, no inventory/credit/sharecount sleeves."
+  },
+  {
+    "name": "v102_1qf_balance_minus_fcf_beta",
+    "family": "fresh_parent_balance_expectation_residual",
+    "source": "v80_v81_balance_expectation_boundary",
+    "hypothesis": "1QF balance expectation is low-turnover but already occupied by d5xK1kmg; subtracting reported FCF/beta overlap tests a cleaner net-debt/asset expectation residual.",
+    "expression": "0.360 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) - 0.120 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) - 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Residualizes against FCF/beta overlap; likely low Fitness but low-turnover."
+  },
+  {
+    "name": "v102_sales_dispersion_actual_residual",
+    "family": "analyst_sales_residual",
+    "source": "active_informed_residual",
+    "hypothesis": "Sales dispersion and sales actual surprise are two older ACTIVE mechanisms; a compact residual may expose delivery surprise not explained by dispersion resolution.",
+    "expression": "0.340 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.260 * group_rank(ts_rank(ts_delta(actual_sales_value_quarterly / sales_estimate_average_quarterly, 63), 126), industry) - 0.180 * group_rank(ts_rank(-1 * sales_estimate_dispersion, 126), industry) - 0.140 * group_rank(ts_rank(ts_delta(sales_estimate_count, 63), 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "May have field-name risk; if valid, tests old sales mechanisms as a residual not a sibling."
+  },
+  {
+    "name": "v102_social_value_minus_product_news",
+    "family": "social_news_residual",
+    "source": "fresh_parent_guardrail",
+    "hypothesis": "Social value/buzz was useful only as a small sleeve; subtracting product/business news tests whether a standalone social residual can avoid the Vkp0P130/news-quality blocker.",
+    "expression": "0.330 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.220 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) - 0.120 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.090 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.060 * rank(-1 * ts_rank((close - vwap) / close, 20))",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Social residual guardrail; prior social standalone was weak, included to avoid all-news/fscore concentration."
+  }
+]

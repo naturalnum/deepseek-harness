@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v60_social_value_persistence_calm",
+    "family": "lowcorr_social_rescue",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "The low-correlation social-value seed may need a longer persistence window and explicit sentiment calmness rather than more product/news/accounting support.",
+    "expression": "0.40 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.25 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.20 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 36,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair of low-corr social seed 1Y7Z65JQ without debt/product/news/option parents."
+  },
+  {
+    "name": "v60_social_value_light_vwap_absorption",
+    "family": "social_technical_lowcorr_mix",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Social attention normalization may strengthen a light VWAP pressure signal while keeping the dominant exposure social rather than late-pressure technical.",
+    "expression": "0.40 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.20 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "VWAP term is deliberately low weight; strict corr gate against mL86Jle1."
+  },
+  {
+    "name": "v60_social_bfl_profitability_confirm",
+    "family": "social_model16_coldfield",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Positive social value may matter more when low-coverage BFL profitability/growth scores confirm operating strength without using ordinary accounting yields.",
+    "expression": "0.35 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_profitability + fscore_bfl_growth, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests BFL scores as a low-weight confirmation rather than a product-peer main signal."
+  },
+  {
+    "name": "v60_news12_session_range_calm",
+    "family": "news12_session_microstructure",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Event-day session range and volume anomalies may identify overreaction pressure distinct from close-location/VWAP if converted from VECTOR to scalar first.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * vec_avg(session_range_standard_deviation), 90), industry) + 0.25 * group_rank(ts_rank(-1 * vec_avg(trading_volume_standard_deviation_2), 90), industry) + 0.25 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses vec_avg on news12 VECTOR fields to avoid event-input operator errors."
+  },
+  {
+    "name": "v60_news12_reaction_speed_calm",
+    "family": "news12_reaction_speed",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Slower event-day threshold moves plus lower range anomalies may capture calm price discovery rather than crowded news sentiment.",
+    "expression": "0.35 * group_rank(ts_rank(vec_avg(minimum_minutes_to_one_percent_move), 90), industry) + 0.25 * group_rank(ts_rank(vec_avg(main_minutes_to_one_pct_down_move), 90), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(price_range_standard_deviation_2), 90), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different from RP product/business news: session reaction speed/volatility, not sentiment topic."
+  },
+  {
+    "name": "v60_fnd6_core_pension_relief",
+    "family": "fundamental6_core_adjustment",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Low core pension and post-retirement adjustment burden may capture cleaner reported earnings without using deferred-tax or goodwill parents.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncwippq)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncwiaq)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_prcepsq)), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-alphaCount fundamental6 VECTOR fields; vec_avg required."
+  },
+  {
+    "name": "v60_fnd6_fair_value_hedge_clean",
+    "family": "fundamental6_fair_value_cleanliness",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Lower fair-value changes and ineffective hedge gains/losses may proxy cleaner mark-to-market exposure without the v40 level-3 footnote warning path.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_tfvceq)) / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_hedgeglq)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_glpq)) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Matrix/vector core-event version of fair-value cleanliness, kept away from ordinary debt/cashflow stabilizers."
+  },
+  {
+    "name": "v60_forward_intangible_amortization_light",
+    "family": "forward_intangible_amortization",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Forward finite-lived intangible amortization may capture acquisition overhang more cleanly than historical goodwill growth or broad intangible burden.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * annual_intangible_assets_net_carrying_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * finite_intangibles_gross_value / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Not a goodwill-growth rescue; no operating quality, reversal, graph, or deferred-tax terms."
+  },
+  {
+    "name": "v60_model16_bfl_total_calm",
+    "family": "model16_bfl_coldscore",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "The low-usage BFL total/surface scores may be useful when treated as slow style quality and paired only with falling market-risk exposure.",
+    "expression": "0.40 * group_rank(ts_rank(fscore_bfl_total, 126), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_surface, 126), industry) + 0.20 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct BFL cold-score probe; not product-peer ranked and no news/option/graph stabilizer."
+  },
+  {
+    "name": "v60_model16_derivative_contrarian",
+    "family": "model16_derivative_contrarian",
+    "source": "lowcorr_multimechanism_probes_v60_20260627",
+    "hypothesis": "Overheated model16 score derivatives may mean-revert when market-risk is falling; this tests a derivative contrarian sign away from analyst-revision fields.",
+    "expression": "0.35 * rank(-1 * ts_rank(multi_factor_static_score_derivative, 90)) + 0.25 * rank(-1 * ts_rank(growth_potential_rank_derivative, 90)) + 0.20 * rank(ts_rank(relative_valuation_rank_derivative, 90)) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different from v57 model16 revision inverse: uses several model16 derivative surfaces and no option/news/reversal terms."
+  }
+]

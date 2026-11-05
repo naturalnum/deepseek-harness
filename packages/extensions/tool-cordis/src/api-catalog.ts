@@ -1297,6 +1297,48 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'epriResearch',
+    summary: 'One research database beneath this account\'s private, physically capped storage.',
+    description: 'One research database beneath this account\'s private, physically capped storage.',
+    methods: [
+      {
+        signature: 'install(kind: \'tools\' | \'skills\' | \'workbench\', ctx: Context): void',
+        description: 'Install the fixed research contribution into this account\'s Loader scope.',
+        parameters: [{ name: 'kind', description: 'Fixed backend contribution selected by a package entry.' }, { name: 'ctx', description: 'Actual account or Preset Loader scope.' }],
+      },
+      {
+        signature: 'materializeSkill(...args: Parameters<AccountFeatureAdmission[\'materializeSkill\']>): ReturnType<AccountFeatureAdmission[\'materializeSkill\']>',
+        description: 'Project immutable bundled resources using the platform\'s existing skill files owner.',
+        parameters: [{ name: 'args', description: 'Complete trusted skill bundle and native scoped lookup.' }],
+        returns: 'Actual account/project resource location.',
+      },
+      {
+        signature: 'labSkills(agent: Agent, signal?: AbortSignal): Promise<unknown>',
+        description: 'Read this account\'s human-published lab skills for the original native Agent.',
+        parameters: [{ name: 'agent', description: 'Original native skill lookup scope.' }, { name: 'signal', description: 'Original lookup cancellation.' }],
+        returns: 'Published research methods within this account only.',
+      },
+      {
+        signature: '@Remote({ resources: { session: (sessionId: SessionId) => sessionId } }) async execute(sessionId: SessionId, operation: string, argsJson: string, signal: AbortSignal): Promise<string>',
+        description: 'Execute a research operation for the authenticated browser\'s current Session.',
+        parameters: [{ name: 'sessionId', description: 'Existing Session selected in the platform.' }, { name: 'operation', description: 'Research operation name, validated by the backend.' }, { name: 'argsJson', description: 'Operation arguments, validated by the backend schema.' }, { name: 'signal', description: 'Original browser-call cancellation.' }],
+        returns: 'Research result serialized as JSON within the configured limit.',
+      },
+      {
+        signature: 'async tool(operation: string, args: unknown, execution: ToolRunContext): Promise<unknown>',
+        description: 'Execute a model operation under the original native tool\'s Agent. Human decisions are supplied only by the native conversation review continuation.',
+        parameters: [{ name: 'operation', description: 'Backend operation name.' }, { name: 'args', description: 'Validated research tool arguments.' }, { name: 'execution', description: 'Original native tool execution.' }],
+        returns: 'Research operation result; no caller-provided actor field is used.',
+      },
+      {
+        signature: 'async review(execution: ToolRunContext, review: (port: { read: (operation: string, args: unknown) => Promise<unknown> human: (operation: string, args: unknown) => Promise<unknown> }) => Promise<unknown>): Promise<unknown>',
+        description: 'Run the reviewed native question continuation without exposing a human actor on the wire.',
+        parameters: [{ name: 'execution', description: 'Original tool Agent and cancellation.' }, { name: 'review', description: 'Trusted plugin\'s native question/revision comparison; it calls human only after an explicit answer.' }],
+        returns: 'Decline or the exact reviewed mutation result.',
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -2269,6 +2311,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Construct the sole native Controller in its actual Loader fiber.',
         parameters: [{ name: 'owner', description: 'Owning native entry inside this independent graph.' }, { name: 'guards', description: 'Shared files/project/Preset and enabled-handler checks, including the fixed directory capability.' }, { name: 'config', description: 'Original native Controller configuration.' }],
         returns: 'The registered native subclass; this does not audit or publish the graph.',
+      },
+      {
+        signature: 'registerFeature(owner: Context, service: TypertRemoteService): AccountFeatureAdmission',
+        description: 'Register a reviewed feature\'s concrete Remote methods during unpublished account assembly. Methods remain denied unless the Root manifest selects their exact endpoint, owner and guard.',
+        parameters: [{ name: 'owner', description: 'Feature\'s original Loader scope.' }, { name: 'service', description: 'Installed feature service, whose namespace equals its Cordis service key.' }],
+        returns: 'Existing account/Session admission; registration is withdrawn with its Loader fiber.',
+      },
+      {
+        signature: 'isFeatureRpc(row: EndpointExposure): boolean',
+        description: 'Check a selected feature endpoint against its actual registered methods.',
+        parameters: [{ name: 'row', description: 'Root-selected unary exposure.' }],
+        returns: 'Whether the original feature currently owns this exact Session-guarded endpoint.',
       },
       {
         signature: 'createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads',
@@ -5763,6 +5817,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountExecutionPort',
     declaration: 'export interface AccountExecutionPort {\n    readonly enforcesSessionFilePolicy?: true | undefined;\n    assertSessionFilePolicyChange?(ctx: Context, session: Session): void;\n    readonly binding: AccountBinding;\n    assertCurrent(ctx: Context): void;\n    deny(ctx: Context, signal?: AbortSignal): never;\n    claim(ctx: Context): void;\n    close(): void;\n}',
+  },
+  {
+    name: 'AccountFeatureAdmission',
+    declaration: 'export interface AccountFeatureAdmission {\n    assertCurrent(): void;\n    assertAgent(agent: Agent): void;\n    resolveAgent(sessionId: SessionId, signal: AbortSignal): Promise<Agent>;\n    materializeSkill(input: SkillBundleInput, options: SkillViewOptions): Promise<FileSystemSkillResources>;\n}',
   },
   {
     name: 'AccountFileSelection',

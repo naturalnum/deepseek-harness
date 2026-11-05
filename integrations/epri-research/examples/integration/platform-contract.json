@@ -1,0 +1,32 @@
+{
+  "schema": "epri.research.platform-integration.v2",
+  "packageName": "deepscientist-harness-suite",
+  "nativePackage": "@deepseek-ai/dsh-experimental-epri-research",
+  "targetRepository": "https://github.com/naturalnum/deepseek-harness",
+  "targetBranch": "power-evolve/cloud-keeperless",
+  "validatedHarnessVersion": "0.2.1-rc.2",
+  "deploymentMode": "platform-cloud-multiuser",
+  "presetPolicy": "extend the existing approved preset; preserve its id and recompute its digest",
+  "publicPaths": {
+    "platform": "/",
+    "research": "/research/"
+  },
+  "identityOwner": "original account-bound platform Remote Peer and native Agent",
+  "dataBoundary": "one store per original account profile.home/storage/epri-research; Session-scoped records",
+  "humanReview": "authenticated owner Remote or native question continuation with exact unchanged revision",
+  "defaultSharing": "only human-published skills within the same account",
+  "remoteExecution": "original Session subprocess/fs providers; no Host fallback",
+  "skillResources": "original cloud files managed-skill projection into the approved project",
+  "browserPackages": [
+    "@deepseek-ai/dsh-experimental-epri-research",
+    "deepscientist-harness-suite"
+  ],
+  "rpc": {
+    "endpoint": "epriResearch/execute",
+    "handlerId": "native:epriResearch",
+    "guard": "account-session"
+  },
+  "productionReady": false,
+  "liveDeploymentTested": false,
+  "sourceRevision": "See the outside-repository review manifest for the exact base revision."
+}

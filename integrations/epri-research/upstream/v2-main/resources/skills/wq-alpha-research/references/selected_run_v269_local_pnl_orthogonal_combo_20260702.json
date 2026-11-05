@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v269_comp_highvol_minus_fcfps_book",
+    "family": "local_pnl_orthogonal_combo",
+    "hypothesis": "High-volume competitor/earnings exhaustion is strong but crowded; subtracting the analyst FCFPS/book-cash-yield sleeve may remove the book/value carrier while keeping event-driven competitor residual.",
+    "field_notes": "Local daily-PnL combo search: P0pYkQMJ - 0.7*1Y7WxqLz predicted Sharpe 1.46, Fitness proxy 1.28, top ACTIVE corr 0.30.",
+    "expression": "(trade_when(ts_rank(volume / adv20, 20) > 0.65, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.170 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)) - 0.700 * (0.30 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcfps_mean / close, 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcfps_high - anl4_fs_detail_estimates_advanced_af_nd_fcfps_low) / close, 126), industry) + 0.16 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcfps_number, 63), 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v269_comp_lowvol_minus_revision_pcr",
+    "family": "local_pnl_orthogonal_combo",
+    "hypothesis": "Low-volume competitor/earnings residual may become more independent after subtracting analyst-revision, customer-authority and PCR curve exposure that maps to existing quality/option carriers.",
+    "field_notes": "Local daily-PnL combo search: vRLpamXw - 0.7*LLpN1JGm predicted Sharpe 1.86, Fitness proxy 1.66, top ACTIVE corr 0.41.",
+    "expression": "(trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)) - 0.700 * (0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.20 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.15 * rank(-(close / open - 1)))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v269_goodwill_option_minus_risk_compression",
+    "family": "local_pnl_orthogonal_combo",
+    "hypothesis": "Goodwill reduction plus option/partner exhaustion is strong but close to risk-compression/technical sleeves; subtracting the pure risk-compression liquidity-dryup parent may leave the accounting-event core.",
+    "field_notes": "Local daily-PnL combo search: ZYpX5z1x - 0.7*mL8NAo9x predicted Sharpe 1.53, Fitness proxy 1.50, top ACTIVE corr 0.41.",
+    "expression": "(0.124 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.055 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.041 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.056 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.036 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.045 * rank(-1 * ts_mean(returns, 5))) - 0.700 * (trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.300 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry) + 0.240 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry) + 0.200 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 126), industry) + 0.160 * rank(-1 * ts_mean(returns, 5)) + 0.100 * rank(-1 * ts_rank(volume / adv20, 20)), -1))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v269_mna_bam_minus_fast_earnings",
+    "family": "local_pnl_orthogonal_combo",
+    "hypothesis": "M&A/BAM event sentiment is strong but absorbed by broader fast-news capacity; subtracting fast earnings-event relevance should isolate non-earnings corporate-action surprise.",
+    "field_notes": "Local daily-PnL combo search: e7OG7K8N - 0.7*LLpZJMlM predicted Sharpe 1.35, Fitness proxy 1.29, top ACTIVE corr 0.35.",
+    "expression": "(trade_when(ts_rank(volume / adv20, 20) < 0.62, 0.420 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 90), industry) + 0.220 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.150 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)), -1)) - 0.700 * (0.40 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v269_bam_skew_cfo_minus_comp",
+    "family": "local_pnl_orthogonal_combo",
+    "hypothesis": "BAM/social-skew and CFO delivery are both strong but crowded; subtracting competitor raw reversal/risk should remove the old competitor-news carrier while preserving corporate-action plus cash-flow-delivery information.",
+    "field_notes": "Local daily-PnL combo search: 0m7NKnR1 + 0.6*kq3MWRLO - 0.6*RRpA7pQa predicted Sharpe 2.43, Fitness proxy 2.21, top ACTIVE corr 0.51.",
+    "expression": "(trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.300 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 90), industry) + 0.210 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_20 - implied_volatility_mean_skew_120), 90), industry) + 0.170 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.140 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 60), industry) + 0.100 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)) + 0.600 * (trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.230 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cfo_std, 126), industry) + 0.190 * group_rank(ts_rank(rank(anl4_fs_actuals_advanced_af_nd_cfo_value) - rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(rank(anl4_fs_guidances_advanced_af_nd_cfo_minguidance), 63), 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)) - 0.600 * (0.42 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.17 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

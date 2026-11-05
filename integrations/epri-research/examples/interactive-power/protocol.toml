@@ -1,0 +1,5 @@
+[airalogy_protocol]
+id = "power_data_quality_interactive"
+version = "1.0.0"
+name = "设备测点数据质量检查"
+description = "根据测点采样数量计算缺失率，供人工核对。"

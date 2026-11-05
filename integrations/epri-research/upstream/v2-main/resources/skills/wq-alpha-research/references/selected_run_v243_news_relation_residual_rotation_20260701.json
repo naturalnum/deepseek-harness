@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v243_legal_credit_ma_minus_earnings",
+    "family": "news_relation_residual_rotation",
+    "hypothesis": "Legal, credit-rating, and M&A sentiment should be most useful when it is not just ordinary earnings-news optimism. A small profitability/reversal sleeve keeps the signal tradable while the negative earnings-sentiment term residualizes against existing earnings-news actives.",
+    "expression": "0.100 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.060 * rank(-(close / open - 1)) - 0.160 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.060 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.050 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.050 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.040 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Derived from post-116 short-active PnL residual: +LLpGdlrm - RRpmOAWj + e7OQoveE. Reject if it maps to e7OQoveE, RRpmOAWj, Vkp0P130, or product/legal news actives."
+  },
+  {
+    "name": "v243_legal_credit_ma_minus_customer_attention",
+    "family": "news_relation_residual_rotation",
+    "hypothesis": "Legal/credit/M&A news can represent balance-sheet or governance repricing distinct from customer-network attention. Subtracting customer-authority attention tests whether the news route has independent residual value.",
+    "expression": "0.090 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.030 * rank(-(close / open - 1)) - 0.180 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.080 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.067 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.067 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.053 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Derived from +LLpGdlrm - RRpmO2xb + e7OQoveE. It intentionally avoids CFO, cost/gross, EBIT, EPS, sales delivery, and option terms."
+  },
+  {
+    "name": "v243_corporate_action_event_residual",
+    "family": "news_relation_residual_rotation",
+    "hypothesis": "Corporate-action and general event sentiment may capture capital-allocation or governance news that is not the same as earnings sentiment; the negative earnings-news sleeve is used only as a residualizer.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.280 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.180 * group_rank(ts_rank(mean_event_sentiment_score, 90), industry) + 0.160 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) - 0.240 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.080 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.060 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cold-ish RavenPack matrix route using high coverage / low alphaCount fields, but not product/business/news12 path-speed or ordinary earnings-only sentiment."
+  },
+  {
+    "name": "v243_pv13_authority_anti_competitor_news",
+    "family": "news_relation_residual_rotation",
+    "hypothesis": "Supplier/customer authority can be informative when it is not simply competitor-return or earnings-news absorption. This tests authority breadth as a residual signal under light profitability support.",
+    "expression": "0.300 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.130 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.190 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.160 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.080 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A compact relationship residual, not a customer/PPE/profit or social/profit/book sibling. Reject on high corr to O0pNbJ17, RRpmO2xb, d5xj5W5v, or v239 social/profit residual."
+  }
+]

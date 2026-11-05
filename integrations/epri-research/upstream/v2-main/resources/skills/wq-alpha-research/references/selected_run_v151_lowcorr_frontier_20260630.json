@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v151_ltv_revision_non_neighbor",
+    "family": "longterm_estimate_non_neighbor",
+    "hypothesis": "Negative long-term estimate revision is occupied by 1Y7Z77YX, but a different long-term vector construction using estimate level dispersion and excluding the same beta/correlation pair may test whether there is residual low-correlation analyst-horizon information.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.75, 0.360 * group_rank(ts_rank(-1 * (vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_detailltv4_est), 126), 126), industry) + 0.130 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Not a window sibling of 1Y7Z77YX: adds low-volume timing and absolute revision-dispersion penalty, removes correlation-slope term. Strict corr vs 1Y7Z77YX, LLpZgaeL, akdb1ZqR."
+  },
+  {
+    "name": "v151_partner_news_breadth_no_return",
+    "family": "partner_news_breadth_no_relationship_return",
+    "hypothesis": "Partner news and partner count may reflect business-development breadth without using rel_ret_part/rel_ret_all return-spillover fields that were proven high-correlation to 58wgxOM1.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.65, 0.320 * group_rank(ts_rank(rp_nip_partner, 126), industry) + 0.220 * group_rank(ts_rank(rp_css_partner, 126), industry) + 0.180 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), industry) + 0.140 * group_rank(ts_rank(-1 * pv13_ompetitorgraphrank_hub_rank, 90), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No rel_ret_* and no customer authority/page-rank. Reject if it maps to news/product or partner-return blockers."
+  },
+  {
+    "name": "v151_cff_dependency_no_debt",
+    "family": "financing_cashflow_dependency",
+    "hypothesis": "Low absolute financing cash-flow dependency and rising estimate breadth may proxy less external-capital reliance without directly using debt, credit facility, buyback, or share-count fields.",
+    "expression": "0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / assets, 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.160 * rank(-1 * ts_mean(returns, 5)) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "CFF actual/estimate dependency, not debt deleveraging or CFF guidance. Stop if it repeats weak CFF/CFO guidance history."
+  },
+  {
+    "name": "v151_equipment_life_light_no_ppe_age",
+    "family": "equipment_specificity_light",
+    "hypothesis": "Shorter equipment useful-life assumptions and lower furniture/equipment specificity may identify more flexible asset bases, different from the 88zJ8RMW accumulated-depreciation/gross-PPE aging parent.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(-1 * min_equipment_useful_life, 126), industry) + 0.220 * group_rank(ts_rank(-1 * equipment_maximum_useful_life, 126), industry) + 0.200 * group_rank(ts_rank(-1 * furniture_fixtures_gross_value / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * gross_machinery_equipment_value_2 / assets, 126), industry) + 0.090 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value and ppe expansion level; strict corr vs 88zJ8RMW and 3q7PkXGN."
+  },
+  {
+    "name": "v151_ecosystem_breadth_low_complexity",
+    "family": "ecosystem_breadth_without_returns",
+    "hypothesis": "A focused ecosystem with broad partner coverage but fewer competitors and lower product-overlap complexity may capture strategic positioning without using relationship returns or customer graph authority.",
+    "expression": "0.300 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), industry) + 0.220 * group_rank(ts_rank(-1 * rel_num_all, 126), industry) + 0.180 * group_rank(ts_rank(-1 * pv13_revere_key_sector_total, 126), industry) + 0.170 * group_rank(ts_rank(-1 * pv13_ompetitorgraphrank_hub_rank, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair of mL86VObX-style count-only seed, no rel_ret_*; submit only if Sharpe improves and corr avoids customer/product graph blockers."
+  },
+  {
+    "name": "v151_cfi_guidance_distinct_update",
+    "family": "cfi_guidance_update_distinct",
+    "hypothesis": "CFI guidance was one of the few analyst guidance routes that once produced an ACTIVE; a change-focused version without gross-income/CFO/CFF/Capex fields tests whether there is remaining non-neighbor investment-discipline capacity.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A single non-neighbor CFI guidance update test after omKWa3jn; reject if high corr or weak."
+  }
+]

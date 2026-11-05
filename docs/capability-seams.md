@@ -7,6 +7,8 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_experimental_epri_research["experimental-epri-research"]
+  svc_epriResearch["ctx.epriResearch<br/>Account research workbench"]
   pkg_pe_cloud_api["pe-cloud-api"]
   svc_cloudModelKey["ctx.cloudModelKey<br/>Account model-key editing"]
   svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
@@ -365,6 +367,7 @@ flowchart LR
   pkg_experimental_client_ui_cot_translation --> svc_cotTranslation
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
+  pkg_experimental_epri_research --> svc_epriResearch
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
@@ -528,6 +531,7 @@ flowchart LR
   svc_deepseekLlmApiExtensions --> pkg_llm_deepseek
   svc_directoryPicker --> pkg_api_workspace_controller
   svc_dynamicCordisRunner --> pkg_tool_cordis
+  svc_epriResearch --> pkg_experimental_epri_research
   svc_fileReferences --> pkg_api_session_controller
   svc_fileUploads --> pkg_api_session_controller
   svc_fs --> pkg_tool_fs
@@ -673,6 +677,7 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.epriResearch` | `service` | [`experimental-epri-research`](../packages/experimental/epri-research) | - | [`experimental-epri-research`](../packages/experimental/epri-research) | - | Owns research data and contributions under the existing account Session and execution owners. |
 | `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner. |
 | `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts fixed plugin edits to original Peer admission, account saves and native profile application. |
 | `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts native Workspace operations to the installed account files owner and approved project roots. |

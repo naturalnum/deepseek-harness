@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v17_stock_comp_sales_burden",
+    "family": "stock_compensation_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "High share-based compensation relative to sales can indicate dilution and lower earnings quality. Pair with customer authority and inventory efficiency instead of EPS/CFO/reversal to reduce correlation with existing actives.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.25 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Matrix field with high coverage; avoids valuation/CFO/reversal stabilizers."
+  },
+  {
+    "name": "v17_unrecognized_comp_cost_burden",
+    "family": "stock_compensation_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "Unrecognized compensation cost for nonvested awards can represent future dilution/expense overhang. Prefer lower burden with operational efficiency.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests compensation overhang rather than current expense."
+  },
+  {
+    "name": "v17_special_items_abs_clean",
+    "family": "special_items_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "Large special items, regardless of sign, often reduce earnings cleanliness. Penalize absolute special items and pair with operational efficiency.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(fnd6_newa2v1300_spi) / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses matrix special-items field; may be sparse but should avoid vector divide errors."
+  },
+  {
+    "name": "v17_debt_extinguishment_clean",
+    "family": "debt_event_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "Large gains/losses on debt extinguishment indicate balance-sheet events and financing stress. Penalize absolute event magnitude without using low-debt or EPS stabilizers.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.25 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-coverage matrix field; included as distinct debt-event mechanism."
+  },
+  {
+    "name": "v17_restructuring_expense_clean",
+    "family": "restructuring_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "Restructuring expenses may indicate disruption and lower earnings quality. Use matrix footnote field and non-earnings stabilizers.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * restructuring_expense_2 / assets, 126), industry) + 0.25 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sparse but economically distinct; strict gates expected."
+  },
+  {
+    "name": "v17_doubtful_accounts_reserve_quality",
+    "family": "receivable_allowance_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "Allowance for doubtful accounts relative to receivables is a sharper credit-quality signal than receivables/sales. It may diversify if combined with operational efficiency instead of earnings quality.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * fn_allowance_for_doubtful_accounts_receivable_a / receivable, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Watch correlation with LLp7PRmM receivables/sales ACTIVE."
+  },
+  {
+    "name": "v17_inventory_turnover_quality",
+    "family": "inventory_operational_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "High inventory turnover plus lower inventory burden can indicate operational efficiency and lower obsolescence risk. This tests an operating-cycle family with no standard quality/reversal parent.",
+    "expression": "0.55 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.30 * group_rank(ts_rank(-1 * inventory / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "May be sector-specific; sub-universe check is critical."
+  },
+  {
+    "name": "v17_prepaid_expense_burden",
+    "family": "prepaid_expense_quality",
+    "source": "accounting_events_matrix_v17_20260625",
+    "hypothesis": "High prepaid expenses relative to assets can reflect aggressive capitalization or working-capital pressure. Pair with operational efficiency and customer authority.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Matrix footnote field with decent coverage; checks whether prepaid burden is distinct from receivables/goodwill quality."
+  }
+]

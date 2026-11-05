@@ -1,0 +1,38 @@
+[
+  {
+    "name": "v242_cfo_guidance_rank_unitsafe",
+    "family": "cfo_guidance_unitsafe_repair",
+    "hypothesis": "The v241 CFO guidance candidate was strong but had UNITS warnings. Ranking each CFO guidance/actual component before combining may preserve the visibility signal while avoiding raw unit arithmetic.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(ts_delta(rank(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance), 63), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(rank(anl4_fs_guidances_advanced_af_nd_cfo_minguidance), 63), 126), industry) + 0.190 * group_rank(ts_rank(rank(anl4_fs_actuals_advanced_af_nd_cfo_value), 126), industry) - 0.130 * group_rank(ts_rank(rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean), 126), industry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v242_cfo_guidance_ratio_no_cross_subtract",
+    "family": "cfo_guidance_unitsafe_repair",
+    "hypothesis": "A separated ratio version avoids actual-minus-estimate and guidance-range subtraction, testing whether CFO guidance improvement rather than raw spread arithmetic drives the strong v241 result.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(ts_delta(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance / abs(assets), 63), 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(anl4_fs_guidances_advanced_af_nd_cfo_minguidance / abs(assets), 63), 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_cfo_value / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v242_cfo_guidance_rank_range_delivery",
+    "family": "cfo_guidance_unitsafe_repair",
+    "hypothesis": "Rank-space range tightness and rank-space actual-vs-consensus delivery may keep the economics of v241 while removing unit-sensitive subtraction between raw CFO fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(ts_delta(rank(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance), 63), 126), industry) + 0.220 * group_rank(ts_rank(ts_delta(rank(anl4_fs_guidances_advanced_af_nd_cfo_minguidance), 63), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(rank(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance) - rank(anl4_fs_guidances_advanced_af_nd_cfo_minguidance)), 126), industry) + 0.180 * group_rank(ts_rank(rank(anl4_fs_actuals_advanced_af_nd_cfo_value) - rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean), 126), industry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v242_cfo_guidance_breadth_delivery",
+    "family": "cfo_guidance_unitsafe_repair",
+    "hypothesis": "If unit-safe rank transforms weaken the signal, analyst breadth and low dispersion around CFO estimates may be the cleaner non-warning proxy for CFO guidance credibility.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.230 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cfo_std, 126), industry) + 0.190 * group_rank(ts_rank(rank(anl4_fs_actuals_advanced_af_nd_cfo_value) - rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(rank(anl4_fs_guidances_advanced_af_nd_cfo_minguidance), 63), 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

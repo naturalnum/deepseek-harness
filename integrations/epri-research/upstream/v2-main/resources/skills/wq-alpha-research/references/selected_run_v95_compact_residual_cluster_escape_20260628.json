@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v95_earnings_resid_short_1y7",
+    "family": "compact_residual_earnings_cashflow",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "Compact version of the v94 earnings/cashflow residual: keep the strong earnings/cashflow core while explicitly subtracting the competitor-vwap-risk sleeve that caused the v93 correlation failure.",
+    "expression": "0.19 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.13 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.10 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.08 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.05 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry) - 0.04 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Flat net-weight residual designed to stay under the 64-operator cap."
+  },
+  {
+    "name": "v95_earnings_resid_short_dual",
+    "family": "compact_residual_earnings_cashflow",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "A stronger compact residual of v93 earnings/cashflow, subtracting both the vwap-risk component and the competitor-news hub in one flat expression.",
+    "expression": "0.16 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.09 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.08 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.09 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.06 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry) - 0.08 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.03 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "More aggressive corr relief; expected lower Sharpe but better chance below 0.68."
+  },
+  {
+    "name": "v95_css_option_resid_lite",
+    "family": "compact_residual_css_option",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "The v93 CSS/option/sentiment fusion was blocked by option-risk; a light compact subtraction may keep enough option information while lowering correlation.",
+    "expression": "0.22 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.16 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.10 * rank(-(close / open - 1)) + 0.05 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.03 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.05 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.05 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Equivalent to a partial option-risk residual without the term that pushed v94 over the operator cap."
+  },
+  {
+    "name": "v95_css_option_resid_flip",
+    "family": "compact_residual_css_option",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "A stronger compact option-risk residual can turn the option sleeve into a differentiator rather than a source of correlation with akdbG2k5.",
+    "expression": "0.23 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.09 * rank(-(close / open - 1)) - 0.05 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.05 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.09 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.05 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.08 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Closer to the v94 0.45 option-risk subtraction, but compressed."
+  },
+  {
+    "name": "v95_tax_aqi_option_resid_short",
+    "family": "compact_residual_tax_quality",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "Tax/customer/competitor strength may survive after subtracting the AQI-option components responsible for v93's omKoaQMl collision.",
+    "expression": "0.24 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.11 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.22 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.10 * rank(-(close / open - 1)) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.14 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.09 * group_rank(ts_rank(-1 * debt / assets, 126), industry) - 0.13 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.07 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) - 0.04 * rank(-1 * ts_rank((high - low) / close, 10))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Compact AQI-option residual; drops EPS and rel_num_part to save operators."
+  },
+  {
+    "name": "v95_tax_pw6_kq3_resid_short",
+    "family": "compact_residual_tax_quality",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "A different tax residual subtracts the deferred-tax/prepaid and competitor-social clusters directly, testing whether the remaining signal is a distinct reversal/tax anomaly.",
+    "expression": "-0.43 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) - 0.10 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) - 0.09 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.15 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.11 * rank(-(close / open - 1)) + 0.04 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.03 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.02 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "More radical residual from local PnL math; included to test if the residual, not the raw tax signal, carries submission value."
+  },
+  {
+    "name": "v95_compval_aqi_fcf_resid_short",
+    "family": "compact_residual_graph_value",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "Competitor hub plus analyst value can be residualized against AQI-option and FCF-guidance components using a compact flat expression.",
+    "expression": "0.29 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.21 * rank(-(close / open - 1)) + 0.13 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.18 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.15 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.06 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.05 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.07 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) - 0.04 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) - 0.03 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Compact version of the v94 compval dual residual that previously exceeded 64 operators."
+  },
+  {
+    "name": "v95_stockcomp_value_minus_optionrisk",
+    "family": "compact_residual_stockcomp_value",
+    "source": "compact_residual_cluster_escape_v95_20260628",
+    "hypothesis": "After LLpKELr9 occupied the FCF-guidance residual, a stockcomp/analyst-value core with an option-risk subtraction may form a different residual path.",
+    "expression": "0.16 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.14 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.10 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.20 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.20 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.12 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.08 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) - 0.04 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Not a simple LLpKELr9 sibling: the negative proxy is option-risk rather than FCF/capex guidance."
+  }
+]

@@ -1,0 +1,6 @@
+interface:
+  display_name: 'IOAI Task Contract'
+  short_description: 'Seal rules and audit the evaluator before baseline work'
+  default_prompt: 'Use $task-contract to seal an IOAI task bundle and audit its evaluator through ioai_competition.'
+policy:
+  allow_implicit_invocation: true

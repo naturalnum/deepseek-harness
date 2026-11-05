@@ -1079,6 +1079,31 @@ export type Config = CuaConfig
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-cua-macos -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-epri-research -->
+<a id="deepseek-aidsh-experimental-epri-research"></a>
+
+## `@deepseek-ai/dsh-experimental-epri-research`
+
+- `inject`: `peCloudApi` · `sessionController`
+- `source`: [`packages/experimental/epri-research/src/index.ts:12`](../packages/experimental/epri-research/src/index.ts)
+
+```ts config-catalog
+/** Trusted deployment paths and finite operation limits; no account or credential settings. */
+export interface Config {
+  /** File URL of the independently built research backend. */
+  backendModule: string
+  /** Python executable in the approved OpenSandbox image. */
+  python: string
+  /** Complete research request/result byte limit, within the platform carrier limit. */
+  maxJsonBytes: number
+  /** Per-stream retained execution output limit. */
+  maxOutputBytes: number
+  /** Native managed-range cleanup observation limit. */
+  graceMs: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-epri-research -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-inspector -->
 <a id="deepseek-aidsh-experimental-inspector"></a>
 

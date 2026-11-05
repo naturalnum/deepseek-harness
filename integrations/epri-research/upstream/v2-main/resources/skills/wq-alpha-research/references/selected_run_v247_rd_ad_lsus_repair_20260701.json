@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v247_rd_ad_cap60_no_reversal",
+    "family": "rd_ad_lsus_repair",
+    "hypothesis": "The v246 R&D/ad efficiency signal was strong but TOP1000-fragile. Removing the short-return sleeve and tightening the cap gate tests whether the edge survives in larger, more liquid names.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.330 * group_rank(ts_rank(fnd6_newa2v1300_xrd / abs(sales), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newa2v1300_xrd / abs(sales), 252)), 126), industry) + 0.220 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Primary LSUS repair for 1Y7RA2xJ; no analyst/news/option/open-close."
+  },
+  {
+    "name": "v247_rd_ad_subindustry_stability",
+    "family": "rd_ad_lsus_repair",
+    "hypothesis": "Subindustry neutralization may reduce sector-specific R&D intensity artifacts and improve sub-universe robustness.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.310 * group_rank(ts_rank(fnd6_newa2v1300_xrd / abs(sales), 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newa2v1300_xrd / abs(sales), 252)), 126), subindustry) + 0.210 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.100 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Tests whether R&D/ad signal is sector-mix driven."
+  },
+  {
+    "name": "v247_rd_stability_pure_largecap",
+    "family": "rd_ad_lsus_repair",
+    "hypothesis": "If the employee-productivity leg is what causes small-cap fragility, a pure stable-R&D-intensity variant should have a cleaner robustness profile, though likely lower Sharpe.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.440 * group_rank(ts_rank(fnd6_newa2v1300_xrd / abs(sales), 126), industry) + 0.280 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newa2v1300_xrd / abs(sales), 252)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure R&D stability ablation; no employee, income, advertising, or reversal sleeve."
+  },
+  {
+    "name": "v247_rd_positive_ad_drag_balance",
+    "family": "rd_ad_lsus_repair",
+    "hypothesis": "R&D intensity may be valuable when paired with restrained advertising drag and labor productivity, distinguishing productive innovation spend from promotional expense.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.300 * group_rank(ts_rank(fnd6_newa2v1300_xrd / abs(sales), 126), industry) - 0.220 * group_rank(ts_rank(abs(fnd6_xad) / abs(sales), 126), industry) + 0.200 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.160 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Different investment composition mechanism; close if LSUS or Sharpe fails."
+  }
+]

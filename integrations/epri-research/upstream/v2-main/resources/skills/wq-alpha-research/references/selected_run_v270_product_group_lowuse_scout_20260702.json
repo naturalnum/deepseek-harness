@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v270_product_group_competitor_reversal",
+    "family": "product_group_lowuse_scout",
+    "hypothesis": "Competitor-relative return reversal is crowded under normal industry ranking, but ranking it inside low-use PV13 product/relationship groups may isolate product-peer mispricing and reduce correlation to existing industry-neutral competitor sleeves.",
+    "field_notes": "Uses low-alphaCount PV13 grouping field pv13_rha2_min5_3000_513_sector as group input, not as a raw numeric signal. Compact replacement for v269 residual stacking.",
+    "expression": "0.75 * group_rank(ts_rank(-1 * rel_ret_comp, 20), pv13_rha2_min5_3000_513_sector) + 0.25 * rank(-(close / open - 1))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v270_product_group_generic_revision",
+    "family": "product_group_lowuse_scout",
+    "hypothesis": "Low-use generic analyst estimate value changes may capture broad non-EPS revision information; comparing within product taxonomy groups should avoid direct EPS/book/CFO crowding.",
+    "field_notes": "Uses rank-space change between anl4_eaz2lafv110_estvalue and anl4_eaz2lafv110_prevval; both are low-use generic estimate fields.",
+    "expression": "group_rank(ts_rank(rank(anl4_eaz2lafv110_estvalue) - rank(anl4_eaz2lafv110_prevval), 126), pv13_hierarchy_min10_3000_513_sector)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v270_product_group_sga_surprise",
+    "family": "product_group_lowuse_scout",
+    "hypothesis": "Actual SG&A below analyst expectation can indicate expense discipline; product-group ranking may make the comparison more economic than broad industry buckets.",
+    "field_notes": "Uses analyst4 SG&A actual vs median estimate in rank space to avoid unit warnings and avoid direct profitability/book/debt fields.",
+    "expression": "group_rank(ts_rank(rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median) - rank(anl4_fs_actual_1qf_v4_nd_sga_value), 126), pv13_hierarchy_f2_sector)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v270_top1000_sga_surprise_reversal",
+    "family": "product_group_lowuse_scout",
+    "hypothesis": "The same SG&A discipline signal may be more reliable in liquid large names; a top1000 gate is a direct response to repeated LOW_SUB_UNIVERSE_SHARPE failures.",
+    "field_notes": "Uses univ1 top1000 only as a liquidity/subuniverse gate, with a small reversal stabilizer for turnover and timing.",
+    "expression": "trade_when(top1000 > 0, 0.70 * group_rank(ts_rank(rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median) - rank(anl4_fs_actual_1qf_v4_nd_sga_value), 126), industry) + 0.30 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v270_product_group_mna_specific",
+    "family": "product_group_lowuse_scout",
+    "hypothesis": "Specific M&A sentiment may carry corporate-action surprise that differs from broad news attention; product taxonomy ranking plus a technical-news fade attempts to avoid the crowded broad news carrier.",
+    "field_notes": "Uses low-use news18 merger_acquisition_sentiment and rp_nip_technical with PV13 grouping, staying far below the 64 operator limit.",
+    "expression": "0.70 * group_rank(ts_rank(merger_acquisition_sentiment, 90), pv13_hierarchy_min20_3000_513_sector) + 0.30 * group_rank(ts_rank(-1 * rp_nip_technical, 60), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v270_product_group_earnings_eval_fade",
+    "family": "product_group_lowuse_scout",
+    "hypothesis": "Earnings-evaluation sentiment may overreact within similar product groups; fading it inside product taxonomy groups tests a more specific version of the old broad editorial contrarian route.",
+    "field_notes": "Small, explicit test of one low-use news18 field. If weak or high-correlated, close this specific route quickly.",
+    "expression": "group_rank(ts_rank(-1 * earnings_evaluation_sentiment, 90), pv13_hierarchy_min5_3000_513_sector)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

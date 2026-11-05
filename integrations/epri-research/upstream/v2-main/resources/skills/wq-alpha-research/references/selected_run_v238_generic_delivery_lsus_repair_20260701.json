@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v238_generic_delivery_largecap_industry",
+    "family": "generic_analyst_vector_delivery_lsus_repair",
+    "source": "v238_generic_delivery_lsus_repair_20260701",
+    "hypothesis": "The generic actual-vs-estimate delivery signal may become TOP1000 robust when restricted to larger, better-covered names while preserving its low correlation profile.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.340 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.260 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Single cap-threshold robustness repair of blLgjRPq. Kill if Sharpe/Fitness drops or LSUS remains below threshold."
+  },
+  {
+    "name": "v238_generic_delivery_subindustry",
+    "family": "generic_analyst_vector_delivery_lsus_repair",
+    "source": "v238_generic_delivery_lsus_repair_20260701",
+    "hypothesis": "Subindustry ranking may remove small-industry composition effects that caused the generic delivery signal to fail sub-universe Sharpe.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.260 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), subindustry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Neutralization/ranking robustness repair. Kill on LSUS, Fitness below 1.10, or corr to 78wrdZ6x/EBIT-delivery cluster."
+  },
+  {
+    "name": "v238_generic_delivery_qf_contraction_blend",
+    "family": "generic_analyst_vector_delivery_lsus_repair",
+    "source": "v238_generic_delivery_lsus_repair_20260701",
+    "hypothesis": "Adding a small generic QF estimate-contraction component that passed LSUS may stabilize the delivery signal without turning it into a single-field analyst revision sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Blend of v237 #5 low-corr delivery and #3 LSUS-pass QF contraction. Submit only if LSUS passes and top daily-PnL corr remains below 0.68."
+  },
+  {
+    "name": "v238_generic_delivery_largecap_blend",
+    "family": "generic_analyst_vector_delivery_lsus_repair",
+    "source": "v238_generic_delivery_lsus_repair_20260701",
+    "hypothesis": "The large-cap gate and QF contraction stabilizer together test whether the LSUS failure is a coverage/micro-cap artifact rather than a true fragility of generic delivery.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.250 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Final narrow repair combining only the two justified changes. Do not further repair if this fails LSUS or becomes high-corr."
+  }
+]

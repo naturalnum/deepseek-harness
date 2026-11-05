@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write integrations/epri-research/cloud/README.md
+/cloud-integration-and-local-review:
+  en: 9ce9ee8dff9f3943
+  zh: cc6497a218d5b872
+/cloud-integration-and-local-review/build:
+  en: bde3b62a881ce018
+  zh: 285458a251f4b442
+/cloud-integration-and-local-review/configuration-copies:
+  en: a10a94bf8b77a7de
+  zh: 06cad3b2860d2bc4
+/cloud-integration-and-local-review/cloud-execution-image:
+  en: 8ccf08b28df2c513
+  zh: 72af646552b68611
+/cloud-integration-and-local-review/verification-scope:
+  en: a5c8881777947e94
+  zh: 156f9809319a94d2

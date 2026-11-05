@@ -1,0 +1,5 @@
+# Optional local customer policy; the generic bundle never applies this.
+- id: preset-ptc
+  disabled: true
+- id: preset-minimal
+  disabled: true

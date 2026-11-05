@@ -1,0 +1,41 @@
+digraph G {
+  graph [
+    rankdir="LR",
+    bgcolor="white",
+    pad="0.18",
+    nodesep="0.48",
+    ranksep="0.58"
+  ];
+  node [
+    shape="rect",
+    style="rounded,filled",
+    fillcolor="#F3F6F8",
+    color="#5B6570",
+    fontcolor="#202427",
+    fontname="Arial",
+    fontsize="11",
+    penwidth="1.1",
+    margin="0.10,0.07"
+  ];
+  edge [
+    color="#3B6FB6",
+    fontname="Arial",
+    fontsize="9",
+    fontcolor="#202427",
+    arrowsize="0.7",
+    penwidth="1.2"
+  ];
+  label="Research workflow";
+  labelloc="t";
+  fontsize="12";
+  fontname="Arial";
+  "data" [label="Raw data"];
+  "qc" [label="Quality control"];
+  "features" [label="Feature matrix"];
+  "model" [label="Model"];
+  "eval" [label="Evaluation"];
+  "data" -> "qc" [label="filter"];
+  "qc" -> "features" [label="encode"];
+  "features" -> "model" [label="train"];
+  "model" -> "eval" [label="validate"];
+}

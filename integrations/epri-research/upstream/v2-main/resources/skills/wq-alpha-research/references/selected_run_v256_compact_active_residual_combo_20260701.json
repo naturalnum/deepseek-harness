@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v256_compact_buyback_option_share_residual",
+    "family": "compact_active_residual_combo",
+    "hypothesis": "Buyback and operating-quality strength may be separable from option/share-dilution exposure by subtracting the call-put/share-count route and retaining option-volatility calm.",
+    "pre_estimated_top_abs_corr": 0.336,
+    "pre_estimated_synthetic_sharpe": 1.48,
+    "source_alpha_ids": ["88zpWZ1X", "QPa7KOGK", "akdbG2k5"],
+    "expression": "0.50 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)) + 0.75 * (0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v256_compact_event_customer_residual",
+    "family": "compact_active_residual_combo",
+    "hypothesis": "Legal/credit/M&A sentiment plus operating-quality reversal may survive after subtracting customer-authority exposure that frequently causes relationship-cluster self-correlation.",
+    "pre_estimated_top_abs_corr": 0.417,
+    "pre_estimated_synthetic_sharpe": 2.23,
+    "source_alpha_ids": ["LLpGdlrm", "RRpmO2xb", "e7OQoveE"],
+    "expression": "0.75 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) - 0.75 * (0.45 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.75 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v256_compact_event_goodwill_residual",
+    "family": "compact_active_residual_combo",
+    "hypothesis": "Event/legal credit sentiment combined with intraday-operating quality may remain strong after subtracting the goodwill/cashflow quality sleeve that often overlaps classic balance-sheet quality.",
+    "pre_estimated_top_abs_corr": 0.432,
+    "pre_estimated_synthetic_sharpe": 2.73,
+    "source_alpha_ids": ["LLpGdlrm", "mL8j98w9", "e7OQoveE"],
+    "expression": "1.00 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) - 1.00 * (0.60 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 1.00 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v256_compact_earnings_fcf_receivable_residual",
+    "family": "compact_active_residual_combo",
+    "hypothesis": "Earnings-evaluation sentiment and free-cash-flow value may form a low-correlation residual after subtracting receivable intensity, reducing overlap with basic quality and delivery alphas.",
+    "pre_estimated_top_abs_corr": 0.434,
+    "pre_estimated_synthetic_sharpe": 2.33,
+    "source_alpha_ids": ["RRpmOAWj", "LLp7PRmM", "P0pgZllw"],
+    "expression": "0.75 * (0.40 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.65 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 0.50 * (0.55 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(net_profit_reported_value / equity, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v256_compact_customer_page_profit_residual",
+    "family": "compact_active_residual_combo",
+    "hypothesis": "Customer page-rank structure may add a different relationship signal when combined with intraday reversal and after subtracting direct operating-income exposure.",
+    "pre_estimated_top_abs_corr": 0.446,
+    "pre_estimated_synthetic_sharpe": 1.94,
+    "source_alpha_ids": ["LLpGdlrm", "QPaGVa3K", "gJ1rA9VO"],
+    "expression": "0.50 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) - 0.75 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.50 * (0.450 * group_rank(ts_rank(pv13_ustomergraphrank_page_rank, 60), industry) - 0.180 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.210 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

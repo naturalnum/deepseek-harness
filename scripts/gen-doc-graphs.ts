@@ -108,6 +108,11 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'epriResearch', pkg: 'experimental-epri-research', title: 'Account research workbench', mode: 'service',
+    consumers: ['experimental-epri-research'],
+    note: 'Owns research data and contributions under the existing account Session and execution owners.',
+  },
+  {
     key: 'cloudModelKey', pkg: 'pe-cloud-api', title: 'Account model-key editing', mode: 'service',
     consumers: ['pe-cloud-api'],
     note: 'Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner.',

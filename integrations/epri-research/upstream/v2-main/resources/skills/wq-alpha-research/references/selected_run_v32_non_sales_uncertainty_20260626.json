@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v32_gross_income_range_coverage",
+    "family": "analyst_uncertainty_non_sales",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "A narrow gross-income estimate range with rising gross-income estimate coverage may capture margin visibility distinct from sales dispersion.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * abs(gross_income_max - min_gross_income_quarterly_estimate) / abs(sales), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(num_gross_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-sales analyst uncertainty using gross-income range/count; strict corr gate against akdb1ZqR."
+  },
+  {
+    "name": "v32_ebit_range_coverage",
+    "family": "analyst_uncertainty_non_sales",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Tight EBIT estimate range plus broader EBIT coverage should capture operating-profit visibility without raw EPS or sales dispersion.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * abs(ebit_max - ebit_min) / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_ebit_est, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Range/count variant after v31 EBIT std was weak."
+  },
+  {
+    "name": "v32_ebitda_std_coverage",
+    "family": "analyst_uncertainty_non_sales",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Lower EBITDA estimate dispersion with rising EBITDA coverage may identify cleaner operating-profit expectations.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * ebitda_stddev / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_ebitda_estimates_quarter, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "EBITDA uncertainty field has low crowding but lower coverage; watch coverage/sub-universe."
+  },
+  {
+    "name": "v32_operating_cashflow_range",
+    "family": "cashflow_estimate_uncertainty",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "A narrower operating cash-flow estimate range with more estimate participation may capture cash-flow forecast confidence without using historical cashflow_op.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * abs(op_cash_flow_max - op_cash_flow_min) / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_op_cash_flow_est, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Forecast cash-flow uncertainty rather than historical CFO quality; avoid known cashflow_op/reversal clusters."
+  },
+  {
+    "name": "v32_free_cashflow_range",
+    "family": "cashflow_estimate_uncertainty",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Narrower free-cash-flow estimate range plus coverage expansion may reward forecastable free-cash-flow generation.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * abs(free_cashflow_max - free_cashflow_min) / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_free_cashflow_est, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Free-cash-flow forecast range; may be sparse."
+  },
+  {
+    "name": "v32_capex_uncertainty_discipline",
+    "family": "expense_capex_uncertainty",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Low capex estimate uncertainty and lower capex upper estimates can indicate disciplined investment planning without using historical capex/CFO/reversal.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * capital_expenditure_max / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_capex_est, 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Guidance/capex history has been weak; this uses estimate-count/risk-state only as a narrow probe."
+  },
+  {
+    "name": "v32_sga_uncertainty_efficiency",
+    "family": "expense_capex_uncertainty",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Lower SG&A estimate dispersion with rising estimate participation may proxy for predictable operating-expense control.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * stddev_sga_expense_quarterly_estimate / abs(sales), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_sga_estimates_quarter, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Expense uncertainty, not sales/revenue uncertainty."
+  },
+  {
+    "name": "v32_rnd_uncertainty_pipeline",
+    "family": "expense_capex_uncertainty",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Stable R&D expense expectations with broader coverage may flag predictable innovation spending rather than generic quality.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * abs(rnd_expense_max - rnd_expense_min) / abs(sales), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_rnd_expense_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Likely sparse, included as a distinct expense-forecast uncertainty probe."
+  },
+  {
+    "name": "v32_net_profit_range_coverage",
+    "family": "analyst_uncertainty_non_sales",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "A tight net-profit estimate range with rising estimate count may rescue the v31 net-income uncertainty near-miss through a more robust range transform.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * abs(max_net_profit_quarterly_estimate - net_income_min) / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_net_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Range-based rescue of v31 net_income_disagreement; watch correlation with akdb1ZqR and EPS/yield ACTIVE names."
+  },
+  {
+    "name": "v32_adjusted_income_range_coverage",
+    "family": "analyst_uncertainty_non_sales",
+    "source": "non_sales_uncertainty_v32_20260626",
+    "hypothesis": "Adjusted-income estimate range tightening with rising coverage may improve on v31 adjusted-income dispersion without relying on sales-count support.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * abs(max_adj_net_income_quarterly_estimate - min_adj_net_income_quarterly_estimate) / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_adj_net_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No sales-count term; stricter test of adjusted-income uncertainty path."
+  }
+]

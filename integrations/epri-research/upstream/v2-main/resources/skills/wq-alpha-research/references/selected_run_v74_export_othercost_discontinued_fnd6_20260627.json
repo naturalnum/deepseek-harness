@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v74_export_sales_low_exposure_stability",
+    "family": "fnd6_operational_disclosure",
+    "source": "hard_field_scan_v74_20260627",
+    "hypothesis": "Lower and more stable export-sales exposure may identify companies less exposed to cross-border demand and tariff/currency shocks, while avoiding the stopped FX translation fields.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_salexg)) / abs(sales), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(ts_delta(vec_avg(fnd6_salexg) / abs(sales), 252)), 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses fnd6_salexg export-sales VECTOR via vec_avg; not a domestic/FX translation field."
+  },
+  {
+    "name": "v74_export_sales_positive_demand",
+    "family": "fnd6_operational_disclosure",
+    "source": "hard_field_scan_v74_20260627",
+    "hypothesis": "Sustained export sales relative to total sales may capture international demand strength; this tests the opposite sign of low-exposure stability.",
+    "expression": "0.45 * group_rank(ts_rank(vec_avg(fnd6_salexg) / abs(sales), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_salexg) / abs(sales), 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sign test for export-sales demand strength; close if it maps back to stopped foreign/FX capacity."
+  },
+  {
+    "name": "v74_other_costs_relief",
+    "family": "fnd6_operational_disclosure",
+    "source": "hard_field_scan_v74_20260627",
+    "hypothesis": "Lower other costs and expenses relative to assets may proxy cleaner operating cost structure without using stopped SG&A/R&D guidance or compensation routes.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_ocaxs)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(ts_delta(vec_avg(fnd6_ocaxs) / assets, 252)), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-user FND6 other-cost VECTOR; avoids analyst cost guidance and stock-comp/employee-liability fields."
+  },
+  {
+    "name": "v74_discontinued_operations_cleanliness",
+    "family": "fnd6_operational_disclosure",
+    "source": "hard_field_scan_v74_20260627",
+    "hypothesis": "Lower discontinued-operations charges may identify cleaner ongoing operations and fewer non-core disposal shocks.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_doq)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(ts_delta(vec_avg(fnd6_newqeventv110_doq) / assets, 252)), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests FND6 discontinued-operations event vector; not a restructuring/goodwill impairment sibling."
+  },
+  {
+    "name": "v74_export_cost_discontinued_composite",
+    "family": "fnd6_operational_disclosure",
+    "source": "hard_field_scan_v74_20260627",
+    "hypothesis": "A broad operational disclosure cleanliness basket may work if no single FND6 cold field is strong enough on its own.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_salexg)) / abs(sales), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_ocaxs)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_doq)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Composite of three low-use FND6 operational disclosure fields; abandon if weaker than individual legs."
+  }
+]

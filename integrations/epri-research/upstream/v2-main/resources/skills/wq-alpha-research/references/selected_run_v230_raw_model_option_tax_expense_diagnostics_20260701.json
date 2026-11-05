@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v230_raw_fscore_quality_social_neglect",
+    "family": "raw_model_quality_social_attention",
+    "hypothesis": "Raw fscore quality/profitability/total fields have not been used in the historical expression set; pairing them with low broad social attention may capture uncrowded quality rather than the occupied fscore value/growth + option/news frontier.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(fscore_quality, 126), pv13_hierarchy_min51_f4_sector) + 0.230 * group_rank(ts_rank(fscore_profitability, 126), pv13_hierarchy_min51_f4_sector) + 0.160 * group_rank(ts_rank(fscore_total, 126), industry) + 0.100 * group_rank(ts_rank(fscore_momentum, 126), industry) + 0.080 * group_rank(ts_rank(-1 * vec_avg(scl12_buzzvec), 60), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Diagnostic only. Require strict pre-submit daily-PnL corr <0.60 versus 3q7jJ130, Wjpx2AEO, leVYqdve, and model/option frontier actives; do not rescue by adding option/news/open-close."
+  },
+  {
+    "name": "v230_short_mid_option_term_clean",
+    "family": "option_short_mid_term_structure",
+    "hypothesis": "Short-vs-mid option breakeven and forward term structure may express near-term option stress normalization without model, social, news-chain, or open-close sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank((option_breakeven_180 - option_breakeven_20) / close, 90), industry) + 0.220 * group_rank(ts_rank((forward_price_180 - forward_price_20) / close, 90), industry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_150 - implied_volatility_mean_skew_10), 90), industry) + 0.140 * group_rank(ts_rank(-1 * abs(historical_volatility_20 - historical_volatility_150), 90), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses several option maturities not used in the historical expressions, but option capacity is crowded. Require corr <0.60 versus option/model/social actives; kill on LSUS or high-corr."
+  },
+  {
+    "name": "v230_cash_tax_realization_clean",
+    "family": "cash_tax_realization_without_deferred",
+    "hypothesis": "Companies whose cash taxes paid align with current tax expense and whose tax reconciliation contains fewer nondeductible/state-local distortions may have cleaner reported earnings; this intentionally avoids deferred tax, prepaid tax, foreign-tax, debt, and payout parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * abs(income_taxes_paid_total - current_income_tax_expense_amount) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(nondeductible_expense_tax_reconciliation) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(tax_credit_reconciliation_amount / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(state_local_tax_reconciliation_value) / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A narrow tax-cleanliness diagnostic, not a deferred/prepaid/foreign-tax repair. Close if it repeats the old weak/high-corr cash-tax branch."
+  },
+  {
+    "name": "v230_unitclean_sga_expense_visibility",
+    "family": "analyst_sga_unitclean_expense_visibility",
+    "hypothesis": "Lower and tighter SG&A guidance/estimate burden may indicate operating expense discipline; using same-family SG&A annual fields scaled by assets avoids prior warning-prone cross-source sales-denominator mixes.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_sga_maxguidance + anl4_fs_guidances_advanced_af_nd_sga_minguidance) / (2 * abs(assets)), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_sga_maxguidance - anl4_fs_guidances_advanced_af_nd_sga_minguidance) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_median / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high - anl4_fs_detail_estimates_advanced_af_nd_sga_low) / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "SG&A/R&D has repeatedly been weak and is partly occupied by xAxGJjNn; this is one unit-clean diagnostic only, with no option-award or payout stabilizer."
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v11_deferred_revenue_quality_reversal",
+    "family": "deferred_revenue_quality",
+    "source": "accounting_quality_v11_20260625",
+    "hypothesis": "Higher deferred revenue relative to sales can proxy customer prepayments and revenue visibility. Add gross margin and a small intraday reversal stabilizer.",
+    "expression": "0.55 * group_rank(ts_rank((fnd6_drc + fnd6_drlt) / sales, 126), subindustry) + 0.30 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Different from receivables: uses customer prepayment/revenue visibility plus gross margin."
+  },
+  {
+    "name": "v11_deferred_revenue_growth_sales_growth",
+    "family": "deferred_revenue_growth",
+    "source": "accounting_quality_v11_20260625",
+    "hypothesis": "Growth in deferred revenue backed by sales growth can indicate improving demand visibility rather than accounting noise.",
+    "expression": "0.60 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.40 * group_rank(ts_rank(sales_growth, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests growth/visibility rather than the level of deferred revenue."
+  },
+  {
+    "name": "v11_cash_earnings_quality",
+    "family": "cash_earnings_quality",
+    "source": "accounting_quality_v11_20260625",
+    "hypothesis": "Cash flow from operations exceeding accounting operating income can indicate higher earnings quality and lower accrual risk.",
+    "expression": "0.65 * group_rank(ts_rank(cash_flow_from_operations / assets - operating_income / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses CFO minus operating-income quality; receivables/reversal are only small stabilizers."
+  },
+  {
+    "name": "v11_gross_margin_sales_growth",
+    "family": "margin_growth_quality",
+    "source": "accounting_quality_v11_20260625",
+    "hypothesis": "Gross-margin strength combined with sales growth can identify quality growth distinct from pure ROE or EPS yield.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.30 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Tests operating margin/growth quality with a light reversal component."
+  },
+  {
+    "name": "v11_payables_increase_cashflow_quality",
+    "family": "payables_working_capital",
+    "source": "accounting_quality_v11_20260625",
+    "hypothesis": "Accounts payable and accrued liabilities increase can improve working-capital cash conversion when supported by operating cash flow.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_newa1v1300_apalch / sales, 126), subindustry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Tests payables/accrual-liability working-capital financing, not receivables."
+  },
+  {
+    "name": "v11_capex_discipline_cashflow",
+    "family": "investment_cashflow_quality",
+    "source": "accounting_quality_v11_20260625",
+    "hypothesis": "Lower capital expenditure intensity combined with strong operating cash flow can proxy disciplined investment and free-cash-flow quality.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * capital_expenditure_amount / assets, 126), industry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Follow-up to weak asset-growth branch, using capex intensity and CFO rather than total asset growth."
+  }
+]

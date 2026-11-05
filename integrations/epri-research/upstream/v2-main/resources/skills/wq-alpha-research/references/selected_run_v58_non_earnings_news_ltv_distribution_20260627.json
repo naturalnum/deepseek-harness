@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v58_ltv_consensus_overoptimism_control",
+    "family": "longterm_consensus_distribution",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "High long-term consensus expectations with wide high-low dispersion may be overoptimistic; fading them may diversify EPS growth and raw long-term revision alphas.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * vec_avg(anl4_basicconltv110_mean), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_basicconltv110_high) - vec_avg(anl4_basicconltv110_low)), 126), industry) + 0.20 * group_rank(ts_rank(vec_avg(anl4_basicconltv110_down) / (vec_avg(anl4_basicconltv110_numest) + 1), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different LTV distribution fields from 1Y7Z77YX's current-vs-previous signal; strict corr gate vs 1Y7Z77YX and LLpZgaeL."
+  },
+  {
+    "name": "v58_ltv_upgrade_breadth_distribution",
+    "family": "longterm_consensus_distribution",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Rising upper-estimate breadth and falling down-estimate breadth in long-term consensus may capture sponsorship rather than raw estimate level.",
+    "expression": "0.35 * group_rank(ts_rank(vec_avg(anl4_basicconltv110_pu) / (vec_avg(anl4_basicconltv110_numest) + 1), 126), industry) + 0.25 * group_rank(ts_rank(-1 * vec_avg(anl4_basicconltv110_down) / (vec_avg(anl4_basicconltv110_numest) + 1), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_basicconltv110_high) - vec_avg(anl4_basicconltv110_low)), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Breadth/count structure rather than current-vs-previous estimate; reject if it becomes an LTV near-neighbor."
+  },
+  {
+    "name": "v58_product_business_news_slow",
+    "family": "product_business_news",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Product and business-related news sentiment may capture demand-cycle information outside earnings, price targets, and relationship-return residuals.",
+    "expression": "0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No product relationship returns, no sales actual surprise, no gross-margin/reversal stabilizer."
+  },
+  {
+    "name": "v58_labor_issue_relief",
+    "family": "labor_news_relief",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Positive labor-news sentiment and absence of strong labor-news impact may identify companies avoiding labor disruption risk.",
+    "expression": "0.35 * group_rank(ts_rank(rp_css_labor, 90), industry) + 0.25 * group_rank(ts_rank(rp_ess_labor, 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(rp_nip_labor), 90), industry) + 0.20 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A non-earnings, non-M&A/credit/legal RP theme not yet used as an ACTIVE parent."
+  },
+  {
+    "name": "v58_dividend_news_defensive",
+    "family": "dividend_news_defensive",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Positive dividend-news sentiment may capture shareholder-return confidence without using buyback payments or share-count contraction.",
+    "expression": "0.35 * group_rank(ts_rank(rp_nip_dividends, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_dividends, 90), industry) + 0.20 * group_rank(ts_rank(rp_ess_dividends, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "News-based payout signal; strict corr gate vs buyback/payout actives."
+  },
+  {
+    "name": "v58_technical_news_contrarian",
+    "family": "technical_analysis_news_contrarian",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Technical-analysis news may represent crowded narrative; fading strong technical-news impact while preferring low market beta could be contrarian.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * rp_nip_technical, 90), industry) + 0.25 * group_rank(ts_rank(-1 * rp_css_technical, 90), industry) + 0.20 * group_rank(ts_rank(-1 * rp_ess_technical, 90), industry) + 0.20 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "News theme, not price-volume technical expression; far from close-location/VWAP."
+  },
+  {
+    "name": "v58_equity_action_news_clean",
+    "family": "equity_action_news",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Equity-action news with positive sentiment but low systematic-risk slope may capture capital-market activity without directly using buyback or dilution fields.",
+    "expression": "0.35 * group_rank(ts_rank(rp_css_equity, 90), industry) + 0.25 * group_rank(ts_rank(rp_ess_equity, 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(rp_nip_equity), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids share-count and buyback fields that repeatedly hit payout/deferred-revenue correlations."
+  },
+  {
+    "name": "v58_marketing_news_product_confirm",
+    "family": "marketing_product_news",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Marketing and product-service news together may proxy product momentum more directly than generic business sentiment.",
+    "expression": "0.35 * group_rank(ts_rank(rp_nip_marketing, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_marketing, 90), industry) + 0.20 * group_rank(ts_rank(rp_ess_product, 90), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Product/marketing news without sales actual surprise or product relationship-return residual."
+  },
+  {
+    "name": "v58_society_news_low_noise",
+    "family": "society_news_low_noise",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Positive society-related news with low impact magnitude may capture lower controversy exposure outside legal/credit/labor categories.",
+    "expression": "0.35 * group_rank(ts_rank(rp_css_society, 90), industry) + 0.25 * group_rank(ts_rank(rp_ess_society, 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(rp_nip_society), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "New RP theme; included as a far-mechanism probe."
+  },
+  {
+    "name": "v58_pv13_capex_restraint_no_quality",
+    "family": "pv13_capex_restraint",
+    "source": "non_earnings_news_ltv_distribution_v58_20260627",
+    "hypothesis": "Expected capex restraint within product peers may improve the v55 capex-light near-miss if ordinary gross-margin quality is removed.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / sales, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_capex_high - anl4_fs_detail_estimates_advanced_af_nd_capex_low) / sales, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_capex_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Single controlled capex-restraint test; no gross margin, CFO, FCF/EV, or close/open stabilizer."
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v25_comp_reversal_slow_decay",
+    "family": "competitor_return_reversal_repair",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "v24 competitor-return reversal had strong Sharpe but excessive turnover; smoothing competitor returns and raising decay may preserve signal while lowering turnover.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * ts_mean(rel_ret_comp, 5), 60), industry) + 0.25 * group_rank(ts_rank(pv13_com_rk_au, 126), industry) + 0.20 * rank(-(close / open - 1))",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct repair of mL8jgJkX high turnover; target TO <=25%, Fitness >=1.10."
+  },
+  {
+    "name": "v25_comp_reversal_no_intraday_slow",
+    "family": "competitor_return_reversal_repair",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "Remove close-open reversal to reduce turnover/correlation, leaving competitor-return reversal and competitor breadth/authority as the core.",
+    "expression": "0.65 * group_rank(ts_rank(-1 * ts_mean(rel_ret_comp, 5), 60), industry) + 0.20 * group_rank(ts_rank(pv13_com_rk_au, 126), industry) + 0.15 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether the relationship-return channel can stand without the accepted close-open parent."
+  },
+  {
+    "name": "v25_comp_reversal_hump",
+    "family": "competitor_return_reversal_repair",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "Hump over a fast relationship-return signal may reduce turnover without collapsing to LOW_TURNOVER as it did for slow accounting fields.",
+    "expression": "hump(0.50 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.30 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(pv13_com_rk_au, 60), industry))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Operator repair; submit only if turnover enters the 1%-25% band and corr clears."
+  },
+  {
+    "name": "v25_comp_reversal_option_spread_mix",
+    "family": "competitor_return_option_mix",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "Blend the high-Sharpe competitor-return reversal with the near-miss option breakeven spread to reduce reliance on close-open and improve option fitness.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * ts_mean(rel_ret_comp, 5), 60), industry) + 0.35 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.20 * rank(-(close / open - 1))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Crossover of the two v24 repair targets; watch both turnover and option-skew/reversal correlation."
+  },
+  {
+    "name": "v25_option_spread_long_window",
+    "family": "option_breakeven_repair",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "The v24 option breakeven spread was near-miss; a longer rank window and higher decay may improve Fitness by reducing turnover noise.",
+    "expression": "0.55 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct repair of vRLjkQdw near-miss; compare against option-skew ACTIVE."
+  },
+  {
+    "name": "v25_option_spread_hump",
+    "family": "option_breakeven_repair",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "Hump on the near-miss option breakeven spread may reduce turnover while keeping the short-window option pressure signal.",
+    "expression": "hump(0.55 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Hump repair on a faster option signal, unlike the slow-accounting v23 hump."
+  },
+  {
+    "name": "v25_option_spread_low_iv_mix",
+    "family": "option_breakeven_repair",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "Combine directional option breakeven pressure with low implied-minus-realized volatility to improve option-only information without share-count or accounting anchors.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.30 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.25 * rank(-(close / open - 1))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Keeps the repair within option data plus a small accepted timing parent."
+  },
+  {
+    "name": "v25_option_spread_dilution_small",
+    "family": "option_breakeven_dilution_mix",
+    "source": "targeted_repair_v25_20260626",
+    "hypothesis": "Use share-count dilution only as a 30% auxiliary to lift option breakeven fitness while avoiding share-count as the main high-correlation driver.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "High correlation risk by design; local corr gate decides."
+  }
+]

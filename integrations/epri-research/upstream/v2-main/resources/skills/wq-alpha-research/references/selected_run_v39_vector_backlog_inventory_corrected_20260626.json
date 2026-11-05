@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v39_backlog_inventory_conversion_vecavg",
+    "family": "vector_backlog_inventory",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Order backlog growth is only useful if it converts through inventory turnover and lower receivable intensity; corrected vector handling tests whether v38 failed because of expression type rather than weak economics.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_obs), 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Corrected v38 order backlog via vec_avg; removes partner breadth from weak v26 backlog expression."
+  },
+  {
+    "name": "v39_backlog_margin_cash_conversion",
+    "family": "vector_backlog_inventory",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Rising backlog should be more valuable when gross margin and operating cash conversion are also healthy.",
+    "expression": "0.40 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_obs), 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(cashflow_op / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Backlog with cash/margin conversion; watch correlation with RRp7Q9Le and cashflow/accounting ACTIVE set."
+  },
+  {
+    "name": "v39_inventory_mix_vector_raw_vs_finished",
+    "family": "vector_inventory_mix",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Raw-material inventory above finished-goods inventory can be constructive demand preparation, while finished-goods accumulation is more likely unsold product.",
+    "expression": "0.40 * group_rank(ts_rank((vec_avg(fnd6_newqeventv110_invrmq) - vec_avg(fnd6_newqeventv110_invfgq)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Corrected v38 inventory event vectors with vec_avg before subtract."
+  },
+  {
+    "name": "v39_inventory_mix_matrix_raw_vs_finished",
+    "family": "matrix_inventory_mix",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "The matrix inventory taxonomy may be cleaner than event-vector inventory; raw-material intensity minus finished-goods intensity should prefer firms preparing for future production over firms carrying unsold goods.",
+    "expression": "0.45 * group_rank(ts_rank((fnd6_newqv1300_invrmq - fnd6_newqv1300_invfgq) / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Matrix alternative to vector inventory; should avoid event-input operator errors."
+  },
+  {
+    "name": "v39_finished_goods_overhang_matrix",
+    "family": "matrix_inventory_mix",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Lower finished-goods inventory relative to sales, combined with stable turnover and low receivables, may capture clean sell-through.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * fnd6_newqv1300_invfgq / sales, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Simple finished-goods overhang probe; likely correlates with LLp7PRmM if too receivable-heavy."
+  },
+  {
+    "name": "v39_restructuring_low_noise_backlog_vecavg",
+    "family": "vector_restructuring_backlog",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Low restructuring charges with positive backlog should favor clean demand over turnaround situations.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * vec_avg(fnd6_newqeventv110_rcpq) / assets, 126), industry) + 0.30 * group_rank(ts_rank(vec_avg(fnd6_obs) / assets, 126), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.10 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Corrected v38 restructuring/backlog vector inputs with vec_avg."
+  },
+  {
+    "name": "v39_restructuring_reversal_clean_matrix",
+    "family": "matrix_restructuring_quality",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Low restructuring cost with less working-capital bloat can identify firms without special-charge noise and balance-sheet stress.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * fnd6_newqv1300_rcpq / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * working_capital / assets, 126), industry) + 0.20 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Matrix version of low restructuring noise; no order backlog to separate whether backlog itself adds value."
+  },
+  {
+    "name": "v39_clean_operating_cycle_matrix",
+    "family": "matrix_workingcapital_cycle",
+    "source": "vector_backlog_inventory_corrected_v39_20260626",
+    "hypothesis": "Higher payable support, lower receivables, and lower finished-goods overhang should capture a clean operating cycle without relying on earnings, sales estimates, graph, close/open, or option fields.",
+    "expression": "0.35 * group_rank(ts_rank(fnd6_cptnewqv1300_apq / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * fnd6_newqv1300_rectrq / sales, 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * fnd6_newqv1300_invfgq / sales, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure matrix working-capital cycle probe; compare to v38 supplier financing and LLp7PRmM receivables ACTIVE."
+  }
+]

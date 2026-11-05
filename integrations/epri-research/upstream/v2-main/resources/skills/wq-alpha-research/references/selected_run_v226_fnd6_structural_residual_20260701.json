@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v226_sp_rank_employee_efficiency",
+    "family": "fnd6_rank_employee_cost_residual",
+    "hypothesis": "S&P-style quality rank, income per employee, restrained headcount growth, and lower cost burden may capture operating discipline in a field set not directly used by current ACTIVE expressions.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(-1 * fnd6_rank, 126), industry) + 0.210 * group_rank(ts_rank(fnd6_newa1v1300_ib / abs(fnd6_newa1v1300_emp), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_emp, 252) / abs(fnd6_newa1v1300_emp), 126), industry) + 0.160 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) + 0.120 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "First controlled probe of fnd6_rank + employee efficiency; reject if it maps to ordinary profitability or employee-liability accounting-cleanliness blockers."
+  },
+  {
+    "name": "v226_cost_conversion_clean",
+    "family": "fnd6_cost_conversion_residual",
+    "hypothesis": "Companies with lower direct-plus-operating cost burden and stronger income/cash conversion should be more resilient; using FND6 cost fields may be distinct from SG&A/R&D guidance failures.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(fnd6_newa1v1300_ibc / abs(fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq), 126), industry) + 0.180 * group_rank(ts_rank(fnd6_newa1v1300_ib / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_std_dev((fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_30_days_spy, 126), industry) + 0.080 * rank(-1 * ts_rank(returns, 20)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Unit-clean same-family cost ratios; no SG&A guidance, advertising, CFI, debt, option, news-chain, or close/open sleeve."
+  },
+  {
+    "name": "v226_sp_rank_cash_shortnotes",
+    "family": "fnd6_rank_liquidity_shortborrow_residual",
+    "hypothesis": "High quality rank plus cash buffer and lower short-term notes/interest burden may represent liquidity resilience without using the ordinary debt-reduction expression that failed LSUS.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * fnd6_rank, 126), industry) + 0.220 * group_rank(ts_rank(fnd6_newa1v1300_che / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * fnd6_np / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * fnd6_intpn / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Watch for debt/liquidity quality correlation; do not rescue if it behaves like ordinary deleveraging or payout-quality capacity."
+  },
+  {
+    "name": "v226_income_before_extra_cash_quality",
+    "family": "fnd6_income_cash_cleanliness_residual",
+    "hypothesis": "Income before extraordinary items that is also supported by cash-flow income and limited comprehensive-income leakage may capture cleaner recurring earnings without EPS or analyst-yield fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(fnd6_newa1v1300_ibcom / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(fnd6_newa1v1300_ibc / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank((fnd6_newa1v1300_ibc - fnd6_newa1v1300_ib) / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_ciq - fnd6_newqv1300_citotalq) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * fnd6_rank, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No analyst EPS/yield and no open-close; reject if it collapses into generic profitability or NCI/intersegment complexity."
+  },
+  {
+    "name": "v226_composite_sentiment_quality_calm",
+    "family": "generic_news_composite_fnd6_quality_residual",
+    "hypothesis": "Generic composite news sentiment may still have residual information if used as a calm, slow overlay on FND6 quality rank and employee efficiency, without product/business/news-chain/event-novelty legs.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(mean_composite_sentiment_score, 126), industry) + 0.190 * group_rank(ts_rank(-1 * ts_std_dev(mean_composite_sentiment_score, 20), 126), industry) + 0.180 * group_rank(ts_rank(-1 * fnd6_rank, 126), industry) + 0.160 * group_rank(ts_rank(fnd6_newa1v1300_ib / abs(fnd6_newa1v1300_emp), 126), industry) + 0.130 * group_rank(ts_rank(-1 * mean_entity_relevance_score, 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Single generic-news control; no novelty/impact/product/business/chain. Kill if it maps to Vkp0P130/LLpKoQPa/WjpJwMdP."
+  },
+  {
+    "name": "v226_fnd6_rank_cost_cash_compact",
+    "family": "compact_fnd6_quality_cost_liquidity",
+    "hypothesis": "A compact FND6-only quality-cost-liquidity blend may avoid the high-correlation routes created by analyst, option, product news, or relationship sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * fnd6_rank, 126), industry) + 0.210 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank(fnd6_newa1v1300_che / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(fnd6_newa1v1300_ibc / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * ts_delta(fnd6_np, 252) / abs(assets), 126), industry) + 0.080 * rank(-1 * ts_rank(returns, 20)), -1)",
+    "decay": 5,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Ablates away generic news; if this works, compare carefully to v226_sp_rank_cash_shortnotes and ordinary profitability/liquidity actives before any submit."
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v83_aqi_option_volume_no_eps",
+    "family": "accounting_option_volume_fusion",
+    "source": "local_pnl_fusion_v83_20260627",
+    "hypothesis": "Acquisition income contribution and low leverage are stable but crowded when paired with EPS; a light option-breakeven plus return-volume exhaustion sleeve may add orthogonal timing without making option or reversal the parent.",
+    "expression": "0.28 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.18 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.08 * rank(-(close / open - 1)) + 0.06 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.12 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.08 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.10 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Rebuilds d5xj87YE + vRLjkQdw + E5wRYVQR without EPS as a dominant stabilizer; reject if it maps back to 9qwXgvQd, QPa7KOGK, or mL86Jle1."
+  },
+  {
+    "name": "v83_aqi_option_volume_eps_tiny",
+    "family": "accounting_option_volume_fusion",
+    "source": "local_pnl_fusion_v83_20260627",
+    "hypothesis": "A very small EPS-yield sleeve may preserve the strong d5xj87YE quality profile while the option/volume sleeves reduce direct overlap with EPS and acquisition-income actives.",
+    "expression": "0.22 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.08 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.20 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.08 * rank(-(close / open - 1)) + 0.07 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.11 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.05 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.05 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Matches the strongest local PnL fusion more closely, but keeps EPS below 10% to avoid akd1nQMW/RRpm5LEo."
+  },
+  {
+    "name": "v83_aqi_social_volume_relief",
+    "family": "accounting_social_volume_fusion",
+    "source": "local_pnl_fusion_v83_20260627",
+    "hypothesis": "Slow negative-buzz relief is low-correlation but weak alone; paired with acquisition-income/low-debt and small volume exhaustion it may diversify without using fast-news or editorial fields.",
+    "expression": "0.30 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.12 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(snt_social_volume_fast_d1, 126), industry) + 0.10 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.06 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses the low-corr v48 social-relief seed as auxiliary, not the v82 fast editorial route."
+  },
+  {
+    "name": "v83_intangible_margin_option_volume",
+    "family": "intangible_option_volume_fusion",
+    "source": "local_pnl_fusion_v83_20260627",
+    "hypothesis": "Low intangible burden plus gross-profit strength was a near-miss but too close to goodwill/accounting quality when paired with reversal; replacing most reversal with option/volume exhaustion may lower overlap.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.20 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.18 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.08 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.12 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.06 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.06 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled intangible-margin fusion; abandon if it remains mL8j98w9/MPpGzqwr-like."
+  },
+  {
+    "name": "v83_goodwill_delta_option_volume",
+    "family": "goodwill_option_volume_fusion",
+    "source": "local_pnl_fusion_v83_20260627",
+    "hypothesis": "Falling goodwill relative to assets was strong but crowded with profitability/reversal; a lower-weight version with option/volume/risk sleeves may keep the cleanup signal while changing the PnL shape.",
+    "expression": "0.28 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.12 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.18 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.08 * rank(-(close / open - 1)) + 0.07 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.12 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.07 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.08 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Rescue only via cross-family fusion; do not follow with goodwill window variants."
+  },
+  {
+    "name": "v83_aqi_pcr_volume_curve_fusion",
+    "family": "accounting_option_flow_fusion",
+    "source": "local_pnl_fusion_v83_20260627",
+    "hypothesis": "Put/call volume curve already has an ACTIVE standalone version, but a small non-breakeven option-flow sleeve may de-correlate acquisition-income/low-debt without using EPS or fast news.",
+    "expression": "0.30 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.16 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.10 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.10 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.06 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.10 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Strict corr gate against 6XwKxVkO and 9qwXgvQd; option-flow is auxiliary only."
+  }
+]

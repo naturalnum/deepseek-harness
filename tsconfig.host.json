@@ -10,6 +10,7 @@
   // The Cloud save integration checks this renderer-free controller leaf, not its Client plugin entry.
   "files": ["packages/client/ui-settings-agent-loop/src/client/agent-loop-card-controller.ts"],
   "include": [
+    "packages/experimental/epri-research/scripts/prepare.ts",
     "apps/web/tests/collapse-timing.e2e.ts",
     "apps/web/tests/notice-wake-tail.e2e.ts",
     "apps/web/tests/fold-blank-matrix.e2e.ts",
@@ -242,6 +243,7 @@
     { "path": "./packages/cloud/pe-account-instructions" },
     { "path": "./packages/cloud/pe-cloud-access" },
     { "path": "./packages/cloud/pe-cloud-api" },
+    { "path": "./packages/experimental/epri-research/tsconfig.host.json" },
     { "path": "./packages/cloud/pe-cloud-client/tsconfig.host.json" },
     { "path": "./packages/cloud/pe-cloud-files" },
     { "path": "./packages/cloud/pe-cloud-runtime/tsconfig.host.json" },

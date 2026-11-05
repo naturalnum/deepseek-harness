@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v167_triple_frontier_balanced",
+    "family": "frontier_fusion_corr_shave",
+    "hypothesis": "Three near-frontier seeds fail for different reasons: intersegment/FX is just over corr to e7OVQKGN, social-deleveraging is just over corr to QPazq9nX, and option-dividend/FCF visibility is just over corr to E5wRq3ZG. Their pairwise PnL correlations are only moderate, so a balanced fusion may retain Fitness while reducing any single ACTIVE correlation peak.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.110 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.140 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.110 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)) - 0.060 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.060 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Balanced fusion of d5x3KvRK/N1p3wepo/LLpz0nOM. Reject if metrics collapse or corr remains over 0.68."
+  },
+  {
+    "name": "v167_social_deleveraging_intersegment_hedge",
+    "family": "social_deleveraging_corr_shave",
+    "hypothesis": "N1p3wepo is strong but corr +0.6811 to QPazq9nX. Adding intersegment/FX complexity relief and option-FCF visibility under calm-return timing may move it away from customer/social/product capacity without deleting the deleveraging signal.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.250 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.150 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.120 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.070 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.060 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary debug target is N1p3wepo's +0.6811 corr. Keep social/debt as the parent but hedge with intersegment/option-FCF."
+  },
+  {
+    "name": "v167_intersegment_option_social_corr_shave",
+    "family": "intersegment_corr_shave",
+    "hypothesis": "d5x3KvRK is submit-like but corr +0.6809 to e7OVQKGN. Option-FCF and social-deleveraging sleeves have lower pairwise correlations to it and may reduce the intersegment/FX active peak while preserving the low-volume complexity edge.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.50, 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.150 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.110 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)) - 0.060 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary debug target is d5x3KvRK's +0.6809 corr. Do not submit if it still maps to intersegment/FX actives."
+  },
+  {
+    "name": "v167_option_fcf_intersegment_debt_confirm",
+    "family": "option_fcf_corr_shave",
+    "hypothesis": "LLpz0nOM has strong Fitness/Returns but corr +0.6865. Giving option-dividend/FCF visibility a smaller role and adding intersegment/social-deleveraging confirmation may keep its return profile while lowering FCF/guidance active overlap.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.200 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.210 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_fcf_low / abs(assets)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary debug target is LLpz0nOM's +0.6865 corr. Avoid turning into option-dividend or FCF sibling."
+  },
+  {
+    "name": "v167_option_convexity_lowcorr_frontier_mix",
+    "family": "option_convexity_aux_frontier_fusion",
+    "hypothesis": "KPb5bkwN has very low ACTIVE correlation but fails LSUS. Keeping option-convexity below one-third weight and adding LSUS-friendlier intersegment/social-deleveraging sleeves tests whether the option signal can serve as a low-corr auxiliary rather than a fragile parent.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.180 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.110 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.100 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Option-convexity is auxiliary, not parent. Reject immediately if LOW_SUB_UNIVERSE recurs."
+  }
+]

@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/epri-research/README.md
+/:
+  en: 1569befeb0010a47
+  zh: d9b50aeb3d0cb3e0
+/deepseek-ai-dsh-experimental-epri-research:
+  en: b054be9d58f1d77a
+  zh: 10a042a0f7bea4c6
+/deepseek-ai-dsh-experimental-epri-research/summary:
+  en: f1941aa6003b5b3f
+  zh: 758163e83b7a5d14
+/deepseek-ai-dsh-experimental-epri-research/table-of-contents:
+  en: 54949cd86df11ede
+  zh: f9b1c8edba291282
+/deepseek-ai-dsh-experimental-epri-research/use-this-package:
+  en: 4c9a1b1d5ea045ed
+  zh: 9914dd8fe865ee51
+/deepseek-ai-dsh-experimental-epri-research/account-ownership:
+  en: e7ba0eab485711ef
+  zh: fc5a7ddd2034a73b
+/deepseek-ai-dsh-experimental-epri-research/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-epri-research/model-experience/approved-research-preset:
+  en: 4b6c1a9ca1808159
+  zh: 3b4a5c7c41576ee9
+/deepseek-ai-dsh-experimental-epri-research/model-experience/approved-research-preset/what-the-model-sees:
+  en: a595a0709adb9faf
+  zh: f9643fac324a6aac
+/deepseek-ai-dsh-experimental-epri-research/model-experience/approved-research-preset/token-effect:
+  en: 8710fb75fca46f3b
+  zh: 235d2622186af973
+/deepseek-ai-dsh-experimental-epri-research/model-experience/approved-research-preset/kv-cache-effect:
+  en: 39cff7b1e06f7550
+  zh: 7ead745b2f87fd5b
+/deepseek-ai-dsh-experimental-epri-research/known-limitations-and-deferred-work:
+  en: c941ee048d69da0c
+  zh: c38c6e77ce86012b
+/deepseek-ai-dsh-experimental-epri-research/known-limitations-and-deferred-work/dev-note:
+  en: 406485c84b86e0bf
+  zh: c59e75f1cfbb1faa

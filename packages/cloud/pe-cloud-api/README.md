@@ -67,6 +67,8 @@ A finite-value field normally rejects `unset`. A Runtime-owned settings transact
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+Reviewed account features register their concrete unary Remote methods with `CloudAccountApi.registerFeature()` during unpublished Loader assembly. Registration retains the original service, method implementations and owning fiber; it grants no endpoint exposure. Root must select the exact endpoint, handler and `account-session` guard. The returned admission reuses original Session/project checks and managed-skill resource projection. Replacement, disposal or account closure rejects later work. See the optional [research integration](../../experimental/epri-research/README.md).
+
 Cloud deployments requiring persisted titles in cold conversation lists compose `@deepseek-ai/dsh-session-projection-cache` with the same account's `sessions`, `sessionProjections` and `storageDomain` providers. Use the native `writeEveryEvents: 200` and `writeIntervalMs: 5000` configuration and retain that entry in the deployment's Runtime `requiredEntryIds`. The native list reads checkpoints without opening conversation bodies; writes are fail-soft, so a failed write leaves a stale or absent hint rather than changing the authoritative title. Existing uncached Sessions acquire a checkpoint through their normal native resume/write/disposal lifecycle; installing the cache does not scan old logs, and read observations containing uncommitted recovery events must not be published as checkpoints. This derived cache remains inside the account's existing private storage and quota; no new storage owner or title generator is installed.
 
 <details>

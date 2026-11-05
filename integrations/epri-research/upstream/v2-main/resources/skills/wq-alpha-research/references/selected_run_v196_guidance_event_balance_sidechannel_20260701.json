@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v196_gross_guidance_wdpq_tax",
+    "family": "guidance_event_balance_sidechannel",
+    "hypothesis": "Gross-income guidance improvement plus low WDPQ event magnitude and low deferred-tax valuation allowance should capture cleaner forward operating delivery without using sales-option, EPS, FCF/contract, current-liability, or news-chain sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.28 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.24 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Side-channel fusion; strict-check against omKoPEb6, pw6jz8ob, QPaze5zX, and all v192-v195 actives."
+  },
+  {
+    "name": "v196_sh_equity_guidance_prepaid_tax",
+    "family": "guidance_event_balance_sidechannel",
+    "hypothesis": "Shareholder-equity guidance improvement with low prepaid expenses and low deferred-tax valuation allowance tests a balance-sheet cleanliness route distinct from EPS/value and current-liability families.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) + 0.28 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.24 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids EPS and buyback/share-count repair sleeves; reject if it maps to pw6jz8ob or O0p8JGJq."
+  },
+  {
+    "name": "v196_wdpq_fscore_netdebt",
+    "family": "guidance_event_balance_sidechannel",
+    "hypothesis": "Low WDPQ event magnitude, favorable f-score value/curvature, and lower net-debt expectations may form a non-option, non-news-chain accounting stability signal.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.32 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.24 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.16 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests WDPQ without PCR/option sleeve, after v194 showed WDPQ+PCR is LSUS fragile."
+  },
+  {
+    "name": "v196_gross_guidance_fscore_lowrisk",
+    "family": "guidance_event_balance_sidechannel",
+    "hypothesis": "Gross-income guidance improvement, f-score value, and low market risk create a slower operating-improvement signal that should be less related to npgrXA3q sales-option and v193 FCF/contract.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.38 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.26 * group_rank(ts_rank(fscore_value, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Uses SUBINDUSTRY neutralization to reduce LSUS risk."
+  },
+  {
+    "name": "v196_tax_prepaid_wdpq_lowrisk",
+    "family": "guidance_event_balance_sidechannel",
+    "hypothesis": "Low deferred-tax allowance, low prepaid expense, and low WDPQ event magnitude are balance/event cleanliness signals with no direct option, EPS, sales, FCF, or contract-liability exposure.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.28 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.24 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.14 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure balance/event cleanliness candidate; reject if it is just pw6jz8ob/qMAGvOe2 sibling."
+  },
+  {
+    "name": "v196_option_award_sga_wdpq",
+    "family": "guidance_event_balance_sidechannel",
+    "hypothesis": "Option-award expected dividend rate, low SGA estimate burden, and low WDPQ magnitude revisit the equity-award/SGA route without FCF or sales-option sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.32 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.28 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.24 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.16 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Do not submit if it maps to xAxGJjNn or old option-award/FCF capacity."
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v207_investment_sale_liquidity_release",
+    "family": "treasury_allocation_flow",
+    "hypothesis": "Selling investments while avoiding fresh investment build-up may indicate balance-sheet liquidity release and capital discipline, a different parent from debt/CFF, analyst guidance, AFS OCI, and long-term investment burden.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "First sanity probe for treasury allocation flow. Reject if it behaves like closed interest/nonoperating carry or long-term investment burden."
+  },
+  {
+    "name": "v207_short_investment_change_discipline",
+    "family": "short_term_investment_discipline",
+    "hypothesis": "Stable or falling short-term investment balances, combined with realized sale-of-investment proceeds, may identify firms recycling financial assets instead of passively hoarding low-yield assets.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_ivstq / abs(assets), 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(fnd6_ivstch) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses short-term investment total/change rather than cash_st or debt. Close if weak or LSUS fragile."
+  },
+  {
+    "name": "v207_marketable_securities_adjustment_stability",
+    "family": "marketable_securities_adjustment_stability",
+    "hypothesis": "Low marketable-securities adjustment noise with controlled short-term investment changes may represent cleaner treasury management without using OCI/fair-value derivative fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_ivst / abs(assets), 252)), 126), industry) + 0.170 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "AFS/OCI-free marketable securities probe. Do not repair if it repeats v185 AFS weakness."
+  },
+  {
+    "name": "v207_treasury_rotation_high_abs_return",
+    "family": "event_conditioned_treasury_rotation",
+    "hypothesis": "Treasury asset sales versus investment build-up may matter most after larger price moves, where liquidity release can be underpriced and generic reversal alone is insufficient.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.310 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) - 0.240 * group_rank(ts_rank(fnd6_ivch / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Operator/regime variation, not a pure window sibling. Strict-check against reversal/quality actives if it reaches correlation gate."
+  }
+]

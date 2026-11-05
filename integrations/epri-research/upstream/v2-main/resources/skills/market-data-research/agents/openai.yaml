@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Market Data and Simulation Research'
+  short_description: 'Run market, company, event, and portfolio research'
+  default_prompt: 'Use $market-data-research for this financial research task.'

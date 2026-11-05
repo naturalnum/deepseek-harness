@@ -1,0 +1,79 @@
+[
+  {
+    "name": "v9_receivables_quality_reversal",
+    "family": "working_capital_quality",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "High receivables relative to sales can indicate lower earnings quality or collection risk. A mostly working-capital signal with only a small reversal stabilizer may diversify away from ROE/payout alphas.",
+    "expression": "0.65 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Main signal is receivables quality; parent reversal weight capped to avoid LLpGdlrm/v7 correlation."
+  },
+  {
+    "name": "v9_inventory_turnover_quality",
+    "family": "inventory_efficiency",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "High inventory turnover can indicate operational efficiency. Combine with a small profitability anchor but avoid close/open reversal to test a slower operational-quality mechanism.",
+    "expression": "0.70 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Distinct from ROE parent by using inventory efficiency as dominant signal."
+  },
+  {
+    "name": "v9_asset_growth_conservative",
+    "family": "investment_conservatism",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "Aggressive asset growth can signal overinvestment. Penalize fast asset expansion and add a small quality anchor to avoid distressed low-growth firms.",
+    "expression": "0.70 * group_rank(-1 * ts_rank(ts_delta(assets, 252) / assets, 126), subindustry) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Fama-French investment-style branch; should not rely on close/open reversal."
+  },
+  {
+    "name": "v9_low_leverage_low_systematic_risk",
+    "family": "safety_quality",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "Balance-sheet safety and lower market-driven risk may identify durable firms. Use debt and systematic risk rather than payout/EPS fields.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * debt_st / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * systematic_risk_last_60_days, 60), industry) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Safety branch; previous risk+quality was weak, but debt/risk combined may be cleaner."
+  },
+  {
+    "name": "v9_sales_estimate_disagreement_quality",
+    "family": "analyst_disagreement",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "Lower analyst sales-estimate dispersion relative to expected sales may proxy forecast confidence. This is analyst data but not EPS yield.",
+    "expression": "0.70 * group_rank(ts_rank(-1 * sales_estimate_stddev_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Analyst disagreement branch; watch correlation with EPS active but mechanism differs from yield."
+  },
+  {
+    "name": "v9_competitor_authority_quality",
+    "family": "competitor_graph_quality",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "Competitor authority may capture competitive-network position. Remove close/open reversal from the v8 graph branch and pair with a light quality anchor to reduce v7 correlation.",
+    "expression": "0.75 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Different from v8 competitor hub and lower parent-reversal exposure; submit only if correlation is clearly below threshold."
+  },
+  {
+    "name": "v9_vwap_reversion_quality",
+    "family": "vwap_reversion_quality",
+    "source": "diversified_v9_20260625",
+    "hypothesis": "VWAP dislocation can capture short-term liquidity pressure. Pair with a small quality anchor and high decay to control turnover.",
+    "expression": "0.65 * rank(-1 * ts_decay_linear(close / vwap, 10)) + 0.35 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "QuantGPT-inspired but distinct from close/open reversal; turnover/correlation gate is critical."
+  }
+]

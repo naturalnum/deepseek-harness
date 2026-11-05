@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v20_gap_acceptance_ind",
+    "family": "overnight_gap_acceptance",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "An overnight gap that is accepted by same-day intraday direction may contain persistent auction information.",
+    "expression": "rank((open / ts_delay(close, 1) - 1) * ((close - open) / open))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Simple QuantaAlpha-inspired gap acceptance test; distinct from pure close/open reversal."
+  },
+  {
+    "name": "v20_gap_rejection_ind",
+    "family": "overnight_gap_rejection",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "If gap acceptance is crowded or overreactive, the reversed sign may capture rejected overnight information.",
+    "expression": "-1 * rank((open / ts_delay(close, 1) - 1) * ((close - open) / open))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Controlled sign pair against v20_gap_acceptance_ind; submit only the stronger, lower-correlation version."
+  },
+  {
+    "name": "v20_gap_range_continuation_ind",
+    "family": "overnight_gap_range_structure",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Overnight gap scaled by recent intraday range may encode auction information beyond raw close/open reversal.",
+    "expression": "rank(ts_zscore((open / ts_delay(close, 1) - 1) / (ts_mean((high - low) / close, 20) + 0.01), 10))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Continuation sign for normalized overnight gap."
+  },
+  {
+    "name": "v20_gap_range_reversal_ind",
+    "family": "overnight_gap_range_structure",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Extreme overnight gap relative to recent range may mean-revert after auction overreaction.",
+    "expression": "-1 * rank(ts_zscore((open / ts_delay(close, 1) - 1) / (ts_mean((high - low) / close, 20) + 0.01), 10))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Reversal sign for normalized overnight gap."
+  },
+  {
+    "name": "v20_price_volume_coordination_ind",
+    "family": "price_volume_coordination",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Correlation between price changes and volume changes, confirmed by intraday return direction, may proxy coordinated participation.",
+    "expression": "rank(ts_corr(ts_delta(close, 1) / close, ts_delta(volume, 1) / volume, 20) * ts_mean((close - open) / close, 5))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "QuantaAlpha institutional-momentum proxy; watch turnover and self-correlation with close/open actives."
+  },
+  {
+    "name": "v20_range_deviation_reversal_ind",
+    "family": "volatility_range_reversal",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "High recent intraday range relative to price may represent noisy overreaction and reverse.",
+    "expression": "-1 * rank(ts_zscore((high - low) / close, 20))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Range structure test; do not submit if it is just low-volatility exposure with weak sub-universe Sharpe."
+  },
+  {
+    "name": "v20_clean_trend_liquidity_ind",
+    "family": "clean_trend_liquidity",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Short-horizon trend can be more reliable when realized volatility is low and relative volume participation is improving.",
+    "expression": "rank(ts_mean(returns, 10) / (ts_std_dev(returns, 20) + 0.01) * ts_rank(volume / adv20, 20))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Trend/liquidity channel; likely regime-sensitive."
+  },
+  {
+    "name": "v20_returns_volume_reversal_ind",
+    "family": "returns_volume_reversal",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Recent returns on unusual volume can mark crowded short-term moves that reverse after smoothing.",
+    "expression": "-1 * rank(ts_decay_linear(returns * volume / adv20, 5))",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "QuantGPT-inspired technical branch with high decay to control turnover."
+  },
+  {
+    "name": "v20_trade_when_volume_reversal_ind",
+    "family": "conditional_volume_reversal",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Only trade short-term reversal when volume is above its 20-day average, reducing noise from quiet days.",
+    "expression": "trade_when(volume > adv20, -1 * rank(returns), -1)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests trade_when syntax and conditional turnover control."
+  },
+  {
+    "name": "v20_debt_price_dislocation_ind",
+    "family": "debt_safety_price_dislocation",
+    "source": "gap_volume_mechanism_shift_v20_20260625",
+    "hypothesis": "Price dislocation can be more reliable in safer balance-sheet names; low debt-to-enterprise-value avoids pure reversal exposure.",
+    "expression": "0.55 * rank(-ts_av_diff(close, 10)) + 0.45 * group_rank(ts_rank(-1 * debt_st / enterprise_value, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "QuantGPT debt/price branch, but with economically safer sign on debt."
+  }
+]

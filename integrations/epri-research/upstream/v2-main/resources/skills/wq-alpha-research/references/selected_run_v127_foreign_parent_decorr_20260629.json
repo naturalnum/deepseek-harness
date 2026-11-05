@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v127_foreign_profit_unremitted_eventful",
+    "family": "foreign_profit_unremitted",
+    "hypothesis": "Foreign EBIT plus unremitted foreign earnings may retain the v126 cross-border alpha while removing the domestic-profit spread that made P0pYoK3W correlate with 9qwdEajr.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.260 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.190 * group_rank(ts_rank(fnd6_pifo / assets, 126), industry) + 0.180 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(current_foreign_tax_expense_value) / assets, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v127_foreign_profit_tax_largecap",
+    "family": "foreign_profit_tax_clean",
+    "hypothesis": "A larger-cap foreign-profit signal confirmed by cleaner foreign tax burden may lift vRLp1W3b's Fitness without using the domestic leg.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.250 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.190 * group_rank(ts_rank(fnd6_pifo / assets, 126), industry) + 0.180 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(deferred_foreign_tax_expense) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(tax_reconciliation_foreign_rate_diff), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v127_foreign_transaction_clean_eventful",
+    "family": "foreign_transaction_cleanliness",
+    "hypothesis": "Low FX transaction gain/loss and OCI translation noise may provide a cleaner foreign-operation parent than the v125 domestic/FX translation signal.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.230 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(fx_transaction_gain_loss_pre_tax) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_oci_net) / assets, 126), industry) + 0.150 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v127_aftertax_foreign_profit_eventful",
+    "family": "aftertax_foreign_profit",
+    "hypothesis": "After-tax foreign profit should be less like domestic EBIT quality and may keep the profitable side of P0pYoK3W while changing the blocker exposure.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.280 * group_rank(ts_rank((fnd6_pifo - fnd6_txfo) / assets, 126), industry) + 0.210 * group_rank(ts_rank((foreign_ebit_amount - current_foreign_tax_expense_value) / assets, 126), industry) + 0.170 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(deferred_foreign_tax_expense) / assets, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v127_foreign_tax_stability_largecap",
+    "family": "foreign_tax_stability",
+    "hypothesis": "Stable effective tax and low foreign-rate reconciliation noise may identify durable foreign earnings quality rather than another FX translation alpha.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.210 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.180 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(ts_delta(effective_tax_rate_continuing_ops_2, 252)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(tax_reconciliation_foreign_rate_diff), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(unrecognized_tax_benefits_affecting_tax_rate) / assets, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v127_export_foreign_profit_efficiency",
+    "family": "export_foreign_profit_efficiency",
+    "hypothesis": "Foreign profit combined with low export-sales burden tests whether overseas profitability is operationally efficient instead of merely broad domestic/FX quality.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.250 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.190 * group_rank(ts_rank(fnd6_pifo / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_salexg)) / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fx_transaction_gain_loss_pre_tax) / assets, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v127_foreign_profit_model_revision_eventful",
+    "family": "foreign_profit_model_revision",
+    "hypothesis": "A small model/revision contrarian timing layer may raise returns for the foreign-profit parent without relying on PCR or social sleeves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.240 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.190 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(current_foreign_tax_expense_value) / assets, 126), industry) + 0.150 * rank(-1 * analyst_revision_rank_derivative) + 0.130 * rank(-1 * relative_valuation_rank_derivative) + 0.120 * rank(-(close / open - 1)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v127_foreign_profit_iv_timing",
+    "family": "foreign_profit_iv_timing",
+    "hypothesis": "A small IV term-structure compression term may improve foreign-profit timing while avoiding PCR/OI and long-breakeven option blockers.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.180 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(current_foreign_tax_expense_value) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_720 - implied_volatility_mean_90), 90), industry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

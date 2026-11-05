@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scientific Visuals"
+  short_description: "Plan and review clear scientific visuals"
+  default_prompt: "Use $deepscientist-scientific-visuals to decide whether a visual helps, choose the smallest suitable format, and review it without making visuals mandatory."

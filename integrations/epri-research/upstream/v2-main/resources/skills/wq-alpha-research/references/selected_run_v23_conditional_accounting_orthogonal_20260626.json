@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v23_benefit_stockcomp_competitor_mix",
+    "family": "conditional_accounting_orthogonal",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Employee-benefit liabilities and share-based compensation are labor/compensation overhangs that may be distinct from prepaid/tax and buyback quality; competitor authority is only a moderate stabilizer.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.25 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids ROE/EPS/CFO/close-open/tax/prepaid; strict corr gate against d5xj5W5v and pw6jz8ob."
+  },
+  {
+    "name": "v23_benefit_debt_maturity_partner_mix",
+    "family": "liability_breadth_quality",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Lower employee-benefit liabilities and lower near-term debt maturities reduce obligation pressure; partner breadth is used as a relationship breadth stabilizer rather than centrality.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * debt_maturities_repayments_next12m / assets, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests a liability-pressure composite without competitor/customer authority centrality."
+  },
+  {
+    "name": "v23_stockcomp_debt_event_competitor_mix",
+    "family": "stockcomp_debt_event_quality",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Share-based compensation burden and debt extinguishment events are separate accounting overhangs; mixing them may lift v17 near-misses without using aqi/CFO/reversal.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.35 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.25 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No fnd6_aqi boost; checks whether two weak accounting families combine cleanly."
+  },
+  {
+    "name": "v23_acquired_goodwill_benefit_partner",
+    "family": "acquisition_goodwill_liability",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Recently acquired goodwill is an acquisition-accounting burden different from goodwill stock; combine it with benefit liabilities and partner breadth to avoid the known goodwill-stock clone.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * acquired_goodwill_value / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sparse acquisition-goodwill field; watch concentrated-weight and sub-universe checks."
+  },
+  {
+    "name": "v23_goodwill_growth_benefit_competitor_low_weight",
+    "family": "goodwill_growth_rescue_low_weight",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Goodwill growth has strong raw signal but high correlation; keep it at 30% and let benefit liabilities plus competitor authority dominate the ranking path.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.40 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.30 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Attempts to reuse goodwill-growth strength without cloning RRp7Q9Le/mL8j98w9/MPpGzqwr."
+  },
+  {
+    "name": "v23_lease_benefit_competitor_low_weight",
+    "family": "lease_burden_rescue_low_weight",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Lease burden had acceptable metrics but cloned prepaid/tax; reduce lease to 30% and pair it with benefit liabilities and competitor authority.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry) + 0.40 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.30 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Designed specifically to test whether lease can be rescued as an auxiliary instead of a main signal."
+  },
+  {
+    "name": "v23_hump_benefit_stockcomp_debt",
+    "family": "hump_accounting_turnover_control",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Hump smoothing may change the update path of several low-turnover accounting near-misses enough to improve Fitness and correlation behavior.",
+    "expression": "hump(0.40 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Operator test from Learn notes; if syntax or metrics fail, do not keep expanding hump blindly."
+  },
+  {
+    "name": "v23_trade_when_quiet_volume_lease",
+    "family": "trade_when_lease_rescue",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "The lease signal may be less correlated when refreshed only in quieter volume regimes, instead of continuously behaving like prepaid/tax liability quality.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.5, group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "trade_when syntax was validated in v20; this tests it on a strong but high-correlation slow signal."
+  },
+  {
+    "name": "v23_trade_when_quiet_return_tax_goodwill",
+    "family": "trade_when_tax_goodwill_rescue",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Deferred-tax allowance and goodwill growth are strong but high-correlation materials; refresh them only during low absolute-return regimes to alter PnL timing.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.6, 0.45 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A deliberate high-correlation-material rescue; submit only if local daily-return correlation clears."
+  },
+  {
+    "name": "v23_ifelse_graph_condition_benefit_stockcomp",
+    "family": "conditional_graph_accounting",
+    "source": "conditional_accounting_v23_20260626",
+    "hypothesis": "Use benefit-liability burden for high competitor-authority firms and stock-comp burden otherwise, creating a conditional accounting signal rather than a linear near-neighbor.",
+    "expression": "if_else(ts_rank(pv13_com_rk_au, 60) > 0.5, group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry), group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "if_else operator test; intended to alter the cross-sectional path rather than merely average two weak fields."
+  }
+]

@@ -1,0 +1,52 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {startServer} from '../dist/server/main.mjs';
+import {reviewInConversation} from '../plugins/airalogy/conversation-review.mjs';
+
+test('conversation review waits for the exact human choice, rejects stale/cancelled/cloud requests and preserves API actor boundaries',async()=>{
+  const directory=mkdtempSync(join(tmpdir(),'conversation-review-')),prior=process.env.DS_RESEARCH_DATA_DIR;
+  process.env.DS_RESEARCH_DATA_DIR=directory;
+  const app=await startServer({directory,port:0}),sessionId='synthetic-review';
+  const api=async(op,args={},token=app.credentials.humanToken)=>{
+    const response=await fetch(app.url+'/api',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({op,args,sessionId})});
+    const body=await response.json();return {status:response.status,...body};
+  };
+  const put=(op,args)=>api(op,{requestId:randomUUID(),...args});
+  let asked=0,answer=async request=>({answers:request.questions.map(q=>({id:q.id,selected:[q.options[0].label]}))});
+  const ctx={get:()=>({ask:async request=>{asked++;assert.equal(request.agent,exec.agent);return answer(request);}})};
+  const exec={agent:{ctx:{get:()=>undefined}},callId:'review-tool-call',signal:new AbortController().signal};
+  try {
+    const file=(await put('attachment_put',{name:'fixture.txt',contentBase64:Buffer.from('Synthetic test source').toString('base64')})).result;
+    await put('evidence_put',{id:'e',expectedRevision:0,title:'合成证据',observation:'仅软件验收',basis:'synthetic',source:{kind:'attachment',reference:file.reference}});
+    const args={id:'e',expectedRevision:1,result:'accepted',reason:'人工合成测试意见',requestId:randomUUID()};
+    assert.equal((await api('evidence_review',args,app.credentials.agentToken)).status,403);
+    assert.equal((await reviewInConversation(ctx,'evidence_review',args,exec,sessionId)).executed,false);
+    assert.equal((await api('science_state')).result.evidence[0].data.review.status,'pending');
+    answer=async request=>({answers:[{id:request.questions[0].id,selected:[] ,custom:'随便'}]});
+    assert.equal((await reviewInConversation(ctx,'evidence_review',args,exec,sessionId)).executed,false);
+    answer=async request=>({answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]});
+    assert.equal((await reviewInConversation(ctx,'evidence_review',args,exec,sessionId)).data.review.status,'accepted');
+    assert.equal((await api('evidence_review',{...args,expectedRevision:2,requestId:randomUUID()},app.credentials.agentToken)).status,403);
+    await put('evidence_put',{id:'e',expectedRevision:2,title:'新版本',observation:'需要重新审阅',basis:'synthetic',source:{kind:'attachment',reference:file.reference}});
+    answer=async request=>{await put('evidence_put',{id:'e',expectedRevision:3,title:'审批期间变更',observation:'旧回答无效',basis:'synthetic',source:{kind:'attachment',reference:file.reference}});return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
+    await assert.rejects(reviewInConversation(ctx,'evidence_review',{...args,expectedRevision:3,requestId:randomUUID()},exec,sessionId),/内容已变化/);
+    assert.equal((await api('science_state')).result.evidence[0].data.review.status,'pending');
+    const abort=new AbortController();
+    answer=async request=>{abort.abort();return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
+    await assert.rejects(reviewInConversation(ctx,'evidence_review',{...args,expectedRevision:4,requestId:randomUUID()},{...exec,signal:abort.signal},sessionId));
+    const count=asked;
+    await assert.rejects(reviewInConversation(ctx,'evidence_review',args,{...exec,agent:{ctx:{get:()=>({})}}},sessionId),/平台账号权限适配/);
+    assert.equal(asked,count);
+    await put('protocol_put',{id:'checks',version:'1',content:'# 合成记录\n\n{{var|result: str, owner="agent"}}\n\n{{check|reviewed, checked_message="已核对合成输入"}}\n'});
+    let record=(await put('record_create',{protocolId:'checks',protocolVersion:'1'})).result;
+    record=(await api('record_update',{id:record.id,expectedRevision:record.revision,requestId:randomUUID(),run:{...record.run,status:'running',values:{result:'synthetic'}}},app.credentials.agentToken)).result;
+    answer=async request=>{assert.match(request.questions[0].detail,/请逐项核对/);assert.match(request.questions[0].detail,/已核对合成输入/);assert.match(request.questions[0].detail,/reviewed/);return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
+    const final=await reviewInConversation(ctx,'record_submit',{id:record.id,expectedRevision:record.revision,requestId:randomUUID()},exec,sessionId);
+    assert.equal(final.status,'submitted');assert.equal(final.run.checks.reviewed,true);
+    assert.equal(final.audit.at(-1).actor,'human');
+  }finally{await app.close();if(prior===undefined)delete process.env.DS_RESEARCH_DATA_DIR;else process.env.DS_RESEARCH_DATA_DIR=prior;rmSync(directory,{recursive:true,force:true});}
+});
