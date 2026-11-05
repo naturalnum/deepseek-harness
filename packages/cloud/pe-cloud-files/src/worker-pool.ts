@@ -24,7 +24,7 @@ import { createFixedRootReader, decodeTextStream, nativeInfo } from './read-only
 import type { FixedRootReader } from './read-only.ts'
 import type { FdByteStream } from './worker-client.ts'
 import type { FdMetadata } from './worker-protocol.ts'
-import type { ResidentResult } from './work-queue.ts'
+import type { ResidentResult, FilesWorkTrace } from './work-queue.ts'
 import { FilesWorkOwner } from './work-owner.ts'
 import { FdWorkerClient, FdWorkerFailure, FdMutationFailure, FdTextWriteFailure, FdStageFailure } from './worker-client.ts'
 import { createTextProjectFileSystem, decodeBoundedText } from './text-project.ts'
@@ -46,7 +46,7 @@ import { staticStorageReservation } from './storage-probe.ts'
 import { runInstructionReadWork } from './instruction-read-work.ts'
 import type { InstructionReadReaders } from './instruction-read-work.ts'
 import { executeStageBatch, planStageBatch, planWorkspaceUploadBatch, validateStagingLimits } from './stage-bridge.ts'
-import type { StageSources, StageFileResult, StageBatchPlan, WorkspaceUploadSource, WorkspaceUploadResult } from './stage-bridge.ts'
+import type { StageSources, StageFileResult, StageBatchPlan, WorkspaceUploadSource, WorkspaceUploadResult, WorkspaceUploadClaim } from './stage-bridge.ts'
 import { environmentQuota, environmentWorkBytes, prepareEnvironmentSlot } from './environment-bank.ts'
 import { prepareSessionEnvironmentDirectory } from './environment-directories.ts'
 import type { EnvironmentBankAuthority, EnvironmentBankState, EnvironmentSessionId, ExecutionMountGrant } from './environment-bank.ts'
@@ -87,6 +87,21 @@ export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'stora
   readonly readyTimeoutMs: number
   readonly drainTimeoutMs: number
 }
+
+/** Root-only finite observation; these comparison values grant no file or account authority. */
+export interface WorkspaceUploadObservationSelection {
+  readonly caseId: string
+  readonly accountId: AccountBinding['accountId']
+  readonly durationMs: number
+  readonly claims: readonly [WorkspaceUploadClaim, WorkspaceUploadClaim]
+}
+/** Actual original queue transition associated with an already authorized upload; no paths or source bytes. */
+export type WorkspaceUploadObservation = Parameters<FilesWorkTrace>[0] & Readonly<{
+  caseId: string
+  role: 'A' | 'B'
+  epoch: AccountBinding['epoch']
+  recipeVersion: string
+}>
 
 /** Internal fixed-root read capability, not the native FileSystem or a client-facing project scope. */
 export interface PoolReadPort {
@@ -343,6 +358,64 @@ export class LinuxFilesPool implements DrainParticipant {
   private startTask: Promise<void> | undefined
   private readonly storageOwner?: RootStorageOwner
   private rootOperation: { readonly id: OperationId; readonly settled: Promise<void>; failure?: unknown } | undefined
+  private uploadObservation: {
+    token: symbol
+    selection: WorkspaceUploadObservationSelection
+    listener: (row: WorkspaceUploadObservation) => boolean
+    dispose: () => void
+    expiresAt: number
+    timer: ReturnType<typeof setTimeout>
+  } | undefined
+
+  /** Observe two exact raw-upload claims on this Root; absence creates no per-work trace.
+   * @param selection Explicit account, case claims and at most 120000 milliseconds.
+   * @param listener Synchronous bounded sink; false or throw withdraws only observation.
+   * @returns Idempotent disposer; expiry and Root stop also clear the sink.
+   */
+  observeWorkspaceUploads(selection: WorkspaceUploadObservationSelection,
+    listener: (row: WorkspaceUploadObservation) => boolean): () => void {
+    this.assertHealthy()
+    if (this.uploadObservation !== undefined || !Number.isSafeInteger(selection.durationMs)
+      || selection.durationMs < 1 || selection.durationMs > 120000 || !/^[a-f0-9]{32}$/.test(selection.caseId)
+      || Buffer.byteLength(selection.accountId) > 256 || selection.claims.length !== 2
+      || selection.claims.some((row, i) => row.name !== `qa-${selection.caseId}-${i === 0 ? 'A' : 'B'}`
+        || !/^[a-f0-9]{64}$/.test(row.sha256) || !Number.isSafeInteger(row.bytes) || row.bytes < 1
+        || row.bytes > (this.config.staging?.maxFileBytes ?? 0))) throw new FilesFailure('files/prerequisite-missing', 'Invalid upload observation')
+    const token = Symbol(), dispose = this.endUploadObservation.bind(this, token)
+    const timer = setTimeout(dispose, selection.durationMs); timer.unref()
+    this.uploadObservation = { token, listener, dispose, timer, expiresAt: performance.now() + selection.durationMs,
+      selection: Object.freeze({ ...selection,
+        claims: [Object.freeze({ ...selection.claims[0] }), Object.freeze({ ...selection.claims[1] })] as const }) }
+    return dispose
+  }
+
+  private endUploadObservation(token?: symbol): void {
+    const current = this.uploadObservation
+    if (current !== undefined && (token === undefined || current.token === token)) {
+      this.uploadObservation = undefined; clearTimeout(current.timer)
+    }
+  }
+
+  private uploadTrace(binding: AccountBinding, sources: readonly WorkspaceUploadSource[]): FilesWorkTrace | undefined {
+    const current = this.uploadObservation, source = sources[0]
+    if (current === undefined || binding.accountId !== current.selection.accountId || sources.length !== 1 || source === undefined) return
+    if (performance.now() >= current.expiresAt) { current.dispose(); return }
+    const role = current.selection.claims.findIndex(row => row.name === source.claim.name
+      && row.bytes === source.claim.bytes && row.sha256 === source.claim.sha256)
+    return role < 0 ? undefined : this.reportUploadObservation.bind(this, current.token, role === 0 ? 'A' : 'B',
+      binding.epoch, binding.recipeVersion)
+  }
+
+  private reportUploadObservation(token: symbol, role: 'A' | 'B', epoch: AccountBinding['epoch'],
+    recipeVersion: string, row: Parameters<FilesWorkTrace>[0]): void {
+    const current = this.uploadObservation
+    if (current?.token !== token) return
+    if (performance.now() >= current.expiresAt) { current.dispose(); return }
+    try {
+      if (!current.listener(Object.freeze({ ...row, caseId: current.selection.caseId, role, epoch, recipeVersion }))) current.dispose()
+    }
+    catch { current.dispose() } // Diagnostic failure never changes business work or its original cause.
+  }
 
   constructor(
     private readonly config: FilesPoolConfig,
@@ -556,6 +629,7 @@ export class LinuxFilesPool implements DrainParticipant {
       execute: (client: FdWorkerClient, control: AbortSignal) => Promise<T>,
       failure: (outcome: 'not-published' | 'unknown', code: FsErrorCode, cause?: unknown) => FdMutationFailure,
       signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' | 'joined-result' | 'retained-lease' = 'native-handoff',
+      trace?: FilesWorkTrace,
     ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
@@ -600,7 +674,7 @@ export class LinuxFilesPool implements DrainParticipant {
           if (delivery !== 'joined-result') answer.reject(error)
           throw error
         } finally { turn.resolve() }
-      }, signal, delivery === 'retained-lease' ? 'lease' : undefined, delivery === 'joined-result' ? 'joined' : undefined)
+      }, signal, delivery === 'retained-lease' ? 'lease' : undefined, delivery === 'joined-result' ? 'joined' : undefined, trace)
       void work.then((result) => {
         if (delivery !== 'native-handoff') answer.resolve(result)
         else result.release()
@@ -865,7 +939,7 @@ export class LinuxFilesPool implements DrainParticipant {
     }
     const stagePublications = async <M extends object>(workspace: Workspace,
       prepare: (selection: Pick<FdRootIdentity, 'rootPath' | 'rootMountId'>, staging: FdStagingLimits) => StageBatchPlan<M> | undefined,
-      lazy: boolean, assertRegistered: () => void, signal?: AbortSignal, joinCancellation = false) => {
+      lazy: boolean, assertRegistered: () => void, signal?: AbortSignal, joinCancellation = false, trace?: FilesWorkTrace) => {
       const current = (): void => { checkCurrent(); assertRegistered() }
       current()
       assertStagingAvailable()
@@ -917,7 +991,7 @@ export class LinuxFilesPool implements DrainParticipant {
           client.beginStage(root, file, chunk, this.config.replyOverheadBytes, actual) }, selected, plan, staging,
         this.config.readChunkBytes, current, control)
       }, (outcome, code, cause) => new FdStageFailure(outcome, code, undefined,
-        cause === undefined ? undefined : { cause }), signal, joinCancellation ? 'joined-result' : 'retained-result').catch((error: unknown) => {
+        cause === undefined ? undefined : { cause }), signal, joinCancellation ? 'joined-result' : 'retained-result', trace).catch((error: unknown) => {
         if (joinCancellation && !execution.entered && error instanceof FilesFailure) {
           throw new FdStageFailure('not-published', signal?.aborted === true ? 'FS_ABORTED' : 'FS_IO_ERROR', undefined, { cause: error })
         }
@@ -1058,7 +1132,8 @@ export class LinuxFilesPool implements DrainParticipant {
         }, typeof sources === 'function', assertRegistered, signal),
       stageWorkspaceUploads: (workspace: Workspace, sources: readonly WorkspaceUploadSource[],
         assertRegistered: () => void, signal?: AbortSignal) => stagePublications(workspace,
-        (selection, staging) => planWorkspaceUploadBatch(sources, selection, staging, this.config), false, assertRegistered, signal, true),
+        (selection, staging) => planWorkspaceUploadBatch(sources, selection, staging, this.config), false, assertRegistered, signal, true,
+        this.uploadTrace(binding, sources)),
       derivePreparedLeaf,
       createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
         const defaultPort = derivePreparedLeaf(defaultGrant)
@@ -1297,6 +1372,7 @@ export class LinuxFilesPool implements DrainParticipant {
   }
 
   private requestStop(): void {
+    this.endUploadObservation()
     if (this.state === 'closing' || this.state === 'closed') return
     this.state = 'closing'
     this.storageOwner?.closeAdmission()

@@ -15,6 +15,14 @@ export interface ResidentResult<T> {
   release(): void
 }
 
+/** Readonly transitions from the original record; executor entry does not mean source or worker entry. */
+export type FilesWorkTrace = (row: Readonly<{
+  id: OperationId
+  event: 'queued-before-invoke' | 'executor-entered' | 'cancelled-before-invoke' | 'settled'
+  invoked: boolean
+  reservedBytes: number
+}>) => void
+
 /** Internal capability minted by one queue; never derived from a request identity. */
 export interface WorkLane {
   /**
@@ -27,7 +35,7 @@ export interface WorkLane {
    * @returns A result whose reservation remains held until release; lease never shortens actual work.
    */
   run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
-    retention?: 'lease', completion?: 'joined'): Promise<ResidentResult<T>>
+    retention?: 'lease', completion?: 'joined', trace?: FilesWorkTrace): Promise<ResidentResult<T>>
   /** Register responsibility and preparation I/O atomically; no storage authority is issued. */
   prepareDirectory(
     intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
@@ -67,6 +75,7 @@ interface RecordState {
   phase: 'queued' | 'running' | 'retained' | 'settled'
   abandoned: boolean
   invoked: boolean
+  trace?: FilesWorkTrace
 }
 
 function callerAbortReason(signal: AbortSignal): Error {
@@ -123,7 +132,7 @@ export class FilesWorkQueue {
     this.lanes.add(lane)
     return Object.freeze({
       run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
-        retention?: 'lease', completion?: 'joined') => this.submit(lane, bytes, work, signal, retention, completion),
+        retention?: 'lease', completion?: 'joined', trace?: FilesWorkTrace) => this.submit(lane, bytes, work, signal, retention, completion, trace),
       prepareDirectory: (
         intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
       ) =>
@@ -186,6 +195,7 @@ export class FilesWorkQueue {
     signal: AbortSignal | undefined,
     retention?: 'lease',
     completion?: 'joined',
+    trace?: FilesWorkTrace,
   ): Promise<ResidentResult<T>> {
     try {
       this.assertBusiness(lane)
@@ -197,7 +207,7 @@ export class FilesWorkQueue {
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new FilesFailure('files/prerequisite-missing', 'files admission failed', { cause: error }))
     }
-    return this.enqueue(lane, bytes, work, signal, undefined, retention, completion)
+    return this.enqueue(lane, bytes, work, signal, undefined, retention, completion, trace)
   }
 
   private assertBusiness(lane: LaneState): void {
@@ -277,6 +287,7 @@ export class FilesWorkQueue {
     lane: LaneState, bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
     owned?: RecordState['owned'], retention: RecordState['retention'] = 'result',
     completion?: 'joined',
+    trace?: FilesWorkTrace,
   ): Promise<ResidentResult<T>> {
     const canRun = this.running < this.limits.maxRunning && lane.running < this.limits.maxRunningPerLane
     // A queued task may be started by another request's completion; keep only its original async context.
@@ -295,6 +306,7 @@ export class FilesWorkQueue {
         deliver: (value, release) => { resolve({ value: value as T, release }) },
         reject, cleanupWait: () => {}, stopQueueWait: () => {}, phase: 'queued', abandoned: false, invoked: false,
         ...owned === undefined ? {} : { owned },
+        ...trace === undefined ? {} : { trace },
       }
       this.residentBytes += bytes
       lane.residentBytes += bytes
@@ -315,6 +327,7 @@ export class FilesWorkQueue {
       else {
         lane.queued++
         this.queue.push(record)
+        this.trace(record, 'queued-before-invoke')
       }
     })
   }
@@ -329,6 +342,7 @@ export class FilesWorkQueue {
     void Promise.resolve().then(() => {
       if (record.controller.signal.aborted) throw callerAbortReason(record.controller.signal)
       record.invoked = true
+      this.trace(record, 'executor-entered')
       return record.work(record.controller.signal)
     }).then(
       (value) => { this.complete(record, { kind: 'success', value }) },
@@ -378,6 +392,7 @@ export class FilesWorkQueue {
       if (index !== -1) this.queue.splice(index, 1)
       record.lane.queued--
       record.owned?.responsibility.undispatched(reason)
+      this.trace(record, 'cancelled-before-invoke')
       this.release(record)
       this.pump()
     }
@@ -390,6 +405,14 @@ export class FilesWorkQueue {
     this.residentBytes -= record.reservedBytes
     record.lane.residentBytes -= record.reservedBytes
     this.retireLane(record.lane)
+    this.trace(record, 'settled')
+    delete record.trace
+  }
+
+  private trace(record: RecordState, event: Parameters<FilesWorkTrace>[0]['event']): void {
+    if (record.trace === undefined) return
+    try { record.trace(Object.freeze({ id: record.id, event, invoked: record.invoked, reservedBytes: record.reservedBytes })) }
+    catch { delete record.trace } // A failed diagnostic cannot change original work or settlement.
   }
 
   private closeLane(lane: LaneState): void {

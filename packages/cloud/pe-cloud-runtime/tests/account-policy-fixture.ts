@@ -98,6 +98,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     readonly sourceModules?: Readonly<Record<string, unknown>>
     readonly extraEntries?: readonly { readonly id: string; readonly name: string; readonly config?: object }[]
     readonly prepare?: (ctx: Context, binding: AccountBinding, guards: ReturnType<typeof createAccountPolicy>) => void
+    readonly filesAttachments?: (binding: AccountBinding, projects: string) => NonNullable<AccountFilesPreparation['attachments']>
+    readonly afterReady?: (ctx: Context, api: CloudAccountApi, files: CloudAccountFiles,
+      guards: ReturnType<typeof createAccountPolicy>) => void | Promise<void>
     readonly declarations: readonly {
       readonly entryId: string
       readonly config: PresetDefinition
@@ -344,6 +347,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         }
         const info = statSync(projects, { bigint: true })
         const input: AccountFilesPreparation = { binding, port: { createWorkspaceRegistry: () => NodeRegistry },
+          ...presetOptions?.filesAttachments === undefined ? {} : { attachments: presetOptions.filesAttachments(binding, projects) },
           projectFor: nativeProjectDeriver(binding, () => { actualGraph(binding) }, (cwd) => { directoryCalls.push(cwd) }),
           defaultGrant: { binding, backend: 'root-owned-isolated-linux-tmpfs', leaf: 'default-workspace',
             parent: { rootPath: projects, rootDevice: String(info.dev), rootInode: String(info.ino) },
@@ -441,6 +445,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     const outcome = await handle.result
     if (outcome.status === 'failed') throw outcome.cause
     if (api === undefined || files === undefined || guards === undefined || barrier === undefined) throw new Error('Component owners absent')
+    await presetOptions?.afterReady?.(outcome.context, api, files, guards)
     if (reserveChild !== undefined) {
       const check = guards.admitSubagent
       if (check === undefined) throw new Error('Original child policy absent')
