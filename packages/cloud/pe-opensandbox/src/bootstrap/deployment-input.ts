@@ -16,7 +16,7 @@ export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:7a41332aef7bcc74414
 export const REMOTE_CLIENT_SERVER_IMAGE_DIGEST = 'sha256:6497790ee3398569aef7d8f35d442e76c33c9be08633a6a2732dbcb2ee1fe01e'
 
 /** Exact Office-only creation policy over the original server; retained old images remain readonly audit inputs. */
-export const OFFICE_SERVER_IMAGE_DIGEST = 'sha256:d2b79b4297bb2e8d0f11349000269aa0e7b600b02aed59d35c6d168b875b1034'
+export const OFFICE_SERVER_IMAGE_DIGEST = 'sha256:6455dfede6c2aa12ef7c2b7e6d69d4254d53918600dab55acd09c62e4ab7a27d'
 
 /**
  * Identify the reviewed server implementations of the original Session-directory guard.

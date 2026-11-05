@@ -5,7 +5,7 @@ export const NATIVE_WORKLOAD_IMAGE_DIGEST = 'sha256:62016189c3c5cec1c88d10af21b5
 export const REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST = 'sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d'
 
 /** Immutable Office dependency supplier; declaration does not enable providers or certify actual CLI/model execution. */
-export const OFFICE_WORKLOAD_IMAGE_DIGEST = 'sha256:3690da1fbb1faaabaf7265927b8b21a0fef0c4c988d83a8b1e321a2e82d43140'
+export const OFFICE_WORKLOAD_IMAGE_DIGEST = 'sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97'
 
 /**
  * Restrict protected selection and SDK bootstrap to reviewed immutable workload images.

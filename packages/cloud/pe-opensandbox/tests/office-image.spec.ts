@@ -61,3 +61,14 @@ it.each(['office-server:latest', OFFICE_SERVER_IMAGE_DIGEST.slice(0, -1) + '5', 
     expect(() => parseRootDeploymentInput(input)).toThrow('selection.originalPolicy')
   },
 )
+
+
+it('keeps the prior Office pair closed rather than allowing either half with the new exact pair', () => {
+  const input = sharedPathDeploymentFixture()
+  input.lifecycle.imageDigest = 'sha256:3690da1fbb1faaabaf7265927b8b21a0fef0c4c988d83a8b1e321a2e82d43140'
+  input.selection.serverImageDigest = OFFICE_SERVER_IMAGE_DIGEST
+  expect(() => parseRootDeploymentInput(input)).toThrow('lifecycle.fixedSelection')
+  input.lifecycle.imageDigest = OFFICE_WORKLOAD_IMAGE_DIGEST
+  input.selection.serverImageDigest = 'sha256:d2b79b4297bb2e8d0f11349000269aa0e7b600b02aed59d35c6d168b875b1034'
+  expect(() => parseRootDeploymentInput(input)).toThrow('selection.originalPolicy')
+})
