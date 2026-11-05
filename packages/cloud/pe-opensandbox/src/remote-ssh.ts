@@ -1,7 +1,7 @@
 /** SSH is an ordinary original managed Subprocess range; keys stay in that range's private PID space and memory FDs. */
 import { deflateSync } from 'node:zlib'
 import { PROBE_SCRIPT } from '@deepseek-ai/dsh-remote-server-cloud'
-import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { Context } from '@deepseek-ai/cordis'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { RemoteServer } from '@deepseek-ai/dsh-remote-server-cloud'
@@ -100,7 +100,8 @@ export function remoteSshSpec(target: RemoteServer, credential: RemoteCredential
  * @param config Explicit Root policy.
  * @param current Original account/target check after awaited credential reads and before spawn.
  * @param probe Whether this is the fixed facts probe.
- * @returns Actual exit/connection/timeout facts. Caller cancellation propagates to native canonical tool handling.
+ * @returns Actual exit/connection/timeout facts. Local interruption does not confirm remote termination.
+ * @throws A readable error with the original cause for user cancellation or this SSH deadline; other failures remain unchanged.
  */
 export async function runRemoteSsh(ctx: Context, target: RemoteServer, credential: RemoteCredential, command: string,
   signal: AbortSignal, config: RemoteSshConfig, current: () => void, probe = false): Promise<RemoteExecOutcome> {
@@ -111,9 +112,22 @@ export async function runRemoteSsh(ctx: Context, target: RemoteServer, credentia
   const workdir = shell.resolve({ command: '', signal: timer.signal }).workdir
   current(); timer.signal.throwIfAborted()
   const handle = subprocess.spawn(remoteSshSpec(target, credential, command, workdir, timer.signal, config, probe))
-  const result = await handle.done
-  // Public handles do not regain authority after caller/account cancellation. Root still owns actual cleanup.
-  signal.throwIfAborted(); current()
+  let result: SubprocessOutcome
+  try {
+    result = await handle.done
+    // Public handles stay revoked after cancellation; Root retains actual cleanup.
+    signal.throwIfAborted()
+  } catch (cause) {
+    if (signal.aborted && cause === signal.reason && typeof cause === 'object' && cause !== null
+      && 'kind' in cause && cause.kind === 'user') {
+      throw new Error('本地等待已取消，远端程序可能仍在运行。', { cause })
+    }
+    if (timer.signal.aborted && cause === timer.signal.reason && timeoutOf(timer.signal, 'remote-ssh-timeout') !== undefined) {
+      throw new Error('本地等待已超时，远端程序可能仍在运行。', { cause })
+    }
+    throw cause
+  }
+  current()
   if (!await handle.waitForExit(AbortSignal.timeout(config.stopWaitMs))) {
     throw new ExecutionStateError('cloud/stop-unconfirmed', 'The original SSH range has not confirmed cleanup.')
   }

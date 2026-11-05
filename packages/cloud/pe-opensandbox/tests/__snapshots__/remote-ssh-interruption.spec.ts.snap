@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`shows the remote-running warning while retaining aborted/user and the original local IO stop owner > native user cancellation and Remote warning 1`] = `
+[
+  {
+    "isError": true,
+    "message": [
+      {
+        "text": "Error: 本地等待已取消，远端程序可能仍在运行。",
+        "type": "text",
+      },
+    ],
+    "type": "tool/result",
+  },
+  {
+    "reason": {
+      "kind": "aborted",
+      "reason": {
+        "kind": "user",
+      },
+    },
+    "type": "turn/end",
+  },
+]
+`;

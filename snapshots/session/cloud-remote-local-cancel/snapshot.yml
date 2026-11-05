@@ -1,0 +1,11 @@
+version: 1
+scenario: cloud-remote-local-cancel
+profile: headless
+composition: cloud-remote-local-cancel
+recording: authored
+header:
+  class: cloud-remote-local-cancel
+  pin: true
+permission: read-only
+workspace:
+  final: true

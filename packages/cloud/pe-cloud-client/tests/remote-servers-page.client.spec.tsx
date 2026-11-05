@@ -26,10 +26,20 @@ it('uses account callbacks for CRUD and shows unknown facts and the native never
   fireEvent.click(screen.getByRole('button', { name: en.save }))
   await screen.findByText('fixture@192.0.2.1:22')
   expect(screen.getByText(en.approvalHint)).toBeTruthy()
+  expect(screen.getByText(/Cancellation and timeout stop local waiting; the remote program may still be running/)).toBeTruthy()
   expect(screen.getByText(new RegExp(en.unknown))).toBeTruthy()
   expect(document.querySelector('input[type="password"]')).toBeNull()
   expect(document.querySelector('pre')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: en.remove }))
   await waitFor(() =>{  expect(screen.getByText(en.empty)).toBeTruthy() })
   expect(call.mock.calls.some(([value]) => value.action === 'remove' && value.id === 'actual-row')).toBe(true)
+})
+
+it('shows the local-wait limitation and retry guidance in Chinese', async () => {
+  const unused = (): never => { throw new Error('Unused native slot prop') }
+  render(<ServersSection {...allowAllAccess} useSessions={unused} useSessionStatus={unused} useSessionRetainInfo={unused}
+    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} scope="account-A-generation-1" close={() => {}}
+    t={makeTranslate(remoteServerDictionaries.zh)} call={async () => ({ servers: [],
+      limits: { maxPrivateKeyBytes: 2048, maxKnownHostsBytes: 2048, maxImportBytes: 4096 } })}/>)
+  expect(await screen.findByText(/取消或超时仅停止本地等待，远端程序可能仍在运行，重试前请先核实远端状态/)).toBeTruthy()
 })
