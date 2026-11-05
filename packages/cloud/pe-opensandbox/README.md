@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 Composition maintainers can select native refusal providers or the developing Root-owned session execution path. Closed mode rejects every Shell and subprocess request before preparation, without creating a sandbox or contacting a backend. Managed mode requires its original protected deployment and target qualification; an empty requirement list alone cannot make an account ready.
 
-The optional [Office guest payload](../../../docs/user/cloud-builtin-skills.md) includes a Linux Word catalog operation under the original managed Bash execution. It creates no account, execution controller or additional quota; the selected image and actual account recipe require separate qualification.
+The optional [Office guest payload](../../../docs/user/cloud-builtin-skills.md) includes a Linux Word catalog operation under the original managed Bash execution. Catalog text uses UTF-8. It creates no account, execution controller or additional quota; the selected image and actual account recipe require separate qualification.
 
 ## Table of Contents
 

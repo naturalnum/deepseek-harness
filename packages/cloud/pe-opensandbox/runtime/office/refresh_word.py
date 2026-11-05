@@ -112,11 +112,13 @@ For pass = 1 To 2
     indexes.getByIndex(i).update()
   Next i
 Next pass
+fileAccess = CreateUnoService("com.sun.star.ucb.SimpleFileAccess")
 For i = 0 To indexes.getCount() - 1
-  outFile = FreeFile()
-  Open INDEX_PREFIX & i & ".txt" For Output As #outFile
-  Print #outFile, indexes.getByIndex(i).getAnchor().String
-  Close #outFile
+  textStream = CreateUnoService("com.sun.star.io.TextOutputStream")
+  textStream.setOutputStream(fileAccess.openFileWrite(ConvertToURL(INDEX_PREFIX & i & ".txt")))
+  textStream.setEncoding("UTF-8")
+  textStream.writeString(indexes.getByIndex(i).getAnchor().String & Chr(10))
+  textStream.closeOutput()
 Next i
 '''.replace('INDEX_PREFIX', literal(destination / 'index-')) if refresh else ''
         export = '' if refresh else f'''
@@ -129,6 +131,7 @@ On Error GoTo Failed
 Dim props(2) As New com.sun.star.beans.PropertyValue
 Dim exported(0) As New com.sun.star.beans.PropertyValue
 Dim doc As Object, indexes As Object, i As Integer, pass As Integer, outFile As Integer
+Dim fileAccess As Object, textStream As Object
 props(0).Name = "Hidden"
 props(0).Value = True
 props(1).Name = "MacroExecutionMode"
