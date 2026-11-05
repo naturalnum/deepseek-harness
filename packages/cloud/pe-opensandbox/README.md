@@ -69,6 +69,8 @@ Explicit `managed.commands.remoteServers: true` adds only `remote_exec` and `rem
 
 Root and SDK bootstrap share an [exact workload-image list](src/bootstrap/workload-images.ts): the original Native supplier or its [pinned OpenSSH client layer](runtime/remote-client/Dockerfile). Tags and other digests are rejected. The SSH supplier requires its [paired immutable server policy](runtime/server/Dockerfile.remote-client), which preserves the original directory guard, seccomp and binding of each request to the single configured workload. Root rejects a new workload against the old server, the old workload against the paired server, and every unreviewed server digest before allocation. The SSH supplier preserves the original Native layers and does not establish Office capability. Deployment must explicitly select the pair and qualify actual original SDK/account execution with the original protections before advertising remote execution.
 
+The public `@deepseek-ai/dsh-pe-opensandbox` library exports `parseRootDeploymentInput` for deployment preflight with the same strict schema, fixed image-pair and limit checks as Root assembly. Parsing creates no Root, SDK, storage lease or execution authority; protected publication and actual qualification remain required.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -69,6 +69,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/workload-images.ts)：原始 Native 供应镜像，或叠加了[固定版本 OpenSSH 客户端层](runtime/remote-client/Dockerfile)的镜像。标签及其他摘要均被拒绝。SSH 供应镜像要求使用其[配对的不可变服务端策略](runtime/server/Dockerfile.remote-client)，保留原始目录守卫、seccomp，以及每个请求与唯一已配置工作负载的绑定。Root 在分配前拒绝新工作负载与旧服务端的组合、旧工作负载与配对服务端的组合，以及所有未审阅的服务端摘要。SSH 供应镜像保留原始 Native 镜像层，不代表具备 Office 能力。部署必须显式选择这一配对，并在原始保护条件下验收实际原 SDK 和账户执行，之后才能声明远程执行可用。
 
+公共 `@deepseek-ai/dsh-pe-opensandbox` 库导出 `parseRootDeploymentInput`，供部署预检使用与 Root 组装相同的严格字段、固定镜像配对和限额检查。解析不创建 Root、SDK、存储租约或执行权限；仍须完成受保护发布和实际验收。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
