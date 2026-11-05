@@ -1,3 +1,4 @@
+import { readinessBudget } from './fixtures/readiness.ts'
 /** Real native rows, Registry, DataClient and Python snapshots over a synthetic kernel and transport; no Linux qualification. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -131,7 +132,7 @@ async function fixture(kind: Kind) {
   const registry = new TrustedRuntimeRegistry({ bootstrap: async () => options,
     fence: () => ({ whenJoined: Promise.resolve(), assertDeploymentCurrent() {} }) }, 1, () => client)
   const signal = new AbortController().signal
-  const prepared = registry.bindPrepared({ ...await registry.handshake(selected, signal) })
+  const prepared = registry.bindPrepared({ ...await registry.handshake(selected, signal, readinessBudget()) })
   const profile: DevServiceProfile = { kind: 'python-http-v1', port: 8000, startWaitMs: 2000, runMs: 1000,
     stopWaitMs: 1000, maxLogReadBytes: 32, maxReplyBytes: 4096, maxScriptBytes: 256, maxArgs: 4, maxArgBytes: 128, maxArgsBytes: 256 }
   const limits = { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512, maxStdinBytes: 4096, maxTailBytes: 32,

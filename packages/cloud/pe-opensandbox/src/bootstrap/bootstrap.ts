@@ -1,6 +1,7 @@
 /** Root-private fixed SDK bootstrap. A stopped allocation never gains another privileged start. */
 import { parentFacts } from '../skill-wire.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -11,7 +12,7 @@ import { SOURCE_DIGEST, SOURCES } from './asset-manifest.ts'
 import { RootAgentProxyTransport } from './agent-proxy.ts'
 import { createOwnedSdkTransport, type OwnedTransportLimits } from '../sdk-transport.ts'
 import { PrivateSemanticAudit, type SemanticSpan } from '../semantic-audit.ts'
-import type { AgentSelection, OwnedSdkTransport, SdkLifecycleConfig } from '../lifecycle-types.ts'
+import { SdkLifecycleFailure, type AgentReadinessBudget, type AgentSelection, type OwnedSdkTransport, type SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { AgentDataClient, ClientOptions, RootGrant } from '../agent-data/types.ts'
 import { DataClient } from '../agent-data/client-internal.ts'
 import { AGENT_SOURCE_SHA256, BWRAP_SHA256, digest, expectedWorldHash } from '../agent-data/index.ts'
@@ -93,7 +94,7 @@ export interface BootstrapConfig {
   readonly agentPort: number
   assertDeploymentCurrent(): void
 }
-interface WireWork { readonly method: string; readonly url: string; requests: number }
+interface WireWork { readonly method: string; readonly url: string; readonly health?: boolean; negativeHealth?: boolean; requests: number }
 
 /** Every request is one public SDK send on a dedicated no-retry dispatcher; close fences synchronously. */
 class BootstrapConnection extends ConnectionConfig {
@@ -103,11 +104,12 @@ class BootstrapConnection extends ConnectionConfig {
   private closing = false
   private closed?: Promise<void>
   private attempts = 0
+  private healthAttempts = 0
   private bytes = 0
   private failure?: { cause: unknown }
 
   constructor(private readonly config: BootstrapConfig, private readonly transport: OwnedSdkTransport,
-    private readonly deadline: number) {
+    private readonly deadline: number, private readonly readiness: AgentReadinessBudget) {
     super({ domain: config.lifecycle.lifecycleBaseUrl, apiKey: config.lifecycle.apiKey,
       headers: { 'X-EXECD-ACCESS-TOKEN': config.execdAccessToken },
       useServerProxy: true, endpointCacheDisabled: true, disableMetrics: true, debug: false,
@@ -134,6 +136,14 @@ class BootstrapConnection extends ConnectionConfig {
     if (this.closing) throw new BootstrapFailure('closed')
     return this.context.run({ method, url, requests: 0 }, run)
   }
+  async health(url: string, run: () => Promise<boolean>): Promise<boolean> {
+    const work: WireWork = { method: 'GET', url, health: true, requests: 0 }
+    try { return await this.context.run(work, run) }
+    catch (cause) {
+      if (work.negativeHealth) return false // Original SDK rejected only this fully consumed HTTP health response.
+      throw cause
+    }
+  }
   override closeTransport(): Promise<void> {
     this.closing = true
     return this.closed ??= this.audit.watch(this.audit.begin('bootstrap-connection-close', { fenced: true }), (async () => {
@@ -147,7 +157,7 @@ class BootstrapConnection extends ConnectionConfig {
     need(request.url === work.url && request.method === work.method && ++work.requests === 1
       && request.headers.get('OPEN-SANDBOX-API-KEY') === this.config.lifecycle.apiKey, 'binding')
     request.headers.set('OpenSandbox-Access-Renew', 'skip')
-    need(++this.attempts <= Object.keys(SOURCES).length + 6, 'bounds')
+    need(work.health ? ++this.healthAttempts <= this.readiness.remainingPolls : ++this.attempts <= Object.keys(SOURCES).length + 6, 'bounds')
     const body = request.body === null ? undefined : new Uint8Array(await request.clone().arrayBuffer())
     const size = body?.length ?? 0
     need(size <= this.config.maxRequestBytes, 'bounds')
@@ -174,6 +184,10 @@ class BootstrapConnection extends ConnectionConfig {
             const chunk = await reader.read()
             if (chunk.done) break
             count += chunk.value.length; this.bytes += chunk.value.length
+            if (work.health) {
+              this.readiness.chargeReplyBytes(chunk.value.length)
+              need(count <= this.config.lifecycle.maxResponseBytes, 'bounds')
+            }
             need(count <= this.config.maxReplyBytes && this.bytes <= this.config.maxAggregateBytes, 'bounds')
             chunks.push(chunk.value)
           }
@@ -183,6 +197,11 @@ class BootstrapConnection extends ConnectionConfig {
       need(Date.now() < this.deadline, 'bounds')
       const complete = Buffer.concat(chunks)
       if (response.status < 200 || response.status >= 300) {
+        if (work.health) {
+          const reply = new Response(complete.length ? complete : null, { status: response.status, headers: response.headers })
+          work.negativeHealth = true
+          return reply
+        }
         throw new BootstrapFailure('wire-unknown', Object.freeze({
           kind: 'root-bootstrap-http-response', statusCode: response.status,
           requestId: response.headers.get('x-request-id')?.slice(0, this.config.lifecycle.maxFieldBytes),
@@ -255,9 +274,10 @@ export class TrustedSdkBootstrap {
    * Start the original allocation's fixed privileged sequence once.
    * @param selection Original intent and mount objects.
    * @param signal Observer cancellation checked between admitted steps.
+   * @param readiness Original remaining lifecycle observations, deadline and byte charge.
    * @returns Sticky original protected endpoint/options; no failed or fenced allocation is replayed.
    */
-  bootstrap(selection: AgentSelection, signal: AbortSignal): Promise<ClientOptions> {
+  bootstrap(selection: AgentSelection, signal: AbortSignal, readiness: AgentReadinessBudget): Promise<ClientOptions> {
     const record = this.record(selection)
     if (record.fenced) return Promise.reject(new BootstrapFailure('closed'))
     if (record.actual !== undefined) return record.actual
@@ -265,7 +285,7 @@ export class TrustedSdkBootstrap {
     record.actual = deferred.promise
     void this.audit.watch(this.audit.begin('bootstrap', { intent: selection.intent, sandboxId: selection.sandboxId }), record.actual,
       () => ({ intent: selection.intent, sandboxId: selection.sandboxId, runtimeIdentity: record.protected?.expected.runtimeIdentity }))
-    void this.start(record, signal).then(deferred.resolve, deferred.reject)
+    void this.start(record, signal, readiness).then(deferred.resolve, deferred.reject)
     return record.actual
   }
 
@@ -363,7 +383,7 @@ export class TrustedSdkBootstrap {
     }
     return url.href
   }
-  private async start(record: RecordState, signal: AbortSignal): Promise<ClientOptions> {
+  private async start(record: RecordState, signal: AbortSignal, readiness: AgentReadinessBudget): Promise<ClientOptions> {
     const { selection } = record
     const assertOpen = (): void => { if (record.fenced) throw new BootstrapFailure('closed') }
     const current = (): void => {
@@ -373,10 +393,12 @@ export class TrustedSdkBootstrap {
       signal.throwIfAborted()
     }
     current()
-    const deadline = Date.now() + this.config.bootstrapTimeoutMs
+    if (readiness.remainingPolls === 0) throw new SdkLifecycleFailure('sdk/ready-unconfirmed')
+    const deadline = Math.min(Date.now() + this.config.bootstrapTimeoutMs, readiness.deadlineAtMs,
+      Date.parse(selection.intent.createDeadlineAt))
     const transport = this.transportFactory()
     try {
-      const connection = new BootstrapConnection(this.config, transport, deadline)
+      const connection = new BootstrapConnection(this.config, transport, deadline, readiness)
       record.connection = connection
       const factory = createDefaultAdapterFactory()
       const sandboxes = factory.createLifecycleStack({ connectionConfig: connection,
@@ -390,6 +412,18 @@ export class TrustedSdkBootstrap {
       const endpoint = await getEndpoint(44772), base = this.endpoint(selection, endpoint, 44772)
       const execd = factory.createExecdStack({ connectionConfig: connection, execdBaseUrl: base,
         ...(endpoint.headers ? { endpointHeaders: endpoint.headers } : {}) })
+      let healthy = false
+      for (let poll = 0; poll < readiness.remainingPolls; poll++) {
+        current()
+        healthy = await connection.health(base + '/ping', () => execd.health.ping(signal))
+        current()
+        if (healthy) break
+        if (poll + 1 < readiness.remainingPolls) {
+          const remaining = deadline - Date.now(); need(remaining > 0, 'bounds')
+          await delay(Math.min(readiness.intervalMs, remaining), undefined, { signal })
+        }
+      }
+      if (!healthy) throw new SdkLifecycleFailure('sdk/ready-unconfirmed')
       const grant = selection.mount.grant
       const root = (value: typeof grant.project | typeof grant.environment): RootGrant => ({
         device: value.rootDevice, inode: value.rootInode,

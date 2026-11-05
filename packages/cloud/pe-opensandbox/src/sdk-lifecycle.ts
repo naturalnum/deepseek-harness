@@ -119,8 +119,9 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     const actual = this.own(async () => {
       span = this.audit.begin('sdk-prepare', { intent: record.intent, sandboxId: created.sandboxId })
       await record.actual
-      let ready = false
-      for (let poll = 0; poll < this.config.maxReadyPolls; poll++) {
+      let ready = false, remainingPolls = this.config.maxReadyPolls
+      for (; remainingPolls > 0;) {
+        remainingPolls--
         this.assertPreparing(record, budget)
         const info = await this.connection.run(budget, 'GET', this.path(created.sandboxId), 200, () => this.sandboxes.getSandbox(created.sandboxId))
         check(info.id === created.sandboxId, 'sdk/selection')
@@ -130,7 +131,13 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         await delay(Math.min(this.config.readyPollIntervalMs, Math.max(0, budget.deadlineAtMs - Date.now())))
       }
       check(ready, 'sdk/ready-unconfirmed'); this.assertPreparing(record, budget)
-      const prepared = await this.agent.handshake(this.selection(record), this.control(budget.deadlineAtMs))
+      const prepared = await this.agent.handshake(this.selection(record), this.control(budget.deadlineAtMs), Object.freeze({
+        remainingPolls, intervalMs: this.config.readyPollIntervalMs, deadlineAtMs: budget.deadlineAtMs,
+        chargeReplyBytes: (bytes: number): void => {
+          budget.bytes += bytes
+          check(budget.bytes <= this.config.maxOperationBytes, 'sdk/bounds')
+        },
+      }))
       this.assertPreparing(record, budget)
       this.checkFields([prepared.runtimeIdentity, prepared.protocolVersion])
       check(prepared.sandboxId === created.sandboxId && prepared.payloadSha256 === this.config.payloadSha256

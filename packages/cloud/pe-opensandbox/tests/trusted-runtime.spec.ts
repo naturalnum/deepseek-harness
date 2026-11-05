@@ -1,3 +1,4 @@
+import { readinessBudget } from './fixtures/readiness.ts'
 /** Root registry units exercise actual ownership and projection; transports and bootstrap are component fakes. */
 import { describe, expect, it, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -101,7 +102,7 @@ describe('Root original trusted runtime registry', () => {
       maxPathBytes: 1024, timeoutMs: 1000, maxBufferPoolBytes: 8192 }
     const owner = { retainRequest() { throw new Error('No HTTP send is expected') } }
     expect(() => f.registry.application(held.registration, identity, limits, owner)).toThrow('unconfirmed')
-    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal) })
+    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal, readinessBudget()) })
     f.registry.service(prepared, held.registration)
     expect(f.registry.application(held.registration, identity, limits, owner)).toBe(transport)
     expect(http).toHaveBeenCalledTimes(1)
@@ -123,7 +124,7 @@ describe('Root original trusted runtime registry', () => {
       maxPathBytes: 1024, timeoutMs: 1000, maxBufferPoolBytes: 8192 }
     const owner = { retainRequest() { throw new Error('No HTTP send is expected') } }
     for (const item of [f, closed]) {
-      const prepared = item.registry.bindPrepared({ ...await item.registry.handshake(item.selected, signal) })
+      const prepared = item.registry.bindPrepared({ ...await item.registry.handshake(item.selected, signal, readinessBudget()) })
       const held = registeredService(item.selected), identity = held.registration.projectIdentity(item.selected.intent.allocationId)
       item.registry.service(prepared, held.registration)
       if (item === closed) expect(() => item.registry.application(held.registration, identity, limits, owner)).toThrow('unconfirmed')
@@ -145,7 +146,7 @@ describe('Root original trusted runtime registry', () => {
 
   it('signs the service role only from its current original registration and retains old control refs after revocation', async () => {
     const f = fixture(), signal = new AbortController().signal
-    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal) })
+    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal, readinessBudget()) })
     const held = registeredService(f.selected)
     const service = f.registry.service(prepared, held.registration), foreground = f.registry.command(prepared)
     expect(held.bindAllocation).toHaveBeenCalledExactlyOnceWith(f.selected.intent.allocationId)
@@ -168,7 +169,7 @@ describe('Root original trusted runtime registry', () => {
 
   it('rejects a service from a different binding, Session, project or purpose before any remote mutation', async () => {
     const f = fixture(), signal = new AbortController().signal
-    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal) })
+    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal, readinessBudget()) })
     const { registration, bindAllocation } = registeredService(f.selected), scope = registration.scope
     const stale = [
       { ...scope, binding: { ...scope.binding } },
@@ -189,8 +190,8 @@ describe('Root original trusted runtime registry', () => {
 
   it('shares one startup/client and projects raw bytes and Linux signals through distinct command references', async () => {
     const f = fixture(), signal = new AbortController().signal
-    const startup = f.registry.handshake(f.selected, signal)
-    expect(f.registry.handshake({ ...f.selected }, signal)).toBe(startup)
+    const startup = f.registry.handshake(f.selected, signal, readinessBudget())
+    expect(f.registry.handshake({ ...f.selected }, signal, readinessBudget())).toBe(startup)
     const prepared = f.registry.bindPrepared({ ...await startup })
     const a = f.registry.command(prepared), b = f.registry.command(prepared)
     await a.prepare({ argv: ['/bin/true'], cwd: '/project', stdin: { mode: 'ignore' } })
@@ -214,10 +215,10 @@ describe('Root original trusted runtime registry', () => {
     const f = fixture(), late = Promise.withResolvers<ClientOptions>(), privileged = Promise.withResolvers<undefined>()
     f.bootstrap.bootstrap.mockReturnValueOnce(late.promise)
     f.bootstrap.fence.mockReturnValueOnce({ whenJoined: privileged.promise, assertDeploymentCurrent: vi.fn() })
-    const startup = f.registry.handshake(f.selected, new AbortController().signal)
+    const startup = f.registry.handshake(f.selected, new AbortController().signal, readinessBudget())
     const refusal = expect(startup).rejects.toThrow('unconfirmed')
     const stopped = f.registry.fenceRequests(f.selected, undefined, new AbortController().signal)
-    expect(() => f.registry.handshake(f.selected, new AbortController().signal)).toThrow('unconfirmed')
+    expect(() => f.registry.handshake(f.selected, new AbortController().signal, readinessBudget())).toThrow('unconfirmed')
     let joined = false
     void stopped.whenPrivilegedStartsJoined.then(() => { joined = true })
     await Promise.resolve(); expect(joined).toBe(false)
@@ -229,7 +230,7 @@ describe('Root original trusted runtime registry', () => {
   it('notes physical deletion while retaining the independent actual local cleanup join', async () => {
     const f = fixture(), local = Promise.withResolvers<undefined>(), signal = new AbortController().signal
     vi.mocked(f.client.whenLocallySettled).mockReturnValueOnce(local.promise)
-    const original = await f.registry.handshake(f.selected, signal)
+    const original = await f.registry.handshake(f.selected, signal, readinessBudget())
     const prepared = f.registry.bindPrepared({ ...original })
     f.registry.command(prepared)
     const stopped = f.registry.fenceRequests({ ...f.selected }, { ...original }, signal)
@@ -248,10 +249,11 @@ describe('Root original trusted runtime registry', () => {
     const f = fixture(), signal = new AbortController().signal
     f.bootstrap.bootstrap.mockResolvedValueOnce({ ...f.options, expected: { ...f.options.expected,
       roots: { ...f.options.expected.roots, project: { ...f.options.expected.roots.project, inode: '999' } } } })
-    await expect(f.registry.handshake(f.selected, signal)).rejects.toThrow('unconfirmed')
+    await expect(f.registry.handshake(f.selected, signal, readinessBudget())).rejects.toThrow('unconfirmed')
     expect(f.factory).not.toHaveBeenCalled()
     await f.registry.fenceRequests(f.selected, undefined, signal).whenJoined
-    const good = fixture(), ready = good.registry.bindPrepared({ ...await good.registry.handshake(good.selected, signal) })
+    const good = fixture()
+    const ready = good.registry.bindPrepared({ ...await good.registry.handshake(good.selected, signal, readinessBudget()) })
     const channel = good.registry.command(ready)
     vi.mocked(good.client.prepare).mockRejectedValueOnce(new Error('private-token-must-never-escape'))
     await expect(channel.prepare({ argv: ['/bin/true'], cwd: '/project', stdin: { mode: 'ignore' } })).rejects.toThrow('unconfirmed')
@@ -266,7 +268,7 @@ it('projects resident expiry from before bootstrap without refreshing it on dela
   const http = vi.fn<ApplicationHttpFactory>(() => ({ withResponse: async () => {} })), f = fixture(http)
   try {
     f.bootstrap.bootstrap.mockImplementation(async () => { now = 5100; return f.options })
-    await f.registry.handshake(f.selected, new AbortController().signal)
+    await f.registry.handshake(f.selected, new AbortController().signal, readinessBudget())
     const held = registeredService(f.selected), identity = held.registration.projectIdentity(f.selected.intent.allocationId)
     const limits = { readBufferBytes: 64, prefetchBytes: 128, maxWireBytes: 4096, maxRequestHeaderBytes: 1024,
       maxPathBytes: 1024, timeoutMs: 1000, maxBufferPoolBytes: 8192 }
@@ -295,7 +297,7 @@ it('reports only known quiescent lifetime boundaries without opening another cha
     remoteUnresolved: [], physicalStopAcknowledged: false, physicalStopRequired: false,
   }))
   try {
-    const ready = f.registry.bindPrepared(await f.registry.handshake(f.selected, new AbortController().signal))
+    const ready = f.registry.bindPrepared(await f.registry.handshake(f.selected, new AbortController().signal, readinessBudget()))
     expect(f.registry.needsContinuation(ready)).toBe(false)
     for (let i = 0; i < 4; i++) f.registry.command(ready)
     expect(f.registry.needsContinuation(ready)).toBe(true)
@@ -314,7 +316,8 @@ it('reports only known quiescent lifetime boundaries without opening another cha
     expect(() => f.registry.needsContinuation(ready)).toThrow('unconfirmed')
     const expired = fixture()
     vi.spyOn(expired.client, 'responsibility').mockReturnValue(healthy)
-    const original = expired.registry.bindPrepared(await expired.registry.handshake(expired.selected, new AbortController().signal))
+    const original = expired.registry.bindPrepared(
+      await expired.registry.handshake(expired.selected, new AbortController().signal, readinessBudget()))
     now = 145099
     expect(expired.registry.needsContinuation(original)).toBe(false)
     now = 145100
@@ -331,7 +334,7 @@ it('retires only the exact stopped and locally joined runtime and permanently re
   const f = fixture(), signal = new AbortController().signal
   const retire = vi.fn(), bootstrap = { ...f.bootstrap, retireStopped: retire }
   const registry = new TrustedRuntimeRegistry(bootstrap, 1, () => f.client)
-  const prepared = registry.bindPrepared(await registry.handshake(f.selected, signal))
+  const prepared = registry.bindPrepared(await registry.handshake(f.selected, signal, readinessBudget()))
   expect(() =>{  registry.retireStopped(prepared, f.selected) }).toThrow('unconfirmed')
   const fenced = registry.fenceRequests(f.selected, undefined, signal)
   await fenced.whenJoined; await fenced.whenPrivilegedStartsJoined
@@ -345,11 +348,11 @@ it('retires only the exact stopped and locally joined runtime and permanently re
   responsibility.mockReturnValue(settled)
   registry.retireStopped(prepared, f.selected)
   expect(retire).toHaveBeenCalledExactlyOnceWith(f.selected)
-  expect(() => registry.handshake(f.selected, signal)).toThrow('unconfirmed')
+  expect(() => registry.handshake(f.selected, signal, readinessBudget())).toThrow('unconfirmed')
   expect(() => registry.command(prepared)).toThrow('unconfirmed')
   expect(() =>{  registry.retireStopped(prepared, f.selected) }).toThrow('unconfirmed')
   const fresh = { ...f.selected, intent: { ...f.selected.intent, allocationId: brandString<AllocationCreateIntent['allocationId']>('allocation-fresh') } }
   // The synthetic client returns the same physical facts; this only proves reclaimed record admission, not a real new sandbox.
-  await expect(registry.handshake(fresh, signal)).resolves.toMatchObject({ sandboxId: fresh.sandboxId })
+  await expect(registry.handshake(fresh, signal, readinessBudget())).resolves.toMatchObject({ sandboxId: fresh.sandboxId })
   await registry.fenceRequests(fresh, undefined, signal).whenJoined
 })

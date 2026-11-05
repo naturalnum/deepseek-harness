@@ -5,7 +5,7 @@ import { copyFacts } from './skill-wire.ts'
 import { randomUUID } from 'node:crypto'
 import { filePolicy as normalizeFilePolicy } from './agent-data/file-policy.ts'
 import type { PreparedSandbox } from './allocation-owner.ts'
-import type { AgentHandshake, AgentSelection, FencedAgentRequests, TrustedAgentLifecycle } from './lifecycle-types.ts'
+import type { AgentHandshake, AgentSelection, AgentReadinessBudget, FencedAgentRequests, TrustedAgentLifecycle } from './lifecycle-types.ts'
 import type { CommandChannel, CommandSnapshot } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
 import { createAgentDataClient, makePrepared, PROTOCOL, SLICE_LIMITS } from './agent-data/index.ts'
@@ -35,7 +35,7 @@ export type ApplicationHttpFactory = (target: RegisteredHttpTarget, limits: Http
 
 /** Fixed Root bootstrap operations; the privileged join includes all late sends and its actual dispatcher close. */
 export interface TrustedAgentBootstrap {
-  bootstrap(selection: AgentSelection, signal: AbortSignal): Promise<ClientOptions>
+  bootstrap(selection: AgentSelection, signal: AbortSignal, readiness: AgentReadinessBudget): Promise<ClientOptions>
   fence(selection: AgentSelection): {
     readonly whenJoined: Promise<void>
     assertDeploymentCurrent(): void
@@ -117,14 +117,14 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
    */
   hasApplicationProvider(): boolean { return this.applicationFactory !== undefined }
 
-  handshake = (selection: AgentSelection, signal: AbortSignal): Promise<AgentHandshake> => {
+  handshake = (selection: AgentSelection, signal: AbortSignal, readiness: AgentReadinessBudget): Promise<AgentHandshake> => {
     const record = this.record(selection)
     if (record.fenced) unavailable()
     if (record.preparation !== undefined) return record.preparation
     const deferred = Promise.withResolvers<AgentHandshake>()
     record.preparation = deferred.promise
     // Install the original promise before bootstrap can send or invoke a reentrant teardown callback.
-    void this.prepare(record, signal).then(deferred.resolve, deferred.reject)
+    void this.prepare(record, signal, readiness).then(deferred.resolve, deferred.reject)
     return record.preparation
   }
 
@@ -347,9 +347,9 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     return undefined
   }
 
-  private async prepare(record: RuntimeRecord, signal: AbortSignal): Promise<AgentHandshake> {
+  private async prepare(record: RuntimeRecord, signal: AbortSignal, readiness: AgentReadinessBudget): Promise<AgentHandshake> {
     const { selection } = record
-    const options = await this.bootstrap.bootstrap(selection, signal)
+    const options = await this.bootstrap.bootstrap(selection, signal, readiness)
     signal.throwIfAborted()
     if (record.fenced) unavailable()
     const { expected } = options, { grant } = selection.mount

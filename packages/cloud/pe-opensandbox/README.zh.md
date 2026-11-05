@@ -125,11 +125,14 @@ Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/work
 
 账户 epoch 中首次意外准备拒绝会向 stderr 写入固定阶段、进程 id、coordinator 准入布尔值及白名单内的自有数据错误码。不记录消息、stack、路径或请求参数，也不调用错误 accessor。已确认的 allocation 前环境容量不足保留原 capacity 响应。观察既不改变原失败与清理责任，也不证明沙盒 ready。
 
+Root 在生命周期状态查询与原 SDK 的 execd 健康检查之间共用现有就绪观察次数。Bootstrap 只接收尚未使用的次数，并沿用同一绝对截止时间、轮询间隔和完整回复字节限额；十四次固定协议请求仍保留原有独立上限。完整读取的负健康回复可等待下一次原有观察，未知 I/O 与已提交命令仍保留原失败，不能重放。
+
 </details>
 
 -----
 
 <a id="further-exploration"></a>
+
 ## 进一步探索
 
 - [应用组合](../../../docs/architecture.zh.md)

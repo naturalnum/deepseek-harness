@@ -1181,3 +1181,30 @@ it('reads only the live account managed Shell limits and withdraws them on revoc
   expect(accountTerminalLimits(b.ctx)).toEqual({ timeoutMs: 20, maxTimeoutMs: 100, maxOutputBytes: 32 })
   expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
 })
+
+
+it.each(['sdk/closed', 'sdk/bounds', 'sdk/capacity', 'sdk/selection', 'sdk/create-unknown', 'sdk/ready-unconfirmed',
+  'sdk/stop-unknown', 'sdk/close-unconfirmed', 'closed', 'binding', 'bounds', 'wire-unknown', 'command-unknown',
+  'endpoint-unrepresentable'])('logs only fixed preparation classification %s through the original managed tool consumer', async (code) => {
+  const f = await applicationFixture(), a = await f.account('classified-preparation-failure', 1)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const privateText = '/private/SECRET-BODY-TOKEN-KEY'
+  const failure = Object.assign(new Error(privateText), { code, body: privateText, key: privateText,
+    cause: Object.assign(new Error(privateText), { code: 'sdk/selection' }) })
+  f.prepare.mockRejectedValueOnce(failure)
+  const dispose = a.ctx.tools.register(defineTool({ name: 'bash', description: 'Native failure-classification consumer.', parameters: {},
+    output: { schema: { type: 'json' }, render: () => [] }, execute: async () => {
+      const command = await a.ctx.shell.execute(a.ctx.shell.resolve({ command: 'printf hello', onExpiry: 'none' }))
+      await command.done; return { completed: true }
+    } }))
+  applicationCleanups.push(dispose)
+  const result = await a.ctx.tools.execute({ callId: ToolCallId('classified-preparation'), name: 'bash', arguments: {},
+    agent: a.agents[0]!, signal: new AbortController().signal })
+  expect(result.isError).toBe(true)
+  if (!result.isError) throw new Error('Scripted preparation must not execute')
+  expect(result.error.message).toBe('Cloud execution is not confirmed available; Root retains cleanup responsibility.')
+  expect(warn).toHaveBeenCalledOnce()
+  expect(warn.mock.calls[0]?.[1]).toMatchObject({ code, causeCode: 'sdk/selection' })
+  expect(JSON.stringify(warn.mock.calls)).not.toMatch(/SECRET|BODY|TOKEN|KEY|private|stack/)
+  expect(JSON.stringify(result)).not.toContain(privateText)
+})

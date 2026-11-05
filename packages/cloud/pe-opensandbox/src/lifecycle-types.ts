@@ -71,10 +71,21 @@ export interface FencedAgentRequests {
   assertDeploymentCurrent(): void
 }
 
+/** Original prepare observations left after lifecycle polling; no new request or byte allowance. */
+export interface AgentReadinessBudget {
+  readonly remainingPolls: number
+  readonly intervalMs: number
+  readonly deadlineAtMs: number
+  /** Charge each actual health-response chunk to the same original lifecycle operation.
+   * @param bytes Received bytes.
+   */
+  chargeReplyBytes(bytes: number): void
+}
+
 /** Root injects its private client; promises retain real work even when the supplied control signal aborts. */
 export interface TrustedAgentLifecycle {
   /** Signal bounds actual work; rejection retains late local requests for the original fence capability. */
-  handshake(this: void, selection: AgentSelection, signal: AbortSignal): Promise<AgentHandshake>
+  handshake(this: void, selection: AgentSelection, signal: AbortSignal, readiness: AgentReadinessBudget): Promise<AgentHandshake>
   /** Synchronously fence every new user/bootstrap submission and return without awaiting local release.
    * Already admitted requests must be confined to this original physical and unable to create/replace resources.
    * whenJoined owns actual local callbacks/transport settlement; pending/failure never means clean or returned budget.

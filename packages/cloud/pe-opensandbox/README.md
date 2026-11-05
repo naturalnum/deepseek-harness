@@ -125,11 +125,14 @@ Explicit `shell.enforceSessionFilePolicy: true` enables the original Session pol
 
 The first unexpected preparation refusal in an account epoch writes a fixed stage, process id, coordinator admission booleans and allowlisted own-data error codes to stderr. It omits messages, stacks, paths and request arguments and never invokes error accessors. Confirmed pre-allocation environment exhaustion keeps its existing capacity response. Observations neither change the retained original failure/cleanup nor prove sandbox readiness.
 
+Root shares the existing readiness-observation count between lifecycle status and the original SDK execd health check. Only the unspent count reaches bootstrap, under the same absolute deadline, polling interval and complete-response byte limits; the fourteen fixed protocol requests keep their separate original bound. A completely consumed negative health reply can wait for another original observation, while unknown I/O and submitted commands retain their original failure and cannot replay.
+
 </details>
 
 -----
 
 <a id="further-exploration"></a>
+
 ## Further Exploration
 
 - [Application composition](../../../docs/architecture.md)

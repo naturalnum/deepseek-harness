@@ -257,9 +257,9 @@ test('Root close fences while handshake is pending, physically stops before hand
   const original = callbacks.handshake, originalJoin = callbacks.fenceRequests
   const acked = Promise.withResolvers<undefined>(), originalAck = callbacks.acknowledgePhysicalStop
   callbacks.acknowledgePhysicalStop = (value, prepared) => { originalAck(value, prepared); acked.resolve(undefined); return undefined }
-  callbacks.handshake = async (value, signal) => {
+  callbacks.handshake = async (value, signal, readiness) => {
     entered.resolve(undefined)
-    try { await release.promise; return await original(value, signal) } finally { actualJoined.resolve(undefined) }
+    try { await release.promise; return await original(value, signal, readiness) } finally { actualJoined.resolve(undefined) }
   }
   callbacks.fenceRequests = (value, prepared, signal) => {
     const fenced = originalJoin(value, prepared, signal)
@@ -341,7 +341,7 @@ test('a server listing cannot expand the original allocation metadata scope', as
 test('failed authenticated handshake does not block known physical DELETE after actual local join', async () => {
   const transport = new FakeTransport(), selected = selection(), callbacks = agent(transport)
   const originalHandshake = callbacks.handshake
-  callbacks.handshake = async (value, signal) => ({ ...await originalHandshake(value, signal), imageDigest: `sha256:${'3'.repeat(64)}` })
+  callbacks.handshake = async (value, signal, readiness) => ({ ...await originalHandshake(value, signal, readiness), imageDigest: `sha256:${'3'.repeat(64)}` })
   const backend = new SdkAllocationBackend(config, callbacks, transport), created = await backend.create(selected.intent, selected.mount)
   await assert.rejects(backend.prepare(created, selected.mount, Date.now() + 1000), { code: 'sdk/selection' })
   await backend.stop(created, undefined); await backend.closeRoot(Date.now() + 1000)
@@ -523,6 +523,7 @@ async function bootstrapFailureFixture(events: readonly object[], options: { pen
     wire.push(`${request.method} ${url.pathname}`)
     if (request.body !== null) await request.arrayBuffer()
     if (url.pathname.endsWith('/endpoints/44772')) return Response.json({ endpoint: '127.0.0.1:24444/v1/sandboxes/sandbox-one/proxy/44772' })
+    if (url.pathname.endsWith('/ping')) return new Response('pong')
     if (url.pathname.endsWith('/files/upload')) return Response.json({})
     if (url.pathname.endsWith('/command')) {
       commands++
@@ -723,6 +724,7 @@ test('actual SDK, pinned bootstrap and runtime owners reclaim seven completed li
         const port = url.pathname.split('/').at(-1)
         return Response.json({ endpoint: `127.0.0.1:24444/v1/sandboxes/${sandboxId}/proxy/${port}` })
       }
+      if (url.pathname.endsWith('/ping')) return new Response('pong')
       if (url.pathname.endsWith('/files/upload')) return Response.json({})
       assert(url.pathname.endsWith('/command')); commands++
       const frames = [{ type: 'init', text: 'synthetic' },
@@ -771,4 +773,32 @@ test('actual SDK, pinned bootstrap and runtime owners reclaim seven completed li
   assert.equal(bootstrapStarts, 7); assert.equal(bootstrapCloses, 7); assert.equal(dataCloses, 7)
   assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 7)
   await backend.closeRootActual()
+})
+
+
+test('passes only actual unspent lifecycle observations and the same deadline to the original handshake consumer', async () => {
+  const selected = selection(), transport = new FakeTransport(), originalFetch = transport.fetch
+  let observations = 0
+  const readyTransport: OwnedSdkTransport = { fetch: async (input, init) => {
+    const method = input instanceof Request ? input.method : init?.method ?? 'GET'
+    const url = new URL(input instanceof Request ? input.url : input.toString())
+    if (method === 'GET' && url.pathname.endsWith('/sandbox-one')) {
+      observations++; transport.getState = observations === 1 ? 'Creating' : 'Running'
+    }
+    return originalFetch(input, init)
+  }, close: () => transport.close() }
+  const callbacks = agent(transport), original = callbacks.handshake
+  const expectedDeadline = Date.parse(selected.intent.createDeadlineAt) - 1
+  callbacks.handshake = async (value, signal, readiness) => {
+    assert.equal(readiness.remainingPolls, config.maxReadyPolls - 2)
+    assert.equal(readiness.intervalMs, config.readyPollIntervalMs)
+    assert.equal(readiness.deadlineAtMs, expectedDeadline)
+    assert(Object.isFrozen(readiness)); readiness.chargeReplyBytes(1)
+    return original(value, signal, readiness)
+  }
+  const backend = new SdkAllocationBackend(config, callbacks, readyTransport)
+  const created = await backend.create(selected.intent, selected.mount)
+  await backend.prepare(created, selected.mount, expectedDeadline)
+  assert.equal(observations, 2)
+  await backend.stop(created, undefined); await backend.closeRootActual()
 })
