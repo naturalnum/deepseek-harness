@@ -38,6 +38,18 @@ export class AttachmentCleanupError extends AttachmentError {
   }
 }
 
+/** Owned staging I/O exhausted storage; its descriptor and temporary name have both been released. */
+export class AttachmentStorageCapacityError extends AttachmentError {
+  /**
+   * @param phase Failed owned I/O, before publication.
+   * @param cause Original ENOSPC or EDQUOT.
+   */
+  constructor(readonly phase: 'open' | 'write' | 'sync', cause: Error) {
+    super('Attachment storage capacity is exhausted.', 'ATTACHMENT_STORAGE_CAPACITY', { cause })
+    this.name = 'AttachmentStorageCapacityError'
+  }
+}
+
 /** Native file object publication was attempted; its outcome cannot be inferred from an error. */
 export class AttachmentPublicationUnconfirmedError extends AttachmentError {
   override readonly settlement = 'unknown' as const
@@ -363,19 +375,31 @@ async function stageImmutableObject(
   const temporary = join(staging, randomUUID())
   let handle: FileHandle | undefined
   let ownsTemporary = false
+  let capacity: { readonly phase: 'open' | 'write' | 'sync'; readonly cause: Error } | undefined
+  const ownedIO = async <T>(phase: 'open' | 'write' | 'sync', run: () => Promise<T>): Promise<T> => {
+    try { return await run() }
+    catch (cause) {
+      if (cause instanceof Error && 'code' in cause && (cause.code === 'ENOSPC' || cause.code === 'EDQUOT')) {
+        capacity = { phase, cause }
+      }
+      throw cause
+    }
+  }
   try {
-    handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
+    handle = await ownedIO('open', () => open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600))
     ownsTemporary = true
     const hash = createHash('sha256')
     let bytes = 0
     for await (const chunk of data) {
       signal?.throwIfAborted()
-      await handle.writeFile(chunk)
+      const writer = handle
+      await ownedIO('write', () => writer.writeFile(chunk))
       hash.update(chunk)
       bytes += chunk.byteLength
     }
     signal?.throwIfAborted()
-    await handle.sync()
+    const writer = handle
+    await ownedIO('sync', () => writer.sync())
     signal?.throwIfAborted()
     const closing = handle
     handle = undefined
@@ -400,6 +424,7 @@ async function stageImmutableObject(
       }
     }
     if (failure instanceof AttachmentError || signal?.aborted === true) throw failure
+    if (capacity !== undefined && failure === capacity.cause) throw new AttachmentStorageCapacityError(capacity.phase, capacity.cause)
     throw new AttachmentError('Unable to persist attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: failure })
   }
 }

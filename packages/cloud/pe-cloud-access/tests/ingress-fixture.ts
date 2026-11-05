@@ -81,3 +81,6 @@ export function rootConfig(): AuthRootConfig {
     startupTimeoutMs: 2000, secretResolveTimeoutMs: 100, maxSecretOperations: 2, maxSecretBytes: 128,
   }
 }
+
+/** External identity library used only by the original Access transport fixtures. */
+export type { Auth } from 'better-auth'

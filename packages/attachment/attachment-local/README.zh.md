@@ -91,6 +91,8 @@ kind: "package-reference"
 
 普通取消或写入错误只有在自有描述符关闭且临时文件清理成功后才返回。流式文件一旦开始对象发布，原生发布或之后的别名失败会抛出 `AttachmentPublicationUnconfirmedError`，保留原始 cause，且不代表已经回滚。关闭或临时文件 unlink 失败会抛出导出的 `AttachmentCleanupError`（`ATTACHMENT_WRITE_FAILED`），并保留 cause；这两类错误都带有提供方中立的 `settlement: 'unknown'` 标记。调用方继续承担未结算的工作或存储责任，不得重试失败的 close。去重完整性读取同样等待流关闭，并通过该错误报告关闭失败。即使保存失败，已经发布的私有对象也会保留，存储所有者必须继续计入其容量占用。
 
+`AttachmentStorageCapacityError`（`ATTACHMENT_STORAGE_CAPACITY`）只在描述符关闭和临时文件 unlink 成功后，保留自有暂存 `open`、`write` 或 `sync` 的原始 `ENOSPC` 或 `EDQUOT` 及阶段。源迭代器抛出相同 errno 不会被归为存储容量不足；取消、清理失败及已经尝试的发布继续沿用原处理。该标记确认自有存储清理，不代表任意输入源已经关闭。
+
 ### 源码地图
 
 | 文件 | 职责 |

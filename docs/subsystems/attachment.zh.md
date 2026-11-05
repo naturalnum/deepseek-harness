@@ -6,6 +6,8 @@
 
 当提供方无法确认资源清理或发布时，`AttachmentError.settlement` 为 `'unknown'`；省略时保留普通失败处理。原生文件上传 intake 对带此标记的失败保留原始 cause，继续占用其名额，并关闭新 intake。
 
+`ATTACHMENT_STORAGE_CAPACITY` 是新增的存储错误分类。本地提供方仅在自有暂存 `open`、`write` 或 `sync` 返回 `ENOSPC` 或 `EDQUOT`，且自有描述符关闭和临时文件 unlink 成功后，才发出 `AttachmentStorageCapacityError`。其 `phase` 区分源迭代前失败与已经尝试的写入或 sync。该错误不代表任意源已经关闭；取消、清理未确认及已经尝试的发布保留原有错误与责任。
+
 未发送的浏览器草稿可以保留在内存中，原生客户端也可以将其暂存于操作系统临时存储。浏览器通用文件取得暂存 prompt 凭证前会完成持久化。宿主接受用户消息后，会先把消息中的图片移到 `<DSH_HOME>/attachments/v1` 下，再追加用户事件。结构化模型图片输出遵循同样的先持久化、后追加事件规则。
 
 来源：[`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)

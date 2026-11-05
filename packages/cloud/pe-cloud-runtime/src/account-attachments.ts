@@ -2,7 +2,7 @@
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
-import { AttachmentCleanupError, AttachmentPublicationUnconfirmedError } from '@deepseek-ai/dsh-attachment-local'
+import { AttachmentCleanupError, AttachmentPublicationUnconfirmedError, AttachmentStorageCapacityError } from '@deepseek-ai/dsh-attachment-local'
 import { FileUploads, FileUploadIntakeUnconfirmedError, FileUploadTooLargeError } from '@deepseek-ai/dsh-client-file-upload'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import { isAgentLoopRequest, type RequestMessage } from '@deepseek-ai/dsh-llm'
@@ -202,6 +202,7 @@ export class AccountAttachments {
     const directory = posix.isAbsolute(workspaceDirectory) ? posix.relative(workspace.path, workspaceDirectory) || '.' : workspaceDirectory
     if (!directory || directory.split('/').some(part => part === '..' || part === '.pe') || directory.includes('\\')) denied()
     let sizeLimitFailure: FdMutationFailure | undefined
+    let capacityFailure: { readonly error: AttachmentStorageCapacityError; readonly failure: FdMutationFailure } | undefined
     try {
       const held = await this.files().runAttachmentIntake(this.limits.intakeReservationBytes, check, async (control) => {
         const signal = AbortSignal.any(input.signal === undefined
@@ -252,7 +253,9 @@ export class AccountAttachments {
           if (error instanceof AttachmentCleanupError || error instanceof FileUploadIntakeUnconfirmedError) throw error
           if (error instanceof AttachmentPublicationUnconfirmedError) throw new FileUploadIntakeUnconfirmedError({ cause: error })
           if (inputFailure !== undefined) throw inputFailure
-          throw new FdMutationFailure('not-published', signal.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR', undefined, { cause: error })
+          const failure = new FdMutationFailure('not-published', signal.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR', undefined, { cause: error })
+          if (!signal.aborted && error instanceof AttachmentStorageCapacityError) capacityFailure = { error, failure }
+          throw failure
         } finally {
           try { await data.return(undefined); await stop() }
           finally { signal.removeEventListener('abort', abort) }
@@ -265,9 +268,11 @@ export class AccountAttachments {
       check()
       return ref
     } catch (error) {
-      // Only the exact confirmed byte-limit failure is safe to classify. Cleanup
-      // failures and all other upload errors retain their existing disposition.
+      // Only exact confirmed byte-limit or storage-capacity failures are classified.
+      // Cleanup failures and all other upload errors retain their existing disposition.
       if (sizeLimitFailure !== undefined && error === sizeLimitFailure) throw new FileUploadTooLargeError()
+      if (capacityFailure !== undefined && error === capacityFailure.failure
+        && !this.binding.lifetime.aborted && input.signal?.aborted !== true) throw capacityFailure.error
       if (error instanceof FdMutationFailure && error.outcome === 'not-published') throw error
       throw new FileUploadIntakeUnconfirmedError({ cause: error })
     }

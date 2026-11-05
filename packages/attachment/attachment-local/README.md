@@ -91,6 +91,8 @@ Generic-file bytes have one canonical object at `<DSH_HOME>/attachments/v1/file-
 
 An ordinary cancellation or write error returns only after owned descriptors close and temporary cleanup succeeds. Once streamed file object publication is attempted, native publication or later alias failures raise `AttachmentPublicationUnconfirmedError`; it retains the original cause and does not establish rollback. A failed close or temporary unlink raises the exported `AttachmentCleanupError` (`ATTACHMENT_WRITE_FAILED`), preserving its cause; both errors carry the owner-neutral `settlement: 'unknown'` marker. Callers retain the unsettled work or storage responsibility and must not retry a failed close. Deduplication integrity reads also wait for their stream to close and report close failures through this error. Already published private objects remain stored even when the save rejects; the storage owner must retain their capacity charge.
 
+`AttachmentStorageCapacityError` (`ATTACHMENT_STORAGE_CAPACITY`) preserves the original `ENOSPC` or `EDQUOT` from owned staging `open`, `write`, or `sync` and records that phase, only after descriptor close and temporary unlink succeed. A source iterator error with the same errno is not classified as storage capacity; abort, cleanup failure and attempted publication keep their original handling. The marker establishes owned storage cleanup, not closure of an arbitrary input source.
+
 ### Source map
 
 | File | Role |

@@ -54,3 +54,5 @@ Native patch removal is conditional on equivalent behavior, not on reducing a fi
 Native PTC and terminal spawn requests carry their resolved per-call sandbox policy into the remote provider. Local argv wrapping remains native; the Cloud provider consumes the original confinement handoff and signs the approved policy on the same operation.
 
 The optional Native `ProfileContext.entryAliases` keeps trusted launch-time entry renames consistent across detached boot/HMR reads and the original ConfigEditor. Cloud uses one bounded, explicitly selected historical `presets` to `agent-preset-registry` alias with the original guarded provider; existing profile bytes remain unchanged until an explicit Native save. Ordinary Native profiles have no alias.
+
+The native attachment staging provider exposes a phase-scoped storage-capacity error for its own prepublication I/O only after its descriptor and temporary name are released. Cloud preserves that exact failure across its original mutation settlement and the original Native receipt mapping; it does not infer capacity from a source error, a queue reservation or a filesystem precheck.

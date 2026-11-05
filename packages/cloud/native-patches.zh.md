@@ -53,3 +53,5 @@ Native 内置技能提供方接收可选部署调用上限：`skill-office.invoc
 原生 PTC 与终端 spawn 请求将已解析的本次沙箱策略传给远程 provider。本地 argv 包装仍由原生实现负责；Cloud provider 消费原始约束交接，并在同一操作上为已批准策略签名。
 
 原生可选 `ProfileContext.entryAliases` 使受信启动期入口重命名在独立 boot/HMR 读取与原 ConfigEditor 中保持一致。Cloud 使用一个有界且显式选择的历史 `presets` 到 `agent-preset-registry` 别名，复用原受保护提供方；现有 profile 字节在显式原生保存前保持不变。普通原生 profile 不设别名。
+
+原生附件暂存提供方仅在释放自有描述符和临时名称后，对发布前自有 I/O 暴露带阶段的存储容量错误。Cloud 通过原修改结算和原生收据映射保留这一精确失败，不从源错误、队列预留或文件系统预检推定容量。

@@ -129,6 +129,8 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 可选 `native.attachments` 显式提供 surface 节点、引用及元数据上限、prompt 和上传容量、上传预留及原生待处理收据数；省略时两个附件 builtin 保持关闭。保存返回后若账户选择复检失败，files 队列以未确认状态保留。原生流式文件发布失败若标记为未确认，会保留上传责任而不会报告为已确认拒绝；自定义回调吞掉或替换此错误不在该保证范围内。准备阶段选择唯一原生存储及 FileUploads 服务，将 Controller 可等待文件钩子委托给原来的同 Agent 收据。前置 pre-step listener 在 files 预算内收集有界原生 Session surface 与本次 claimed 消息，先于其他 listener 的路径计价和消费。最终原生 LLM 请求只能使用该准备集合，原始消息与持久引用不改写。两个同步路径映射均检查当前实际 Agent、项目与调用者。结果仅保留到该请求，拒绝、idle、销毁或 lifetime 结束时撤销，释放前继续占用原驻留预算。当前宿主文件系统将已验证副本映射为自身；后续沙盒 backend 的相同文件映射须单独验收。
 
+已确认的原生暂存容量失败通过精确的 `FdMutationFailure` 身份走完原修改队列，实际结算后将同一个 `AttachmentStorageCapacityError` 返回原生收据错误映射。输入源 return 失败、绑定取消、清理未确认或保存后失败继续保留原普通或未确认结果。上传驻留预留不代表文件系统可用空间检查。
+
 ### Account layout
 
 `/types` 声明唯一的 `AccountLayout`，包含共享 private/Profile/patch、凭据、Session、storage、附件原件、技能、指令、项目、环境及进程本地 Session 索引地址。`AccountMountInput` 将这些地址与既有 binding、启动 InstanceId 及原生 `LaunchEnvironmentSnapshot` 配对。这些是可信装配数据；路径不授予目录访问、ready 或配额证据。凭据只交给需要的原生消费者。

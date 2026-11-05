@@ -6,6 +6,8 @@ The attachment seam separates binary image and generic-file ownership from the s
 
 `AttachmentError.settlement` is `'unknown'` when the provider cannot confirm resource cleanup or publication; omission retains ordinary failure handling. Native file-upload intake preserves the original error as cause, retains its occupied slot and closes new intake for a marked failure.
 
+`ATTACHMENT_STORAGE_CAPACITY` is an additive storage-error category. The local provider emits `AttachmentStorageCapacityError` only for its own staging `open`, `write` or `sync` returning `ENOSPC` or `EDQUOT`, after owned descriptor close and temporary unlink succeed. Its `phase` distinguishes failure before source iteration from a write or sync attempt. It does not establish arbitrary source closure; cancellation, cleanup uncertainty and attempted publication retain their original error and ownership.
+
 Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Browser generic files become durable before they receive a staged prompt receipt. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. Structured model image output follows the same persist-before-event rule.
 
 Source: [`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)
