@@ -8,19 +8,20 @@ import sys
 import tarfile
 
 BASE_SERVER = 'sha256:6497790ee3398569aef7d8f35d442e76c33c9be08633a6a2732dbcb2ee1fe01e'
-OFFICE = 'sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97'
-AFTER = '63c6efcb1cfac8ae8d7adcfe9d816544e7052df2be2c7ce3928bcda7808c82aa'
+OFFICE = 'sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461'
+AFTER = 'f1a357ec42dce6fc67ed2db1e8a4d37528fa5df42226d0ba846fc9bee111229a'
 BEFORE = '4557a2744b784f4b6480a4a5a5dcb26c492c006e145c1cb7771939b5b78498d1'
 NEEDLE = """        selected_images = (('sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a',
                             'sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d')
                            if native else (FIXED_IMAGE,))
 """
-REPLACEMENT = """        selected_images = ((('sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97',)
+REPLACEMENT = """        selected_images = ((('sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461',)
                             if self.policy['admitCreates'] else
                             ('sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a',
                              'sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d',
                              'sha256:3690da1fbb1faaabaf7265927b8b21a0fef0c4c988d83a8b1e321a2e82d43140',
-                             'sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97'))
+                             'sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97',
+                             'sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461'))
                            if native else (FIXED_IMAGE,))
 """
 

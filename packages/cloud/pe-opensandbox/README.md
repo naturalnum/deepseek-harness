@@ -55,7 +55,7 @@ Deployment v2 explicitly selects `storage.mode: shared-path` and references the 
 
 The Office workload and its server are an exact pair in `bootstrap/workload-images.ts` and `bootstrap/deployment-input.ts`. The [offline context producer](runtime/server/prepare_office_context.py) requires the exact original SSH server policy source and emits the [COPY-only overlay](runtime/server/Dockerfile.office). Its Native creation policy accepts only the Office workload; closed creation admission retains the exact original workloads for readonly history verification. It preserves the original syscall filter, capabilities, resource limits and deletion owner. A digest declaration does not qualify CLI behavior, enable Office providers or publish a ready account.
 
-The current UTF-8 Office supplier replaces the prior Office selection. The new server retains the previous Office digest only for closed-admission readonly audit, alongside the two original workloads; it cannot create that previous Office workload.
+The current Office supplier preserves UTF-8 catalogs and explicit Markdown subheading numbers. Its exact server accepts only this workload for creation; the previous Office and original workload digests remain available only for closed-admission readonly audit. The original release archives, templates and content versions remain unchanged.
 
 Each successful shared-path Root current check verifies the protected selection and storage plan once through the shared export owner, retaining the original descriptor, path identity, readonly-mount and complete-file digest checks.
 

@@ -55,7 +55,7 @@ kind: "package-reference"
 
 Office 工作负载及其服务端在 `bootstrap/workload-images.ts` 和 `bootstrap/deployment-input.ts` 中按精确摘要配对。[离线上下文生成器](runtime/server/prepare_office_context.py) 要求原 SSH 服务端策略源码的精确字节，并生成[仅 COPY 的覆盖层](runtime/server/Dockerfile.office)。其 Native 创建策略只接受 Office 工作负载；关闭创建准入时，仍保留原工作负载的精确摘要用于只读历史验证。原系统调用过滤、capabilities、资源限额及删除责任拥有者保持不变。摘要声明不代表 CLI 行为合格，不会启用 Office provider 或发布账户就绪。
 
-当前 UTF-8 Office 供应者替换此前的 Office 选择。新服务端仅在关闭创建准入时，将前一个 Office 摘要与两个原始工作负载一同保留供只读审计，不能再创建此前的 Office 工作负载。
+当前 Office 供应者保留 UTF-8 目录文本及 Markdown 显式二、三级标题编号。其配对服务端仅接受该工作负载的新建请求；此前 Office 及原始工作负载的摘要仅供关闭创建准入后的只读审计。原始发布归档、模板及内容版本保持不变。
 
 每次成功的共享路径 Root 当前性检查，通过共享挂载拥有者各验证一次受保护的部署选择和存储计划，保留原文件描述符、路径身份、只读挂载及完整文件摘要检查。
 

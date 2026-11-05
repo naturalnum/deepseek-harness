@@ -44,7 +44,7 @@ it.each([
   expect(() => parseRootDeploymentInput(input)).toThrow('selection.workloadImagePair')
 })
 
-it.each(['office:latest', OFFICE_WORKLOAD_IMAGE_DIGEST.slice(0, -1) + '1', 'sha256:' + 'e'.repeat(64)])(
+it.each(['office:latest', OFFICE_WORKLOAD_IMAGE_DIGEST.slice(0, -1) + (OFFICE_WORKLOAD_IMAGE_DIGEST.endsWith('0') ? '1' : '0'), 'sha256:' + 'e'.repeat(64)])(
   'refuses an unpinned Office workload selector %s', (imageDigest) => {
     const input = sharedPathDeploymentFixture()
     input.lifecycle.imageDigest = imageDigest
@@ -63,12 +63,24 @@ it.each(['office-server:latest', OFFICE_SERVER_IMAGE_DIGEST.slice(0, -1) + '5', 
 )
 
 
-it('keeps the prior Office pair closed rather than allowing either half with the new exact pair', () => {
+it.each([
+  ['sha256:3690da1fbb1faaabaf7265927b8b21a0fef0c4c988d83a8b1e321a2e82d43140',
+    'sha256:d2b79b4297bb2e8d0f11349000269aa0e7b600b02aed59d35c6d168b875b1034'],
+  ['sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97',
+    'sha256:6455dfede6c2aa12ef7c2b7e6d69d4254d53918600dab55acd09c62e4ab7a27d'],
+])('keeps prior Office pair %s / %s closed to creation', (priorWorkload, priorServer) => {
   const input = sharedPathDeploymentFixture()
-  input.lifecycle.imageDigest = 'sha256:3690da1fbb1faaabaf7265927b8b21a0fef0c4c988d83a8b1e321a2e82d43140'
+  input.lifecycle.imageDigest = priorWorkload
   input.selection.serverImageDigest = OFFICE_SERVER_IMAGE_DIGEST
   expect(() => parseRootDeploymentInput(input)).toThrow('lifecycle.fixedSelection')
   input.lifecycle.imageDigest = OFFICE_WORKLOAD_IMAGE_DIGEST
-  input.selection.serverImageDigest = 'sha256:d2b79b4297bb2e8d0f11349000269aa0e7b600b02aed59d35c6d168b875b1034'
+  input.selection.serverImageDigest = priorServer
   expect(() => parseRootDeploymentInput(input)).toThrow('selection.originalPolicy')
+})
+
+it('pins the heading-compatible workload and its one immutable server without changing Native or SSH suppliers', () => {
+  expect(OFFICE_WORKLOAD_IMAGE_DIGEST).toBe('sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461')
+  expect(OFFICE_SERVER_IMAGE_DIGEST).toBe('sha256:1b7ec16bb1031eab0fd7024905fc03dc5f814fbfe46bbb2d5aa2f88e3813b628')
+  expect(NATIVE_WORKLOAD_IMAGE_DIGEST).toBe('sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a')
+  expect(REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST).toBe('sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d')
 })
