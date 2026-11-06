@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v217_ebit_receivable_quality_proxy",
+    "family": "ebit_delivery_crossparent_probe",
+    "hypothesis": "Test whether EBIT delivery becomes more TOP1000-robust when confirmed by collection quality rather than CFO or more EBIT detail. Low receivables-to-sales plus operating income should penalize accrual-heavy EBIT beats and may differ from the direct e7OVEPxp sibling path.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.230 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.190 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.120 * rank(-(close / open - 1)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cross-parent proxy from LLp7PRmM + e7OVEPxp. Reject if it maps to e7OVEPxp, RRp7Q9Le, QPaze5zX, or receivable-quality actives."
+  },
+  {
+    "name": "v217_ebit_aqi_credit_largecap_proxy",
+    "family": "ebit_delivery_crossparent_probe",
+    "hypothesis": "Blend EBIT delivery with accounting-quality and credit-rating event support under a large-cap gate. This tests whether the low-corr e7OVEPxp + 78wvg3wO local frontier can create a robust state without using current accrual, EV cash profitability, or competitor-return sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.170 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.160 * group_rank(ts_rank(rp_ess_credit_ratings, 90), industry) + 0.170 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.100 * rank(-1 * ts_rank((close - vwap) / close, 40)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids v216 EV/competitor and v213 accrual/option/sales paths. Strict-check against 78wvg3wO, 9qwXgvQd, qMAGvOe2, 88zpWZ1X, and e7OVEPxp."
+  },
+  {
+    "name": "v217_ebit_profit_reversal_pair_proxy",
+    "family": "ebit_delivery_crossparent_probe",
+    "hypothesis": "A compact two-parent proxy for LLpGdlrm + e7OVEPxp: ordinary profitability/reversal carries broad robustness, while EBIT actual-vs-estimate detail adds a slower analyst-delivery sleeve. It is only useful if the realized PnL stays below the strict correlation gate.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * rank(-(close / open - 1)) + 0.230 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.180 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "This is deliberately compact; if it fails correlation to LLpGdlrm, RRpmOAWj, e7OVEPxp, or 58w2QKw6, close it and do not tune weights."
+  },
+  {
+    "name": "v217_ebit_netdebt_assetlight_proxy",
+    "family": "ebit_delivery_crossparent_probe",
+    "hypothesis": "Combine EBIT delivery with low net-debt and asset-estimate discipline. The intended mechanism is operating delivery with less balance-sheet financing dependence, not another FCF/EV or CFF repair route.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.210 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses d5xK1kmg-like balance-sheet discipline as a minority parent. Reject if it maps to e7OVEPxp, d5xK1kmg, E5wRq3ZG, P0pgZllw, or old net-debt/guidance routes."
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v209_treasury_option_fcf_reversal_quad",
+    "family": "treasury_crossparent_fusion",
+    "hypothesis": "Treasury investment-sale liquidity release is nearly uncorrelated with option/sentiment residual and lowly correlated with PV13 cash-profitability and intraday/5d reversal. A four-sleeve blend may preserve O0p2bElq's new treasury information while avoiding dominance by any existing ACTIVE parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.110 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.170 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Designed from low-corr parents O0p2bElq/QPa0gl0W/E5wRq3ZG/LLpGdlrm but avoids copying any full parent expression. Reject if top corr is QPa0gl0W or E5wRq3ZG above strict gate."
+  },
+  {
+    "name": "v209_treasury_option_reported_cashprofit_quad",
+    "family": "treasury_crossparent_fusion",
+    "hypothesis": "Reported FCF/equity and treasury release have low pairwise correlation, but reported FCF is occupied if used alone. Combining a reduced reported-cash-profit sleeve with treasury release, option/sentiment residual, and reversal tests for incremental capital-allocation timing.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.100 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.160 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.100 * group_rank(ts_rank(net_profit_reported_value / equity, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Reported cash-profit sleeve is deliberately below P0pgZllw/9qwWXNW9 parent weight. Strict-check against P0pgZllw, 9qwWXNW9, QPa0gl0W, and O0p2bElq."
+  },
+  {
+    "name": "v209_treasury_pcr_roe_reversal_quad",
+    "family": "treasury_crossparent_fusion",
+    "hypothesis": "PCR volume curve and ROE/reversal are both low-correlated to treasury release. A compact four-sleeve blend tests whether option-flow crowding plus treasury liquidity release adds a distinct timing route without reusing breakeven/news/current-liability parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.100 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.140 * rank(ts_rank(operating_income / equity, 126)) + 0.110 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses PCR curve rather than option breakeven; reject if it maps to 6XwKxVkO or LLpGdlrm above gate."
+  },
+  {
+    "name": "v209_treasury_option_value_alltype_light",
+    "family": "treasury_crossparent_fusion",
+    "hypothesis": "Long-tenor option/alltype stability is low-to-moderately correlated with treasury release. A light alltype stability and PV13 value sleeve may improve robustness while keeping the treasury sleeve from becoming an O0p2bElq sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.100 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.170 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests treasury + Vkpeno3w-style option/alltype + E5wRq3ZG-style value, but with each parent reduced. Reject if it becomes a Vkpeno3w or E5wRq3ZG sibling."
+  },
+  {
+    "name": "v209_business_sale_treasury_asset_recycle",
+    "family": "cold_asset_recycling_probe",
+    "hypothesis": "Proceeds from selling business units are a very low-crowding asset-recycling field. Paired lightly with treasury liquidity release and without lease/fixed-commitment legs, it may express deliberate portfolio pruning rather than the 3q7PkXGN lease/PPE recycling capacity.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(proceeds_from_business_sales / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(fnd6_sppe / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cold probe, not a lease/fixed-commitment repair. Expect possible sparse-field weakness; strict reject if LSUS fails or corr to 3q7PkXGN/O0p2bElq is high."
+  }
+]

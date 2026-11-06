@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v55_pv13_group_operating_yield_quality",
+    "family": "pv13_product_group_fundamental_quality",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Operating yield and asset quality may be more incremental when ranked inside product/supply-chain peer groups rather than standard industry groups.",
+    "expression": "0.40 * group_rank(ts_rank(operating_income / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.30 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.15 * group_rank(ts_rank(-1 * debt / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests pv13 product hierarchy as the comparison group; no close/open, EPS, option, news, or graph centrality as signal."
+  },
+  {
+    "name": "v55_pv13_group_fcf_operating_profit",
+    "family": "pv13_product_group_value_quality",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "FCF and operating profit valuation may be less redundant when compared within product hierarchy peers rather than broad industries.",
+    "expression": "0.40 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.35 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.25 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Known value/quality ingredients but a different peer grouping; strict corr gate against RRpm5LEo and MPpGzqwr."
+  },
+  {
+    "name": "v55_pv13_group_eps_growth_confidence",
+    "family": "pv13_product_group_eps_growth",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "The v54 EPS growth-rate signal may behave differently inside product hierarchy groups; this tests grouping, not a near-neighbor submit.",
+    "expression": "0.35 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "A controlled grouping test for LLpZgaeL's parent; do not submit if corr remains high."
+  },
+  {
+    "name": "v55_pv13_group_buyback_yield",
+    "family": "pv13_product_group_payout",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Buyback yield may be less crowded if normalized within supply-chain/product groups and paired with operating yield rather than close/open reversal.",
+    "expression": "0.45 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), pv13_hierarchy_min20_3k_sector) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), pv13_hierarchy_min20_3k_sector) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Removes close/open from the payout-quality recipe; product-group rank may alter the return path, but correlation gate is decisive."
+  },
+  {
+    "name": "v55_pv13_group_sales_delivery_clean",
+    "family": "pv13_product_group_sales_delivery",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Actual sales delivery relative to estimates may be cleaner when compared to product peers and stripped of relationship centrality.",
+    "expression": "0.45 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(ts_delta(actual_sales_value_quarterly / sales_estimate_average_quarterly, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Grouping test for sales delivery; strict corr gate vs rKoO0M89 and akdb1ZqR."
+  },
+  {
+    "name": "v55_pv13_group_revenue_growth_quality",
+    "family": "pv13_product_group_growth_quality",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Sales growth plus gross margin should be judged against product peers; product-group ranking may reduce ordinary sector and profitability overlap.",
+    "expression": "0.40 * group_rank(ts_rank(sales_growth, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.35 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Growth-quality without close/open, customer graph rank, or news; may be lower corr if pv13 grouping is informative."
+  },
+  {
+    "name": "v55_pv13_group_capex_light_quality",
+    "family": "pv13_product_group_capex_discipline",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Capital-light quality may be better expressed among product peers, avoiding ordinary industry capex/cashflow crowding.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), pv13_hierarchy_min20_3k_sector) + 0.30 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), pv13_hierarchy_min20_3k_sector) + 0.25 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No cashflow_op or close/open; watch correlation to MPp7RPxn capex/CFO active."
+  },
+  {
+    "name": "v55_pv13_group_pretax_confidence",
+    "family": "pv13_product_group_pretax_visibility",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Pretax-income forecast confidence may have a product-peer relative component distinct from EPS-growth confidence.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Pretax forecast surface, not EPSR; product hierarchy group rank tests a new relative-comparison axis."
+  },
+  {
+    "name": "v55_return_autocorr_reversal_lowcorr",
+    "family": "technical_autocorr_reversal",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Negative short-term return autocorrelation under low market beta may capture mean-reversion structure distinct from close-location or VWAP pressure.",
+    "expression": "0.45 * rank(-1 * ts_corr(returns, ts_delay(returns, 1), 20)) + 0.25 * rank(-1 * ts_rank(abs(returns), 20)) + 0.30 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No close/open, close-location, VWAP, or volume/adv pressure; tests a different technical statistic."
+  },
+  {
+    "name": "v55_low_beta_residual_momentum",
+    "family": "risk_residual_momentum",
+    "source": "pv13_group_operational_rotation_v55_20260627",
+    "hypothesis": "Stocks with improving 20-day return rank while beta/correlation compresses may capture residual momentum without news, option, or close-location parents.",
+    "expression": "0.35 * rank(ts_rank(ts_mean(returns, 20), 60)) + 0.30 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_30_days, 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Risk-residual momentum probe; v53 pure risk residual was weak, so require the momentum term to carry performance."
+  }
+]

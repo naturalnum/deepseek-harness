@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Report Chart'
+  short_description: 'Build evidence-bound charts for DeepScientist reports'
+  default_prompt: 'Use $deepscientist-report-chart to choose the clearest visual medium and render verified numeric evidence as a typed, evidence-bound chart when appropriate.'
+policy:
+  allow_implicit_invocation: true

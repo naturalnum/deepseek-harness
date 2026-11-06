@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v184_usnews_delayed_reaction_continuation",
+    "family": "usnews_d1_intraday_reaction_delayed_continuation",
+    "hypothesis": "When the 120-minute post-news reaction improves beyond the first ten minutes and also beats the benchmark, the event may be absorbed slowly rather than as a crowded open-to-close reversal.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.260 * group_rank(ts_rank(vec_avg(main_pct_change_one_twenty_minute_post_news) - vec_avg(main_pct_change_ten_minute_post_news), 60), industry) + 0.200 * group_rank(ts_rank(vec_avg(relative_performance_vs_benchmark_1555), 60), industry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(main_pct_change_ten_minute_post_news)), 60), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(main_trading_volume_deviation_std), 60), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(session_range_standard_deviation), 60), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses US News D1 intraday reaction fields with alphaCount near zero. No novelty-chain elapsed, no QEP/BEE, no option, no CFI, no analyst revision."
+  },
+  {
+    "name": "v184_usnews_early_overreaction_reversal",
+    "family": "usnews_d1_intraday_early_overreaction",
+    "hypothesis": "Large negative first-minute and five-minute post-news reactions can overstate bad information. If the downward move is fast but broad market correlation is low, next-day reversal may be cleaner.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.250 * group_rank(ts_rank(-1 * vec_avg(pct_change_first_minute_post_news_1555), 60), industry) + 0.210 * group_rank(ts_rank(-1 * vec_avg(pct_change_5m_post_news), 60), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(minutes_to_1pct_decline), 60), industry) + 0.140 * group_rank(ts_rank(vec_avg(minutes_to_one_percent_gain_2), 60), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(main_trading_volume_deviation_std), 60), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests event-day reversal using fresh vector fields rather than ordinary close/open or VWAP pressure. Reject on high turnover or correlation to technical actives."
+  },
+  {
+    "name": "v184_usnews_up_down_speed_asymmetry",
+    "family": "usnews_d1_intraday_threshold_speed_asymmetry",
+    "hypothesis": "Faster upside threshold crossing than downside threshold crossing after news suggests constructive information absorption. The speed asymmetry may be distinct from sentiment and ordinary daily returns.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(vec_avg(minutes_to_1pct_decline) - vec_avg(minutes_to_one_pct_up_move_1555), 60), industry) + 0.180 * group_rank(ts_rank(vec_avg(main_pct_change_sixty_minute_post_news), 60), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(session_range_standard_deviation), 60), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(current_to_average_volume_ratio_2), 60), industry) + 0.120 * group_rank(ts_rank(vec_avg(relative_performance_vs_benchmark_1555), 60), industry) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Threshold-speed asymmetry, not novelty-chain staleness. Watch for missing-threshold encoding issues or concentrated weights."
+  },
+  {
+    "name": "v184_usnews_range_compression_absorption",
+    "family": "usnews_d1_intraday_range_volume_absorption",
+    "hypothesis": "Positive post-news relative performance with compressed session range and muted volume anomaly may identify orderly absorption rather than crowded event chasing.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.240 * group_rank(ts_rank(vec_avg(relative_performance_vs_benchmark_1555), 60), industry) + 0.220 * group_rank(ts_rank(-1 * vec_avg(session_range_standard_deviation), 60), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(session_price_range_value), 60), industry) + 0.150 * group_rank(ts_rank(-1 * vec_avg(main_trading_volume_deviation_std), 60), industry) + 0.110 * group_rank(ts_rank(-1 * abs(vec_avg(opening_gap_percent_2)), 60), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Orderly absorption probe. Designed to be slower and less close/open-like than pure event-day reversal."
+  },
+  {
+    "name": "v184_usnews_vwap_reclaim",
+    "family": "usnews_d1_intraday_vwap_reclaim",
+    "hypothesis": "A higher VWAP from news time to close relative to the price at news time can indicate institutional absorption after the event. A calm volume/range sleeve tries to avoid raw momentum crowding.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank((vec_avg(vwap_from_news_to_close_2_1555) - vec_avg(main_price_at_news_time)) / abs(vec_avg(main_price_at_news_time)), 60), industry) + 0.180 * group_rank(ts_rank(vec_avg(relative_performance_vs_benchmark_1555), 60), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(main_trading_volume_deviation_std), 60), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(session_range_standard_deviation), 60), industry) + 0.120 * group_rank(ts_rank(-1 * abs(vec_avg(prev_day_pct_change)), 60), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses event-time-to-close VWAP reclaim. Reject if it maps to existing close-location/VWAP actives."
+  },
+  {
+    "name": "v184_usnews_downside_tail_relief",
+    "family": "usnews_d1_intraday_downside_tail_relief",
+    "hypothesis": "Events with limited downside excursion, better upside follow-through, and slower downside threshold crossing may have lower adverse-selection risk after the news.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.240 * group_rank(ts_rank(-1 * vec_avg(maximum_downward_price_movement_1555), 60), industry) + 0.210 * group_rank(ts_rank(vec_avg(maximum_upward_percent_change_1555), 60), industry) + 0.170 * group_rank(ts_rank(vec_avg(minutes_to_1pct_decline), 60), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(session_range_standard_deviation), 60), industry) + 0.120 * group_rank(ts_rank(vec_avg(relative_performance_vs_benchmark_1555), 60), industry) + 0.120 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Downside-tail relief probe using fresh D1 event fields. Do not repair with ordinary daily high-low or close/open if weak."
+  }
+]

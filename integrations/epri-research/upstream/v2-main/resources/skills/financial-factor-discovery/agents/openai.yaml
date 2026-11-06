@@ -1,0 +1,4 @@
+interface:
+  display_name: "Financial Factor Discovery"
+  short_description: "Run XAlpha-style factor discovery campaigns."
+  default_prompt: "Plan and execute a reproducible multi-round factor discovery campaign."

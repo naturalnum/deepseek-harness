@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v79_two_day_reversal_decay60",
+    "family": "short_reversal_turnover_repair",
+    "hypothesis": "The raw 2-day close reversal is low-correlation but too high turnover; high decay may bring turnover below the 25% local gate while retaining enough Sharpe.",
+    "expression": "rank(-ts_delta(close, 2))",
+    "decay": 60,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Direct repair of O0pG9rG1/GrwGov5x; no fundamental/news/option anchors."
+  },
+  {
+    "name": "v79_five_day_mean_reversal",
+    "family": "short_reversal_turnover_repair",
+    "hypothesis": "A 5-day mean return reversal may reduce turnover relative to raw daily returns while keeping the low-correlation contrarian profile.",
+    "expression": "rank(-1 * ts_mean(returns, 5))",
+    "decay": 40,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Tests medium-short horizon reversal without close/open or vwap."
+  },
+  {
+    "name": "v79_ten_day_rank_reversal_low_vol",
+    "family": "short_reversal_turnover_repair",
+    "hypothesis": "Reversal works better after smoother selloffs; add low realized volatility to improve fitness and drawdown.",
+    "expression": "0.55 * rank(-1 * ts_rank(returns, 10)) + 0.25 * rank(-1 * ts_rank(historical_volatility_20, 60)) + 0.20 * group_rank(ts_rank(-1 * beta_last_60_days_spy, 90), industry)",
+    "decay": 35,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Low-vol risk control; strict corr gate vs LLpGdlrm/0m7p1Lb1/kq3Jjmrk."
+  },
+  {
+    "name": "v79_reversal_dryup_risk",
+    "family": "short_reversal_liquidity_dryup",
+    "hypothesis": "Price reversal after low relative volume may capture liquidity exhaustion rather than high-turnover noise.",
+    "expression": "0.45 * rank(-1 * ts_mean(returns, 5)) + 0.25 * rank(-1 * ts_rank(volume / adv20, 20)) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 36,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "No vwap/close-location; volume only as dry-up filter."
+  },
+  {
+    "name": "v79_reversal_social_relief",
+    "family": "short_reversal_social_relief",
+    "hypothesis": "Small social value and fading buzz may distinguish recoverable short-term selloffs from deteriorating names.",
+    "expression": "0.45 * rank(-1 * ts_mean(returns, 5)) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 36,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Small v76-style social sleeve; reject if corr moves to JjpPv3N2."
+  },
+  {
+    "name": "v79_two_day_reversal_group_industry",
+    "family": "short_reversal_turnover_repair",
+    "hypothesis": "Industry-relative 2-day reversal with high decay may reduce market-wide noise and turnover.",
+    "expression": "group_rank(ts_rank(-1 * ts_delta(close, 2) / close, 20), industry)",
+    "decay": 50,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Industry-relative raw 2-day reversal; compare against simple decay60 variant."
+  }
+]

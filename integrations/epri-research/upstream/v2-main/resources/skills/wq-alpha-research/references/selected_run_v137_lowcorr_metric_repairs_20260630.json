@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v137_social_vwap_slow_absorption",
+    "family": "lowcorr_social_vwap_absorption",
+    "hypothesis": "P0pMOLjq had low local correlation but weak Fitness due high turnover. Slower VWAP/volume windows and smoother social sentiment should preserve the low-corr path while improving Fitness through lower turnover.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.70, 0.300 * rank(-1 * ts_rank((close - vwap) / close, 40)) + 0.150 * rank(ts_rank(volume / adv20, 40)) + 0.250 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.180 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.120 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 90), industry), -1)",
+    "decay": 42,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed P0pMOLjq: S1.36/F0.86/maxcorr 0.604. Goal is lower TO and maintain low-corr social/VWAP absorption."
+  },
+  {
+    "name": "v137_social_netdebt_slow_confirm",
+    "family": "social_balance_sheet_calm",
+    "hypothesis": "leVKJkP2 was just below both Sharpe and Fitness gates; net-debt quality may be a slow confirmer for social value/buzz without using FCF or value-sales parents.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.68, 0.330 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.240 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.230 * group_rank(ts_rank(-1 * net_debt_amount / assets, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry), -1)",
+    "decay": 36,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed leVKJkP2: S1.34/F1.07/maxcorr 0.713. Adds only a small reversal term; strict-check against JjpPv3N2 and E5wRq3ZG."
+  },
+  {
+    "name": "v137_vwap_beta_slow_market",
+    "family": "pure_absorption_beta_relief",
+    "hypothesis": "Pure VWAP absorption plus low market-correlation relief is close to passing but correlated with old technical sleeves. Longer windows and a small reversal term may raise Sharpe without falling into competitor/news parents.",
+    "expression": "0.330 * rank(-1 * ts_rank((close - vwap) / close, 45)) + 0.150 * rank(ts_rank(volume / adv20, 40)) + 0.230 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 120), industry) + 0.180 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 120), industry) + 0.110 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 38,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seeds d5x1mrwK/omKWvjNn. Avoids social, news, fscore, competitor, and option fields."
+  },
+  {
+    "name": "v137_reversal_beta_social_confirm",
+    "family": "lowbeta_reversal_social_confirm",
+    "hypothesis": "The low-volume reversal/beta seed had adequate Fitness but low Sharpe. Adding a small social-quality confirmer may lift hit rate while keeping maxcorr near the 0.68 boundary.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.72, 0.350 * rank(-1 * ts_mean(returns, 5)) + 0.210 * rank(-1 * ts_rank(volume / adv20, 20)) + 0.240 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.110 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.090 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry), -1)",
+    "decay": 40,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Repair seed 88zv3nxv: S1.15/F1.14/maxcorr 0.678. Tests whether a tiny social confirmer can clear Sharpe while staying under corr gate."
+  },
+  {
+    "name": "v137_epsr_negative_revision_reversal",
+    "family": "epsr_negative_revision_lowcorr",
+    "hypothesis": "Reverse EPSR revision had relatively low correlation but Fitness below gate. A modest short-term reversal leg and slower risk relief may raise return without reverting to option/EPSR surface actives.",
+    "expression": "0.380 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 63), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed 88zPaAbV: S1.31/F0.90/maxcorr 0.655. No call/put, PCR, sales, PTP, or gross-income guidance."
+  },
+  {
+    "name": "v137_customer_network_lowvolume_residual",
+    "family": "customer_network_residual",
+    "hypothesis": "Customer-count with weak customer centrality is strong but correlated to FCF/legal and competitor sleeves. Low-volume timing and removing part of the beta relief may isolate relationship breadth rather than general quality.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.58, 0.380 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.260 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_page_rank, 126), industry) + 0.180 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_auth_rank, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed qMA06nvj: S1.63/F1.39/maxcorr 0.727. No rel_ret_cust/competitor graph/M&A/legal/credit fields."
+  },
+  {
+    "name": "v137_writedown_aqi_no_customer",
+    "family": "writedown_aqi_cleanliness",
+    "hypothesis": "Writedown pretax cleanliness plus AQI had near-threshold metrics but customer authority likely pulled it toward buyback/quality sleeves. Removing customer graph and adding small risk relief may lower correlation.",
+    "expression": "0.500 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.250 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed blLjPpoK: S1.41/F1.05/maxcorr 0.721. Tests whether removing pv13 customer authority creates a cleaner accounting-event parent."
+  },
+  {
+    "name": "v137_news_impact_novelty_no_partner",
+    "family": "news_impact_novelty_residual",
+    "hypothesis": "News-impact/novelty had high headline metrics but correlated to product/news sleeves. Removing partner news and raw reversal should test whether novelty itself carries a separate low-correlation event path.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.340 * group_rank(ts_rank(mean_news_impact_projection, 90), industry) + 0.260 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) + 0.180 * group_rank(ts_rank(-1 * mean_entity_relevance_score, 90), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed wpR2RnLY: S1.85/F1.73 but maxcorr 0.803. No rp_nip_partner, product, M&A, legal, credit, close/open, or VWAP terms."
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v37_cfo_actual_consensus_delivery",
+    "family": "cashflow_balance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Operating cash-flow delivery above analyst consensus may identify firms whose cash conversion is better than expected, without using historical CFO/quality or sales surprise.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_cfo_value / anl4_fs_detail_estimates_advanced_af_nd_cfo_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_af_nd_cfo_value / anl4_fs_detail_estimates_advanced_af_nd_cfo_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Annual CFO actual/consensus delivery; avoids cashflow_op/assets, close/open, sales, EPS, option, and news novelty."
+  },
+  {
+    "name": "v37_fcf_actual_consensus_delivery",
+    "family": "cashflow_balance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Free-cash-flow actuals above annual consensus may capture cash profitability delivery through a different route than FCF/EV yield.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_fcf_value / anl4_fs_detail_estimates_advanced_af_nd_fcf_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_af_nd_fcf_value / anl4_fs_detail_estimates_advanced_af_nd_fcf_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Annual FCF delivery; compare with RRpm5LEo/FCF-yield legacy but no valuation denominator."
+  },
+  {
+    "name": "v37_capex_underspend_delivery",
+    "family": "cashflow_balance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Lower actual capex versus consensus may capture disciplined investment and cash preservation distinct from historical capex/assets.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_capex_value / anl4_fs_detail_estimate_1qf_v4_nd_capex_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_actuals_advanced_af_nd_capex_value / anl4_fs_detail_estimate_1qf_v4_nd_capex_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Capex actual vs estimate underspend; strict comparison to MPp7RPxn capex/CFO ACTIVE."
+  },
+  {
+    "name": "v37_netdebt_below_consensus",
+    "family": "cashflow_balance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Actual net debt below analyst consensus may signal balance-sheet improvement or cleaner cash generation, distinct from credit-capacity/news fields.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_netdebt_value / anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_actuals_advanced_af_nd_netdebt_value / anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Net-debt delivery without credit facility or credit-rating news."
+  },
+  {
+    "name": "v37_total_assets_disciplined_delivery",
+    "family": "cashflow_balance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Lower actual total assets versus consensus can proxy conservative asset growth and investment discipline, a balance-sheet version of the investment factor.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_totassets_value / anl4_fs_detail_estimates_advanced_af_nd_totassets_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_actuals_advanced_af_nd_totassets_value / anl4_fs_detail_estimates_advanced_af_nd_totassets_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Asset discipline delivery; no sales/CFO/quality anchor."
+  },
+  {
+    "name": "v37_shareholder_equity_delivery",
+    "family": "cashflow_balance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Shareholders' equity actuals above consensus may capture balance-sheet book-value delivery without using profitability or payout fields.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_sh_equity_value / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_af_nd_sh_equity_value / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Shareholder-equity actual vs consensus; low-alphaCount but watch coverage/sub-universe."
+  },
+  {
+    "name": "v37_cfo_guidance_midpoint",
+    "family": "cashflow_guidance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Management's operating-cash-flow guidance midpoint above consensus may be an underused forward cash-conversion signal.",
+    "expression": "0.50 * group_rank(ts_rank((anl4_fs_guidances_advanced_qf_nd_cfo_minguidance + anl4_fs_guidances_advanced_qf_nd_cfo_maxguidance) / (2 * anl4_fs_detail_estimate_1qf_v4_nd_cfo_mean), 126), industry) + 0.30 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_cfo_number, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "CFO guidance vs consensus; guidance history has been weak, so this is a narrow probe."
+  },
+  {
+    "name": "v37_fcf_guidance_midpoint",
+    "family": "cashflow_guidance_delivery",
+    "source": "cashflow_balance_delivery_v37_20260626",
+    "hypothesis": "Free-cash-flow guidance midpoint above consensus may capture management confidence in cash generation without valuation or sales fields.",
+    "expression": "0.50 * group_rank(ts_rank((anl4_fs_guidances_advanced_qf_nd_fcf_minguidance + anl4_fs_guidances_advanced_qf_nd_fcf_maxguidance) / (2 * anl4_fs_detail_estimate_1qf_v4_nd_fcf_mean), 126), industry) + 0.30 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_fcf_number, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "FCF guidance vs consensus; no sales/EPS/option/news."
+  }
+]

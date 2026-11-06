@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v221_icapt_annual_quarterly_balance",
+    "family": "invested_capital_efficiency_lsus_repair",
+    "hypothesis": "The annual invested-capital productivity version had enough Fitness but weak sub-universe robustness, while the quarterly version had strong LSUS but lower Fitness. A balanced annual/quarterly productivity expression may retain the annual return signal while inheriting quarterly robustness.",
+    "expression": "trade_when(rank(cap) > 0.52, 0.250 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.190 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.200 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newqv1300_icaptq), 126), subindustry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_icaptq / assets, 126), 126), industry) + 0.110 * group_rank(ts_rank(-1 * fnd6_newa2v1300_wcap / assets, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Main v221 repair: annual return signal plus quarterly LSUS stabilizer. Reject if LSUS fails or Fitness remains below 1.10."
+  },
+  {
+    "name": "v221_icapt_largecap_stability",
+    "family": "invested_capital_efficiency_lsus_repair",
+    "hypothesis": "Raising the cap gate should reduce the TOP1000 fragility seen in rKon7GNd. If the signal is real among larger names, annual invested-capital productivity should keep Fitness while LSUS improves.",
+    "expression": "trade_when(rank(cap) > 0.62, 0.310 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.250 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_icapt / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * fnd6_newqv1300_wcapq / assets, 126), industry) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Large-cap / lower truncation LSUS repair. Kill if return and Fitness collapse."
+  },
+  {
+    "name": "v221_icapt_market_neutral",
+    "family": "invested_capital_efficiency_lsus_repair",
+    "hypothesis": "If industry neutralization removes too much of the capital-efficiency spread, MARKET neutralization may preserve cross-industry capital productivity while still controlling net exposure. This tests a real setting-level robustness change from v220.",
+    "expression": "trade_when(rank(cap) > 0.52, 0.280 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.220 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_icapt / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_icaptq / assets, 126), 126), industry) + 0.100 * group_rank(ts_rank(-1 * fnd6_newa2v1300_wcap / assets, 126), industry) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Setting-level repair, not a sibling if LSUS/Fitness improve materially. Strict corr gate still required."
+  },
+  {
+    "name": "v221_icapt_signal_only",
+    "family": "invested_capital_efficiency_lsus_repair",
+    "hypothesis": "Removing explicit reversal and most risk sleeves tests whether the invested-capital productivity signal itself carries enough strength. If this collapses, v220 strength was mostly auxiliary and the family should close.",
+    "expression": "trade_when(rank(cap) > 0.52, 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.260 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_icapt / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_icaptq / assets, 126), 126), industry) + 0.070 * group_rank(ts_rank(-1 * fnd6_newqv1300_wcapq / assets, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Signal purity check. Do not submit unless it independently clears all gates and corr."
+  }
+]

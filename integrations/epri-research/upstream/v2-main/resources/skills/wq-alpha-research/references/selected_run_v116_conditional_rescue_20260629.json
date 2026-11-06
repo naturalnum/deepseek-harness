@@ -1,0 +1,56 @@
+[
+  {
+    "name": "v116_comp_earnings_lowvol_trade",
+    "family": "conditional_comp_earnings_volume",
+    "hypothesis": "The v115 competitor/earnings-volume parent was very strong but slightly high-corr; trading only in low-volume regimes may change the timing path away from O0pNbJ17 and 6Xwo83wP.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v116_comp_earnings_calm_trade",
+    "family": "conditional_comp_earnings_calm",
+    "hypothesis": "A calm-return gate may separate the competitor/earnings-volume parent from the old competitor/news sleeves by avoiding high-jump days that dominate their PnL overlap.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v116_comp_earnings_lowcorr_trade",
+    "family": "conditional_comp_earnings_risk",
+    "hypothesis": "Trading the competitor/earnings-volume parent only when short market correlation is below its long baseline may decouple it from broad reversal/quality sleeves.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v116_sales_option_pcr_lowvol_trade",
+    "family": "conditional_sales_option_pcr",
+    "hypothesis": "The v115 sales/option/PCR parent was just above corr threshold with O0p6KQw1; low-volume gating may separate it from the calm-return PCR/EPSR active sleeve.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.200 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.160 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.110 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.130 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.090 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.060 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.040 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v116_sales_option_pcr_highabs_trade",
+    "family": "conditional_sales_option_pcr_eventful",
+    "hypothesis": "Unlike O0p6KQw1's calm-return gate, trading sales/option/PCR on more eventful absolute-return days may create a complementary path while preserving the strong parent.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.200 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.160 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.110 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.130 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.090 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.060 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.040 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v116_aqi_credit_vwap_largecap",
+    "family": "conditional_aqi_credit_vwap",
+    "hypothesis": "The AQI/credit/VWAP parent was strong but near the AQI/EPS blockers; large-cap gating may reduce sub-universe and small-name overlap while testing whether the credit/VWAP component can stand on its own.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.260 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.190 * group_rank(ts_rank(rp_ess_credit_ratings, 90), industry) + 0.130 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.200 * rank(-1 * ts_rank((close - vwap) / close, 40)) + 0.100 * rank(ts_rank(volume / adv20, 30)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

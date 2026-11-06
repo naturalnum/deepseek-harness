@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v110_compraw_nip_cashflow_dualblock_030_015",
+    "family": "dual_blocker_compraw_earnings_cashflow",
+    "source": "v110_dual_blocker_residuals_20260628",
+    "hypothesis": "v107 raw competitor + NIP earnings/cashflow was strong but hit O0pNbJ17 and 1Y7WOx9W. A two-blocker compact residual may preserve the raw competitor / cashflow edge while removing competitor-hub earnings and CSS option/sentiment overlap.",
+    "expression": "0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.090 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.120 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.151 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.120 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.030 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.033 * group_rank(ts_rank(rp_css_earnings, 90), industry) - 0.008 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.012 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.009 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL synthetic: XgpN5J2x - 0.30*O0pNbJ17 - 0.15*1Y7WOx9W. Sharpe-like ~2.16, max corr ~0.650 vs 9qwXgvQd / 1Y7WOx9W / 88zpWZ1X."
+  },
+  {
+    "name": "v110_compraw_nip_cashflow_dualblock_025_020",
+    "family": "dual_blocker_compraw_earnings_cashflow",
+    "source": "v110_dual_blocker_residuals_20260628",
+    "hypothesis": "A slightly stronger 1Y7WOx9W subtraction may provide more cushion against CSS/cashflow and buyback/reversal blockers if the 0.30/0.15 mix still maps to earnings-cashflow actives.",
+    "expression": "0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.093 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.138 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.143 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.100 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.025 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.044 * group_rank(ts_rank(rp_css_earnings, 90), industry) - 0.010 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.016 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.012 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL synthetic: XgpN5J2x - 0.25*O0pNbJ17 - 0.20*1Y7WOx9W. Sharpe-like ~2.14, max corr ~0.646."
+  },
+  {
+    "name": "v110_compraw_css_cashflow_dualblock_030_015",
+    "family": "dual_blocker_compraw_earnings_cashflow",
+    "source": "v110_dual_blocker_residuals_20260628",
+    "hypothesis": "CSS earnings version of the raw competitor cashflow residual. It should be submitted only if it is not a sibling of a successful NIP version; serial correlation gate will enforce that.",
+    "expression": "0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.090 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.192 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.151 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.120 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.105 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.030 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.008 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.012 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.009 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL synthetic: 88zGdPqz - 0.30*O0pNbJ17 - 0.15*1Y7WOx9W. Sharpe-like ~1.97, max corr ~0.647."
+  },
+  {
+    "name": "v110_goodwill_option_minus_compvwap_040",
+    "family": "goodwill_option_compvwap_residual",
+    "source": "v110_dual_blocker_residuals_20260628",
+    "hypothesis": "Goodwill-option was repeatedly strong but crowded. Prior social-goodwill subtraction failed; subtracting competitor/VWAP-risk instead may isolate goodwill + option/volume absorption rather than social-goodwill overlap.",
+    "expression": "0.280 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.120 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.048 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.080 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.084 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) - 0.034 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.080 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.050 * rank(ts_rank(volume / adv20, 20)) - 0.070 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Platform-PnL synthetic: mL8YaxNK - 0.40*1Y7jOjvR. Sharpe-like ~1.77, max corr ~0.649 vs E5wVN6gm."
+  },
+  {
+    "name": "v110_comp_option_minus_kq3_akdb",
+    "family": "competitor_option_double_blocker",
+    "source": "v110_dual_blocker_residuals_20260628",
+    "hypothesis": "Competitor raw + small option breakeven was strong but blocked by social-competitor and option-risk actives. Subtract both kq3Jjmrk and akdbG2k5 proxies to test whether a cleaner competitor-option timing residual remains.",
+    "expression": "0.300 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.092 * rank(-(close / open - 1)) + 0.112 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.104 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.140 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) - 0.042 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.024 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.018 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.028 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) - 0.016 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL synthetic: leVMjWne - 0.30*kq3Jjmrk - 0.08*akdbG2k5. Sharpe-like ~1.98, max corr ~0.650."
+  }
+]

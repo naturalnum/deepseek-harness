@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v158_capital_light_cap60_subindustry",
+    "family": "capital_light_lsus_repair",
+    "hypothesis": "Xgpzlaba had strong Sharpe/Fitness but failed LOW_SUB_UNIVERSE. A cap60/SUBINDUSTRY version tests whether low capex intensity plus durable gross profit survives in more stable larger names without returning to CFI/gross-income guidance or reported-FCF capacity.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.420 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), subindustry) + 0.320 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair of Xgpzlaba. Strict-check against MPp7RPxn, QPaze5zX, omKarE8m, P0pgZllw, E5wRq3ZG, and 88zJ8RMW."
+  },
+  {
+    "name": "v158_capital_light_market_quality_breadth",
+    "family": "capital_light_lsus_repair",
+    "hypothesis": "If cap/subindustry kills the capital-light edge, a MARKET-neutral version with lower capex weight and added estimate breadth should keep the gross-profit/capital-light parent while reducing TOP3000 fragility.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.330 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), industry) + 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), industry) + 0.140 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 63), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Adds only analyst breadth, not gross-income guidance level or CFI/capex guidance. Stop capital-light repair if this still fails LSUS or maps to guidance/cash-yield actives."
+  },
+  {
+    "name": "v158_nonoption_award_forfeiture_relief",
+    "family": "nonoption_equity_award_overhang",
+    "hypothesis": "High non-option equity award forfeitures and nonvested award counts may proxy compensation overhang and retention stress. Low forfeiture/nonvested overhang should differ from option-award expected dividend and from broad allocated SBP expense.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * non_option_equity_awards_forfeited_count / common_stock_shares_outstanding_count, 126), industry) + 0.240 * group_rank(ts_rank(-1 * nonvested_equity_awards_count / common_stock_shares_outstanding_count, 126), industry) + 0.180 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonoption_awards / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-option equity-award stress, not option dividend, broad SBP expense, buyback, or share-count contraction. Strict-check against akda9EW9, LLpKELr9, j2ZaGlVE, xAxGJjNn, and MPpGzqwr."
+  },
+  {
+    "name": "v158_equity_award_grant_forfeit_spread",
+    "family": "nonoption_equity_award_overhang",
+    "hypothesis": "A healthier award cycle should have fewer forfeitures relative to grants and lower unrecognized non-option compensation burden. This spread form avoids ordinary stock-comp expense levels and option-overhang fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.310 * group_rank(ts_rank((non_option_equity_awards_granted_count - non_option_equity_awards_forfeited_count) / common_stock_shares_outstanding_count, 126), industry) + 0.230 * group_rank(ts_rank(-1 * nonvested_equity_awards_count / common_stock_shares_outstanding_count, 126), industry) + 0.170 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonoption_awards / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses grant-forfeit balance for non-option equity awards. Reject if it simply behaves like existing compensation/debt-extinguishment or dilution capacity."
+  },
+  {
+    "name": "v158_dividend_estimate_largecap_lowbeta",
+    "family": "dividend_estimate_stability_repair",
+    "hypothesis": "zq9Gk1nE had Fitness 1.10 and high returns but Sharpe 1.18. Larger-cap, lower-beta trading and a smaller raw yield leg may improve Sharpe without using option-award expected dividend, buybacks, or shareholder-yield fields.",
+    "expression": "trade_when(rank(cap) > 0.58, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_div_high / close - anl4_fs_detail_estimates_basic_af_v4_nd_div_low / close), 126), industry) + 0.200 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One Sharpe repair for dividend estimate stability. Do not continue if it misses; avoid option_award_expected_dividend_rate and buyback/share-count fields."
+  },
+  {
+    "name": "v158_cff_dependency_largecap_drawdown_repair",
+    "family": "financing_cashflow_dependency_repair",
+    "hypothesis": "XgpzoAnl was near Sharpe but Fitness below gate. A large-cap, lower-beta version with less reversal tests whether low financing cash-flow dependency can survive outside debt, credit-line, buyback, and CFI guidance routes.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.320 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / assets, 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.040 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One repair for financing-dependency only. Stop if Fitness remains weak or it maps to debt/CFI/FCF actives."
+  }
+]

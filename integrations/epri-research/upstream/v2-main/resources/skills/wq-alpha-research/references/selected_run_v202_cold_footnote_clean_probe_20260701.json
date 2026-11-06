@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v202_pension_funded_status_clean",
+    "family": "pension_funded_status_cleanliness",
+    "hypothesis": "Better funded defined-benefit plans and lower pension/postretirement liabilities can reduce hidden balance-sheet risk. This uses low-use pension footnote fields and avoids debt, buyback, book-delivery, special-items, option, and news legs.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank((defined_benefit_plan_asset_fair_value - defined_benefit_plan_obligation_value) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * noncurrent_pension_postretirement_liabilities / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(pension_oci_net_tax) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * net_periodic_cost_defined_benefit_plan / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Cold pension funded-status route. Reject if coverage causes LOW_SUB_UNIVERSE or if it maps to employee-benefit/accounting-quality actives."
+  },
+  {
+    "name": "v202_antidilutive_overhang_no_payout",
+    "family": "latent_dilution_overhang_clean",
+    "hypothesis": "Low antidilutive-securities overhang can indicate less latent dilution risk, but prior high-scoring versions leaned on dividend, buyback, and reversal. This version removes payout and close/open, using only low beta/correlation stabilization.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.300 * group_rank(ts_rank(-1 * antidilutive_securities_eps_exclusion_count / common_stock_shares_outstanding_count, 126), industry) + 0.240 * group_rank(ts_rank(-1 * fn_antidilutive_securities_excl_from_eps_a / common_stock_shares_outstanding_count, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(diluted_shares_outstanding_adjustment_avg) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One non-payout dilution-overhang test. Strict-check against QPa7KOGK, 88zpWZ1X, MPpGzqwr, and buyback/share-count clusters."
+  },
+  {
+    "name": "v202_contingent_merger_liability_clean",
+    "family": "contingent_merger_liability_cleanup",
+    "hypothesis": "Low and falling contingent consideration liabilities after acquisitions may indicate cleaner acquisition accounting and lower future earnout surprises. This avoids goodwill and M&A news, using only contingent-liability cleanup with risk relief.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs(contingent_consideration_liability_acquisition) / abs(assets), 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(contingent_merger_liability) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(abs(contingent_consideration_liability_acquisition) / abs(assets), 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Contingent-acquisition cleanup without goodwill/news/customer intangibles. Stop if weak or high-corr to acquisition/goodwill/accounting-quality actives."
+  },
+  {
+    "name": "v202_tax_settlement_clean_lowrisk",
+    "family": "tax_settlement_uncertainty_cleanup",
+    "hypothesis": "Settlements or statute lapses that reduce unrecognized tax-benefit uncertainty can be constructive, while current-period increases and legal settlement payments are riskier. This is a narrow tax-uncertainty cleanup test, not prepaid/deferred-tax valuation allowance.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(tax_benefit_decrease_settlement / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(tax_benefit_reduction_statute_lapse / abs(assets), 126), industry) - 0.180 * group_rank(ts_rank(unrecognized_tax_benefit_increase_current_period / abs(assets), 126), industry) - 0.130 * group_rank(ts_rank(legal_settlement_payment_amount / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Narrow tax uncertainty cleanup. Reject if it maps to tax/prepaid/WDPQ or legal/news accounting-quality clusters."
+  }
+]

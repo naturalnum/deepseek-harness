@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v178_amort_schedule_pure_subindustry",
+    "family": "intangible_schedule_repair",
+    "hypothesis": "The v177 near-miss may improve if scheduled amortization relief is compared within subindustry peers and kept pure, without the finite-intangible-base long leg that may dilute the relief signal.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(sales), 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * intangible_amortization_expense_year_three / abs(sales), 126), subindustry) + 0.150 * group_rank(ts_rank(-1 * intangible_amortization_expense_fourth_year / abs(sales), 126), subindustry) + 0.080 * group_rank(ts_rank(-1 * year5_intangible_amortization_expense / abs(sales), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Pure schedule-relief version of v177 78wMlPM5. No profitability/cashflow support."
+  },
+  {
+    "name": "v178_amort_schedule_near_term_slope",
+    "family": "intangible_schedule_slope",
+    "hypothesis": "A downward-sloping amortization schedule, where near-term amortization is lower than later-year commitments, may capture fading EPS drag more directly than absolute low amortization.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.340 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), industry) + 0.240 * group_rank(ts_rank((intangible_amortization_expense_year_three - annual_intangible_amortization_expense_second_year) / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank((intangible_amortization_expense_fourth_year - intangible_amortization_expense_year_three) / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(sales), 126), subindustry) + 0.100 * group_rank(ts_rank(annual_intangible_assets_net_carrying_value / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Schedule-shape test rather than level. Watch if slope terms create sparse/noisy behavior."
+  },
+  {
+    "name": "v178_amort_schedule_largecap",
+    "family": "intangible_schedule_largecap",
+    "hypothesis": "A larger-cap gate may improve robustness and Fitness by removing sparse small-cap disclosure noise while preserving future amortization relief.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.290 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), industry) + 0.230 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(sales), 126), industry) + 0.200 * group_rank(ts_rank(-1 * intangible_amortization_expense_year_three / abs(sales), 126), industry) + 0.160 * group_rank(ts_rank(-1 * intangible_amortization_expense_fourth_year / abs(sales), 126), industry) + 0.120 * group_rank(ts_rank(annual_intangible_assets_net_carrying_value / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Large-cap robustness repair for v177 78wMlPM5. Reject if Fitness collapses from reduced breadth."
+  },
+  {
+    "name": "v178_amort_schedule_assets_denominator",
+    "family": "intangible_schedule_denominator",
+    "hypothesis": "Scaling scheduled amortization by assets rather than sales may reduce cyclicality and make the signal more balance-sheet based, potentially improving Sharpe.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * intangible_amortization_expense_year_three / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * intangible_amortization_expense_fourth_year / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(finite_intangibles_gross_value / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Denominator test. If worse than sales denominator, keep v177 shape."
+  },
+  {
+    "name": "v178_acquired_intangible_low_future_drag",
+    "family": "acquired_intangible_context",
+    "hypothesis": "Future amortization relief should matter most when companies have acquired finite-lived intangibles but the forward amortization burden is not heavy, distinguishing productive acquisitions from EPS drag.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.260 * group_rank(ts_rank(acquired_finite_intangible_assets / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(acquired_finite_intangible_assets_total / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(sales), 126), subindustry) - 0.120 * group_rank(ts_rank(acquisition_related_costs_expense / abs(sales), 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Acquisition-context version, not broad goodwill. Reject if it falls into acquisition/goodwill crowding or LSUS fail."
+  },
+  {
+    "name": "v178_amort_schedule_cashflow_supported",
+    "family": "intangible_schedule_cashflow_support",
+    "hypothesis": "Low future amortization drag should be more credible when operating cash flow support exists, but cashflow should remain auxiliary to avoid becoming a standard quality factor.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.280 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(sales), 126), industry) + 0.190 * group_rank(ts_rank(-1 * intangible_amortization_expense_year_three / abs(sales), 126), industry) + 0.130 * group_rank(ts_rank(-1 * intangible_amortization_expense_fourth_year / abs(sales), 126), industry) + 0.110 * group_rank(ts_rank(cashflow_op / abs(assets), 126), subindustry) + 0.070 * group_rank(ts_rank(operating_income / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Cashflow/profit support is capped at 18% combined to avoid reconstructing operating quality."
+  }
+]

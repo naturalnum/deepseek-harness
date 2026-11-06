@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v97_aqi_value_residual_018",
+    "family": "clean_boundary_accounting_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "AQI/low-debt/EPS was strong but blocked by profitability/value ACTIVE alphas; subtracting a compact EBITDA/OI value proxy may leave a cleaner accounting-quality residual.",
+    "expression": "0.45 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.11 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.07 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: d5xj87YE minus 0.18*RRpm5LEo, Sharpe-like ~1.82, top corr ~0.65."
+  },
+  {
+    "name": "v97_aqi_value_residual_025",
+    "family": "clean_boundary_accounting_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "A stronger value/profitability subtraction for AQI/low-debt/EPS, targeting a larger correlation cushion while keeping enough EPS/accounting strength.",
+    "expression": "0.45 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.15 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.10 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: d5xj87YE minus 0.25*RRpm5LEo, Sharpe-like ~1.72, top corr ~0.62."
+  },
+  {
+    "name": "v97_option_sentiment_residual_012",
+    "family": "clean_boundary_option_sentiment_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "Option breakeven plus sentiment stability was just above the corr gate; a light option-risk subtraction may isolate sentiment-conditioned option flow.",
+    "expression": "0.22 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.14 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.15 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.12 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.02 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: N1peJ8vg minus 0.12*akdbG2k5, Sharpe-like ~1.58, top corr ~0.64."
+  },
+  {
+    "name": "v97_option_sentiment_residual_018",
+    "family": "clean_boundary_option_sentiment_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "Stronger option-risk subtraction on option/sentiment stability; should reduce akdbG2k5 overlap further at some strength cost.",
+    "expression": "0.19 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.12 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.15 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.12 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.04 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: N1peJ8vg minus 0.18*akdbG2k5, Sharpe-like ~1.53, top corr ~0.63."
+  },
+  {
+    "name": "v97_intangible_margin_residual_012",
+    "family": "clean_boundary_intangible_margin_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "Low intangible burden plus gross-margin quality was slightly too correlated with goodwill/cashflow; subtracting a small goodwill/cashflow proxy may isolate an intangible-margin residual.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.35 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.13 * rank(-(close / open - 1)) - 0.07 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry) - 0.03 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: akd7vaO9 minus 0.12*mL8j98w9, Sharpe-like ~1.51, top corr ~0.65."
+  },
+  {
+    "name": "v97_intangible_margin_residual_018",
+    "family": "clean_boundary_intangible_margin_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "Stronger goodwill/cashflow subtraction on intangible-margin quality, aiming for more correlation relief.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.35 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.12 * rank(-(close / open - 1)) - 0.11 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry) - 0.05 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: akd7vaO9 minus 0.18*mL8j98w9, Sharpe-like ~1.47, top corr ~0.63."
+  },
+  {
+    "name": "v97_gross_capex_guidance_residual_012",
+    "family": "clean_boundary_guidance_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "Gross-income/capex guidance was blocked by CFI guidance; a compact CFI-guidance subtraction may keep enough management-guidance information without mapping to omKWa3jn.",
+    "expression": "0.28 * group_rank(ts_rank((min_gross_income_guidance_2 + max_gross_income_guidance_2) / (2 * assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_capex_minguidance + anl4_fs_guidances_advanced_af_nd_capex_maxguidance) / (2 * assets), 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(max_gross_income_guidance_2 - min_gross_income_guidance_2) / assets, 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry) + 0.09 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.05 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) - 0.02 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: N1pPQWPE minus 0.12*omKWa3jn, Sharpe-like ~1.45, top corr ~0.64."
+  },
+  {
+    "name": "v97_gross_capex_guidance_residual_018",
+    "family": "clean_boundary_guidance_residual",
+    "source": "clean_boundary_residuals_v97_20260628",
+    "hypothesis": "Stronger CFI-guidance subtraction for gross-income/capex guidance; may pass correlation if Fitness remains above gate.",
+    "expression": "0.28 * group_rank(ts_rank((min_gross_income_guidance_2 + max_gross_income_guidance_2) / (2 * assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_capex_minguidance + anl4_fs_guidances_advanced_af_nd_capex_maxguidance) / (2 * assets), 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(max_gross_income_guidance_2 - min_gross_income_guidance_2) / assets, 126), industry) + 0.13 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.07 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) - 0.04 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local residual probe: N1pPQWPE minus 0.18*omKWa3jn, Sharpe-like ~1.40, top corr ~0.60."
+  }
+]

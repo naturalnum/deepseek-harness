@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v112_comp_social_resid_kq3_010",
+    "family": "competitor_reversal_social_residual",
+    "hypothesis": "Pure competitor return reversal is strong but too close to an ACTIVE social-competitor sleeve; subtracting a small social and correlation-risk component may keep the competitor edge while changing the daily PnL path.",
+    "expression": "0.460 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.284 * rank(-(close / open - 1)) + 0.184 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.014 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.008 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.006 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v112_comp_social_resid_kq3_015",
+    "family": "competitor_reversal_social_residual",
+    "hypothesis": "A stronger anti-social-competitor subtraction should move the pure competitor reversal parent farther from kq3Jjmrk while preserving enough Sharpe to pass the submit gate.",
+    "expression": "0.440 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.276 * rank(-(close / open - 1)) + 0.176 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.021 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.012 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.009 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v112_comp_intangible_gp_mix_050",
+    "family": "competitor_intangible_profitability",
+    "hypothesis": "Low intangibles and stable gross-profit assets can diversify competitor reversal away from pure social/option competitor sleeves.",
+    "expression": "0.250 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.175 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.225 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v112_comp_acqgdwl_cashflow_mix_050",
+    "family": "competitor_acquired_goodwill_cashflow",
+    "hypothesis": "Acquired goodwill discipline plus cashflow quality may stabilize a competitor reversal parent without reusing the old AQI/cashflow core directly.",
+    "expression": "0.325 * group_rank(ts_rank(-1 * fnd6_acqgdwl / assets, 126), industry) + 0.125 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.200 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v112_comp_rd_salesgrowth_mix_050",
+    "family": "competitor_rd_growth",
+    "hypothesis": "R&D intensity and sales growth can add a product-investment angle to competitor reversal, potentially separating from cashflow and social competitor blockers.",
+    "expression": "0.250 * group_rank(ts_rank(rd_expense / sales, 126), industry) + 0.175 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.225 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v112_comp_news_lowvol_mix",
+    "family": "competitor_news_low_volume",
+    "hypothesis": "Low-volume regimes may let broad competitor reversal combine with GHC/SSC news imbalance without becoming another high-turnover news or option sibling.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.160 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.200 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.120 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) - 0.080 * group_rank(ts_rank(vec_avg(nws18_relevance_fast_d1), 45), industry) - 0.060 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.050 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v112_sales_option_comp_residual_compact",
+    "family": "sales_option_compact_residual",
+    "hypothesis": "Actual sales delivery and option-risk relief may add a non-cashflow event sleeve to a trimmed competitor/cashflow residual, avoiding the raw cashflow-only blocker.",
+    "expression": "0.220 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.120 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.160 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.100 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.080 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.080 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.080 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

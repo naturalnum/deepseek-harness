@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v59_product_focus_low_complexity",
+    "family": "pv13_product_complexity",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Companies with fewer key and terminal product sectors may be easier to price and manage; this tests product-complexity structure without relationship-return residuals.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * pv13_revere_key_sector_total, 126), industry) + 0.30 * group_rank(ts_rank(-1 * pv13_revere_term_sector_total, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_all, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No rel_ret, no competitor/customer authority, no accounting quality; checks whether product focus itself carries low-corr signal."
+  },
+  {
+    "name": "v59_ecosystem_breadth_without_returns",
+    "family": "pv13_relationship_counts",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Broad partner/product overlap net of direct competitors may indicate ecosystem reach without using the crowded related-return channel.",
+    "expression": "0.35 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_all - rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * pv13_revere_key_sector_total, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Count-only relationship breadth; strict corr gate vs QPa7KOGK and 58wgxOM1."
+  },
+  {
+    "name": "v59_competitive_crowding_deconcentration",
+    "family": "pv13_competitive_structure",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Lower competitor breadth and lower competitor graph centrality may identify less crowded competitive positions, distinct from the existing positive competitor-authority alpha.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * pv13_com_page_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * pv13_ompetitorgraphrank_hub_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Opposite structural premise from competitor hub/authority actives; no earnings news or return residual."
+  },
+  {
+    "name": "v59_customer_diversification_no_return",
+    "family": "pv13_customer_structure",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "More customers with lower customer graph concentration may represent diversified demand, avoiding the crowded customer-return spillover expression.",
+    "expression": "0.35 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.25 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_page_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No rel_ret_cust; deliberately structural to test whether customer diversification has standalone signal."
+  },
+  {
+    "name": "v59_insider_news_accumulation_lowrisk",
+    "family": "insider_news_sentiment",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Positive insider-trading news sentiment and impact may proxy management confidence outside recommendations, price targets, product/business news, and earnings news.",
+    "expression": "0.35 * group_rank(ts_rank(rp_css_insider, 90), industry) + 0.25 * group_rank(ts_rank(rp_ess_insider, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_insider, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-product, non-earnings RP theme; prior insider+recommendation was weak, so this isolates insider sentiment."
+  },
+  {
+    "name": "v59_short_interest_decrowding",
+    "family": "short_interest_decrowding",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Falling short interest and low short crowding may capture covering pressure or lower negative-information risk, but without option-flow confirmation or accounting quality anchors.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(news_short_interest, 63), 126), industry) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 90), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled short-interest retest; prior short-interest mainline was weak, so do not rescue unless clearly near gate and low-corr."
+  },
+  {
+    "name": "v59_iv_skew_term_structure_no_reversal",
+    "family": "option_skew_term_nonbreakeven",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "A calmer short-vs-long option skew term structure may capture downside-demand normalization without using breakeven, PCR volume curve, close/open reversal, or fundamentals.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs((implied_volatility_put_60 - implied_volatility_call_60) - (implied_volatility_put_180 - implied_volatility_call_180)), 90), industry) + 0.25 * group_rank(ts_rank(-1 * implied_volatility_mean_skew_60, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 90), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-breakeven option structure; strict corr gate vs 0m7p1Lb1, QPa7KOGK, akdbG2k5, and 6XwKxVkO."
+  },
+  {
+    "name": "v59_call_iv_upside_demand",
+    "family": "option_call_put_asymmetry",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Call implied volatility above put implied volatility may represent upside option demand rather than defensive skew, potentially distinct from existing skew and breakeven actives.",
+    "expression": "0.45 * group_rank(ts_rank(implied_volatility_call_60 - implied_volatility_put_60, 90), industry) + 0.25 * group_rank(ts_rank(implied_volatility_call_180 - implied_volatility_put_180, 90), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No breakeven, IV risk premium, PCR curve, or reversal parent; only submit if corr is comfortably below option actives."
+  },
+  {
+    "name": "v59_bfl_quality_value_product_peer",
+    "family": "bfl_product_peer_residual",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "BFL quality/value/growth scores may become more useful when compared inside product peers rather than industry or subindustry buckets.",
+    "expression": "0.35 * group_rank(ts_rank(fscore_bfl_quality, 126), pv13_hierarchy_min20_3k_sector) + 0.25 * group_rank(ts_rank(fscore_bfl_value, 126), pv13_hierarchy_min20_3k_sector) + 0.20 * group_rank(ts_rank(fscore_bfl_growth, 126), pv13_hierarchy_min20_3k_sector) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A BFL retest with pv13 product peer comparison; no model16 analyst_revision derivative or accounting ratios."
+  },
+  {
+    "name": "v59_volume_return_absorption",
+    "family": "liquidity_absorption_statistic",
+    "source": "structural_ownership_option_liquidity_v59_20260627",
+    "hypothesis": "Stocks where returns and relative volume are less positively coupled may have less momentum-chasing flow; this is a non-close-location technical statistic.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * ts_corr(returns, volume / adv20, 20), 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(returns) * volume / adv20, 20), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids close/open, close-location, VWAP pressure, option, news, graph, and analyst fields."
+  }
+]

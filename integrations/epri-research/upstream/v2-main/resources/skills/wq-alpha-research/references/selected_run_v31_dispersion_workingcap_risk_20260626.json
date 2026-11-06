@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v31_sales_dispersion_resolution",
+    "family": "analyst_dispersion_coverage",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Falling sales-estimate disagreement with broadening analyst coverage may identify companies where revenue uncertainty is resolving before the price fully adjusts.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * ts_delta(sales_estimate_standard_deviation / abs(sales), 63), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(sales_estimate_count_quarterly, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses low-crowding sales estimate dispersion dynamics plus risk-spike filter; no EPS yield, revision derivative, graph, dilution, or reversal."
+  },
+  {
+    "name": "v31_net_income_disagreement_coverage",
+    "family": "analyst_dispersion_coverage",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Low net-income estimate dispersion and rising estimate participation may proxy for improving information quality distinct from EPS yield.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * net_income_stddev / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_net_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests analyst uncertainty/coverage using low-alphaCount net_income_stddev and num_net_income_est."
+  },
+  {
+    "name": "v31_ebit_dispersion_count_risk",
+    "family": "analyst_dispersion_coverage",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "EBIT estimate consensus with more contributing analysts should capture operating-forecast confidence without reusing EPS yield.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * ebit_stddev / abs(assets), 126), industry) + 0.35 * group_rank(ts_rank(ts_delta(num_ebit_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "EBIT std/count fields have moderate coverage and much lower user crowding than common EPS fields."
+  },
+  {
+    "name": "v31_inventory_turnover_receivable_clean",
+    "family": "working_capital_cycle",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "High inventory turnover with receivables shrinking rather than building may signal real demand and cash conversion quality.",
+    "expression": "0.45 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.30 * group_rank(ts_rank(fnd6_mfma2_recch / abs(sales), 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * inventory / abs(sales), 126), subindustry)",
+    "decay": 0,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Working-capital cycle without cashflow_op, operating_income, deferred revenue, dilution, or reversal anchors."
+  },
+  {
+    "name": "v31_doubtful_receivable_quality",
+    "family": "working_capital_cycle",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Low doubtful-receivable reserves combined with receivable reductions may identify cleaner revenue quality in receivable-heavy industries.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * fnd6_recd / abs(receivable), 126), subindustry) + 0.30 * group_rank(ts_rank(fnd6_mfma2_recch / abs(sales), 126), subindustry) + 0.20 * group_rank(ts_rank(inventory_turnover, 126), subindustry)",
+    "decay": 0,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Targets receivable quality; watch for correlation with existing accounting-quality ACTIVE alphas."
+  },
+  {
+    "name": "v31_inventory_mix_pipeline",
+    "family": "working_capital_cycle",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "A higher raw-material share and lower finished-goods share, when turnover is healthy, may reflect a cleaner production pipeline rather than unsold goods.",
+    "expression": "0.40 * group_rank(ts_rank(fnd6_invrm / abs(inventory), 126), subindustry) + 0.35 * group_rank(ts_rank(-1 * fnd6_invfg / abs(inventory), 126), subindustry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry)",
+    "decay": 0,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Uses inventory component mix; may be sector-sparse, so subindustry rank and nanHandling are important."
+  },
+  {
+    "name": "v31_beta_correlation_spike_relief",
+    "family": "model51_risk_slope",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Stocks with short-window beta and market-correlation spikes below their long-window baseline may have less crowding and better idiosyncratic alpha capacity.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 60), industry) + 0.35 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry) + 0.20 * group_rank(ts_rank(-1 * sales_estimate_standard_deviation / abs(sales), 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure model51 slope plus small sales-uncertainty anchor; expected to be low related to accounting/reversal clusters if it has enough strength."
+  },
+  {
+    "name": "v31_idio_risk_compression_inventory",
+    "family": "model51_working_capital",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Idiosyncratic-risk compression combined with improving inventory conversion may capture operational de-risking rather than common-market beta exposure.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 60), industry) + 0.35 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * inventory / abs(sales), 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Combines model51 risk slope with inventory conversion, intentionally avoiding v30 revision-stabilizer ingredients."
+  },
+  {
+    "name": "v31_pretax_dispersion_resolution",
+    "family": "analyst_dispersion_coverage",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Declining pretax-income dispersion with stable analyst participation may be a cleaner operating visibility signal than broad EPS yield.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * ts_delta(pretax_income_stddev / abs(assets), 63), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(num_pretax_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pretax estimate std/count are comparatively underused and may diversify away from EPS/ROE ACTIVE names."
+  },
+  {
+    "name": "v31_adj_income_dispersion_sales_count",
+    "family": "analyst_dispersion_coverage",
+    "source": "dispersion_workingcap_risk_v31_20260626",
+    "hypothesis": "Adjusted-income estimate agreement plus sales-coverage expansion should reward cleaner forecastability while avoiding raw EPS level.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * adj_net_income_stddev / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_adj_net_income_est, 63), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(sales_estimate_count_quarterly, 63), 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Adjusted net income std/count with sales coverage; no risk/reversal/quality parent."
+  }
+]

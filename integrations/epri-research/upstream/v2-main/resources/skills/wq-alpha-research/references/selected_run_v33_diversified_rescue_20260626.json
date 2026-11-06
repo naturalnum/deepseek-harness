@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v33_intangible_margin_event_no_reversal",
+    "family": "intangible_margin_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Low intangible burden and strong gross margin had a near-threshold result; replacing intraday reversal with broad event sentiment may lower correlation to the goodwill/reversal ACTIVE cluster.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.30 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue of akd7vaO9 with close/open removed; strict corr gate versus mL8j98w9 and MPpGzqwr."
+  },
+  {
+    "name": "v33_intangible_margin_bfl_quality",
+    "family": "intangible_margin_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "A sparse BFL quality term may preserve stability without reusing the accepted goodwill/cashflow/reversal structure.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.30 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.25 * group_rank(ts_rank(fscore_bfl_quality, 126), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "BFL coverage is lower, so watch sub-universe checks."
+  },
+  {
+    "name": "v33_option_breakeven_iv_risk_no_reversal",
+    "family": "option_breakeven_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "The option breakeven and IV-risk-premium seed cleared Fitness but collided with option-skew/reversal; replacing reversal with beta-spike relief may keep the option edge more orthogonal.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue of 58wlgpKz with no close/open; strict corr gate against 0m7p1Lb1 and QPa7KOGK."
+  },
+  {
+    "name": "v33_option_breakeven_iv_event",
+    "family": "option_breakeven_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Broad event sentiment may add non-option information to the option breakeven seed while avoiding share-count and reversal ingredients.",
+    "expression": "0.40 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.25 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Alternative option rescue; reject if it remains an option-skew near-neighbor."
+  },
+  {
+    "name": "v33_stockcomp_goodwill_event_bfl",
+    "family": "stockcomp_goodwill_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Low stock-based compensation expense plus improving goodwill burden was strong but too close to payout/accounting clusters; event and BFL terms replace relationship/reversal stabilizers.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.15 * group_rank(ts_rank(mean_corporate_action_sentiment, 60), industry) + 0.15 * group_rank(ts_rank(fscore_bfl_quality, 126), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Derived from 88zl6eY7/RRp7mKMg but removes customer/competitor graph and close/open."
+  },
+  {
+    "name": "v33_goodwill_delta_event_risk",
+    "family": "goodwill_delta_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Goodwill decrease was very strong but crowded when paired with operating income and reversal; pairing it with event sentiment and risk relief may reduce correlation.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry) + 0.25 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue of RRp70j8d; likely weaker without profitability/reversal, but worth one low-corr probe."
+  },
+  {
+    "name": "v33_aqi_lowdebt_event",
+    "family": "acquisition_income_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Acquisition income contribution plus low debt cleared metrics when mixed with EPS; broad event sentiment may replace EPS and lower correlation to analyst-yield ACTIVE alphas.",
+    "expression": "0.50 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.20 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue of d5xj87YE with EPS removed; watch correlation with 9qwXgvQd and RRpm5LEo."
+  },
+  {
+    "name": "v33_aqi_lowdebt_bfl_value",
+    "family": "acquisition_income_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "A BFL value term may diversify the acquisition-income/low-debt seed without using EPS or cashflow quality.",
+    "expression": "0.45 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.30 * group_rank(ts_rank(fscore_bfl_value, 126), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "BFL value coverage is sparse; require clean sub-universe checks."
+  },
+  {
+    "name": "v33_adjusted_income_event_rescue",
+    "family": "analyst_uncertainty_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Adjusted-income range tightening was the only v32 seed near the gate; replacing sales-dispersion support with event sentiment and risk relief tests a more orthogonal uncertainty path.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs(max_adj_net_income_quarterly_estimate - min_adj_net_income_quarterly_estimate) / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(num_adj_net_income_est, 63), 126), industry) + 0.20 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Cautious RRpbbNan rescue; strict corr gate against akdb1ZqR."
+  },
+  {
+    "name": "v33_revision_event_option_no_reversal",
+    "family": "revision_derivative_rescue",
+    "source": "diversified_rescue_v33_20260626",
+    "hypothesis": "Negative analyst-revision derivative had borderline metrics but became crowded with reversal/credit; event sentiment and option-flow term structure test a no-reversal version.",
+    "expression": "0.40 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry) + 0.20 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open, credit news, dilution, or graph stabilizer; reject if weak or still highly correlated."
+  }
+]

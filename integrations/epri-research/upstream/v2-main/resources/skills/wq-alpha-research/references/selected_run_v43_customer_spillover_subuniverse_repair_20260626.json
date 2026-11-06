@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v43_lowauth_market_longer_window",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "E5wpdYVG only missed sub-universe Sharpe by 0.05; longer signal window and higher decay may improve robustness while keeping low correlation.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Direct robustness repair of E5wpdYVG; reduce spillover weight and raise beta relief."
+  },
+  {
+    "name": "v43_lowauth_market_trunc005",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "Lower truncation may reduce small-subuniverse concentration while preserving E5wpdYVG's return path.",
+    "expression": "0.45 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Same expression family as E5wpdYVG with more conservative truncation/decay."
+  },
+  {
+    "name": "v43_signalonly_market_longer_window",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "WjpeEjlx had very low correlation but sub-universe fail; longer horizon may improve cross-subuniverse stability.",
+    "expression": "0.65 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.35 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Signal-only repair; keep low-correlation profile."
+  },
+  {
+    "name": "v43_signalonly_market_trunc005",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "Lower truncation on the WjpeEjlx signal-only structure may improve sub-universe without adding crowded fields.",
+    "expression": "0.70 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Minimal change from WjpeEjlx."
+  },
+  {
+    "name": "v43_signal_beta_corr_relief",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "Adding market-correlation relief may improve sub-universe robustness for customer spillover without customer-authority exposure.",
+    "expression": "0.55 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Still no authority; tests robust market-exposure relief."
+  },
+  {
+    "name": "v43_lowauth_subindustry_trunc005",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "Subindustry neutralization with lower truncation may rescue sub-universe while keeping low authority weight.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), subindustry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Finer peer control but still avoids high authority."
+  },
+  {
+    "name": "v43_trade_when_low_beta_spillover",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "Trading customer spillover only when short-term beta is not spiking may remove weak sub-universe episodes.",
+    "expression": "trade_when(ts_rank(beta_last_60_days_spy - beta_last_360_days_spy, 60) < 0.65, 0.60 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.40 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry), -1)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Conditional robustness test; watch turnover and LOW_TURNOVER."
+  },
+  {
+    "name": "v43_ranked_components_no_subtract",
+    "family": "customer_spillover_subuniverse_repair",
+    "source": "customer_spillover_subuniverse_repair_v43_20260626",
+    "hypothesis": "Ranking customer return and own return separately may avoid unit warning while preserving relative spillover information.",
+    "expression": "0.45 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5), 60), industry) + 0.20 * group_rank(ts_rank(-1 * ts_mean(returns, 5), 60), industry) + 0.15 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "No direct subtraction; may eliminate UNITS warning and improve check behavior."
+  }
+]

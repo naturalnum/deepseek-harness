@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v165_callput_cfi_balanced_lsus",
+    "family": "option_cfi_lsus_fusion",
+    "hypothesis": "KPb5bkwN and mL87NgRK both have strong headline metrics and low mutual PnL correlation, but each fails LOW_SUB_UNIVERSE. A balanced option-convexity + CFI-update blend tests whether two independent unstable sleeves can stabilize each other without becoming an existing ACTIVE sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.220 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.050 * rank(-(close / open - 1)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary v165 fusion. Reject if LSUS still fails or if corr maps to zq92joQo/GrwK89PO/e7OG3bmz or CFI actives."
+  },
+  {
+    "name": "v165_callput_cfi_no_reversal",
+    "family": "option_cfi_lsus_fusion",
+    "hypothesis": "If short reversal is part of the unstable sub-universe exposure, removing it while adding low-correlation CFI-update and risk terms may preserve option-convexity alpha with better robustness.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.210 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.110 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open or 5d reversal; tests whether LSUS improves by removing short-cycle timing."
+  },
+  {
+    "name": "v165_callput_cfi_cap50_market",
+    "family": "option_cfi_lsus_fusion",
+    "hypothesis": "Previous cap65/cap70 repairs killed call/put convexity. A milder cap50 gate with MARKET neutralization and CFI-update complement tests robustness without over-filtering the source universe.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.270 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.230 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)) + 0.040 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Milder robustness gate than v121. Reject if MARKET neutralization kills metrics or returns to option/model crowding."
+  },
+  {
+    "name": "v165_cfi_primary_option_confirm",
+    "family": "cfi_option_confirm_lsus",
+    "hypothesis": "mL87NgRK is cleanly low-corr but LSUS-fragile. Keeping CFI update primary and using a smaller option-convexity confirmer may improve market-state robustness without turning into a pure option sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.310 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.170 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "CFI primary with option confirmer. Strict-check against mL87NgRK, CFI actives, zq92joQo, GrwK89PO, e7OG3bmz."
+  },
+  {
+    "name": "v165_callput_with_sga_acq_aux",
+    "family": "option_lsus_auxiliary_visibility",
+    "hypothesis": "SG&A expectation discipline and acquisition cash absorption were weak but LSUS-safe-ish v164 auxiliaries with low PnL correlation to KPb5bkwN. Tiny auxiliary weights test whether operating visibility can lift call/put convexity robustness without cloning SG&A or acquisition parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.330 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.130 * group_rank(ts_rank(-1 * sg_and_a_expense_median / abs(sales), 126), industry) + 0.090 * group_rank(ts_rank(acquired_cash_equivalents_business_combination / abs(gross_payments_for_acquisitions), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.070 * rank(-(close / open - 1)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses weak LSUS-safer auxiliaries only at small weights. Reject if unit warnings or if it remains KPb5bkwN LSUS-fragile."
+  }
+]

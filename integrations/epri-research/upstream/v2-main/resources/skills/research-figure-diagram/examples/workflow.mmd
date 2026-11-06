@@ -1,0 +1,10 @@
+flowchart LR
+  A["Raw data"]
+  B["Quality control"]
+  C["Model"]
+  D["Evaluation"]
+  A -->|"filter"| B
+  B -->|"train"| C
+  C -->|"validate"| D
+  classDef default fill:#F3F6F8,stroke:#5B6570,color:#202427;
+  classDef accent fill:#EAF6F3,stroke:#2A9D8F,color:#202427;

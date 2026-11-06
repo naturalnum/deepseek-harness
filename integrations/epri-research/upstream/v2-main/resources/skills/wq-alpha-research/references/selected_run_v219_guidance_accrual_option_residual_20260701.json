@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v219_gross_guidance_accrual_option_calm",
+    "family": "guidance_accrual_option_residual",
+    "hypothesis": "Gross-income guidance improvement is more reliable when accrued liabilities and tax payables are low, while option-implied calm reduces crowded event-risk exposure. The goal is a compact residual of QPaze5zX + A1wmZ22l + QPa0gl0W without social sentiment or heavy open-close reversal.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.230 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance - anl4_fs_guidances_advanced_af_nd_grossincome_minguidance) / abs(sales), 126), industry) + 0.170 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * taxes_payable_total_value / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_60 - historical_volatility_60), 90), industry) + 0.100 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Equal-weight active-PnL frontier proxy with no social sleeve and minimal reversal. Reject if high-corr to QPaze5zX, A1wmZ22l, QPa0gl0W, E5wVN6gm, or 2r72v5P8."
+  },
+  {
+    "name": "v219_guidance_liability_lowcorr_regime",
+    "family": "guidance_accrual_option_residual",
+    "hypothesis": "When a stock's short-run market correlation is below its long-run correlation, gross-income guidance plus liability cleanup may express a cleaner idiosyncratic quality signal than the standalone guidance or accrued-liability actives.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.270 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.190 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * accrued_liabilities_total_2 / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * taxes_payable_total_value / assets, 126), industry) + 0.110 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses a real SPY-correlation regime gate rather than parameter tweaks. Reject if it simply maps to QPaze5zX/A1wmZ22l or old low-SPY-corr profitability."
+  },
+  {
+    "name": "v219_option_calm_guidance_profit_nosocial",
+    "family": "guidance_accrual_option_residual",
+    "hypothesis": "A no-social option calm signal combined with gross-income guidance and plain profitability may capture expectation-quality under low option uncertainty while avoiding QPa0gl0W's social/close-open structure.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.230 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_60 - historical_volatility_60), 90), industry) + 0.200 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.160 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Option/guidance/profitability blend deliberately omits social sentiment and open-close reversal. Reject if high-corr to QPa0gl0W, E5wVN6gm, Vkpeno3w, or option-vol actives."
+  },
+  {
+    "name": "v219_accrual_guidance_quality_largecap",
+    "family": "guidance_accrual_option_residual",
+    "hypothesis": "Large-cap companies with improving gross-income guidance, low accrued liabilities, low interest due, and stable profitability may provide a conservative quality residual with lower LSUS risk than small-cap accounting cleanup.",
+    "expression": "trade_when(rank(cap) > 0.62, 0.250 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * accrued_liabilities_total_2 / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * interest_due_liabilities / assets, 126), industry) + 0.190 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.140 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Large-cap cleanup variant to reduce LSUS risk. Reject if high-corr to A1wmZ22l, QPaze5zX, or tax/prepaid/current-liability actives."
+  }
+]

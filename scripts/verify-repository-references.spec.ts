@@ -72,6 +72,17 @@ describe('unique object-name prefix search', () => {
 })
 
 describe('maintained repository reference policy', () => {
+  it('accepts a full commit field only in the research source lock', () => {
+    const file = 'integrations/epri-research/source-records/source-lock.json'
+    const hash = 'a'.repeat(40)
+    const commits = new Set([hash, hash.slice(0, 7)])
+    const pin = `      "commit": "${hash}",`
+    expect(findRepositoryReferences(file, pin, commits)).toEqual([])
+    expect(findRepositoryReferences('other.json', pin, commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, pin.replace('commit', 'comment'), commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, pin.replace(hash, hash.slice(0, 7)), commits)).toHaveLength(1)
+  })
+
   it('permits only the independent kit repository and its source URLs', () => {
     for (const suffix of ['', '.git', '/tree/main/packages/entry']) {
       expect(findRepositoryReferences('package.json', `${organizationUrl}/libreoffice-kit${suffix}`, new Set())).toEqual([])

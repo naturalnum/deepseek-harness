@@ -1,0 +1,567 @@
+[
+  {
+    "name": "v248_contract_eps_minus_aqi_residual",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "expression": "-1.000 * (0.300 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.167 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.132 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.099 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.102 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) + 0.700 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.700 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "idx": 1,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "wpRAdG2Q",
+      "sim_data": {
+        "id": "OuXaX9cp4TT9Ac14f1IAz1D",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 12,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "-1.000 * (0.300 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.167 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.132 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.099 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.102 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) + 0.700 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.700 * group_rank(ts_rank(est_eps / close, 126), industry)",
+        "status": "COMPLETE",
+        "alpha": "wpRAdG2Q"
+      }
+    },
+    "metrics": {
+      "id": "wpRAdG2Q",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 12,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "-1.000 * (0.300 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.167 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.132 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.099 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.102 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) + 0.700 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.700 * group_rank(ts_rank(est_eps / close, 126), industry)",
+        "description": null,
+        "operatorCount": 59
+      },
+      "dateCreated": "2026-07-01T09:00:17-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T09:00:17-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "GOOD",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 4298363,
+        "bookSize": 20000000,
+        "longCount": 1571,
+        "shortCount": 1565,
+        "turnover": 0.0754,
+        "returns": 0.0869,
+        "drawdown": 0.0321,
+        "margin": 0.002305,
+        "sharpe": 1.91,
+        "fitness": 1.59,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.91
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.59
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0754
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0754
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.83,
+            "value": 1.35
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "correlations": [
+      {
+        "alpha_id": "akd1nQMW",
+        "corr": 0.8452381474730779,
+        "old_sharpe": 2.11,
+        "old_fitness": 1.68
+      },
+      {
+        "alpha_id": "RRpm5LEo",
+        "corr": 0.7064030720342018,
+        "old_sharpe": 2.09,
+        "old_fitness": 1.8
+      },
+      {
+        "alpha_id": "78wvg3wO",
+        "corr": 0.5911524074068578,
+        "old_sharpe": 1.94,
+        "old_fitness": 1.66
+      },
+      {
+        "alpha_id": "0m75g85v",
+        "corr": 0.5734474987249382,
+        "old_sharpe": 1.74,
+        "old_fitness": 1.4
+      },
+      {
+        "alpha_id": "58wJ22nk",
+        "corr": 0.5430296379680865,
+        "old_sharpe": 2.06,
+        "old_fitness": 1.62
+      }
+    ],
+    "submission": {
+      "submitted": false,
+      "reason": "high_corr_with_akd1nQMW_+0.85"
+    }
+  },
+  {
+    "name": "v248_peer_margin_capex_residual_unused_groups",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * (group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), pv13_hierarchy_min10_3k_all_sector) - group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), industry)) + 0.260 * (group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), pv13_hierarchy_min20_f3_513_sector) - group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), industry)) + 0.210 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.190 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "idx": 5,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "LLpwQLrn",
+      "sim_data": {
+        "id": "JH59jbUE4si8HuyV5AIkdY",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 10,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "trade_when(rank(cap) > 0.45, 0.340 * (group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), pv13_hierarchy_min10_3k_all_sector) - group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), industry)) + 0.260 * (group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), pv13_hierarchy_min20_f3_513_sector) - group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), industry)) + 0.210 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.190 * rank(-1 * ts_mean(returns, 5)), -1)",
+        "status": "COMPLETE",
+        "alpha": "LLpwQLrn"
+      }
+    },
+    "metrics": {
+      "id": "LLpwQLrn",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 10,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "trade_when(rank(cap) > 0.45, 0.340 * (group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), pv13_hierarchy_min10_3k_all_sector) - group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), industry)) + 0.260 * (group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), pv13_hierarchy_min20_f3_513_sector) - group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), industry)) + 0.210 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.190 * rank(-1 * ts_mean(returns, 5)), -1)",
+        "description": null,
+        "operatorCount": 37
+      },
+      "dateCreated": "2026-07-01T09:03:08-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T09:03:08-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "AVERAGE",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 3789639,
+        "bookSize": 20000000,
+        "longCount": 1007,
+        "shortCount": 1014,
+        "turnover": 0.1188,
+        "returns": 0.0766,
+        "drawdown": 0.0469,
+        "margin": 0.001289,
+        "sharpe": 1.62,
+        "fitness": 1.27,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.62
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.27
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.1188
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.1188
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.7,
+            "value": 0.52
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "blocking_checks_LOW_SUB_UNIVERSE_SHARPE"
+    }
+  },
+  {
+    "name": "v248_peer_fcf_ev_residual_unused_groups",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * (group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min30_3000_mapped_513_sector) - group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry)) + 0.280 * (group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min51_f3_513_sector) - group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)) + 0.220 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.180 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "idx": 4,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "mL8NGQPX",
+      "sim_data": {
+        "id": "2FlS1n4ss4F7cezqVQfqTqR",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 10,
+          "neutralization": "MARKET",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "trade_when(rank(cap) > 0.45, 0.320 * (group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min30_3000_mapped_513_sector) - group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry)) + 0.280 * (group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min51_f3_513_sector) - group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)) + 0.220 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.180 * rank(-1 * ts_mean(returns, 5)), -1)",
+        "status": "COMPLETE",
+        "alpha": "mL8NGQPX"
+      }
+    },
+    "metrics": {
+      "id": "mL8NGQPX",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 10,
+        "neutralization": "MARKET",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "trade_when(rank(cap) > 0.45, 0.320 * (group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min30_3000_mapped_513_sector) - group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry)) + 0.280 * (group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min51_f3_513_sector) - group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)) + 0.220 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.180 * rank(-1 * ts_mean(returns, 5)), -1)",
+        "description": null,
+        "operatorCount": 30
+      },
+      "dateCreated": "2026-07-01T09:00:36-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T09:00:37-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "AVERAGE",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 4267748,
+        "bookSize": 20000000,
+        "longCount": 1010,
+        "shortCount": 1016,
+        "turnover": 0.1235,
+        "returns": 0.0863,
+        "drawdown": 0.0579,
+        "margin": 0.001397,
+        "sharpe": 1.43,
+        "fitness": 1.19,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.43
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.19
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.1235
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.1235
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.62,
+            "value": 0.85
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "correlations": [
+      {
+        "alpha_id": "WjpR68WG",
+        "corr": 0.6352817633492235,
+        "old_sharpe": 1.71,
+        "old_fitness": 1.31
+      },
+      {
+        "alpha_id": "3q7jJ130",
+        "corr": 0.6096867280360536,
+        "old_sharpe": 1.68,
+        "old_fitness": 1.5
+      },
+      {
+        "alpha_id": "O0p2bElq",
+        "corr": 0.4768077836776234,
+        "old_sharpe": 1.52,
+        "old_fitness": 1.15
+      },
+      {
+        "alpha_id": "qMAGvOe2",
+        "corr": 0.4741099497795469,
+        "old_sharpe": 1.74,
+        "old_fitness": 1.45
+      },
+      {
+        "alpha_id": "58wgxOM1",
+        "corr": 0.4230369264454225,
+        "old_sharpe": 1.76,
+        "old_fitness": 1.71
+      }
+    ],
+    "submission": {
+      "submitted": false,
+      "reason": "high_corr_with_WjpR68WG_+0.64"
+    }
+  },
+  {
+    "name": "v248_option_ltv_payout_residual",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "expression": "-1.000 * (0.40 * group_rank(ts_rank(-1 * (vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_detailltv4_est), 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 0.700 * (trade_when(ts_rank(abs(returns), 20) > 0.55, 0.240 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.190 * group_rank(ts_rank((option_breakeven_360 - option_breakeven_90) / close, 90), industry) + 0.180 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)) + 0.700 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "idx": 2,
+    "sim": {
+      "status": "ERROR",
+      "sim_data": {
+        "id": "1zVxG5ci358KcD7DrrnOopZ",
+        "type": "REGULAR",
+        "status": "ERROR",
+        "message": "Expression with 75 operators exceeds limit of 64. <linkToCommonErrorMessages>Learn more</linkToCommonErrorMessages>",
+        "location": {
+          "line": null,
+          "start": null,
+          "end": null,
+          "property": "regular"
+        },
+        "links": {
+          "linkToCommonErrorMessages": "https://support.worldquantbrain.com/hc/en-us/articles/18423410021783--BRAIN-TIPS-Troubleshooting-common-error-messages"
+        }
+      }
+    }
+  },
+  {
+    "name": "v248_sentiment_sheq_capex_residual",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "expression": "-1.000 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 1.000 * (0.40 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) -1.000 * (0.55 * group_rank(ts_rank(-1 * capital_expenditure_amount / assets, 126), industry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * rank(-(close / open - 1))) + 1.000 * (0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / abs(assets), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry))",
+    "idx": 3,
+    "sim": {
+      "status": "ERROR",
+      "sim_data": {
+        "id": "2chmOEal74nAbaXXmcsjUyR",
+        "type": "REGULAR",
+        "status": "ERROR",
+        "message": "Expression with 81 operators exceeds limit of 64. <linkToCommonErrorMessages>Learn more</linkToCommonErrorMessages>",
+        "location": {
+          "line": null,
+          "start": null,
+          "end": null,
+          "property": "regular"
+        },
+        "links": {
+          "linkToCommonErrorMessages": "https://support.worldquantbrain.com/hc/en-us/articles/18423410021783--BRAIN-TIPS-Troubleshooting-common-error-messages"
+        }
+      }
+    }
+  }
+]

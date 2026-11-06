@@ -1,0 +1,6 @@
+interface:
+  display_name: 'IOAI Evaluate and Submit'
+  short_description: 'Audit local evidence while official submission stays off'
+  default_prompt: 'Use $evaluate-submit to audit the canonical IOAI frontier and choose the next local action.'
+policy:
+  allow_implicit_invocation: true

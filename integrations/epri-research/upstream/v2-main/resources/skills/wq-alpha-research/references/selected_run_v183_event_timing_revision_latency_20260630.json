@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v183_news18_chain_staleness_reversal",
+    "family": "news18_event_timing_chain_staleness",
+    "hypothesis": "Ravenpack novelty-chain elapsed time captures stale follow-on event flow rather than ordinary sentiment. Long novelty chains with low story-record pressure and low broad-market correlation may identify slower, less crowded information absorption.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.220 * group_rank(ts_rank(vec_avg(novelty_chain_elapsed_ms), 126), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh news18 timing parent: no QEP/BEE/GHC/SSC sentiment semantics, no option/CFI/debt fields. Reject if it behaves like old news/reversal actives or fails LSUS."
+  },
+  {
+    "name": "v183_news18_event_duration_clean",
+    "family": "news18_event_timing_duration_structure",
+    "hypothesis": "Shorter event duration and shorter reporting-period span can proxy cleaner, more discrete event classification. Combining that with stale novelty chains tests event microstructure without reusing news sentiment scores.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.220 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.180 * group_rank(ts_rank(vec_avg(novelty_chain_elapsed_ms), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(event_end_time_utc) - vec_avg(event_start_time_utc)), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(vec_avg(reporting_period_end_time_utc_fast_d1) - vec_avg(reporting_period_start_time_utc_fast_d1)), 126), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled timestamp-structure test. If platform unit/type checks reject timestamp arithmetic, close this micro-route and retain chain elapsed fields only."
+  },
+  {
+    "name": "v183_generic_qf_revision_latency",
+    "family": "analyst4_generic_quarterly_revision_latency",
+    "hypothesis": "Generic quarterly analyst revisions that are directionally positive but not erratic may capture slow expectation drift outside the crowded EPS/EBIT/FCF named-detail clusters. Event-chain staleness is a small timing confirmer.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(vec_avg(anl4_dez1basicqfv4_est) - vec_avg(anl4_dez1basicqfv4_preest), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_dez1basicqfv4_est) - vec_avg(anl4_dez1basicqfv4_preest)), 126), industry) + 0.160 * group_rank(ts_rank(vec_avg(anl4_basicqfv4_actual) - vec_avg(anl4_dez1basicqfv4_preest), 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(anl4_dez1basicqfv4_est) - vec_avg(anl4_dez1basicqfv4_preest), 20), 126), industry) + 0.120 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Generic revision test, not EPS/EBIT/BVPS detail. Watch for correlation to analyst revision actives; do not repair with named EPS or operating-delivery fields."
+  },
+  {
+    "name": "v183_generic_af_revision_latency",
+    "family": "analyst4_generic_annual_revision_latency",
+    "hypothesis": "Annual generic estimate revisions should be slower than quarterly revisions and may diversify if the signal is a broad expectations-lag effect rather than named earnings delivery.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(vec_avg(anl4_dez1basicafv4_est) - vec_avg(anl4_dez1basicafv4_preest), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_dez1basicafv4_est) - vec_avg(anl4_dez1basicafv4_preest)), 126), industry) + 0.160 * group_rank(ts_rank(vec_avg(anl4_basicafv4_actual) - vec_avg(anl4_dez1basicafv4_preest), 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(anl4_dez1basicafv4_est) - vec_avg(anl4_dez1basicafv4_preest), 20), 126), industry) + 0.120 * group_rank(ts_rank(vec_avg(novelty_chain_elapsed_ms), 126), industry) + 0.160 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Annual generic revision companion to the quarterly test. Reject if it simply reconstructs existing EPS/BVPS/EBIT analyst capacity."
+  },
+  {
+    "name": "v183_detail_lt_revision_chain_stale",
+    "family": "low_use_detail_long_term_revision_latency",
+    "hypothesis": "The low-use long-term analyst detail estimate and previous-estimate fields may capture delayed long-horizon expectation changes. A stale news-chain sleeve tests whether revisions matter more when attention is not crowded.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate)), 126), industry) + 0.170 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.130 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses analyst detail LT fields with alphaCount near zero; reject on weak metrics or high correlation to long-term estimate / analyst actives."
+  },
+  {
+    "name": "v183_detail_basic_qf_revision_event_sparse",
+    "family": "low_use_detail_basic_qf_revision_latency",
+    "hypothesis": "Low-use basic quarterly detail estimate revisions may contain a broad analyst-lag effect. Pairing it with sparse event flow and idiosyncratic-risk moderation is meant to avoid a pure named-earnings revision clone.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)), 126), industry) + 0.160 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.120 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Low-use quarterly detail revision test. The misspelled previosestimate field name matches BRAIN metadata."
+  }
+]

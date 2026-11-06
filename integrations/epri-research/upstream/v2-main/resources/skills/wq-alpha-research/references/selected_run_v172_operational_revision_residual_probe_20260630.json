@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v172_sales_revision_residual_no_actual",
+    "family": "sales_estimate_revision_residual",
+    "hypothesis": "Sales actual surprise and sales dispersion are already ACTIVE, but analyst sales estimate revisions from current to previous estimates may capture demand revision before actual delivery. Subtract small proxies for actual-sales surprise and sales-count expansion to avoid directly cloning the existing sales actives.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.290 * group_rank(ts_rank((vec_avg(sales_estimate_value) - vec_avg(sales_previous_estimate_value)) / abs(vec_avg(sales_previous_estimate_value)), 126), industry) + 0.180 * group_rank(ts_rank((anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_mean - anl4_fs_detail_estimates_basic_qf_v4_nd_sales_mean) / abs(anl4_fs_detail_estimates_basic_qf_v4_nd_sales_mean), 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_std / abs(anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_mean), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) - 0.100 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) - 0.070 * group_rank(ts_rank(ts_delta(sales_estimate_count, 63), 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different from rKoO0M89 actual sales delivery and akdb1ZqR dispersion/count resolution; strict-check against both."
+  },
+  {
+    "name": "v172_forward_sales_delay_visibility",
+    "family": "forward_sales_visibility",
+    "hypothesis": "Delay-one-quarter sales estimates with low dispersion and improving breadth may measure forward demand visibility. Using the forward/current estimate ratio and subtracting current-quarter actual and dispersion proxies tests whether there is capacity outside the existing sales actual-surprise and dispersion actives.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.70, 0.270 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_mean / abs(anl4_fs_detail_estimates_basic_qf_v4_nd_sales_mean), 126), industry) + 0.210 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_std / abs(anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_mean), 126), industry) + 0.160 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_sales_number, 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) - 0.080 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) - 0.060 * group_rank(ts_rank(-1 * sales_estimate_stddev_quarterly / abs(sales_estimate_average_quarterly), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Forward sales term is the primary parent; existing sales actual/dispersion components are only small negative blockers."
+  },
+  {
+    "name": "v172_sga_actual_under_estimate_clean",
+    "family": "sga_actual_estimate_cost_control",
+    "hypothesis": "Standalone SG&A expectation was close but under Fitness. A cost-control version using actual annual SG&A, analyst SG&A mean, estimate breadth, and actual-vs-estimate tightness may capture execution discipline rather than management guidance or labor-cost sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.270 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_sga_value / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_sga_value - anl4_fs_detail_estimates_advanced_af_nd_sga_mean) / abs(sales), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No SG&A guidance, no labor/employee liability, no option-dividend. Reject if it maps to xAxGJjNn, MPpGzqwr, or v169 labor/SG&A blockers."
+  },
+  {
+    "name": "v172_adjusted_netprofit_breadth_residual",
+    "family": "adjusted_netprofit_consensus_breadth",
+    "hypothesis": "Non-sales analyst uncertainty was weak when used as pure dispersion, but adjusted net-profit breadth plus actual adjusted profitability may carry a different operating confirmation. A small subtraction of ordinary net-profit mean tests whether adjusted profit contains residual information beyond simple net-profit level.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.230 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofita_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_netprofita_value / abs(assets), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.070 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / abs(assets), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A cautious non-sales analyst residual probe; strict-check against e7OVQKGN, 78wvjvW8, 9qwdEajr, and total-assets/netprofit actives."
+  },
+  {
+    "name": "v172_cfo_visibility_minus_fcf_value",
+    "family": "cfo_visibility_residual",
+    "hypothesis": "CFO delivery was weak as a pure detail factor, but CFO estimate breadth and low dispersion may still serve as a cash-quality signal if explicit FCF/value exposure is subtracted. This tests CFO visibility as a residual rather than ordinary FCF yield.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cfo_std / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_cfo_value / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) - 0.090 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses FCF only as a small blocker. Stop if it is weak like v130 CFO delivery or high-corr to reported FCF/capex actives."
+  },
+  {
+    "name": "v172_capex_actual_underspend_residual",
+    "family": "capex_actual_estimate_residual",
+    "hypothesis": "Ordinary capex-light profitability and gross/capex guidance are occupied or fragile. Actual capex below analyst capex expectations with CFO confirmation may capture disciplined capital allocation without using gross-profit or CFI guidance as the parent.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.270 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_capex_value / abs(anl4_fs_detail_estimates_advanced_af_nd_capex_mean), 126), industry) + 0.200 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / abs(sales), 126), industry) + 0.160 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_capex_number, 126), industry) + 0.120 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.060 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * abs(sales)), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Do not continue if it maps to QPaze5zX/omKarE8m/omKWa3jn or repeats capital-light LSUS failures."
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v174_core_earnings_pure_norisk",
+    "family": "core_earnings_corr_escape",
+    "hypothesis": "The v173 core-earnings seed was submit-grade but too correlated to the fscore contrarian/reversal path. Removing the short-reversal and low-beta stabilizers tests whether S&P core earnings and core-adjusted gain/loss fields carry enough standalone capacity.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.280 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No fscore, no close/open, no beta/correlation. This is the clean standalone test."
+  },
+  {
+    "name": "v174_core_prepaid_future_cost_mix",
+    "family": "core_earnings_prepaid_cost_mix",
+    "hypothesis": "Prepaid/retirement cost relief was a clean near-miss with a different accounting-pressure meaning. Mixing it with core earnings may keep the core signal while moving away from the fscore/reversal blocker.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.180 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * prepaid_expense_total / assets, 126), industry) + 0.070 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.050 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_prcaq) / assets, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No tax/deferred-tax/customer authority, no v169 employee-liability/labor fields. Strict-check against pw6jz8ob and 3q7jJ130."
+  },
+  {
+    "name": "v174_core_minus_fscore_proxy",
+    "family": "core_earnings_anti_fscore_residual",
+    "hypothesis": "If v173 core earnings is partly a fscore-style quality/value proxy, subtracting a compact approximation of 3q7jJ130 should reveal whether a residual core-earnings component remains.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.260 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), industry) - 0.040 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) - 0.030 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) - 0.030 * group_rank(ts_rank(fscore_value, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A single explicit blocker-residual test. If it collapses or remains high-corr, close core-earnings decorrelation."
+  },
+  {
+    "name": "v174_core_lowvolume_path",
+    "family": "core_earnings_volume_regime",
+    "hypothesis": "The fscore blocker trades continuously with reversal/low-beta timing. Refreshing core earnings only in lower-volume regimes plus a return-volume decoupling confirmer may alter the daily PnL path without using news/social/option fields.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.55, 0.290 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.250 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * ts_corr(returns, volume / adv20, 20), 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Volume-regime path change, not a VWAP/reversal clone. Strict-check against 58wgxOM1, QPazq9nX, mL86Jle1, and 3q7jJ130."
+  },
+  {
+    "name": "v174_core_oci_event_path",
+    "family": "core_earnings_oci_event_path",
+    "hypothesis": "Core earnings may work better as a cleaner reported-earnings anchor during volatile periods, while OCI/hedge noise relief supplies a different risk-openness dimension. This tests an event-conditioned path rather than the continuous fscore path.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.220 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.200 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_adjustment) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(oci_derivatives_hedge_net) / assets, 126), industry) + 0.060 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / assets, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Event-conditioned core plus OCI noise relief. Reject if it maps to 9qwdEajr/d5xo7gvE or remains too close to 3q7jJ130."
+  },
+  {
+    "name": "v174_core_subindustry_tight",
+    "family": "core_earnings_subindustry_peer",
+    "hypothesis": "If the v173 correlation came from broad-market quality/timing exposure, subindustry peer ranking and SUBINDUSTRY neutralization may isolate a more local core-earnings residual.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.320 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), subindustry) + 0.280 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), subindustry), -1)",
+    "decay": 26,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Peer-localization test only; not a window sibling. Submit only if corr drops below gate and Fitness remains >=1.10."
+  }
+]

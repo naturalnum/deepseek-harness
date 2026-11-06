@@ -1,0 +1,6 @@
+interface:
+  display_name: "Research Protocol Workflow"
+  short_description: "Turn reusable methods into clear executable research workflows"
+  default_prompt: "Use $deepscientist-protocol-workflow to turn this validated method into a concise executable research workflow and a reviewable dry-run record."
+policy:
+  allow_implicit_invocation: true

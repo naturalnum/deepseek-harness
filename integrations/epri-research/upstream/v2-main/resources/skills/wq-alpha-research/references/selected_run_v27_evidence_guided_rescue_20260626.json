@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v27_earnings_news_credit_capacity",
+    "family": "earnings_news_credit_capacity",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Earnings-news impact was strong but correlated with reversal/quality actives; replacing part of cashflow/reversal with credit capacity may preserve event signal while reducing common exposure.",
+    "expression": "0.45 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.15 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues d5xjLAWK/RRp7Ldae by lowering reversal and cashflow exposure; strict corr gate against 88zpWZ1X/MPpGzqwr."
+  },
+  {
+    "name": "v27_earnings_news_no_reversal_credit",
+    "family": "earnings_news_credit_capacity",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "If close-open reversal is the main correlation source, a no-reversal earnings-news + credit-capacity structure may be less crowded even if weaker.",
+    "expression": "0.55 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.20 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open, no operating_income/cashflow; compare strength to v14 no-reversal variant."
+  },
+  {
+    "name": "v27_revenue_news_credit_margin",
+    "family": "revenue_news_credit_capacity",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Revenue-news sentiment was a near-miss with high turnover; adding credit capacity and gross margin while raising decay may improve Fitness.",
+    "expression": "0.45 * group_rank(ts_rank(rp_ess_revenue, 90), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.20 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues akd7v6wv by reducing close/open and smoothing revenue news."
+  },
+  {
+    "name": "v27_earnings_news_writedown_credit",
+    "family": "earnings_news_writedown_credit",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Earnings-news signal may be more orthogonal when paired with asset-write-down discipline and credit flexibility instead of operating cashflow.",
+    "expression": "0.40 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.30 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.20 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Combines the strongest news branch with v19 writedown near-miss; watch runtime and correlation."
+  },
+  {
+    "name": "v27_competitor_hub_credit_capacity",
+    "family": "competitor_hub_credit_capacity",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Competitor hub + reversal was extremely strong but borderline correlated; using credit capacity instead of ROE may reduce overlap with parent-fusion actives.",
+    "expression": "0.50 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues rKo2xMQa by cutting close/open and removing operating-income/ROE anchor."
+  },
+  {
+    "name": "v27_competitor_hub_credit_news",
+    "family": "competitor_hub_credit_news",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Competitor network position may be more investable when credit-rating news is favorable; this avoids the close-open parent entirely.",
+    "expression": "0.55 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.25 * group_rank(ts_rank(rp_css_credit_ratings, 90), industry) + 0.20 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open and no operating quality; should be lower correlation if it has enough signal."
+  },
+  {
+    "name": "v27_competitor_hub_news_mix",
+    "family": "competitor_hub_event_mix",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Competitor hub and earnings-news impact are both high-Sharpe but different mechanisms; a balanced mix may clear correlation better than either parent near-neighbor.",
+    "expression": "0.40 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Crosses two strong-but-crowded parents with lower individual weights."
+  },
+  {
+    "name": "v27_acquired_goodwill_credit_capacity",
+    "family": "acquired_goodwill_credit_capacity",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Low acquired-goodwill burden was low-correlated but weak Fitness; credit capacity may improve returns without falling back to cashflow/operating quality.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * fnd6_acqgdwl / assets, 126), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.15 * group_rank(ts_rank(rel_num_comp, 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues d5xjqoMY while reducing cashflow anchor."
+  },
+  {
+    "name": "v27_writedown_credit_capacity",
+    "family": "vector_writedown_credit_capacity",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Vector writedown burden was a near-miss; adding credit capacity and competitor breadth may lift Fitness while keeping the mechanism distinct.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.15 * group_rank(ts_rank(rel_num_comp, 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues YPp72gxA / blLjPpoK with credit-capacity auxiliary instead of stock-comp or aqi."
+  },
+  {
+    "name": "v27_intangible_light_credit_margin",
+    "family": "intangible_credit_margin",
+    "source": "evidence_guided_rescue_v27_20260626",
+    "hypothesis": "Intangible-light margin was near the gate but collided with low-goodwill; lower intangible weight and add credit capacity to change the return path.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.25 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues akd7vaO9 by reducing overlap with mL8j98w9."
+  }
+]

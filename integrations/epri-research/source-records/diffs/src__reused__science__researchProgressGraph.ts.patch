@@ -1,0 +1,36 @@
+--- packages/desktop/src/renderer/pages/conversation/Preview/components/ResearchGitWorkspace/researchProgressGraph.ts
++++ src/reused/science/researchProgressGraph.ts
+@@ -4,8 +4,8 @@
+  * SPDX-License-Identifier: Apache-2.0
+  */
+ 
+-import { parseResearchCommitSubject, type ResearchStrategy } from '@/common/chat/researchStrategy';
+-import type { ProjectGitCommitSummary } from '@/common/types/office/preview';
++import { parseResearchCommitSubject, type ResearchStrategy } from './researchStrategy';
++import type { ProjectGitCommitSummary } from './gitTypes';
+ 
+ export interface ResearchProgressGraphNode {
+   id: string;
+@@ -304,7 +304,7 @@
+ export interface CollapseLinearResearchCommitsOptions {
+   /** Git log order supplied by the caller. Defaults to the API's newest-first order. */
+   order?: 'newest-first' | 'oldest-first';
+-  /** Hard visual limit. Hidden commits remain available inside their visible group. */
++  /** Visual budget for optional milestones; topology always takes priority. */
+   maxBoundaries?: number;
+   boundaryShas?: readonly string[];
+ }
+@@ -359,6 +359,13 @@
+     const parentCount = presentParentsBySha.get(commit.sha)?.length ?? 0;
+     const childCount = childrenBySha.get(commit.sha)?.length ?? 0;
+     if (parentCount !== 1 || childCount !== 1) structuralIndexes.add(index);
++    // Keep each incoming branch visible instead of absorbing both chains into
++    // their common merge. Only single-parent ancestry may share a group.
++    if (parentCount > 1) {
++      presentParentsBySha.get(commit.sha)?.forEach((parent) => {
++        structuralIndexes.add(chronologicalIndex.get(parent)!);
++      });
++    }
+     if (
+       isResearchCommitSemanticBoundary(commit, {
+         previousCommit: commitBySha.get(commit.parents[0]),

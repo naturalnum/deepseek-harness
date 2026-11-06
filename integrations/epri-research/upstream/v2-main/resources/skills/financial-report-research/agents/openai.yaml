@@ -1,0 +1,4 @@
+interface:
+  display_name: "Financial Report Research"
+  short_description: "Produce evidence-grounded financial reports."
+  default_prompt: "Research the financial question, verify evidence, and publish one report."

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v49_social_buzz_relief_with_volume_confirm",
+    "family": "social_lowcorr_rescue",
+    "source": "social_lowcorr_rescue_v49_20260627",
+    "hypothesis": "Slow relief in negative social buzz may need a confirmation from rising social volume to become strong enough while staying orthogonal to existing option/news/accounting alphas.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(snt_social_volume_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Rescues v48 social relief by replacing positive sentiment level with social volume confirmation."
+  },
+  {
+    "name": "v49_social_sentiment_momentum_calm",
+    "family": "social_lowcorr_rescue",
+    "source": "social_lowcorr_rescue_v49_20260627",
+    "hypothesis": "Improving fast social sentiment under low sentiment volatility may be a cleaner social signal than raw buzz levels.",
+    "expression": "0.40 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.15 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests social sentiment improvement rather than negative-buzz relief level."
+  },
+  {
+    "name": "v49_social_value_reversal_of_attention",
+    "family": "social_lowcorr_rescue",
+    "source": "social_lowcorr_rescue_v49_20260627",
+    "hypothesis": "High sentiment value after fading negative buzz may capture attention normalization without using price reversal.",
+    "expression": "0.35 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.30 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(snt_buzz_fast_d1, 20), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses social value plus fading buzz; no news, option, accounting, graph, or close/open."
+  },
+  {
+    "name": "v49_social_relief_with_asset_light",
+    "family": "social_fundamental_coldfield",
+    "source": "social_lowcorr_rescue_v49_20260627",
+    "hypothesis": "Social relief may matter more for asset-light firms where attention changes are less tied to capital-cycle/accounting pressure.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(-1 * gross_machinery_equipment_value_2 / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Small cold-field asset-light confirmation; watch for strength without accounting-pressure correlation."
+  },
+  {
+    "name": "v49_social_relief_with_netdebt_light",
+    "family": "social_fundamental_coldfield",
+    "source": "social_lowcorr_rescue_v49_20260627",
+    "hypothesis": "Social sentiment relief may be more credible when net-debt pressure is light, but debt should remain only a small stabilizer.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(-1 * net_debt_amount / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests whether a very small debt-quality stabilizer can lift social without returning to MPpGzqwr; strict corr gate required."
+  },
+  {
+    "name": "v49_social_buzz_relief_industry_neutral",
+    "family": "social_lowcorr_rescue",
+    "source": "social_lowcorr_rescue_v49_20260627",
+    "hypothesis": "Industry neutralization may help social relief if MARKET neutralization leaves sector-level attention noise.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.30 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Neutralization ablation of v48 social relief; still no high-correlation parent."
+  }
+]

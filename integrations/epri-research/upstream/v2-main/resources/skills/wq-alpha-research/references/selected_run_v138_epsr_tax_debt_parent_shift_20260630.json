@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v138_epsr_negative_revision_decay16_market",
+    "family": "epsr_negative_revision_fitness_repair",
+    "hypothesis": "The 1QF EPSR negative-revision parent is the cleanest remaining low-correlation seed. A slightly slower decay and MARKET neutralization may lift Fitness above the strict gate without adding option or sales terms.",
+    "expression": "0.360 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 63), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair of 78wm00YZ/88zPaAbV. It missed Fitness by 0.02 and had low corr (~0.65). No option/PCR/sales/PTP/gross-income guidance."
+  },
+  {
+    "name": "v138_annual_epsr_negative_revision",
+    "family": "annual_epsr_negative_revision",
+    "hypothesis": "Annual EPSR estimates may express analyst over-optimism correction more slowly than the 1QF EPSR seed, potentially improving Fitness and avoiding 1QF EPSR/option-surface blockers.",
+    "expression": "0.360 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_epsr_mean, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_epsr_mean, 63), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_epsr_number, 63), 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "True parent shift from 1QF EPSR to annual advanced EPSR fields; strict-check against EPSR/option actives."
+  },
+  {
+    "name": "v138_capex_grossprofit_no_reversal",
+    "family": "capex_light_gross_profit_clean",
+    "hypothesis": "Capex discipline plus gross profit had near-submit metrics but close/open reversal pulled it toward buyback/value sleeves. Removing reversal and adding risk relief tests whether capital-light profitability can stand alone.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.470 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), industry) + 0.330 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent shift from rKojvzR9: remove close/open reversal and add cap gate + volume exhaustion. Strict-check against MPp7RPxn, qMAGvOe2, and capex/FCF actives."
+  },
+  {
+    "name": "v138_tax_uncertainty_no_cashflow",
+    "family": "tax_uncertainty_cleanliness",
+    "hypothesis": "Unrecognized tax benefits are strong but high-corr when paired with cashflow or intraday reversal. A pure tax-liability bundle with beta relief may isolate tax cleanliness rather than quality/buyback sleeves.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.430 * group_rank(ts_rank(-1 * fn_unrecognized_tax_benefits_a / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * future_tax_liabilities / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(net_deferred_tax_assets_liabilities) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repairs P0p7j6Lq/vRLpM6rd by removing cashflow_op and close/open. Strict-check against MPpGzqwr, pw6jz8ob, and qMAGvOe2."
+  },
+  {
+    "name": "v138_debt_repayment_quality_largecap",
+    "family": "debt_repayment_quality",
+    "hypothesis": "Debt repayment with low debt cost and low interest paid is a solvency-quality parent. A large-cap gate may improve Sharpe for the ZYpbQ030 near-miss without using buyback or cashflow fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(debt_repayments_total_2 / assets, 126), industry) + 0.270 * group_rank(ts_rank(-1 * debt_instrument_interest_rate_percent, 126), industry) + 0.240 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed ZYpbQ030: S1.34/F1.13 but high corr to buyback/value. Adds large-cap gate, no reversal."
+  },
+  {
+    "name": "v138_deferred_revenue_no_reversal_receivable",
+    "family": "deferred_revenue_receivable_quality",
+    "hypothesis": "Deferred-revenue growth is powerful but occupied when paired with reversal or gross margin. Pairing it with low receivables and no close/open may express cleaner cash-collection quality.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.430 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.300 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Attempts a true variant of YPp7KRVW/LLp7azx6 without close/open and with cap gate. Strict-check against RRp7Q9Le and qMAGvOe2."
+  },
+  {
+    "name": "v138_longterm_estimate_revision_eventful",
+    "family": "longterm_estimate_down_revision",
+    "hypothesis": "Long-term estimate downward revision is high-corr in its simple form; trading it only in eventful windows with low beta may isolate a slower analyst disappointment path.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.420 * group_rank(ts_rank(-1 * (vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.240 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_detailltv4_est), 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.160 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent shift from WjpeW5Lo. No option, sales, EPSR, or competitor fields; strict-check against 1Y7Z77YX/zq92joQo."
+  },
+  {
+    "name": "v138_revision_derivative_no_option_largecap",
+    "family": "model_revision_no_option",
+    "hypothesis": "Analyst revision rank derivative is strong but usually crowded when mixed with options or close/open. A large-cap no-option version with operating quality and risk relief may test a model-signal path distinct from sales-option and competitor/news.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.420 * rank(-1 * analyst_revision_rank_derivative) + 0.220 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair of e7OzRv5p/v30 derivative branches without option/PCR/credit/customer graph. Strict corr against MPpGzqwr, A1wrAX3E, and wpR9AnYd."
+  }
+]

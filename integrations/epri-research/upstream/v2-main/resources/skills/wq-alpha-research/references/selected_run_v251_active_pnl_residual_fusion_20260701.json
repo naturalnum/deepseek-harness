@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v251_news_chain_anti_model_option_cfo",
+    "family": "active_pnl_residual_fusion",
+    "hypothesis": "Slow news-chain staleness with low event count may be a distinct underreaction surface, but the occupied option/model and CFO-guidance components should be explicitly subtracted to avoid reusing existing capacity.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.190 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) - 0.170 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.160 * group_rank(ts_rank(fscore_surface_accel, 126), industry) - 0.140 * group_rank(ts_rank(ts_delta(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance / abs(assets), 63), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Lineage: low-corr synthetic residual around omKZRRn2 minus Wjpx2AEO/qMApOQrK. Reject on high corr to news-chain/model-option/CFO actives; do not repair with EBIT, EPS, open-close, alltype, or CFO siblings."
+  },
+  {
+    "name": "v251_buyback_treasury_anti_contract",
+    "family": "active_pnl_residual_fusion",
+    "hypothesis": "Shareholder return through actual buybacks plus treasury-stock/investment balance can be separated from contract-liability sales-growth capacity by penalizing deferred-revenue and sales-growth expansion.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.220 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) - 0.210 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) - 0.110 * group_rank(ts_rank(sales_growth, 126), subindustry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Lineage: 88zpWZ1X + KPb2n2WE - RRp7Q9Le, with open-close and operating-income removed. Reject if the remaining strength is only buyback-quality or PCR crowding."
+  },
+  {
+    "name": "v251_sales_delivery_cfo_minus_asset_eps",
+    "family": "active_pnl_residual_fusion",
+    "hypothesis": "Sales-delivery surprise and CFO-guidance improvement may retain signal after subtracting the crowded total-assets and EPS-yield analyst sleeves; the goal is a delivery-quality residual, not another CFO/sales sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.200 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.190 * group_rank(ts_rank(ts_delta(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance / abs(assets), 63), 126), industry) - 0.190 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / abs(assets), 63), 126), industry) - 0.120 * group_rank(ts_rank(est_eps / close, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Lineage: npgrXA3q/qMApOQrK residualized against 78wrdZ6x-like asset/EPS exposure. One-shot only; if high corr to sales-option or CFO guidance actives, close rather than changing weights/windows."
+  },
+  {
+    "name": "v251_social_skew_contract_anti_technical",
+    "family": "active_pnl_residual_fusion",
+    "hypothesis": "Social value and buzz-return reversal with option-skew calmness may become less crowded when paired with contract-liability growth and explicitly residualized against the occupied technical reversal sleeve.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.270 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.230 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.220 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_20 - implied_volatility_mean_skew_120), 90), industry) + 0.160 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) - 0.120 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Lineage: N1pJ51Rw + RRp7Q9Le - 1Y7jOjvR, without open-close, VWAP, volume, or beta. Reject if it simply becomes an N1pJ51Rw social/skew sibling or a contract-liability sibling."
+  }
+]

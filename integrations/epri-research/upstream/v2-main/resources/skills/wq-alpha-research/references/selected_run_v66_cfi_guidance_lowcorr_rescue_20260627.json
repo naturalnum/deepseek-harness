@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v66_cfi_guidance_breadth_boost",
+    "family": "cfi_guidance_lowcorr_rescue",
+    "source": "cfi_guidance_lowcorr_rescue_v66_20260627",
+    "hypothesis": "The v65 CFI guidance near-miss was low-correlation and just below the Fitness gate; increasing estimate-breadth weight may improve stability without changing the parent mechanism.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Minimal v65 rescue: move 10% weight from magnitude/range into breadth."
+  },
+  {
+    "name": "v66_cfi_guidance_subindustry",
+    "family": "cfi_guidance_lowcorr_rescue",
+    "source": "cfi_guidance_lowcorr_rescue_v66_20260627",
+    "hypothesis": "Investing-cash-flow guidance is capital-intensity dependent; subindustry ranking may improve comparability and lift Fitness while preserving low correlation.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), subindustry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Peer-group rescue analogous to v64, but stop if it loses Sharpe/Fitness."
+  },
+  {
+    "name": "v66_cfi_guidance_qf_timing",
+    "family": "cfi_guidance_lowcorr_rescue",
+    "source": "cfi_guidance_lowcorr_rescue_v66_20260627",
+    "hypothesis": "Quarterly CFI guidance may shift timing enough to raise Fitness without becoming a capex/reported-FCF near-neighbor.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_qf_nd_cfi_minguidance + anl4_fs_guidances_advanced_qf_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_cfi_maxguidance - anl4_fs_guidances_advanced_qf_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_cfi_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Quarterly timing sibling of the v65 annual CFI near-miss."
+  },
+  {
+    "name": "v66_cfi_guidance_stronger_risk_relief",
+    "family": "cfi_guidance_lowcorr_rescue",
+    "source": "cfi_guidance_lowcorr_rescue_v66_20260627",
+    "hypothesis": "A slightly stronger risk-relief term may improve drawdown-adjusted Fitness for the CFI guidance signal while keeping top correlation below 0.68.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.10 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Adds only 10% beta-slope relief; reject if alpha strength falls below v65."
+  }
+]

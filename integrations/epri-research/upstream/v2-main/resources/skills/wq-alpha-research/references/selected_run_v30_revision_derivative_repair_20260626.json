@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v30_revision_derivative_more_reversal",
+    "family": "revision_derivative_repair",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "The v29 revision-derivative near-miss may need a slightly stronger intraday reversal stabilizer to lift Sharpe while keeping model16 as the main signal.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Small increase in reversal from v29; watch correlation with LLpGdlrm/88zpWZ1X/RRpmOAWj."
+  },
+  {
+    "name": "v30_revision_derivative_customer_auth",
+    "family": "revision_derivative_relationship",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "A small customer-authority stabilizer may lift the model revision signal without relying on operating quality or buyback.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.20 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses small relationship exposure; strict corr gate against RRpmO2xb."
+  },
+  {
+    "name": "v30_revision_derivative_small_dilution",
+    "family": "revision_derivative_dilution",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "Share-count contraction is strong but crowded; a 15% weight may improve Fitness without dominating the return path.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.20 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Small dilution helper only; strict corr gate against RRp7Q9Le/88zpWZ1X/MPpGzqwr."
+  },
+  {
+    "name": "v30_revision_derivative_no_option_flow",
+    "family": "revision_derivative_repair",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "Option-flow term structure was weak in v28; removing it and using reversal plus low-risk may improve the revision-derivative seed.",
+    "expression": "0.55 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Ablates option-flow term from rKoOWG13."
+  },
+  {
+    "name": "v30_revision_derivative_subindustry",
+    "family": "revision_derivative_repair",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "Subindustry neutralization may improve sub-universe robustness for the revision-derivative seed.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), subindustry) + 0.15 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), subindustry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Group/neutralization ablation of v29 seed."
+  },
+  {
+    "name": "v30_revision_derivative_news_insider",
+    "family": "revision_derivative_insider",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "Insider-news sentiment may complement model revision acceleration without using EPS/quality directly.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(rp_css_insider, 60), industry) + 0.20 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests model revision + insider catalyst; watch overlap with 1Y7wXvZJ."
+  },
+  {
+    "name": "v30_revision_derivative_credit_small",
+    "family": "revision_derivative_credit",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "Credit-rating sentiment was a weak auxiliary but may stabilize model revisions at low weight without using credit-facility capacity.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * group_rank(ts_rank(rp_css_credit_ratings, 60), industry) + 0.20 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids credit_facility_* but tests credit news as a light stabilizer."
+  },
+  {
+    "name": "v30_revision_derivative_positive_control",
+    "family": "revision_derivative_sign_control",
+    "source": "revision_derivative_repair_v30_20260626",
+    "hypothesis": "Sign control: if the analyst_revision_rank_derivative direction is misread, positive sign should outperform; otherwise it should fail and confirm the v29 direction.",
+    "expression": "0.45 * rank(analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.15 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sign ablation; unlikely submit unless it unexpectedly passes and correlation is low."
+  }
+]

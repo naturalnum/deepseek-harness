@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v123_netprofit_dispersion_lowcorr_trade",
+    "family": "analyst_netprofit_visibility",
+    "hypothesis": "Annual net-profit estimate level with falling dispersion and rising coverage may capture broad profit visibility outside the occupied EPSR/PTP/FCF surfaces; the low market-correlation gate is meant to avoid old analyst-expectation sleeves.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofit_std / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_number, 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.130 * rank(-1 * ts_rank(volume / adv20, 20)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v123_netprofita_largecap_visibility",
+    "family": "analyst_netprofit_visibility",
+    "hypothesis": "Adjusted net-profit attribution estimates are a cleaner profitability-expectation parent than EPSR; a large-cap gate should reduce sub-universe fragility and keep it away from small sparse analyst names.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), subindustry) + 0.240 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofita_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) + 0.120 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v123_annual_totassets_netprofit_restraint",
+    "family": "annual_balance_expectation",
+    "hypothesis": "Annual total-asset estimate restraint plus net-profit visibility is a different balance-sheet expectation surface from the occupied 1QF netdebt/totassets dry-up alpha.",
+    "expression": "0.280 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.220 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_number, 63), 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / assets, 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v123_saf_revision_contrarian_eventful",
+    "family": "analyst_saf_detail_vector",
+    "hypothesis": "The SAF detail vector has zero local alpha/user count and may represent a different forecast horizon; contrarian broad revisions under high absolute-return conditions test whether estimate upgrades are overextended without using EPSR/PTP/long-term estimate parents.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.350 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_saf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_saf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_saf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_saf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_estimate_saf_v4_nd_estimate) / abs(assets), 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.130 * rank(-1 * ts_rank(volume / adv20, 20)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v123_fnd6_special_items_event_reversal",
+    "family": "fnd6_special_items_contrarian",
+    "hypothesis": "Prior FND6 special-item cleanliness was weak; the opposite structure tests whether large settlement/restructuring/fair-value shocks are over-penalized after eventful price moves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.240 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_rcaq)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_tfvceq)) / assets, 126), industry) + 0.140 * rank(-(close / open - 1)) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v123_fnd6_pension_adjustment_relief",
+    "family": "fnd6_pension_postretirement",
+    "hypothesis": "Small pension and post-retirement core adjustments may indicate cleaner reported earnings; this is a one-shot check of a low-use vector parent with dry-up stabilization, not a generic cold-field sweep.",
+    "expression": "0.290 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncwippq)) / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pnciaq)) / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_prcaq)) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.120 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v123_derivative_afs_tax_clean_largecap",
+    "family": "derivative_afs_tax_disclosure",
+    "hypothesis": "Low derivative liabilities/notional exposure and low AFS OCI noise, confirmed by current tax quality, may represent balance-sheet mark-to-market cleanliness rather than the occupied unrecognized-tax/prepaid branch.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.270 * group_rank(ts_rank(-1 * abs(derivative_liability_fair_value) / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(notional_value_derivative_contracts) / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_adjustment) / assets, 126), industry) + 0.160 * group_rank(ts_rank(current_federal_tax_expense_amount / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v123_revenue_news_netprofit_eventful",
+    "family": "revenue_news_netprofit",
+    "hypothesis": "Revenue-specific news impact plus annual net-profit visibility may create an event/analyst blend without social, option, competitor, or EPSR parents; this tests a matrix-compatible news18 route distinct from low-volume BAM/QEP/BEE sleeves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(rp_ess_revenue, 90), industry) + 0.220 * group_rank(ts_rank(rp_nip_revenue, 90), industry) + 0.170 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 90), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

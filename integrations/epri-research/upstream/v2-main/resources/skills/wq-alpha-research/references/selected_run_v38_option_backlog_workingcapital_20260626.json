@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v38_option_breakeven_slow_market_repair",
+    "family": "option_surface_repair",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "The v33 option-breakeven near-miss missed Fitness by only 0.01; slower decay and market neutralization may reduce turnover while keeping the option-positioning path below the correlation gate.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Targeted rescue of j2ZA8Pae with slower decay and beta 60d instead of 30d; submit only if corr stays below QPa7KOGK/rKoO0M89."
+  },
+  {
+    "name": "v38_option_breakeven_iv_term_risk",
+    "family": "option_surface_repair",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Call-put breakeven strength is more useful when short implied volatility risk premium and short-vs-long IV stress are both muted.",
+    "expression": "0.40 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.25 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - implied_volatility_mean_180), 60), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Structural option repair: adds IV term-structure relief instead of close/open, share-count, partner, sales, or news stabilizers."
+  },
+  {
+    "name": "v38_put_call_flow_term_relief",
+    "family": "option_flow_rotation",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Lower short-term put-call pressure versus longer-dated flow can reveal cleaner option demand without using breakeven spread directly.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * (pcr_vol_60 - pcr_vol_180), 60), industry) + 0.30 * group_rank(ts_rank(-1 * (pcr_oi_60 - pcr_oi_180), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.10 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests an option-flow path without call-put breakeven; should be lower corr if it has enough Sharpe."
+  },
+  {
+    "name": "v38_order_backlog_inventory_conversion",
+    "family": "backlog_workingcapital",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Rising order backlog paired with faster inventory conversion and lower receivables can identify demand that is being converted into cash rather than just booked as accounting growth.",
+    "expression": "0.50 * group_rank(ts_rank(ts_delta(fnd6_obs, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses order backlog fnd6_obs, not sales actual surprise or deferred revenue; watch corr with LLp7PRmM/RRp7Q9Le."
+  },
+  {
+    "name": "v38_inventory_mix_raw_vs_finished",
+    "family": "backlog_workingcapital",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Raw-material inventory strength with lower finished-goods accumulation and healthy turnover can indicate planned production demand rather than unsold goods.",
+    "expression": "0.40 * group_rank(ts_rank((fnd6_newqeventv110_invrmq - fnd6_newqeventv110_invfgq) / assets, 126), industry) + 0.25 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * fnd6_rectr / sales, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Inventory composition using low-alphaCount raw/finished-goods fields; avoids total inventory and close/open."
+  },
+  {
+    "name": "v38_receivable_allowance_quality",
+    "family": "backlog_workingcapital",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Falling allowance for doubtful accounts relative to receivables may capture improving customer collectability, a different angle from simply shorting receivables over sales.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * fn_allowance_for_doubtful_accounts_receivable_a / receivable, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(fn_allowance_for_doubtful_accounts_receivable_a / receivable, 252), 126), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses allowance footnote field with low direct alphaCount; watch sparse coverage and LLp7PRmM corr."
+  },
+  {
+    "name": "v38_supplier_financing_workingcapital",
+    "family": "backlog_workingcapital",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Accounts-payable and accrued-liability increases can be a favorable cash-conversion source when working capital is not bloated and inventory turns are healthy.",
+    "expression": "0.45 * group_rank(ts_rank(fnd6_newa1v1300_apalch / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * working_capital / assets, 126), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Working-capital source-of-cash probe; no operating-income, EPS, buyback, graph, close/open, sales surprise, option breakeven, or news novelty."
+  },
+  {
+    "name": "v38_low_restructuring_backlog_discipline",
+    "family": "backlog_workingcapital",
+    "source": "option_backlog_workingcapital_v38_20260626",
+    "hypothesis": "Firms with low restructuring charges and positive order backlog may reflect cleaner demand without turnaround noise.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * fnd6_newqeventv110_rcpq / assets, 126), industry) + 0.30 * group_rank(ts_rank(fnd6_obs / assets, 126), industry) + 0.15 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.10 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A cleaner-demand probe using restructuring and backlog rather than sales/revenue estimate fields."
+  }
+]

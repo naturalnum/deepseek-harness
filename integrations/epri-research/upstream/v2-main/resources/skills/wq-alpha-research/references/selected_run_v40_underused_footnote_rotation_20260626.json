@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v40_pension_funded_status_quality",
+    "family": "pension_funded_status",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Better defined-benefit plan funded status and lower noncurrent pension/postretirement liabilities can identify firms with fewer hidden benefit obligations, a route distinct from ordinary debt or cashflow quality.",
+    "expression": "0.45 * group_rank(ts_rank((defined_benefit_plan_asset_fair_value - defined_benefit_plan_obligation_value) / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * noncurrent_pension_postretirement_liabilities / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * net_periodic_cost_defined_benefit_plan / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses low-alphaCount pension fields; no close/open, EPS, graph, option, sales, cashflow, or deferred revenue."
+  },
+  {
+    "name": "v40_pension_contribution_obligation_relief",
+    "family": "pension_funded_status",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Employer pension contributions are more favorable when future benefit payments and pension OCI noise are low, suggesting manageable benefit obligations.",
+    "expression": "0.35 * group_rank(ts_rank(pension_employer_contributions / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * future_benefit_payments_next_12mo / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(oci_pension_postretirement_net_tax) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pension cash commitment and OCI noise; watch coverage and LOW_SUB_UNIVERSE_SHARPE."
+  },
+  {
+    "name": "v40_oci_fx_hedge_stability",
+    "family": "oci_fx_hedge",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Lower FX translation and hedge OCI volatility may identify cleaner balance sheets less exposed to hidden currency and hedge mark-to-market noise.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(hedge_derivative_oci_net_tax) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(cumulative_oci_cash_flow_hedge_net) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A more specific OCI variant than v21 accumulated-OCI stability; no lease/graph stabilizer."
+  },
+  {
+    "name": "v40_available_for_sale_oci_clean",
+    "family": "oci_afs_quality",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Low available-for-sale securities OCI adjustments and low broad OCI burden may proxy cleaner mark-to-market risk in financial and asset-heavy firms.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_adjustment) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_value_2) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(accumulated_oci_net_of_tax_value) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "More specific AFS-securities OCI probe; compare against v21 OCI weak result."
+  },
+  {
+    "name": "v40_level3_fair_value_opacity",
+    "family": "fair_value_opacity",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Lower level-3 fair-value assets and liabilities should proxy less valuation opacity and model-risk exposure, distinct from conventional leverage.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * recurring_assets_fair_value_lvl3 / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * recurring_liabilities_fair_value_level3 / assets, 126), industry) + 0.20 * group_rank(ts_rank((recurring_assets_fair_value_lvl2 - recurring_assets_fair_value_lvl3) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Fair-value hierarchy opacity; underused but possibly sector-sensitive."
+  },
+  {
+    "name": "v40_derivative_net_asset_cleanliness",
+    "family": "derivative_fair_value",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Positive derivative asset versus liability balance with low notional exposure may indicate cleaner hedge book exposure than the v34 derivative-liability-only attempt.",
+    "expression": "0.35 * group_rank(ts_rank((derivative_asset_fair_value - derivative_liability_fair_value) / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * derivative_contract_notional_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(hedge_derivative_oci_net_tax) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Revisits derivative fair-value as net exposure without event sentiment; v34 liability-only was weak."
+  },
+  {
+    "name": "v40_stock_option_overhang_clean",
+    "family": "stock_option_overhang",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Lower outstanding/granted stock-option overhang and fewer shares issued from option exercises may reduce future dilution without relying on crowded buyback/share-count contraction signals.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_shares_outstanding_total, 126), industry) + 0.25 * group_rank(ts_rank(-1 * option_awards_granted_count / common_shares_outstanding_total, 126), industry) + 0.25 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_shares_outstanding_total, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Corrects v34 share-option-overhang field availability and avoids common-stock buyback or close/open."
+  },
+  {
+    "name": "v40_rsu_unrecognized_comp_burden",
+    "family": "equity_comp_overhang",
+    "source": "underused_footnote_rotation_v40_20260626",
+    "hypothesis": "Low unrecognized option and non-option compensation cost with low RSU expense may identify lower future stock-comp dilution and cleaner earnings.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_stock_options / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * unrecognized_comp_cost_nonoption_awards / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * allocated_sbp_expense_rsu / sales, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Stock-comp burden without allocated_sbp_expense_total or buyback; watch relation to stock-comp/goodwill failures."
+  }
+]

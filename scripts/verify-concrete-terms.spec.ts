@@ -64,6 +64,24 @@ describe('concrete terminology policy', () => {
     )).toEqual([{ file: '.agents/notes/implemented/process/current.md', line: 1 }])
   })
 
+  it('checks first-party research code beside its copied sources and license notices', () => {
+    const root = 'integrations/epri-research/'
+    for (const copied of ['upstream/v2-main/skills/example.md', 'src/reused/domain/example.ts', 'licenses/NOTICE']) {
+      expect(findConcreteTermViolations(root + copied, blockedTerm)).toEqual([])
+    }
+    const adapter = root + 'src/server/example.mjs'
+    expect(findConcreteTermViolations(adapter, blockedTerm)).toEqual([{ file: adapter, line: 1 }])
+  })
+
+  it('preserves only the existing calculation-package manifest name in the .aira writer', () => {
+    const file = 'integrations/epri-research/src/server/archive.mjs'
+    const path = `'/package-${blockedTerm}.json'`
+    expect(findConcreteTermViolations(file, `add(root + ${path}, bytes)`)).toEqual([])
+    expect(findConcreteTermViolations(file, `add(root + ${path}, ${blockedTerm})`)).toEqual([{ file, line: 1 }])
+    const other = 'integrations/epri-research/src/server/example.mjs'
+    expect(findConcreteTermViolations(other, path)).toEqual([{ file: other, line: 1 }])
+  })
+
   it('preserves historical identifiers only in alpha and RC release schema snapshots', () => {
     for (const channel of ['alpha', 'rc']) {
       expect(findConcreteTermViolations(

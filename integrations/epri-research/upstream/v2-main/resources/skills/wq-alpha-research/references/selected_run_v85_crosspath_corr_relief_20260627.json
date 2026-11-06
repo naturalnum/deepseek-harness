@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v85_goodwill_social_reversal_corr_relief",
+    "family": "goodwill_social_corr_relief",
+    "source": "local_pnl_fusion_v85_20260627",
+    "hypothesis": "The v84 goodwill/social alpha was strong but just over the RRp7Q9Le correlation line; adding slow 5d reversal and correlation relief may reduce that path without returning to option/AQI.",
+    "expression": "0.312 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.130 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.078 * rank(-(close / open - 1)) + 0.112 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.084 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.072 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.042 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.040 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.040 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate vRLOYL8a + JjpPx52W at 80/20. Local blend after omKoPEb6 sync: Sharpe about 2.38, max ACTIVE corr about 0.66."
+  },
+  {
+    "name": "v85_goodwill_social_vwap_risk_relief",
+    "family": "goodwill_social_vwap_relief",
+    "source": "local_pnl_fusion_v85_20260627",
+    "hypothesis": "Replace part of the RRp7Q9Le-like goodwill/operating-quality path with VWAP dislocation, relative volume, and idio-risk slope relief.",
+    "expression": "0.293 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.122 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.073 * rank(-(close / open - 1)) + 0.105 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.079 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.039 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.039 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.063 * rank(ts_rank(volume / adv20, 20)) + 0.087 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate vRLOYL8a + pw65od6V at 75/25; local blend max corr near 0.61, but watch P0pgZllw/E5wRq3ZG drift."
+  },
+  {
+    "name": "v85_comp_vwap_risk_balanced",
+    "family": "competitor_return_vwap_risk",
+    "source": "local_pnl_fusion_v85_20260627",
+    "hypothesis": "Raw competitor-return reversal is occupied when paired with close/open and authority; mixing in VWAP pressure and idio-risk relief may preserve strength while moving away from kq3Jjmrk and mL86Jle1.",
+    "expression": "0.210 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.080 * rank(-(close / open - 1)) + 0.085 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.075 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.125 * rank(ts_rank(volume / adv20, 20)) + 0.175 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate RRpA7pQa + pw65od6V at 50/50. Local blend Sharpe about 2.17, max ACTIVE corr about 0.65."
+  },
+  {
+    "name": "v85_comp_social_relief_lowcorr",
+    "family": "competitor_return_social_relief",
+    "source": "local_pnl_fusion_v85_20260627",
+    "hypothesis": "Use social negative-buzz relief as the dominant de-correlation sleeve around a smaller competitor-return parent, instead of the already ACTIVE social-confirm recipe.",
+    "expression": "0.147 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.056 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.053 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.035 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.227 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.162 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.162 * group_rank(ts_rank(snt_social_volume_fast_d1, 126), industry) + 0.098 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate RRpA7pQa + QPaKmZP5 at 35/65. Local blend Sharpe about 2.16, max ACTIVE corr about 0.65."
+  },
+  {
+    "name": "v85_aqi_sentiment_stability_no_option",
+    "family": "aqi_sentiment_stability",
+    "source": "local_pnl_fusion_v85_20260627",
+    "hypothesis": "AQI/low-debt is occupied when paired with option/volume, but slow sentiment-stability sleeves may provide a non-option de-correlation path that the v83 social-volume version lacked.",
+    "expression": "0.293 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.195 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.162 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.140 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.105 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.053 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.052 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate d5xj87YE + wpRbXmNp at 65/35. Strict corr gate against omKoaQMl and omKoPEb6."
+  },
+  {
+    "name": "v85_ebit_visibility_ev_value",
+    "family": "ebit_visibility_value",
+    "source": "local_pnl_fusion_v85_20260627",
+    "hypothesis": "The 1QF EBIT visibility seed was below gate but lower-correlation; EV valuation may lift return without using PTP or goodwill.",
+    "expression": "0.170 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_ebit_mean / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_ebit_std / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_ebit_number, 63), 126), industry) + 0.090 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.250 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.250 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate d5xKbLlK + omKNPNO5 at 50/50. Local blend Sharpe about 1.85, max ACTIVE corr about 0.67."
+  }
+]

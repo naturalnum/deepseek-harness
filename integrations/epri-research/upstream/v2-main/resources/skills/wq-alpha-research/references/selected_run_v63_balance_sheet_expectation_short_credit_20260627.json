@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v63_sh_equity_guidance_band",
+    "family": "shareholder_equity_guidance",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "A high shareholder-equity guidance midpoint with a narrow guidance band may capture balance-sheet confidence outside EPS, FCF, EV valuation, accounting-cleanliness, and price-reversal families.",
+    "expression": "0.42 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), industry) + 0.24 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance - anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance) / abs(assets), 126), industry) + 0.19 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Analyst balance-sheet guidance probe; no FCF, EV, option, news/product graph, relationship return, close/open, tax/SBP/lease cleanliness."
+  },
+  {
+    "name": "v63_sh_equity_guidance_improvement",
+    "family": "shareholder_equity_guidance",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Improving shareholder-equity guidance may be more orthogonal than the level signal and less tied to existing EPSR/FCF actives.",
+    "expression": "0.38 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), industry) + 0.27 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Change-oriented sh-equity guidance; watch Fitness and corr vs LLpZgaeL/P0pgZllw."
+  },
+  {
+    "name": "v63_sh_equity_actual_delivery",
+    "family": "shareholder_equity_delivery",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Shareholder-equity actuals above analyst estimates may capture balance-sheet delivery distinct from sales/EPS/FCF delivery.",
+    "expression": "0.42 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_sh_equity_value / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 126), industry) + 0.23 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_af_nd_sh_equity_value / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repairs weak prior sh-equity delivery by using annual advanced fields and MARKET neutralization; no price/value term."
+  },
+  {
+    "name": "v63_bvps_actual_with_equity_delivery",
+    "family": "book_value_delivery",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Book value per share actuals combined with shareholder-equity delivery may form a balance-sheet value signal, but it must pass strict corr checks versus ordinary value and FCF actives.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), industry) + 0.25 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_sh_equity_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Controlled book-value probe; reject if it becomes ordinary value/high corr with P0pgZllw or RRpm5LEo."
+  },
+  {
+    "name": "v63_netdebt_equity_expectation",
+    "family": "netdebt_equity_expectation",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Low net-debt actuals relative to estimates paired with positive shareholder-equity guidance may capture balance-sheet repair without using tax/SBP/lease cleanliness.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_netdebt_value / anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean, 126), industry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Balance-sheet expectation blend; no FCF/EV/profitability/close-open."
+  },
+  {
+    "name": "v63_total_assets_compact_equity_ratio",
+    "family": "asset_growth_balance_sheet_expectation",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Lower expected total-asset growth plus higher expected equity/assets may capture conservative asset growth rather than accounting-cleanliness or profitability.",
+    "expression": "0.34 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.26 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean / anl4_fs_detail_estimates_advanced_af_nd_totassets_mean, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Conservative balance-sheet expectation probe; avoids tax/SBP/lease and ordinary operating profitability."
+  },
+  {
+    "name": "v63_ptp_estimate_subindustry_repair",
+    "family": "pretax_estimate_repair",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "The v62/v50 pretax estimate seed has enough Sharpe but marginal corr; subindustry grouping and lower level weight may preserve signal while reducing overlap with EPSR and reported FCF actives.",
+    "expression": "0.34 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), subindustry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), subindustry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), industry) + 0.18 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Strict corr gate vs LLpZgaeL/P0pgZllw; do not rescue if corr remains above 0.68."
+  },
+  {
+    "name": "v63_ebit_guidance_band",
+    "family": "ebit_guidance_consensus",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "EBIT guidance midpoint with narrow guidance band may be a non-EPS operating expectation signal, separate from FCF/EV valuation.",
+    "expression": "0.40 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_ebit_minguidance + anl4_fs_guidances_advanced_af_nd_ebit_maxguidance) / (2 * assets), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_ebit_maxguidance - anl4_fs_guidances_advanced_af_nd_ebit_minguidance) / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Annual EBIT guidance, not EBITDA/EV; expected to be weak if guidance fields are noisy."
+  },
+  {
+    "name": "v63_short_interest_relief_pure",
+    "family": "short_interest_relief",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Low and falling short interest may be independent if not stabilized by operating profitability, option flow, or social/news filters.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(news_short_interest, 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure short-interest probe after v59 short-interest weakness; stop if Sharpe/Fitness remains low."
+  },
+  {
+    "name": "v63_credit_facility_short_relief",
+    "family": "credit_facility_capacity",
+    "source": "balance_sheet_expectation_short_credit_v63_20260627",
+    "hypothesis": "Low credit-facility utilization plus remaining capacity and low short interest may capture balance-sheet liquidity without tax/SBP/lease cleanliness.",
+    "expression": "0.38 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / credit_facility_max_borrowing, 126), industry) + 0.27 * group_rank(ts_rank(credit_facility_remaining_borrowing_capacity / credit_facility_max_borrowing, 126), industry) + 0.20 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Credit capacity + short relief; no FCF, EV, tax/SBP/lease, product graph, or price reversal."
+  }
+]

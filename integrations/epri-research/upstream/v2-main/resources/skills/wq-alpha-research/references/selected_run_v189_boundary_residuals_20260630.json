@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v189_intersegment_fx_anti_netprofit_residual",
+    "family": "intersegment_fx_boundary_residual",
+    "hypothesis": "The d5x3KvRK seed is only slightly above the strict corr gate versus e7OVQKGN. Removing the analyst net-profit delivery sleeve and part of the direct FCA term tests whether intersegment/FX disclosure cleanliness has residual capacity beyond the accepted intersegment-netprofit alpha.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.45, 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fx_transaction_gain_loss_pre_tax) / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) - 0.110 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / abs(assets), 126), industry) - 0.080 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / abs(assets), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Boundary residual of d5x3KvRK. Submit only if corr drops below 0.68 and metrics remain intact."
+  },
+  {
+    "name": "v189_foreign_profit_fx_anti_intersegment",
+    "family": "foreign_profit_fx_boundary_residual",
+    "hypothesis": "A foreign-profit minus domestic-profit signal may be less tied to intersegment-sales disclosure than the d5x3KvRK seed. Explicitly subtracting the intersegment cleanliness sleeve tests whether the foreign/FX route is independent or already occupied.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.300 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank((foreign_ebit_amount - domestic_ebit_value) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / abs(assets), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) - 0.120 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry) - 0.080 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Likely high-corr to foreign/domestic actives; included as one controlled residual test."
+  },
+  {
+    "name": "v189_social_debt_anti_customer_residual",
+    "family": "social_deleveraging_customer_blocker_residual",
+    "hypothesis": "The N1p3wepo social-deleveraging seed is just above the corr gate versus QPazq9nX. Subtracting customer-count exposure and reversing customer authority/page-rank signs tests whether social debt reduction has residual capacity beyond customer-network breadth.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.58, 0.300 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / abs(assets), 252), 126), industry) + 0.220 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.190 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.130 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.070 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "If customer-blocker subtraction collapses the signal or corr stays high, close social-deleveraging repair."
+  },
+  {
+    "name": "v189_social_debt_subindustry_product_anti",
+    "family": "social_deleveraging_product_blocker_residual",
+    "hypothesis": "A subindustry-ranked social-debt variant with explicit product-news and customer-count subtraction may lower correlation to QPazq9nX and Vkp0P130. This is the second and final small repair of the social-deleveraging near-miss.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / abs(assets), 252), 126), subindustry) + 0.220 * group_rank(ts_rank(snt_social_value_fast_d1, 180), subindustry) + 0.180 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), subindustry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) - 0.100 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.080 * group_rank(ts_rank(rel_num_cust, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Reject if it maps back to QPazq9nX/Vkp0P130 or loses Fitness."
+  },
+  {
+    "name": "v189_option_award_fcf_anti_value",
+    "family": "option_award_fcf_value_residual",
+    "hypothesis": "The LLpz0nOM option-award/FCF estimate seed is just above the corr gate versus E5wRq3ZG. Subtracting FCF yield and EBITDA value proxies tests whether option-award dividend confidence plus FCF estimate breadth has residual capacity beyond the accepted value/FCF sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.270 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_fcf_low / abs(assets)), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.110 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry) - 0.080 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One-shot residual of option-award/FCF seed. Strict-check against E5wRq3ZG and xAxGJjNn."
+  },
+  {
+    "name": "v189_competitor_anti_aqi_cfo_residual",
+    "family": "competitor_raw_quality_blocker_residual",
+    "hypothesis": "The npge9GWx/Jjp3R9kW competitor raw seeds are barely above the corr gate and collide with kq3Jjmrk/9qwXgvQd. Removing AQI/CFO quality and hub/social overlap tests whether the competitor-return reversal contains any independent residual left.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.65, 0.330 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.120 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.140 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.100 * group_rank(ts_rank(fnd6_aqi / abs(assets), 126), industry) - 0.070 * group_rank(ts_rank(cashflow_op / abs(assets), 126), subindustry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "High-risk old frontier residual; if weak or still high-corr, do not continue competitor raw repairs."
+  }
+]

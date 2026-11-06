@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v50_fcfps_guidance_floor_stability",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "A strong minimum free-cash-flow-per-share guidance floor with a narrow guidance range may capture management confidence without using news, option, graph, or sales-estimate parents.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_guidances_advanced_af_nd_fcfps_minguidance / close, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_fcfps_maxguidance - anl4_fs_guidances_advanced_af_nd_fcfps_minguidance) / close, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "New guidance-surface parent; avoid EPS/sales estimates and existing option/news/graph capacity."
+  },
+  {
+    "name": "v50_cfps_basic_guidance_floor_stability",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "Basic cash-flow-per-share guidance may be less crowded than EPS guidance; a high floor and narrow range should prefer firms with resilient cash generation.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_guidances_basic_af_nd_cfps_minguidance / close, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_basic_af_nd_cfps_maxguidance - anl4_fs_guidances_basic_af_nd_cfps_minguidance) / close, 126), industry) + 0.30 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Sibling of FCFPS guidance but using basic CFPS fields; likely correlated if both work, strict PnL gate required."
+  },
+  {
+    "name": "v50_cfo_guidance_floor_range",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "Operating-cash-flow guidance floors scaled by market value can capture cash-generation quality while avoiding old reported cash-flow/accounting pressure fields.",
+    "expression": "0.38 * group_rank(ts_rank(anl4_fs_guidances_advanced_af_nd_cfo_minguidance / cap, 126), industry) + 0.32 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance - anl4_fs_guidances_advanced_af_nd_cfo_minguidance) / cap, 126), industry) + 0.30 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Absolute CFO guidance scaled by cap; watch unit/coverage behavior and correlation to profitability ACTIVE."
+  },
+  {
+    "name": "v50_gross_income_guidance_floor_range",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "A firm with a high gross-income guidance floor and low management-guidance dispersion may have resilient operating economics distinct from EPS and sales revisions.",
+    "expression": "0.38 * group_rank(ts_rank(anl4_fs_guidances_advanced_qf_nd_grossincome_minguidance / cap, 126), industry) + 0.32 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_grossincome_maxguidance - anl4_fs_guidances_advanced_qf_nd_grossincome_minguidance) / cap, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests gross-income guidance surface rather than sales estimate dispersion."
+  },
+  {
+    "name": "v50_ebitda_guidance_floor_range",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "EBITDA guidance floor strength and range stability may act as a less crowded quality/yield signal than reported EBITDA or EPS estimate yield.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_guidances_advanced_qf_nd_ebitda_minguidance / cap, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_ebitda_maxguidance - anl4_fs_guidances_advanced_qf_nd_ebitda_minguidance) / cap, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Could overlap with RRpm5LEo if it simply becomes EBITDA yield; daily-PnL gate decides."
+  },
+  {
+    "name": "v50_rd_guidance_commitment_low_risk",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "High minimum R&D guidance, when risk is not rising, may capture committed innovation investment rather than accounting quality or price reversal.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_guidances_advanced_qf_nd_rd_exp_minguidance / cap, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_rd_exp_maxguidance - anl4_fs_guidances_advanced_qf_nd_rd_exp_minguidance) / cap, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Intentionally different sign from cost-cutting; industry group rank should reduce sector R&D bias."
+  },
+  {
+    "name": "v50_conservative_capex_guidance_with_fcf",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "Low capex guidance combined with positive FCF analyst expectations may capture capital discipline without using reported capex/accounting-pressure fields.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.30 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Capex guidance plus FCF detail-estimate breadth; stop if it maps back to MPp7RPxn/MPpGzqwr."
+  },
+  {
+    "name": "v50_fcf_detail_estimate_range_breadth",
+    "family": "analyst_guidance_surface",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "High free-cash-flow estimate mean with low estimate spread and broad analyst coverage may be a cleaner cash-flow confidence signal.",
+    "expression": "0.35 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high - anl4_fs_detail_estimates_advanced_af_nd_fcf_low) / cap, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Detail-estimate surface rather than management guidance; compare with FCFPS/CFO guidance siblings."
+  },
+  {
+    "name": "v50_doubtful_accounts_reserve_light",
+    "family": "operating_detail_coldfield",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "A low doubtful-accounts reserve relative to assets, stabilized by idiosyncratic-risk relief, may capture receivables quality through a footnote field not used by the current ACTIVE set.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * allowance_for_doubtful_accounts_2 / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * fn_allowance_for_doubtful_accounts_receivable_a / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cold-field receivables-quality probe; likely kill if it correlates with LLp7PRmM/accounting-pressure alphas."
+  },
+  {
+    "name": "v50_range_volatility_residual_reversal",
+    "family": "price_volume_structure",
+    "source": "guidance_surface_rotation_v50_20260627",
+    "hypothesis": "Stocks with short-term range volatility above their close-to-close volatility and deteriorating market beta may be overextended; this tests a pure price-volume structure far from guidance fields.",
+    "expression": "0.40 * rank(-1 * ts_rank((parkinson_volatility_30 - historical_volatility_30), 60)) + 0.30 * rank(-1 * ts_rank(ts_mean(returns, 10) / (ts_std_dev(returns, 20) + 0.01), 60)) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A single non-guidance probe; no close/open leg, no option/news/social/graph."
+  }
+]

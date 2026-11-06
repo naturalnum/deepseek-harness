@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v182_cfi_alltype_attention_stability",
+    "family": "alltype_social_attention_cfi_lsus_repair",
+    "hypothesis": "CFI guidance update has strong low-correlation IS metrics but repeatedly fails sub-universe checks. A high-coverage all-type social attention stability sleeve may filter unstable attention regimes without using news18/news12, option, debt, or current-liability fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.110 * group_rank(ts_rank(-1 * abs(ts_delta(vec_avg(scl12_alltype_sentvec), 20)), 126), industry) + 0.110 * group_rank(ts_rank(-1 * vec_avg(scl12_alltype_buzzvec), 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Not a CFI parameter sibling: removes beta/reversal and adds unused alltype social vectors as the external robustness layer. Reject on LOW_SUB_UNIVERSE or corr to CFI/contract-liability actives."
+  },
+  {
+    "name": "v182_option_alltype_attention_stability",
+    "family": "alltype_social_attention_option_lsus_repair",
+    "hypothesis": "Long-tenor call-put convexity has the lowest ACTIVE PnL correlation in the local frontier but is LSUS-fragile. Replacing close/open and beta timing with all-type social attention stability tests whether the option edge survives in a more robust information regime.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.160 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(ts_delta(vec_avg(scl12_alltype_sentvec), 20)), 126), industry) + 0.130 * group_rank(ts_rank(-1 * vec_avg(scl12_alltype_buzzvec), 126), industry) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No close/open and no 5-day reversal. Submit only if LSUS passes and corr stays below 0.68; otherwise close this alltype option repair."
+  },
+  {
+    "name": "v182_cfi_option_alltype_eventful",
+    "family": "alltype_social_attention_cfi_option_eventful",
+    "hypothesis": "Prior option+CFI fusions stayed LSUS-fragile. This version keeps both frontier sleeves below dominant weight and trades only in eventful return regimes, while alltype attention stability supplies a different robustness filter.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.220 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.110 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.120 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.100 * group_rank(ts_rank(-1 * vec_avg(scl12_alltype_buzzvec), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A one-shot three-way frontier repair. Reject if it repeats v165 LSUS or maps to existing option/model/social actives."
+  },
+  {
+    "name": "v182_financing_cost_alltype_regime",
+    "family": "financing_cost_alltype_corr_escape",
+    "hypothesis": "Financing-cost amortization relief was metric-pass and LSUS-pass but too correlated to current-liability/fscore capacity. Removing beta/reversal and trading only when alltype sentiment magnitude is calm tests whether financing friction has an independent path.",
+    "expression": "trade_when(ts_rank(abs(vec_avg(scl12_alltype_sentvec)), 20) < 0.65, 0.280 * group_rank(ts_rank(-1 * financing_costs_amortization / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * financing_costs_amortization_total / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * fn_debt_issuance_costs_a / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * fn_debt_issuance_costs_q / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * vec_avg(scl12_alltype_buzzvec), 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Single decorrelation test for zq901keE; no override if corr remains high to A1wmZ22l/3q7PkXGN."
+  },
+  {
+    "name": "v182_debt_issuance_efficiency_alltype",
+    "family": "issuance_cost_efficiency_alltype",
+    "hypothesis": "Low debt-issuance cost per debt proceeds is a financing-efficiency signal rather than a simple liability-level signal. Alltype attention stability is included to avoid the crowded current-liability cleanliness path.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.240 * group_rank(ts_rank(-1 * debt_issuance_costs_total / abs(debt_issuance_proceeds_2), 126), industry) + 0.210 * group_rank(ts_rank(-1 * debt_issuance_costs_expense / abs(debt_issuance_proceeds), 126), industry) + 0.170 * group_rank(ts_rank(-1 * net_deferred_finance_costs / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(net_deferred_finance_costs_value / abs(assets), 252), 126), industry) + 0.130 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A distinct cost-per-proceeds test using newer low-use fields. Reject on unit issues, weak metrics, or high corr to debt/current-liability actives."
+  },
+  {
+    "name": "v182_alltype_attention_pure_residual",
+    "family": "alltype_social_attention_pure",
+    "hypothesis": "The alltype social vectors are high coverage and absent from prior selected runs. A compact standalone attention-stability residual tests whether they contain usable information before treating them only as auxiliaries.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.240 * group_rank(ts_rank(vec_avg(scl12_alltype_sentvec), 60), industry) + 0.220 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(scl12_alltype_buzzvec), 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_delta(vec_avg(scl12_alltype_buzzvec), 20), 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh-parent diagnostic. Do not repair if it becomes a news/social/reversal neighbor or lacks Fitness."
+  }
+]

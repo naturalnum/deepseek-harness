@@ -1,0 +1,6 @@
+interface:
+  display_name: 'IOAI Report'
+  short_description: 'Freeze and verify an immutable local IOAI report'
+  default_prompt: 'Use $report to freeze and verify an IOAI report at one canonical frontier revision.'
+policy:
+  allow_implicit_invocation: true

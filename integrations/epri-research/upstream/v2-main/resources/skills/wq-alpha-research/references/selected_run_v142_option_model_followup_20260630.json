@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v142_skew_slope_model_lowcorr",
+    "family": "option_skew_slope_model",
+    "hypothesis": "IV skew-slope compression under falling market correlation may be a different risk-pricing parent from e7OG3bmz's mean-IV term compression.",
+    "expression": "trade_when(correlation_last_90_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_30 - implied_volatility_mean_skew_180), 90), industry) + 0.230 * rank(-1 * earnings_certainty_rank_derivative) + 0.180 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "No PCR, breakeven, social, VWAP, forward, or debt; strict-check against e7OG3bmz and old option/social skew blockers."
+  },
+  {
+    "name": "v142_call_put_asymmetry_largecap",
+    "family": "clean_call_put_iv_asymmetry",
+    "hypothesis": "Directional call-vs-put IV asymmetry in liquid large names may be cleaner than the earlier long-tenor call/put absolute-asymmetry variants that errored or failed LSUS.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.320 * group_rank(ts_rank(implied_volatility_call_60 - implied_volatility_put_60, 90), industry) + 0.220 * group_rank(ts_rank(implied_volatility_call_180 - implied_volatility_put_180, 90), industry) + 0.180 * rank(-1 * relative_valuation_rank_derivative) + 0.150 * rank(-1 * multi_factor_static_score_derivative) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Simplified call-put IV parent; avoids forward price, close/open reversal, social, sparse footnotes, and absolute long-tenor asymmetry."
+  },
+  {
+    "name": "v142_realized_vol_model_eventful",
+    "family": "realized_volatility_model_residual",
+    "hypothesis": "Compressed realized volatility term structure plus contrarian model ranks may keep the risk-pricing mechanism while reducing overlap with implied-vol term compression.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.280 * group_rank(ts_rank(-1 * abs(historical_volatility_20 - historical_volatility_180), 90), industry) + 0.240 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - parkinson_volatility_180), 90), industry) + 0.200 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.150 * rank(-1 * earnings_certainty_rank_derivative) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Realized-vol rather than implied-vol parent; may be weaker but should reveal whether e7OG3bmz depends specifically on implied vol."
+  },
+  {
+    "name": "v142_largecap_mean_skew_model",
+    "family": "largecap_mean_skew_model",
+    "hypothesis": "Large-cap option mean-vol and skew compression with valuation/certainty model terms tests whether a more liquid, no-event gate can lower correlation to e7OG3bmz.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.300 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_360 - implied_volatility_mean_30), 90), industry) + 0.220 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_60 - implied_volatility_mean_skew_270), 90), industry) + 0.200 * rank(-1 * relative_valuation_rank_derivative) + 0.150 * rank(-1 * earnings_certainty_rank_derivative) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "A deliberately liquid-regime sibling; submit only if correlation clears e7OG3bmz, not as a parameter copy."
+  },
+  {
+    "name": "v142_model_led_skew_confirm",
+    "family": "model_led_option_confirm",
+    "hypothesis": "If the true parent is the model-derivative contrarian signal, a model-led expression with only a light skew-compression confirmation may have a different PnL path from e7OG3bmz.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.300 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.240 * rank(-1 * earnings_certainty_rank_derivative) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_20 - implied_volatility_mean_skew_120), 90), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Model-led rather than option-led; no PCR/breakeven/social/VWAP/forward."
+  }
+]

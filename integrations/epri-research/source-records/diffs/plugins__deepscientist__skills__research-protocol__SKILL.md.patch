@@ -1,0 +1,24 @@
+--- resources/skills/deepscientist-protocol-workflow/SKILL.md
++++ plugins/deepscientist/skills/research-protocol/SKILL.md
+@@ -1,7 +1,11 @@
+ ---
+-name: deepscientist-protocol-workflow
++name: research-protocol
+ description: Create, refine, or reuse an executable research workflow and its structured run records when Knowledge Deposition is active. Use only for repeatable multi-step laboratory, computational, evidence, or analysis procedures with explicit inputs, checkpoints, reviewable outputs, and a real need for reproducibility or handoff; do not use for one-off work or abstract method notes.
+ ---
++
++# Harness integration
++
++The original V2 authoring guidance follows. Use research_protocol_put/get and research_record_create/get/update/export. Review checks and record_submit/reopen/archive/restore are human-only: ask the user to perform these operations in the workbench; do not attempt to obtain a human credential. Agent data changes reset prior review checks. Use research_attachment_put/get for real files up to 2 MiB; a file field must contain the returned attachment:SHA256 reference, not a filename. Python model/assigner execution, .aira archives and Platform cloud synchronization are not enabled. Saving AIMD is not proof of executable Python validation. The legacy lab_skill/project_workspace APIs are not available. Read the preserved references under upstream/v2-main/resources/skills/deepscientist-protocol-workflow.
+ 
+ # DeepScientist Protocol Workflow
+ 
+@@ -17,7 +21,7 @@
+   4. It has an observable output and a reviewable completion criterion.
+   5. Reproduction, audit, comparison, or handoff matters to the project.
+ - If any gate is false, do not create a protocol. For a one-off task, answer or execute directly. For abstract guidance without a concrete run sequence, update `memory/methods` instead. For an exploratory long-running effort, keep the main work in its active research/goal workflow and standardize only a stable subprocedure.
+-- Do not add a new MCP server. Use normal project files and the existing Git-backed project workspace.
++- Reuse the installed Airalogy data plugin and its research_* tools. Keep editable protocol source in the workspace, publish immutable versions through research_protocol_put, and store runs through research_record_* tools. Do not start a second data authority.
+ 
+ ## Read Before Authoring
+ 

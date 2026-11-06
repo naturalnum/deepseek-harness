@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v12_deferred_revenue_growth_reversal_quality",
+    "family": "deferred_revenue_growth",
+    "source": "nearmiss_refine_v12_20260625",
+    "hypothesis": "v11 deferred-revenue growth was a near-miss. Add a small intraday reversal and light quality anchor to lift Sharpe/Fitness without making the parent factor dominant.",
+    "expression": "0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Refines qMAj1o2O by replacing part of sales-growth weight with the proven low-correlation intraday reversal ingredient."
+  },
+  {
+    "name": "v12_deferred_revenue_growth_gross_margin",
+    "family": "deferred_revenue_growth",
+    "source": "nearmiss_refine_v12_20260625",
+    "hypothesis": "Deferred revenue growth should be stronger when backed by gross margin. This tests demand visibility plus profitability quality.",
+    "expression": "0.60 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses gross margin instead of sales_growth to reduce sub-universe weakness."
+  },
+  {
+    "name": "v12_deferred_revenue_growth_receivables_quality",
+    "family": "deferred_revenue_receivables_quality",
+    "source": "nearmiss_refine_v12_20260625",
+    "hypothesis": "Deferred revenue growth and low receivables/sales are complementary working-capital quality signals: prepayment visibility versus collection risk.",
+    "expression": "0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "May correlate with LLp7PRmM; submit only if PnL correlation stays below threshold."
+  },
+  {
+    "name": "v12_capex_sales_discipline_cashflow",
+    "family": "investment_cashflow_quality",
+    "source": "nearmiss_refine_v12_20260625",
+    "hypothesis": "Capex intensity relative to sales may be a cleaner investment-discipline measure than capex/assets, especially when backed by operating cash flow.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), industry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Refines MPp7RPxn by changing the denominator from assets to sales and using slightly higher decay."
+  },
+  {
+    "name": "v12_capex_discipline_gross_margin",
+    "family": "investment_margin_quality",
+    "source": "nearmiss_refine_v12_20260625",
+    "hypothesis": "Low capex intensity is more valuable when gross margin is strong, indicating capital-light quality rather than underinvestment.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), industry) + 0.35 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A capital-light quality variant; should be less analyst-yield-like than EBITDA/EV."
+  }
+]

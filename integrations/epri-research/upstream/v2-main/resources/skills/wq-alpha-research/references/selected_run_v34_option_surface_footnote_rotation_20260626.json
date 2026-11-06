@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v34_option_surface_90d_risk_relief",
+    "family": "option_surface_rescue",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "The 60-day option breakeven/IV-risk near-miss was low-correlation but just missed Fitness; shifting to 90-day surface may improve sub-universe stability without adding crowded reversal or fundamentals.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_90 - put_breakeven_90) / close, 90), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_90 - historical_volatility_90), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct low-correlation rescue of j2ZA8Pae; avoid close/open and share-count."
+  },
+  {
+    "name": "v34_option_surface_30d_fast_relief",
+    "family": "option_surface_rescue",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "A shorter 30-day option surface may sharpen signal strength while decay controls turnover; submit only if sub-universe improves.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_30 - put_breakeven_30) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_30 - historical_volatility_30), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Fast option surface variant; watch turnover and sub-universe."
+  },
+  {
+    "name": "v34_option_forward_discount_ivrp",
+    "family": "option_surface_rescue",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "Forward-price discount plus low IV risk premium captures option-implied optimism/cheap insurance without using existing breakeven-skew formulas directly.",
+    "expression": "0.45 * group_rank(ts_rank((forward_price_90 - close) / close, 90), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_90 - historical_volatility_90), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option-implied forward variant; should be compared with QPa7KOGK and j2ZA8Pae."
+  },
+  {
+    "name": "v34_debt_rate_repayment_quality",
+    "family": "debt_rate_footnote",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "High debt repayment combined with lower stated debt rates and lower interest cash paid may identify refinancing/deleveraging quality distinct from credit-capacity news.",
+    "expression": "0.40 * group_rank(ts_rank(debt_repayments_total_2 / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * debt_instrument_interest_rate_percent, 126), industry) + 0.30 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "New footnote debt-rate mechanism; no credit facility or credit news."
+  },
+  {
+    "name": "v34_cash_tax_deferred_timing",
+    "family": "cash_tax_timing",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "Cash taxes paid relative to deferred tax expense may proxy earnings quality through tax cash conversion, different from deferred-tax valuation allowance.",
+    "expression": "0.40 * group_rank(ts_rank(income_taxes_paid_total / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * annual_deferred_income_tax_expense / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * deferred_tax_liabilities_total_4 / assets, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids known deferred_tax_assets_valuation_allowance_value ACTIVE path; still watch pw6jz8ob correlation."
+  },
+  {
+    "name": "v34_current_tax_quality_risk",
+    "family": "cash_tax_timing",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "Current tax expense and taxes paid can capture real taxable profitability; risk relief is included as a small non-accounting stabilizer.",
+    "expression": "0.45 * group_rank(ts_rank(current_income_tax_expense_amount / assets, 126), industry) + 0.30 * group_rank(ts_rank(income_taxes_paid_total / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Cash/current tax path, not valuation allowance/prepaid."
+  },
+  {
+    "name": "v34_derivative_liability_burden",
+    "family": "derivative_liability_footnote",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "Lower derivative liability fair value relative to assets and notional exposure may identify cleaner hedge/liability profiles in a rarely used footnote channel.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * derivative_liability_fair_value / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * notional_value_derivative_contracts / assets, 126), industry) + 0.20 * group_rank(ts_rank(mean_event_sentiment_score, 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sparse underused mechanism; watch sub-universe and coverage."
+  },
+  {
+    "name": "v34_share_option_overhang",
+    "family": "share_option_overhang",
+    "source": "option_surface_footnote_rotation_v34_20260626",
+    "hypothesis": "Low option-award overhang and low share issuance from exercised options may capture dilution overhang without using the crowded buyback/share-count contraction path.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_shares_outstanding_total, 126), industry) + 0.30 * group_rank(ts_rank(-1 * option_awards_granted_count / common_shares_outstanding_total, 126), industry) + 0.25 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_shares_outstanding_total, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "New option-compensation overhang channel; reject if it maps to buyback/dilution ACTIVE names."
+  }
+]

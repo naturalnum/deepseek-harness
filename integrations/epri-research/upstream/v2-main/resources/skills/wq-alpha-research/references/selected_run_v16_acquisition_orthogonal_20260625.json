@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v16_acquisition_sales_contribution_margin",
+    "family": "acquisition_sales_quality",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "Acquisition sales contribution may capture demand/scale benefits from deals, distinct from v15's income contribution. Gross margin and low goodwill burden filter low-quality acquisitions without using CFO or intraday reversal.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_aqs / sales, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "First fnd6_aqs test; no close/open and no cashflow_op to reduce correlation with 9qwXgvQd."
+  },
+  {
+    "name": "v16_acquisition_after_tax_eps_value",
+    "family": "acquisition_after_tax_quality",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "Positive acquisition/merger after-tax contribution should matter when valuation is not stretched. Use analyst EPS yield and low leverage as slow stabilizers.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_newqeventv110_aqaq / assets, 126), industry) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.20 * group_rank(ts_rank(-1 * debt / assets, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses after-tax acquisition field rather than fnd6_aqi; no reversal/CFO."
+  },
+  {
+    "name": "v16_acquisition_pretax_relationship",
+    "family": "acquisition_pretax_relationship",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "Acquisition pretax contribution may work better when firms also sit in strong customer networks. Relationship authority is an orthogonal stabilizer to accounting quality.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_newqeventv110_aqpq / assets, 126), industry) + 0.25 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.20 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests pretax acquisition event contribution with relationship data, avoiding close/open."
+  },
+  {
+    "name": "v16_acquisition_eps_effect_combo",
+    "family": "acquisition_eps_effect",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "Acquisition-related EPS effect should be valued differently from raw income contribution. Combine it with sales contribution and EPS yield.",
+    "expression": "0.50 * group_rank(ts_rank(fnd6_eventv110_aqepsq / close, 126), industry) + 0.30 * group_rank(ts_rank(fnd6_aqs / sales, 126), industry) + 0.20 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sparse EPS-effect field; strict submit gate expected."
+  },
+  {
+    "name": "v16_aqi_low_debt_eps",
+    "family": "acquisition_income_balance_sheet",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "The v15 acquisition-income signal may diversify if paired with low leverage and EPS yield instead of CFO and close/open reversal.",
+    "expression": "0.45 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct v15 sibling but removes CFO/reversal and lowers fnd6_aqi weight; submit only if self-corr to 9qwXgvQd is low."
+  },
+  {
+    "name": "v16_aqi_credit_ratings_news",
+    "family": "acquisition_income_credit_news",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "Acquisition income contribution may be more valuable when credit-rating news is favorable, capturing financing quality rather than operating cashflow quality.",
+    "expression": "0.50 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(rp_ess_credit_ratings, 90), industry) + 0.20 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Hybrid accounting + credit-ratings news; no close/open."
+  },
+  {
+    "name": "v16_goodwill_growth_eps_authority",
+    "family": "goodwill_growth_rescue",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "v15 goodwill growth was strong but too correlated with deferred revenue. Replace operating quality/reversal with EPS yield and customer authority to lower common quality/reversal exposure.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue variant for RRp70j8d; no close/open or operating_income."
+  },
+  {
+    "name": "v16_deferred_tax_allowance_eps_authority",
+    "family": "tax_quality_rescue",
+    "source": "acquisition_orthogonal_v16_20260625",
+    "hypothesis": "v15 deferred-tax allowance was strong but too correlated with goodwill quality. Replace operating quality/reversal with EPS yield and customer authority.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescue variant for Xgp7XlVx; submit only if corr to mL8j98w9 and 9qwXgvQd stays below threshold."
+  }
+]

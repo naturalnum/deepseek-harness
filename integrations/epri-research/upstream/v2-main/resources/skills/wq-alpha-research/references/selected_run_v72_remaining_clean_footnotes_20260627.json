@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v72_defined_contribution_cost_relief",
+    "family": "remaining_clean_footnotes",
+    "source": "remaining_clean_footnotes_v72_20260627",
+    "hypothesis": "Lower defined-contribution plan cost relative to assets may proxy lower recurring labor-benefit burden without using the stopped stock-compensation or employee-liability fields.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(recognized_cost_defined_contribution_plan / assets, 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Clean high-coverage footnote not directly tested; abandon if it maps to employee/SBP accounting-cleanliness actives."
+  },
+  {
+    "name": "v72_new_stock_issuance_pressure",
+    "family": "remaining_clean_footnotes",
+    "source": "remaining_clean_footnotes_v72_20260627",
+    "hypothesis": "Lower new stock issuance value may capture financing pressure and dilution risk distinct from buyback/share-count guidance routes.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses a low-alphaCount issuance-value field rather than realized share-count contraction or buyback execution."
+  },
+  {
+    "name": "v72_senior_notes_balance_relief",
+    "family": "remaining_clean_footnotes",
+    "source": "remaining_clean_footnotes_v72_20260627",
+    "hypothesis": "Lower senior-note balances and falling senior-note burden may capture cleaner financing structure without relying on the stopped debt-repayment route.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * senior_notes_balance / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * senior_notes_balance_2 / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * ts_delta(senior_notes_balance_2 / assets, 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Financing-structure level, not repayment/interest paid quality; still likely to be weak."
+  },
+  {
+    "name": "v72_asset_specificity_light",
+    "family": "remaining_clean_footnotes",
+    "source": "remaining_clean_footnotes_v72_20260627",
+    "hypothesis": "Lower land-improvement and furniture/fixture intensity may proxy less asset-specific fixed-cost exposure while avoiding the stopped machinery/useful-life line.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * land_improvements_total_value / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * furniture_fixtures_gross_value / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * ts_delta(land_improvements_total_value / assets, 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Physical-asset specificity probe; not machinery/equipment/useful-life."
+  },
+  {
+    "name": "v72_doubtful_account_provision_relief",
+    "family": "remaining_clean_footnotes",
+    "source": "remaining_clean_footnotes_v72_20260627",
+    "hypothesis": "Lower doubtful-account provision may capture credit quality in receivables distinct from older allowance-level tests.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * doubtful_accounts_provision_2 / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(doubtful_accounts_provision_2 / assets, 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Provision-flow variant of the allowance route; close if weak or high-correlation."
+  }
+]

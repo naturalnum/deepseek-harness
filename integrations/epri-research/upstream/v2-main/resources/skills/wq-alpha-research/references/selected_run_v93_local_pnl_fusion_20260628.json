@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v93_competitor_hub_analyst_value_fusion",
+    "family": "local_pnl_fusion_graph_analyst_value",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "A smaller competitor-hub sleeve combined with analyst sales/EPS value may preserve the strong graph/reversal edge while reducing exact overlap with prior graph-only and EPS-only ACTIVE alphas.",
+    "expression": "0.29 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.23 * rank(-(close / open - 1)) + 0.13 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.18 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.17 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local synthetic fusion suggested the rKo2xMQa + d5xZWARJ blend can sit just below the 0.68 corr gate; this is the most direct high-strength test."
+  },
+  {
+    "name": "v93_tax_quality_competitor_raw_fusion",
+    "family": "local_pnl_fusion_tax_graph",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "Deferred-tax allowance quality and customer authority may complement competitor return reversal, creating a distinct tax/relationship path instead of another pure tax or pure competitor alpha.",
+    "expression": "0.23 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.12 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.10 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.25 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.15 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests the N1p7WQG8/Xgp7XlVx + 1Y7jwanz low-corr synthetic cluster with lower EPS exposure and slower decay."
+  },
+  {
+    "name": "v93_aqi_competitor_raw_fusion",
+    "family": "local_pnl_fusion_accounting_graph",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "Accounting-quality investment intensity, low leverage, and competitor return reversal may diversify each other better than AQI or competitor raw signals alone.",
+    "expression": "0.22 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.12 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.25 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Risky because AQI is occupied, but local fusion ranked this cross-family blend above ordinary AQI rescues."
+  },
+  {
+    "name": "v93_earnings_cashflow_competitor_fusion",
+    "family": "local_pnl_fusion_earnings_graph",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "Earnings-news/cashflow strength is too crowded alone, but a partial competitor-return sleeve may alter the daily PnL path enough to pass the strict correlation gate.",
+    "expression": "0.23 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.22 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.14 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled revisit of earnings/cashflow, not a boundary tweak; reject if it still maps to O0pNbJ17/Vkp0P130/88zpWZ1X."
+  },
+  {
+    "name": "v93_epsr_buyback_competitor_fusion",
+    "family": "local_pnl_fusion_epsr_payout_graph",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "EPS revision yield plus buyback strength is crowded, but adding competitor return reversal may reduce its overlap with EPS/payout ACTIVE alphas while keeping high raw strength.",
+    "expression": "0.20 * group_rank(ts_rank(est_epsr / close, 126), industry) + 0.16 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.24 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "High-crowding ingredients, but the local synthetic blend was one of the few with projected max corr near 0.61."
+  },
+  {
+    "name": "v93_css_earnings_option_sentiment_fusion",
+    "family": "local_pnl_fusion_news_option_sentiment",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "CSS earnings news and option-implied sentiment stability may complement each other if both are kept below dominant weights, forming a timing path distinct from ordinary earnings/reversal.",
+    "expression": "0.22 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.16 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.10 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.11 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.05 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "This is a true cross-path fusion of two previously crowded near-misses; do not expand if it lands near akdbG2k5/Vkp0P130."
+  },
+  {
+    "name": "v93_stockcomp_debt_analyst_value_fusion",
+    "family": "local_pnl_fusion_stockcomp_analyst_value",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "Low stock-compensation burden and low debt-extinguishment noise may act as a cleaner accounting sleeve for analyst sales/EPS value, with relationship/sentiment terms reducing payout-neighbor correlation.",
+    "expression": "0.16 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.14 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.10 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.04 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.20 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.20 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local fusion of rKodN991 + d5xZWARJ; included because projected max corr was lower than direct stockcomp or analyst-value variants."
+  },
+  {
+    "name": "v93_competitor_intangible_margin_fusion",
+    "family": "local_pnl_fusion_graph_intangible_margin",
+    "source": "local_pnl_fusion_v93_20260628",
+    "hypothesis": "Competitor underperformance reversal may combine with low intangible burden and gross-margin quality to create a cleaner operations/relationship path than either parent alone.",
+    "expression": "0.22 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.13 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.24 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.18 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A less obvious fusion than buyback/EPS; useful even if it fails because it tests whether competitor raw can pair with operations quality instead of payout/accounting."
+  }
+]

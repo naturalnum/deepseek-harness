@@ -1,0 +1,38 @@
+[
+  {
+    "name": "v290_option_eps_roe_minus_profit_ev_040",
+    "family": "second_order_composite_residual",
+    "hypothesis": "The v289 option/EPS/ROE composite has excellent metrics but collides with quality/EPS capacity; subtracting the profit/EV active blocker should preserve option-plus-quality breadth while reducing old profitability exposure.",
+    "expression": "0.18 * (0.45 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)) - 0.27 * (0.45 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.31 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.25 * (group_rank(ts_rank(est_eps / close, 126), industry)) - 0.40 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v290_option_eps_roe_minus_profit_ev_045",
+    "family": "second_order_composite_residual",
+    "hypothesis": "A stronger profit/EV subtraction tests the safer-correlation boundary for the same v289 option/EPS/ROE parent.",
+    "expression": "0.18 * (0.45 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)) - 0.27 * (0.45 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.31 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.25 * (group_rank(ts_rank(est_eps / close, 126), industry)) - 0.45 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v290_eps_contract_minus_eps_035",
+    "family": "second_order_composite_residual",
+    "hypothesis": "The v289 EPS/contract/option-dilution composite has strong metrics but too much direct EPS exposure; subtracting the EPS active blocker tests whether the contract and option-dilution residual remains tradable.",
+    "expression": "0.12 * (0.5 * rank(-(close / open - 1)) + 0.5 * rank(ts_rank(operating_income / equity, 126))) + 0.25 * (group_rank(ts_rank(est_eps / close, 126), industry)) - 0.32 * (0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)) + 0.31 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) - 0.35 * (group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v290_eps_sales_buyback_minus_eps_030",
+    "family": "second_order_composite_residual",
+    "hypothesis": "The v289 EPS/sales/buyback composite was too close to direct EPS; subtracting EPS should expose the sales-dispersion and buyback/reversal residual if it exists.",
+    "expression": "0.32 * (group_rank(ts_rank(est_eps / close, 126), industry)) + 0.19 * (0.50 * group_rank(ts_rank(-1 * ts_delta(sales_estimate_standard_deviation / abs(sales), 63), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(sales_estimate_count_quarterly, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_30_days - systematic_risk_last_360_days), 60), industry)) + 0.15 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 0.34 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) - 0.30 * (group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

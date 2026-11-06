@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v193_contract_eps_forward",
+    "family": "orthogonal_parent_fusion",
+    "hypothesis": "Contract-liability growth, EPS value, and long forward-curve slope are low-correlated with the two new v192 actives and with each other. This avoids the occupied news + option + current-liability local space.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.30 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.24 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.12 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary v193 candidate: no news-chain sleeve, no 720/90 call-put breakeven sleeve, no current accrued liability sleeve."
+  },
+  {
+    "name": "v193_contract_assetestimate_profit",
+    "family": "orthogonal_parent_fusion",
+    "hypothesis": "Deferred revenue growth plus improving analyst asset efficiency can express capital-light forward demand without relying on news or option skew.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.36 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.26 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.22 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_mean / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses the low-corr 78wvjvW8-style analyst asset-estimate parent, but with contract liability as the anchor."
+  },
+  {
+    "name": "v193_competitor_eps_contract",
+    "family": "orthogonal_parent_fusion",
+    "hypothesis": "Competitor-network rank, EPS value, and deferred revenue growth are individually strong while still low-corr to v192 actives. This tests a non-news customer/competitor graph fusion without intraday reversal dominance.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.28 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.24 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Reject if it maps back to 2r7Gzlnw/zq9dnMY1 competitor-reversal capacity."
+  },
+  {
+    "name": "v193_fcf_capex_contract_forward",
+    "family": "orthogonal_parent_fusion",
+    "hypothesis": "FCF yield, low capex guidance, deferred revenue growth, and forward-curve slope should prefer self-funding demand realizers rather than balance-sheet accrual cleanup.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.32 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.24 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.24 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.20 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Strict-check against 9qwWXNW9 and LLprjdP9; do not submit if it is just their average."
+  },
+  {
+    "name": "v193_assetestimate_eps_forward",
+    "family": "orthogonal_parent_fusion",
+    "hypothesis": "Analyst asset-estimate contraction plus EPS value and long forward-curve slope should capture lean growth expectations with lower relation to contract-liability actives.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.28 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.24 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.14 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No contract-liability leg; intended to test whether the asset-estimate parent can stand apart from LLprjdP9/RRp7Q9Le."
+  },
+  {
+    "name": "v193_roe_contract_forward",
+    "family": "orthogonal_parent_fusion",
+    "hypothesis": "Subindustry ROE, deferred revenue growth, and forward-curve slope are simple but low-corr to the new v192 actives. This is a compact robustness check for profitability-demand fusion without news or current liabilities.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.28 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.24 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Reject if too close to LLpGdlrm/QPaGVa3K profitability-reversal capacity."
+  }
+]

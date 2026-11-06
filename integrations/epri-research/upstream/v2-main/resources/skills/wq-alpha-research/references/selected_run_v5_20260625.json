@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v5_short_interest_quality",
+    "family": "short_interest_quality",
+    "source": "memory_guided_v5_20260625",
+    "hypothesis": "High short interest may indicate crowded negative positioning; paired with operating quality it may capture resilient firms under short pressure.",
+    "expression": "0.5 * group_rank(ts_rank(-news_short_interest, 60), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses US News short-interest matrix; intended to diversify from analyst yield and buyback."
+  },
+  {
+    "name": "v5_customer_return_signal",
+    "family": "relationship_customer",
+    "source": "memory_guided_v5_20260625",
+    "hypothesis": "Customer return signal may proxy supply-chain demand information and be less correlated with accounting-quality factors.",
+    "expression": "group_rank(ts_rank(pv13_custretsig_retsig, 20), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Relationship dataset candidate; no quality anchor to reduce correlation."
+  },
+  {
+    "name": "v5_customer_authority_quality",
+    "family": "relationship_customer",
+    "source": "memory_guided_v5_20260625",
+    "hypothesis": "Customer network authority may identify firms exposed to stronger customer ecosystems; combine lightly with quality.",
+    "expression": "0.6 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Relationship graph field with moderate coverage; watch sub-universe and correlation."
+  },
+  {
+    "name": "v5_news_index_underreaction",
+    "family": "news_relative_performance",
+    "source": "memory_guided_v5_20260625",
+    "hypothesis": "Post-news relative performance versus SPY may capture event underreaction after smoothing.",
+    "expression": "group_rank(ts_rank(news_indx_perf, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "US News matrix field; pure event-relative return channel."
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v150_interest_carry_core_subindustry",
+    "family": "interest_income_nonoperating_repair",
+    "hypothesis": "v149 may have been weakened by absolute nonoperating penalties and coarse INDUSTRY grouping. Test the pure interest-income / net-interest carry core at SUBINDUSTRY peer level.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(vec_avg(fnd6_iints) / assets, 126), subindustry) + 0.280 * group_rank(ts_rank(vec_avg(fnd6_nxints) / assets, 126), subindustry) + 0.150 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_nxints) / assets, 252), 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Ablation of XgpzMnox: remove nonoperating absolute penalty and use subindustry peer ranking. Close if Sharpe stays below 1.35."
+  },
+  {
+    "name": "v150_positive_nonoperating_carry",
+    "family": "nonoperating_income_positive_carry",
+    "hypothesis": "The sign of nonoperating income may matter more than absolute cleanliness. Positive nonoperating income excluding interest plus positive interest carry may capture investment-income contribution rather than accounting noise.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.280 * group_rank(ts_rank(vec_avg(fnd6_nopxs) / assets, 126), industry) + 0.240 * group_rank(ts_rank(vec_avg(fnd6_iints) / assets, 126), industry) + 0.200 * group_rank(ts_rank(vec_avg(fnd6_nxints) / assets, 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_nopxs) / assets, 252), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests sign rather than low absolute nonoperating item. Reject if it becomes ordinary quality/value or weak."
+  },
+  {
+    "name": "v150_interest_carry_change_largecap",
+    "family": "interest_carry_change",
+    "hypothesis": "Improving interest carry may be more informative than the level, especially for large-cap companies where coverage and sub-universe robustness should be better.",
+    "expression": "trade_when(rank(cap) > 0.58, 0.310 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_iints) / assets, 252), 126), industry) + 0.300 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_nxints) / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(vec_avg(fnd6_iints) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_nopxs)) / assets, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Change-dominant repair for potential level crowding. Large-cap gate is meant to test sub-universe robustness, not to hide small-cap dependence."
+  },
+  {
+    "name": "v150_interest_carry_no_beta_reversal",
+    "family": "interest_carry_core_no_aux",
+    "hypothesis": "If v149's weak result was dominated by generic beta/reversal auxiliaries, the raw carry core should reveal whether the economic parent has independent strength.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.390 * group_rank(ts_rank(vec_avg(fnd6_iints) / assets, 126), industry) + 0.330 * group_rank(ts_rank(vec_avg(fnd6_nxints) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_nopxs)) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_nopxs)) / assets, 252), 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure parent ablation with no beta/correlation/reversal. If weak, the carry route should be closed."
+  },
+  {
+    "name": "v150_interest_carry_low_market_corr",
+    "family": "interest_carry_lowcorr_regime",
+    "hypothesis": "Interest/nonoperating carry may work only when market correlation is low; this tests a regime gate without using debt, lease, buyback, option, or social fields.",
+    "expression": "trade_when(correlation_last_90_days_spy < 0.68, 0.300 * group_rank(ts_rank(vec_avg(fnd6_iints) / assets, 126), industry) + 0.260 * group_rank(ts_rank(vec_avg(fnd6_nxints) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_nopxs)) / assets, 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_iints) / assets, 252), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Regime-gated repair. Do not continue if the gate only lowers turnover without raising Sharpe/Fitness."
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v21_low_operating_lease_burden",
+    "family": "lease_obligation_quality",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Lower future operating lease obligations relative to assets can indicate cleaner balance-sheet obligations and less fixed-cost pressure.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * current_minimum_operating_lease_payment / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "New slow liability mechanism; no ROE/EPS/CFO/close-open anchor."
+  },
+  {
+    "name": "v21_ppe_depreciation_asset_efficiency",
+    "family": "asset_age_capital_efficiency",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Lower accumulated PP&E depreciation burden and lower gross PP&E intensity may indicate less capital-intensive, more flexible operations.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests asset-age/capital-intensity rather than capex flow; watch sector/sub-universe behavior."
+  },
+  {
+    "name": "v21_intangible_amortization_burden",
+    "family": "intangible_amortization_quality",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "High finite-lived intangible amortization relative to sales can proxy acquisition/intangible overhang without using goodwill stock directly.",
+    "expression": "0.65 * group_rank(ts_rank(-1 * accumulated_amortization_finite_intangibles / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Alternative to goodwill/assets; should not be treated as a goodwill near-neighbor unless correlation says so."
+  },
+  {
+    "name": "v21_tax_payable_cleanliness",
+    "family": "tax_liability_quality",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Lower taxes payable and unrecognized tax positions relative to assets may indicate cleaner tax accounting and lower unresolved tax risk.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * taxes_payable_total_value / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * unrecognized_tax_positions / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tax-cleanliness variant distinct from deferred-tax allowance; strict correlation gate against pw6jz8ob and MPpGzqwr."
+  },
+  {
+    "name": "v21_cash_tax_quality",
+    "family": "cash_tax_quality",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Sustainable companies can pay taxes in cash without large unresolved tax liabilities; combine paid taxes with low unrecognized tax positions.",
+    "expression": "0.50 * group_rank(ts_rank(income_taxes_paid_total / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * unrecognized_tax_positions / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Positive cash-tax sign tests tax realism rather than low-tax avoidance."
+  },
+  {
+    "name": "v21_oci_balance_sheet_stability",
+    "family": "oci_balance_sheet_stability",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Large accumulated OCI relative to assets can represent balance-sheet marks and currency/pension/security volatility; lower burden may be cleaner.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(accumulated_oci_net_of_tax_value) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "OCI balance-sheet stability; watch whether abs() plus sparse footnote fields creates concentration."
+  },
+  {
+    "name": "v21_employee_benefit_liability_burden",
+    "family": "employee_benefit_liability_quality",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Lower employee compensation and benefit liabilities relative to assets can indicate fewer accrued labor/benefit obligations.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * accumulated_oci_net_of_tax_value / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Benefit-liability channel; related to labor/pension accounting but distinct from prepaid/tax."
+  },
+  {
+    "name": "v21_near_term_debt_maturity_pressure",
+    "family": "debt_maturity_pressure",
+    "source": "fundamental_lease_tax_v21_20260625",
+    "hypothesis": "Lower near-term debt maturities and lower credit-facility balance relative to assets can reduce refinancing pressure.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * debt_maturities_repayments_next12m / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * credit_facility_outstanding_balance / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Debt maturity/liquidity pressure; distinct from debt_st/EV and debt extinguishment."
+  }
+]

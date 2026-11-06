@@ -1,0 +1,47 @@
+[
+  {
+    "name": "v264_guidance_rank_clarity_annual",
+    "family": "generic_guidance_rank_space",
+    "hypothesis": "Broad management guidance that tightens in rank space and improves over time may capture planning visibility without raw unit subtraction across heterogeneous guidance items.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.250 * group_rank(ts_rank(ts_delta(rank(vec_avg(anl4_fs_guidance_af_v4_nd_estimate)), 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) - rank(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate))), 126), industry) + 0.130 * group_rank(ts_rank(fscore_bfl_surface_accel, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v264_guidance_rank_clarity_qf_basic",
+    "family": "generic_guidance_rank_space",
+    "hypothesis": "Quarterly/basic guidance rank clarity may keep the v241 guidance-clarity edge while changing timing away from annual CFO and shareholder-equity guidance actives.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.300 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_basic_qf_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_basic_qf_v4_nd_minguidance))), 126), industry) + 0.260 * group_rank(ts_rank(ts_delta(rank(vec_avg(anl4_fs_guidance_basic_qf_v4_nd_estimate)), 42), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_qf_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_qf_v4_nd_minguidance))), 126), industry) + 0.140 * group_rank(ts_rank(fscore_bfl_total, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v264_guidance_recommendation_neglect_safe",
+    "family": "guidance_clarity_recommendation_coverage",
+    "hypothesis": "Planning visibility under analyst-coverage neglect may behave differently from ordinary EPS or recommendation alphas if recommendation VECTOR fields are converted safely and kept as a small sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(rank(vec_avg(anl4_fs_guidance_af_v4_nd_estimate)), 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(anl4_norec), 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(rank(vec_avg(anl4_detailrecv4_est)), 63), 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v264_assets_credit_news_guidance_small",
+    "family": "assets_credit_news_guidance",
+    "hypothesis": "Asset and credit news sentiment may provide a non-legal, non-M&A event confirmation for broad guidance clarity, but must stay small because legal/credit news capacity is already crowded.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v264_pv13_pureplay_guidance_clarity",
+    "family": "pv13_product_structure_guidance",
+    "hypothesis": "Guidance clarity may be more reliable for product-focused pure-play firms; product-structure fields are used only as a lightweight condition rather than another peer-value parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(single_sector_pureplay_company_count / (primary_sector_focused_company_count + 1), 126), industry) + 0.240 * group_rank(ts_rank(-1 * pv13_revere_term_sector_total, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.140 * group_rank(ts_rank(ts_delta(rank(vec_avg(anl4_fs_guidance_af_v4_nd_estimate)), 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 90), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

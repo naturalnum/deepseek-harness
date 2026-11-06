@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v237_generic_af_estimate_contraction_no_beta",
+    "family": "generic_analyst_vector_revision",
+    "source": "v237_generic_analyst_vector_revision_20260701",
+    "hypothesis": "Across many annual forecast line items, negative aggregate estimate changes plus lower revision magnitude may proxy analyst expectation de-risking, distinct from single-field EPS/EBIT/total-assets revisions.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.420 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.300 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) / abs(assets), 63), 126), industry) + 0.280 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No beta/news/reversal sleeve from historical A1wLRoER. Kill if it remains high-corr to 1Y7Z77YX / 1Y7jOjvR / O0p8JGJq or triggers unit warnings."
+  },
+  {
+    "name": "v237_generic_af_estimate_positive_revision",
+    "family": "generic_analyst_vector_revision",
+    "source": "v237_generic_analyst_vector_revision_20260701",
+    "hypothesis": "The opposite sign tests whether broad annual forecast upgrades across many line items carry ordinary revision momentum after removing risk sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.440 * group_rank(ts_rank((vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.300 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) / abs(assets), 63), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Sign ablation, not a window tweak. Kill if weak or if it becomes a crowded analyst revision sibling."
+  },
+  {
+    "name": "v237_generic_qf_estimate_contraction_pure",
+    "family": "generic_analyst_vector_revision",
+    "source": "v237_generic_analyst_vector_revision_20260701",
+    "hypothesis": "Quarterly generic estimate contraction may capture near-term expectation reset; if it is robust it should work without news, technical, or beta add-ons.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.400 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) / abs(assets), 63), 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate) / abs(assets), 63), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure QF version of the generic vector revision surface. Kill on LOW_FITNESS or high corr to MPpGzqwr / 88zpWZ1X / generic analyst actives."
+  },
+  {
+    "name": "v237_long_term_estimate_revision_convergence",
+    "family": "generic_analyst_vector_revision",
+    "source": "v237_generic_analyst_vector_revision_20260701",
+    "hypothesis": "Long-term estimate revisions across generic line items may capture slow expectation convergence, which could differ from near-term EPS or sales revisions.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.380 * group_rank(ts_rank(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate), 126), industry) + 0.300 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate)), 126), industry) + 0.200 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_detail_lt_v4_nd_estimate), 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate)), 63), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Long-term generic estimate surface; no price/risk/news sleeves. Kill if weak, warning-prone, or high-corr to existing analyst estimate actives."
+  },
+  {
+    "name": "v237_generic_actual_estimate_delivery",
+    "family": "generic_analyst_vector_delivery",
+    "source": "v237_generic_analyst_vector_revision_20260701",
+    "hypothesis": "Broad actual-vs-estimate delivery across generic annual and quarterly line items may capture reporting quality beyond any one EBIT/EPS field, provided it does not collide with the total-assets/EBIT delivery cluster.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.260 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Generic delivery test. Kill if it maps to 78wrdZ6x / WjpxeKkk / EBIT-delivery or fails LSUS."
+  }
+]

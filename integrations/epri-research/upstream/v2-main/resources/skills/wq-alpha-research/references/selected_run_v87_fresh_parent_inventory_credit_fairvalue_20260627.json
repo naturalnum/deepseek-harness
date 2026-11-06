@@ -1,0 +1,92 @@
+[
+  {
+    "name": "v87_fscore_inventory_credit_clean",
+    "family": "fresh_parent_model_inventory_credit",
+    "hypothesis": "Style-surface improvement should work better when inventories are lean and credit capacity is not being consumed.",
+    "expression": "0.28 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.20 * group_rank(ts_rank(-1 * inventory_finished_goods_value / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * inventory_wip_amount / assets, 126), industry) + 0.16 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.12 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_inventory_receivable_clean_reversal",
+    "family": "fresh_parent_inventory_receivable",
+    "hypothesis": "Lower finished-goods/WIP buildup and fewer receivable write-offs should signal cleaner working-capital quality; short reversal is only a small timing sleeve.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * inventory_value_finished_goods / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * inventory_wip_amount / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * doubtful_accounts_write_offs / sales, 126), industry) + 0.15 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.15 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v87_credit_capacity_tax_penalty",
+    "family": "fresh_parent_credit_tax",
+    "hypothesis": "Firms with unused credit facilities and low unrecognized-tax penalty drag should carry less latent balance-sheet stress.",
+    "expression": "0.30 * group_rank(ts_rank((credit_facility_remaining_borrowing_capacity - credit_facility_outstanding_amount) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / credit_facility_max_borrowing, 126), industry) + 0.20 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.15 * group_rank(ts_rank(-1 * unrecognized_tax_benefits_penalties_interest / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_derivative_afs_oci_clean",
+    "family": "fresh_parent_derivative_afs_oci",
+    "hypothesis": "Lower derivative notional, derivative liabilities, AFS OCI swings, and FX translation noise should identify cleaner financial statements.",
+    "expression": "0.25 * group_rank(ts_rank(-1 * abs(derivative_liability_fair_value) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(notional_value_derivative_contracts) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_adjustment) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net_tax) / assets, 126), industry) + 0.10 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_fairvalue_level_derivative_quality",
+    "family": "fresh_parent_fairvalue_hierarchy",
+    "hypothesis": "More observable recurring assets and lower level-3 liabilities / derivative gains should reduce valuation opacity.",
+    "expression": "0.30 * group_rank(ts_rank((recurring_assets_fair_value_lvl1 - recurring_assets_fair_value_lvl3) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * recurring_liabilities_fair_value_level3 / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(net_pretax_gain_loss_derivatives) / assets, 126), industry) + 0.15 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_restructuring_inventory_writeoff",
+    "family": "fresh_parent_restructuring_inventory",
+    "hypothesis": "Low restructuring reserves, low restructuring expense, and low inventory write-downs should capture operational cleanup without using the crowded goodwill/AQI routes.",
+    "expression": "0.28 * group_rank(ts_rank(-1 * restructuring_reserve_total / assets, 126), industry) + 0.22 * group_rank(ts_rank(-1 * restructuring_expense_2 / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * inventory_valuation_write_down / assets, 126), industry) + 0.15 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_customer_intangible_acquisition_clean",
+    "family": "fresh_parent_customer_intangible",
+    "hypothesis": "Lower customer-related intangibles, pro-forma acquisition revenue dependence, and future intangible amortization should avoid acquisition overhang without directly using goodwill.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * customer_related_intangibles_gross_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * proforma_revenue_business_acquisition / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / assets, 126), industry) + 0.15 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.15 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_fscore_contrarian_value_reversal",
+    "family": "fresh_parent_model_contrarian",
+    "hypothesis": "Crowded model growth/momentum acceleration may mean-revert; cheapness plus short reversal may isolate a different model-style path.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_analyst_derivative_inventory_credit",
+    "family": "near_miss_model_derivative_fresh_aux",
+    "hypothesis": "The old negative analyst-revision derivative seed may de-correlate if the option sleeve is fully replaced with inventory and credit-capacity fundamentals.",
+    "expression": "0.32 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * inventory_finished_goods_value / assets, 126), industry) + 0.15 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(fscore_surface_accel, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v87_sharecount_credit_inventory",
+    "family": "near_miss_shareholder_yield_fresh_aux",
+    "hypothesis": "Share-count reduction and reacquisition may become less correlated to existing payout alphas when combined with credit capacity and inventory discipline.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.20 * group_rank(ts_rank(shares_reacquired_during_period / common_stock_shares_outstanding_count, 252), industry) + 0.15 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * inventory_wip_amount / assets, 126), industry) + 0.10 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(fscore_surface_accel, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "v257_aqi_customer_anti_buyback_profit",
+    "family": "post_active_compact_residual",
+    "hypothesis": "AQI/cashflow quality and customer page-rank structure may retain a distinct residual after subtracting the occupied buyback/profitability sleeve.",
+    "pre_estimated_top_abs_corr": 0.438,
+    "pre_estimated_synthetic_sharpe": 1.46,
+    "source_alpha_ids": ["MPpGzqwr", "9qwXgvQd", "gJ1rA9VO"],
+    "expression": "-1.00 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 1.00 * (0.55 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 1.00 * (0.450 * group_rank(ts_rank(pv13_ustomergraphrank_page_rank, 60), industry) - 0.180 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.210 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v257_legal_credit_minus_product_news_quality",
+    "family": "post_active_compact_residual",
+    "hypothesis": "Legal/credit/M&A sentiment may be more robust when product/business news exposure is explicitly removed and the remaining sleeve is anchored by operating quality.",
+    "pre_estimated_top_abs_corr": 0.443,
+    "pre_estimated_synthetic_sharpe": 1.53,
+    "source_alpha_ids": ["QPaGVa3K", "e7OQoveE", "Vkp0P130"],
+    "expression": "1.00 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) + 0.75 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)) - 0.75 * (0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v257_competitor_earnings_quality_anti_buyback",
+    "family": "post_active_compact_residual",
+    "hypothesis": "Competitor hub and earnings-news structure can add an event relationship sleeve to operating quality after reducing direct buyback/profitability overlap.",
+    "pre_estimated_top_abs_corr": 0.475,
+    "pre_estimated_synthetic_sharpe": 1.79,
+    "source_alpha_ids": ["QPaGVa3K", "MPpGzqwr", "O0pNbJ17"],
+    "expression": "0.75 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 0.50 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 0.50 * (0.40 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v257_fcf_value_minus_epsr_guidance",
+    "family": "post_active_compact_residual",
+    "hypothesis": "FCF/value and operating quality may keep a cleaner value-quality residual after subtracting a crowded EPSR guidance/dispersion sleeve.",
+    "pre_estimated_top_abs_corr": 0.476,
+    "pre_estimated_synthetic_sharpe": 1.72,
+    "source_alpha_ids": ["QPaGVa3K", "LLpZgaeL", "omKJ5nLl"],
+    "expression": "1.00 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 1.00 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v175_lifo_conservative_inventory_buffer",
+    "family": "lifo_inventory_accounting",
+    "hypothesis": "A positive and rising LIFO reserve can indicate conservative inventory accounting, while low finished-goods overhang suggests clean sell-through. This tests inventory valuation quality without using the old broad working-capital or receivable-only route.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(fnd6_lifr / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(ts_delta(fnd6_lifr / abs(assets), 252), 126), industry) + 0.190 * group_rank(ts_rank(-1 * fnd2_a_inventoryfinishedgoods / abs(sales), 126), subindustry) + 0.140 * group_rank(ts_rank(fnd2_a_inventoryrawmaterials / abs(sales), 126), subindustry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids sales-growth, operating-income, FCF, buyback, debt, and close/open as dominant parents. Strict-check against inventory/working-capital and quality actives."
+  },
+  {
+    "name": "v175_lifo_sellthrough_reserve_clean",
+    "family": "lifo_inventory_sellthrough",
+    "hypothesis": "High LIFO reserve is more useful when inventory write-downs and receivable intensity are low; that combination may capture conservative costing plus real demand conversion instead of unsold inventory accumulation.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.250 * group_rank(ts_rank(fnd6_lifr / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank((fnd2_a_inventoryrawmaterials - fnd2_a_inventoryfinishedgoods) / abs(sales), 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * abs(inventory_valuation_write_down) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * receivable / abs(sales), 126), subindustry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Second LIFO probe with a different sell-through confirmation. Reject if it simply repeats old inventory/receivable weakness or maps to quality/reversal actives."
+  },
+  {
+    "name": "v175_capitalized_interest_cip_discipline",
+    "family": "capitalized_interest_construction_discipline",
+    "hypothesis": "Low and falling capitalized interest plus controlled construction-in-progress can indicate less aggressive project capitalization and fewer future impairment risks. This is a capitalization-policy route, not ordinary debt deleveraging or lease/PPE burden.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.280 * group_rank(ts_rank(-1 * fnd6_intc / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * ts_delta(fnd6_intc / abs(assets), 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * gross_construction_in_progress_value / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * fnd6_fatc / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids direct debt level, interest expense, leases, PPE sale/recycling, and capex guidance. Strict-check against PPE/lease/capex actives."
+  },
+  {
+    "name": "v175_cip_completion_ebitda_support",
+    "family": "cip_completion_operating_support",
+    "hypothesis": "Construction-in-progress falling while EBITDA delivery remains strong may identify projects moving from capitalized work into productive operations, rather than stagnant capitalized assets.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * ts_delta(gross_construction_in_progress_value / abs(assets), 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * fnd6_intc / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_ebitda_value - anl4_fs_detail_estimates_advanced_af_nd_ebitda_mean) / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebitda_std / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "CIP completion primary with EBITDA support. Reject if it high-correlates to EBIT actual-delivery or PPE/lease actives."
+  },
+  {
+    "name": "v175_ebitda_delivery_depr_gap",
+    "family": "ebitda_delivery_residual",
+    "hypothesis": "EBITDA actual delivery with tight analyst dispersion and low depreciation/amortization burden may capture operating cash earnings quality distinct from EBIT delivery, especially when the D&A layer is not expanding.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_ebitda_value - anl4_fs_detail_estimates_advanced_af_nd_ebitda_mean) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebitda_std / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ebitda_number, 63), 126), industry) + 0.160 * group_rank(ts_rank(-1 * depre_amort / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One EBITDA-delivery residual probe. Do not repair if it maps to e7OVEPxp/EBIT delivery or ordinary value/profitability actives."
+  },
+  {
+    "name": "v175_derivative_notional_liability_relief",
+    "family": "derivative_exposure_footnote",
+    "hypothesis": "Lower derivative notional and derivative-liability fair value may proxy less hidden hedge/counterparty exposure. This avoids OCI/translation fields and tests derivative contract exposure directly.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * notional_value_derivative_contracts / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * derivative_contract_notional_value / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * fair_value_derivative_liabilities / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(derivative_asset_fair_value_2 / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Derivative contract exposure, not OCI/hedge-noise. Stop if it repeats v146/v173 fair-value/OCI weakness."
+  }
+]

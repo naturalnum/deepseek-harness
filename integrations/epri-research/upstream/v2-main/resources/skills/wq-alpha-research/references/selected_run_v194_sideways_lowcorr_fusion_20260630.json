@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v194_pv13_pcr_lowbeta",
+    "family": "sideways_lowcorr_fusion",
+    "hypothesis": "PV13 competitor graph authority and short-end put/call volume term structure have low pairwise correlation in the local ACTIVE matrix. Low beta-slope is used as a stabilizer without using EPS, news-chain, current liabilities, or FCF/capex/contract legs.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.30 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.16 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against 6XwKxVkO, d5xj5W5v, 2r7Gzlnw, and new actives."
+  },
+  {
+    "name": "v194_pv13_pcr_anti_reversal",
+    "family": "sideways_lowcorr_fusion",
+    "hypothesis": "Same non-EPS PV13 + PCR parent as candidate 1, but explicitly subtracts the intraday reversal leg that dominates many old graph/option actives.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.38 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.30 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) - 0.12 * rank(-(close / open - 1)), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A decorrelation attempt for the same parent; reject if strength collapses or it still maps to reversal actives."
+  },
+  {
+    "name": "v194_customer_event_lowrisk",
+    "family": "sideways_lowcorr_fusion",
+    "hypothesis": "Customer graph breadth combined with M&A, credit-rating and legal news sentiment may capture relationship-driven corporate event quality. This avoids EPS/value and the v192 news-chain timing fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.24 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_page_rank, 126), industry) + 0.18 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.16 * group_rank(ts_rank(rp_nip_credit_ratings + rp_nip_legal, 90), industry) + 0.12 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against QPazq9nX, e7OQoveE, RRpmO2xb, and customer/product/news blockers."
+  },
+  {
+    "name": "v194_wdpq_pcr_beta",
+    "family": "sideways_lowcorr_fusion",
+    "hypothesis": "Weak-disclosure/event magnitude cleanliness (WDPQ) and short-end PCR term structure are from distinct data sources. This tests whether removing news/social buzz sleeves from WDPQ can preserve strength and reduce crowding.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.36 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.28 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.16 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids social/news buzz legs used in omKoPEb6 and qMAGvOe2."
+  },
+  {
+    "name": "v194_fscore_pv13_pcr",
+    "family": "sideways_lowcorr_fusion",
+    "hypothesis": "F-score value/growth curvature, PV13 graph authority, and PCR term structure form a non-EPS, non-current-liability, non-FCF/capex fusion. Low beta is used only as a small stabilizer.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.28 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(fscore_value, 126), industry) + 0.22 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.18 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Reject if it maps to 3q7jJ130 / graph-reversal actives."
+  },
+  {
+    "name": "v194_sales_delivery_option_risk",
+    "family": "sideways_lowcorr_fusion",
+    "hypothesis": "Actual sales delivery, short-end option skew, and falling beta/correlation risk may retain A1wLWmwY-style sales strength while excluding EPS and long-tenor option/current-liability/news sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.24 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.18 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.14 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against A1wLWmwY, P0pYj5Px, QPa0gl0W, and short-option actives."
+  }
+]

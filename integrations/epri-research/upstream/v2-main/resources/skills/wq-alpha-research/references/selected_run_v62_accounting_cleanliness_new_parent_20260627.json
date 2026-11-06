@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v62_tax_uncertainty_clean",
+    "family": "tax_uncertainty_accounting_cleanliness",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Lower unrecognized tax benefits and future tax liabilities may proxy cleaner tax/accounting quality without using EPS, close/open, FCF, EV, news, or product graph stabilizers.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * fn_unrecognized_tax_benefits_a / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * future_tax_liabilities / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(net_deferred_tax_assets_liabilities) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Structural repair of P0p7j6Lq after removing cashflow_op and close/open; strict corr gate vs pw6jz8ob and MPpGzqwr."
+  },
+  {
+    "name": "v62_tax_benefit_sbp_offset",
+    "family": "tax_sbp_offset",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Share-based compensation burden may be less harmful when tax benefits from share compensation offset the dilution/expense signal.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.25 * group_rank(ts_rank(tax_benefit_from_share_compensation_expense / assets, 126), industry) + 0.20 * group_rank(ts_rank(excess_tax_benefit_sbp_financing / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests a tax-offset view of SBP rather than ordinary profitability or graph confirmation."
+  },
+  {
+    "name": "v62_employee_sbp_debt_cleanliness",
+    "family": "employee_sbp_debt_cleanliness",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "A low burden from employee liabilities, stock-based compensation, and debt extinguishment noise may capture accounting cleanliness without the pv13 graph term that made earlier variants crowded.",
+    "expression": "0.38 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.32 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Near the strong RRp7mKMg/3q7llW1Z ingredients, but removes pv13_com_rk_au and hump to test whether the accounting core is independently submit-worthy."
+  },
+  {
+    "name": "v62_unrecognized_compensation_clean",
+    "family": "employee_compensation_cleanliness",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Unrecognized compensation cost and employee benefit liabilities may identify future expense overhang before it appears in ordinary profitability.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * nonvested_awards_compensation_recognition_period, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses high-coverage but low-alphaCount compensation-footnote fields; no EPS, profitability, price reversal, or product graph."
+  },
+  {
+    "name": "v62_operating_lease_maturity_clean",
+    "family": "lease_maturity_cleanliness",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Lower operating lease commitments and near-term debt maturities should capture off-balance-sheet burden distinct from the active prepaid/deferred-tax alpha.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * current_minimum_operating_lease_payment / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * debt_maturities_repayments_next12m / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure lease/maturity repair of 1Y7wgq6K after removing pv13 customer graph."
+  },
+  {
+    "name": "v62_lease_liability_change",
+    "family": "lease_liability_change",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Falling lease commitments and lower capital lease liabilities may form a balance-sheet improvement signal with lower correlation than static lease burden.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * ts_delta(future_minimum_operating_lease_payments / assets, 252), 126), industry) + 0.25 * group_rank(ts_rank(-1 * capital_lease_liability_balance / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * current_minimum_operating_lease_payment / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Change-oriented lease probe; no product graph, close/open, operating income, or FCF."
+  },
+  {
+    "name": "v62_acquisition_intangible_burden",
+    "family": "acquisition_intangible_cleanliness",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Lower acquisition payments, acquired intangibles, and goodwill acquisition burden may identify cleaner organic growth outside existing goodwill-level alphas.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * net_payments_for_acquisitions / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * acquired_finite_intangible_assets / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * period_goodwill_acquisition_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Acquisition-burden path rather than static goodwill/assets; strict corr gate vs mL8j98w9."
+  },
+  {
+    "name": "v62_intangible_forward_amortization_clean",
+    "family": "forward_intangible_amortization",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Forward intangible amortization overhang may be useful when paired with acquisition burden instead of the weak v60 static intangible carrying-value blend.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * annual_intangible_assets_net_carrying_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * net_payments_for_acquisitions / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A more acquisition-aware version of the weak YPpM7KVR intangible probe; stop if still below Sharpe/Fitness."
+  },
+  {
+    "name": "v62_pretax_guidance_band_clean",
+    "family": "pretax_guidance_consensus",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Pretax guidance midpoint with a narrow guidance band may capture management confidence in earnings before tax without using EPSR, sales surprise, FCF, or EV valuation.",
+    "expression": "0.42 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_ptp_minguidance + anl4_fs_guidances_advanced_af_nd_ptp_maxguidance) / (2 * assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_ptp_maxguidance - anl4_fs_guidances_advanced_af_nd_ptp_minguidance) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Guidance-band variant of the 1Y7Zoj2J pretax near-miss, designed to reduce corr vs LLpZgaeL and P0pgZllw."
+  },
+  {
+    "name": "v62_total_goodwill_consensus_low",
+    "family": "total_goodwill_consensus",
+    "source": "accounting_cleanliness_new_parent_v62_20260627",
+    "hypothesis": "Low analyst-estimated total goodwill and narrow estimate dispersion may proxy lower acquisition/intangible risk without using operating profitability or close/open reversal.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totgw_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totgw_high - anl4_fs_detail_estimates_advanced_af_nd_totgw_low) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totgw_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Analyst total-goodwill path; separate from static goodwill/assets ACTIVE mL8j98w9."
+  }
+]

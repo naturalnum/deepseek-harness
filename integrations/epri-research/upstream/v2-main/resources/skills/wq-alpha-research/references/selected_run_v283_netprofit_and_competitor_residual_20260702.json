@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v283_netprofit_median_yield_level",
+    "family": "analyst_netprofit_estimates",
+    "hypothesis": "Annual net-profit consensus scaled by enterprise value may preserve the v282 net-profit direction while lowering turnover versus pure revision.",
+    "expression": "group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v283_netprofit_level_lowdisp",
+    "family": "analyst_netprofit_estimates",
+    "hypothesis": "Net-profit yield should work better when analyst dispersion is low; this tests a simple level plus confidence sleeve without reverting to EPS/FCF carriers.",
+    "expression": "0.70 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_netprofit_high - anl4_fs_detail_estimates_advanced_af_nd_netprofit_low) / abs(enterprise_value), 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v283_netprofit_level_revision",
+    "family": "analyst_netprofit_estimates",
+    "hypothesis": "Combining level and revision may lift annualized returns enough to cross Fitness while staying in the underused net-profit estimate family.",
+    "expression": "0.60 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) + 0.40 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 63), 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v283_product_comp_resid_dual_030",
+    "family": "competitor_product_residual",
+    "hypothesis": "The high-quality product/competitor/volume frontier candidate is blocked by product-news and fscore/reversal alphas; subtracting a compact average blocker may leave a lower-correlation competitor-pressure residual.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.65, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.170 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1) - 0.30 * (0.5 * (0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)) + 0.5 * (0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v283_product_comp_resid_dual_035",
+    "family": "competitor_product_residual",
+    "hypothesis": "A stronger exact dual-blocker subtraction should push the product/competitor residual below the strict 0.58 daily-PnL correlation boundary if metrics survive.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.65, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.170 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1) - 0.35 * (0.5 * (0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)) + 0.5 * (0.30 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.22 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.18 * group_rank(ts_rank(fscore_value, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v283_relret_comp_minus_social_040",
+    "family": "competitor_return_residual",
+    "hypothesis": "A pure competitor relative-return/auction-rank signal is strong but blocked by an ACTIVE social-enhanced version; subtracting that carrier may isolate a cleaner competitor-return residual.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.30 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.40 * (0.40 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.14 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.08 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v283_relret_comp_minus_social_045",
+    "family": "competitor_return_residual",
+    "hypothesis": "A slightly stronger subtraction trades some Sharpe for a safer self-correlation margin on the competitor-return residual.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.30 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.45 * (0.40 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.14 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.08 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

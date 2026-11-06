@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v144_totgw_actual_expectation_gap",
+    "family": "total_goodwill_forecast_surprise",
+    "hypothesis": "Raw goodwill delta and total-goodwill consensus have been weak/crowded, but the actual-vs-consensus gap is a different delivery signal: firms whose reported total goodwill is close to, low relative to, and less dispersed versus analyst expectations may carry less acquisition overpayment and impairment risk.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_totgw_value / assets - anl4_fs_detail_estimates_advanced_af_nd_totgw_mean / assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totgw_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totgw_high / assets - anl4_fs_detail_estimates_advanced_af_nd_totgw_low / assets), 126), industry) + 0.140 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totgw_number, 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One-shot fresh parent after v136: not ts_delta(goodwill)/assets, not option/model, not debt. Submit only if metrics and local ACTIVE corr gate pass."
+  },
+  {
+    "name": "v144_totgw_guidance_tightening",
+    "family": "total_goodwill_guidance_range",
+    "hypothesis": "A tightening and lower total-goodwill guidance range may reveal management confidence that acquisition accounting will not expand unexpectedly. This is related to goodwill but uses guidance range behavior rather than balance-sheet delta.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_totgw_minguidance + anl4_fs_guidances_advanced_af_nd_totgw_maxguidance) / (2 * assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_totgw_maxguidance / assets - anl4_fs_guidances_advanced_af_nd_totgw_minguidance / assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_totgw_minguidance + anl4_fs_guidances_advanced_af_nd_totgw_maxguidance) / (2 * assets), 63), 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Sibling to total-goodwill delivery but semantically distinct: guidance midpoint/range contraction. If both weak or correlated, close the total-goodwill guidance route."
+  },
+  {
+    "name": "v144_cfps_actual_delivery_clean",
+    "family": "cfps_actual_consensus_delivery",
+    "hypothesis": "FCFPS/BVPS families are crowded, but annual CFPS actual delivery has lower alphaCount and measures cash generation per share before free-cash-flow-specific crowding. Reward high CFPS, close actual-consensus delivery, tight dispersion, and low beta.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.280 * group_rank(ts_rank(anl4_fs_actuals_basic_af_nd_cfps_value / close, 126), industry) + 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_mean / close, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_basic_af_nd_cfps_value / close - anl4_fs_detail_estimates_basic_af_v4_nd_cfps_mean / close), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_high / close - anl4_fs_detail_estimates_basic_af_v4_nd_cfps_low / close), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled CFPS delivery probe; if it is weak or high-corr to BVPS/FCF ACTIVEs, do not expand CFPS/FCFPS siblings."
+  },
+  {
+    "name": "v144_capex_expectation_discipline",
+    "family": "capex_actual_estimate_discipline",
+    "hypothesis": "Prior CAPEX/gross-income blends were weak or subuniverse-limited, but a pure capital-allocation discipline signal may survive: lower actual and expected capex intensity, tight analyst dispersion, and slight reversal should favor firms with restrained reinvestment burden.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.280 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_capex_value / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_capex_value / assets - anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_capex_high / assets - anl4_fs_detail_estimates_advanced_af_nd_capex_low / assets), 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh enough only as a pure discipline test; do not keep repairing if it repeats earlier CAPEX LSUS/weak behavior."
+  },
+  {
+    "name": "v144_credit_line_repayment_relief",
+    "family": "credit_line_repayment_discipline",
+    "hypothesis": "The user's deleveraging theme failed on broad debt ratios due to LOW_SUB_UNIVERSE_SHARPE/high-corr. Credit-line repayments are more event-like and less balance-sheet-ratio-like: sustained repayments and falling repayment intensity may capture liquidity normalization without using debt/assets.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(repayments_of_credit_lines / assets, 126), industry) + 0.220 * group_rank(ts_rank(line_of_credit_repayments / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * ts_delta(abs(repayments_of_credit_lines) / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One non-ratio deleveraging continuation using credit-line repayment fields. If LOW_SUB_UNIVERSE_SHARPE recurs, close this branch together with debt-ratio siblings."
+  }
+]

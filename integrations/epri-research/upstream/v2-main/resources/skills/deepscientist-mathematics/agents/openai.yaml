@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Mathematical Research'
+  short_description: 'Evidence-first mathematics, verification, figures, and reports'
+  default_prompt: 'Use $deepscientist-mathematics to formalize the claim, test both evidence lanes, verify or bound the result, and publish a step-by-step Science Report with linked evidence and appropriate checked visuals.'
+policy:
+  allow_implicit_invocation: true

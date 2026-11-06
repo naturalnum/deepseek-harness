@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v99_comp_hub_value_minus_llpkel_016",
+    "family": "post53_residual_comp_hub_value",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "The comp-hub analyst-value residual is high quality but just above the corr gate versus LLpKELr9; subtracting the main stockcomp/debt/value overlap may leave a cleaner graph-value residual.",
+    "expression": "0.290 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.206 * rank(-(close / open - 1)) + 0.130 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.148 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.114 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.066 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.042 * group_rank(ts_rank(-1 * debt / assets, 126), industry) - 0.060 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.033 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) - 0.026 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Compact approximation of LLpK2KoM minus 0.16*LLpKELr9 main positive overlap; lowest-weight debt-ext term removed for operator budget."
+  },
+  {
+    "name": "v99_comp_hub_value_minus_58w_020",
+    "family": "post53_residual_comp_hub_value",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "A second comp-hub/value rescue subtracts the newly ACTIVE 58wJ22nk AQI-competitor residual, targeting the new blocker without reopening AQI/value.",
+    "expression": "0.290 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.181 * rank(-(close / open - 1)) + 0.130 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.180 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.129 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.090 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.059 * group_rank(ts_rank(-1 * debt / assets, 126), industry) - 0.042 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.023 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) - 0.050 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) - 0.020 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "LLpK2KoM minus 0.20*58wJ22nk main terms; local residual top corr around 0.66."
+  },
+  {
+    "name": "v99_ptp_subindustry_minus_epsr_035",
+    "family": "post53_residual_ptp_estimate",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "Pretax estimate confidence remains strong but maps to EPSR/analyst expectation; a stronger EPSR subtraction may isolate PTP-specific visibility.",
+    "expression": "0.340 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), subindustry) + 0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), subindustry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.140 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.088 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.070 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) - 0.053 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRp66men minus 0.35*LLpZgaeL; local top corr around 0.61 but prior PTP residuals had sub-universe risk."
+  },
+  {
+    "name": "v99_ptp_subindustry_minus_shequity_030",
+    "family": "post53_residual_ptp_estimate",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "PTP estimate confidence is also blocked by shareholder-equity guidance; subtracting that balance-sheet expectation sleeve may avoid pure EPSR subtraction.",
+    "expression": "0.340 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), subindustry) + 0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), subindustry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), industry) + 0.135 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.135 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) - 0.075 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry) - 0.045 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / abs(assets), 126), subindustry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRp66men minus 0.30*O0p8JGJq main terms; local top corr around 0.63."
+  },
+  {
+    "name": "v99_stockcomp_sent_minus_compvwap_045",
+    "family": "post53_residual_stockcomp_sentiment",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "Stockcomp/debt plus sentiment stability is strong but stuck to competitor/VWAP and dilution blockers; subtracting the competitor-VWAP-risk sleeve may open a non-analyst stockcomp residual.",
+    "expression": "0.260 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.228 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.124 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.140 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.053 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.095 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) - 0.036 * rank(-(close / open - 1)) - 0.090 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.079 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "rKodN991 minus 0.45*1Y7jOjvR main terms; beta and sentiment-vol subterms removed to stay within the operator budget."
+  },
+  {
+    "name": "v99_ppe_age_minus_issuance_040",
+    "family": "post53_residual_asset_age",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "PPE asset-age contrarian is real but crowded through equity issuance; subtracting the new-stock-issuance sleeve tests whether asset harvesting remains independent.",
+    "expression": "0.380 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.180 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) - 0.100 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), industry) - 0.060 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRpeAxrn minus 0.40*1Y7jgeXX main terms; local top corr estimated around 0.65."
+  },
+  {
+    "name": "v99_news_vector_subindustry_neutral",
+    "family": "post53_debug_news_vector_subuniverse",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "News-vector residuals had strong headline metrics but failed LOW_SUB_UNIVERSE_SHARPE; subindustry neutralization and slightly slower decay may reduce small-cap/sector fragility.",
+    "expression": "0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.180 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.050 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.095 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.135 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.113 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.068 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry)",
+    "decay": 28,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Debug variant of mL8albO2; same signal, more conservative settings for sub-universe repair."
+  },
+  {
+    "name": "v99_news_vector_quality_anchor",
+    "family": "post53_debug_news_vector_subuniverse",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "Adding a small operating-quality anchor may improve news-vector sub-universe robustness without turning it into a plain profitability alpha.",
+    "expression": "0.300 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.150 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.030 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.080 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.140 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.120 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.070 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.120 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 28,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "News-vector sub-universe repair with a small quality stabilizer; abandon if it becomes MPpGzqwr/O0p8JGJq correlated."
+  },
+  {
+    "name": "v99_customer_div_minus_mna_news_045",
+    "family": "post53_residual_customer_diversification",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "Customer diversification without return spillover is low-turnover and close to the gate; subtracting M&A/legal/credit-news risk may isolate the relationship-structure component.",
+    "expression": "0.350 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.250 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_page_rank, 126), industry) + 0.200 * group_rank(ts_rank(-1 * pv13_ustomergraphrank_auth_rank, 126), industry) + 0.200 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) - 0.135 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) - 0.113 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) - 0.113 * group_rank(ts_rank(rp_nip_legal, 90), industry) - 0.090 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "qMA06nvj minus 0.45*e7OQoveE; local top corr moves to P0pgZllw around 0.66."
+  },
+  {
+    "name": "v99_forward_curve_minus_fscore_045",
+    "family": "post53_residual_forward_curve",
+    "source": "v99_post53_local_residual_scan_20260628",
+    "hypothesis": "Forward-curve carry has repeatedly hit the fscore/reversal timing sleeve; a much stronger direct fscore subtraction is the final test before closing this route.",
+    "expression": "0.280 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.200 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.059 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.046 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.135 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) - 0.099 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) - 0.081 * group_rank(ts_rank(fscore_value, 126), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "QPa033rr minus 0.45*3q7jJ130; local top corr below 0.55, but strength may collapse."
+  }
+]

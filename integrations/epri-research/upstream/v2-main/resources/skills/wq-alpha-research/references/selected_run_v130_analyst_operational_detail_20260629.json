@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v130_annual_ebit_confidence_largecap",
+    "family": "analyst_ebit_confidence",
+    "hypothesis": "High annual EBIT estimate level with narrow dispersion and broader analyst coverage may capture operating-profit visibility away from EPSR/PTP/netprofit/detail-asset parents.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebit_high - anl4_fs_detail_estimates_advanced_af_nd_ebit_low) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_ebit_actual_delivery_eventful",
+    "family": "analyst_ebit_delivery",
+    "hypothesis": "EBIT actual delivery above a stable analyst surface may be a different operational-delivery signal from sales surprise and PTP estimate confidence.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.240 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_ebitda_confidence_eventful",
+    "family": "analyst_ebitda_confidence",
+    "hypothesis": "EBITDA estimate confidence has lower historical usage than EBIT and may capture operating leverage visibility not already covered by cash-profitability alphas.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebitda_mean / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebitda_high - anl4_fs_detail_estimates_advanced_af_nd_ebitda_low) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebitda_std / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebitda_number, 126), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_ebitda_actual_delivery_largecap",
+    "family": "analyst_ebitda_delivery",
+    "hypothesis": "Actual EBITDA delivery plus narrow EBITDA estimate band tests a delivery signal distinct from sales-actual surprise and gross/capex guidance residuals.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.240 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebitda_value / assets, 126), industry) + 0.210 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebitda_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebitda_value - anl4_fs_detail_estimates_advanced_af_nd_ebitda_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebitda_number, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_cfo_estimate_confidence_largecap",
+    "family": "analyst_cfo_confidence",
+    "hypothesis": "CFO estimate level and dispersion may express cash-conversion visibility without directly using reported cashflow_op or reported FCF/equity.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfo_high - anl4_fs_detail_estimates_advanced_af_nd_cfo_low) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cfo_std / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_cfo_actual_delivery_eventful",
+    "family": "analyst_cfo_delivery",
+    "hypothesis": "CFO actual delivery above a stable CFO estimate surface may be an operational cash-delivery alpha if kept away from reported-FCF and CFI-guidance parents.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.250 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_cfo_value / assets, 126), industry) + 0.190 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cfo_value - anl4_fs_detail_estimates_advanced_af_nd_cfo_mean) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cfo_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_sga_estimate_discipline_largecap",
+    "family": "analyst_sga_discipline",
+    "hypothesis": "Low expected SG&A burden with narrow estimate range may represent operating expense discipline different from gross-income/capex guidance and intersegment complexity.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.250 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high - anl4_fs_detail_estimates_advanced_af_nd_sga_low) / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 126), industry) + 0.160 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v130_ebit_cfo_consistency_eventful",
+    "family": "analyst_operating_cash_consistency",
+    "hypothesis": "Consistent EBIT and CFO analyst surfaces may identify operating earnings that convert to cash, without using the old reported cashflow or sales-surprise parents.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean - anl4_fs_detail_estimates_advanced_af_nd_cfo_mean) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

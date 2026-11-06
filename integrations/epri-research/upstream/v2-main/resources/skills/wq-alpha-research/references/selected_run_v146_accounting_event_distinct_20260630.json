@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v146_aftertax_writedown_no_aqi",
+    "family": "aftertax_writedown_cleanliness",
+    "hypothesis": "qMAGvOe2 occupies pretax writedown + AQI. Test a distinct after-tax writedown parent with no AQI, customer, credit, buyback, or debt sleeves; if it passes, it would be a cleaner event-accounting signal rather than the existing AQI/writedown sibling.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.70, 0.360 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdaq)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_wdaq)) / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(inventory_valuation_write_down) / assets, 126), industry) + 0.140 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Strict-check against qMAGvOe2 and omKoPEb6. This is not a pretax/AQI sibling; if weak or correlated, close after-tax writedown."
+  },
+  {
+    "name": "v146_restructuring_reserve_no_aqi",
+    "family": "restructuring_reserve_cleanliness",
+    "hypothesis": "Restructuring reserve and expense are distinct from writedown pretax. Reward firms with low restructuring reserve/expense and falling reserve, using only volume exhaustion and beta relief as light timing.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * restructuring_reserve_total / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * restructuring_expense_2 / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_rcpq)) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_delta(restructuring_reserve_total / assets, 252), 126), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Inspired by Vkpd5PEG but removes fscore and close/open, which previously pulled it into payout/reversal blockers."
+  },
+  {
+    "name": "v146_discontinued_ops_stability",
+    "family": "discontinued_operations_stability",
+    "hypothesis": "Discontinued operations were weak as a direct cleanliness parent, but a calm-regime stability version using both discontinued-only and extraordinary/discontinued vectors may improve Sharpe without AQI/writedown overlap.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.340 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_doq)) / assets, 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_xidoq)) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(ts_delta(vec_avg(fnd6_newqeventv110_doq) / assets, 252)), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One final discontinued-ops stability probe; earlier direct version was weak, so do not repair if this does not clear gates."
+  },
+  {
+    "name": "v146_special_items_event_contrarian",
+    "family": "special_items_event_contrarian",
+    "hypothesis": "MPpe197o had high returns but low Sharpe using positive settlement/restructuring/fair-value shock. Recast as a smoother contrarian event-shock basket with no total-assets/netprofit parent, testing whether event shock itself carries independent alpha.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.260 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.240 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_rcpq)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_tfvceq)) / assets, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "A smoother standalone version of the special-items shock auxiliary. Submit only if Sharpe improves and corr is clean."
+  },
+  {
+    "name": "v146_level3_fairvalue_liability_clean",
+    "family": "level3_fairvalue_cleanliness",
+    "hypothesis": "Level-3 and fair-value disclosure fields are cold and previously weak in broad derivative/AFS bundles. Test a simple liability-vs-asset cleanliness expression using recurring level-3 fair value fields and fair-value changes, without derivative/OCI/tax auxiliaries.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.280 * group_rank(ts_rank(-1 * recurring_liabilities_fair_value_level3 / assets, 126), industry) + 0.220 * group_rank(ts_rank(recurring_assets_fair_value_lvl3 / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_tfvceq)) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_tfvlq)) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cold fair-value disclosure one-shot. If weak, do not expand derivative/fair-value/OCI cleanup routes."
+  }
+]

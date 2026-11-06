@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v19_news_downside_excursion_stockcomp",
+    "family": "news_price_reaction_accounting_quality",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Penalize names with large downside excursion after news, then use share-based compensation burden and customer authority as slower non-EPS stabilizers.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * news_low_exc_stddev, 60), industry) + 0.25 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids earnings-news, EPS, CFO, ROE, and close/open; main risk is weak news reaction signal."
+  },
+  {
+    "name": "v19_news_upside_excursion_acceptance",
+    "family": "news_price_reaction_accounting_quality",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Positive upside excursion after news may mark accepted good information. Pair with stock-comp discipline and customer authority.",
+    "expression": "0.55 * group_rank(ts_rank(news_high_exc_stddev, 60), industry) + 0.25 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sign test against downside-excursion variant; strict correlation gate."
+  },
+  {
+    "name": "v19_news_volume_calm_debt_event",
+    "family": "news_attention_debt_event_quality",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Avoid unstable news-volume spikes and debt-extinguishment event burden. This tests a calm-attention plus financing-stress mechanism.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * news_vol_stddev, 60), industry) + 0.25 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses debt near-miss as minority weight and avoids fnd6_aqi/quality anchors."
+  },
+  {
+    "name": "v19_pretax_uncertainty_news_downside",
+    "family": "analyst_uncertainty_news_reaction",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Lower pretax-income estimate dispersion plus lower downside news excursion should capture predictable fundamentals without EPS-yield exposure.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * pretax_income_stddev, 126), industry) + 0.30 * group_rank(ts_rank(-1 * news_low_exc_stddev, 60), industry) + 0.20 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Analyst uncertainty branch; avoids est_eps/close and operating-income anchors."
+  },
+  {
+    "name": "v19_sales_dispersion_news_downside",
+    "family": "analyst_disagreement_news_reaction",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Sales-estimate dispersion was weak alone; combine it with downside news reaction and stock-comp burden to test a more complete uncertainty-quality signal.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * sales_estimate_dispersion, 126), industry) + 0.35 * group_rank(ts_rank(-1 * news_low_exc_stddev, 60), industry) + 0.20 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Designed as a rescue of the weak analyst-disagreement family without EPS or ROE."
+  },
+  {
+    "name": "v19_stockcomp_social_stability_news_calm",
+    "family": "stock_comp_social_attention_stability",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Share-based compensation burden had near-miss strength. Stable social sentiment and calm news volume may improve Fitness while staying distinct from accounting-quality actives.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_std_dev(snt_social_value, 20), 60), industry) + 0.20 * group_rank(ts_rank(-1 * news_vol_stddev, 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Social stability is auxiliary only because pure sentiment-volatility failed earlier."
+  },
+  {
+    "name": "v19_debt_social_stability_news_downside",
+    "family": "debt_event_social_attention_stability",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Debt-extinguishment burden was a low-Fitness near-miss. Add stable social sentiment and low downside news excursion as orthogonal attention filters.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_std_dev(snt_social_value, 20), 60), industry) + 0.20 * group_rank(ts_rank(-1 * news_low_exc_stddev, 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No fnd6_aqi/CFO/EPS anchor; should be low-correlation if it has enough strength."
+  },
+  {
+    "name": "v19_writedown_vector_news_downside",
+    "family": "vector_writedown_news_reaction",
+    "source": "news_reaction_uncertainty_v19_20260625",
+    "hypothesis": "Vector writedown was close to the Fitness line in v18. Combine vector-averaged writedown burden with downside news reaction and stock-comp discipline.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.35 * group_rank(ts_rank(-1 * news_low_exc_stddev, 60), industry) + 0.20 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses vec_avg to avoid event-input arithmetic errors observed in v16."
+  }
+]

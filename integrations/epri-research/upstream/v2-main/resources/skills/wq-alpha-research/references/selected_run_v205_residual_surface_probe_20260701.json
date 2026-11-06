@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v205_generic_guidance_actual_residual",
+    "family": "generic_guidance_actual_residual",
+    "hypothesis": "Generic company guidance and actual fields are high-coverage and low-crowding, but direct generic revision vectors were high-corr. This version asks whether actual-vs-guidance gap plus guidance range compression under a low market-correlation regime carries a different timing path.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(anl4_fs_actual_af_v4_nd_actual - anl4_fs_guidance_af_v4_nd_estimate, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_guidance_af_v4_nd_maxguidance - anl4_fs_guidance_af_v4_nd_minguidance), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_guidance_af_v4_nd_estimate, 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh generic guidance surface. Reject if it maps to generic analyst vector blockers (`1Y7Z77YX`, `O0p8JGJq`) or produces unit warnings / weak metrics."
+  },
+  {
+    "name": "v205_detail_previous_estimate_latency",
+    "family": "analyst_detail_latency_residual",
+    "hypothesis": "The previous-estimate fields may capture revision latency. Unlike earlier direct generic vector tests, this uses current-minus-previous estimate and actual-minus-previous in a low-SPY-correlation timing regime with no sales/EPS/BVPS named parent.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.310 * group_rank(ts_rank(anl4_fs_detail_estimate_basic_af_v4_nd_estimate - anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate, 126), industry) + 0.240 * group_rank(ts_rank(anl4_fs_actual_basic_af_v4_nd_actual - anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_basic_af_v4_nd_estimate - anl4_fs_actual_basic_af_v4_nd_actual), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A stricter timing variant of generic analyst revision latency. Do not repair by small window tweaks if it is high-corr to `MPpGzqwr` or generic analyst actives."
+  },
+  {
+    "name": "v205_longterm_revision_compression",
+    "family": "longterm_revision_latency",
+    "hypothesis": "Long-term estimate-current minus previous estimate is nearly unused and could reflect slow expectation anchoring. A pure LT revision compression signal may avoid named EPS/sales/detail estimate parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(anl4_fs_detail_lt_v4_nd_estimate - anl4_fs_detail_lt_v4_nd_previosestimate, 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_lt_v4_nd_estimate - anl4_fs_detail_lt_v4_nd_previosestimate), 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-use LT revision surface. Stop if it repeats v183 LT weakness or LSUS fragility."
+  },
+  {
+    "name": "v205_acquisition_cash_absorption_largecap",
+    "family": "acquisition_cash_absorption",
+    "hypothesis": "Acquisition payment fields are low-use and economically meaningful: cash-efficient acquisitions and lower purchase outflow may imply disciplined capital allocation. Large-cap and low-correlation timing are used to avoid old goodwill/AQI acquisition clusters.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.270 * group_rank(ts_rank((gross_payments_for_acquisitions - net_payments_for_acquisitions) / abs(acquisition_total_purchase_value), 126), industry) + 0.220 * group_rank(ts_rank(-1 * net_payments_for_acquisitions / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * business_acquisition_payments_net / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * acquisition_related_expenses / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One cold footnote probe; not a goodwill/AQI rescue. Stop if weak like v164 acquisition cash absorption or high-corr to acquired-goodwill actives."
+  },
+  {
+    "name": "v205_generic_lowrange_guidance_sparse",
+    "family": "generic_guidance_range_sparsity",
+    "hypothesis": "Companies giving narrow generic guidance ranges with stable point estimates may have lower operational uncertainty. This tests range compression without actual/estimate subtraction dominance.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.340 * group_rank(ts_rank(-1 * abs(anl4_fs_guidance_af_v4_nd_maxguidance - anl4_fs_guidance_af_v4_nd_minguidance), 126), industry) + 0.230 * group_rank(ts_rank(anl4_fs_guidance_af_v4_nd_estimate, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(ts_delta(anl4_fs_guidance_af_v4_nd_estimate, 63)), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Range-only generic guidance ablation. Reject if it merely recreates ordinary low-risk/quality exposure."
+  },
+  {
+    "name": "v205_comp_earnings_lowcorr_nocashflow",
+    "family": "conditional_competitor_earnings_nocashflow",
+    "hypothesis": "Competitor/earnings/cashflow is crowded, but previous success came from changing trading regime and removing cashflow. This tests a stricter no-cashflow, low market-correlation version with no raw cashflow_op sleeve; it is included as the single probability-preserving legacy probe.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.220 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.150 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.130 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.030 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against `A1wrAX3E`, `E5w8oepG`, `O0pNbJ17`, `Vkp0P130`, and `6Xwo83wP`; do not submit if top corr is near or above 0.68."
+  }
+]

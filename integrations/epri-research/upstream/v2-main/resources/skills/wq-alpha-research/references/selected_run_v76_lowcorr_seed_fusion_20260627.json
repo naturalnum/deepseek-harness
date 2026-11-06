@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v76_social_vwap_balanced_lowcorr",
+    "family": "lowcorr_seed_fusion",
+    "source": "alpha_db_lowcorr_nearmiss_scan_v76_20260627",
+    "hypothesis": "Two clean but individually weak seeds, slow social-attention normalization and VWAP/volume absorption, may combine into a stronger low-correlation signal.",
+    "expression": "0.30 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.10 * rank(ts_rank(volume / adv20, 20)) + 0.10 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Fusion of 1Y7Z65JQ and pw65od6V; reject if it becomes a mL86Jle1/VWAP sibling."
+  },
+  {
+    "name": "v76_social_vwap_trade_when_calm",
+    "family": "lowcorr_seed_fusion",
+    "source": "alpha_db_lowcorr_nearmiss_scan_v76_20260627",
+    "hypothesis": "The same social/VWAP fusion may work better when refreshed only during calmer absolute-return regimes, reducing churn and drawdown.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.75, 0.30 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.25 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.10 * rank(ts_rank(volume / adv20, 20)) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses proven trade_when syntax from prior DB; designed to reduce turnover, not to create a technical near-neighbor."
+  },
+  {
+    "name": "v76_social_vwap_fast_earnings_small_confirm",
+    "family": "lowcorr_seed_fusion",
+    "source": "alpha_db_lowcorr_nearmiss_scan_v76_20260627",
+    "hypothesis": "A small fast-earnings confirmation may lift the low-correlation social/VWAP basket without letting the high-correlation fast-news parent dominate.",
+    "expression": "0.30 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.15 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Fast earnings is only 15%; gate strictly against e7OQoveE/Vkp0P130."
+  },
+  {
+    "name": "v76_social_vwap_reported_fcf_tiny_confirm",
+    "family": "lowcorr_seed_fusion",
+    "source": "alpha_db_lowcorr_nearmiss_scan_v76_20260627",
+    "hypothesis": "A tiny reported-FCF confirmation may improve quality while keeping the parent mechanism social/VWAP rather than the occupied reported-FCF capacity.",
+    "expression": "0.30 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.25 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.15 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Reported FCF is only 15%; reject if corr approaches P0pgZllw/9qwWXNW9."
+  },
+  {
+    "name": "v76_vwap_social_risk_dominant",
+    "family": "lowcorr_seed_fusion",
+    "source": "alpha_db_lowcorr_nearmiss_scan_v76_20260627",
+    "hypothesis": "The VWAP/volume seed may be the stronger parent if slow social relief is used only as a low-correlation stabilizer.",
+    "expression": "0.35 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.20 * rank(ts_rank(volume / adv20, 20)) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A more technical-weighted fusion; reject if it behaves like close-location/VWAP stopped routes."
+  }
+]

@@ -1,0 +1,6 @@
+interface:
+  display_name: 'IOAI Trial'
+  short_description: 'Run sealed IOAI candidates with canonical evidence'
+  default_prompt: 'Use $trial to execute sealed IOAI candidates through ioai_competition.'
+policy:
+  allow_implicit_invocation: true

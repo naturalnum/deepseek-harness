@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v262_social_neglect_equity_news",
+    "family": "social_news_model_cold_probe",
+    "hypothesis": "Positive broad equity news sentiment that is not accompanied by crowded social buzz may capture under-attended good news, with low short-window SPY correlation as a risk filter.",
+    "field_notes": "mean_equity_sentiment_score active_usage=0; snt_value_fast_d1 and scl12_buzz_fast_d1 active_usage=0; avoids payout/book/buyback/value fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * group_rank(ts_rank(mean_equity_sentiment_score, 60), industry) + 0.25 * group_rank(ts_rank(-1 * snt_value_fast_d1, 60), industry) + 0.20 * group_rank(ts_rank(-1 * scl12_buzz_fast_d1, 60), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 60), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v262_labor_society_news_resilience",
+    "family": "social_news_model_cold_probe",
+    "hypothesis": "Constructive labor and society-related news can signal lower stakeholder or regulatory pressure; combining it with low negative social buzz and low idiosyncratic risk may avoid ordinary earnings/value capacity.",
+    "field_notes": "rp_nip_labor, rp_css_society, rp_ess_society all have local ACTIVE usage 0; social buzz is only a neglect confirmer.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * group_rank(ts_rank(rp_nip_labor, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_society, 90), industry) + 0.20 * group_rank(ts_rank(-1 * snt_buzz_fast_d1, 60), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_30_days, 60), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v262_far_option_skew_social_calm",
+    "family": "social_news_model_cold_probe",
+    "hypothesis": "Very long-tenor option skew and put/call volume calm may measure slow insurance-demand normalization; adding social buzz-return relief and novelty avoids pure option-term siblings.",
+    "field_notes": "implied_volatility_mean_skew_1080, implied_volatility_mean_skew_720, pcr_vol_1080, and pcr_vol_720 have local ACTIVE usage 0.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_1080 - implied_volatility_mean_skew_720), 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(pcr_vol_1080 - pcr_vol_720), 90), industry) + 0.20 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.15 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v262_model_derivative_sentiment_contrast",
+    "family": "social_news_model_cold_probe",
+    "hypothesis": "Contrarian model16 derivative signals may work when combined with improving earnings certainty and broad composite news sentiment, without option, social alltype, or price-location carriers.",
+    "field_notes": "multi_factor_acceleration_score_derivative and earnings_certainty_rank_derivative have local ACTIVE usage 0; composite sentiment provides an independent news semantic sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.25 * rank(earnings_certainty_rank_derivative) + 0.20 * rank(-1 * composite_factor_score_derivative) + 0.15 * group_rank(ts_rank(mean_composite_sentiment_score, 60), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v262_partner_ptg_news_neglect",
+    "family": "social_news_model_cold_probe",
+    "hypothesis": "Positive price-target and partnership news under low social attention may capture under-reacted external validation, distinct from earnings release, dividend, or book/value capacity.",
+    "field_notes": "rp_ess_ptg, rp_nip_partner, and rp_css_partner have local ACTIVE usage 0; social buzz is used as an attention penalty.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * group_rank(ts_rank(rp_ess_ptg, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_partner, 90), industry) + 0.20 * group_rank(ts_rank(rp_css_partner, 90), industry) + 0.15 * group_rank(ts_rank(-1 * scl12_buzz_fast_d1, 60), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

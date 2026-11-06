@@ -1,0 +1,4 @@
+[airalogy_protocol]
+id = "power-linear-calibration"
+version = "1.0.0"
+name = "电力测量通道线性标定"

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v211_rec_underweight_short_relief",
+    "family": "recommendation_crowding_relief",
+    "hypothesis": "Fewer underweight recommendations and lower short-interest pressure may identify stocks where analyst/short crowding is relaxing. BFL quality is only a stabilizer, avoiding EPS, sales, book, treasury, and close/open parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * anl4_under / (anl4_total_rec + 1), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_buy / (anl4_total_rec + 1), 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(shares_sold_short), 60), industry) + 0.140 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Short-interest and recommendation are not trusted as standalone parents; this is a controlled crowding-relief residual with strict LSUS/corr gate."
+  },
+  {
+    "name": "v211_bfl_social_calm_no_option",
+    "family": "bfl_social_calm",
+    "hypothesis": "Positive social sentiment may matter more when low-coverage BFL profitability/growth confirms operating strength and social sentiment is calm. This intentionally removes option skew, VWAP, close/open, and treasury.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.70, 0.240 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.220 * group_rank(ts_rank(fscore_bfl_growth, 126), industry) + 0.180 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.150 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.110 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.100 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry), -1)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Social is a confirmer, not an option/skew/VWAP parent; strict-check against RRplYRpo, N1pJ51Rw, JjpPv3N2."
+  },
+  {
+    "name": "v211_news12_reaction_calm_short_relief",
+    "family": "news12_reaction_calm",
+    "hypothesis": "Slow, calm event-day price discovery with low abnormal range/volume and reduced short pressure may capture a different residual than RavenPack topic/news-chain signals.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.240 * group_rank(ts_rank(vec_avg(minimum_minutes_to_one_percent_move), 90), industry) + 0.190 * group_rank(ts_rank(vec_avg(main_minutes_to_one_pct_down_move), 90), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(price_range_standard_deviation_2), 90), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(trading_volume_standard_deviation_2), 90), industry) + 0.140 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses vec_avg for news12 vector fields. No news-chain, no RP sentiment topic, no PV late-pressure term."
+  },
+  {
+    "name": "v211_model_derivative_residual_calm",
+    "family": "model_derivative_residual",
+    "hypothesis": "Overheated model derivative surfaces may mean-revert when idiosyncratic/systematic risk is not rising. This removes the close/open timing that made 3q7jJ130 work, so it is a true residual test rather than a fscore sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * rank(-1 * ts_rank(multi_factor_static_score_derivative, 90)) + 0.210 * rank(-1 * ts_rank(growth_potential_rank_derivative, 90)) + 0.170 * rank(ts_rank(relative_valuation_rank_derivative, 90)) + 0.140 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.130 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 90), industry) + 0.100 * group_rank(ts_rank(-1 * news_vol_stddev, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No open-close, no VWAP, no option/news topic stabilizer. Reject if it simply maps back to 3q7jJ130 or old model-revision actives."
+  },
+  {
+    "name": "v211_optionvol_rec_no_social",
+    "family": "optionvol_recommendation_residual",
+    "hypothesis": "Call/put IV asymmetry and Parkinson-vol compression had headline strength but LSUS issues when paired with social or sparse inventory. A large-cap recommendation-pressure stabilizer tests a materially different repair surface without PCR, breakeven, skew, social, or treasury.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.210 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.170 * group_rank(ts_rank(-1 * abs(implied_volatility_put_720 - implied_volatility_call_720), 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.160 * group_rank(ts_rank(-1 * anl4_under / (anl4_total_rec + 1), 126), industry) + 0.140 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled option-vol residual probe despite prior LSUS failures; do not repair with social, inventory, forward, PCR, or breakeven if it fails."
+  }
+]

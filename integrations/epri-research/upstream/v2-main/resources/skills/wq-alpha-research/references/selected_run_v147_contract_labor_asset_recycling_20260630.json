@@ -1,0 +1,72 @@
+[
+  {
+    "name": "v147_deferred_event_backlog_minus_guidance",
+    "family": "contract_liability_event_residual",
+    "hypothesis": "Deferred-revenue event shocks plus order backlog may capture billing/contract visibility. Subtracting gross-income guidance is a blocker-aware attempt to avoid the QPaze5zX guidance sleeve that absorbed earlier deferred-revenue variants.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(ts_delta((vec_avg(fnd6_newqeventv110_drcq) + vec_avg(fnd6_newqeventv110_drltq)) / assets, 252), 126), industry) + 0.240 * group_rank(ts_rank(vec_avg(fnd6_obs) / assets, 126), industry) - 0.180 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Distinct from direct fnd6_drc/fnd6_drlt + receivable siblings; strict-check against QPaze5zX, RRp7Q9Le, and deferred revenue actives."
+  },
+  {
+    "name": "v147_current_deferred_shift_clean",
+    "family": "contract_liability_maturity_shift",
+    "hypothesis": "A shift from long-term to current deferred revenue may signal nearer-term realizable contract visibility rather than generic deferred-revenue growth.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.340 * group_rank(ts_rank((fnd6_drc - fnd6_drlt) / assets, 126), industry) + 0.220 * group_rank(ts_rank(ts_delta(fnd6_drc / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(fnd6_drlt / assets, 252), 126), industry) + 0.140 * group_rank(ts_rank(vec_avg(fnd6_obs) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests maturity-mix rather than total deferred-revenue level; no receivable, sales-growth, gross-margin, or close/open terms."
+  },
+  {
+    "name": "v147_asset_recycling_contract_visibility",
+    "family": "asset_recycling_with_contract_visibility",
+    "hypothesis": "PPE sale/gain recycling was a near-miss. Pairing it with backlog/contract visibility rather than PPE age or capex guidance may improve Fitness without becoming a PPE-aging sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry) + 0.210 * group_rank(ts_rank(fnd6_sppe / assets, 126), industry) + 0.190 * group_rank(ts_rank(vec_avg(fnd6_obs) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * acquisition_assets_property_plant_equipment / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repairs qMAG1PZA by changing the confirmer from intraday reversal/volume exhaustion to contract backlog; strict-check against 88zJ8RMW and capex/PPE actives."
+  },
+  {
+    "name": "v147_lease_relief_asset_recycling",
+    "family": "fixed_commitment_relief_asset_recycling",
+    "hypothesis": "Lease maturity relief was close but likely quality-correlated. Combining lower future lease commitments with asset recycling may express fixed-commitment flexibility rather than generic quality.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * operating_leases_minimum_payments_due_thereafter / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * operating_lease_minimum_payments_due_five_years / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * operating_leases_min_payments_3y / assets, 126), industry) + 0.160 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled revisit of E5wz7eJ0/vRL2r9Pr with a different asset-recycling parent; abandon if still high-corr to MPpGzqwr/pw6jz8ob."
+  },
+  {
+    "name": "v147_labor_news_slow_comp_relief",
+    "family": "labor_event_slow_cost_relief",
+    "hypothesis": "Labor news had Sharpe but weak Fitness/high turnover. Slower decay plus employee-liability and defined-contribution cost relief may turn it into a lower-turnover labor-quality signal.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.260 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.220 * group_rank(ts_rank(rp_nip_labor, 126), industry) + 0.190 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / sales, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repairs 3q7PZdzO by removing short-interest and intraday reversal, replacing them with slow compensation-cost relief."
+  },
+  {
+    "name": "v147_intangible_amortization_cliff",
+    "family": "intangible_amortization_schedule",
+    "hypothesis": "Low near-term intangible amortization cliffs may identify cleaner finite-lived intangible schedules without using goodwill, gross profit, cashflow, or customer intangible fields.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * intangible_assets_amortization / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * intangible_assets_net_carrying_value / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_delta(intangible_amortization_next_12m / assets, 252), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A true cold footnote probe; not an intangible/gross-profit or goodwill sibling."
+  },
+  {
+    "name": "v147_backlog_fixed_commitment_balance",
+    "family": "backlog_fixed_commitment_balance",
+    "hypothesis": "Backlog was weak as a standalone parent, but backlog relative to fixed lease commitments may identify demand visibility without excessive fixed-cost burden.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(vec_avg(fnd6_obs) / assets, 126), industry) - 0.240 * group_rank(ts_rank((operating_leases_minimum_payments_due_thereafter + operating_lease_minimum_payments_due_five_years) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests demand visibility net of fixed commitments; stop if it repeats backlog/lease weak history."
+  }
+]

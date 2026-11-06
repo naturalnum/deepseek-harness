@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v68_intersegment_subindustry_change",
+    "family": "intersegment_lowcorr_rescue",
+    "source": "intersegment_lowcorr_rescue_v68_20260627",
+    "hypothesis": "The v67 intersegment seed was close but slightly high-correlation to sh-equity guidance; subindustry ranking plus a falling-complexity term may reduce that overlap and lift Fitness.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_intseg)) / abs(sales), 252), 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "One-step rescue from JjpP0gQm: change peer axis and replace market-correlation term with idio-risk slope."
+  },
+  {
+    "name": "v68_intersegment_event_fx_clean",
+    "family": "intersegment_lowcorr_rescue",
+    "source": "intersegment_lowcorr_rescue_v68_20260627",
+    "hypothesis": "Using event-vector foreign-exchange income may be a cleaner disclosure-specific confirmation than the v67 matrix FX term.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.28 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_fcaq)) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Keeps the parent mechanism but swaps one matrix FX term for a low-user event vector."
+  },
+  {
+    "name": "v68_intersegment_change_dominant",
+    "family": "intersegment_lowcorr_rescue",
+    "source": "intersegment_lowcorr_rescue_v68_20260627",
+    "hypothesis": "A falling intersegment-elimination burden may be more incremental and less correlated than a static low-complexity level.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_intseg)) / abs(sales), 252), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Tests whether change, not level, is the real signal; abandon if Sharpe/Fitness deteriorate."
+  },
+  {
+    "name": "v68_intersegment_pure_low_complexity",
+    "family": "intersegment_lowcorr_rescue",
+    "source": "intersegment_lowcorr_rescue_v68_20260627",
+    "hypothesis": "Removing broad FX/market terms may reduce overlap with existing ACTIVE balance-sheet/risk alphas, even if the raw signal weakens.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_intseg)) / abs(sales), 252), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_fcaq)) / assets, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "A deliberately purer mechanism; only useful if correlation falls while Sharpe improves."
+  }
+]

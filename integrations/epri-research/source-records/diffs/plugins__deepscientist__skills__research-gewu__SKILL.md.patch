@@ -1,0 +1,30 @@
+--- resources/skills/loop-goal/SKILL.md
++++ plugins/deepscientist/skills/research-gewu/SKILL.md
+@@ -1,7 +1,15 @@
+ ---
+-name: deepscientist-loop-goal
++name: research-gewu
+ description: Persistent DeepScientist Discovery Mode for iterative work toward a user-defined target, with compact progress summaries, blocker discipline, and concrete next actions.
+ ---
++
++# Harness compatibility mapping
++
++This is the complete copied V2 Discovery/格物 skill with a continuation-controller adapter. Only enable persistent work when the user authorizes it. Harness native Goal and its current pause/resume/blocked rules take precedence.
++
++Legacy tool names below describe upstream contracts. This minimal plugin does not expose research_roadmap or project_workspace and must never fabricate those calls or receipts. Keep one research-ledger.json in the authorized workspace using native file/Git tools, containing objective, completionContract, focused stage, routeMode, priorWorkRefs, doNotRepeat, evidence locations and disposition. It is the sole research ledger, subordinate to native Goal. Protocol runs belong to research_record_*; do not use an experimental record as the goal scheduler.
++
++Legacy runtime-bound runId/goalId and stage-limit semantics below are not implemented here. Do not infer completion from a report, turn limit or stopped route. Use native user-interaction tools instead of legacy user_input. Git commits remain subject to the user's authorization.
+ 
+ # DeepScientist Discovery Mode
+ 
+@@ -11,9 +19,7 @@
+ 
+ - Preserve one durable user objective. A research stage tests part of it and
+   must never replace or silently narrow it.
+-- Treat this overlay as the sole continuation controller. Do not call Codex
+-  `create_goal`, `get_goal`, or `update_goal` for the same task. Domain modes
+-  provide evidence rules, not another scheduler.
++- Use DeepSeek Harness native Goal as the sole continuation controller. Call its create_goal/get_goal/update_goal only under their current authorization rules. This copied skill supplies research discipline, not a second scheduler.
+ - Stop or ask only when user input, credentials, approval, or an external state
+   change is truly required. Difficulty, uncertainty, elapsed time, or one
+   exhausted route is not a terminal blocker.

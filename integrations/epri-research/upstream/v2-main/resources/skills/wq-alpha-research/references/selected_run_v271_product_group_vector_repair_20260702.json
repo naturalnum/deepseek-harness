@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v271_product_comp_slow60",
+    "family": "product_group_vector_repair",
+    "hypothesis": "The v270 product-group competitor signal had borderline Sharpe but excessive turnover; a slower 60-day product-peer reversal without intraday reversal may preserve signal while improving Fitness.",
+    "field_notes": "Direct repair of E5wPmd2G: longer rel_ret_comp smoothing, same low-use PV13 product group, higher decay and lower truncation.",
+    "expression": "group_rank(ts_rank(ts_mean(-1 * rel_ret_comp, 5), 60), pv13_rha2_min5_3000_513_sector)",
+    "decay": 30,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v271_product_comp_earnings_slow",
+    "family": "product_group_vector_repair",
+    "hypothesis": "A slower product-peer competitor reversal may need an earnings-news stabilizer to recover Sharpe while keeping turnover lower than the v270 short-window version.",
+    "field_notes": "Combines compact product-group competitor reversal with scalar rp_nip_earnings, avoiding v269 residual complexity.",
+    "expression": "0.65 * group_rank(ts_rank(ts_mean(-1 * rel_ret_comp, 5), 60), pv13_rha2_min5_3000_513_sector) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), pv13_hierarchy_min10_3000_513_sector)",
+    "decay": 28,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v271_vec_mna_product_group",
+    "family": "product_group_vector_repair",
+    "hypothesis": "M&A event sentiment must be vector-averaged before time-series ranking; product-group comparison may isolate corporate-action information from broad news attention.",
+    "field_notes": "Vector-safe repair of v270_product_group_mna_specific using vec_avg(merger_acquisition_sentiment).",
+    "expression": "group_rank(ts_rank(vec_avg(merger_acquisition_sentiment), 90), pv13_hierarchy_min20_3000_513_sector)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v271_vec_earnings_eval_fade",
+    "family": "product_group_vector_repair",
+    "hypothesis": "Earnings evaluation sentiment may overreact; vector averaging first makes the event input compatible and tests a compact product-peer fade.",
+    "field_notes": "Vector-safe repair of v270_product_group_earnings_eval_fade.",
+    "expression": "group_rank(ts_rank(-1 * vec_avg(earnings_evaluation_sentiment), 90), pv13_hierarchy_min5_3000_513_sector)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v271_generic_revision_vecavg",
+    "family": "product_group_vector_repair",
+    "hypothesis": "Generic analyst estimate revisions may be event/vector typed; vector averaging current and previous estimate values should test the same non-EPS revision idea safely.",
+    "field_notes": "Vector-safe repair of v270_product_group_generic_revision.",
+    "expression": "group_rank(ts_rank(vec_avg(anl4_eaz2lafv110_estvalue) - vec_avg(anl4_eaz2lafv110_prevval), 126), pv13_hierarchy_min10_3000_513_sector)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v271_product_group_sga_surprise_flip",
+    "family": "product_group_vector_repair",
+    "hypothesis": "If lower-than-expected SG&A was weak, higher SG&A than expected may instead proxy investment intensity or demand support; one sign-flip test closes the SG&A route if weak.",
+    "field_notes": "Single sign ablation of d5xr9JPJ, still product-group ranked and compact.",
+    "expression": "group_rank(ts_rank(rank(anl4_fs_actual_1qf_v4_nd_sga_value) - rank(anl4_fs_detail_estimate_1qf_v4_nd_sga_median), 126), pv13_hierarchy_f2_sector)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

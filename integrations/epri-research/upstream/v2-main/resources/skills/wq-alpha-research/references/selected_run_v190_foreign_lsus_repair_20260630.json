@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v190_foreign_spread_lsus_largecap",
+    "family": "foreign_profit_fx_lsus_repair",
+    "hypothesis": "A1wEGNYY had strong headline metrics and low ACTIVE correlation but failed LOW_SUB_UNIVERSE_SHARPE by a small margin. A stricter large-cap gate plus lower truncation may stabilize the sub-universe while preserving the foreign-minus-domestic residual and anti-intersegment separation.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.260 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank((foreign_ebit_amount - domestic_ebit_value) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net_tax) / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.110 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry) - 0.090 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary LSUS repair of A1wEGNYY. Reject if it re-correlates to 9qwdEajr/e7OVQKGN or loses Fitness."
+  },
+  {
+    "name": "v190_foreign_spread_subindustry_local",
+    "family": "foreign_profit_fx_lsus_repair",
+    "hypothesis": "A peer-local subindustry rank may reduce broad geographic-quality exposure and improve sub-universe stability without adding old news, option, or generic quality sleeves.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.280 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / abs(assets), 126), subindustry) + 0.210 * group_rank(ts_rank((foreign_ebit_amount - domestic_ebit_value) / abs(assets), 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / abs(assets), 126), subindustry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) - 0.120 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), subindustry) - 0.070 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Tests whether localizing the foreign/domestic spread fixes LSUS and reduces geographic-quality overlap."
+  },
+  {
+    "name": "v190_foreign_profit_delta_lsus",
+    "family": "foreign_profit_delta_lsus_repair",
+    "hypothesis": "Using improvement in foreign profitability instead of level may be less tied to the existing 9qwdEajr domestic/FX level alpha and could stabilize the TOP1000 sub-universe.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(ts_delta(fnd6_pifo / abs(assets), 252), 126), industry) + 0.210 * group_rank(ts_rank(ts_delta(foreign_ebit_amount / abs(assets), 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(ts_delta(foreign_currency_translation_adjustment_net / abs(assets), 252)), 126), industry) + 0.130 * group_rank(ts_rank(unremitted_foreign_earnings_value / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) - 0.120 * group_rank(ts_rank(ts_delta(domestic_ebit_value / abs(assets), 252), 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Delta version to avoid pure geographic-quality level overlap."
+  },
+  {
+    "name": "v190_fx_cash_effect_stability",
+    "family": "fx_cash_effect_stability",
+    "hypothesis": "Exchange-rate effects on cash are low-crowding FX-stability fields. Pairing them with foreign-profit spread may improve reliability without falling back to ordinary translation-OCI or intersegment sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(exchange_rate_effect_cash_equivalents) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(exchange_rate_effect_on_cash) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(unremitted_foreign_earnings_value / abs(assets), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) - 0.110 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses low alphaCount FX cash-effect fields as a stabilizer; submit only if LSUS and corr both pass."
+  },
+  {
+    "name": "v190_aftertax_foreign_spread_lsus",
+    "family": "aftertax_foreign_profit_lsus_repair",
+    "hypothesis": "After-tax foreign profit may keep A1wEGNYY's cross-border residual while improving sub-universe consistency through tax-quality confirmation. Domestic and intersegment sleeves remain explicit penalties.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.240 * group_rank(ts_rank((fnd6_pifo - fnd6_txfo) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank((foreign_ebit_amount - current_foreign_tax_expense_value) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(deferred_foreign_tax_expense) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(tax_rate_diff_foreign_income), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) - 0.120 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry) - 0.090 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled tax-confirmed LSUS repair; reject if it maps back to 9qwdEajr or prior v127 foreign-tax blockers."
+  },
+  {
+    "name": "v190_foreign_profit_backfill_stable",
+    "family": "foreign_profit_coverage_stability",
+    "hypothesis": "Sparse foreign EBIT/footnote coverage may be a source of LSUS fragility. Backfilling only the core foreign fields tests whether coverage stabilization fixes the blocker without adding a crowded sleeve.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.270 * group_rank(ts_rank(ts_backfill(foreign_ebit_amount, 252) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(ts_backfill(fnd6_pifo, 252) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(ts_backfill(foreign_currency_translation_adjustment_net, 252)) / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) - 0.130 * group_rank(ts_rank(ts_backfill(domestic_ebit_value, 252) / abs(domestic_assets_total_value), 126), industry) - 0.090 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Coverage-stability test. Stop if backfill creates concentration or high correlation."
+  },
+  {
+    "name": "v190_export_foreign_anti_domestic",
+    "family": "export_foreign_profit_lsus_repair",
+    "hypothesis": "Export-sales burden can distinguish operational foreign profitability from broad domestic/FX quality. This tests an export-efficiency version while keeping domestic-revenue and intersegment exposure as penalties.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_salexg)) / abs(sales), 126), industry) + 0.160 * group_rank(ts_rank(unremitted_foreign_earnings_value / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(fx_transaction_gain_loss_pre_tax) / abs(assets), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) - 0.120 * group_rank(ts_rank(domestic_revenue_amount / abs(sales), 126), industry) - 0.080 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Revisits export only as an anti-domestic stabilizer, not as standalone foreign-profit repair."
+  },
+  {
+    "name": "v190_foreign_spread_lowmarketcorr",
+    "family": "foreign_profit_fx_lsus_repair",
+    "hypothesis": "Replacing A1wEGNYY's eventful abs-return gate with a lower market-correlation large-cap regime may reduce sub-universe fragility while keeping the same low-corr residual structure.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.260 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank((foreign_ebit_amount - domestic_ebit_value) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) - 0.120 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry) - 0.080 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Regime replacement for A1wEGNYY; do not submit if it becomes 9qwdEajr/e7OVQKGN adjacent."
+  }
+]
