@@ -56,10 +56,10 @@ function AccountManagement(props: Props) {
       <label>{t('template')}<select name="templateId" required>{state.templates.filter(row => row.available > 0).map(row => <option key={row.id} value={row.id}>{row.id}</option>)}</select></label>
       <button disabled={state.pending || !state.templates.some(row => row.available > 0)}>{t('create')}</button>
     </form>
-    {state.rows.map(row => <article key={row.id}><h2>{row.email}</h2><p>{row.enabled ? t('enabled') : t('disabled')}</p>
+    {state.rows.map(row => <article key={row.id}><h2>{row.email}</h2><p>{row.enabled ? t('enabled') : row.resourceState === 'disabled' ? t('disabled') : t('loginBlocked')}</p>
       <p>{row.resourceState === 'ready' ? t('resourcesReady') : row.resourceState === 'legacy' ? t('resourcesLegacy')
         : row.resourceState === 'stop-unknown' ? t('resourcesUnknown') : t('resourcesPending')}</p>
-      {!row.enabled && row.resourceState !== 'ready' && <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'prepare', id: row.id, templateId: text(new FormData(event.currentTarget), 'templateId') }) }}>
+      {!row.enabled && row.resourceState !== 'ready' && row.resourceState !== 'stop-unknown' && <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'prepare', id: row.id, templateId: text(new FormData(event.currentTarget), 'templateId') }) }}>
         <label>{t('template')}<select name="templateId" required>{state.templates.map(item => <option key={item.id} value={item.id}>{item.id}</option>)}</select></label>
         <button disabled={state.pending || state.templates.length === 0}>{t('prepare')}</button>
       </form>}
@@ -70,7 +70,9 @@ function AccountManagement(props: Props) {
       <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'role', id: row.id, role: text(new FormData(event.currentTarget), 'role') }) }}>
         <label>{t('role')}<select key={row.role} name="role" defaultValue={row.role}>{roles}</select></label><button disabled={state.pending}>{t('save')}</button>
       </form>
-      <button disabled={state.pending} onClick={() => props.submit({ op: 'enabled', id: row.id, enabled: !row.enabled })}>{row.enabled ? t('disable') : t('enable')}</button>
+      <button disabled={state.pending} onClick={() => props.submit({ op: 'enabled', id: row.id,
+        enabled: row.resourceState !== 'stop-unknown' && !row.enabled })}>{row.resourceState === 'stop-unknown'
+          ? t('retryDisable') : row.enabled ? t('disable') : t('enable')}</button>
       <form onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget
         props.submit({ op: 'password', id: row.id, password: text(new FormData(form), 'password') }); form.reset() }}>
         <label>{t('password')}<input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password"/></label>
@@ -143,7 +145,8 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
             if (typeof id !== 'string' || typeof available !== 'number') throw new TypeError('Invalid resource template')
             return { id, available }
           })
-          const resourceFailed = result !== null && typeof result === 'object' && Reflect.get(result, 'resourceState') === 'failed'
+          const resourceState: unknown = result !== null && typeof result === 'object' ? Reflect.get(result, 'resourceState') : undefined
+          const resourceFailed = Reflect.get(value, 'op') === 'create' && resourceState !== 'ready'
           current(); state.set({ rows: refreshed, templates, offset, pageSize, total,
             search: Reflect.get(value, 'op') === 'list' && typeof Reflect.get(value, 'search') === 'string' ? String(Reflect.get(value, 'search')) : state.getSnapshot().search,
             pending: false, failed: resourceFailed, created: Reflect.get(value, 'op') === 'create' && !resourceFailed })
