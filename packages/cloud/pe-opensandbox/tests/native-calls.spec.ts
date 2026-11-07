@@ -188,5 +188,7 @@ it('requires an explicitly selected tool and the same live Agent before an addit
   selected.calls.release(current.token)
   const { agent: _agent, ...agentless } = current
   expect(() => selected.calls.run(agentless, async () => result)).toThrow('original native foreground')
-  expect(() => selected.calls.run({ ...current, agent: exec.agent }, async () => result)).toThrow('exact live account-native Agent')
+  const foreignAgent = exec.agent
+  if (foreignAgent === undefined) throw new Error('Original foreign fixture Agent absent')
+  expect(() => selected.calls.run({ ...current, agent: foreignAgent }, async () => result)).toThrow('exact live account-native Agent')
 })
