@@ -439,6 +439,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         throw new AccountRuntimeError('cloud/invalid-config', 'Initial account assignments exceed or repeat the immutable inventory')
       }
       for (const initial of control.config.staticAccounts?.initialAssignments ?? []) await bindings.seed(initial.accountId, initial.slotId)
+      control.owners.installStaticAccountAdmission(inventory.sha256)
       control.revokeStaticBindings = installAssignments({
         lookup: id => bindings.lookup(id), list: () => bindings.list(), assertCurrent: row => bindings.assertCurrent(row),
       })
@@ -480,9 +481,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    */
   async initializeAccountAdministration(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void> {
     const control = this.activeControl(), bindings = await this.staticBindings(control)
+    if (bindings === undefined) {
+      throw new AccountRuntimeError('cloud/invalid-config', 'Account administration requires a verified v3 preallocated storage inventory.')
+    }
     accountAdministrationTransactionBudget(control.config.accountWaitTimeoutMs, control.config.pg,
-      bindings?.inventory.slots.length ?? 0, budgets)
-    if (bindings !== undefined) for (const id of accountIds) {
+      bindings.inventory.slots.length, budgets)
+    for (const id of accountIds) {
       if (await bindings.refresh(id) === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'An initial administrator has no static assignment')
     }
   }
@@ -523,11 +527,16 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   async prepareManagedAccount(accountId: AccountId, templateId: string, operationId: string): Promise<void> {
     const control = this.activeControl(), bindings = await this.staticBindings(control)
     if (bindings === undefined) {
+      control.factory.openAccountAdmission(accountId)
       const use = await this.acquireNativeAccount(control, accountId)
       try { use.assertCurrent() } finally { use.release() }
       return
     }
     let record = await bindings.reserve(accountId, templateId, operationId)
+    if (record.phase === 'stop-unknown') {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'The original account stop has not been confirmed.')
+    }
+    if (record.phase === 'disabled') control.factory.openAccountAdmission(accountId)
     if (record.phase !== 'preparing') record = await bindings.transition(record, 'preparing', operationId)
     try {
       const use = await this.acquireStaticAccount(control, accountId)
@@ -537,7 +546,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       return
     } catch (error) {
       const actual = await bindings.refresh(accountId)
-      if (actual !== undefined) await bindings.transition(actual, 'failed', operationId)
+      if (actual?.phase === 'preparing' && actual.operationId === operationId) await bindings.transition(actual, 'failed', operationId)
       throw error
     }
   }
@@ -548,13 +557,17 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * @returns Disabled only after original factory/Files/execution release; unknown stays explicitly unresolved.
    */
   async disableManagedAccount(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'> {
-    const control = this.activeControl(), bindings = await this.staticBindings(control)
+    const control = this.activeControl()
+    control.factory.closeAccountAdmission(accountId)
+    const bindings = await this.staticBindings(control)
+    const original = await bindings?.refresh(accountId)
+    // This update waits for any claim already holding the same binding row FOR SHARE.
+    const fenced = original === undefined ? undefined : await bindings?.transition(original, 'stop-unknown', operationId)
     const retained = control.factory.retainsAccount(accountId)
     const observed = retained ? await control.factory.stopNative(accountId) : undefined
     const owner = retained ? undefined : await control.owners.locate(accountId)
     const phase = observed?.status === 'unknown' || owner !== undefined && owner.phase !== 'unowned' ? 'stop-unknown' : 'disabled'
-    const record = await bindings?.refresh(accountId)
-    if (record !== undefined) await bindings?.transition(record, phase, operationId)
+    if (fenced !== undefined && phase === 'disabled') await bindings?.transition(fenced, phase, operationId)
     if (phase === 'disabled') control.requests.delete(accountId)
     return phase
   }

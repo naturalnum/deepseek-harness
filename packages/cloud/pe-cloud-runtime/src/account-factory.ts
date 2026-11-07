@@ -10,7 +10,7 @@ import { mountAccount, requireAccountProductionPorts, AccountMountPrerequisiteEr
 import type { NativeAccountBootHandle, NativeAccountBootOutcome, NativeDisposalObservation } from './native-boot.ts'
 import { AccountNativeIntegration } from './account-native-integration.ts'
 import type { RuntimeCapacity } from './capacity.ts'
-import type { PostgresOwnerStore } from './owner-store.ts'
+import { OwnerClaimAdmissionClosed, type PostgresOwnerStore } from './owner-store.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import { observeStartup, startupFailureObserver, type StartupObserver } from './startup-observation.ts'
@@ -100,6 +100,7 @@ const MAX_DELAY = 2_147_483_647
  */
 export class AccountFactory {
   private readonly slots = new Map<AccountId, Slot>()
+  private readonly closedAccounts = new Set<AccountId>()
   private readonly limits: AccountFactoryLimits
   private waiters = 0
   private borrows = 0
@@ -185,6 +186,7 @@ export class AccountFactory {
    */
   startNativeMount(input: AccountMountInput, recipe: AccountRecipe): Promise<NativeAccountBootOutcome> {
     this.assertOpen()
+    this.assertAccountAdmission(input.binding.accountId)
     const existing = this.slots.get(input.binding.accountId)
     if (existing !== undefined) {
       if (existing.input === undefined || existing.input.binding !== input.binding || existing.input.layout !== input.layout
@@ -207,6 +209,7 @@ export class AccountFactory {
    */
   claimAndMount(owners: PostgresOwnerStore, request: AccountFactoryRequest): Promise<NativeAccountBootOutcome> {
     this.assertOpen()
+    this.assertAccountAdmission(request.accountId)
     const existing = this.slots.get(request.accountId)
     if (existing !== undefined) {
       const first = existing.request
@@ -300,6 +303,7 @@ export class AccountFactory {
    * @param requireNative Require the original production native Root check for Root business admission.
    */
   assertBusinessCurrent(binding: AccountBinding, requireNative = false): void {
+    this.assertAccountAdmission(binding.accountId)
     this.assertMountCurrent(binding)
     const slot = this.slots.get(binding.accountId)
     if (slot?.state !== 'ready') {
@@ -415,6 +419,27 @@ export class AccountFactory {
    * @returns Whether the original slot remains retained, including failed or uncertain work.
    */
   retainsAccount(accountId: AccountId): boolean { return this.slots.has(accountId) }
+
+  /** Close new mounts and business borrows synchronously; existing mount and stop promises retain actual ownership.
+   * @param accountId Authentic target selected by Root account administration.
+   */
+  closeAccountAdmission(accountId: AccountId): void { this.assertOpen(); this.closedAccounts.add(accountId) }
+
+  /** Reopen an explicitly enabled account only after its original factory slot is completely released.
+   * @param accountId Authentic target whose durable stop was confirmed before resource preparation.
+   */
+  openAccountAdmission(accountId: AccountId): void {
+    this.assertOpen()
+    if (!this.closedAccounts.has(accountId)) return
+    if (this.slots.has(accountId)) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'The original account mount or stop is still retained.')
+    }
+    this.closedAccounts.delete(accountId)
+  }
+
+  private assertAccountAdmission(accountId: AccountId): void {
+    if (this.closedAccounts.has(accountId)) throw new AccountRuntimeError('cloud/account-unavailable', 'Account admission is closed.')
+  }
 
   /**
    * Select only this factory's existing production binding for an exact observed owner.
@@ -922,7 +947,8 @@ export class AccountFactory {
       slot.settlement = settlement
       slot.reservation.settleMount()
       if ('cause' in settlement && slot.request !== undefined && slot.native === undefined
-        && (!slot.claimAttempted || settlement.cause instanceof OwnerPgNotSubmittedError)) {
+        && (!slot.claimAttempted || settlement.cause instanceof OwnerPgNotSubmittedError
+          || settlement.cause instanceof OwnerClaimAdmissionClosed)) {
         slot.releaseAfterClose = true
         if (slot.closing === undefined) {
           slot.reservation.releaseAccount()

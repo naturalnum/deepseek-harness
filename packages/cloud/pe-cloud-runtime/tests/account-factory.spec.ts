@@ -86,6 +86,39 @@ function fixture(label: string) {
 }
 
 describe('bounded concrete native account mounts', () => {
+  it('closes one account before a slot exists and joins its original pending native mount when stopping', async () => {
+    const { value } = factory()
+    const a = fixture('account-admission-a'), b = fixture('account-admission-b')
+    value.closeAccountAdmission(a.input.binding.accountId)
+    expect(() => value.startNativeMount(a.input, a.recipe)).toThrow('admission is closed')
+    expect(a.starts()).toBe(0)
+    expect(value.inspect().slots).toBe(0)
+    value.openAccountAdmission(a.input.binding.accountId)
+    const cleanupEntered = gate(), cleanupFinished = gate()
+    const recipe: AccountRecipe = { ...a.recipe, prepare: async (ctx, binding) => {
+      ctx.effect(() => async () => { cleanupEntered.resolve(undefined); await cleanupFinished.promise })
+      await a.recipe.prepare(ctx, binding)
+    } }
+    const actualA = value.startNativeMount(a.input, recipe)
+    await a.entered.promise
+    value.closeAccountAdmission(a.input.binding.accountId)
+    const stopped = value.stopNative(a.input.binding.accountId)
+    await cleanupEntered.promise
+    expect(value.stopNative(a.input.binding.accountId)).toBe(stopped)
+    expect(() => value.startNativeMount(a.input, recipe)).toThrow('admission is closed')
+    expect(() => value.openAccountAdmission(a.input.binding.accountId)).toThrow('still retained')
+    const actualB = value.startNativeMount(b.input, b.recipe)
+    await b.entered.promise
+    b.resume.resolve(undefined)
+    const mountedB = await actualB
+    if (mountedB.status !== 'mounted') throw new Error('Independent native fixture B did not mount')
+    mountedB.context.fiber.assertActive()
+    a.resume.resolve(undefined); cleanupFinished.resolve(undefined)
+    await expect(actualA).resolves.toMatchObject({ status: 'failed' })
+    await expect(stopped).resolves.toMatchObject({ native: { status: 'confirmed' } })
+    mountedB.context.fiber.assertActive()
+  })
+
   it.each(['same-input', 'fresh-wrapper'])('merges twenty actual Loader starts using %s without publishing ready', async (style) => {
     const { value } = factory()
     const f = fixture(style)
