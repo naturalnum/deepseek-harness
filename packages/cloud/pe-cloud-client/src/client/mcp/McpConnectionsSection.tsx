@@ -24,6 +24,7 @@ function McpConnectionsBody({ t, call }: McpConnectionsProps): ReactNode {
   const [reply, setReply] = useState<CloudMcpConnectionReply>()
   const [probe, setProbe] = useState<CloudMcpConnectionReply['test']>()
   const [editing, setEditing] = useState<CloudMcpConnectionView>()
+  const [editVersion, setEditVersion] = useState<string>()
   const [serverName, setServerName] = useState(''), [url, setUrl] = useState('')
   const [token, setToken] = useState(''), [headers, setHeaders] = useState(''), [clearHeaders, setClearHeaders] = useState(false)
   const [timeout, setTimeoutValue] = useState(0), [enabled, setEnabled] = useState(true)
@@ -47,10 +48,13 @@ function McpConnectionsBody({ t, call }: McpConnectionsProps): ReactNode {
     return () => { alive.current = false }
   }, [])
   const reset = (): void => {
+    setEditVersion(undefined)
     setProbe(undefined); setEditing(undefined); setServerName(''); setUrl(''); setToken(''); setHeaders(''); setClearHeaders(false)
     setTimeoutValue(reply?.limits.maxToolCallTimeoutMs ?? 0); setEnabled(true)
   }
   const edit = (row: CloudMcpConnectionView): void => {
+    if (reply === undefined) return
+    setEditVersion(reply.version)
     setProbe(undefined); setEditing(row); setServerName(row.serverName); setUrl(row.url); setTimeoutValue(row.toolCallTimeoutMs)
     setEnabled(row.enabled); setToken(''); setHeaders(''); setClearHeaders(false)
   }
@@ -72,7 +76,9 @@ function McpConnectionsBody({ t, call }: McpConnectionsProps): ReactNode {
   const save = async (): Promise<void> => {
     const value = connection()
     if (value === undefined || reply === undefined) return
-    if (await request({ action: 'save', version: reply.version, ...editing === undefined ? {} : { id: editing.id }, connection: value })) reset()
+    const version = editing === undefined ? reply.version : editVersion
+    if (version === undefined) return
+    if (await request({ action: 'save', version, ...editing === undefined ? {} : { id: editing.id }, connection: value })) reset()
   }
   const test = async (): Promise<void> => {
     const value = connection()
@@ -80,10 +86,12 @@ function McpConnectionsBody({ t, call }: McpConnectionsProps): ReactNode {
   }
   const valid = /^[A-Za-z0-9_-]{1,32}$/.test(serverName) && /^https?:\/\//.test(url) && Number.isSafeInteger(timeout) && timeout > 0
     && reply !== undefined && timeout <= reply.limits.maxToolCallTimeoutMs
+  const changed = editing !== undefined && editVersion !== undefined && reply !== undefined && reply.version !== editVersion
   return <section className={css.section} aria-label={t('title')}>
     <header><h2>{t('title')}</h2><Button disabled={busy} onClick={() => { void request({ action: 'list' }) }}>{t('refresh')}</Button></header>
     <p>{t('intro')}</p><p className={css.note}>{t('httpHint')}</p>
     {error && <p role="alert" className={css.error}>{error}</p>}
+    {changed && <p role="alert" className={css.error}>{t('changed')}</p>}
     {busy && <p role="status">{t(reply === undefined ? 'loading' : 'pending')}</p>}
     {reply?.connections.length === 0 && <p>{t('empty')}</p>}
     <div className={css.list}>{reply?.connections.map(row => <article className={css.card} key={row.id}>
