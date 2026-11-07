@@ -7,7 +7,7 @@
   "cloudBaseCommit": "edcd1ea91ca0ddde78dedde322c600f43021920e",
   "importedSuiteTree": "2fb896ab57a04abba370e3e2b1c851f685127239",
   "transportPatch": "diffs/cloud-transports.patch",
-  "transportPatchSha256": "669a765289c856ea2251229323580c01d1206c9c2363bd16e805ebbb5186a174",
+  "transportPatchSha256": "e4591135557a4025143f1ffa64804972132e4b6a8d301d027e40f75a358b2ae1",
   "files": [
     {
       "path": "src/reused/engine/index.ts",
@@ -30,8 +30,8 @@
     {
       "path": "src/reused/engine/protocol_executor.py",
       "importedSha256": "aba618a10fba303d2332f85b972629ce44aea4e53a2b104cd277bb3d81b0c62f",
-      "cloudSha256": "aba618a10fba303d2332f85b972629ce44aea4e53a2b104cd277bb3d81b0c62f",
-      "change": "retained-original"
+      "cloudSha256": "c0fdd9df46285bd650ab646ee4e47c4cdb72b3ba1d3e929d04a694362144affc",
+      "change": "optional-model-absence-diagnostic"
     },
     {
       "path": "src/reused/engine/workflow_executor.py",

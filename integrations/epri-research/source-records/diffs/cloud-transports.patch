@@ -139,3 +139,44 @@ index 56a53a449c..4f449b5a95 100644
    return (payload.notes || [])
      .map((note, index): LiteraturePaper => {
        const content = (note.content || {}) as Record<string, unknown>;
+diff --git a/integrations/epri-research/src/reused/engine/protocol_executor.py b/integrations/epri-research/src/reused/engine/protocol_executor.py
+index d936b66a93..01d326261f 100644
+--- a/integrations/epri-research/src/reused/engine/protocol_executor.py
++++ b/integrations/epri-research/src/reused/engine/protocol_executor.py
+@@ -95,7 +95,8 @@ class ProtocolStdoutLogger:
+             self._buffer = ""
+ 
+ 
+-def import_module(module_name, force_reload=False):
++def import_module(module_name, force_reload=False, *, optional=False):
++    """Ignore an absent optional leaf; preserve resolution and initialization errors."""
+     importlib.invalidate_caches()
+ 
+     if not force_reload and module_name in sys.modules:
+@@ -104,6 +105,8 @@ def import_module(module_name, force_reload=False):
+     previous = sys.modules.pop(module_name, None)
+ 
+     spec = importlib.util.find_spec(module_name)
++    if optional and spec is None:
++        return None
+     if spec is None or spec.loader is None:
+         logger.warning(f"module {module_name} not found")
+         return None
+@@ -151,7 +154,7 @@ def _load_aimd_model(protocol_name: str):
+ 
+ 
+ def _merge_protocol_var_model(protocol_name: str, aimd_var_model):
+-    model = import_module(f"{protocol_name}.model")
++    model = import_module(f"{protocol_name}.model", optional=True)
+     if model is not None and hasattr(model, "VarModel"):
+         return merge_var_models(aimd_var_model, model.VarModel)
+     return aimd_var_model
+@@ -317,7 +320,7 @@ def assign_variable(protocol_name: str, params: dict) -> dict:
+     fields = aimd_model.VarModel.model_fields
+ 
+     # load model
+-    var_model = import_module(f"{protocol_name}.model")
++    var_model = import_module(f"{protocol_name}.model", optional=True)
+     if var_model is not None and hasattr(var_model, "VarModel"):
+         fields = deep_merge(fields, var_model.VarModel.model_fields)
+ 

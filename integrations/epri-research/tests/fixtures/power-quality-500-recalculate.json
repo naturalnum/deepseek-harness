@@ -1,0 +1,2513 @@
+{
+  "packageId": "power-data-quality-interactive",
+  "version": "1.0.0",
+  "action": "recalculate",
+  "params": {
+    "values": {},
+    "tables": {
+      "measurements": [
+        {
+          "channel": "测点001",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点002",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点003",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点004",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点005",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点006",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点007",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点008",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点009",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点010",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点011",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点012",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点013",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点014",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点015",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点016",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点017",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点018",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点019",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点020",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点021",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点022",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点023",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点024",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点025",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点026",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点027",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点028",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点029",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点030",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点031",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点032",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点033",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点034",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点035",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点036",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点037",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点038",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点039",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点040",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点041",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点042",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点043",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点044",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点045",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点046",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点047",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点048",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点049",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点050",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点051",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点052",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点053",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点054",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点055",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点056",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点057",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点058",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点059",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点060",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点061",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点062",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点063",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点064",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点065",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点066",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点067",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点068",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点069",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点070",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点071",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点072",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点073",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点074",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点075",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点076",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点077",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点078",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点079",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点080",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点081",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点082",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点083",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点084",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点085",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点086",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点087",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点088",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点089",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点090",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点091",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点092",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点093",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点094",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点095",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点096",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点097",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点098",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点099",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点100",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点101",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点102",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点103",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点104",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点105",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点106",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点107",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点108",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点109",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点110",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点111",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点112",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点113",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点114",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点115",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点116",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点117",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点118",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点119",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点120",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点121",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点122",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点123",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点124",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点125",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点126",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点127",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点128",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点129",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点130",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点131",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点132",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点133",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点134",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点135",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点136",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点137",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点138",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点139",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点140",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点141",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点142",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点143",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点144",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点145",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点146",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点147",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点148",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点149",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点150",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点151",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点152",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点153",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点154",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点155",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点156",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点157",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点158",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点159",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点160",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点161",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点162",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点163",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点164",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点165",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点166",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点167",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点168",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点169",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点170",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点171",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点172",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点173",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点174",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点175",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点176",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点177",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点178",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点179",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点180",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点181",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点182",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点183",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点184",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点185",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点186",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点187",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点188",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点189",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点190",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点191",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点192",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点193",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点194",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点195",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点196",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点197",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点198",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点199",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点200",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点201",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点202",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点203",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点204",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点205",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点206",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点207",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点208",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点209",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点210",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点211",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点212",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点213",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点214",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点215",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点216",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点217",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点218",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点219",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点220",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点221",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点222",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点223",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点224",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点225",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点226",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点227",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点228",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点229",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点230",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点231",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点232",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点233",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点234",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点235",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点236",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点237",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点238",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点239",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点240",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点241",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点242",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点243",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点244",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点245",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点246",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点247",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点248",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点249",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点250",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点251",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点252",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点253",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点254",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点255",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点256",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点257",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点258",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点259",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点260",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点261",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点262",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点263",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点264",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点265",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点266",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点267",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点268",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点269",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点270",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点271",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点272",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点273",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点274",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点275",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点276",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点277",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点278",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点279",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点280",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点281",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点282",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点283",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点284",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点285",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点286",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点287",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点288",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点289",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点290",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点291",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点292",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点293",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点294",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点295",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点296",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点297",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点298",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点299",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点300",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点301",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点302",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点303",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点304",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点305",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点306",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点307",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点308",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点309",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点310",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点311",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点312",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点313",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点314",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点315",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点316",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点317",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点318",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点319",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点320",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点321",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点322",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点323",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点324",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点325",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点326",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点327",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点328",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点329",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点330",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点331",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点332",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点333",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点334",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点335",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点336",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点337",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点338",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点339",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点340",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点341",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点342",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点343",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点344",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点345",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点346",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点347",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点348",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点349",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点350",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点351",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点352",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点353",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点354",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点355",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点356",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点357",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点358",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点359",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点360",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点361",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点362",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点363",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点364",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点365",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点366",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点367",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点368",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点369",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点370",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点371",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点372",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点373",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点374",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点375",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点376",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点377",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点378",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点379",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点380",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点381",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点382",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点383",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点384",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点385",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点386",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点387",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点388",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点389",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点390",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点391",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点392",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点393",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点394",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点395",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点396",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点397",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点398",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点399",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点400",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点401",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点402",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点403",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点404",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点405",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点406",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点407",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点408",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点409",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点410",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点411",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点412",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点413",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点414",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点415",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点416",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点417",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点418",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点419",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点420",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点421",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点422",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点423",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点424",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点425",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点426",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点427",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点428",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点429",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点430",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点431",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点432",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点433",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点434",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点435",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点436",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点437",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点438",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点439",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点440",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点441",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点442",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点443",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点444",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点445",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点446",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点447",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点448",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点449",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点450",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点451",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点452",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点453",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点454",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点455",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点456",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点457",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点458",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点459",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点460",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点461",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点462",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点463",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点464",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点465",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点466",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点467",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点468",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点469",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点470",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点471",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点472",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点473",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点474",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点475",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点476",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点477",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点478",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点479",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点480",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点481",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点482",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点483",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点484",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点485",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点486",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点487",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点488",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点489",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点490",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点491",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点492",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点493",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点494",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点495",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点496",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点497",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点498",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点499",
+          "expected": 100,
+          "valid": 90
+        },
+        {
+          "channel": "测点500",
+          "expected": 100,
+          "valid": 90
+        }
+      ]
+    }
+  },
+  "requestId": "power-quality-500-output-regression"
+}

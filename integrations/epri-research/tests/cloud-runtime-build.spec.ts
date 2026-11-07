@@ -10,3 +10,7 @@ it('keeps the standalone scientific interpreter separate from protected Office b
 it('joins bounded same-script image children and defers PDF and OCR libraries to their actual branch',()=>{
   execFileSync('python3',['-I','-B',fileURLToPath(new URL('./test_document_children.py',import.meta.url))],{timeout:10000,stdio:'pipe'})
 })
+
+it('keeps absent optional models quiet and preserves actual module-resolution and dependency failures',()=>{
+  execFileSync('python3',['-I','-B',fileURLToPath(new URL('./test_optional_model.py',import.meta.url))],{timeout:10000,stdio:'pipe'})
+})

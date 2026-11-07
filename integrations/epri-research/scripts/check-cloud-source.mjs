@@ -1,4 +1,4 @@
-/** Check the retained scientific implementation and the two documented transport injections. */
+/** Check retained scientific sources and the recorded transport and optional-model adaptations. */
 import {readFileSync} from 'node:fs';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -11,4 +11,4 @@ for(const file of record.files){
   if(file.change==='retained-original'&&file.importedSha256!==file.cloudSha256)throw new Error('Retained executor differs from its imported source');
 }
 if(hash(readFileSync(join(root,'source-records',record.transportPatch)))!==record.transportPatchSha256)throw new Error('Transport patch record changed');
-console.log('Cloud source record: retained executors and documented transport injections match.');
+console.log('Cloud source record: retained executors and documented adaptations match.');

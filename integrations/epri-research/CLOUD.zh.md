@@ -76,6 +76,8 @@ PDF 渲染与 OCR 共用原受管任务，但分离各自重库：PDF 父进程�
 
 先在本包自己的真实 `node_modules` 中完成依赖安装。当前单仓库中先运行 `npm ci --omit=peer`，再运行 `node scripts/link-cloud-peers.mjs`；这些链接存在期间禁止运行安装命令。构建 Host artifacts，用 `node scripts/build.mjs` 构建本包，检查 `tsconfig.cloud.json`；从仓库根目录运行 `node node_modules/vitest/vitest.mjs run --config integrations/epri-research/vitest.cloud.config.ts`。原有包测试继续验证本地模式兼容。
 
-[cloud-integration.json](source-records/cloud-integration.json) 记录导入分支/基线及保留的科研文件。对应补丁仅在复用源码中注入 executor/fetch 传输选择，保留原 upstream 树及许可。升级时获取来源新分支，在独立 feature 分支审阅并仅应用 `git diff --binary OLD NEW -- integrations/epri-research`，适配已记录的注入点、更新来源记录，再运行独立包及 Cloud 组合测试。Python 依赖变化时重新验证新不可变镜像；不要覆盖 Cloud 的根目录检查脚本，也不要以删除 Cloud 准入解决冲突。
+[cloud-integration.json](source-records/cloud-integration.json) 记录导入分支/基线及精确科研文件。对应补丁记录复用源码中的 executor/fetch 传输选择与可选模型缺失诊断，保留原 upstream 树及许可。可选协议 `model.py` 不存在时不记录警告；实际模型内部的依赖/导入错误及父模块解析失败仍然可见。必需模块缺失和已有 namespace 没有 loader 的情况保留原诊断。升级时获取来源新分支，在独立 feature 分支审阅并仅应用 `git diff --binary OLD NEW -- integrations/epri-research`，协调这些适配、更新来源记录，再运行独立包及 Cloud 组合测试。Python 依赖变化时重新验证新不可变镜像；不要覆盖 Cloud 的根目录检查脚本，也不要以删除 Cloud 准入解决冲突。
+
+[500 行 CSV](tests/fixtures/power-quality-500.csv) 与[精确重算请求](tests/fixtures/power-quality-500-recalculate.json)覆盖原内置质量方法：应有合计 50,000、有效合计 45,000、缺失率 10%，计算错误和待计算字段均应为空。[两行 CSV](tests/fixtures/power-quality-2.csv)用于恢复 300/270/10% 示例。实际原生/Web 资格必须在原 stderr 预算内运行这些输入；仅 stdlib 导入器回归不能证明 Airalogy 计算通过。
 
 组件测试覆盖真实 Loader/Gateway/原生 Session、一次性工作台请求及记录的 keyless 聊天/工具轨迹、脚本化计算通道所有权、账号隔离的实际资源复制与用户修改保留、动态技能隔离及失效。它们不代表真实 Linux 后端验收。最终仍须在已登录浏览器验证按钮 → 原生聊天意图 → 受管 Airalogy 计算 → 原界面结果，并验证精确人工审批、A/B 账号、重启/停用/排空和上述完整工作流/OCR。
