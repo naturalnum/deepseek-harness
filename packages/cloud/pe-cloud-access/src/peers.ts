@@ -32,6 +32,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cloud/account-unavailable': {}
     'cloud/capacity': {}
     'cloud/stop-unconfirmed': SafeDetails
+    'cloud/account-stop-unconfirmed': SafeDetails
     'cloud/stale-generation': {}
   }
 }

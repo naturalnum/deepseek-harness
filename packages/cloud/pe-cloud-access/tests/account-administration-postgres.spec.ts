@@ -112,6 +112,9 @@ describe.skipIf(configPath === undefined)('real account administration with Post
       expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
       expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
       expect(prepared).toBe(1)
+      const unconfirmed = await post('/cloud/admin/accounts', { op: 'enabled', id: createdBody.id, enabled: false }, a.cookie)
+      expect(unconfirmed.status).toBe(503)
+      expect(await unconfirmed.json()).toMatchObject({ code: 'cloud/account-stop-unconfirmed', retry: 'after-status-check' })
       unknownStop = false
       expect((await post('/cloud/admin/accounts', { op: 'enabled', id: createdBody.id, enabled: false }, a.cookie)).status).toBe(200)
       const results = await Promise.all([

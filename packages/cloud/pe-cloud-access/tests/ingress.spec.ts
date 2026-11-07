@@ -1,4 +1,4 @@
-/** Actual Web route registration and native runtime seal refusal; no positive account or schema is fabricated. */
+/** Actual Web routes and shared ingress failure ownership; Root readiness and identity answers remain explicit fixtures. */
 import { Context } from '@deepseek-ai/cordis'
 import { WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
@@ -19,7 +19,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-async function fixture(preview = false) {
+async function fixture(preview = false, administration = false) {
   const ctx = new Context()
   const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
   // Constructing the real service does not invoke Service.init or open its listener.
@@ -31,7 +31,9 @@ async function fixture(preview = false) {
   const limits = { ...ingressConfig(), ...(preview ? { servicePreview: { maxUrlBytes: 1024, maxFieldBytes: 128,
     maxRequestHeaderCount: 16, maxRequestHeaderBytes: 2048,
     response: { maxBodyBytes: 8192, maxChunkBytes: 4096, maxChunks: 8, maxHeaderCount: 32, maxHeaderBytes: 4096 } } } : {}) }
-  const auth = await BetterAuthAccess.create(config, pool, 'ingress-test-secret-thirty-two-characters-123456', async () => {})
+  const auth = await BetterAuthAccess.create({ ...config, ...administration ? {
+    accountAdministration: { maxAccounts: 3, maxPageSize: 3, initialAdministratorIds: ['actor'] },
+  } : {} }, pool, 'ingress-test-secret-thirty-two-characters-123456', async () => {})
   const authCurrent = vi.fn((): void => { throw new AuthAccessError('cloud/account-unavailable', 'test' as AuthAccessError['requestId']) })
   const ingress = new CloudIngress(ctx, config, limits, auth, {
     web, runtime, recipeVersion: 'ingress-test', assertAuthenticationCurrent: authCurrent,
@@ -56,7 +58,7 @@ async function fixture(preview = false) {
   const stream = vi.spyOn(TypertGatewayService.prototype, 'createNodeStreamTransport')
   const query = vi.spyOn(pool, 'query')
   return {
-    ctx, web, runtime, ingress, register, upgrade, seal, authCurrent, authenticate, previewAuth, bootstrap, authHandler,
+    ctx, web, runtime, auth, ingress, register, upgrade, seal, authCurrent, authenticate, previewAuth, bootstrap, authHandler,
     locate, acquire, borrow, http, stream, query, stderr,
   }
 }
@@ -70,6 +72,45 @@ function responseRequestId(body: string): string {
 }
 
 describe('shared Web ingress under the actual unsealed runtime', () => {
+  it('keeps the shared ingress available after one account drain is unconfirmed', async () => {
+    const f = await fixture(false, true)
+    f.seal.mockImplementation(() => {})
+    f.authCurrent.mockImplementation(() => {})
+    f.authenticate.mockResolvedValue({ accountId: 'actor' as Awaited<ReturnType<BetterAuthAccess['authenticate']>>['accountId'],
+      authSessionId: 'synthetic-login' as Awaited<ReturnType<BetterAuthAccess['authenticate']>>['authSessionId'] })
+    const administer = vi.spyOn(f.auth, 'administer').mockRejectedValueOnce(new AuthAccessError(
+      'cloud/account-stop-unconfirmed', 'synthetic-management' as AuthAccessError['requestId']))
+      .mockResolvedValueOnce({ accounts: [], templates: [], offset: 0, limit: 3, total: 0 })
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(([value]) => value).find(row => row.path === '/cloud/admin/accounts')
+    if (route === undefined) throw new Error('Actual account management route missing')
+    const send = async (body: object) => {
+      const value = carrier('/cloud/admin/accounts', 'POST', ['Origin', 'http://127.0.0.1:4100',
+        'Content-Type', 'application/json', 'X-Pe-Account', 'actor', 'X-Pe-Generation', 'original'])
+      value.request.complete = true
+      value.request.push(JSON.stringify(body)); value.request.push(null)
+      await route.handler(value.request, value.response)
+      return value
+    }
+    const stopped = await send({ op: 'enabled', id: 'target', enabled: false })
+    expect(administer).toHaveBeenCalledTimes(1)
+    expect(stopped.response.statusCode).toBe(503)
+    expect(Buffer.concat(stopped.socket.output).toString('utf8')).toContain('cloud/account-stop-unconfirmed')
+    expect(f.ingress.observe()).toMatchObject({ current: true })
+    const listed = await send({ op: 'list', search: '', offset: 0 })
+    expect(listed.response.statusCode).toBe(200)
+    expect(administer).toHaveBeenCalledTimes(2)
+    expect(f.ingress.observe()).toMatchObject({ current: true })
+  })
+
+  it('retains the exact account-management registration together with the optional preview route', async () => {
+    const f = await fixture(true, true)
+    await f.ingress.install()
+    expect(f.ingress.observe()).toMatchObject({ current: true, registeredRoutes: 7 })
+    expect(f.register.mock.calls.filter(([row]) => row.path === '/cloud/admin/accounts')).toHaveLength(1)
+    expect(f.register.mock.calls.filter(([row]) => row.path === '/cloud/service-preview')).toHaveLength(1)
+  })
+
   it('reports only the actually registered fixed preview route and keeps unsealed admission before login or account work', async () => {
     const f = await fixture(true)
     await f.ingress.install()

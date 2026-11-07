@@ -1,8 +1,9 @@
 /** C-01 authentication failures; raw library errors and credentials stay off the wire. */
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
-/** Login admission and Peer cleanup failures, separate from native business RPC errors. */
-export type AuthFailureCode = 'cloud/unauthenticated' | 'cloud/forbidden' | 'cloud/login-active' | 'cloud/last-administrator' | 'cloud/account-unavailable' | 'cloud/capacity' | 'cloud/stop-unconfirmed'
+/** Authentication, account-management and Peer-cleanup failures, separate from native business RPC errors. */
+export type AuthFailureCode = 'cloud/unauthenticated' | 'cloud/forbidden' | 'cloud/login-active' | 'cloud/last-administrator'
+  | 'cloud/account-unavailable' | 'cloud/capacity' | 'cloud/stop-unconfirmed' | 'cloud/account-stop-unconfirmed'
 
 /** Authentication failure with a fixed, credential-free public message. */
 export class AuthAccessError extends Error {
@@ -21,12 +22,14 @@ export class AuthAccessError extends Error {
       : code === 'cloud/unauthenticated' ? 'Sign in again before sending an account request.'
         : code === 'cloud/login-active' ? 'Sign out before starting another login in this browser.'
           : code === 'cloud/forbidden' ? 'Request origin or transport is not permitted.'
-            : code === 'cloud/stop-unconfirmed' ? 'Login Peer cleanup is unconfirmed. Check status before sending a new operation.'
-              : code === 'cloud/capacity' ? 'Authentication capacity is full. Check status before sending a new operation.'
-                : 'Authentication could not be confirmed. Check status before sending a new operation.', options)
+            : code === 'cloud/account-stop-unconfirmed' ? 'Account sign-in is blocked but resource cleanup is unconfirmed. Check account status.'
+              : code === 'cloud/stop-unconfirmed' ? 'Login Peer cleanup is unconfirmed. Check status before sending a new operation.'
+                : code === 'cloud/capacity' ? 'Authentication capacity is full. Check status before sending a new operation.'
+                  : 'Authentication could not be confirmed. Check status before sending a new operation.', options)
     this.name = 'AuthAccessError'
     this.status = code === 'cloud/unauthenticated' ? 401 : code === 'cloud/forbidden' ? 403 : code === 'cloud/login-active' || code === 'cloud/last-administrator' ? 409 : code === 'cloud/capacity' ? 429 : 503
-    this.retry = code === 'cloud/account-unavailable' || code === 'cloud/capacity' || code === 'cloud/stop-unconfirmed' ? 'after-status-check' : 'never'
+    this.retry = code === 'cloud/account-unavailable' || code === 'cloud/capacity' || code === 'cloud/stop-unconfirmed'
+      || code === 'cloud/account-stop-unconfirmed' ? 'after-status-check' : 'never'
   }
 
   /**

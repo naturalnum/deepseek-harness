@@ -47,7 +47,7 @@ type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.c
 
 const FAILURE_CODES: readonly string[] = Object.freeze([
   'cloud/unauthenticated', 'cloud/forbidden', 'cloud/login-active', 'cloud/last-administrator', 'cloud/account-unavailable',
-  'cloud/account-starting', 'cloud/account-quarantined', 'cloud/stop-unconfirmed', 'cloud/capacity',
+  'cloud/account-starting', 'cloud/account-quarantined', 'cloud/stop-unconfirmed', 'cloud/account-stop-unconfirmed', 'cloud/capacity',
   'cloud/invalid-config', 'cloud/config-conflict', 'cloud/config-busy', 'cloud/stale-generation',
   'cloud/model-not-allowed', 'cloud/invalid-project-title',
   'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM',
@@ -275,13 +275,15 @@ export class CloudIngress {
    */
   observe(): IngressObservation {
     const web = this.ctx.get('webServer')
+    const expectedRegistrations = 5 + (this.limits.servicePreview === undefined ? 0 : 1) + (this.auth.accountAdministrationEnabled ? 1 : 0)
     const original = (value: object): object => {
       const target: unknown = Reflect.get(value, symbols.original)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
     }
     return Object.freeze({
       state: this.state,
-      current: this.state === 'installed' && this.accepting && this.registrations.size === (this.limits.servicePreview === undefined ? 5 : 6)
+      current: this.state === 'installed' && this.accepting
+        && this.registrations.size === expectedRegistrations
         && this.ctx.fiber.state === FiberState.ACTIVE && web !== undefined && original(web) === original(this.dependencies.web),
       registeredRoutes: this.registrations.size, pendingOperations: this.operations.size,
     })
