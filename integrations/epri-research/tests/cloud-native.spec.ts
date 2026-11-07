@@ -1,6 +1,6 @@
 /** Real Loader/native Session/Gateway and independent account Stores; no deployment or external computation is certified. */
 import {join} from 'node:path'
-import {randomUUID} from 'node:crypto'
+import {createHash,randomUUID} from 'node:crypto'
 import {fileURLToPath} from 'node:url'
 import {loadOverlayPatches} from '@deepseek-ai/dsh-app-boot'
 import {expect,it,vi} from 'vitest'
@@ -22,7 +22,7 @@ import {SLICE_LIMITS} from '../../../packages/cloud/pe-opensandbox/src/agent-dat
 const limits={maxDatabaseBytes:1048576,maxRequestBytes:1048576,maxReplyBytes:1048576,maxPendingRequests:2,
   maxConcurrentResourcePreparations:1,maxSkillProviders:64,maxSkillFiles:1024,maxSkillBytes:33554432,maxSkillFileBytes:4194304,maxSkillPathBytes:256,executionTimeoutMs:10000,expectedPythonVersion:'3.13',expectedAiralogyVersion:'0.16.0',maxPayloadBytes:8388608,fileChunkBytes:65536,maxConcurrentFileTransfers:2,maxOutputBytes:32768,graceMs:1000,gitPath:'/usr/bin/git',pythonPath:'/usr/bin/python3'}
 const endpoint={endpoint:'cloudResearch/action',handlerId:'native:cloudResearch',guard:'account-session' as const}
-async function fixture(accountId:string,overrides:Partial<Cloud.Config>={},projectDirectoryName?:string) {
+async function fixture(accountId:string,overrides:Partial<Cloud.Config>={},projectDirectoryName?:string,questions=false) {
   const options={defaultId:'research-suite',...projectDirectoryName===undefined?{}:{projectDirectoryName},declarations:[{entryId:'research-preset',selectable:true,config:{id:'research-suite',plugins:[
     {id:'persona',name:'cordis:m8z-persona',config:{prefix:'Research fixture.',complete:true,includeRuntimeContext:false}},
     {id:'research-tools',name:'deepscientist-harness-suite/airalogy'},
@@ -33,7 +33,8 @@ async function fixture(accountId:string,overrides:Partial<Cloud.Config>={},proje
   researchStorage(binding:Cloud.CloudResearch['binding'],privateRoot:string){
     return {binding,directory:join(privateRoot,'research-suite'),assertCurrent(){binding.lifetime.throwIfAborted()}}
   }}
-  const f=policyFixture([endpoint],undefined,accountId,{selected:[]},undefined,undefined,undefined,undefined,[],false,undefined,options)
+  const rpc=questions?[endpoint,{endpoint:'userQuestions/answer',handlerId:'native:userQuestions',guard:'account-session' as const}]:[endpoint]
+  const f=policyFixture(rpc,undefined,accountId,{selected:[]},undefined,undefined,undefined,undefined,[],false,undefined,options)
   const graph=await f.start()
   await graph.api.auditPrepared(graph.ctx)
   const {sessionId}=await graph.ctx.sessionController.create({})
@@ -44,6 +45,66 @@ async function fixture(accountId:string,overrides:Partial<Cloud.Config>={},proje
   const tool=async(name:string,args:Record<string,unknown>={},signal=new AbortController().signal)=>graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name,arguments:args,agent,signal})
   return {f,graph,agent,api,tool}
 }
+
+it('presents only saved versions in native research approval questions without changing their exact snapshot binding',async()=>{
+  const a=await fixture('research-review-copy',{},undefined,true)
+  const created=await a.tool('research_task_create',{objective:'Synthetic approval copy check',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0',requestId:'create-review-copy'})
+  expect(created,JSON.stringify(created)).toMatchObject({isError:false})
+  if(created.isError)throw new Error('Task fixture failed')
+  const task=created.value as {id:string}
+  const before={task:await a.api('task_get',{id:task.id}),method:await a.api('method_get',{id:'power-data-quality-interactive',version:'1.0.0'})}
+  const args={id:task.id,reason:'Inspect exact source before execution',requestId:'review-copy'}
+  const fingerprint=createHash('sha256').update(JSON.stringify({op:'task_open',args,before})).digest('hex')
+  const snapshots:Array<{header:string|undefined;question:string;intro:string[];options:unknown}>=[]
+  const release=a.agent.ctx.on('user-questions/request',async request=>{
+    expect(request.agent).toBe(a.agent)
+    const question=request.questions[0]
+    if(question===undefined)throw new Error('Native review question absent')
+    expect(question.id).toBe('research-review-'+fingerprint)
+    expect(question.detail).not.toContain('undefined')
+    expect(question.detail).not.toContain('**版本**')
+    snapshots.push({header:question.header,question:question.question,
+      intro:question.detail!.split('\n\n').slice(0,7).map(line=>line.replaceAll(task.id.replaceAll('-','\\-'),'<task-id>')),options:question.options})
+    return {answers:[{id:question.id,selected:[question.options![0]!.label]}]}
+  })
+  try{
+    expect(await a.tool('research_task_open',args)).toMatchObject({isError:false,value:{executed:false,status:'declined'}})
+    expect(snapshots).toMatchSnapshot('task approval without an invented generic version')
+    expect(await a.api('task_get',{id:task.id})).toEqual(before.task)
+  }finally{release()}
+})
+
+it('retains saved record revisions and requested package versions in native review headers',async()=>{
+  const a=await fixture('research-review-versions',{},undefined,true)
+  expect(await a.tool('research_protocol_put',{id:'review-protocol',version:'1',content:'# Review\n{{var|x: int}}',requestId:'protocol-copy'})).toMatchObject({isError:false})
+  const recordResult=await a.tool('research_record_create',{protocolId:'review-protocol',protocolVersion:'1',requestId:'record-copy'})
+  expect(recordResult).toMatchObject({isError:false})
+  if(recordResult.isError)throw new Error('Record fixture failed')
+  const record=recordResult.value as {id:string;revision:number}
+  const prepare=a.graph.ctx.tools.register({name:'fixture_review_package',description:'Synthetic imported package for review copy',parameters:{type:'object',additionalProperties:false},
+    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},execute:(_args,exec)=>a.graph.ctx.cloudResearch.reviewedCall('engine_package_put',{
+      id:'review-package',version:'2.3.4',title:'Review package',kind:'protocol',files:{'protocol.aimd':'# Review\n{{var|x: int}}','protocol.toml':'[airalogy_protocol]\nid="review-package"\nversion="2.3.4"'},requestId:'package-copy'},exec)})
+  let packageResult
+  try{packageResult=await a.tool('fixture_review_package')}finally{prepare()}
+  expect(packageResult,JSON.stringify(packageResult)).toMatchObject({isError:false})
+  if(packageResult.isError)throw new Error('Package fixture failed')
+  const source=packageResult.value as {sha256:string}
+  const cases=[
+    {op:'record_archive',args:{id:record.id,expectedRevision:record.revision,reason:'Review only',requestId:'archive-copy'},version:record.revision},
+    {op:'engine_package_review',args:{id:'review-package',version:'2.3.4',sha256:source.sha256,approved:true,reason:'Review only'},version:'2.3.4'},
+  ]
+  for(const item of cases){
+    const release=a.agent.ctx.on('user-questions/request',async request=>{
+      const question=request.questions[0]
+      if(question===undefined)throw new Error('Native review question absent')
+      const versionLine=question.detail!.split('\n\n')[2]
+      expect(versionLine).toBe('**版本**：'+String(item.version).replaceAll('.','\\.'))
+      expect({header:question.header,question:question.question,version:versionLine,options:question.options}).toMatchSnapshot(item.op+' saved version')
+      return {answers:[{id:question.id,selected:[question.options![0]!.label]}]}
+    })
+    try{const result=await a.tool('research_'+item.op,item.args);expect(result,JSON.stringify(result)).toMatchObject({isError:false,value:{executed:false,status:'declined'}})}finally{release()}
+  }
+})
 
 it('keeps actual account Stores and native Session access independent and refuses foreign/native-less invocations',async()=>{
   const a=await fixture('research-a'),b=await fixture('research-b')

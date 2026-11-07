@@ -14,8 +14,9 @@ function reviewDetail(op, args, before, checks, name) {
   const lines = [
     line('本次操作',name),
     line('对象',data.title || before?.title || args.id),
-    line('版本',before.revision ?? args.version),
   ];
+  const version = before.revision ?? args.version;
+  if (version !== undefined) lines.push(line('版本',version));
   if (op === 'task_open') {
     lines.push(line('研究任务',before.task.objective),line('数据性质',before.task.basis),line('方法',before.method.title+' / '+before.method.version),line('方法源码 SHA-256',before.method.sha256),line('适用范围',before.method.metadata.limitations),'本次确认会批准这份精确源码并准备实验记录；不会代替结果复核。','待启用源码：\n'+snapshot(before.method.files));
   } else if (op === 'evidence_review') {

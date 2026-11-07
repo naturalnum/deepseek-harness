@@ -1,5 +1,33 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`presents only saved versions in native research approval questions without changing their exact snapshot binding > task approval without an invented generic version 1`] = `
+[
+  {
+    "header": "科研审批",
+    "intro": [
+      "**本次操作**：启用研究方法并准备实验",
+      "**对象**：<task-id>",
+      "**研究任务**：Synthetic approval copy check",
+      "**数据性质**：synthetic",
+      "**方法**：设备测点数据质量检查 / 1\\.0\\.0",
+      "**方法源码 SHA-256**：88a52b1c11219f47f2f1553ea2d4977249ab22c467102b7d9aee631872bd68c8",
+      "**适用范围**：仅评价采样完整性，不作设备故障或状态诊断。",
+    ],
+    "options": [
+      {
+        "description": "保留现有内容，继续讨论或修改。",
+        "label": "暂不执行",
+      },
+      {
+        "description": "已核对当前版本，仅执行此项操作。",
+        "label": "确认启用研究方法并准备实验",
+      },
+    ],
+    "question": "是否启用研究方法并准备实验？",
+  },
+]
+`;
+
 exports[`records a real native workbench intent, executes only its stored parameters once and returns the actual Store result > native workbench request and actual tool result 1`] = `
 [
   {
@@ -52,4 +80,40 @@ exports[`records a real native workbench intent, executes only its stored parame
     "source": undefined,
   },
 ]
+`;
+
+exports[`retains saved record revisions and requested package versions in native review headers > engine_package_review saved version 1`] = `
+{
+  "header": "科研审批",
+  "options": [
+    {
+      "description": "保留现有内容，继续讨论或修改。",
+      "label": "暂不执行",
+    },
+    {
+      "description": "已核对当前版本，仅执行此项操作。",
+      "label": "确认批准或撤销协议执行",
+    },
+  ],
+  "question": "是否批准或撤销协议执行？",
+  "version": "**版本**：2\\.3\\.4",
+}
+`;
+
+exports[`retains saved record revisions and requested package versions in native review headers > record_archive saved version 1`] = `
+{
+  "header": "科研审批",
+  "options": [
+    {
+      "description": "保留现有内容，继续讨论或修改。",
+      "label": "暂不执行",
+    },
+    {
+      "description": "已核对当前版本，仅执行此项操作。",
+      "label": "确认归档记录",
+    },
+  ],
+  "question": "是否归档记录？",
+  "version": "**版本**：1",
+}
 `;
