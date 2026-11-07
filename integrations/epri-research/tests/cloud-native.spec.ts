@@ -1,6 +1,8 @@
 /** Real Loader/native Session/Gateway and independent account Stores; no deployment or external computation is certified. */
 import {join} from 'node:path'
 import {randomUUID} from 'node:crypto'
+import {fileURLToPath} from 'node:url'
+import {loadOverlayPatches} from '@deepseek-ai/dsh-app-boot'
 import {expect,it,vi} from 'vitest'
 import {ToolCallId} from '@deepseek-ai/dsh-llm'
 import {isJsonValue} from '@deepseek-ai/dsh-util-values'
@@ -15,6 +17,7 @@ import {workbenchBrowserApi} from './workbench-browser-fixture.mjs'
 import {guardianEncodedBudget,guardianWorkingCopiesBudget} from '../../../packages/cloud/pe-opensandbox/src/agent-data/encoded-budget.ts'
 import type {OperationSpec} from '../../../packages/cloud/pe-opensandbox/src/agent-data/types.ts'
 import type {SkillWorld} from '../../../packages/cloud/pe-opensandbox/src/agent-data/skill-world.ts'
+import {SLICE_LIMITS} from '../../../packages/cloud/pe-opensandbox/src/agent-data/constants.ts'
 
 const limits={maxDatabaseBytes:1048576,maxRequestBytes:1048576,maxReplyBytes:1048576,maxPendingRequests:2,
   maxConcurrentResourcePreparations:1,maxSkillProviders:64,maxSkillFiles:1024,maxSkillBytes:33554432,maxSkillFileBytes:4194304,maxSkillPathBytes:256,executionTimeoutMs:10000,expectedPythonVersion:'3.13',expectedAiralogyVersion:'0.16.0',maxPayloadBytes:8388608,fileChunkBytes:65536,maxConcurrentFileTransfers:2,maxOutputBytes:32768,graceMs:1000,gitPath:'/usr/bin/git',pythonPath:'/usr/bin/python3'}
@@ -164,7 +167,7 @@ it('runs an approved package through actual native confinement and managed subpr
   expect(charges).toEqual({resident:0,active:0})
 })
 
-async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string,maxSkillCopiesPerOperation?:number,reply?:(payload:Record<string,unknown>)=>unknown){
+async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string,maxSkillCopiesPerOperation?:number,reply?:(payload:Record<string,unknown>)=>unknown,maxTailBytes=32768){
   const {NativeCommandAccount}=await import('../../../packages/cloud/pe-opensandbox/src/native-command-account.ts')
   const {CloudSubprocessRuntime}=await import('../../../packages/cloud/pe-opensandbox/src/native-providers.ts')
   const {CloudSandboxProvider}=await import('../../../packages/cloud/pe-opensandbox/src/native-sandbox.ts')
@@ -205,7 +208,7 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const commands=new NativeCommandAccount(a.graph.ctx,a.graph.binding,{assertBusinessCurrent(){a.graph.api.sessionProject(a.agent.session)},
     getAgent:id=>a.graph.ctx.agents.get(id),projectForAgent:agent=>a.graph.guards.projectForAgent(agent),projectForSession:session=>a.graph.guards.projectForSession(session),
     assertRetainedExecutionOwner(){throw new Error('No background job in fixture')},files(){throw new Error('Only the external channel is scripted')}},
-    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['research_engine_run','research_document_status','skill',...reply?['research_workbench_execute']:[]],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
+    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['research_engine_run','research_engine_status','research_document_status','skill',...reply?['research_workbench_execute']:[]],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes,
       maxObservedBytes:65536,pollIntervalMs:1000,maxWaiters:2,maxLifetimeMs:10000,stopWaitMs:1000}},root)
   const sandbox=new CloudSandboxProvider(a.graph.ctx,commands.calls,{current(){return {enforcement:'partial',denialSignatures:[],runnerFailureRules:[]}}},{maxArgvBytes:4096,maxArgvEntries:16})
   new CloudSubprocessRuntime(a.graph.ctx,commands,sandbox)
@@ -221,6 +224,28 @@ it('retains a complete managed probe result after the source-style successful Py
   const b=await fixture('research-probe-failed'),failed=await managedFixture(b,true,'import sys,json\nprint(json.dumps({"available":True}))\nsys.exit(7)\n')
   expect(await b.tool('research_document_status')).toMatchObject({isError:false,value:{available:false,execution:'managed-native'}})
   expect(failed.observations).toEqual(['research_document_status']);expect(failed.charges).toEqual({resident:0,active:0})
+})
+
+it('combines the shipped research collection selection with the original authenticated provider tail capacity',async()=>{
+  const patch=loadOverlayPatches('research-tail-config',fileURLToPath(new URL('../cordis.cloud.patch.yml',import.meta.url)))
+  const selected=patch.flatMap(row=>row.insert??[]).find(row=>row.id==='cloud-research')
+  if(selected===undefined)throw new Error('Shipped Cloud research configuration absent')
+  const config=Cloud.Config(selected.config),tail=SLICE_LIMITS.tailBytesPerStream
+  expect(config.maxOutputBytes).toBe(tail)
+  const probe="import json\nprint(json.dumps({'python':'3.13.1','airalogy':'0.16.0'}))\n"
+  // The scientific version response is synthetic; the Loader, staged Python process and managed collection are real.
+  const a=await fixture('research-deployed-tail',{maxOutputBytes:config.maxOutputBytes})
+  const managed=await managedFixture(a,true,probe,undefined,undefined,tail)
+  expect(await a.tool('research_engine_status')).toMatchObject({isError:false,value:{ready:true,execution:'managed-native'}})
+  expect(managed.observations).toEqual(['research_engine_status','research_engine_status'])
+  expect(managed.charges).toEqual({resident:0,active:0})
+
+  const b=await fixture('research-oversized-tail',{maxOutputBytes:tail+1})
+  const rejected=await managedFixture(b,true,probe,undefined,undefined,tail)
+  expect(await b.tool('research_engine_status')).toMatchObject({isError:false,value:{ready:false,
+    message:'Cloud command collection exceeds the authenticated channel tail capacity.'}})
+  expect(rejected.observations).toEqual([])
+  expect(rejected.charges).toEqual({resident:0,active:0})
 })
 
 it.each([2,8])('runs staged Python in a real long project under the complete guardian and %s-copy ceilings',async(copies)=>{

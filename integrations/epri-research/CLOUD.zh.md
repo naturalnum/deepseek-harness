@@ -26,7 +26,9 @@ Cloud 示例选择原有私有 `cordis:pe-account-instructions-session` 入口�
 
 自定义技能沿用同一个原生技能注册表中的账号受管提供方。Cloud 科研预设不另装默认文件系统提供方，因为其独立模式默认会发现 Host 用户目录；独立科研内置与账号内发布提供方仍注册在原生技能服务中。
 
-示例显式配置 256 MiB SQLite 页容量、8 MiB 请求/回复/输入结果容量、两个待执行工作台请求、180 秒观察/工具预算、32 KiB 命令输出及 Python/Git 路径。原生 FS 操作只须容纳选定的 64 KiB 窗口及原有 range 回复开销。原有 HTTP unary 载体须另容纳选定 8 MiB 逻辑 RPC 限额与请求/回复包装；这是一次有界 HTTP 调用，并非分块 RPC。WebSocket 入站帧限制与之独立。结果文件经过完整性核验，stdout 仅传递有界回执。配置本身不能证明计算或 OCR 已就绪。
+示例显式配置 256 MiB SQLite 页容量、8 MiB 请求/回复/输入结果容量、两个待执行工作台请求、180 秒观察/工具预算、4 KiB 命令输出及 Python/Git 路径。原生 FS 操作只须容纳选定的 64 KiB 窗口及原有 range 回复开销。原有 HTTP unary 载体须另容纳选定 8 MiB 逻辑 RPC 限额与请求/回复包装；这是一次有界 HTTP 调用，并非分块 RPC。WebSocket 入站帧限制与之独立。结果文件经过完整性核验，stdout 仅传递有界回执。配置本身不能证明计算或 OCR 已就绪。
+
+`maxOutputBytes` 对 stdout、stderr 的选择都不得超过原 Root 的 `commands.commandLimits.maxTailBytes`。示例为每流 4096 字节。Python 通过 stdout 返回很小的字节数／哈希回执，完整科研 JSON 则保存在有界 FS 结果文件中。Git 输出或诊断超出所选保留容量时，仍由原有 lossy-output 检查明确拒绝，不把部分输出报告为成功。
 
 文件传输显式选择 `fileChunkBytes: 65536` 和 `maxConcurrentFileTransfers: 2`。输入先编码为 UTF-8，再通过原生 FS 写入 base64 分片；同一受管 Python bootstrap 在原脚本读取 JSON 前核对完整字节数与 SHA-256。结果、Git 及已交付文件通过原生 `readByteRange` 读取，校验精确长度、前后原生版本及结果回执指纹。完整快照受科研包自己的容量限制；短读、版本变化、取消或指纹不符均明确失败，不报告成功。传输槽位保留到实际暂存、命令观察与结果收集返回；无需修改 Cloud FS 全局限制或复制引擎。
 

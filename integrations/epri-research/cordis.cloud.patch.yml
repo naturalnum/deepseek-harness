@@ -11,7 +11,7 @@
         maxPayloadBytes: 8388608
         fileChunkBytes: 65536
         maxConcurrentFileTransfers: 2
-        maxOutputBytes: 32768
+        maxOutputBytes: 4096
         graceMs: 1000
         pythonPath: /opt/dsh/research/python/bin/python3
         gitPath: /usr/bin/git
