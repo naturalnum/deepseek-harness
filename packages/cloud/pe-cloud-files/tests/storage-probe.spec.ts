@@ -220,7 +220,8 @@ describe('two retained static preparations with serial verification', () => {
 
   async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> | ReturnType<typeof rawV3> = raw(),
     withSkillProof = false,
-    collection = false, normalRestart = false, recordSha256?: string) {
+    collection = false, normalRestart = false, recordSha256?: string,
+    initializeInventory?: (owner: RootStorageOwner, install: () => void) => Promise<void>) {
     record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = record.version === 3 ? '262144'
       : record.version === 2 ? '131072' : '65536'
     const declared = 'slots' in record ? record.slots : record.accounts
@@ -277,17 +278,26 @@ describe('two retained static preparations with serial verification', () => {
       assertPoolCurrent: vi.fn(() => {}), bind: vi.fn<StaticStorageDriver['bind']>(() => { throw new Error('No native lane expected') }),
       joinEpoch: vi.fn(async () => {}),
     } satisfies StaticStorageDriver
-    const owner = new RootStorageOwner({ ...config, planSha256, ...withSkillProof ? { skillRevalidation: { proofPath: '/deployment/cold-skill.json',
-      proofSha256: createHash('sha256').update(proofBytes).digest('hex') } } : {} }, 1024, driver, collection ? 2 : 1)
     const assignments = new Map<StaticStorageAccount['accountId'], StaticAccountAssignment>()
     let withdrawAssignments = () => {}
     if (deployment.version === 3) {
       for (const [index, account] of plan.accounts.entries()) assignments.set(account.accountId, Object.freeze({
         accountId: account.accountId, slotId: deployment.slots[index]!.slotId, revision: '1',
       }))
-      withdrawAssignments = owner.installAccountAssignments({ lookup: id => assignments.get(id), list: () => [...assignments.values()],
-        assertCurrent: (assignment) => { if (assignments.get(assignment.accountId) !== assignment) throw new Error('Assignment revoked') } })
     }
+    const resolver = { lookup: (id: StaticStorageAccount['accountId']) => assignments.get(id), list: () => [...assignments.values()],
+      assertCurrent: (assignment: StaticAccountAssignment) => { if (assignments.get(assignment.accountId) !== assignment) throw new Error('Assignment revoked') } }
+    const initialize = vi.fn<NonNullable<ConstructorParameters<typeof RootStorageOwner>[4]>>(async (inventory, install) => {
+      expect(inventory).toEqual({ sha256: planSha256, maxAccounts: 3,
+        slots: deployment.version === 3 ? deployment.slots.map(({ slotId, templateId }) => ({ slotId, templateId })) : [] })
+      expect(driver.probe).toHaveBeenCalled()
+      expect(driver.skillProof).not.toHaveBeenCalled()
+      await initializeInventory?.(owner, () => { withdrawAssignments = install(resolver) })
+    })
+    const owner = new RootStorageOwner({ ...config, planSha256, ...withSkillProof ? { skillRevalidation: { proofPath: '/deployment/cold-skill.json',
+      proofSha256: createHash('sha256').update(proofBytes).digest('hex') } } : {} }, 1024, driver, collection ? 2 : 1,
+    initializeInventory === undefined ? undefined : initialize)
+    if (deployment.version === 3 && initializeInventory === undefined) withdrawAssignments = owner.installAccountAssignments(resolver)
     owners.push(owner)
     await owner.initializeStatic()
     const probePaths = driver.probe.mock.calls.map(call => call[0])
@@ -310,8 +320,37 @@ describe('two retained static preparations with serial verification', () => {
       pending.push(result)
       return result
     }
-    return { owner, driver, facts, plan, encoded, proofBytes, controllers, inputs, prepare, probePaths, assignments, withdrawAssignments }
+    return { owner, driver, facts, plan, encoded, proofBytes, controllers, inputs, prepare, probePaths, assignments,
+      withdrawAssignments, initialize }
   }
+
+  it('installs v3 persisted assignments after physical verification and before cold proof parsing without opening admission', async () => {
+    const f = await fixture(rawV3(), true, false, false, undefined, async (owner, install) => {
+      expect(() => owner.assertRootCurrent()).toThrow()
+      install()
+      expect(() => owner.assertRootCurrent()).toThrow()
+    })
+    expect(f.initialize).toHaveBeenCalledTimes(1)
+    expect(f.driver.skillProof).toHaveBeenCalledTimes(1)
+    f.owner.assertRootCurrent()
+    const lease = await f.prepare(f.inputs[0]!)
+    lease.assertCurrent()
+    await lease.closeAfterActualDrain()
+  })
+
+  it('keeps a failed or withdrawn inventory initializer closed and leaves legacy initialization unchanged', async () => {
+    await expect(fixture(rawV3(), true, false, false, undefined, async () => {
+      throw new Error('Persistent assignments unavailable')
+    })).rejects.toThrow('Persistent assignments unavailable')
+    await expect(fixture(rawV3(), true, false, false, undefined, async (owner, install) => {
+      install(); owner.closeAdmission()
+    })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+    const legacy = await fixture(raw(), true, false, false, undefined, async () => {
+      throw new Error('Legacy deployments must not initialize dynamic assignments')
+    })
+    expect(legacy.initialize).not.toHaveBeenCalled()
+    legacy.owner.assertRootCurrent()
+  })
 
   it('prepares three v3 accounts only through original bindings and retains data after lease close', async () => {
     const f = await fixture(rawV3())
