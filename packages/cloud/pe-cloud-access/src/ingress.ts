@@ -774,14 +774,18 @@ export class CloudIngress {
         await consume(operation)
       }
       catch (error) {
-        if (this.failure(error, id).code === 'cloud/stop-unconfirmed') {
+        const accountResourceStop = operation.accountManagement
+          && (error instanceof AccountRuntimeError || error instanceof ExecutionStateError || error instanceof CloudApiError)
+          && error.code === 'cloud/stop-unconfirmed'
+        const failure = accountResourceStop ? new AuthAccessError('cloud/account-stop-unconfirmed', id, { cause: error }) : error
+        if (this.failure(failure, id).code === 'cloud/stop-unconfirmed') {
           operation.cleanupUnknown = true
           operation.cleanupCause = error
           this.state = 'unknown'
           this.accepting = false
           this.ctx.logger.error('Cloud ingress body cleanup is unconfirmed; admission remains closed.')
         }
-        this.sendFailure(operation, error)
+        this.sendFailure(operation, failure)
       }
       finally {
         operation.forwarding = false

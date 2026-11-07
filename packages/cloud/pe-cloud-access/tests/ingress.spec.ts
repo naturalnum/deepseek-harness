@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
+import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { TypertGatewayService } from '@deepseek-ai/dsh-api-gateway'
 import { REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
@@ -72,14 +73,16 @@ function responseRequestId(body: string): string {
 }
 
 describe('shared Web ingress under the actual unsealed runtime', () => {
-  it('keeps the shared ingress available after one account drain is unconfirmed', async () => {
+  it.each(['access', 'runtime'] as const)('keeps shared ingress available after account cleanup is unconfirmed in %s', async (source) => {
     const f = await fixture(false, true)
     f.seal.mockImplementation(() => {})
     f.authCurrent.mockImplementation(() => {})
     f.authenticate.mockResolvedValue({ accountId: 'actor' as Awaited<ReturnType<BetterAuthAccess['authenticate']>>['accountId'],
       authSessionId: 'synthetic-login' as Awaited<ReturnType<BetterAuthAccess['authenticate']>>['authSessionId'] })
-    const administer = vi.spyOn(f.auth, 'administer').mockRejectedValueOnce(new AuthAccessError(
-      'cloud/account-stop-unconfirmed', 'synthetic-management' as AuthAccessError['requestId']))
+    const failure = source === 'access' ? new AuthAccessError(
+      'cloud/account-stop-unconfirmed', 'synthetic-management' as AuthAccessError['requestId'])
+      : new AccountRuntimeError('cloud/stop-unconfirmed', 'Original account resource cleanup is unconfirmed')
+    const administer = vi.spyOn(f.auth, 'administer').mockRejectedValueOnce(failure)
       .mockResolvedValueOnce({ accounts: [], templates: [], offset: 0, limit: 3, total: 0 })
     await f.ingress.install()
     const route = f.register.mock.calls.map(([value]) => value).find(row => row.path === '/cloud/admin/accounts')

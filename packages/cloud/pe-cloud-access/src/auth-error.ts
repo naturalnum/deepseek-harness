@@ -22,7 +22,7 @@ export class AuthAccessError extends Error {
       : code === 'cloud/unauthenticated' ? 'Sign in again before sending an account request.'
         : code === 'cloud/login-active' ? 'Sign out before starting another login in this browser.'
           : code === 'cloud/forbidden' ? 'Request origin or transport is not permitted.'
-            : code === 'cloud/account-stop-unconfirmed' ? 'Account sign-in is blocked but resource cleanup is unconfirmed. Check account status.'
+            : code === 'cloud/account-stop-unconfirmed' ? 'Account resource cleanup is unconfirmed. Check account status before retrying.'
               : code === 'cloud/stop-unconfirmed' ? 'Login Peer cleanup is unconfirmed. Check status before sending a new operation.'
                 : code === 'cloud/capacity' ? 'Authentication capacity is full. Check status before sending a new operation.'
                   : 'Authentication could not be confirmed. Check status before sending a new operation.', options)
