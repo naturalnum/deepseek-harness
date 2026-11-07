@@ -1,13 +1,16 @@
 /** Account administration in the original settings surface and account-bound transport. */
+import clsx from 'clsx'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PreparedCloudPage } from './prepared-page.ts'
 import { ClientFailure } from './errors.ts'
 import { readResponse } from './read-response.ts'
 import { ACCOUNT_MANAGEMENT_NS, accountManagementDictionaries } from './account-management-locales.ts'
+import css from './account-management.module.css'
 
 interface AccountRow {
   readonly id: string
@@ -42,49 +45,61 @@ function text(data: FormData, key: string): string { const value = data.get(key)
 function AccountManagement(props: Props) {
   const state = props.useAccountManagement(value => value), { t } = props
   const roles = <><option value="user">{t('user')}</option><option value="admin">{t('admin')}</option></>
-  return <section><h1>{t('title')}</h1><p>{t('introduction')}</p>
-    <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'list', offset: 0, search: text(new FormData(event.currentTarget), 'search') }) }}>
-      <label>{t('search')}<input name="search" maxLength={200}/></label><button disabled={state.pending}>{t('refresh')}</button>
+  return <section className={css.section} aria-label={t('title')}>
+    <header className={css.header}><h1>{t('title')}</h1><p>{t('introduction')}</p></header>
+    <form className={css.inlineForm} onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'list', offset: 0, search: text(new FormData(event.currentTarget), 'search') }) }}>
+      <label className={css.field}>{t('search')}<Input className={clsx(css.control)} name="search" maxLength={200}/></label>
+      <Button type="submit" variant="outline" disabled={state.pending}>{t('refresh')}</Button>
     </form>
-    {state.failed && <p role="alert">{t('failed')}</p>}{state.created && <p role="status">{t('created')}</p>}
-    {state.pending && <p role="status">{t('pending')}</p>}
-    <form onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget, data = new FormData(form)
+    {state.failed && <p role="alert" className={css.error}>{t('failed')}</p>}
+    {state.created && <p role="status">{t('created')}</p>}{state.pending && <p role="status">{t('pending')}</p>}
+    <form className={css.card} onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget, data = new FormData(form)
       props.submit({ op: 'create', email: text(data, 'email'), displayName: text(data, 'displayName'), password: text(data, 'password'), role: text(data, 'role'), templateId: text(data, 'templateId') }); form.reset() }}>
       <h2>{t('create')}</h2>
-      <label>{t('email')}<input required name="email" type="email" maxLength={254}/></label>
-      <label>{t('displayName')}<input required name="displayName" maxLength={200}/></label>
-      <label>{t('password')}<input required name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password"/></label>
-      <label>{t('role')}<select name="role">{roles}</select></label>
-      <label>{t('template')}<select name="templateId" required>{state.templates.filter(row => row.available > 0).map(row => <option key={row.id} value={row.id}>{row.id}</option>)}</select></label>
-      <button disabled={state.pending || !state.templates.some(row => row.available > 0)}>{t('create')}</button>
+      <div className={css.formGrid}>
+        <label className={css.field}>{t('email')}<Input className={clsx(css.control)} required name="email" type="email" maxLength={254}/></label>
+        <label className={css.field}>{t('displayName')}<Input className={clsx(css.control)} required name="displayName" maxLength={200}/></label>
+        <label className={css.field}>{t('password')}<Input className={clsx(css.control)} required name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password"/></label>
+        <label className={css.field}>{t('role')}<select className={css.select} name="role">{roles}</select></label>
+        <label className={css.field}>{t('template')}<select className={css.select} name="templateId" required>{state.templates.filter(row => row.available > 0).map(row => <option key={row.id} value={row.id}>{row.id}</option>)}</select></label>
+      </div>
+      <div className={css.actions}><Button type="submit" variant="primary" disabled={state.pending || !state.templates.some(row => row.available > 0)}>{t('create')}</Button></div>
     </form>
-    {state.rows.map(row => <article key={`${state.listingRevision}:${row.id}`}><h2>{row.email}</h2><p>{row.enabled ? t('enabled') : row.resourceState === 'disabled' ? t('disabled') : t('loginBlocked')}</p>
-      <p>{row.resourceState === 'ready' ? t('resourcesReady') : row.resourceState === 'legacy' ? t('resourcesLegacy')
-        : row.resourceState === 'stop-unknown' ? t('resourcesUnknown') : t('resourcesPending')}</p>
-      {!row.enabled && row.resourceState !== 'ready' && row.resourceState !== 'stop-unknown' && <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'prepare', id: row.id, templateId: text(new FormData(event.currentTarget), 'templateId') }) }}>
-        <label>{t('template')}<select name="templateId" required>{state.templates.map(item => <option key={item.id} value={item.id}>{item.id}</option>)}</select></label>
-        <button disabled={state.pending || state.templates.length === 0}>{t('prepare')}</button>
+    <div className={css.list}>{state.rows.map(row => <article className={css.card} key={`${state.listingRevision}:${row.id}`}>
+      <header className={css.accountHeader}>
+        <div className={css.accountIdentity}><h2>{row.email}</h2><div className={css.status}>
+          <p>{row.enabled ? t('enabled') : row.resourceState === 'disabled' ? t('disabled') : t('loginBlocked')}</p>
+          <p>{row.resourceState === 'ready' ? t('resourcesReady') : row.resourceState === 'legacy' ? t('resourcesLegacy')
+            : row.resourceState === 'stop-unknown' ? t('resourcesUnknown') : t('resourcesPending')}</p>
+        </div></div>
+        <Button type="button" variant="outline" disabled={state.pending} onClick={() => { props.submit({ op: 'enabled', id: row.id,
+          enabled: row.resourceState !== 'stop-unknown' && !row.enabled }) }}>{row.resourceState === 'stop-unknown'
+            ? t('retryDisable') : row.enabled ? t('disable') : t('enable')}</Button>
+      </header>
+      {!row.enabled && row.resourceState !== 'ready' && row.resourceState !== 'stop-unknown' && <form className={css.inlineForm} onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'prepare', id: row.id, templateId: text(new FormData(event.currentTarget), 'templateId') }) }}>
+        <label className={css.field}>{t('template')}<select className={css.select} name="templateId" required>{state.templates.map(item => <option key={item.id} value={item.id}>{item.id}</option>)}</select></label>
+        <Button type="submit" variant="outline" disabled={state.pending || state.templates.length === 0}>{t('prepare')}</Button>
       </form>}
-      <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'rename', id: row.id, displayName: text(new FormData(event.currentTarget), 'displayName') }) }}>
-        <label>{t('displayName')}<input key={row.displayName} name="displayName" defaultValue={row.displayName} maxLength={200}/></label>
-        <button disabled={state.pending}>{t('save')}</button>
+      <form className={css.inlineForm} onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'rename', id: row.id, displayName: text(new FormData(event.currentTarget), 'displayName') }) }}>
+        <label className={css.field}>{t('displayName')}<Input className={clsx(css.control)} key={row.displayName} name="displayName" defaultValue={row.displayName} maxLength={200}/></label>
+        <Button type="submit" variant="outline" disabled={state.pending}>{t('save')}</Button>
       </form>
-      <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'role', id: row.id, role: text(new FormData(event.currentTarget), 'role') }) }}>
-        <label>{t('role')}<select key={row.role} name="role" defaultValue={row.role}>{roles}</select></label><button disabled={state.pending}>{t('save')}</button>
+      <form className={css.inlineForm} onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'role', id: row.id, role: text(new FormData(event.currentTarget), 'role') }) }}>
+        <label className={css.field}>{t('role')}<select className={css.select} key={row.role} name="role" defaultValue={row.role}>{roles}</select></label>
+        <Button type="submit" variant="outline" disabled={state.pending}>{t('save')}</Button>
       </form>
-      <button disabled={state.pending} onClick={() => props.submit({ op: 'enabled', id: row.id,
-        enabled: row.resourceState !== 'stop-unknown' && !row.enabled })}>{row.resourceState === 'stop-unknown'
-          ? t('retryDisable') : row.enabled ? t('disable') : t('enable')}</button>
-      <form onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget
+      <form className={css.inlineForm} onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget
         props.submit({ op: 'password', id: row.id, password: text(new FormData(form), 'password') }); form.reset() }}>
-        <label>{t('password')}<input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password"/></label>
-        <button disabled={state.pending}>{t('resetPassword')}</button>
+        <label className={css.field}>{t('password')}<Input className={clsx(css.control)} name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password"/></label>
+        <Button type="submit" variant="outline" disabled={state.pending}>{t('resetPassword')}</Button>
       </form>
-    </article>)}
-    <button disabled={state.pending || state.offset === 0} onClick={() => props.submit({ op: 'list', search: state.search,
-      offset: Math.max(0, state.offset - state.pageSize) })}>{t('previous')}</button>
-    <button disabled={state.pending || state.offset + state.rows.length >= state.total} onClick={() => props.submit({ op: 'list',
-      search: state.search, offset: state.offset + state.pageSize })}>{t('next')}</button>
+    </article>)}</div>
+    <nav className={css.actions} aria-label={t('title')}>
+      <Button type="button" variant="outline" disabled={state.pending || state.offset === 0} onClick={() => { props.submit({ op: 'list', search: state.search,
+        offset: Math.max(0, state.offset - state.pageSize) }) }}>{t('previous')}</Button>
+      <Button type="button" variant="outline" disabled={state.pending || state.offset + state.rows.length >= state.total} onClick={() => { props.submit({ op: 'list',
+        search: state.search, offset: state.offset + state.pageSize }) }}>{t('next')}</Button>
+    </nav>
   </section>
 }
 
