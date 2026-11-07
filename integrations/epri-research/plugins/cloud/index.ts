@@ -17,6 +17,7 @@ import { validateArgs, contracts } from '../../src/server/contracts.mjs'
 import { searchLiterature } from '../../src/reused/literature/literatureSearch.ts'
 import { materializeResearchSkill } from './resources.mjs'
 import { createNativeResearchRuntime } from './native-runner.mjs'
+import { researchJsonResult } from './result-json.ts'
 
 /** Independent Cloud entry identity. */
 export const name = 'research-suite/cloud'
@@ -136,7 +137,8 @@ export class CloudResearch extends TypertRemoteService {
         const owned={...exec,signal}
         try {
           const result=await this.perform(item.request.op,item.request.args,owned,'human',item.check)
-          item.check();item.resolve(result);return {requestId,operation:item.request.op,inputSha256:item.inputSha256,result}
+          const output=researchJsonResult({requestId,operation:item.request.op,inputSha256:item.inputSha256,result},config.maxReplyBytes)
+          item.check();item.resolve(output.result);return output
         } catch(error) { item.reject(error);throw error }
       },
     })
@@ -190,21 +192,20 @@ export class CloudResearch extends TypertRemoteService {
   private perform(op:string,args:Record<string,unknown>,exec:ToolRunContext,actor:'human'|'agent',requestCurrent?:()=>void):Promise<unknown> {
     this.assertToolCurrent(exec)
     return this.track(this.operationGuard.run(()=>{this.assertToolCurrent(exec);requestCurrent?.()},()=>this.runtime.withExecution(exec,async()=>{
-      const result=await this.store.execute(op,validateArgs(op,args),actor,exec.signal,exec.agent?.session.id)
+      let result=await this.store.execute(op,validateArgs(op,args),actor,exec.signal,exec.agent?.session.id)
       if(op==='engine_run' && result!==null && typeof result==='object' && 'status' in result && result.status==='running') {
         const {id}=z.object({id:z.string()}).passthrough().parse(result)
-        const run=await this.store.waitForRun(id,exec.agent!.session.id)
+        result=await this.store.waitForRun(id,exec.agent!.session.id)
         this.assertToolCurrent(exec)
-        return run
       }
       this.assertToolCurrent(exec)
       if(['lab_skill_put','lab_skill_publish','workspace_import'].includes(op))for(const invalidate of this.skillListeners)invalidate()
-      return result
+      return researchJsonResult(result,this.config.maxReplyBytes)
     })))
   }
   /** Dispatch an original native research tool.
    * @param op Exact domain operation. @param args Validated operation input. @param exec Actual native invocation.
-   * @returns Original domain result after actual scientific settlement. */
+   * @returns Bounded JSON domain result after actual scientific settlement; undefined object fields are omitted. */
   agentCall(op:string,args:Record<string,unknown>,exec:ToolRunContext):Promise<unknown> { return this.perform(op,args,exec,'agent') }
   /** Apply the existing native question continuation.
    * @param op Exact reviewed operation. @param args Version-pinned input. @param exec Original invocation.
@@ -281,8 +282,7 @@ export class CloudResearch extends TypertRemoteService {
         } finally {control.removeEventListener('abort',aborted);this.pending.delete(requestId)}
       }
       await this.verifySession(value.sessionId,signal);check()
-      if(Buffer.byteLength(JSON.stringify(result))>this.config.maxReplyBytes)fail('科研结果超过已配置容量，请缩小读取范围。')
-      return result
+      return researchJsonResult(result,this.config.maxReplyBytes)
     }).catch((error:unknown)=>{
       // Preserve the two original protocol-recovery decisions through the native Remote encoder.
       if(error instanceof DomainError){

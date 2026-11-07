@@ -3,6 +3,7 @@ import {join} from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {expect,it,vi} from 'vitest'
 import {ToolCallId} from '@deepseek-ai/dsh-llm'
+import {isJsonValue} from '@deepseek-ai/dsh-util-values'
 import * as SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ResearchSkills from '../plugins/deepscientist/index.mjs'
@@ -102,6 +103,51 @@ it('records a real native workbench intent, executes only its stored parameters 
   expect(await a.api('state')).toMatchObject({protocols:[{id:'from-workbench'}]})
 })
 
+it('returns committed task create/get/open views as bounded lossless JSON through original native tools',async()=>{
+  const a=await fixture('research-task-json-a'),b=await fixture('research-task-json-b')
+  const called=new Set<string>(),outputs:unknown[]=[]
+  const original=a.graph.adapter.stream.bind(a.graph.adapter)
+  a.graph.ctx.on('tools/post-execute',async(exec,result,next)=>{
+    const decision=await next()
+    if(exec.name==='research_workbench_execute'){expect(result.isError,JSON.stringify(result)).toBe(false);expect(isJsonValue(result.value)).toBe(true);outputs.push(result.value)}
+    return decision
+  })
+  vi.spyOn(a.graph.adapter,'stream').mockImplementation(async function*(options){
+    const text=options.messages.flatMap(message=>message.content).filter(block=>block.type==='text').map(block=>block.text).join('\n')
+    const id=[...text.matchAll(/requestId=([a-f0-9-]{36})/g)].at(-1)?.[1]
+    if(id&&!called.has(id)){called.add(id);yield {type:'block-start',index:0,blockType:'tool-call'};yield {type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('task-intent-'+called.size),name:'research_workbench_execute',arguments:JSON.stringify({requestId:id})}};yield {type:'finish',reason:{kind:'tool-calls'}}}
+    else yield* original(options)
+  })
+  const task=await a.api('task_create',{objective:'评估合成测点采样完整性',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0',requestId:'task-json-create'}) as {id:string}
+  await a.agent.whenIdle()
+  expect(outputs).toHaveLength(1)
+  expect(task).not.toHaveProperty('record');expect(task).not.toHaveProperty('report')
+  const read=await a.tool('research_task_get',{id:task.id})
+  expect(read).toMatchObject({isError:false,value:task});expect(isJsonValue(read.value)).toBe(true)
+  expect(await a.api('tasks')).toHaveLength(1)
+
+  // Only the external managed Python transport is scripted; task preparation, Store writes and native Tools are real.
+  await managedFixture(a,false,undefined,undefined,(payload)=>{
+    if(payload.action===undefined)return {python:'3.13.1',airalogy:'0.16.0'}
+    if(payload.action==='parse_protocol')return {success:true,data:{assigners:{expected_total:{mode:'auto'}}}}
+    if(payload.action==='recalculate'){
+      const params=payload.params as {values:unknown;tables:unknown}
+      return {success:true,data:{values:params.values,tables:params.tables,targets:['expected_total'],pending:['expected_total'],errors:[]}}
+    }
+    throw new Error('Unexpected scientific transport operation in JSON result fixture')
+  })
+  const opened=await a.api('task_open',{id:task.id,reason:'明确核对合成软件测试方法源码',requestId:'task-json-open'})
+  await a.agent.whenIdle()
+  expect(outputs).toHaveLength(2)
+  expect(opened).toMatchObject({id:task.id,record:{protocolId:'power-data-quality-interactive'}})
+  expect(isJsonValue(opened)).toBe(true)
+  expect(opened).not.toHaveProperty('report')
+  expect((await b.tool('research_task_get',{id:task.id})).isError).toBe(true)
+  const other=await a.graph.ctx.sessionController.create({}),otherAgent=a.graph.ctx.agents.get(other.sessionId)
+  if(otherAgent===undefined)throw new Error('Original second Session Agent absent')
+  expect((await a.graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name:'research_task_get',arguments:{id:task.id},agent:otherAgent,signal:new AbortController().signal})).isError).toBe(true)
+})
+
 it('runs an approved package through actual native confinement and managed subprocess ownership, copying file results before releasing each command',async()=>{
   const a=await fixture('research-managed')
   const {observations,charges,domainResult}=await managedFixture(a)
@@ -118,7 +164,7 @@ it('runs an approved package through actual native confinement and managed subpr
   expect(charges).toEqual({resident:0,active:0})
 })
 
-async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string,maxSkillCopiesPerOperation?:number){
+async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string,maxSkillCopiesPerOperation?:number,reply?:(payload:Record<string,unknown>)=>unknown){
   const {NativeCommandAccount}=await import('../../../packages/cloud/pe-opensandbox/src/native-command-account.ts')
   const {CloudSubprocessRuntime}=await import('../../../packages/cloud/pe-opensandbox/src/native-providers.ts')
   const {CloudSandboxProvider}=await import('../../../packages/cloud/pe-opensandbox/src/native-sandbox.ts')
@@ -147,7 +193,7 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
       if(output!==undefined){
         const parts=[];for(let index=0;index<Number(argv[10]);index++)parts.push(Buffer.from(await readFile(join(a.f.project,argv[5]+'.'+index),'utf8'),'base64'));
         const payload:Record<string,unknown>=JSON.parse(Buffer.concat(parts).toString('utf8'));payloads.push(payload)
-        const result=payload.action==='workflow_assign'?{success:true,data:{outputs:{y:42}}}:domainResult
+        const result=reply?reply(payload):payload.action==='workflow_assign'?{success:true,data:{outputs:{y:42}}}:domainResult
         const bytes=Buffer.from(JSON.stringify(result));await writeFile(join(a.f.project,output),bytes,{flag:'wx'});stdout=JSON.stringify({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})
       }
       else if(argv[3]?.includes('os.unlink')){await unlink(argv[4]!)}
@@ -159,7 +205,7 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const commands=new NativeCommandAccount(a.graph.ctx,a.graph.binding,{assertBusinessCurrent(){a.graph.api.sessionProject(a.agent.session)},
     getAgent:id=>a.graph.ctx.agents.get(id),projectForAgent:agent=>a.graph.guards.projectForAgent(agent),projectForSession:session=>a.graph.guards.projectForSession(session),
     assertRetainedExecutionOwner(){throw new Error('No background job in fixture')},files(){throw new Error('Only the external channel is scripted')}},
-    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['research_engine_run','research_document_status','skill'],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
+    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['research_engine_run','research_document_status','skill',...reply?['research_workbench_execute']:[]],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
       maxObservedBytes:65536,pollIntervalMs:1000,maxWaiters:2,maxLifetimeMs:10000,stopWaitMs:1000}},root)
   const sandbox=new CloudSandboxProvider(a.graph.ctx,commands.calls,{current(){return {enforcement:'partial',denialSignatures:[],runnerFailureRules:[]}}},{maxArgvBytes:4096,maxArgvEntries:16})
   new CloudSubprocessRuntime(a.graph.ctx,commands,sandbox)
@@ -235,7 +281,7 @@ it('retains the uncollected result after cancellation and joins the original com
 })
 
 it('stages a large input and collects a multibyte managed result through original 64 KiB FS calls without whole-file reads',async()=>{
-  const a=await fixture('research-chunked',{maxDatabaseBytes:16777216})
+  const a=await fixture('research-chunked',{maxDatabaseBytes:16777216,maxReplyBytes:8388608})
   const fs=a.agent.ctx.get('fs')!,write=fs.writeText.bind(fs),range=fs.readByteRange.bind(fs),writes:number[]=[],reads:number[]=[]
   let corrupt=false
   vi.spyOn(fs,'writeText').mockImplementation((target,text,...args)=>{
