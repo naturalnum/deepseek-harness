@@ -194,7 +194,7 @@ variable(name: string, provider: (context: AssembleContext) => string | undefine
 refreshContext(assembly: PromptAssembly, context: AssembleContext = {}): PromptAssembly
 
 /**
- * Assemble global and scoped providers, detach tool parameters, apply
+ * Await scoped preparation, collect global and scoped providers, detach tool parameters, apply
  * canonical ordering, then run the assembly waterfall. Scoped sections and
  * variables shadow globals. The returned waterfall value is authoritative
  * except that an effective complete section is restored afterwards as the
@@ -251,6 +251,28 @@ Emitted when any prompt provider changes. This registry notification is unfilter
  */
 'system-prompt/change'(): void
 ```
+
+Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
+
+<a id="system-promptprepare--waterfall"></a>
+
+#### `system-prompt/prepare` — waterfall
+
+Await scoped preparation before reading prompt, variable or tool providers. Rejection stops this assembly before any provider snapshot is collected. The caller's signal applies only to this assembly; shared provider work retains its own lifetime. Listeners must delegate with `next()`.
+
+```ts cordis-catalog
+/**
+ * Await scoped preparation before reading prompt, variable or tool providers.
+ * Rejection stops this assembly before any provider snapshot is collected.
+ * The caller's signal applies only to this assembly; shared provider work
+ * retains its own lifetime. Listeners must delegate with `next()`.
+ * @param context - the caller's per-assembly context and optional signal.
+ * @mode waterfall
+ */
+'system-prompt/prepare'(this: Scoped<SystemPrompt>, context: AssembleContext, next: () => Promise<void>): Promise<void>
+```
+
+Types: [Scoped](scope.zh.md)
 
 Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -4490,7 +4490,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async assemble(context: AssembleContext = {}): Promise<PromptAssembly>',
-        description: 'Assemble global and scoped providers, detach tool parameters, apply canonical ordering, then run the assembly waterfall. Scoped sections and variables shadow globals. The returned waterfall value is authoritative except that an effective complete section is restored afterwards as the sole prompt section.',
+        description: 'Await scoped preparation, collect global and scoped providers, detach tool parameters, apply canonical ordering, then run the assembly waterfall. Scoped sections and variables shadow globals. The returned waterfall value is authoritative except that an effective complete section is restored afterwards as the sole prompt section.',
         parameters: [{ name: 'context', description: 'the optional scope and plugin-defined assembly fields.' }],
         returns: 'the post-waterfall assembly with any complete prompt enforced.',
       },
@@ -5823,6 +5823,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Emitted when any prompt provider changes.',
     description: 'Emitted when any prompt provider changes. This registry notification is unfiltered because a global change affects every scope.',
     parameters: [],
+  },
+  {
+    name: 'system-prompt/prepare',
+    mode: 'waterfall',
+    signature: '\'system-prompt/prepare\'(this: Scoped<SystemPrompt>, context: AssembleContext, next: () => Promise<void>): Promise<void>',
+    summary: 'Await scoped preparation before reading prompt, variable or tool providers.',
+    description: 'Await scoped preparation before reading prompt, variable or tool providers. Rejection stops this assembly before any provider snapshot is collected. The caller\'s signal applies only to this assembly; shared provider work retains its own lifetime. Listeners must delegate with `next()`.',
+    parameters: [{ name: 'context', description: 'the caller\'s per-assembly context and optional signal.' }],
   },
   {
     name: 'tools/change',
