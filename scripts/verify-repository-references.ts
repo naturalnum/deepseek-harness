@@ -32,6 +32,13 @@ function isMaintained(file: string): boolean {
   return !excludedPrefixes.some(prefix => file.startsWith(prefix))
 }
 
+/** Read one unambiguous JSON object property from TypeScript's JSON syntax tree. */
+function property(object: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined {
+  const matches = object.properties.filter((node): node is ts.PropertyAssignment => ts.isPropertyAssignment(node)
+    && ts.isStringLiteralLike(node.name) && node.name.text === key)
+  return matches.length === 1 ? matches[0]?.initializer : undefined
+}
+
 /** Exact upstream revision in the generated Office source notice, never prose or an arbitrary JSON field. */
 function officeSourcePin(file: string, source: string): { value: string; line: number; column: number } | undefined {
   const matched = /^packages\/skill\/skill-office\/assets\/([^/]+)\/DSH-SOURCE\.json$/.exec(file)
@@ -47,17 +54,50 @@ function officeSourcePin(file: string, source: string): { value: string; line: n
   const parsed = ts.parseJsonText(file, source)
   const first = parsed.statements[0]
   if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return undefined
-  const property = (object: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined => {
-    const matches = object.properties.filter((node): node is ts.PropertyAssignment => ts.isPropertyAssignment(node)
-      && ts.isStringLiteralLike(node.name) && node.name.text === key)
-    return matches.length === 1 ? matches[0]?.initializer : undefined
-  }
   const sourceObject = property(first.expression, 'source')
   if (sourceObject === undefined || !ts.isObjectLiteralExpression(sourceObject)) return undefined
   const commit = property(sourceObject, 'commit')
   if (commit === undefined || !ts.isStringLiteralLike(commit) || !/^"[a-f0-9]{40}"$/.test(commit.getText(parsed))) return undefined
   const position = parsed.getLineAndCharacterOfPosition(commit.getStart(parsed))
   return { value: origin.commit, line: position.line, column: position.character + 1 }
+}
+
+/** Exact revision fields in the independent research import's two structured source records. */
+function researchSourcePins(file: string, source: string): { value: string; line: number; column: number }[] {
+  const prefix = 'integrations/epri-research/source-records/'
+  if (file !== prefix + 'cloud-integration.json' && file !== prefix + 'source-lock.json') return []
+  try { JSON.parse(source) } catch { return [] }
+  const parsed = ts.parseJsonText(file, source), first = parsed.statements[0]
+  if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return []
+  const literal = (object: ts.ObjectLiteralExpression, key: string): string | undefined => {
+    const value = property(object, key)
+    return value !== undefined && ts.isStringLiteralLike(value) ? value.text : undefined
+  }
+  const pins: ts.StringLiteralLike[] = []
+  const collect = (object: ts.ObjectLiteralExpression, key: string): void => {
+    const value = property(object, key)
+    if (value !== undefined && ts.isStringLiteralLike(value) && /^[a-f0-9]{40}$/u.test(value.text)
+      && /^"[a-f0-9]{40}"$/u.test(value.getText(parsed))) pins.push(value)
+  }
+  const object = first.expression
+  if (file.endsWith('/cloud-integration.json')) {
+    if (literal(object, 'sourceRepository') !== 'https://github.com/naturalnum/deepseek-harness'
+      || literal(object, 'sourceBranch') !== 'GMZ/deepscientist-airalogy-native') return []
+    for (const key of ['sourceCommit', 'sourceBaseCommit', 'cloudBaseCommit']) collect(object, key)
+  } else {
+    const sources = property(object, 'sources')
+    if (sources === undefined || !ts.isArrayLiteralExpression(sources)) return []
+    const repos = new Set(['ResearAI/DeepScientist_V2', 'deepseek-ai/deepseek-harness', 'airalogy/airalogy'])
+    for (const item of sources.elements) {
+      if (!ts.isObjectLiteralExpression(item)) continue
+      const repo = literal(item, 'repo')
+      if (repo !== undefined && repos.has(repo)) collect(item, 'commit')
+    }
+  }
+  return pins.map((node) => {
+    const position = parsed.getLineAndCharacterOfPosition(node.getStart(parsed))
+    return { value: node.text, line: position.line, column: position.character + 1 }
+  })
 }
 
 /**
@@ -73,7 +113,8 @@ export function findRepositoryReferences(
   commits: ReadonlySet<string>,
 ): RepositoryReference[] {
   if (!isMaintained(file)) return []
-  const sourcePin = officeSourcePin(file, source)
+  const officePin = officeSourcePin(file, source)
+  const sourcePins = [...officePin === undefined ? [] : [officePin], ...researchSourcePins(file, source)]
   const references: RepositoryReference[] = []
   for (const [index, line] of source.split('\n').entries()) {
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
@@ -83,7 +124,7 @@ export function findRepositoryReferences(
       ? [...line.matchAll(/(?<=\bsize\s*=\s*)\d+(?=\s*(?:[,}]|$))/g)] : []
     if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase())
       && !artifactSizes.some(size => size.index === match.index && size[0] === match[0])
-      && !(match[0] === sourcePin?.value && index === sourcePin.line && match.index === sourcePin.column))) {
+      && !sourcePins.some(pin => match[0] === pin.value && index === pin.line && match.index === pin.column))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }

@@ -13,6 +13,7 @@
 import { existsSync, globSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { gitIndexPaths, readGitIndexBlob } from './translation-pairing-git.ts'
+import { isUnchangedImportedResearchContent } from './imported-research-content.ts'
 import {
   computeTranslationPairingRecord,
   parseTranslationPairingRecord,
@@ -94,7 +95,9 @@ const isTranslationPairSource = translationPairSourcePredicate(manifest)
  * manifest must keep their trailing slash.
  */
 function isExcluded(file: string): boolean {
+  const imported = readRepositoryFile(file)
   return isTranslationPairingManifestExcluded(file, manifest)
+    || imported !== undefined && isUnchangedImportedResearchContent(file, imported)
 }
 
 const recordContext = { repoRoot: root, isTranslationPairSource, repositoryFileExists }

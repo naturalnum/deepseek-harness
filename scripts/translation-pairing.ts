@@ -163,6 +163,7 @@ export function isTranslationScopeFile(file: string): boolean {
     && !isTranslationSourceExcluded(file) && (README_ARTIFACT.test(file)
     || ROOT_PAIRED_DOCUMENT_ARTIFACT.test(file)
     || file.startsWith('.agents/notes/')
+    || /^integrations\/epri-research\/CLOUD(?:\.md|\.zh\.md|\.i18n\.yaml)$/u.test(file)
     || file.startsWith('docs/')
     || file.startsWith('python/'))
 }

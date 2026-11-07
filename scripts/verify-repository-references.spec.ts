@@ -8,6 +8,24 @@ import { findRepositoryReferences, scanRepositoryReferences, uniquePrefixMatch }
 
 const organizationUrl = `https://${['github.com', ['deepseek', 'harness'].join('-')].join('/')}`
 
+describe('research source revision fields', () => {
+  const revision = 'a'.repeat(40), commits = new Set([revision])
+  const file = 'integrations/epri-research/source-records/cloud-integration.json'
+  const record = { sourceRepository: 'https://github.com/naturalnum/deepseek-harness',
+    sourceBranch: 'GMZ/deepscientist-airalogy-native', sourceCommit: revision }
+  it('retains exact structured source pins while still rejecting ordinary prose and unrelated JSON fields', () => {
+    expect(findRepositoryReferences(file, JSON.stringify(record), commits)).toEqual([])
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, note: revision }), commits)).toHaveLength(1)
+    expect(findRepositoryReferences('integrations/epri-research/CLOUD.md', revision, commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, sourceBranch: 'unreviewed' }), commits)).toHaveLength(1)
+  })
+  it('accepts only the selected upstream source-lock repository commit field', () => {
+    const lock = 'integrations/epri-research/source-records/source-lock.json'
+    expect(findRepositoryReferences(lock, JSON.stringify({ sources: [{ repo: 'airalogy/airalogy', commit: revision }] }), commits)).toEqual([])
+    expect(findRepositoryReferences(lock, JSON.stringify({ sources: [{ repo: 'another/repo', commit: revision }] }), commits)).toHaveLength(1)
+  })
+})
+
 function repository(test: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-repository-references-'))
   test.onTestFinished(() => {
