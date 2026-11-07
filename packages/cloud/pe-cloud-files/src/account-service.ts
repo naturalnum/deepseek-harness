@@ -1,4 +1,5 @@
 import { openRemoteServerStore, type RemoteStoreLimits, type AccountRemoteServerStore } from './remote-server-store.ts'
+import type { AccountResearchStorage } from './research-storage.ts'
 /** Graph-owned preparation installs the native Registry and its selected restricted filesystem in one account fiber. */
 import type { SkillProjectPort } from './skill-project-work.ts'
 import type { SkillProjectGrant, SkillWorkingCopyGrant, SkillOperationCopies } from './skill-projection.ts'
@@ -30,6 +31,8 @@ export interface AccountFilesPreparation {
   readonly enforceSessionFilePolicy?: boolean
   /** Root storage lease supplies this private fixed-purpose port; omission grants no skill storage. */
   readonly skillVersions?: () => SkillVersionPort
+  /** Original preallocated private-domain lease; omission keeps independent research persistence closed. */
+  readonly researchStorage?: () => AccountResearchStorage
   /** Fixed original-lease projection issuer; no client-selected backend or path. */
   readonly skillProjection?: () => SkillProjectPort
   readonly binding: AccountBinding
@@ -113,6 +116,7 @@ export class CloudAccountFiles extends Service {
   // Keep native constructor identity stable through Cordis caller-scoped method tracing.
   private readonly providers: {
     readonly skillVersions: AccountFilesPreparation['skillVersions']
+    readonly researchStorage: AccountFilesPreparation['researchStorage']
     readonly skillProjection: AccountFilesPreparation['skillProjection']
     readonly Registry: ControlledWorkspaceRegistryConstructor
     readonly createFileSystem: AccountFilesPreparation['createFileSystem']
@@ -168,7 +172,8 @@ export class CloudAccountFiles extends Service {
     checkGraph(ctx)
     super(ctx, 'peCloudFiles')
     this.binding = input.binding
-    this.providers = { Registry, skillVersions: input.skillVersions, skillProjection: input.skillProjection,
+    this.providers = { Registry, skillVersions: input.skillVersions, researchStorage: input.researchStorage,
+      skillProjection: input.skillProjection,
       createFileSystem: input.createFileSystem, enforceSessionFilePolicy: input.enforceSessionFilePolicy,
       withInstructionReaders: input.withInstructionReaders,
       projectFor: input.projectFor, prepareExecutionMounts: input.prepareExecutionMounts,
@@ -195,6 +200,21 @@ export class CloudAccountFiles extends Service {
     const prepare = this.providers.skillVersions
     if (prepare === undefined) throw new FilesFailure('files/prerequisite-missing', 'Private skill storage is unavailable')
     return prepare()
+  }
+
+  /**
+   * Borrow only the fixed research child of this graph's original verified private domain.
+   * @param owner Actual plugin caller in the same account graph.
+   * @returns Host-only storage grant; callers retain their native store handles through actual graph disposal.
+   */
+  researchStorage(owner: Context): AccountResearchStorage {
+    this.assertInstalled(owner)
+    const prepare = this.providers.researchStorage
+    if (prepare === undefined) throw new FilesFailure('files/prerequisite-missing', 'Private research storage is unavailable.')
+    const grant = prepare()
+    if (grant.binding !== this.binding) throw new FilesFailure('cloud/stale-generation', 'Research storage has a foreign account binding.')
+    grant.assertCurrent()
+    return grant
   }
 
   /** Prepare only this files owner's installed private native storage and credential providers.

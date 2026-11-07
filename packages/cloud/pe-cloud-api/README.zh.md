@@ -10,6 +10,8 @@ kind: "package-reference"
 
 明确选择云端配方允许开放的原生 RPC、逻辑流、Fetch 路由和设置字段。未知操作保持关闭，原生清单变化会撤销先前审核。共享守卫在原生 Session 委派及实际模型调用前执行。runtime、项目和配置保存集成不完整时，账户挂载明确失败。
 
+可信账户插件可调用 `sessionProject(actualSession)`，复用 Runtime 原有的 Session、Workspace、成员关系和 Preset 检查。它返回已注册的原生 Workspace，不创建 Session 或执行作用域；缺少原有策略回调或账户准入时拒绝调用。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -18,6 +20,8 @@ kind: "package-reference"
 - [模型体验](#model-experience)
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
+
+`withPeerUse(peer, consume)` 将插件工作转交给原有登录注册表及其持有的 AccountUse。在实际工作前后复查精确账号绑定、当前 Peer、业务准入和账号图；复制的 Peer、已撤销登录、其他账号及缺失准备回调均被拒绝。它不创建新的借用或释放责任。
 
 -----
 

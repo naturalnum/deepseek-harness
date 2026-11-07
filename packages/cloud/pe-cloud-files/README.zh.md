@@ -20,6 +20,8 @@ kind: "package-reference"
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+`researchStorage(actualPluginContext)` 签发指向已验证账号私有域中固定 `research-suite` 子目录的 Host 授权。它复用原有预分配存储和精确安装代次，不接受模型选择目录，也不增加账号容量。独立科研存储必须在实际读取和提交时调用 `assertCurrent()`，并保留句柄直到原生图销毁已等待其实际工作结束。省略准备回调时，科研持久化保持不可用。
+
 -----
 
 <a id="use-this-package"></a>

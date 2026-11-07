@@ -444,6 +444,11 @@ export class StaticAccountStorageLease {
       },
       withInstructionReaders: port.withInstructionReaders,
       skillVersions: () => port.skillVersions(),
+      researchStorage: () => {
+        current(); this.assertLayout()
+        return Object.freeze({ binding, directory: posix.join(this.account.private.rootPath, 'research-suite'),
+          assertCurrent: () => { current(); this.assertLayout() } })
+      },
       skillProjection: () => port.skillProjection(),
       defaultGrant: Object.freeze({ binding, parent, backend: 'root-owned-isolated-ext4', leaf: 'default-workspace',
         assertDeployment: current, assertExclusive: current }),

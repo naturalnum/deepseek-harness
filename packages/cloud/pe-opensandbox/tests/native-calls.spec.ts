@@ -11,7 +11,7 @@ const contexts: Context[] = []
 afterEach(async () => { for (const ctx of contexts.splice(0)) await ctx.fiber.dispose() })
 const result: ToolExecutionResult = { isError: false, value: null, content: [] }
 
-function fixture(maxScopes = 4) {
+function fixture(maxScopes = 4, allowedTools = ['bash', 'run_code', 'terminal_open']) {
   const ctx = new Context(), generation = new AbortController()
   contexts.push(ctx)
   const binding: AccountBinding = Object.freeze({ accountId: 'native-unit' as AccountBinding['accountId'],
@@ -23,7 +23,7 @@ function fixture(maxScopes = 4) {
     projects.set(id, Object.freeze({ id }))
   }
   const released = vi.fn<(scope: unknown) => void>()
-  const calls = new NativeExecutionCalls(ctx, { binding, maxScopes, allowedTools: ['bash', 'run_code', 'terminal_open'],
+  const calls = new NativeExecutionCalls(ctx, { binding, maxScopes, allowedTools,
     getAgent: id => agents.get(id), projectForAgent: agent => projects.get(agent.id)!,
     assertCurrent(scope) { if (scope.project !== projects.get(scope.sessionId)) throw new Error('project changed') }, released })
   const exec = (id = 'A'): ToolDispatchExecution => ({ callId: id as ToolDispatchExecution['callId'],
@@ -170,4 +170,23 @@ it('does not retain an ordinary Bash invocation as a terminal without the exact 
     return result
   })
   f.calls.release(exec.token)
+})
+
+
+it('requires an explicitly selected tool and the same live Agent before an additional consumer can capture execution', async () => {
+  const closed = fixture(), selected = fixture(4, ['bash', 'airalogy_engine_run'])
+  const exec = { ...closed.exec(), name: 'airalogy_engine_run' }
+  await closed.calls.run(exec, async () => {
+    expect(() => closed.calls.capture(closed.ctx)).toThrow('original live native invocation')
+    return result
+  })
+  const current = { ...selected.exec(), name: 'airalogy_engine_run' }
+  await selected.calls.run(current, async () => {
+    expect(selected.calls.capture(selected.ctx).scope.consumerId).toBe('airalogy_engine_run')
+    return result
+  })
+  selected.calls.release(current.token)
+  const { agent: _agent, ...agentless } = current
+  expect(() => selected.calls.run(agentless, async () => result)).toThrow('original native foreground')
+  expect(() => selected.calls.run({ ...current, agent: exec.agent }, async () => result)).toThrow('exact live account-native Agent')
 })
