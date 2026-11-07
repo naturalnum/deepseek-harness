@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Real prepared page/transport/native settings registration; the external HTTP replies are scripted. */
 import { Context } from '@deepseek-ai/cordis'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ConnectionWebSocket } from '@deepseek-ai/dsh-client-connection/client'
@@ -15,6 +16,14 @@ class Socket implements ConnectionWebSocket {
   close(): void { this.readyState = 3 }
   addEventListener: ConnectionWebSocket['addEventListener'] = () => {}
   removeEventListener: ConnectionWebSocket['removeEventListener'] = () => {}
+}
+function isAccountFace(value: unknown): value is AccountFace {
+  if (value === null || typeof value !== 'object' || typeof Reflect.get(value, 'submit') !== 'function') return false
+  const hooks: unknown = Reflect.get(value, 'hooks')
+  if (hooks === null || typeof hooks !== 'object') return false
+  const store: unknown = Reflect.get(hooks, 'accountManagement')
+  return store !== null && typeof store === 'object' && typeof Reflect.get(store, 'getSnapshot') === 'function'
+    && typeof Reflect.get(store, 'subscribe') === 'function'
 }
 async function fixture(role: 'admin' | 'user') {
   const disabled = { state: 'disabled', reason: 'not-approved' } as const
@@ -47,7 +56,8 @@ async function fixture(role: 'admin' | 'user') {
   ctx.provide('clientPersistence', page.nativeOptions.persistence)
   const slots = new SlotRegistry(ctx), locale = new LocaleRuntime(ctx)
   locale.setLocale('en'); ctx.provide('locale', locale)
-  slots.register({ name: 'root', children: { 'settings.section': { kind: 'list', scope: 'root' } } }, () => null)
+  slots.register({ name: 'root', children: { 'settings.section': { kind: 'list', scope: 'root' } } },
+    ({ renderSlot }: PropsRenderSlots<'settings.section'>) => renderSlot('settings.section', { close() {} }))
   await page.start({ run: async () => {
     page.nativeOptions.prepareContext(ctx)
     await ctx.plugin((owner) => { page.activate(owner); installCloudAccountManagement(owner, page) }).await()
@@ -64,7 +74,8 @@ it('loads on opening the admin settings entry and preserves the captured actor/t
   expect(f.requests).toHaveLength(0)
   const entry = f.slots.entries('settings.section').find(row => row.options.id === 'cloud-account-management')
   if (entry?.inject === undefined) throw new Error('Account settings menu absent')
-  const face = entry.inject() as AccountFace
+  const face: unknown = entry.inject()
+  if (!isAccountFace(face)) throw new Error('Account settings injection differs from the registered face')
   await vi.waitFor(() => { expect(face.hooks.accountManagement.getSnapshot().rows).toHaveLength(1) })
   expect(f.requests[0]?.target).toBe('https://example.test/app/cloud/admin/accounts')
   expect(f.requests[0]?.headers.get('x-account')).toBe('actor')
