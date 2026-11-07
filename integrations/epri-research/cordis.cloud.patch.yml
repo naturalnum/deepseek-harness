@@ -9,6 +9,8 @@
         maxPendingRequests: 2
         executionTimeoutMs: 180000
         maxPayloadBytes: 8388608
+        fileChunkBytes: 65536
+        maxConcurrentFileTransfers: 2
         maxOutputBytes: 32768
         graceMs: 1000
         pythonPath: /opt/dsh/runtime/dependencies/python/bin/python3

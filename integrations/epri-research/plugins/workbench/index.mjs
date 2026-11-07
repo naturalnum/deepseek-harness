@@ -21,12 +21,15 @@ export function apply(ctx) {
       try {
         const sessionId = conversationId(exec);
         const agentCtx = exec.agent.ctx;
-        const fs = agentCtx.get('fs');
-        const cwd = await agentCtx.get('workingDirectory').ensure(exec.agent, exec.signal);
-        const target = await fs.resolve(file.path, {cwd, signal:exec.signal});
-        const bytes = await fs.readBytes(target, exec.signal, 2 * 1024 * 1024);
-        const input={name:basename(file.path),contentBase64:Buffer.from(bytes).toString('base64'),requestId:'present:' + exec.callId + ':' + index};
         const cloud=cloudResearch(agentCtx);
+        let bytes;
+        if(cloud)bytes=await cloud.readPresentedFile(file.path,exec);
+        else {
+          const fs=agentCtx.get('fs'),cwd=await agentCtx.get('workingDirectory').ensure(exec.agent,exec.signal);
+          const target=await fs.resolve(file.path,{cwd,signal:exec.signal});
+          bytes=await fs.readBytes(target,exec.signal,2*1024*1024);
+        }
+        const input={name:basename(file.path),contentBase64:Buffer.from(bytes).toString('base64'),requestId:'present:' + exec.callId + ':' + index};
         await (cloud?cloud.agentCall('attachment_put',input,exec):call('attachment_put',input,exec.signal,sessionId));
         messages.push('科研工作台已保存文件快照：' + basename(file.path));
       } catch (e) {
