@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v131_ebit_delivery_cap45_market",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "A stricter large-cap gate may push the EBIT actual-delivery seed across the TOP1000 sub-universe check with minimal change to the parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v131_ebit_delivery_cap50_market",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "A still stricter cap gate tests whether the seed's 0.79/0.80 sub-universe miss is simply marginal small-cap contamination.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.240 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v131_ebit_delivery_cap45_industry",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "Keeping industry neutralization instead of market neutralization may retain the original eventful EBIT delivery signal while improving large-cap stability.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v131_ebit_delivery_no_error_cap45",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "Removing the absolute delivery-error term may reduce sparse/small-cap noise while preserving the actual EBIT delivery and estimate visibility core.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.230 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.110 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v131_ebit_delivery_more_dispersion_relief",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "Increasing weight on EBIT dispersion relief and reducing actual-level dominance may improve robustness without changing the parent signal.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.210 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.190 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v131_ebit_delivery_more_risk_relief",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "More beta and market-correlation relief may lift the sub-universe check for a high-Sharpe EBIT delivery seed.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.220 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v131_ebit_delivery_largecap_reversal5",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "Replacing intraday reversal with a slower 5-day reversal may lower small-cap noise while keeping turnover within range.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.250 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.210 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v131_ebit_delivery_subindustry_cap40",
+    "family": "ebit_delivery_lsus_repair",
+    "hypothesis": "Subindustry ranking may improve top-universe robustness if EBIT delivery varies mostly within narrower operating peers.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.240 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), subindustry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), subindustry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), subindustry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), subindustry) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

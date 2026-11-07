@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v75_equity_method_income_yield",
+    "family": "equity_method_investment_disclosure",
+    "source": "hard_field_scan_v75_20260627",
+    "hypothesis": "Higher income from equity-method investments relative to assets may identify companies with valuable unconsolidated affiliates and partnership earnings that are not captured by ordinary operating-income yields.",
+    "expression": "0.45 * group_rank(ts_rank(equity_method_investment_income / assets, 126), industry) + 0.25 * group_rank(ts_rank(equity_method_investment_income_total / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Ultra-low-use equity-method income fields; avoids ordinary operating-income/FCF anchors."
+  },
+  {
+    "name": "v75_equity_method_low_complexity",
+    "family": "equity_method_investment_disclosure",
+    "source": "hard_field_scan_v75_20260627",
+    "hypothesis": "Lower equity-method investment balance with positive affiliate income may proxy cleaner corporate structure and capital efficiency.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * investments_equity_method_value / assets, 126), industry) + 0.30 * group_rank(ts_rank(equity_method_investment_income / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * equity_method_investment_total / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests capital-light affiliate structure rather than simple affiliate-income strength."
+  },
+  {
+    "name": "v75_equity_method_ownership_focus",
+    "family": "equity_method_investment_disclosure",
+    "source": "hard_field_scan_v75_20260627",
+    "hypothesis": "Lower ownership concentration in equity-method investments may reduce opacity and governance leakage while preserving affiliate income signal.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(equity_investment_ownership_percent), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(equity_investment_ownership_ratio), 126), industry) + 0.25 * group_rank(ts_rank(equity_method_investment_income / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses ownership-percent fields as a disclosure/opacity axis, not a standard profitability ratio."
+  },
+  {
+    "name": "v75_equity_method_income_growth",
+    "family": "equity_method_investment_disclosure",
+    "source": "hard_field_scan_v75_20260627",
+    "hypothesis": "Improving equity-method income may capture affiliate earnings momentum before it appears in consolidated fundamentals.",
+    "expression": "0.40 * group_rank(ts_rank(ts_delta(equity_method_investment_income / assets, 252), 126), industry) + 0.25 * group_rank(ts_rank(equity_method_investment_income / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * investments_equity_method_value / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Growth-oriented equity-method income test; reject if turnover rises without Sharpe."
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v162_contract_sales_gap_otherliab_residual",
+    "family": "contract_liability_sales_gap",
+    "hypothesis": "If deferred revenue grows faster than recognized sales while other non-deferred liabilities are not expanding, the firm may have customer-funded demand visibility rather than broad liability growth. This tests billing-vs-sales timing without receivable or gross-income guidance sleeves.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.320 * group_rank(ts_rank((ts_delta(fnd6_drc + fnd6_drlt, 252) - ts_delta(sales, 252)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(fnd6_loxdr / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(fnd6_lcoxdr / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Materially different from LLprjdP9: no receivable discipline and no gross-income guidance subtraction; isolates deferred revenue growth relative to sales and other liabilities."
+  },
+  {
+    "name": "v162_quarterly_deferred_maturity_domestic",
+    "family": "contract_liability_maturity_quarterly",
+    "hypothesis": "A near-term shift into current deferred revenue is more useful when supported by simple domestic operations. Quarterly/new-reported deferred revenue fields may capture a fresher maturity surprise than the annual fnd6_drc/fnd6_drlt level.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(ts_delta(fnd6_newqv1300_drcq / assets, 126), 126), industry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_drltq / assets, 126), 126), industry) + 0.170 * group_rank(ts_rank((fnd6_newqv1300_drcq - fnd6_newqv1300_drltq) / assets, 126), industry) + 0.150 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.100 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One maturity-shift repair with a domestic confirmer instead of receivable/backlog/gross-margin. Strict-check against LLprjdP9, mL870bRW, and 78wmMAE2."
+  },
+  {
+    "name": "v162_customer_financed_deleveraging",
+    "family": "customer_financed_debt_relief",
+    "hypothesis": "Debt reduction is more meaningful when external financing is replaced by customer prepayments. Combining falling debt/assets with rising current deferred revenue tests a customer-financed deleveraging parent, not ordinary debt slope or social-deleveraging.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.300 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(fnd6_drc / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(fnd6_drlt / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * taxes_payable_total_value / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Revisits the user's debt idea only through a new external customer-financing trigger. Reject if it maps back to debt/social/customer/news actives or LLprjdP9."
+  },
+  {
+    "name": "v162_deferred_current_accrual_cleanliness",
+    "family": "contract_liability_nonreceivable_confirmation",
+    "hypothesis": "Current deferred revenue should be more valuable when non-customer accruals and current other liabilities are not growing. This treats deferred revenue as clean customer funding rather than hidden working-capital pressure.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(ts_delta(fnd6_drc / assets, 252), 126), industry) - 0.210 * group_rank(ts_rank(ts_delta(fnd6_lcoxdr / assets, 252), 126), industry) - 0.170 * group_rank(ts_rank(ts_delta(current_accrued_liabilities_total / assets, 252), 126), industry) - 0.120 * group_rank(ts_rank(taxes_due_liabilities / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-receivable confirmation of deferred revenue. Avoids gross-income guidance, receivable/sales, backlog, and direct value/profitability sleeves."
+  },
+  {
+    "name": "v162_tax_settlement_resolution_cold",
+    "family": "tax_legal_resolution_event",
+    "hypothesis": "Resolution of uncertain tax positions through settlements or statute lapse may release overhang, but only if legal settlement cash payments are low. This is an event-resolution probe rather than the closed low-tax-liability quality route.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.280 * group_rank(ts_rank(tax_benefit_decrease_settlement / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(tax_benefit_reduction_statute_lapse / abs(assets), 126), industry) - 0.190 * group_rank(ts_rank(unrecognized_tax_benefit_increase_current_period / abs(assets), 126), industry) - 0.140 * group_rank(ts_rank(legal_settlement_payment_amount / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Cold non-contract-liability probe. Stop if it repeats MPpGzqwr/tax-quality correlation or stays weak."
+  },
+  {
+    "name": "v162_current_accrual_payable_cleanliness",
+    "family": "current_accrual_liability_cleanliness",
+    "hypothesis": "Low accrued liabilities, low taxes payable, and low interest payable may capture cleaner short-term obligations without using ordinary profitability, FCF, receivables, or debt ratios.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.290 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * accrued_liabilities_total_2 / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * taxes_payable_total_value / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * interest_due_liabilities / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Cold liability-cleanliness probe using low-alphaCount payable/accrual fields. It is deliberately separate from deferred revenue so a success would indicate a different parent."
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v181_bfl_alt_peer_residual",
+    "family": "pv13_peer_taxonomy_residual",
+    "hypothesis": "BFL style quality may be more informative relative to relationship-derived economic peer groups than relative to ordinary GICS industry groups; subtracting the industry rank tests whether the alternative peer taxonomy adds residual information.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * (group_rank(ts_rank(fscore_bfl_value, 126), pv13_hierarchy_min51_f1_513_sector) - group_rank(ts_rank(fscore_bfl_value, 126), industry)) + 0.220 * (group_rank(ts_rank(fscore_bfl_profitability, 126), pv13_hierarchy_f3_513_sector) - group_rank(ts_rank(fscore_bfl_profitability, 126), industry)) + 0.180 * (group_rank(ts_rank(fscore_bfl_growth, 126), pv13_hierarchy_min20_top3000_513_sector) - group_rank(ts_rank(fscore_bfl_growth, 126), industry)) + 0.160 * (group_rank(ts_rank(fscore_bfl_surface, 126), pv13_rha2_min30_3000_513_sector) - group_rank(ts_rank(fscore_bfl_surface, 126), industry)) + 0.100 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure taxonomy-residual test. No close/open, EPS, customer/competitor graph, option, news, or ordinary accounting quality stabilizer."
+  },
+  {
+    "name": "v181_bfl_contrarian_peer_slow",
+    "family": "pv13_peer_taxonomy_bfl_contrarian",
+    "hypothesis": "The old fscore contrarian seed had clean correlation but too much turnover; ranking slower BFL value/momentum/growth reversal inside PV13 peer groups may keep the style-mispricing edge while lowering turnover.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * fscore_bfl_momentum, 126), pv13_hierarchys32_513_sector) + 0.240 * group_rank(ts_rank(fscore_bfl_value, 126), pv13_hierarchy_min20_top3000_513_sector) + 0.180 * group_rank(ts_rank(-1 * fscore_bfl_growth, 126), pv13_hierarchy_f3_513_sector) + 0.160 * group_rank(ts_rank(-1 * (fscore_bfl_surface - fscore_bfl_value), 126), pv13_hierarchy_min51_f1_513_sector) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A slower version of the clean but high-turnover fscore contrarian idea, using PV13 peer groups and no close/open reversal."
+  },
+  {
+    "name": "v181_grossincome_alt_peer_delivery",
+    "family": "pv13_peer_grossincome_delivery",
+    "hypothesis": "Gross-income actual delivery and analyst tightness were weak under ordinary industry ranks; relationship-derived peer groups may compare gross-income economics more cleanly across product-market peers.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.230 * (group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_grossincome_value / assets, 126), pv13_hierarchy_min20_top3000_513_sector) - group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_grossincome_value / assets, 126), industry)) + 0.200 * (group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_grossincome_mean / assets, 126), pv13_hierarchy_f3_513_sector) - group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_grossincome_mean / assets, 126), industry)) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_grossincome_std / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 63), 126), pv13_rha2_min30_3000_513_sector) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_grossincome_value - anl4_fs_detail_estimates_advanced_af_nd_grossincome_mean) / abs(assets), 126), pv13_hierarchys32_513_sector) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No management guidance, no EBIT/EBITDA, no close/open. Reject if it simply maps to gross-income guidance or EBIT-delivery actives."
+  },
+  {
+    "name": "v181_rd_efficiency_peer_residual",
+    "family": "pv13_peer_rd_efficiency",
+    "hypothesis": "R&D spending discipline may be meaningful only relative to product-market peers; low and tightening R&D expense expectations inside PV13 peers test a different structure from old R&D/sales-growth attempts.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.240 * (group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_rd_exp_value / abs(sales), 126), pv13_hierarchy_f3_513_sector) - group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_rd_exp_value / abs(sales), 126), industry)) + 0.210 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_rd_exp_mean / abs(sales), 126), pv13_hierarchy_min20_top3000_513_sector) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_high - anl4_fs_detail_estimates_advanced_af_nd_rd_exp_low) / abs(sales), 126), pv13_hierarchy_min51_f1_513_sector) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_number, 63), 126), pv13_rha2_min30_3000_513_sector) + 0.130 * group_rank(ts_rank(fscore_bfl_growth, 126), pv13_hierarchys32_513_sector) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests peer-relative R&D discipline rather than broad R&D intensity, sales growth, guidance floor, or patent/software siblings."
+  },
+  {
+    "name": "v181_sh_equity_peer_delivery_residual",
+    "family": "pv13_peer_balance_sheet_delivery",
+    "hypothesis": "Shareholder-equity actual delivery and estimate confidence may have residual value when compared inside economic peer groups, distinct from the already occupied management-guidance improvement route.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * (group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) - group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), industry)) + 0.210 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_f3_513_sector) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), pv13_hierarchys32_513_sector) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 63), 126), pv13_hierarchy_min20_top3000_513_sector) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids sh-equity management guidance fields; strict-check against O0p8JGJq, BVPS/CFPS, and LLpZgaeL."
+  },
+  {
+    "name": "v181_nonrecurring_peer_cleanliness",
+    "family": "pv13_peer_nonrecurring_cleanliness",
+    "hypothesis": "A broad nonrecurring-adjustment cleanliness basket may be useful when localized to economic peer groups, but only if it does not reconstruct the existing special-items/labor or fscore/core-earnings capacity.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.230 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_xiq)) / assets, 126), pv13_hierarchy_min20_top3000_513_sector) + 0.190 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_eventv110_spidq)) / assets, 126), pv13_hierarchys32_513_sector) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_nrtxtq)) / assets, 126), pv13_hierarchy_f3_513_sector) + 0.150 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pncq)) / assets, 126), pv13_hierarchy_min51_f1_513_sector) + 0.140 * group_rank(ts_rank(fnd6_newqv1300_spcedq, 126), pv13_rha2_min30_3000_513_sector) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled event/core-adjustment peer-localization probe. Close if weak or high-corr to d5xo7gvE / 3q7jJ130 / core-earnings diagnostics."
+  }
+]

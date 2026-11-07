@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v253_actual_vector_largecap_subindustry",
+    "family": "actual_vector_lsus_repair",
+    "hypothesis": "The broad actual-vs-estimate vector is strong but TOP1000-fragile; a larger-cap gate and subindustry control may preserve delivery surprise while reducing small-cap dependence.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.250 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.190 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), subindustry) + 0.170 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair of 6XwQrrbK: cap gate 0.60, SUBINDUSTRY, no old stabilizers."
+  },
+  {
+    "name": "v253_actual_vector_simplified_largecap",
+    "family": "actual_vector_lsus_repair",
+    "hypothesis": "If LSUS failure is caused by noisy absolute-surprise and revision-range terms, a simplified large-cap delivery surprise should keep only the robust core.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.360 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.280 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Signal simplification: removes absolute residual legs and uses one market-correlation stabilizer only."
+  },
+  {
+    "name": "v253_actual_vector_cap70_no_revision",
+    "family": "actual_vector_lsus_repair",
+    "hypothesis": "A stricter large-cap version without estimate revision may test whether the actual delivery surprise itself is robust enough in TOP1000-like names.",
+    "expression": "trade_when(rank(cap) > 0.70, 0.400 * group_rank(ts_rank((vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.300 * group_rank(ts_rank((vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_qf_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)) / abs(assets), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Stricter cap gate and no revision leg. If weak, the signal likely relies on small/mid-cap breadth."
+  },
+  {
+    "name": "v253_actual_vector_rankspace_unitsafe",
+    "family": "actual_vector_lsus_repair",
+    "hypothesis": "Rank-space actual-minus-estimate delivery avoids raw mixed-unit vector arithmetic and may improve robustness if the original signal is driven by cross-sectional delivery ordering rather than magnitude.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.300 * group_rank(ts_rank(rank(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual)) - rank(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)), 126), industry) + 0.240 * group_rank(ts_rank(rank(vec_avg(anl4_fs_actual_qf_v4_nd_actual)) - rank(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate)), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual)) - rank(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate))), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_actual_qf_v4_nd_actual)) - rank(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate))), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Rank-space unit-safe repair. Reject on syntax issues, warning, LSUS, or high corr to analyst delivery actives."
+  }
+]

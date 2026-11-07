@@ -1,0 +1,4 @@
+interface:
+  display_name: 'DS Report'
+  short_description: 'Author clear, visual DeepScientist research reports.'
+  default_prompt: 'Use $report-authoring to turn verified results into a reader-first DeepScientist report with purposeful visuals and a reusable Preview.'

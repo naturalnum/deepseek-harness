@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v41_bfl_surface_total_accel_lowrisk",
+    "family": "bfl_fundamental_score",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "Low-crowding BFL composite score plus its acceleration may capture style improvement without raw accounting, analyst sales, option breakeven, or close/open reversal.",
+    "expression": "0.40 * group_rank(ts_rank(fscore_bfl_total, 126), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_surface_accel, 126), industry) + 0.20 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure BFL score probe with low-risk stabilizer; watch coverage and sub-universe."
+  },
+  {
+    "name": "v41_bfl_value_growth_momentum_balance",
+    "family": "bfl_fundamental_score",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "A balanced BFL value/growth/momentum blend may be less correlated than raw EPS yield, operating quality, or analyst revision derivative.",
+    "expression": "0.30 * group_rank(ts_rank(fscore_bfl_value, 126), subindustry) + 0.25 * group_rank(ts_rank(fscore_bfl_growth, 126), subindustry) + 0.25 * group_rank(ts_rank(fscore_bfl_momentum, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids analyst_revision_rank_derivative because v30 showed that branch becomes crowded when stabilized."
+  },
+  {
+    "name": "v41_model_accel_static_value_no_revision",
+    "family": "model_score_derivative",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "High-coverage model score acceleration and static-score derivative may work without analyst-revision derivative or option-flow stabilizers.",
+    "expression": "0.35 * rank(multi_factor_acceleration_score_derivative) + 0.25 * rank(multi_factor_static_score_derivative) + 0.25 * rank(relative_valuation_rank_derivative) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Controlled alternative to v29/v30: no analyst_revision_rank_derivative, no close/open, no option."
+  },
+  {
+    "name": "v41_social_fast_positive_attention_calm",
+    "family": "social_fast_d1",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "Fast-d1 positive social sentiment with elevated attention but stable sentiment dispersion may be more useful than regular social attention fields.",
+    "expression": "0.35 * group_rank(ts_rank(snt_social_value_fast_d1, 45), industry) + 0.25 * group_rank(ts_rank(snt_social_volume_fast_d1, 45), industry) + 0.25 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 60), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Different from v28 regular social fields; uses fast_d1 matrices and calmness."
+  },
+  {
+    "name": "v41_social_fast_negative_buzz_relief",
+    "family": "social_fast_d1",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "Low negative sentiment and improving relative social buzz may capture sentiment relief without RavenPack earnings or price reversal anchors.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * snt_value_fast_d1, 45), industry) + 0.30 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 45), industry) + 0.20 * group_rank(ts_rank(scl12_sentiment_fast_d1, 45), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests social relief sign; no close/open or earnings sentiment."
+  },
+  {
+    "name": "v41_non_earnings_ravenpack_sentiment_basket",
+    "family": "non_earnings_news_sentiment",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "Non-earnings RavenPack sentiment may carry orthogonal event information compared with the existing earnings-news ACTIVE cluster.",
+    "expression": "0.30 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(mean_equity_sentiment_score, 90), industry) + 0.25 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids mean_earnings_evaluation_sentiment and rp_nip_earnings to reduce correlation with RRpmOAWj/O0pNbJ17."
+  },
+  {
+    "name": "v41_customer_spillover_slow_low_comp",
+    "family": "relationship_customer_spillover",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "Slow customer-return catch-up with customer authority and low competitive crowding may preserve relationship information while avoiding pure high-turnover customer-return failure.",
+    "expression": "0.35 * group_rank(ts_rank(ts_mean(rel_ret_cust, 5) - ts_mean(returns, 5), 60), industry) + 0.25 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Relationship return is only a smoothed component because pure customer return failed in v5."
+  },
+  {
+    "name": "v41_bfl_social_growth_momentum",
+    "family": "bfl_social_cross",
+    "source": "bfl_social_relationship_rotation_v41_20260626",
+    "hypothesis": "BFL growth/momentum confirmed by fast-d1 social sentiment may form a different path from accounting quality, sales surprise, and option breakeven.",
+    "expression": "0.30 * group_rank(ts_rank(fscore_bfl_growth, 126), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_momentum, 126), industry) + 0.25 * group_rank(ts_rank(snt_social_value_fast_d1, 45), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Crosses two underused families at moderate weights; strict corr gate if it unexpectedly passes."
+  }
+]

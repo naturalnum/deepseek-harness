@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.data/
+verification/
+source-records/build-inputs.json
+__pycache__/
+*.pyc
+*.sqlite*
+connection.json
+.credentials.yaml
+.env
+.env.*
+
+!upstream/v2-main/resources/skills/nature-downloader/scripts/lib/

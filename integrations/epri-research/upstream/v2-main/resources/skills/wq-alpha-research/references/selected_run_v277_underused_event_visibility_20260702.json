@@ -1,0 +1,50 @@
+[
+  {
+    "name": "v277_news12_benchmark_reversal_slow",
+    "hypothesis": "Large post-news outperformance versus SPY can reflect short-horizon overreaction; a slow, large-cap industry-ranked reversal may capture event digestion without using the occupied news18 earnings surfaces.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(performance_vs_benchmark_pre), 5), 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v277_news12_short_interest_pressure",
+    "hypothesis": "High short-interest ratio around news events can indicate informed negative pressure; smoothing it should avoid raw event-path turnover.",
+    "expression": "trade_when(rank(cap) > 0.50, group_rank(ts_rank(ts_mean(-1 * vec_avg(shares_sold_short_count_2), 20), 180), industry), -1)",
+    "decay": 20,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v277_news12_path_asymmetry_two_pct",
+    "hypothesis": "When downside thresholds are reached faster than upside thresholds after news, the event path may reveal persistent adverse information rather than generic sentiment.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * (vec_avg(minutes_to_two_pct_up_move_1555) - vec_avg(minutes_to_two_pct_down_move_1555)), 5), 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v277_total_asset_estimate_visibility",
+    "hypothesis": "Low dispersion in analyst total-asset estimates may proxy balance-sheet visibility and lower hidden asset-risk, distinct from ordinary debt or EBIT delivery.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totassets_high - anl4_fs_detail_estimates_advanced_af_nd_totassets_low) / abs(assets), 126), industry), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v277_total_asset_delivery_error",
+    "hypothesis": "Companies whose reported total assets land close to analyst expectations may have cleaner disclosure and fewer balance-sheet surprises.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_totassets_value - anl4_fs_detail_estimates_advanced_af_nd_totassets_median) / abs(assets), 126), industry), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v277_gross_income_visibility",
+    "hypothesis": "Consensus gross-income strength with low dispersion may capture cost pass-through visibility before it reaches crowded EPS or EBIT estimates.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_grossincome_median / abs(assets), 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_grossincome_std / abs(assets), 126), industry), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v125_nci_netprofita_largecap",
+    "family": "nci_complexity_netprofita",
+    "hypothesis": "Low noncontrolling-interest balance and income leakage may identify cleaner ownership economics; adjusted net-profit visibility is only a confirmer, not the parent.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.250 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_mibtq) / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_miiq) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_cimiiq) / assets, 126), industry) + 0.160 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_nci_intersegment_eventful",
+    "family": "nci_segment_complexity",
+    "hypothesis": "NCI leakage plus low intersegment eliminations tests a structural-complexity parent that is adjacent to, but not the same as, the v124 intersegment/netprofita alpha.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.240 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_mibtq) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_miiq) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.130 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.130 * rank(-(close / open - 1)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_domestic_profit_fx_clean_largecap",
+    "family": "geographic_profit_fx_clean",
+    "hypothesis": "Domestic operating profit strength with lower FX translation noise may isolate a cleaner geographic-quality signal if kept away from pure cash-profitability and book-value parents.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry) + 0.170 * group_rank(ts_rank(fnd6_pidom / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / assets, 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_equity_method_affiliate_quality",
+    "family": "equity_method_affiliate_quality",
+    "hypothesis": "Positive affiliate income with low equity-method investment balance may capture capital-light partnership quality distinct from consolidated profitability.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.240 * group_rank(ts_rank(equity_method_investment_income / assets, 126), industry) + 0.180 * group_rank(ts_rank(equity_method_investment_income_total / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * investments_equity_method_value / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(equity_investment_ownership_percent), 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_export_othercost_discontinued_largecap",
+    "family": "operational_disclosure_cleanliness",
+    "hypothesis": "Low export exposure, other-cost noise, and discontinued-operations charges may become usable when restricted to larger names and confirmed by adjusted profit visibility.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.200 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_salexg)) / abs(sales), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_ocaxs)) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_doq)) / assets, 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_advertising_discipline_netprofita",
+    "family": "advertising_efficiency_netprofita",
+    "hypothesis": "Low advertising burden inside subindustry plus adjusted net-profit visibility tests whether prior weak advertising fields need a profitability-quality context rather than standalone growth interpretation.",
+    "expression": "0.260 * group_rank(ts_rank(-1 * abs(fnd6_xad) / abs(sales), 126), subindustry) + 0.180 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_xad / abs(sales), 252)), 126), subindustry) + 0.190 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.110 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_intersegment_lowvolume_no_netprofita",
+    "family": "intersegment_timing_no_netprofita",
+    "hypothesis": "Low intersegment and FX complexity may be separable from v124 if it trades only in quiet-volume regimes and removes the annual netprofita confirmer.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.45, 0.310 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)) + 0.150 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v125_acquisition_complexity_netprofita",
+    "family": "acquisition_complexity_netprofita",
+    "hypothesis": "Low acquisition payments, acquisition-related expenses, and pro-forma acquisition revenue may proxy simpler organic economics, with adjusted net-profit visibility as a quality confirmer.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.210 * group_rank(ts_rank(-1 * business_acquisition_total_payment / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * acquisition_related_expenses / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * proforma_revenue_business_acquisition / assets, 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

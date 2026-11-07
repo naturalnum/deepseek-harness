@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v91_nip_earnings_cashflow_lowcorr_no_open",
+    "family": "earnings_cashflow_lowcorr_rescue",
+    "hypothesis": "The v86 NIP earnings/cashflow candidate is very strong but barely above the strict corr gate; removing daily open-close and adding risk/forward-carry sleeves may change the return path enough to pass.",
+    "expression": "0.34 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.22 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.14 * rank(-1 * ts_mean(returns, 5)) + 0.12 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.08 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_css_earnings_cashflow_short_relief",
+    "family": "earnings_cashflow_lowcorr_rescue",
+    "hypothesis": "CSS earnings has similar strength to NIP but a slightly different news path; short-interest and beta relief replace part of the crowded reversal/cashflow exposure.",
+    "expression": "0.32 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.20 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.14 * rank(-1 * ts_mean(returns, 5)) + 0.12 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.12 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_earnings_calm_trade_when",
+    "family": "earnings_cashflow_lowcorr_rescue",
+    "hypothesis": "Only refreshing the earnings/cashflow signal in calmer absolute-return regimes may lower overlap with the payout/reversal ACTIVE path while retaining the earnings-news edge.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.34 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.22 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.18 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.14 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.12 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_forward_curve_no_dividend",
+    "family": "option_forward_curve_rescue",
+    "hypothesis": "Forward-curve carry was strong but hit the fscore/reversal path; removing dividend and open-close should test whether the forward curve itself has standalone low-corr information.",
+    "expression": "0.36 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.24 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.16 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.12 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_forward_curve_product_residual",
+    "family": "option_forward_curve_rescue",
+    "hypothesis": "Pairing forward carry with product/business news rather than dividend/reversal may test a different event-confirmed carry route.",
+    "expression": "0.30 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.20 * group_rank(ts_rank((forward_price_60 - forward_price_360) / close, 90), industry) + 0.18 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.14 * group_rank(ts_rank(rp_css_business, 90), industry) + 0.10 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_antidilutive_no_dividend_social",
+    "family": "dilution_overhang_lowcorr_rescue",
+    "hypothesis": "Antidilutive overhang was strong but mapped to payout/deferred-revenue; removing dividend/reversal and adding social/risk sleeves may separate dilution relief from shareholder-yield exposure.",
+    "expression": "0.25 * group_rank(ts_rank(-1 * antidilutive_securities_eps_exclusion_count / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(-1 * fn_antidilutive_securities_excl_from_eps_a / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_soe_minguidance + anl4_fs_guidances_advanced_af_nd_soe_maxguidance) / (2 * sales), 126), industry) + 0.15 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.12 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_stockcomp_forward_relief",
+    "family": "dilution_overhang_lowcorr_rescue",
+    "hypothesis": "A small forward-carry sleeve may change stock-compensation overhang timing enough to avoid the old payout/accounting-quality path.",
+    "expression": "0.24 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.14 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.14 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.12 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v91_ptp_product_credit_residual",
+    "family": "ptp_estimate_lowcorr_rescue",
+    "hypothesis": "PTP estimate confidence was just over the corr gate; product and credit-rating news may provide a non-EPS confirmation path without daily reversal.",
+    "expression": "0.26 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), industry) + 0.18 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.14 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.12 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

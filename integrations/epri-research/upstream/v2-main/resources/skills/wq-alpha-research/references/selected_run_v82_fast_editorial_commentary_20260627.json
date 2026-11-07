@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v82_fast_editorial_qmb_calm",
+    "family": "fast_editorial_commentary",
+    "hypothesis": "Fast editorial/commentary stance may capture opinion-driven information that is distinct from earnings, M&A, credit, legal, and generic fast sentiment if filtered by lower story noise and calmer beta.",
+    "expression": "0.42 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.18 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "New qmb/editorial vector route; reject if it maps to e7OQoveE/Vkp0P130 fast-news capacity."
+  },
+  {
+    "name": "v82_fast_editorial_positive_relevance",
+    "family": "fast_editorial_commentary",
+    "hypothesis": "Unlike low-relevance generic fast news, editorial commentary may work better when the story is clearly attached to the company.",
+    "expression": "0.42 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.18 * group_rank(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 90), industry) + 0.18 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.22 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Relevance sign ablation; no generic ssc/qep, no earnings/M&A/credit/legal terms."
+  },
+  {
+    "name": "v82_editorial_matrix_fast_confirm",
+    "family": "fast_editorial_commentary",
+    "hypothesis": "The sparse fast editorial vector may need confirmation from the slower mean editorial-commentary matrix to avoid one-day noise.",
+    "expression": "0.36 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.28 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.18 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.18 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Combines qmb fast vector with a same-theme matrix field rather than generic fast sentiment."
+  },
+  {
+    "name": "v82_editorial_social_stability",
+    "family": "fast_editorial_social_stability",
+    "hypothesis": "Editorial/commentary stance may be more investable when social sentiment is stable and negative buzz is fading, while keeping social terms small enough not to become JjpPv3N2.",
+    "expression": "0.36 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.18 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.18 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.14 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.14 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Small social-stability sleeve only; strict corr gate vs JjpPv3N2 and e7OQoveE."
+  },
+  {
+    "name": "v82_editorial_contrarian_lownoise",
+    "family": "fast_editorial_commentary",
+    "hypothesis": "If editorial/commentary tone is crowded or overreactive, fading positive commentary under low story count may be the better sign.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * mean_editorial_commentary_sentiment, 126), industry) + 0.18 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Sign-control for editorial/commentary; stop the route if both signs are weak or high-corr."
+  }
+]

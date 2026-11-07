@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v235_software_ip_capitalization_light_pure",
+    "family": "software_ip_capitalization_quality",
+    "source": "v235_software_ip_capitalization_20260701",
+    "hypothesis": "Firms with lower capitalized software and patent/IP asset burdens may have cleaner reported asset bases and less future amortization drag, if the signal is not merely a lease/fixed-commitment sibling.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.360 * group_rank(ts_rank(-1 * capitalized_software_gross_value / abs(assets), 126), industry) + 0.300 * group_rank(ts_rank(-1 * gross_patents_ip_intangible_assets / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * patents_ip_amortization_total / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * max_software_useful_life, 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure no-price version of the xAxWOnjq software/IP theme. Kill if weak, LSUS fails, or local corr maps back to 3q7PkXGN / lease-fixed-commitment / PPE-intangible actives."
+  },
+  {
+    "name": "v235_software_ip_burden_decline",
+    "family": "software_ip_capitalization_quality",
+    "source": "v235_software_ip_capitalization_20260701",
+    "hypothesis": "Falling software and patent/IP capitalization intensity may be more incremental than low levels, separating disciplined technology capitalization from static asset-light exposure.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.340 * group_rank(ts_rank(-1 * ts_delta(capitalized_software_gross_value / abs(assets), 252), 126), industry) + 0.280 * group_rank(ts_rank(-1 * ts_delta(gross_patents_ip_intangible_assets / abs(assets), 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * patents_ip_amortization_total / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(operating_income / sales, 126), subindustry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Decline/intensity variant with a small operating-margin confirmer. Kill on high corr to 78wrdZ6x, 3q7PkXGN, WjpR68WG, or ordinary quality actives."
+  },
+  {
+    "name": "v235_software_useful_life_conservative",
+    "family": "software_ip_capitalization_quality",
+    "source": "v235_software_ip_capitalization_20260701",
+    "hypothesis": "Shorter reported software useful lives plus lower capitalized software intensity may proxy conservative capitalization policy rather than aggressive intangible accounting.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * max_software_useful_life, 126), industry) + 0.240 * group_rank(ts_rank(-1 * minimum_useful_life_software_assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * capitalized_software_gross_value / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(operating_income / sales, 126), subindustry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses the low-alphaCount software useful-life fields. Kill if sparse coverage causes concentrated weight, LOW_TURNOVER, LSUS failure, or UNITS warnings."
+  },
+  {
+    "name": "v235_software_ip_capitalization_with_margin_no_reversal",
+    "family": "software_ip_capitalization_quality",
+    "source": "v235_software_ip_capitalization_20260701",
+    "hypothesis": "Lower technology-intangible capitalization burden should matter more when core margins are already solid; this avoids price reversal and beta sleeves from the historical xAxWOnjq version.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * capitalized_software_gross_value / abs(assets), 126), industry) + 0.250 * group_rank(ts_rank(-1 * gross_patents_ip_intangible_assets / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * patents_ip_amortization_total / abs(assets), 126), industry) + 0.270 * group_rank(ts_rank(operating_income / sales, 126), subindustry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Margin-confirmed no-reversal version. Kill if it becomes a generic profitability/intangible sibling or if top daily-PnL corr is not comfortably below 0.68."
+  }
+]

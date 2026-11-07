@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v135_construction_in_progress_restraint",
+    "family": "ppe_adjacent_construction_restraint",
+    "hypothesis": "Low construction-in-progress intensity and falling construction burden may capture disciplined capacity expansion without reusing PPE aging or capex guidance.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * fnd6_fatc / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * gross_construction_in_progress_value / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(fnd6_fatc / assets, 252), 126), industry) + 0.130 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.090 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different from 88zJ8RMW: no accumulated depreciation / gross PPE ratio. Tests construction pipeline restraint."
+  },
+  {
+    "name": "v135_ppe_sale_gain_recycling",
+    "family": "ppe_asset_recycling",
+    "hypothesis": "Positive sale-of-property and PPE-investment gain/loss may proxy for asset recycling discipline, a different PPE-adjacent parent from age or capex guidance.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.320 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry) + 0.240 * group_rank(ts_rank(fnd6_sppe / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * acquisition_assets_property_plant_equipment / assets, 126), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.090 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Fresh PPE-adjacent parent; strict-check against 88zJ8RMW and capex guidance actives."
+  },
+  {
+    "name": "v135_lease_maturity_slope_market",
+    "family": "lease_maturity_structure",
+    "hypothesis": "A declining operating-lease maturity burden plus low capital lease liability may reflect cleaner fixed-cost commitments, but must avoid the old prepaid/tax lease sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * future_minimum_operating_lease_payments / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * operating_leases_minimum_payments_due_thereafter / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(operating_lease_minimum_payments_due_five_years / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * capital_lease_liability_balance / assets, 126), industry) + 0.100 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled lease-maturity test; reject if it maps to pw6jz8ob or old lease accounting-quality cluster."
+  },
+  {
+    "name": "v135_credit_facility_utilization_clean",
+    "family": "credit_facility_capacity",
+    "hypothesis": "Higher unused credit facility capacity relative to outstanding balance can proxy for liquidity resilience, if expressed as rank ratios rather than raw incompatible subtraction.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * (group_rank(ts_rank(credit_facility_remaining_capacity / assets, 126), industry) - group_rank(ts_rank(credit_facility_outstanding_balance / assets, 126), industry)) + 0.180 * group_rank(ts_rank(credit_facility_max_borrowing / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.140 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.130 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids competitor/earnings/forward parents used in historical strong credit-facility near-misses."
+  },
+  {
+    "name": "v135_short_interest_clean_largecap",
+    "family": "short_interest_without_forward",
+    "hypothesis": "Low short-interest pressure plus volume exhaustion can capture crowding relief without using forward curves, social, or option terms.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.360 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.190 * group_rank(ts_rank(-1 * vec_avg(shares_sold_short), 60), industry) + 0.180 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.130 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Historical short-interest strength usually came with forward curves or earnings. This isolates short-interest pressure."
+  },
+  {
+    "name": "v135_insider_news_no_dilution",
+    "family": "insider_news_event",
+    "hypothesis": "Positive insider-trading news sentiment can be informative, but prior strong seed used share-count dilution; this version removes dilution/buyback legs and uses risk/volume timing only.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.70, 0.360 * group_rank(ts_rank(rp_css_insider, 60), industry) + 0.260 * group_rank(ts_rank(rp_nip_insider, 60), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.040 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether insider news itself has alpha after removing share-count/dilution exposure."
+  },
+  {
+    "name": "v135_labor_news_quality",
+    "family": "labor_news_event",
+    "hypothesis": "Labor issue sentiment may proxy for operating stability and employee-relations risk; this is separate from compensation liability/accounting burden.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.340 * group_rank(ts_rank(rp_css_labor, 90), industry) + 0.260 * group_rank(ts_rank(rp_nip_labor, 90), industry) + 0.160 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * rank(-(close / open - 1)) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh RavenPack labor parent; strict-check against e7OQoveE and social/news actives."
+  },
+  {
+    "name": "v135_legal_credit_no_mna",
+    "family": "legal_credit_news_without_mna",
+    "hypothesis": "Legal and credit news may retain quality information without the M&A component that made v134 BAM collide with e7OQoveE.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.280 * group_rank(ts_rank(rp_css_legal, 90), industry) + 0.220 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.220 * group_rank(ts_rank(rp_css_credit, 90), industry) + 0.120 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.090 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Removes mean_merger_acquisition_sentiment and rp_nip_credit_ratings mix from e7OQoveE; likely high-corr but worth one clean test."
+  }
+]

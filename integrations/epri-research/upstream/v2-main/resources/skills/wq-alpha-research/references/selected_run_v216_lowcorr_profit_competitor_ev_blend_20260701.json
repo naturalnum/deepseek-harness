@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v216_profit_comp_ev_light_balance",
+    "family": "lowcorr_profit_competitor_ev_blend",
+    "hypothesis": "A lightweight proxy for the local ACTIVE-PnL low-corr blend LLpGdlrm + E5wRq3ZG + A1wrAX3E: combine intraday reversal/profitability, product-peer EV cash profitability, competitor-return absorption, earnings attention, and volume exhaustion without current-accrual, sales-delivery, treasury, option-curve, or capex-guidance sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.160 * rank(-(close / open - 1)) + 0.150 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.170 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.160 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.160 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.100 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Strict-check against RRpmOAWj, LLpGdlrm, E5wRq3ZG, A1wrAX3E, 58w2kxAz, and FCF/value/cash-profit blockers. Submit only if corr < 0.68 and all live checks pass."
+  },
+  {
+    "name": "v216_ev_profit_comp_no_openclose",
+    "family": "lowcorr_profit_competitor_ev_blend",
+    "hypothesis": "Test whether the EV profitability + competitor/earnings parent can stand without the common open-close reversal sleeve. Low beta and volume exhaustion act as stabilizers, reducing direct overlap with LLpGdlrm and 58w2kxAz.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.190 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.180 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.130 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.110 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No open-close, no current-accrual, no option, no capex guidance. Main risk is direct mapping to E5wRq3ZG / A1wrAX3E; correlation gate decides."
+  },
+  {
+    "name": "v216_ev_profit_comp_low_spy_corr_regime",
+    "family": "lowcorr_profit_competitor_ev_blend",
+    "hypothesis": "Use the short-vs-long SPY correlation regime that previously separated one competitor/earnings path, but replace cashflow_op with product-peer EV profitability. This asks whether the regime opens a separate EV-profit capacity rather than another E5w8oepG sibling.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.210 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.170 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.180 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.130 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * group_rank(ts_rank(operating_income / equity, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Regime-gated to lower ordinary value/reversal overlap. Reject if it maps to E5w8oepG, A1wrAX3E, E5wRq3ZG, or 58w2kxAz."
+  },
+  {
+    "name": "v216_ev_comp_issuance_decorr",
+    "family": "lowcorr_profit_competitor_ev_blend",
+    "hypothesis": "Add a small, explicitly capped low-issuance discipline sleeve to the EV profitability + competitor parent. The goal is not an issuance sibling, but a third low-pair-correlation parent that may lower overlap with both EV-value and competitor/earnings actives.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.190 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.160 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.160 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.120 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), industry) + 0.100 * rank(-(close / open - 1)) + 0.090 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Issuance sleeve is intentionally below one quarter of total weight because 1Y7jgeXX occupies the direct low-issuance route. Submit only if corr clears 1Y7jgeXX, E5wRq3ZG, A1wrAX3E, and 58w2kxAz."
+  }
+]

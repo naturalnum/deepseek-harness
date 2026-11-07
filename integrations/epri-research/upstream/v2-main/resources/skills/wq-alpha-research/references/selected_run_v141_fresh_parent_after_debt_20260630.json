@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v141_grossincome_actual_delivery",
+    "family": "gross_income_actual_delivery",
+    "hypothesis": "Actual annual gross income that is strong versus assets and close to a well-covered analyst consensus should capture delivered margin quality, not the already-occupied management gross-income guidance parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_grossincome_value / assets, 126), industry) + 0.240 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_grossincome_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_grossincome_value / assets - anl4_fs_detail_estimates_advanced_af_nd_grossincome_mean / assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_grossincome_high / assets - anl4_fs_detail_estimates_advanced_af_nd_grossincome_low / assets), 126), industry) + 0.120 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A deliberate parent shift from gross-income guidance/capex to actual-vs-consensus gross-income delivery; strict-check against QPaze5zX and e7OVEPxp."
+  },
+  {
+    "name": "v141_special_eps_cleanliness",
+    "family": "diluted_eps_special_item_cleanliness",
+    "hypothesis": "Small diluted-EPS effects from writedowns, restructuring, and nonrecurring taxes may represent cleaner earnings than the pretax/AQI accounting-quality route that is already occupied.",
+    "expression": "0.320 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_eventv110_wddq)) / close, 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_rcdq)) / close, 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_eventv110_nrtxtdq)) / close, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses diluted EPS impact fields rather than debt extinguishment, pretax writedown, AQI, customer authority, or operating-income legs."
+  },
+  {
+    "name": "v141_option_model_vol_compression",
+    "family": "non_pcr_option_model_residual",
+    "hypothesis": "A compressed option-vol surface plus conservative model derivative ranks may isolate low-crowding risk premia without using the crowded PCR, breakeven, social, or foreign-sales parents.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_720 - implied_volatility_mean_90), 90), industry) + 0.230 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_180), 90), industry) + 0.200 * rank(-1 * multi_factor_static_score_derivative) + 0.150 * rank(-1 * growth_potential_rank_derivative) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "One-shot test of option/model residuals after option-vol-surface LSUS history; no PCR, put/call breakeven, social, or cross-border features."
+  },
+  {
+    "name": "v141_partner_news_breadth_lowhub",
+    "family": "partner_news_breadth",
+    "hypothesis": "Positive partner news with broad partner coverage and lower competitor-hub exposure can capture business-development quality distinct from relationship return spillovers.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.320 * group_rank(ts_rank(rp_nip_partner, 126), industry) + 0.240 * group_rank(ts_rank(rp_css_partner, 126), industry) + 0.190 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.130 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids rel_ret_part, rel_ret_comp, customer graph authority, and session-news microstructure; tests partner breadth as its own parent."
+  },
+  {
+    "name": "v141_cff_actual_financing_relief",
+    "family": "financing_cashflow_actual_delivery",
+    "hypothesis": "Lower absolute financing cash flow and steadier financing expectations may identify firms with less external capital dependency, a route adjacent to but not identical to debt-ratio deleveraging.",
+    "expression": "0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / assets, 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests financing-cash-flow dependency rather than total debt/assets; close if it behaves like the weak CFF/CFO guidance family."
+  },
+  {
+    "name": "v141_dividend_estimate_stability",
+    "family": "dividend_estimate_stability",
+    "hypothesis": "Sustainable dividend expectations with tight dispersion and increasing analyst coverage may provide a stability signal that is not the same as forward-return option overlays.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_div_high / close - anl4_fs_detail_estimates_basic_af_v4_nd_div_low / close), 126), industry) + 0.190 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A compact retry of dividend-estimate stability without option forward, PCR, buyback, or heavy reversal legs."
+  }
+]

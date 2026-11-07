@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v274_news18_bee_largecap_fade",
+    "family": "news18_event_surface_extension",
+    "hypothesis": "RavenPack's direct earnings evaluation score may capture a different transform of earnings news than the submitted earnings_evaluation_sentiment alpha; a slow large-cap fade tests whether analyst/news overreaction persists while strict correlation gate blocks near duplicates.",
+    "field_notes": "Uses nws18_bee, not earnings_evaluation_sentiment or nws18_ber_fast_d1. Same robust vector-safe cap-gated template, with strict corr gate expected to reject duplicates.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_bee), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v274_rp_ess_earnings_largecap_fade",
+    "family": "news18_event_surface_extension",
+    "hypothesis": "Event sentiment score of earnings news is a lower-level event surface; fading smoothed large-cap earnings event sentiment may preserve the successful mechanism but with different PnL timing than the average earnings-evaluation field.",
+    "field_notes": "Uses rp_ess_earnings, previously unused locally, and will be abandoned if it errors or correlates too highly to npg5egk8/qMAJGLQv.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(rp_ess_earnings), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v274_rp_css_earnings_largecap_fade",
+    "family": "news18_event_surface_extension",
+    "hypothesis": "Composite sentiment score of earnings news may aggregate a different RavenPack scoring layer; this tests whether composite earnings sentiment gives an independent enough slow fade.",
+    "field_notes": "This is closer to existing earnings news capacity and should only submit if correlation stays below the strict frontier gate.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(rp_css_earnings), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v274_corporate_action_sentiment_largecap_fade",
+    "family": "news18_event_surface_extension",
+    "hypothesis": "Corporate action announcement sentiment can be overinterpreted around buybacks, splits, and other actions; a cap-gated slow fade tests a broader corporate-action surface than the M&A-specific route, which was too weak alone.",
+    "field_notes": "Uses corporate_action_sentiment, a low-alphaCount field distinct from merger_acquisition_sentiment.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(corporate_action_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v274_news18_acb_largecap_fade",
+    "family": "news18_event_surface_extension",
+    "hypothesis": "The RavenPack ACB corporate-action announcement score is another corporate-action layer; fading it in liquid large caps may capture announcement overreaction without relying on earnings surfaces.",
+    "field_notes": "Uses nws18_acb, not the M&A-specific field. This is a corporate-action surface probe.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_acb), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v274_legal_event_sentiment_largecap_fade",
+    "family": "news18_event_surface_extension",
+    "hypothesis": "Legal-news event sentiment may trigger short-run overreaction but mean-revert in large liquid names; it is economically distinct from earnings release/evaluation and could add lower-correlation capacity.",
+    "field_notes": "Uses rp_ess_legal. This is a cautious single legal-news probe; do not expand if LSUS or correlation fails.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(rp_ess_legal), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

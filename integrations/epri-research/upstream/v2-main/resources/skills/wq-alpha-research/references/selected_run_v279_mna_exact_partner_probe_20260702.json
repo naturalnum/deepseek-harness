@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v279_mna_bam_exact_outside_minus_050",
+    "hypothesis": "The v276 gated compression failed to remove the M&A-credit/legal carrier; exact outside subtraction should better match the local daily-PnL residual grid.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.62, 0.420 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 90), industry) + 0.220 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.150 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)), -1) - 0.50 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v279_mna_bam_exact_outside_minus_060",
+    "hypothesis": "A stronger exact subtraction may reduce the e7OQoveE blocker further if the 0.50 residual still sits near the correlation boundary.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.62, 0.420 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 90), industry) + 0.220 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.150 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)), -1) - 0.60 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v279_rp_css_mna_exact_outside_minus_050",
+    "hypothesis": "RavenPack composite M&A sentiment may carry a different event-quality surface than BAM; exact carrier removal tests whether it has independent residual value.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.62, 0.500 * group_rank(ts_rank(rp_css_mna, 90), industry) + 0.150 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)), -1) - 0.50 * (0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v279_partner_event_largecap_fade",
+    "hypothesis": "Partnership-related event sentiment can represent commercial-network changes rather than earnings or corporate-action surfaces; slow fade tests overreaction.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * rp_ess_partner, 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v279_investor_relations_impact_largecap_fade",
+    "hypothesis": "Investor-relations impact news may capture management communication shocks distinct from earnings-event evaluation if smoothed and cap-gated.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * rp_nip_inverstor, 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v185_cfi_largecap_lsus_repair",
+    "family": "cfi_guidance_top1000_lsus_repair",
+    "hypothesis": "The only historical metric-pass seed below the strict local ACTIVE-correlation gate is a CFI guidance discipline signal, but it fails sub-universe Sharpe. A stricter large-cap gate plus lower absolute CFI expectation and analyst-breadth confirmation tests whether the signal can become TOP1000 robust without option/social sleeves.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.300 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfi_mean) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.080 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Controlled single repair of mL87NgRK. Kill if LOW_SUB_UNIVERSE remains or if corr moves toward omKWa3jn/LLprjdP9/e7OVEPxp."
+  },
+  {
+    "name": "v185_defined_benefit_payment_slope_relief",
+    "family": "defined_benefit_future_payment_schedule",
+    "hypothesis": "A lower and smoother defined-benefit payment schedule should reduce long-horizon labor and benefit obligation drag. This uses fresh benefit-payment schedule fields rather than the previously weak defined-contribution or broad pension-core fields.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.220 * group_rank(ts_rank(-1 * (future_benefit_payments_next_12mo + expected_benefit_payments_year2 + expected_future_benefit_payment_year_three) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * (db_plan_future_payments_year4 + pension_expected_payment_year_five + future_benefit_payments_post_year5) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * defined_benefit_plan_interest_cost / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(-1 * defined_benefit_plan_service_cost / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(ts_delta(db_plan_periodic_benefit_cost / abs(sales), 252)), 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "New schedule-specific pension/benefit probe. Do not repair with stock-comp, lease, or ordinary profitability if weak."
+  },
+  {
+    "name": "v185_afs_amortized_cost_oci_relief",
+    "family": "available_for_sale_securities_mark_to_market_cleanliness",
+    "hypothesis": "Cleaner available-for-sale securities exposure, low OCI adjustment magnitude, and stable amortized cost may proxy lower mark-to-market balance-sheet noise. This is a lighter amortized-cost version of prior weak AFS/derivative probes.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.240 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_adjustment) / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_net) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(ts_delta(available_for_sale_securities_amortized_cost / abs(assets), 252)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(amortized_cost_available_securities) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled AFS amortized-cost probe. Prior AFS/OCI was weak, so kill unless metrics are clearly above gate."
+  },
+  {
+    "name": "v185_news12_pe_short_relief_value",
+    "family": "news12_snapshot_valuation_short_pressure",
+    "hypothesis": "Cold news12 P/E snapshot fields may carry a valuation signal distinct from intraday reaction fields. Favor positive low P/E names with lower short-interest pressure and lower broad-market correlation.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(if_else(vec_avg(price_to_earnings_ratio_value) > 0, -1 * vec_avg(price_to_earnings_ratio_value), -1 * abs(vec_avg(price_to_earnings_ratio_value))), 90), industry) + 0.220 * group_rank(ts_rank(if_else(vec_avg(main_share_price_to_earnings_ratio) > 0, -1 * vec_avg(main_share_price_to_earnings_ratio), -1 * abs(vec_avg(main_share_price_to_earnings_ratio))), 90), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(shares_sold_short_count_5_1555), 90), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.080 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Not a US News intraday reaction sibling. Reject if it maps to ordinary value/reversal or short-interest weak routes."
+  },
+  {
+    "name": "v185_gap_acceptance_liquidity_confirmation",
+    "family": "quantaalpha_gap_acceptance_pv",
+    "hypothesis": "An overnight gap that is accepted intraday, accompanied by controlled range and improving liquidity, may continue after delay-1 without relying on fundamental or news fields.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.340 * rank(ts_rank((open / ts_delay(close, 1) - 1) * ((close - open) / open), 20)) + 0.220 * rank(ts_rank((close - vwap) / close, 20)) + 0.180 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.140 * rank(ts_rank(volume / adv20, 20)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure PV structure from QuantaAlpha-style gap acceptance. Watch turnover and corr to close/open/VWAP actives."
+  },
+  {
+    "name": "v185_gap_rejection_exhaustion_reversal",
+    "family": "quantaalpha_gap_rejection_exhaustion_pv",
+    "hypothesis": "When gap direction and intraday acceptance are weak under elevated volume, the move may be an exhaustion event. This tests a PV-only rejection signal separate from news event-day fields.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.55, 0.300 * rank(-1 * ts_rank((open / ts_delay(close, 1) - 1) * ((close - open) / open), 20)) + 0.250 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.180 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.150 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "PV-only exhaustion/reversal. Reject if turnover is too high or if it reconstructs existing close/open reversal capacity."
+  }
+]

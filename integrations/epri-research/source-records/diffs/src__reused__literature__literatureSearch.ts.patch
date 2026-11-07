@@ -1,0 +1,107 @@
+--- packages/desktop/src/process/resources/builtinMcp/literatureSearch.ts
++++ src/reused/literature/literatureSearch.ts
+@@ -32,6 +32,7 @@
+   startYear?: number;
+   endYear?: number;
+   timeoutMs?: number;
++  signal?: AbortSignal;
+ }
+ 
+ export interface LiteraturePaper {
+@@ -231,24 +232,18 @@
+   });
+ };
+ 
+-const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string, string>): Promise<Response> => {
+-  const controller = new AbortController();
+-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+-  try {
++const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<Response> => {
+     return await fetch(url, {
+       headers: {
+         'User-Agent': PUBLIC_USER_AGENT,
+         ...headers,
+       },
+-      signal: controller.signal,
++      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
+     });
+-  } finally {
+-    clearTimeout(timer);
+-  }
+-};
+-
+-const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string, string>): Promise<T> => {
+-  const response = await withTimeout(url, timeoutMs, headers);
++};
++
++const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<T> => {
++  const response = await withTimeout(url, timeoutMs, headers, signal);
+   if (!response.ok) {
+     const body = await response.text().catch(() => '');
+     throw new Error(`${response.status} ${response.statusText}${body ? `: ${body.slice(0, 240)}` : ''}`);
+@@ -256,8 +251,8 @@
+   return (await response.json()) as T;
+ };
+ 
+-const fetchText = async (url: URL, timeoutMs: number, headers?: Record<string, string>): Promise<string> => {
+-  const response = await withTimeout(url, timeoutMs, headers);
++const fetchText = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<string> => {
++  const response = await withTimeout(url, timeoutMs, headers, signal);
+   if (!response.ok) {
+     const body = await response.text().catch(() => '');
+     throw new Error(`${response.status} ${response.statusText}${body ? `: ${body.slice(0, 240)}` : ''}`);
+@@ -287,7 +282,7 @@
+     url.searchParams.set('year', start === end ? String(start) : `${start}-${end}`);
+   }
+   const headers = options.semanticScholarApiKey ? { 'x-api-key': options.semanticScholarApiKey } : undefined;
+-  const payload = await fetchJson<{ data?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, headers);
++  const payload = await fetchJson<{ data?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, headers, options.signal);
+   return (payload.data || []).map((item, index) => {
+     const external = (item.externalIds || {}) as Record<string, unknown>;
+     const authors = Array.isArray(item.authors)
+@@ -321,7 +316,7 @@
+   if (filters.length) url.searchParams.set('filter', filters.join(','));
+   if (options.openAlexEmail) url.searchParams.set('mailto', options.openAlexEmail);
+   if (options.openAlexApiKey) url.searchParams.set('api_key', options.openAlexApiKey);
+-  const payload = await fetchJson<{ results?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000);
++  const payload = await fetchJson<{ results?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal);
+   return (payload.results || []).map((item, index) => {
+     const ids = (item.ids || {}) as Record<string, unknown>;
+     const primaryLocation = (item.primary_location || {}) as Record<string, unknown>;
+@@ -375,7 +370,7 @@
+   url.searchParams.set('max_results', String(options.maxResults));
+   url.searchParams.set('sortBy', 'relevance');
+   url.searchParams.set('sortOrder', 'descending');
+-  const xml = await fetchText(url, options.timeoutMs || 30000);
++  const xml = await fetchText(url, options.timeoutMs || 30000, undefined, options.signal);
+   const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gu)].map((match) => match[1]);
+   return entries
+     .map((entry, index): LiteraturePaper => {
+@@ -420,7 +415,8 @@
+   const payload = await fetchJson<{ message?: { items?: Array<Record<string, unknown>> } }>(
+     url,
+     options.timeoutMs || 30000,
+-    headers
++    headers,
++    options.signal
+   );
+   return (payload.message?.items || []).map((item, index) => {
+     const dateParts = ((item.published || item['published-print'] || item['published-online'] || {}) as Record<string, unknown>)[
+@@ -453,7 +449,7 @@
+   url.searchParams.set('q', options.query);
+   url.searchParams.set('h', String(options.maxResults));
+   url.searchParams.set('format', 'json');
+-  const payload = await fetchJson<{ result?: { hits?: { hit?: unknown } } }>(url, options.timeoutMs || 30000);
++  const payload = await fetchJson<{ result?: { hits?: { hit?: unknown } } }>(url, options.timeoutMs || 30000, undefined, options.signal);
+   return ensureArray(payload.result?.hits?.hit)
+     .map((hit, index): LiteraturePaper => {
+       const info = ((hit as Record<string, unknown>).info || {}) as Record<string, unknown>;
+@@ -478,7 +474,7 @@
+   const url = new URL('https://api2.openreview.net/notes/search');
+   url.searchParams.set('term', options.query);
+   url.searchParams.set('limit', String(options.maxResults));
+-  const payload = await fetchJson<{ notes?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000);
++  const payload = await fetchJson<{ notes?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal);
+   return (payload.notes || [])
+     .map((note, index): LiteraturePaper => {
+       const content = (note.content || {}) as Record<string, unknown>;

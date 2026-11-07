@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v166_custom_eps_guidance_confidence",
+    "family": "management_guidance_custom_eps",
+    "hypothesis": "Custom EPS annual guidance is a high-coverage, nearly unused management surface. A rising midpoint with a tight range may capture management confidence in adjusted profitability without directly copying ordinary analyst EPS yield.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_custom_eps_minguidance + anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance) / (2 * close), 63), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance - anl4_fs_guidances_advanced_af_nd_custom_eps_minguidance) / close, 126), industry) + 0.180 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_custom_eps_minguidance + anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance) / (2 * close), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "New annual custom-EPS guidance fields; strict-check against EPS/value actives and reject if it becomes ordinary EPS yield."
+  },
+  {
+    "name": "v166_adjusted_custom_eps_gap_clean",
+    "family": "management_guidance_non_gaap_quality",
+    "hypothesis": "A small gap between custom EPS guidance and adjusted EPS guidance may indicate less non-GAAP opacity. Pairing clean custom-vs-adjusted spread with tight guidance ranges targets credibility rather than headline EPS level.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.280 * group_rank(ts_rank(-1 * abs(((anl4_fs_guidances_advanced_af_nd_custom_eps_minguidance + anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance) - (anl4_fs_guidances_advanced_af_nd_epsa_minguidance + anl4_fs_guidances_advanced_af_nd_epsa_maxguidance)) / (2 * close)), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance - anl4_fs_guidances_advanced_af_nd_custom_eps_minguidance) / close, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_epsa_maxguidance - anl4_fs_guidances_advanced_af_nd_epsa_minguidance) / close, 126), industry) + 0.130 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_epsa_minguidance + anl4_fs_guidances_advanced_af_nd_epsa_maxguidance) / (2 * close), 63), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Credibility/opacity route, not EPS-yield route. Abandon if metrics are weak or corr maps to EPS/BVPS actives."
+  },
+  {
+    "name": "v166_fcf_guidance_vs_street_residual",
+    "family": "management_guidance_fcf_residual",
+    "hypothesis": "Management FCF guidance above street FCF median, with a narrow range and rising midpoint, may be a distinct cash-confidence residual rather than the weak old detail-estimate FCF surface.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.280 * group_rank(ts_rank(((anl4_fs_guidances_advanced_af_nd_fcf_minguidance + anl4_fs_guidances_advanced_af_nd_fcf_maxguidance) / 2 - anl4_fs_detail_estimates_advanced_af_nd_fcf_median) / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_fcf_minguidance + anl4_fs_guidances_advanced_af_nd_fcf_maxguidance) / (2 * abs(assets)), 63), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_fcf_maxguidance - anl4_fs_guidances_advanced_af_nd_fcf_minguidance) / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Differs from v50 by using management-guidance-vs-street residual instead of detail-estimate FCF level/range."
+  },
+  {
+    "name": "v166_bvps_guidance_vs_street_residual",
+    "family": "management_guidance_book_residual",
+    "hypothesis": "BVPS active capacity is occupied by analyst estimates and actual book value. A management guidance midpoint above street BVPS mean, with tight guidance, tests whether manager-street book-value disagreement carries a separate residual.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(((anl4_fs_guidances_advanced_af_nd_bvps_minguidance + anl4_fs_guidances_advanced_af_nd_bvps_maxguidance) / 2 - anl4_fs_detail_estimates_advanced_af_nd_bvps_mean) / close, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_bvps_maxguidance - anl4_fs_guidances_advanced_af_nd_bvps_minguidance) / close, 126), industry) + 0.170 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_bvps_minguidance + anl4_fs_guidances_advanced_af_nd_bvps_maxguidance) / (2 * close), 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) - 0.090 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Residualized against direct BVPS estimate level to avoid simple siblings of wpR9AnYd/9qwE360V."
+  },
+  {
+    "name": "v166_tangible_book_guidance_clean",
+    "family": "management_guidance_tangible_book",
+    "hypothesis": "Tangible BVPS guidance is less explored than BVPS estimate/actual levels. A tight and rising tangible-book guidance surface may identify cleaner capital backing while staying away from debt, lease, PPE, and deferred-revenue fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_tbvps_minguidance + anl4_fs_guidances_advanced_af_nd_tbvps_maxguidance) / (2 * close), 63), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_tbvps_maxguidance - anl4_fs_guidances_advanced_af_nd_tbvps_minguidance) / close, 126), industry) + 0.170 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_tbvps_minguidance + anl4_fs_guidances_advanced_af_nd_tbvps_maxguidance) / (2 * close), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tangible-book management guidance, not ordinary BVPS estimate/actual. Reject if high corr to BVPS actives."
+  }
+]

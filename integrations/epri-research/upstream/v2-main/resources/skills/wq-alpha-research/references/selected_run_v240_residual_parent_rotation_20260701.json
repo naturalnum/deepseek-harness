@@ -1,0 +1,47 @@
+[
+  {
+    "name": "v240_cost_aqi_anti_gross_residual",
+    "family": "residual_parent_rotation",
+    "hypothesis": "Operating cost discipline plus acquisition income contribution may be useful, but direct gross-income guidance is already crowded; subtracting that sleeve should leave a cleaner residual.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.180 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.240 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v240_backlog_cost_anti_gross_model",
+    "family": "residual_parent_rotation",
+    "hypothesis": "Backlog conversion and cost discipline should reward real demand absorption; a small model-quality term may stabilize it while a gross-guidance subtraction reduces old guidance exposure.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_obs), 252) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) - 0.260 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v240_model_cost_anti_gross_no_option",
+    "family": "residual_parent_rotation",
+    "hypothesis": "Model contrarian quality without option/news sleeves is weak alone, but may become useful as a residual confirmer for cost discipline after subtracting gross-income guidance crowding.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.180 * group_rank(ts_rank(fscore_value, 126), industry) + 0.220 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) - 0.260 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v240_contract_receivable_cost_residual",
+    "family": "residual_parent_rotation",
+    "hypothesis": "Deferred revenue growth is occupied, but pairing it with low receivables and cost discipline while subtracting gross-income guidance may test a billing-to-cost conversion residual rather than a pure backlog sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) - 0.220 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v240_workingcapital_cash_cost_residual",
+    "family": "residual_parent_rotation",
+    "hypothesis": "Non-cost working-capital restraint plus cash-income conversion may be a different expansion of the cost-conversion parent, provided it avoids the old backlog/inventory and gross-guidance exposures.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_wcapq / abs(assets), 252), 126), industry) + 0.220 * group_rank(ts_rank(fnd6_newa1v1300_ibc / abs(fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq), 126), industry) + 0.180 * group_rank(ts_rank(-1 * (fnd6_newqv1300_cogsq + fnd6_newqv1300_xoprq) / abs(sales), 126), industry) - 0.220 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

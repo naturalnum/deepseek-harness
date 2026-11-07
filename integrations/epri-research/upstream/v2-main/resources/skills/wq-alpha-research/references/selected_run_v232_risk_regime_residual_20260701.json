@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v232_pure_risk_compression",
+    "family": "risk_regime_residual",
+    "source": "v232_risk_regime_residual_20260701",
+    "hypothesis": "Stocks whose idiosyncratic risk, market correlation, and beta are falling versus their long-window baselines may represent de-crowding and lower required-risk states, without relying on old accounting, option, news, or guidance parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry) + 0.260 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry) + 0.220 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 126), industry) + 0.180 * group_rank(ts_rank(-1 * systematic_risk_last_90_days, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Pure risk-regime parent. Reject if weak, low-turnover, or high-corr to mL86Jle1 / technical late-pressure / model-option actives."
+  },
+  {
+    "name": "v232_risk_compression_liquidity_dryup",
+    "family": "risk_regime_liquidity_state",
+    "source": "v232_risk_regime_residual_20260701",
+    "hypothesis": "Risk compression may be more tradable when relative volume is below its recent norm, indicating lower crowd pressure rather than active liquidation.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.300 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry) + 0.240 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry) + 0.200 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 126), industry) + 0.160 * rank(-1 * ts_mean(returns, 5)) + 0.100 * rank(-1 * ts_rank(volume / adv20, 20)), -1)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Risk-regime plus liquidity dry-up. It intentionally avoids close-location and VWAP pressure used by mL86Jle1/v52."
+  },
+  {
+    "name": "v232_factor_loading_stability",
+    "family": "risk_loading_stability",
+    "source": "v232_risk_regime_residual_20260701",
+    "hypothesis": "Stable beta and stable SPY correlation can proxy cleaner factor exposure; paired with low idiosyncratic risk and a small short reversal term, it tests stability rather than raw de-risking.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs(beta_last_60_days_spy - beta_last_360_days_spy), 126), industry) + 0.280 * group_rank(ts_rank(-1 * abs(correlation_last_60_days_spy - correlation_last_360_days_spy), 126), industry) + 0.220 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry) + 0.200 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests stable loading rather than falling loading. Reject if it becomes a generic short-reversal/risk sleeve."
+  },
+  {
+    "name": "v232_idio_to_systematic_rotation",
+    "family": "risk_structure_rotation",
+    "source": "v232_risk_regime_residual_20260701",
+    "hypothesis": "A shift from idiosyncratic risk toward more systematic explained risk can indicate event-risk normalization; this may differ from the close-location/VWAP technical route and from accounting-quality parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 90), subindustry) + 0.240 * group_rank(ts_rank(systematic_risk_last_60_days - systematic_risk_last_360_days, 90), industry) + 0.200 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Event-risk normalization proxy with one small return-volume exhaustion term. Reject if LSUS fails or if correlation returns to mL86Jle1 / E5wRYVQR technical capacity."
+  }
+]

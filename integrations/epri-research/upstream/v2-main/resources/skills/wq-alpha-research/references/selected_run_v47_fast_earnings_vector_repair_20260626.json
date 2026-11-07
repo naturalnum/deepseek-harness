@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v47_fast_earnings_slow_window",
+    "family": "fast_earnings_vector_repair",
+    "source": "fast_earnings_vector_repair_v47_20260626",
+    "hypothesis": "Slower rank windows may preserve the fast earnings evaluation signal while reducing turnover enough to lift Fitness.",
+    "expression": "0.45 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Direct slow-window repair of KPbrjG81."
+  },
+  {
+    "name": "v47_fast_earnings_lower_turnover_126",
+    "family": "fast_earnings_vector_repair",
+    "source": "fast_earnings_vector_repair_v47_20260626",
+    "hypothesis": "A 126-day rank and higher decay should materially reduce turnover if signal persistence is real.",
+    "expression": "0.45 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 126), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 126), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "More aggressive turnover reduction; watch signal decay."
+  },
+  {
+    "name": "v47_fast_earnings_relevance_filter",
+    "family": "fast_earnings_vector_repair",
+    "source": "fast_earnings_vector_repair_v47_20260626",
+    "hypothesis": "Adding event relevance at modest weight may improve robustness without moving into M&A/credit/legal news.",
+    "expression": "0.40 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests whether relevance should be positive for fast earnings news, unlike v46 low-relevance generic news."
+  },
+  {
+    "name": "v47_fast_earnings_story_count_positive",
+    "family": "fast_earnings_vector_repair",
+    "source": "fast_earnings_vector_repair_v47_20260626",
+    "hypothesis": "For earnings evaluation, more story-event records may confirm the signal instead of being noise.",
+    "expression": "0.40 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Opposite sign of story count vs KPbrjG81."
+  },
+  {
+    "name": "v47_fast_earnings_no_generic_sentiment",
+    "family": "fast_earnings_vector_repair",
+    "source": "fast_earnings_vector_repair_v47_20260626",
+    "hypothesis": "Removing generic fast sentiment may reduce overlap with e7OQoveE and other event-sentiment actives.",
+    "expression": "0.55 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.25 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "More earnings-specific, fewer generic sentiment components."
+  },
+  {
+    "name": "v47_fast_earnings_industry_neutral",
+    "family": "fast_earnings_vector_repair",
+    "source": "fast_earnings_vector_repair_v47_20260626",
+    "hypothesis": "Industry neutralization may improve sub-universe stability for fast earnings events, though correlation must be checked.",
+    "expression": "0.45 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 90), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Neutralization variant of v47_fast_earnings_slow_window."
+  }
+]

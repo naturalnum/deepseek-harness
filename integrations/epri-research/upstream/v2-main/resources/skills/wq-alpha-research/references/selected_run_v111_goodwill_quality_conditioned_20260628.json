@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v111_goodwill_eps_customer_minus_rrpm_e5_015_008",
+    "family": "goodwill_eps_customer_quality_residual",
+    "source": "v111_goodwill_quality_conditioned_20260628",
+    "hypothesis": "O0p7wNOp is strong but blocked by operating-quality and goodwill/social-quality sleeves. Subtract a compact RRpm5LEo quality proxy plus a small E5wVN6gm goodwill/social proxy while keeping the EPS + customer-authority positive core.",
+    "expression": "0.525 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.250 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.200 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.090 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.070 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.009 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.007 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) - 0.006 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.006 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL synthetic: O0p7wNOp - 0.15*RRpm5LEo - 0.08*E5wVN6gm. Sharpe-like ~1.74, max corr ~0.657."
+  },
+  {
+    "name": "v111_goodwill_eps_customer_minus_rrpm_e5_015_010",
+    "family": "goodwill_eps_customer_quality_residual",
+    "source": "v111_goodwill_quality_conditioned_20260628",
+    "hypothesis": "Slightly stronger E5wVN6gm subtraction for more cushion if the light residual remains too close to goodwill/social-quality blockers.",
+    "expression": "0.519 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.250 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.200 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.090 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.073 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.011 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) - 0.008 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) - 0.007 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.009 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL synthetic: O0p7wNOp - 0.15*RRpm5LEo - 0.10*E5wVN6gm. Sharpe-like ~1.71, max corr ~0.650."
+  },
+  {
+    "name": "v111_goodwill_eps_customer_calm_rrpm",
+    "family": "goodwill_eps_customer_conditioned",
+    "source": "v111_goodwill_quality_conditioned_20260628",
+    "hypothesis": "Conditioning has repeatedly rescued strong crowded parents. Test whether goodwill/EPS/customer-authority under calm-return regime can separate from ordinary operating-quality and social-goodwill actives.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.550 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.250 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.200 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.060 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.040 * group_rank(ts_rank(operating_income / assets, 126), subindustry), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Regime-change probe for O0p7wNOp. Use as path-change candidate, not a coefficient sibling."
+  },
+  {
+    "name": "v111_pv13_quality_minus_payout_sheq_015_015",
+    "family": "pv13_operational_quality_residual",
+    "source": "v111_goodwill_quality_conditioned_20260628",
+    "hypothesis": "d5x1nqOj has strong product-hierarchy operating quality but maps to payout/profitability and shareholder-equity guidance. Subtract compact MPpGzqwr and O0p8JGJq proxies to isolate product-specific operating quality.",
+    "expression": "0.400 * group_rank(ts_rank(operating_income / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.150 * group_rank(ts_rank(-1 * debt / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.150 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.075 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.075 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.068 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) - 0.038 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Platform-PnL synthetic: d5x1nqOj - 0.15*MPpGzqwr - 0.15*O0p8JGJq. Sharpe-like ~1.66, max corr ~0.663."
+  },
+  {
+    "name": "v111_pv13_quality_minus_payout_sheq_025_015",
+    "family": "pv13_operational_quality_residual",
+    "source": "v111_goodwill_quality_conditioned_20260628",
+    "hypothesis": "Stronger payout/profitability subtraction for product-hierarchy operating quality. This may lower MPpGzqwr overlap while preserving the PV13 product-group core.",
+    "expression": "0.400 * group_rank(ts_rank(operating_income / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.150 * group_rank(ts_rank(-1 * debt / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.150 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.125 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.125 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.068 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) - 0.038 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Platform-PnL synthetic: d5x1nqOj - 0.25*MPpGzqwr - 0.15*O0p8JGJq. Sharpe-like ~1.61, max corr ~0.639."
+  }
+]

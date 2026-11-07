@@ -1,0 +1,9 @@
+# 科学发现 · 人机协作记录
+
+人填写研究问题，智能体通过 research_record_update 填写实验发现，人复核后提交。
+
+{{var|question: str, title="研究问题", owner="human"}}
+
+{{var|answer: str, title="实验发现", owner="agent"}}
+
+{{check|reviewed, title="已复核智能体结果与原始证据"}}

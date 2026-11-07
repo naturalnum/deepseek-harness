@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v152_cfi_update_cap60_market",
+    "family": "cfi_guidance_update_lsus_repair",
+    "hypothesis": "mL87NgRK failed only LOW_SUB_UNIVERSE despite strong Sharpe/Fitness; a stricter large-cap gate may remove small-cap contamination while preserving CFI guidance-update signal.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.340 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Primary TOP1000 robustness repair of mL87NgRK; strict-check against omKWa3jn/omKarE8m/O0p8JGJq if platform checks pass."
+  },
+  {
+    "name": "v152_cfi_update_level_blend_cap55",
+    "family": "cfi_guidance_update_lsus_repair",
+    "hypothesis": "Blending CFI guidance update with a modest level-discipline term may stabilize sub-universe behavior without reverting fully to omKWa3jn's absolute CFI-guidance parent.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.280 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Level term capped at 22% to avoid cloning omKWa3jn; reject if corr high."
+  },
+  {
+    "name": "v152_cfi_update_subindustry_cap50",
+    "family": "cfi_guidance_update_lsus_repair",
+    "hypothesis": "Subindustry peer ranking plus a cap gate may reduce small-cap/sub-universe fragility for the CFI update signal.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.360 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), subindustry) + 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), subindustry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), subindustry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Peer-axis robustness repair; not for submission if it becomes an omKWa3jn sibling."
+  },
+  {
+    "name": "v152_cfi_update_no_reversal_risk_only",
+    "family": "cfi_guidance_update_lsus_repair",
+    "hypothesis": "Removing the 5-day reversal term may reduce sub-universe instability and make the CFI update signal less dependent on short-cycle small-cap behavior.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.380 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No short reversal; tests whether LSUS came from timing sleeve rather than CFI update parent."
+  }
+]

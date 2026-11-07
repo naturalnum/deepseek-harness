@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v188_adjfactor_split_event_absorption",
+    "family": "pv1_adjustment_split_event_structure",
+    "hypothesis": "Large changes in price adjustment factors and split ratios capture corporate-action mechanics from PV data rather than news sentiment. A calmer post-adjustment return/volume path may indicate that the market has absorbed the mechanical event without crowding into ordinary corporate-action news.",
+    "expression": "trade_when(ts_rank(abs(ts_delta(adjfactor, 5)) + abs(split - 1), 252) > 0.55, 0.300 * group_rank(ts_rank(-1 * abs(ts_delta(adjfactor, 5)), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(split - 1), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(close - vwap) / close, 60), exchange) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.150 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "New PV1 mechanical-action route. Reject if it maps to corporate-action/news or pure risk-volume actives."
+  },
+  {
+    "name": "v188_adjustment_stability_listing_resilience",
+    "family": "pv1_adjustment_stability_listing_resilience",
+    "hypothesis": "Stocks with stable split/adjustment factors, tight VWAP tracking, and lower exchange-relative range may be mechanically cleaner listings. This tests a non-news, non-fundamental stability surface independent of analyst delivery and accounting cleanliness.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.280 * group_rank(ts_rank(-1 * abs(ts_delta(adjfactor, 20)), 126), exchange) + 0.220 * group_rank(ts_rank(-1 * abs(split - 1), 126), exchange) + 0.190 * group_rank(ts_rank(-1 * (high - low) / close, 60), exchange) + 0.170 * group_rank(ts_rank(-1 * abs(close - vwap) / close, 60), exchange) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests exchange-relative listing stability without close/open reversal, news, option, debt, or accounting fields."
+  },
+  {
+    "name": "v188_exchange_liquidity_dryup_relief",
+    "family": "exchange_relative_liquidity_microstructure",
+    "hypothesis": "Exchange-relative liquidity stability can capture mechanically resilient listings: lower range, lower VWAP dislocation, and less return-volume exhaustion within each exchange. This is a deliberately non-fundamental route to avoid current accounting/news blockers.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.75, 0.270 * group_rank(ts_rank(-1 * (high - low) / close, 60), exchange) + 0.240 * group_rank(ts_rank(-1 * abs(close - vwap) / close, 60), exchange) + 0.190 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.160 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure PV/risk structure. Reject if it high-correlates with risk-volume/VWAP active cluster."
+  },
+  {
+    "name": "v188_other_current_assets_opacity_release",
+    "family": "fnd6_other_current_assets_opacity",
+    "hypothesis": "Other current assets and sundry current assets can contain opaque balance-sheet items. Falling other-current-asset intensity without relying on payables, lease, tax, debt, or contract-liability fields may identify balance-sheet cleanup not already occupied by current-liability cleanliness.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.310 * group_rank(ts_rank(-1 * fnd6_acox / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * fnd6_acodo / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(fnd6_acox / abs(assets), 252), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_acoq)) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh current-asset opacity parent. Strict-check against A1wmZ22l/current-liability and MPpGzqwr accounting-quality actives."
+  },
+  {
+    "name": "v188_other_current_assets_event_clean",
+    "family": "fnd6_other_current_assets_event_clean",
+    "hypothesis": "Event updates to other current assets may matter when the change is small and non-current asset burden is not rising. This uses current-asset opacity as the parent, not payable/accrual liabilities or deferred revenue.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.300 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_acoq)) / abs(assets), 126), industry) + 0.230 * group_rank(ts_rank(-1 * fnd6_acox / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * fnd6_newqeventv110_ancq / abs(assets), 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Event-vector current-asset cleanup. If weak or high-corr, close this parent rather than doing current-asset siblings."
+  },
+  {
+    "name": "v188_capital_surplus_dilution_control",
+    "family": "fnd6_capital_surplus_dilution_control",
+    "hypothesis": "Capital surplus / share premium reserve growth can proxy equity issuance or dilution pressure without directly using buyback, share-count contraction, or treasury-stock fields. Lower capital-surplus expansion plus lower beta tests a non-buyback dilution-control surface.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_capsq)) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * fnd6_newqv1300_capsq / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Controlled dilution proxy without buyback/share-count fields. Reject if it maps to payout/dilution actives."
+  }
+]

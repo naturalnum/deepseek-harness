@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v109_pcr_epsr_minus_llp88z_020_005",
+    "family": "pcr_epsr_corr_rescue",
+    "source": "v109_pcr_epsr_corr_rescue_20260628",
+    "hypothesis": "v108 PCR/EPSR passed metrics but hit LLpZgaeL and buyback/reversal. Subtract a compact EPSR industry proxy plus a small buyback/reversal/ROE proxy while preserving PCR open-interest and PV13 EPSR product hierarchy.",
+    "expression": "0.150 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.205 * rank(-(close / open - 1)) + 0.113 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.175 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.125 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.080 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.050 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.040 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) - 0.018 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Platform-PnL residual proxy O0p6vo6q - 0.20*LLpZgaeL - 0.05*88zpWZ1X. Synthetic max corr ~0.687, near strict gate; included as high-strength light-residual probe."
+  },
+  {
+    "name": "v109_pcr_epsr_minus_llp88z_025_010",
+    "family": "pcr_epsr_corr_rescue",
+    "source": "v109_pcr_epsr_corr_rescue_20260628",
+    "hypothesis": "Stronger two-blocker subtraction targets the local safe zone where top corr shifted to RRpmOAWj around 0.66-0.67 while keeping enough Sharpe-like strength.",
+    "expression": "0.150 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.185 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.175 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.125 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.100 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.063 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.050 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) - 0.035 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "O0p6vo6q - 0.25*LLpZgaeL - 0.10*88zpWZ1X main terms. Platform-PnL synthetic Sharpe-like ~1.83, max corr ~0.670 vs RRpmOAWj."
+  },
+  {
+    "name": "v109_pcr_epsr_rrpmclean_025_010",
+    "family": "pcr_epsr_corr_rescue",
+    "source": "v109_pcr_epsr_corr_rescue_20260628",
+    "hypothesis": "Use the already low-reversal v108 version as base, then subtract LLpZgaeL and 88zpWZ1X. This sacrifices some strength for more correlation cushion against RRpmOAWj.",
+    "expression": "0.156 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.160 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.182 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.115 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.110 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.100 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.063 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.050 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) - 0.035 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.008 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "LLp8xkp2 - 0.25*LLpZgaeL - 0.10*88zpWZ1X. Synthetic max corr ~0.638, but strength may be lower."
+  },
+  {
+    "name": "v109_pcr_epsr_minus_llp88z_market",
+    "family": "pcr_epsr_corr_rescue",
+    "source": "v109_pcr_epsr_corr_rescue_20260628",
+    "hypothesis": "Neutralization ablation for the strongest safe-zone residual. MARKET neutralization may alter the platform PnL path versus industry EPSR blockers.",
+    "expression": "0.150 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.185 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.175 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.125 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.100 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.063 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.050 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) - 0.035 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Same expression as v109 0.25/0.10 but MARKET neutralized. Use as path-change ablation, likely high corr with sibling if one becomes ACTIVE."
+  },
+  {
+    "name": "v109_pcr_epsr_calm_trade_minus_llp",
+    "family": "pcr_epsr_corr_rescue_trade_when",
+    "source": "v109_pcr_epsr_corr_rescue_20260628",
+    "hypothesis": "If linear residuals remain high-corr, changing the trading regime may separate PCR/EPSR timing from LLpZgaeL / RRpmOAWj while keeping the high-quality core.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.150 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.175 * rank(-(close / open - 1)) + 0.105 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.095 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.095 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.080 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.050 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.040 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Regime/timing version rather than another coefficient sibling. Main risk is Sharpe loss or mapping to LLpKoQPa-like calm gate behavior."
+  }
+]

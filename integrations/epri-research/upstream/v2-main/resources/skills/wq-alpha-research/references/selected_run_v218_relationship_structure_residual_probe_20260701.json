@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v218_customer_intangible_breadth_residual",
+    "family": "relationship_structure_residual_probe",
+    "hypothesis": "Customer-related intangible capital can indicate durable customer contracts, but high customer-network crowding can signal dependency risk. Long companies with customer intangibles that are not simply customer graph clones, with low beta slope and mild reversal support.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(customer_related_intangibles_gross_value / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * accumulated_amortization_customer_intangibles_2 / abs(customer_related_intangibles_gross_value), 126), industry) + 0.180 * group_rank(ts_rank(rel_num_cust, 126), industry) - 0.170 * group_rank(ts_rank(pv13_ustomergraphrank_page_rank, 126), industry) + 0.120 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests a fundamental customer-asset surface rather than pure PV13 graph authority. Reject if it maps to RRpmO2xb, QPazq9nX, 3q7J5J1e, or relationship graph actives."
+  },
+  {
+    "name": "v218_segment_fx_netprofit_stability",
+    "family": "relationship_structure_residual_probe",
+    "hypothesis": "Lower intersegment eliminations and lower foreign-exchange noise, paired with stable attributable net-profit estimates, may capture cleaner multinational operating structure without using EBIT delivery or EV cash-profitability.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.240 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofita_mean / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netprofita_std / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A controlled version of the intersegment/foreign complexity surface. Reject if high-corr to e7OVQKGN, 9qwdEajr, d5xo7gvE, or foreign/FX LSUS families."
+  },
+  {
+    "name": "v218_sales_dispersion_count_regime",
+    "family": "relationship_structure_residual_probe",
+    "hypothesis": "Falling sales-estimate dispersion with improving analyst participation should indicate cleaner demand visibility. A low market-correlation regime gate aims to separate it from old sales-delivery and earnings/value actives.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.340 * group_rank(ts_rank(-1 * ts_delta(sales_estimate_standard_deviation / abs(sales), 63), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(sales_estimate_count_quarterly, 63), 126), industry) + 0.170 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.140 * group_rank(ts_rank(-1 * systematic_risk_last_90_days, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Targets analyst demand-visibility uncertainty, not sales actual/estimate delivery alone. Reject if it maps to rKoO0M89, akdb1ZqR, 58w2kxAz, or sales-delivery actives."
+  },
+  {
+    "name": "v218_debt_maturity_wall_relief",
+    "family": "relationship_structure_residual_probe",
+    "hypothesis": "Companies with lower near-term debt maturity pressure and real repayment discipline may be safer than firms that simply have low debt levels. This tests the user's debt idea through maturity structure instead of raw debt delta.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.250 * group_rank(ts_rank(-1 * fnd2_a_ltrmdmrepoplinnext12m / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * fnd2_a_ltrmdmrepoplinytwo / assets, 126), industry) + 0.170 * group_rank(ts_rank(debt_repayments_total_2 / assets, 126), industry) + 0.150 * group_rank(ts_rank(debt_repayment_year_three / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Debt maturity/repaid-principal structure only. Reject if it maps to old debt/CFF/credit-facility failures, WjpxeKkk net-debt capacity, or LSUS fragility."
+  },
+  {
+    "name": "v218_product_investor_relation_residual",
+    "family": "relationship_structure_residual_probe",
+    "hypothesis": "Positive product/service news and calmer investor-relations news may capture business execution without using earnings, EV cash profitability, or the news-chain/current-liability route.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.65, 0.260 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.210 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.170 * group_rank(ts_rank(rp_nip_business, 90), industry) - 0.150 * group_rank(ts_rank(abs(rp_css_inverstor), 90), industry) + 0.120 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-earnings news18 residual. Reject if high-corr to Vkp0P130, WjpJwMdP, omKZRRn2, or news-chain/alltype actives."
+  }
+]

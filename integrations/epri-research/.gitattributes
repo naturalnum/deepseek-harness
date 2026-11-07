@@ -1,0 +1,3 @@
+# Preserve the original formatting of third-party resource and patch files.
+upstream/** -whitespace
+source-records/diffs/** -whitespace

@@ -1,0 +1,17 @@
+# 电力测量通道线性标定
+
+填写同一量纲的标准值和测量值，自动计算线性拟合与残差。最大允许残差由本次任务的试验要求填写，单位与测量值相同；本方法不代替设备检定规程。
+
+最大允许拟合残差：{{var|max_residual: float = 0.1, gt=0, title="最大允许拟合残差", owner="human"}}
+
+{{var|points, title="标定数据表", owner="human", subvars=[var(point: str, title="测量点"), var(reference: float, title="标准值"), var(measured: float, title="测量值"), var(error: float, title="示值误差", owner="system")]}}
+
+## 自动计算
+
+斜率：{{var|slope: float, title="拟合斜率", owner="system"}}
+截距：{{var|intercept: float, title="拟合截距", owner="system"}}
+拟合优度：{{var|r2: float, title="拟合优度 R²", owner="system"}}
+最大拟合残差：{{var|residual: float, title="最大拟合残差", owner="system"}}
+满足本次残差限值：{{var|qc_pass: bool, title="残差质控通过", owner="system"}}
+
+{{check|verified, checked_message="已核对数据来源、量纲、残差限值及计算结果；质控结果仅适用于本次设定条件"}}

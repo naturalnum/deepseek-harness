@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v140_total_debt_slope_subindustry",
+    "family": "debt_asset_slope_subindustry_repair",
+    "hypothesis": "The v139 total debt/assets slope was strong but failed sub-universe Sharpe. Subindustry ranking and a milder technical risk term may reduce cross-industry leverage structure noise.",
+    "expression": "0.500 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), subindustry) + 0.230 * group_rank(ts_rank(-1 * ts_delta(debt_lt / assets, 252), 126), subindustry) + 0.170 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Repair of 2r76axK6 LOW_SUB_UNIVERSE_SHARPE; no AQI, FCF, operating-income, social, or guidance legs."
+  },
+  {
+    "name": "v140_largecap_total_debt_slope",
+    "family": "debt_asset_slope_largecap_repair",
+    "hypothesis": "Sub-universe failure may come from unstable small-cap balance-sheet updates. A large-cap gate can keep the deleveraging slope but remove noisy small names.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.520 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(debt_lt / assets, 252), 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Large-cap/liquid repair for 2r76axK6; strict-check against quality and guidance actives."
+  },
+  {
+    "name": "v140_high_leverage_deleveraging",
+    "family": "high_leverage_debt_reduction",
+    "hypothesis": "Debt reduction should matter more for firms that are still levered. Gating on high debt/assets may turn the signal from generic low-debt quality into active balance-sheet repair.",
+    "expression": "trade_when(rank(debt / assets) > 0.55, 0.520 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.250 * group_rank(ts_rank(-1 * ts_delta(debt_st / assets, 126), 126), industry) + 0.130 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Mechanism parent is high-leverage repair, not static low debt; should reduce overlap with static debt/assets ACTIVE alphas."
+  },
+  {
+    "name": "v140_debt_sales_slope",
+    "family": "debt_to_sales_deleveraging",
+    "hypothesis": "Debt/assets can inherit asset-quality noise. Debt-to-sales decline asks whether leverage is falling relative to revenue capacity, a different scaling of the same deleveraging idea.",
+    "expression": "0.460 * group_rank(ts_rank(-1 * ts_delta(debt / sales, 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * ts_delta(debt_st / sales, 126), 126), industry) + 0.150 * group_rank(ts_rank(-1 * debt / sales, 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Alternative denominator repair for v139; no value-sales or gross-profit terms."
+  },
+  {
+    "name": "v140_short_debt_share_relief",
+    "family": "current_liability_pressure_relief",
+    "hypothesis": "Short-debt pressure can be expressed as current debt share of current liabilities, not just current debt/assets. A falling share should capture refinancing stress relief.",
+    "expression": "0.420 * group_rank(ts_rank(-1 * ts_delta(debt_st / liabilities_curr, 126), 126), subindustry) + 0.260 * group_rank(ts_rank(-1 * ts_delta(liabilities_curr / assets, 126), 126), industry) + 0.180 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Repair of ZYpzjGbd by changing denominator and subindustry comparison."
+  },
+  {
+    "name": "v140_maturity_wall_relief",
+    "family": "debt_maturity_pressure",
+    "hypothesis": "Upcoming maturity obligations falling relative to assets should capture refinancing-risk improvement more directly than total debt balances.",
+    "expression": "0.400 * group_rank(ts_rank(-1 * debt_maturities_repayments_next12m / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * ts_delta(debt_maturities_repayments_next12m / assets, 126), 126), industry) + 0.200 * group_rank(ts_rank(-1 * debt_st / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Distinct refinancing-stress parent; uses footnote maturity wall rather than total debt level."
+  },
+  {
+    "name": "v140_interest_burden_pure_relief",
+    "family": "pure_interest_burden_relief",
+    "hypothesis": "v139 interest coverage was strong but too quality-correlated because of operating income. Removing operating income tests pure interest-burden relief from debt service pressure.",
+    "expression": "0.400 * group_rank(ts_rank(-1 * ts_delta(interest_expense / assets, 126), 126), industry) + 0.270 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Decorrelation attempt for QPazEQRw without operating_income/FCF/AQI."
+  },
+  {
+    "name": "v140_lowvol_short_debt_relief",
+    "family": "short_debt_lowvol_regime",
+    "hypothesis": "Debt improvement may be underreacted in calm, low-volatility regimes and more crowded during eventful periods. Low-vol gating may preserve short-debt strength while changing the PnL path.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.410 * group_rank(ts_rank(-1 * ts_delta(debt_st / assets, 126), 126), industry) + 0.250 * group_rank(ts_rank(-1 * debt_st / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Regime repair for ZYpzjGbd; no social/customer/news terms to avoid QPazq9nX/Vkp0P130 correlation."
+  }
+]

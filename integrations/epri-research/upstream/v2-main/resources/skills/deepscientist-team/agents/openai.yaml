@@ -1,0 +1,4 @@
+interface:
+  display_name: 'DeepScientist Team'
+  short_description: 'Coordinate isolated Git work and publish an evidence-backed report.'
+  default_prompt: "Use $deepscientist-team to plan bounded parallel work, dispatch role-scoped workers, integrate verified Git deliveries, and publish one openable report in the user's language."

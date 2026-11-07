@@ -1,0 +1,47 @@
+[
+  {
+    "name": "v241_generic_guidance_clarity",
+    "family": "non_cost_blindspot_rotation",
+    "hypothesis": "Broad management guidance that is tightening and improving across reported items may proxy higher planning visibility without using cost, gross-income, backlog, or working-capital parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * abs((vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance) - vec_avg(anl4_fs_guidance_af_v4_nd_minguidance)) / abs(vec_avg(anl4_fs_guidance_af_v4_nd_estimate))), 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_guidance_af_v4_nd_estimate), 63), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)), 126), industry) + 0.140 * group_rank(ts_rank(fscore_bfl_total, 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v241_shares_guidance_dilution_control",
+    "family": "non_cost_blindspot_rotation",
+    "hypothesis": "Falling guided share count and lower dilution adjustment should represent cleaner per-share economics, distinct from direct buyback, debt, or cost-conversion sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_shr_maxguidance + anl4_fs_guidances_advanced_af_nd_shr_minguidance) / (2 * common_stock_shares_outstanding_count), 63), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_shr_maxguidance - anl4_fs_guidances_advanced_af_nd_shr_minguidance) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.200 * group_rank(ts_rank(-1 * diluted_shares_outstanding_adjustment_avg / abs(common_stock_shares_outstanding_count), 126), industry) + 0.140 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v241_cfo_guidance_credibility",
+    "family": "non_cost_blindspot_rotation",
+    "hypothesis": "Improving and less dispersed CFO guidance, confirmed by actual CFO delivery, may capture cash-generation credibility without CFF/debt financing or gross-income guidance exposure.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_cfo_maxguidance + anl4_fs_guidances_advanced_af_nd_cfo_minguidance) / (2 * abs(assets)), 63), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfo_maxguidance - anl4_fs_guidances_advanced_af_nd_cfo_minguidance) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_cfo_value - anl4_fs_detail_estimates_advanced_af_nd_cfo_mean) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v241_recommendation_peer_relief",
+    "family": "non_cost_blindspot_rotation",
+    "hypothesis": "Within fine PV13 economic peers, fewer underweight calls and improving recommendation detail may capture analyst crowding relief that is different from EPS/EBIT delivery and social/news residuals.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.270 * group_rank(ts_rank(-1 * anl4_under / (anl4_total_rec + 1), 126), pv13_hierarchy_min20_3k_513_sector) + 0.220 * group_rank(ts_rank(ts_delta(anl4_buy / (anl4_total_rec + 1), 63), 126), pv13_hierarchy_min20_3k_513_sector) + 0.210 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), pv13_hierarchy_min20_3k_513_sector) + 0.150 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v241_bfl_peer_residual_no_news_option",
+    "family": "non_cost_blindspot_rotation",
+    "hypothesis": "Low-coverage BFL total/value/growth under a PV13 peer group may create a different model-style residual if it avoids option, news, book, cost, and analyst delivery sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(fscore_bfl_total, 126), pv13_hierarchy_min20_3k_513_sector) + 0.220 * group_rank(ts_rank(fscore_bfl_value, 126), pv13_hierarchy_min20_3k_513_sector) + 0.190 * group_rank(ts_rank(fscore_bfl_growth, 126), pv13_hierarchy_min20_3k_513_sector) - 0.160 * group_rank(ts_rank(fscore_bfl_momentum, 126), pv13_hierarchy_min20_3k_513_sector) + 0.170 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

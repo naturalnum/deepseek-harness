@@ -1,0 +1,13 @@
+--- packages/desktop/src/renderer/pages/conversation/Preview/components/ResearchGitWorkspace/researchStage.ts
++++ src/reused/science/researchStage.ts
+@@ -4,8 +4,8 @@
+  * SPDX-License-Identifier: Apache-2.0
+  */
+ 
+-import type { ProjectGitCommitSummary, ProjectGitResearchStageDisposition } from '@/common/types/office/preview';
+-import { normalizeResearchStrategy, parseResearchCommitSubject } from '@/common/chat/researchStrategy';
++import type { ProjectGitCommitSummary, ProjectGitResearchStageDisposition } from './gitTypes';
++import { normalizeResearchStrategy, parseResearchCommitSubject } from './researchStrategy';
+ 
+ export type ResearchStageTone =
+   | 'prompt'

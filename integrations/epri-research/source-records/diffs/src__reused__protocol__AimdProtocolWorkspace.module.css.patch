@@ -1,0 +1,12 @@
+--- packages/desktop/src/renderer/pages/conversation/Preview/components/AimdProtocolWorkspace/AimdProtocolWorkspace.module.css
++++ src/reused/protocol/AimdProtocolWorkspace.module.css
+@@ -1779,3 +1779,9 @@
+     transition: none;
+   }
+ }
++
++/* Host adapter: actions wrap inside a browser workbench rather than an Electron pane. */
++.headerMain { flex-wrap: wrap; }
++.headerMain > div:first-child { flex: 1 1 430px; }
++.headerActions { flex: 1 1 340px; flex-wrap: wrap; }
++.headerActions [role="status"] { order: 5; flex-basis: 100%; }

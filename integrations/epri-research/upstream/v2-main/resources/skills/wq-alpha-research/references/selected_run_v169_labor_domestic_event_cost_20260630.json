@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v169_labor_domestic_cost_relief",
+    "family": "labor_domestic_cost_relief",
+    "hypothesis": "Firms with constructive labor-news tone, low employee compensation obligations, and domestic operating support may have cleaner labor-cost execution than peers; this is a cost-control parent rather than a generic profitability or news12 event signal.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.220 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.180 * group_rank(ts_rank(rp_nip_labor, 126), industry) + 0.180 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.130 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.100 * group_rank(ts_rank(domestic_revenue_amount / abs(sales), 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary repair of JjpzWrnl using domestic operating confirmation, without SG&A/option/debt."
+  },
+  {
+    "name": "v169_domestic_focus_labor_confirm",
+    "family": "domestic_focus_labor_confirm",
+    "hypothesis": "Domestic operating focus was clean but below the submit line; adding labor-cost relief and a small special-items shock confirmer may lift Sharpe without making it a lease/PPE or balance-sheet guidance sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(domestic_revenue_amount / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(domestic_assets_total_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.110 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.080 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Primary repair of A1wmjY6d with labor and small special-items confirmation; strict-check against domestic/FX actives."
+  },
+  {
+    "name": "v169_special_items_labor_stabilized",
+    "family": "special_items_labor_stabilized",
+    "hypothesis": "Special-items event contrarian had high returns but low Sharpe; labor cost and domestic profitability may stabilize the event-shock parent without relying on AQI, customer graph, buyback, or broad value.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.170 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.160 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_rcpq)) / assets, 126), industry) + 0.130 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_spiq)) / assets, 126), industry) + 0.170 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.130 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.130 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Special-items stays below half weight and is stabilized by labor/domestic cost execution."
+  },
+  {
+    "name": "v169_employee_liability_release_domestic",
+    "family": "employee_liability_release",
+    "hypothesis": "A falling employee-compensation liability burden may indicate payroll/benefit obligation relief. Combining level and change with domestic EBIT should test a fundamental labor-cost release parent separate from RavenPack labor tone.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.240 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_liabilities / assets, 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_benefit_liabilities / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.080 * group_rank(ts_rank(rp_nip_labor, 126), industry) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "More fundamental-cost version; if weak, labor-cost release is not a standalone route."
+  },
+  {
+    "name": "v169_labor_sga_expectation_confirm",
+    "family": "labor_cost_sga_confirm",
+    "hypothesis": "SG&A expectation discipline alone was high-corr/low-Fitness, but a small analyst-cost expectation confirmer may improve labor-cost relief if kept subordinate to labor and employee-liability terms.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.170 * group_rank(ts_rank(rp_nip_labor, 126), industry) + 0.170 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.150 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * sg_and_a_expense_median / abs(sales), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(sg_and_a_expense_max - sg_and_a_expense_min) / abs(sales), 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "SG&A is <=22% combined; reject if it maps to xAxGJjNn/MPpGzqwr."
+  }
+]

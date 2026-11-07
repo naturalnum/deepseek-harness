@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v186_employee_release_corpaction_calm",
+    "family": "employee_liability_release_nonlabor_confirm",
+    "hypothesis": "Falling employee compensation and benefit liabilities can indicate lower payroll/benefit obligation drag. Corporate-action sentiment and sparse event flow are used as a genuinely different confirmer, avoiding the old labor-news, domestic EBIT, special-items, SG&A, lease, debt, and broad-quality sleeves.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.300 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_liabilities / abs(assets), 252), 126), industry) + 0.210 * group_rank(ts_rank(-1 * employee_compensation_liabilities / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.130 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.100 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Boundary test of RRpKadqj without labor/domestic/special-items. Kill if Fitness remains below gate or corr maps to d5xo7gvE/MPpGzqwr/3q7PkXGN."
+  },
+  {
+    "name": "v186_employee_release_no_domestic_lowrisk",
+    "family": "employee_liability_release_no_domestic_counterfactual",
+    "hypothesis": "This isolates the employee-liability release itself: falling compensation liabilities, falling benefit liabilities, lower defined-contribution cost, and lower market-risk linkage. If this fails, the earlier near-miss likely depended on the occupied labor/domestic support layer.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.310 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_liabilities / abs(assets), 252), 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_benefit_liabilities / abs(assets), 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.100 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure no-domestic/no-labor counterfactual. Do not repair with SG&A, lease/PPE, broad profitability, stock-comp, or special-items if weak."
+  },
+  {
+    "name": "v186_corporate_action_matrix_absorption",
+    "family": "corporate_action_news_absorption_corrected",
+    "hypothesis": "Positive corporate-action sentiment that is novel but not heavily repeated can capture constructive strategic or capital-structure announcements. This is the syntax-correct matrix/vector version of the earlier corporate-action idea, using vec_avg on vector fields instead of invalid event inputs.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.65, 0.300 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.220 * group_rank(ts_rank(vec_avg(corporate_action_sentiment), 90), industry) + 0.180 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.100 * group_rank(ts_rank(-1 * mean_entity_relevance_score, 90), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled corrected corporate-action probe. Reject if weak or if it maps to payout/news18-chain WjpJwMdP/simple equity-action capacity."
+  },
+  {
+    "name": "v186_event_sentiment_low_noise_matrix",
+    "family": "news18_event_sentiment_low_noise",
+    "hypothesis": "Mean event sentiment may be useful only when the event is low-crowding, lower-relevance, and not accompanied by strong return-volume pressure. This tests a broad event-sentiment surface distinct from the ACTIVE novelty-chain elapsed/staleness mechanism.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.280 * group_rank(ts_rank(mean_event_sentiment_score, 126), industry) + 0.200 * group_rank(ts_rank(mean_corporate_action_sentiment, 126), industry) + 0.170 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.140 * group_rank(ts_rank(-1 * mean_entity_relevance_score, 126), industry) + 0.120 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.090 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Broad matrix event-sentiment probe, not chain elapsed. Close if it is weak or high-corr to WjpJwMdP/product/business/news semantic actives."
+  },
+  {
+    "name": "v186_corpaction_sparse_downside_relief",
+    "family": "corporate_action_sparse_downside_relief",
+    "hypothesis": "Constructive corporate-action tone may matter more after muted downside pressure and sparse event repetition. This tests a calmer, more market-neutral corporate-action variant without direct buyback, debt, acquisition-accounting, or shareholder-yield fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(mean_corporate_action_sentiment, 126), industry) + 0.210 * group_rank(ts_rank(vec_avg(corporate_action_sentiment), 126), industry) + 0.170 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(ts_min(returns, 20)), 90), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Second corporate-action shape with a different risk/price path. If both corporate-action candidates fail, close this corrected route rather than keep mutating windows."
+  }
+]

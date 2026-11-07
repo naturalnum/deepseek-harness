@@ -1,0 +1,70 @@
+DeepScientist
+
+This distribution is a modified work based on AionUi.
+
+Upstream project:
+  AionUi
+  https://github.com/iOfficeAI/AionUi
+  Copyright 2025 AionUi (aionui.com)
+  Originally licensed under the Apache License, Version 2.0.
+
+DeepScientist modifications:
+  Copyright 2026 DeepScientist / ResearAI / DeepScientist contributors.
+  Starting from this DeepScientist fork/distribution, DeepScientist is
+  licensed under AGPL-3.0-only unless a file or third-party component
+  carries its own license notice.
+
+Preserved Apache notice:
+  The repository previously carried an Apache-2.0 notice for:
+  Copyright 2025 DeepScientist (deepscientist.cc)
+  That notice and the Apache-2.0 license text are preserved in
+  LICENSES/Apache-2.0.txt and THIRD_PARTY_NOTICES.md.
+
+Research skill acknowledgements:
+  DeepScientist includes or references research skill material from:
+  - ResearAI/DeepScientist
+    https://github.com/ResearAI/DeepScientist
+    Apache-2.0 project metadata.
+  - K-Dense-AI/scientific-agent-skills
+    https://github.com/K-Dense-AI/scientific-agent-skills
+    Repository-level MIT license; individual skills and referenced
+    databases/tools may carry additional terms.
+  - Auto-Empirical Research Skills
+    https://github.com/brycewang-stanford/Auto-Empirical-Research-Skills
+    Creative Commons Attribution-ShareAlike 4.0 International.
+    Copyright (c) 2026 CoPaper.AI.
+    DeepScientist materializes/adapts a curated subset as aer-* Science skills;
+    those adapted skill contents remain under CC BY-SA 4.0 ShareAlike terms.
+
+Major modifications in this fork include:
+  - Rebranding from the upstream desktop assistant lineage to DeepScientist.
+  - Science Mode planning and research-project workflow documentation.
+  - Medical Evidence Mode, source-labeled report surfaces, and evidence
+    workflow integrations.
+  - Scientific artifact preview concepts for figures, tables, reports,
+    notebooks, manuscripts, code, logs, review status, and source trails.
+  - New README images, localized README files, generated brand assets,
+    and DeepScientist-specific product documentation.
+  - Additional local MCP/tooling plans and research workflow integrations.
+
+Representative modified or added paths include:
+  - readme.md
+  - docs/readme/
+  - docs/specs/science-mode-architecture.zh-CN.md
+  - resources/readme/
+  - resources/deepscientist-logo.*
+  - packages/desktop/src/common/chat/
+  - packages/desktop/src/common/config/
+  - packages/desktop/src/process/resources/builtinMcp/
+  - packages/desktop/src/renderer/pages/conversation/
+  - packages/desktop/src/renderer/pages/settings/
+
+No endorsement:
+  AionUi, iOfficeAI, DeepScientist, and their original upstream
+  contributors do not endorse DeepScientist unless expressly stated.
+
+Third-party components:
+  Third-party dependencies, vendored skills, generated assets, and files
+  with their own license headers remain subject to their respective
+  license terms. See THIRD_PARTY_NOTICES.md for the current attribution
+  and audit notes.

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v225_model_option_chain_no_reversal",
+    "family": "model_option_news_chain_residual",
+    "hypothesis": "Fscore contrarian, long-tenor option convexity, and slow sparse-news-chain staleness are individually occupied, but a balanced no-open-close blend may create a different daily-PnL path while avoiding direct fscore/open-close and option/alltype siblings.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.190 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.150 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.120 * group_rank(ts_rank(fscore_value, 126), industry) + 0.190 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.130 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.130 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.080 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open sleeve; strict-check against 3q7jJ130, Vkpeno3w, WjpJwMdP, RRplYRpo, and news-chain actives."
+  },
+  {
+    "name": "v225_treasury_chain_model_calm",
+    "family": "treasury_news_chain_model_residual",
+    "hypothesis": "Balance-sheet investment-sale discipline may be more independent when paired with sparse event-chain timing and a small fscore contrarian component, rather than option/PCR/profitability sleeves that were occupied in v209.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(vec_avg(novelty_chain_elapsed_ms), 126), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.160 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids treasury+option, treasury+PCR, treasury+cash-profit siblings; kill if it maps to O0p2bElq, 2r72v5P8, or KPb2n2WE."
+  },
+  {
+    "name": "v225_recommendation_chain_fscore_lowrisk",
+    "family": "recommendation_news_chain_model_residual",
+    "hypothesis": "Recommendation detail was weak as a standalone analyst route, but pairing slow recommendation improvement with sparse-news-chain timing and model-risk relief may test a different analyst-opinion residual without EPS, sales, or guidance fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), industry) + 0.180 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.140 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses vec_avg recommendation detail to avoid event arithmetic; do not rescue if recommendation weakness or LSUS repeats."
+  },
+  {
+    "name": "v225_pv_pressure_chain_treasury",
+    "family": "pv_exhaustion_news_chain_treasury",
+    "hypothesis": "Return-volume exhaustion has been useful only as a timing layer; combining it with sparse-news-chain staleness and treasury allocation may create a non-close-location pressure residual distinct from VWAP/close-open technical actives.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.240 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.180 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.150 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.210 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No close/open or VWAP location. Kill if it becomes WjpJwMdP/O0p2bElq sibling or if turnover rises."
+  },
+  {
+    "name": "v225_option_recommendation_chain",
+    "family": "option_recommendation_news_chain_residual",
+    "hypothesis": "Long-tenor option convexity can be stabilized by analyst recommendation improvement and sparse event-chain timing rather than alltype social attention; this tests whether the option frontier has any non-alltype residual left.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), industry) + 0.160 * group_rank(ts_rank(vec_avg(novelty_chain_elapsed_ms), 126), industry) + 0.130 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled non-alltype option frontier test; stop if it is weak, LSUS-blocked, or high-corr to Vkpeno3w/KPb5bkwN."
+  }
+]

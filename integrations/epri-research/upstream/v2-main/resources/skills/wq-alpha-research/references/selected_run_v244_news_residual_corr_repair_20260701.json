@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v244_legal_credit_ma_pure_minus_earnings",
+    "family": "news_residual_corr_repair",
+    "hypothesis": "The v243 legal/credit/M&A residual was strong but correlated with the profitability/reversal active. Removing profitability and reversal tests whether the news residual itself carries submit-grade edge.",
+    "expression": "0.260 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.230 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.230 * group_rank(ts_rank(rp_nip_legal, 90), industry) - 0.300 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.080 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair for leVY90m7 high corr to LLpGdlrm and 0m7p1Lb1. No open-close, operating-income, EPS, option, CFO, cost, or sales-delivery terms."
+  },
+  {
+    "name": "v244_legal_credit_ma_anti_llpgdlrm",
+    "family": "news_residual_corr_repair",
+    "hypothesis": "If the strong v243 version was mostly a hidden profitability/reversal clone, explicitly subtracting those two sleeves should lower self-correlation while retaining legal/credit/M&A event information.",
+    "expression": "0.280 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.240 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.240 * group_rank(ts_rank(rp_nip_legal, 90), industry) - 0.260 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) - 0.120 * rank(-(close / open - 1)) - 0.100 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.120 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Aggressive correlation repair; reject if Sharpe/Fitness collapses or if still maps to LLpGdlrm / e7OQoveE."
+  },
+  {
+    "name": "v244_corporate_action_anti_product_business",
+    "family": "news_residual_corr_repair",
+    "hypothesis": "The v243 corporate-action/event residual was strong but mapped to product/business news actives. Subtracting product and business news tests corporate-action sentiment as a separate governance/capital-allocation channel.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.72, 0.320 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.180 * group_rank(ts_rank(mean_event_sentiment_score, 90), industry) + 0.180 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) - 0.180 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.140 * group_rank(ts_rank(rp_css_product, 90), industry) - 0.120 * group_rank(ts_rank(rp_nip_business, 90), industry) - 0.120 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.080 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair for 0m7L6xOq high corr to Vkp0P130/WjpJwMdP/O0pNbJ17. No reversal or option sleeve."
+  },
+  {
+    "name": "v244_corporate_action_largecap_lownews",
+    "family": "news_residual_corr_repair",
+    "hypothesis": "Corporate-action sentiment may be more robust in liquid names and less correlated when generic projected news impact is removed.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.340 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.200 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) - 0.180 * group_rank(ts_rank(mean_news_impact_projection, 90), industry) - 0.160 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) - 0.120 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.100 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Lower-noise corporate action repair; close the route if it remains high-corr to product/news-chain actives or falls below gates."
+  }
+]

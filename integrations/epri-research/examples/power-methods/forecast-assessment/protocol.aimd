@@ -1,0 +1,16 @@
+# 负荷预测结果评估
+
+导入相同时刻、同一单位的实际负荷和预测负荷，计算误差。本方法评价已有预测结果，不训练预测模型；使用独立测试时段并核对是否存在数据泄漏。
+
+本次允许的平均绝对误差：{{var|max_mae: float = 1.0, gt=0, title="平均绝对误差限值", owner="human"}}
+
+{{var|samples, title="负荷预测对比表", owner="human", subvars=[var(time: str, title="时刻"), var(actual: float, title="实际负荷"), var(predicted: float, title="预测负荷"), var(absolute_error: float, title="绝对误差", owner="system")]}}
+
+## 自动计算
+
+样本数：{{var|count: int, title="评估样本数", owner="system"}}
+MAE：{{var|mae: float, title="平均绝对误差 MAE", owner="system"}}
+RMSE：{{var|rmse: float, title="均方根误差 RMSE", owner="system"}}
+满足本次误差限值：{{var|qc_pass: bool, title="MAE 质控通过", owner="system"}}
+
+{{check|verified, checked_message="已核对时刻对应、负荷单位、测试时段独立性和误差限值；未将合成数据当作实际测量"}}

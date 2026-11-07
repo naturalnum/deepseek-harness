@@ -1,0 +1,20 @@
+--- packages/desktop/src/renderer/pages/conversation/Preview/components/AimdProtocolWorkspace/ProtocolDocumentBrowser.tsx
++++ src/reused/protocol/ProtocolDocumentBrowser.tsx
+@@ -4,13 +4,13 @@
+  * SPDX-License-Identifier: Apache-2.0
+  */
+ 
+-import DeepScientistIcon from '@/renderer/components/icons/DeepScientistIcon';
++import DeepScientistIcon from '../../ui/adapters/Icon';
+ import { Button, Spin, Tooltip } from '@arco-design/web-react';
+ import { PreviewOpen } from '@icon-park/react';
+ import React, { useEffect, useMemo, useState } from 'react';
+-import { useLocalFilePreview } from '../../hooks/useLocalFilePreview';
+-import MarkdownPreview from '../viewers/MarkdownViewer';
+-import type { ProtocolDocument } from './useProtocolDocuments';
++import { useLocalFilePreview } from '../../ui/adapters/openDocument';
++import MarkdownPreview from '../../ui/adapters/MarkdownPreview';
++import type { ProtocolDocument } from '../../ui/adapters/useProtocolDocuments';
+ import styles from './AimdProtocolWorkspace.module.css';
+ 
+ export type ProtocolDocumentBrowserLabels = {

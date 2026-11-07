@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v213_comp_sales_accrual_option_proxy",
+    "family": "light_active_pnl_proxy",
+    "hypothesis": "Compress the v212 low-corr 5-parent idea into one representative term per parent: profitability/reversal, competitor absorption, sales delivery, current-accrual release, and long-option curve. This should stay under the 64-operator platform limit.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.180 * rank(-(close / open - 1)) + 0.170 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.170 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.160 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(current_accrued_liabilities_total / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Lightweight proxy for v212 candidate 1. Strict-check against A1wrAX3E, npgrXA3q, 88zXVMGl, LLpGdlrm."
+  },
+  {
+    "name": "v213_eps_comp_accrual_lowcorr_proxy",
+    "family": "light_active_pnl_proxy",
+    "hypothesis": "A compact EPS/competitor/current-accrual proxy for the v212 four-parent blend. It removes news novelty and deep option terms to keep complexity low while preserving cross-parent diversification.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.180 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(current_accrued_liabilities_total / assets, 252), 126), industry) + 0.140 * rank(-(close / open - 1)) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Lightweight proxy for v212 candidate 2. It will likely collide if too EPS/reversal-heavy; rely on post-sim corr gate."
+  },
+  {
+    "name": "v213_aqi_social_accrual_option_proxy",
+    "family": "light_active_pnl_proxy",
+    "hypothesis": "A compact AQI/cashflow/social/accrual/option-curve blend inspired by the v212 composite. It tests whether social quality and accrual release can stabilize AQI without recreating one full existing parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.180 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.150 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(current_accrued_liabilities_total / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Lightweight proxy for v212 AQI/social/accrual corner. Reject if it maps back to e7O6NWzz or 88zXVMGl."
+  },
+  {
+    "name": "v213_comp_value_accrual_reversal_proxy",
+    "family": "light_active_pnl_proxy",
+    "hypothesis": "Compress the competitor/value hub plus accrual release path: competitor hub, sales-value, EPS value, competitor-return absorption, current-accrual release, and only a small reversal/risk sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.190 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.180 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.170 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(current_accrued_liabilities_total / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.080 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A compact proxy for the v212 competitor/value/AQI/accrual blend, but with AQI removed to lower overlap with AQI actives."
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v223_debt_reduction_interest_clean",
+    "family": "user_debt_reduction_baseline",
+    "hypothesis": "Companies reducing debt while interest burden and beta slope fall should be financially healthier; this directly audits the user's debt-reduction idea under current strict gates.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.230 * group_rank(ts_rank(-1 * interest_expense / abs(sales), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(sales / assets, 252), 126), subindustry) + 0.140 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Debt is historically crowded/high-corr, so this is a controlled baseline, not a preferred submit route."
+  },
+  {
+    "name": "v223_dividend_guidance_confidence",
+    "family": "dividend_guidance_stability",
+    "hypothesis": "Stable and improving dividend-per-share expectations with low analyst dispersion may indicate shareholder-return confidence without relying on buyback or share-count fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 63), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_div_high - anl4_fs_detail_estimates_basic_af_v4_nd_div_low) / close, 126), industry) + 0.140 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids direct buyback/share-count payout siblings; reject if it maps to existing payout/value capacity."
+  },
+  {
+    "name": "v223_sga_rd_operating_leverage_gap",
+    "family": "expense_guidance_operating_leverage",
+    "hypothesis": "Lower SG&A burden versus analyst expectation and restrained R&D guidance can signal operating leverage when analyst coverage is broadening.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_sga_value / abs(sales), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_sga_value - anl4_fs_detail_estimates_advanced_af_nd_sga_mean) / abs(sales), 126), industry) + 0.190 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance + anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance) / (2 * abs(sales)), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high - anl4_fs_detail_estimates_advanced_af_nd_sga_low) / abs(sales), 126), industry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different from the existing SG&A/option-award ACTIVE by removing stock-comp and option-award sleeves."
+  },
+  {
+    "name": "v223_rd_growth_low_dispersion",
+    "family": "rd_productivity_guidance",
+    "hypothesis": "R&D investment should be more valuable when sales growth is present and R&D guidance dispersion is low, separating productive innovation from unfocused spending.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(rd_expense / abs(sales), 126), subindustry) + 0.240 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance - anl4_fs_guidances_advanced_af_nd_rd_exp_minguidance) / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses R&D as a productive investment signal, not as ordinary EPS/profitability or buyback stabilization."
+  },
+  {
+    "name": "v223_advertising_efficiency_largecap",
+    "family": "advertising_efficiency",
+    "hypothesis": "Lower and stable advertising intensity paired with asset turnover may indicate efficient demand generation rather than expensive customer acquisition.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.340 * group_rank(ts_rank(-1 * abs(fnd6_xad) / abs(sales), 126), industry) + 0.230 * group_rank(ts_rank(sales / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_xad / abs(sales), 252)), 126), industry) + 0.140 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Large-cap repair of prior advertising LSUS weakness; reject if Fitness collapses or LSUS remains weak."
+  }
+]

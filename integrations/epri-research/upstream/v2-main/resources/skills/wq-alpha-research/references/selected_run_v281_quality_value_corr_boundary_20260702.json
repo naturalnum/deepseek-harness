@@ -1,0 +1,34 @@
+[
+  {
+    "name": "v281_quality_value_minus_qpa_010",
+    "hypothesis": "The v257 FCF/value minus EPSR-guidance residual is strong but blocked by direct operating-income/equity exposure; lowering the direct quality sleeve from 1.00 to 0.90 should preserve strength while targeting the strict correlation boundary.",
+    "expression": "0.90 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 1.00 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v281_quality_value_minus_qpa_015",
+    "hypothesis": "A 0.85 direct-quality weight gives more cushion versus QPaGVa3K while retaining most of the FCF/value residual according to the local PnL slope.",
+    "expression": "0.85 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 1.00 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v281_quality_value_minus_qpa_020",
+    "hypothesis": "A 0.80 direct-quality weight should move top correlation toward about 0.51 locally; reject if the quality sleeve reduction erodes Fitness below 1.10.",
+    "expression": "0.80 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 1.00 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v281_quality_value_minus_qpa_025",
+    "hypothesis": "A 0.75 direct-quality weight is the upper cushion edge; it is included only to test whether a weaker but still passable value residual remains if 0.90/0.85 are too correlated.",
+    "expression": "0.75 * (group_rank(ts_rank(operating_income / equity, 126), subindustry)) - 1.00 * (0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 1.00 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

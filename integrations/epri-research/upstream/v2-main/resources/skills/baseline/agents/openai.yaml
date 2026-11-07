@@ -1,0 +1,6 @@
+interface:
+  display_name: 'IOAI Baseline'
+  short_description: 'Run and confirm a sealed local IOAI baseline comparator'
+  default_prompt: 'Use $baseline to run, verify, and explicitly confirm the local comparator through ioai_competition.'
+policy:
+  allow_implicit_invocation: true

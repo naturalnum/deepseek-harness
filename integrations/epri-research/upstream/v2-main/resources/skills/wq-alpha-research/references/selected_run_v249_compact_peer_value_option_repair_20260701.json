@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v249_peer_opprofit_ev_no_fcf",
+    "family": "compact_peer_value_option_repair",
+    "hypothesis": "Operating-profit-to-enterprise-value ranked inside an underused PV13 product taxonomy, then differenced from ordinary industry rank, may keep the peer-value signal while avoiding the FCF/backlog carrier that blocked v248.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.520 * (group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min51_f3_513_sector) - group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)) + 0.220 * (group_rank(ts_rank(cash_flow_from_operations / assets, 126), pv13_hierarchy_min20_f3_513_sector) - group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry)) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Compact repair of v248_peer_fcf_ev_residual_unused_groups with FCF removed. Submit only if top ACTIVE daily-PnL corr <0.60 and LSUS passes."
+  },
+  {
+    "name": "v249_peer_fcf_ev_anti_contract",
+    "family": "compact_peer_value_option_repair",
+    "hypothesis": "The v248 peer FCF/EV near-miss may become distinct if its contract-liability/backlog-like overlap is explicitly penalized with one short anti-contract sleeve instead of adding more value/profitability legs.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.360 * (group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min30_3000_mapped_513_sector) - group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry)) + 0.260 * (group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min51_f3_513_sector) - group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)) - 0.200 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One-shot repair only. If corr remains above 0.60 or Sharpe/Fitness weakens, close FCF/EV peer residual rather than changing groups/windows."
+  },
+  {
+    "name": "v249_peer_margin_largecap_no_capex",
+    "family": "compact_peer_value_option_repair",
+    "hypothesis": "The v248 peer margin/capex signal failed TOP1000 robustness; removing capex and using a stricter large-cap gate tests whether pure product-peer margin quality has a stable large-cap core.",
+    "expression": "trade_when(rank(cap) > 0.62, 0.460 * (group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), pv13_hierarchy_min10_3k_all_sector) - group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), industry)) + 0.260 * (group_rank(ts_rank(operating_income / assets, 126), subindustry) - group_rank(ts_rank(operating_income / assets, 126), industry)) + 0.160 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "LSUS robustness probe, not a capex repair. Reject immediately on any LOW_SUB_UNIVERSE_SHARPE fail."
+  },
+  {
+    "name": "v249_simplified_option_ltv_payout_under64",
+    "family": "compact_peer_value_option_repair",
+    "hypothesis": "A short option term-structure and breakeven curve signal, penalized by long-term target-value revision and lightly supported by buyback yield, tests an under-64 version of the v248 option/LTV direction.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.260 * group_rank(ts_rank((option_breakeven_360 - option_breakeven_90) / close, 90), industry) - 0.220 * group_rank(ts_rank(vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest), 126), industry) + 0.130 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Simplified from the 75-operator v248 expression. Reject if warning-prone, high-corr to option/payout actives, or Fitness is only carried by ordinary profitability."
+  }
+]

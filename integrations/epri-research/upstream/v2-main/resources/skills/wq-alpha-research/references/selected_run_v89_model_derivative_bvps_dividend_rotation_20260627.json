@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v89_model_cashflow_certainty_contra",
+    "family": "model_derivative_non_fscore",
+    "hypothesis": "Cashflow-efficiency and earnings-certainty derivative scores were empirically contrarian in probes; value and open-close timing may turn them into a low-correlation model signal.",
+    "expression": "0.32 * rank(-1 * ts_rank(cashflow_efficiency_rank_derivative, 90)) + 0.28 * rank(-1 * ts_rank(earnings_certainty_rank_derivative, 90)) + 0.18 * rank(ts_rank(relative_valuation_rank_derivative, 90)) + 0.12 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_multifactor_accel_contra_value",
+    "family": "model_derivative_non_fscore",
+    "hypothesis": "Multi-factor acceleration/static derivatives may mean-revert; valuation and high decay test a slower alternative to the fscore surface route.",
+    "expression": "0.34 * rank(-1 * ts_rank(multi_factor_acceleration_score_derivative, 90)) + 0.24 * rank(-1 * ts_rank(multi_factor_static_score_derivative, 90)) + 0.20 * rank(ts_rank(relative_valuation_rank_derivative, 90)) + 0.12 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_composite_revision_contra_bfl_quality",
+    "family": "model_derivative_non_fscore",
+    "hypothesis": "A contrarian composite revision derivative may be less crowded if quality/profitability are used as slow stabilizers instead of option or payout sleeves.",
+    "expression": "0.34 * rank(-1 * composite_factor_score_derivative) + 0.20 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.18 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.16 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_bfl_profit_quality_contra_momentum",
+    "family": "bfl_model_quality",
+    "hypothesis": "BFL profitability and quality may provide a different model-style parent when combined with contrarian BFL momentum rather than fscore surface/growth/value.",
+    "expression": "0.32 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.28 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.18 * group_rank(ts_rank(-1 * fscore_bfl_momentum, 126), industry) + 0.12 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_bvps_actual_value_reversal",
+    "family": "analyst_bvps_guidance",
+    "hypothesis": "High actual BVPS yield and shareholder-equity support may form a slow book-value anchor; reversal sleeves test whether it can clear Sharpe without becoming a payout duplicate.",
+    "expression": "0.35 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_sh_equity_value / assets, 126), industry) + 0.18 * rank(-(close / open - 1)) + 0.15 * rank(-1 * ts_mean(returns, 5)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_bvps_estimate_confidence",
+    "family": "analyst_bvps_guidance",
+    "hypothesis": "High analyst BVPS estimate yield with low dispersion and rising coverage may capture book-value confidence distinct from EPS/PTP routes.",
+    "expression": "0.30 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_bvps_high - anl4_fs_detail_estimates_advanced_af_nd_bvps_low) / close, 126), industry) + 0.16 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_number, 63), 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_dividend_estimate_confidence",
+    "family": "analyst_dividend_guidance",
+    "hypothesis": "Dividend estimate yield, low dispersion, and rising estimate count may identify stable shareholder return without directly using buyback fields.",
+    "expression": "0.28 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.18 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_af_v4_nd_div_std / close, 126), industry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.16 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v89_cff_financing_visibility",
+    "family": "analyst_cff_guidance",
+    "hypothesis": "Lower expected financing cashflow magnitude, tighter CFF estimate dispersion, and rising coverage may signal less financing stress.",
+    "expression": "0.28 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_high - anl4_fs_detail_estimates_advanced_af_nd_cff_low) / abs(assets), 126), industry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v192_compact_news_option_current",
+    "family": "compact_lowcorr_parent_fusion",
+    "hypothesis": "Compact fusion of three low-correlated ACTIVE parents: news18 chain staleness, long-tenor option/alltype stability, and current-accrual cleanliness. Each sleeve is deliberately simple to stay under BRAIN's 64-operator limit.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.33 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.23 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Compressed replacement for over-limit v192 initial candidate. Strict-check against WjpJwMdP, Vkpeno3w, and A1wmZ22l."
+  },
+  {
+    "name": "v192_compact_option_current_book",
+    "family": "compact_lowcorr_parent_fusion",
+    "hypothesis": "Option/alltype convexity, current-accrual cleanliness, and actual book-value support had low pairwise correlations. This tests whether a three-parent balance can clear correlation without the news-chain sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.36 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.27 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.27 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "No WjpJwMdP leg; intended to reduce news self-correlation while keeping three distinct data sources."
+  },
+  {
+    "name": "v192_compact_news_option_ebit",
+    "family": "compact_lowcorr_parent_fusion",
+    "hypothesis": "News-chain staleness and option/alltype convexity are low-correlated; EBIT actual-vs-estimate delivery adds a slow analyst/fundamental delivery leg without using BVPS or contract-liability fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.33 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.23 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Designed to avoid direct BVPS/KPbZ0eLg and current-liability/A1wmZ22l dominance."
+  },
+  {
+    "name": "v192_compact_current_contract_option",
+    "family": "compact_lowcorr_parent_fusion",
+    "hypothesis": "Combines current-accrual cleanliness, contract-liability growth residual, and option/alltype convexity. It excludes receivable and gross-income guidance to reduce LLprjdP9 sibling risk.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(-1 * current_accrued_liabilities_total / assets, 126), industry) + 0.28 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.28 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A compact cross-parent blend; if it maps to LLprjdP9/A1wmZ22l, close this fusion branch."
+  },
+  {
+    "name": "v192_compact_book_residual_option_news",
+    "family": "compact_lowcorr_parent_fusion",
+    "hypothesis": "Actual BVPS minus analyst BVPS estimate may express realized book delivery rather than estimated book value. Option/alltype and news-chain sleeves are included as unrelated timing parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close - anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.33 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.23 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Explicit book residual; reject if it remains a wpR9AnYd/KPbZ0eLg sibling or loses strength."
+  },
+  {
+    "name": "v192_compact_current_flow_option_news",
+    "family": "compact_current_flow_fusion",
+    "hypothesis": "Uses change in current accrued liabilities instead of A1wmZ22l's level signal, then fuses with option/alltype and news-chain staleness. This tests whether the current-liability parent has a lower-correlation flow variant.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(-1 * ts_delta(current_accrued_liabilities_total / assets, 252), 126), industry) + 0.33 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.23 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Flow variant inspired by A1wmZ22l but not a level sibling. Stop if it repeats v163 flow weakness."
+  }
+]

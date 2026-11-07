@@ -1,0 +1,56 @@
+[
+  {
+    "name": "v284_netprofit_level_minus_eps_015",
+    "family": "analyst_netprofit_exact_residual",
+    "hypothesis": "Net-profit estimate yield is strong but overlaps with EPS yield; subtracting a small exact EPS-yield blocker should preserve net-profit-specific information and pass the strict correlation gate.",
+    "expression": "group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) - 0.15 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v284_netprofit_level_minus_eps_020",
+    "family": "analyst_netprofit_exact_residual",
+    "hypothesis": "A slightly stronger EPS-yield subtraction gives more self-correlation safety if the 0.15 boundary is still too close.",
+    "expression": "group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) - 0.20 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v284_netprofit_conf_minus_opquality_015",
+    "family": "analyst_netprofit_exact_residual",
+    "hypothesis": "Net-profit yield plus low dispersion is blocked by an operating-profit/quality active alpha; exact subtraction may leave the analyst-confidence component.",
+    "expression": "0.70 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_netprofit_high - anl4_fs_detail_estimates_advanced_af_nd_netprofit_low) / abs(enterprise_value), 126), industry) - 0.15 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v284_netprofit_conf_minus_opquality_020",
+    "family": "analyst_netprofit_exact_residual",
+    "hypothesis": "A stronger operating-quality subtraction should improve self-correlation margin while retaining the net-profit confidence parent.",
+    "expression": "0.70 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_netprofit_high - anl4_fs_detail_estimates_advanced_af_nd_netprofit_low) / abs(enterprise_value), 126), industry) - 0.20 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v284_netprofit_revision_minus_eps_opq_020",
+    "family": "analyst_netprofit_exact_residual",
+    "hypothesis": "The level+revision variant has multiple blockers; subtracting a compact average of EPS yield and operating quality may make it portfolio-incremental.",
+    "expression": "0.60 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) + 0.40 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 63), 126), industry) - 0.20 * (0.5 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.5 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry)))",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v284_netprofit_revision_minus_eps_opq_025",
+    "family": "analyst_netprofit_exact_residual",
+    "hypothesis": "A stronger average blocker subtraction may cross the strict correlation boundary with still-acceptable Sharpe.",
+    "expression": "0.60 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 126), industry) + 0.40 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 63), 126), industry) - 0.25 * (0.5 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.5 * (0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry)))",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

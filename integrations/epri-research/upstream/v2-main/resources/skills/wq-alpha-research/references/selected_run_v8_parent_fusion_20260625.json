@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v8_customer_pagerank_reversal_roe",
+    "family": "parent_fusion_relationship_variant",
+    "source": "parent_factor_fusion_v8_20260625",
+    "hypothesis": "Customer authority worked in v7; PageRank is a related but not identical network-centrality measure. Test whether customer network centrality survives a field change while close/open reversal keeps turnover and correlation controlled.",
+    "expression": "0.45 * group_rank(ts_rank(pv13_ustomergraphrank_page_rank, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Near-family test against RRpmO2xb; submit only if correlation gate passes clearly."
+  },
+  {
+    "name": "v8_competitor_hub_reversal_roe",
+    "family": "parent_fusion_competitor_graph",
+    "source": "parent_factor_fusion_v8_20260625",
+    "hypothesis": "Competitor graph hub score may capture competitive-network structure rather than customer-network authority. Pair with close/open reversal and a small ROE anchor.",
+    "expression": "0.45 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Distinct relationship mechanism from customer authority; watch sub-universe and correlation."
+  },
+  {
+    "name": "v8_news_open_gap_reversal_roe",
+    "family": "parent_fusion_news_gap",
+    "source": "parent_factor_fusion_v8_20260625",
+    "hypothesis": "Opening gaps around news can reflect auction overreaction. Reverse the smoothed gap signal and stabilize it with close/open reversal plus ROE quality.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * nws12_mainz_opengap, 20), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "News gap branch; different from earnings sentiment in RRpmOAWj."
+  },
+  {
+    "name": "v8_news_result_vs_index_reversal_roe",
+    "family": "parent_fusion_news_event_return",
+    "source": "parent_factor_fusion_v8_20260625",
+    "hypothesis": "Pure news relative performance failed earlier; reverse the event-relative return and use close/open reversal plus ROE as stabilizers.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * nws12_mainz_result_vs_index, 20), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether event-return reversal works after v5 positive news_indx_perf failed."
+  },
+  {
+    "name": "v8_option_pcr_reversal_roe",
+    "family": "parent_fusion_option_positioning",
+    "source": "parent_factor_fusion_v8_20260625",
+    "hypothesis": "Option put/call positioning alone was too weak, but a low-weight, smoothed PCR component may add crowding information to the close/open reversal parent.",
+    "expression": "0.30 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.45 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option branch with lower weight; likely high correlation with reversal parent if PCR adds little."
+  },
+  {
+    "name": "v8_option_skew_reversal_roe",
+    "family": "parent_fusion_option_skew",
+    "source": "parent_factor_fusion_v8_20260625",
+    "hypothesis": "Implied-volatility skew was weak alone. A smoothed skew term may proxy downside-demand/crowding when paired with close/open reversal and ROE.",
+    "expression": "0.30 * group_rank(ts_rank(implied_volatility_mean_skew_60, 60), industry) + 0.45 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option skew branch; keep only if it improves correlation-adjusted value."
+  }
+]

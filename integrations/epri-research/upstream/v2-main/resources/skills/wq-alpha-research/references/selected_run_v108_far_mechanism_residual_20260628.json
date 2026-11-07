@@ -1,0 +1,79 @@
+[
+  {
+    "name": "v108_pcr_epsr_surface_mix_050",
+    "family": "far_mechanism_pcr_epsr_surface",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "Combine option open-interest pressure / intraday reversal / ROE with product-hierarchy EPSR forecast confidence. Local PnL synthesis after 61 ACTIVE shows high Sharpe-like strength with max corr around 0.64, materially different from v105-v107 new sleeves.",
+    "expression": "0.150 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.225 * rank(-(close / open - 1)) + 0.125 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.175 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.125 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local synthetic 0.5*2r7p3lwJ + 0.5*blLON2zr: Sharpe-like ~2.22, max active corr ~0.643 vs omKoaQMl / E5wVN6gm / omKarE8m / RRpmOAWj."
+  },
+  {
+    "name": "v108_pcr_epsr_minus_rrpm_002",
+    "family": "far_mechanism_pcr_epsr_surface",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "A tiny anti-RRpmOAWj subtraction should preserve the PCR/EPSR cross-mechanism strength while reducing the earnings-sentiment / reversal / ROE overlap that is the most likely platform blocker.",
+    "expression": "0.150 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.218 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.175 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.125 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.100 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.008 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Approx 0.5*2r7p3lwJ + 0.5*blLON2zr - 0.02*RRpmOAWj. Local synthetic max corr ~0.641 and keeps high Sharpe-like ~2.19."
+  },
+  {
+    "name": "v108_pcr_epsr_low_reversal_minus_rrpm",
+    "family": "far_mechanism_pcr_epsr_surface",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "Shift a little weight away from the shared close/open reversal term and toward EPSR breadth / risk relief. This tests whether the PCR/EPSR mix can clear correlation without leaning too heavily on the crowded RRpmOAWj / 0m7p1Lb1 reversal sleeve.",
+    "expression": "0.156 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.200 * rank(-(close / open - 1)) + 0.115 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.182 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.115 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.110 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) - 0.008 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Mechanism-shift sibling of the PCR/EPSR primary. If candidate 1 or 2 becomes ACTIVE, this should be blocked by the serial local corr gate."
+  },
+  {
+    "name": "v108_ptp_option_partner_mix_075",
+    "family": "ptp_option_partner_crosspath",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "Pretax forecast confidence alone repeatedly failed or collided with EPSR; adding a smaller option breakeven / partner-count sleeve may change the PnL path enough to pass sub-universe and correlation gates.",
+    "expression": "0.300 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.188 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.113 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.138 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.063 * rank(-(close / open - 1)) + 0.050 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local synthetic 0.75*1Y7Zoj2J + 0.25*vRLjkQdw: Sharpe-like ~2.06, max corr ~0.654. Watch LOW_SUB_UNIVERSE_SHARPE from old PTP residuals."
+  },
+  {
+    "name": "v108_epsr_option_partner_mix_067",
+    "family": "epsr_option_partner_crosspath",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "EPSR product-hierarchy confidence is high-corr as a standalone parent; combining it with option breakeven and partner breadth may turn it into a separate timing sleeve with acceptable corr cushion.",
+    "expression": "0.235 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.168 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.134 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.134 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) + 0.182 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.083 * rank(-(close / open - 1)) + 0.066 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local synthetic 0.67*blLON2zr + 0.33*vRLjkQdw: Sharpe-like ~1.92, max corr ~0.647. Lower priority than PCR/EPSR but still a distinct crosspath test."
+  },
+  {
+    "name": "v108_ptp_subindustry_minus_epsr_030",
+    "family": "ptp_estimate_residual_control",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "Control retest of PTP-specific visibility after all new ACTIVE blockers. Stronger EPSR subtraction should keep correlation below the gate; submit only if the historical LOW_SUB_UNIVERSE issue clears.",
+    "expression": "0.340 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), subindustry) + 0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), subindustry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.120 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.075 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.060 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) - 0.045 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRp66men - 0.30*LLpZgaeL. Local synthetic Sharpe-like ~1.70, max corr ~0.631. Historical PTP residuals failed sub-universe, so this is a low-priority control."
+  },
+  {
+    "name": "v108_ptp_subindustry_minus_shequity_030",
+    "family": "ptp_estimate_residual_control",
+    "source": "v108_far_mechanism_residual_20260628",
+    "hypothesis": "Alternative PTP residual subtracting shareholder-equity guidance rather than EPSR. This tests whether the blocker is balance-sheet expectation overlap rather than pure EPSR analyst expectation.",
+    "expression": "0.340 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), subindustry) + 0.300 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), subindustry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), industry) + 0.135 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.135 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) - 0.075 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry) - 0.045 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / abs(assets), 126), subindustry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "RRp66men - 0.30*O0p8JGJq. Local synthetic Sharpe-like ~1.65, max corr ~0.657. Submit only if checks pass; likely control rather than main path."
+  }
+]

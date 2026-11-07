@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v266_fx_cash_translation_tailwind",
+    "family": "fx_cash_translation_fundamental2",
+    "hypothesis": "Positive and stable FX translation effects on cash can mark global-currency tailwinds that are distinct from ordinary foreign/domestic profit, debt, EPS, or cash-flow estimate routes.",
+    "field_notes": "exchange_rate_effect_cash_equivalents has platform alphaCount=1 and local ACTIVE usage=0; exchange_rate_effect_on_cash has no local ACTIVE usage. Assets is used only as a scale denominator.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.550 * group_rank(ts_rank(exchange_rate_effect_on_cash / assets, 126), industry) + 0.250 * group_rank(ts_rank(ts_delta(exchange_rate_effect_cash_equivalents / assets, 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * ts_std_dev(exchange_rate_effect_on_cash / assets, 126), 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v266_news18_impact_sentiment_neglect",
+    "family": "news18_direct_impact_sentiment",
+    "hypothesis": "High projected news impact with positive event sentiment and low event-record crowding may capture under-distributed important news rather than the already crowded earnings/product/legal news chains.",
+    "field_notes": "news_impact_projection_score, event_sentiment_score, composite_sentiment_score_2, and story_event_record_count have local ACTIVE usage=0 as direct VECTOR fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(vec_avg(news_impact_projection_score), 90), industry) + 0.280 * group_rank(ts_rank(vec_avg(event_sentiment_score), 90), industry) + 0.200 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count), 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(composite_sentiment_score_2) - vec_avg(event_sentiment_score)), 90), industry), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v266_news18_editorial_equity_contrarian",
+    "family": "news18_editorial_equity_sentiment",
+    "hypothesis": "Broad editorial and equity-market sentiment can be more useful as a contrarian pressure signal when paired with high projected impact and low story crowding, rather than as another ordinary positive-news sleeve.",
+    "field_notes": "editorial_commentary_sentiment_2 and equity_sentiment_score are unused direct VECTOR fields locally and avoid earnings/dividend/legal/product labels.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(-1 * vec_avg(editorial_commentary_sentiment_2), 126), industry) + 0.280 * group_rank(ts_rank(-1 * vec_avg(equity_sentiment_score), 126), industry) + 0.200 * group_rank(ts_rank(vec_avg(news_impact_projection_score), 90), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count), 90), industry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v266_news18_reporting_freshness_impact",
+    "family": "news18_reporting_period_timing",
+    "hypothesis": "Impactful events tied to shorter, cleaner reporting windows and shorter event duration should be more actionable than stale or complex reporting-period stories.",
+    "field_notes": "reporting_period_start/end time direct fields and event_start_time_utc_fast_d1 have local ACTIVE usage=0; this tests event timing rather than semantic news labels.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(-1 * abs(vec_avg(reporting_period_end_time_utc_fast_d1) - vec_avg(reporting_period_start_time_utc_fast_d1)), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(event_end_time_utc) - vec_avg(event_start_time_utc_fast_d1)), 126), industry) + 0.240 * group_rank(ts_rank(vec_avg(news_impact_projection_score), 90), industry) + 0.160 * group_rank(ts_rank(vec_avg(event_sentiment_score), 90), industry), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v266_news12_updown_reaction_asymmetry",
+    "family": "news12_post_event_reaction_path",
+    "hypothesis": "After-news upside that reaches a 2% move faster than downside, without an extreme immediate five-minute jump, can indicate resilient liquidity and delayed positive digestion.",
+    "field_notes": "minutes_to_2pct_decline and minutes_to_2pct_increase have platform alphaCount=0; this is the high-risk exploratory leg because news12 path fields have often been weak or LSUS-prone.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.380 * group_rank(ts_rank(vec_avg(minutes_to_2pct_decline) - vec_avg(minutes_to_2pct_increase), 60), industry) + 0.240 * group_rank(ts_rank(vec_avg(minimum_minutes_to_two_percent_move), 60), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(five_minute_price_change_pct_3)), 60), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count), 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  }
+]

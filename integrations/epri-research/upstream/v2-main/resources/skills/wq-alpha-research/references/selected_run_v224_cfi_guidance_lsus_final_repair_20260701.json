@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v224_cfi_guidance_largecap_market",
+    "family": "cfi_guidance_lsus_final_repair",
+    "hypothesis": "Stable cash-flow-from-investing guidance may proxy disciplined capital allocation, but prior versions were TOP1000 fragile; a stricter cap gate and MARKET neutralization test whether the signal survives in larger, more liquid names.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.390 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.270 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Final large-cap LSUS repair for the CFI-guidance low-corr seed."
+  },
+  {
+    "name": "v224_cfi_guidance_subindustry",
+    "family": "cfi_guidance_lsus_final_repair",
+    "hypothesis": "CFI guidance stability may be more comparable within narrower industries; SUBINDUSTRY ranking tests whether LSUS improves without adding old stabilizers.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.390 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), subindustry) + 0.270 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), subindustry) + 0.200 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), subindustry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Narrow peer repair; reject if Fitness drops or LSUS remains failed."
+  },
+  {
+    "name": "v224_cfi_guidance_signal_only",
+    "family": "cfi_guidance_lsus_final_repair",
+    "hypothesis": "If CFI guidance is a genuine parent, the guidance stability and analyst-count components should retain signal without beta/reversal relief.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.450 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets), 63)), 126), industry) + 0.320 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Signal-only diagnostic; do not submit unless it unexpectedly clears all gates and corr."
+  },
+  {
+    "name": "v224_cfi_actual_guidance_alignment",
+    "family": "cfi_guidance_lsus_final_repair",
+    "hypothesis": "Guided investing-cash-flow discipline is more credible when actual CFI is close to guidance and analyst coverage is improving, which may reduce the small-cap fragility of pure guidance range signals.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.330 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cfi_value - (anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / 2) / abs(assets), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Adds CFI actual-vs-guidance alignment, still avoiding FCF/EV/competitor/book/PPE stabilizers."
+  }
+]

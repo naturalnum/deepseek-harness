@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v18_prepaid_burden_aqi_boost",
+    "family": "prepaid_expense_quality_refine",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "v17 prepaid burden had the best standalone Sharpe but low Fitness. Add a small acquisition-income contribution boost and remove weak inventory turnover to improve returns while keeping prepaid burden dominant.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Near-miss refine; submit only if corr to 9qwXgvQd stays below threshold."
+  },
+  {
+    "name": "v18_stock_comp_burden_aqi_boost",
+    "family": "stock_compensation_quality_refine",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "v17 stock-comp burden had Sharpe but weak Fitness. A small acquisition-income boost may lift returns while stock-comp burden remains the main signal.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Near-miss refine; watch correlation with 9qwXgvQd and relationship actives."
+  },
+  {
+    "name": "v18_debt_extinguishment_aqi_boost",
+    "family": "debt_event_quality_refine",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "v17 debt-extinguishment clean was a low-turnover near-miss. Add a small acquisition-income contribution component to raise Fitness.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.25 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Near-miss refine; debt event remains dominant."
+  },
+  {
+    "name": "v18_vector_debt_extinguishment_eps",
+    "family": "vector_debt_event_quality",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "Debt extinguishment EPS-effect vectors should be converted to matrix via vec_avg before ranking. Negative event magnitude may proxy financing stress.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_eventv110_dteepsq)), 126), industry) + 0.25 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Proper vector handling test; no divide on event input."
+  },
+  {
+    "name": "v18_vector_writedown_pretax",
+    "family": "vector_writedown_quality",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "Writedown pretax event vectors may flag asset quality problems. Convert to matrix with vec_avg and penalize magnitude.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.25 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Proper vector handling test for writedown events."
+  },
+  {
+    "name": "v18_vector_rd_inprocess",
+    "family": "vector_rd_event_quality",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "In-process R&D event expense can represent acquisition/R&D accounting burden. Penalize event magnitude after vector averaging.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_rdipepsq)), 126), industry) + 0.25 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Proper vector handling test for in-process R&D EPS effects."
+  },
+  {
+    "name": "v18_prepaid_tax_allowance_mix",
+    "family": "prepaid_tax_quality_refine",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "Prepaid-expense burden and deferred-tax valuation allowance are separate accounting-quality pressures. Combine both at moderate weights without EPS/CFO/reversal.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses high-score tax material at moderate weight; watch mL8j98w9/MPpGzqwr correlation."
+  },
+  {
+    "name": "v18_stock_comp_goodwill_growth_mix",
+    "family": "stock_comp_goodwill_refine",
+    "source": "nearmiss_vector_events_v18_20260625",
+    "hypothesis": "Stock-comp burden and goodwill growth both capture accounting-quality overhangs. Combine them without EPS/CFO/reversal to avoid v16 valuation crowding.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.35 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses high-score goodwill-growth material at moderate weight; strict correlation gate."
+  }
+]

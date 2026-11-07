@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v96_forward_curve_minus_fscore_012",
+    "family": "boundary_residual_forward_curve",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "Forward-curve carry was just above the corr gate; subtracting a small fscore/reversal proxy may preserve its option-forward component while moving below 0.68.",
+    "expression": "0.28 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.20 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.12 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.09 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.04 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) - 0.03 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) - 0.02 * group_rank(ts_rank(fscore_value, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.12 of 3q7jJ130: Sharpe-like ~1.69, top corr ~0.63."
+  },
+  {
+    "name": "v96_forward_curve_minus_fscore_018",
+    "family": "boundary_residual_forward_curve",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "A stronger compact fscore residual tests whether forward-curve carry can get a safer correlation cushion while keeping submission-level Fitness.",
+    "expression": "0.28 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.20 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.11 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.06 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) - 0.04 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) - 0.03 * group_rank(ts_rank(fscore_value, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.18 of 3q7jJ130: Sharpe-like ~1.63, top corr ~0.61."
+  },
+  {
+    "name": "v96_share_reduction_minus_option_share_025",
+    "family": "boundary_residual_share_reduction",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "Share-count reduction had strong Fitness but collided with option/share and payout clusters; subtracting a compact option-share proxy may keep the anti-dilution core.",
+    "expression": "0.47 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.21 * rank(-(close / open - 1)) + 0.17 * group_rank(ts_rank(rel_num_part, 126), industry) - 0.11 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.08 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) - 0.06 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.25 of QPa7KOGK: Sharpe-like ~2.00, top corr ~0.71, still risky but high strength."
+  },
+  {
+    "name": "v96_share_reduction_minus_payout_035",
+    "family": "boundary_residual_share_reduction",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "A payout/profitability subtraction targets the remaining RRp7Q9Le/MPpGzqwr/88zpWZ1X overlap more directly than the option-share subtraction.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.20 * rank(-(close / open - 1)) + 0.18 * group_rank(ts_rank(rel_num_part, 126), industry) - 0.18 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.12 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Targets the payout/profitability blockers left after option-share subtraction."
+  },
+  {
+    "name": "v96_dilution_dividend_minus_buyback_012",
+    "family": "boundary_residual_dilution_dividend",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "Antidilutive overhang plus dividend was strong but mapped to buyback/profitability; a small payout proxy subtraction may leave a different dilution-capacity signal.",
+    "expression": "0.24 * group_rank(ts_rank(-1 * antidilutive_securities_eps_exclusion_count / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(-1 * fn_antidilutive_securities_excl_from_eps_a / common_stock_shares_outstanding_count, 126), industry) + 0.16 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.12 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.06 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.06 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.12 of MPpGzqwr: Sharpe-like ~1.77, but top corr may move to e7OQoveE/RRp7Q9Le."
+  },
+  {
+    "name": "v96_dilution_dividend_minus_buyback_025",
+    "family": "boundary_residual_dilution_dividend",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "A stronger payout/profitability subtraction aims to move the dilution/dividend signal below the corr gate with still acceptable raw strength.",
+    "expression": "0.24 * group_rank(ts_rank(-1 * antidilutive_securities_eps_exclusion_count / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(-1 * fn_antidilutive_securities_excl_from_eps_a / common_stock_shares_outstanding_count, 126), industry) + 0.16 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.10 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.13 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.13 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.25 of MPpGzqwr: Sharpe-like ~1.73, top corr ~0.67 in synthetic test."
+  },
+  {
+    "name": "v96_ptp_estimate_minus_epsr_012",
+    "family": "boundary_residual_ptp_estimate",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "PTP estimate confidence was just above the corr gate; subtracting a light EPSR-estimate proxy may isolate PTP-specific analyst information.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.12 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) - 0.05 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.03 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.02 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.12 of LLpZgaeL: Sharpe-like ~1.59, top corr ~0.65."
+  },
+  {
+    "name": "v96_ptp_estimate_minus_epsr_025",
+    "family": "boundary_residual_ptp_estimate",
+    "source": "boundary_residual_noncovered_v96_20260628",
+    "hypothesis": "Stronger EPSR-estimate subtraction for PTP estimate confidence, trading some strength for a larger correlation cushion.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptp_mean / assets, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptp_high - anl4_fs_detail_estimates_advanced_af_nd_ptp_low) / abs(assets), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptp_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.11 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) - 0.10 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) - 0.06 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) - 0.05 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate for subtracting 0.25 of LLpZgaeL: Sharpe-like ~1.52, top corr ~0.63."
+  }
+]

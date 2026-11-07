@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v4_buyback_quality_subindustry",
+    "family": "payout_quality",
+    "source": "memory_guided_v4_20260625",
+    "hypothesis": "The buyback+quality branch worked; changing the comparison group to subindustry may improve peer comparability without changing the core mechanism.",
+    "expression": "0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), subindustry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Controlled variant of MPpGzqwr; correlation gate should reject if too similar."
+  },
+  {
+    "name": "v4_repurchased_shares_quality",
+    "family": "payout_quality",
+    "source": "memory_guided_v4_20260625",
+    "hypothesis": "Number of shares repurchased can provide a different payout lens than cash payments; combine with quality to avoid weak firms.",
+    "expression": "0.5 * group_rank(ts_rank(shares_reacquired_during_period / common_stock_shares_outstanding_count, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Alternative buyback intensity field; sparse but economically direct."
+  },
+  {
+    "name": "v4_dividend_yield_quality",
+    "family": "payout_quality",
+    "source": "memory_guided_v4_20260625",
+    "hypothesis": "Dividend yield plus operating quality may capture shareholder yield with less sparsity than buyback-only fields.",
+    "expression": "0.5 * group_rank(ts_rank(dividend / close, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Payout branch but different from buyback; check for value/quality correlation."
+  },
+  {
+    "name": "v4_news_earnings_sentiment_slow",
+    "family": "news_quality",
+    "source": "memory_guided_v4_20260625",
+    "hypothesis": "The news earnings sentiment branch had Sharpe but weak Fitness; longer smoothing and higher decay may reduce turnover enough to become submit-worthy.",
+    "expression": "0.4 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.6 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-turnover repair of v3 news quality candidate."
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v64_sh_equity_guidance_improvement_no_dispersion",
+    "family": "shareholder_equity_guidance_corr_rescue",
+    "source": "sh_equity_guidance_corr_rescue_v64_20260627",
+    "hypothesis": "KPbrrxxE is strong but slightly too correlated with LLpZgaeL; removing the analyst-dispersion component may reduce EPSR-style overlap while preserving the shareholder-equity guidance improvement signal.",
+    "expression": "0.55 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), industry) + 0.20 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Direct KPbrrxxE rescue; removes sh-equity estimate dispersion, the likely EPSR-overlap term."
+  },
+  {
+    "name": "v64_sh_equity_guidance_vs_estimate",
+    "family": "shareholder_equity_guidance_corr_rescue",
+    "source": "sh_equity_guidance_corr_rescue_v64_20260627",
+    "hypothesis": "Guidance above analyst shareholder-equity estimate is more balance-sheet-specific than the raw guidance level and may lower correlation with EPSR estimate signals.",
+    "expression": "0.45 * group_rank(ts_rank(((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / 2) / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / 2) / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 63), 126), industry) + 0.15 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Changes the main signal from level to guidance-vs-estimate delivery; watch divide stability and corr vs LLpZgaeL."
+  },
+  {
+    "name": "v64_qf_sh_equity_guidance_improvement",
+    "family": "quarterly_shareholder_equity_guidance",
+    "source": "sh_equity_guidance_corr_rescue_v64_20260627",
+    "hypothesis": "Quarterly shareholder-equity guidance may retain balance-sheet information but shift timing enough to reduce correlation with annual EPSR-style alphas.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_qf_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_qf_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), industry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_qf_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_qf_nd_sh_equity_maxguidance) / (2 * assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_sh_equity_maxguidance - anl4_fs_guidances_advanced_qf_nd_sh_equity_minguidance) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Quarterly version of KPbrrxxE; reject if it remains an EPSR/LLpZgaeL near-neighbor."
+  },
+  {
+    "name": "v64_sh_equity_guidance_subindustry",
+    "family": "shareholder_equity_guidance_corr_rescue",
+    "source": "sh_equity_guidance_corr_rescue_v64_20260627",
+    "hypothesis": "Ranking shareholder-equity guidance improvement within subindustry may reduce broad analyst-expectation co-movement versus LLpZgaeL's industry EPSR signal.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / abs(assets), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Peer-group axis only; if it stays high-corr, stop sh-equity guidance near-neighbor rescue."
+  },
+  {
+    "name": "v64_sh_equity_guidance_strong_risk_relief",
+    "family": "shareholder_equity_guidance_corr_rescue",
+    "source": "sh_equity_guidance_corr_rescue_v64_20260627",
+    "hypothesis": "A stronger risk-relief component may lower the final PnL correlation while leaving enough shareholder-equity guidance alpha to pass the submit gate.",
+    "expression": "0.36 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), industry) + 0.24 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Accept lower raw alpha strength in exchange for lower corr; submit only if still passes Sharpe/Fitness."
+  }
+]

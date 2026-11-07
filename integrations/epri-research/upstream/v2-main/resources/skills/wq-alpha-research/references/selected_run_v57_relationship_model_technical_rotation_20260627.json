@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v57_partner_spillover_low_comp",
+    "family": "partner_relationship_spillover",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "Partner-return spillover may capture supply-chain information that is different from the occupied customer-spillover alpha.",
+    "expression": "0.45 * group_rank(ts_rank(ts_mean(rel_ret_part / close, 10) - ts_mean(returns, 10), 120), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.15 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different relationship entity from 58wgxOM1; no customer return or customer authority."
+  },
+  {
+    "name": "v57_partner_competitor_spread",
+    "family": "partner_competitor_spread",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "Partner strength relative to competitor strength may capture ecosystem advantage without using customer-spillover or graph authority.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_part / close, 10) - ts_mean(rel_ret_comp / close, 10), 120), industry) + 0.25 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No own-return subtraction; tests relative partner-vs-competitor channel."
+  },
+  {
+    "name": "v57_all_overlap_return_residual",
+    "family": "product_overlap_return_residual",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "Broad product-overlap return residual may capture peer information more diffusely than customer-specific return spillover.",
+    "expression": "0.45 * group_rank(ts_rank(ts_mean(rel_ret_all / close, 15) - ts_mean(returns, 15), 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_all, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests broad product-overlap residual; strict corr gate vs 58wgxOM1."
+  },
+  {
+    "name": "v57_model_revision_inverse_quality",
+    "family": "model16_inverse_revision",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "Negative analyst-revision derivative is the only model16 direction with prior signal; pairing it with inverse quality derivatives may avoid crowded accounting stabilizers.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.20 * rank(-1 * earnings_certainty_rank_derivative) + 0.20 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No close/open, option, news, graph, or EPS; tests whether the inverse model direction can stand alone."
+  },
+  {
+    "name": "v57_model_revision_accel_spread",
+    "family": "model16_revision_acceleration_spread",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "The spread between negative analyst-revision derivative and broad model acceleration may isolate overextended model optimism.",
+    "expression": "0.50 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A compact model16 repair; reject if it repeats v48 weak model-revision path."
+  },
+  {
+    "name": "v57_bfl_contrarian_value_momentum",
+    "family": "bfl_contrarian_composite",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "BFL scores were weak in the positive direction; a contrarian value/growth/momentum mix may test whether the score sign is reversed in this universe.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * fscore_bfl_momentum, 126), industry) + 0.25 * group_rank(ts_rank(-1 * fscore_bfl_growth, 126), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_value, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Re-tests BFL with a sign/control change, not as a large branch."
+  },
+  {
+    "name": "v57_parkinson_close_vol_spread",
+    "family": "technical_volatility_structure",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "A gap between high-low volatility and close-to-close volatility may identify intraday noise that mean-reverts without using close-location or VWAP pressure.",
+    "expression": "0.45 * rank(-1 * ts_rank(parkinson_volatility_30 - historical_volatility_30, 90)) + 0.25 * rank(-1 * ts_rank(ts_std_dev(returns, 20), 90)) + 0.30 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-close-location technical statistic; watch option-vol active correlations."
+  },
+  {
+    "name": "v57_vol_term_compression",
+    "family": "technical_volatility_term_structure",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "Short-run volatility compression relative to long-run volatility may capture calmer residual risk outside realized-vol pure risk residual.",
+    "expression": "0.40 * rank(-1 * ts_rank(historical_volatility_20 - historical_volatility_120, 90)) + 0.25 * rank(-1 * ts_rank(parkinson_volatility_20 - parkinson_volatility_120, 90)) + 0.20 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Volatility term-structure, not option breakeven/PCR or late-pressure."
+  },
+  {
+    "name": "v57_slow_volume_dryup_reversal",
+    "family": "volume_liquidity_structure",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "Low relative volume after negative medium-term return pressure may capture liquidity exhaustion without using close-location or VWAP.",
+    "expression": "0.40 * rank(ts_rank(-1 * ts_mean(returns, 10), 60)) + 0.30 * rank(ts_rank(-1 * volume / adv20, 60)) + 0.30 * group_rank(ts_rank(-1 * beta_last_60_days_spy, 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Simple unit-clean liquidity exhaustion probe; strict corr vs LLpGdlrm and mL86Jle1."
+  },
+  {
+    "name": "v57_longterm_revision_fitness_repair",
+    "family": "longterm_estimate_revision_sign_control",
+    "source": "relationship_model_technical_rotation_v57_20260627",
+    "hypothesis": "The v54 negative long-term estimate revision seed had low correlation and strong Sharpe but low Fitness; a slower decay and risk mix may improve tradability without moving into EPSR.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * (vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_detailltv4_est), 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled repair of WjpeW5Lo; stop if Fitness remains below gate or corr moves toward LLpZgaeL/akdb1ZqR."
+  }
+]

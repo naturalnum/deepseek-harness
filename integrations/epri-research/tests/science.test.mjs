@@ -1,0 +1,44 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {randomUUID} from 'node:crypto';
+import {openStore} from '../dist/server/service.mjs';
+const uid=()=>randomUUID();
+test('research evidence, claims, reports and routes retain sources, enforce review, isolate sessions and survive restart',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'science-suite-'));let store=openStore(dir);
+ const call=(op,args={},actor='human',session='science-A')=>store.execute(op,args,actor,undefined,session);
+ const put=(op,args,actor='human',session='science-A')=>call(op,{requestId:uid(),...args},actor,session);
+ try {
+  const file=await put('attachment_put',{name:'measurements.csv',contentBase64:Buffer.from('x,y\n1,2\n').toString('base64')});
+  const e=await put('evidence_put',{id:'e1',expectedRevision:0,title:'测量记录',observation:'输入 1，测得 2',basis:'measured',source:{kind:'attachment',reference:file.reference}},'agent');
+  assert.equal(e.data.source.sha256,file.reference.slice(11));
+  await assert.rejects(put('evidence_put',{id:'foreign',expectedRevision:0,title:'跨会话',observation:'不可访问',basis:'measured',source:{kind:'attachment',reference:file.reference}},'human','science-B'),{code:'NOT_FOUND'});
+  await assert.rejects(put('evidence_review',{id:'e1',expectedRevision:1,result:'accepted',reason:'checked'},'agent'),{code:'FORBIDDEN'});
+  const claim={id:'c1',expectedRevision:0,title:'结论',statement:'本次样本观测为 2',limitations:'单次测试',status:'supported',evidenceIds:['e1']};
+  await assert.rejects(put('claim_put',claim,'agent'),{code:'INCOMPLETE'});
+  const reviewed=await put('evidence_review',{id:'e1',expectedRevision:1,result:'accepted',reason:'与原始文件逐值核对'});
+  const c=await put('claim_put',claim,'agent'); assert.equal(c.data.evidence[0].revision,2);
+  const report=await put('report_put',{id:'report',expectedRevision:0,title:'测试报告',markdown:'## 结果\n测得 2。\n## 局限\n单次测试。',claimIds:['c1'],evidenceIds:['e1']});
+  assert.equal(report.data.claims[0].sha256,c.sha256);
+  await put('evidence_put',{id:'e1',expectedRevision:2,title:'更新观察',observation:'补充信息',basis:'measured',source:{kind:'attachment',reference:file.reference}});
+  assert.equal((await call('science_revision',{kind:'report',id:'report',revision:1})).data.evidence[0].data.observation,e.data.observation);
+  assert.equal((await call('science_state')).evidence[0].data.review.status,'pending');
+  await assert.rejects(put('evidence_put',{id:'e1',expectedRevision:2,title:'stale',observation:'stale',basis:'measured',source:{kind:'attachment',reference:file.reference}}),{code:'CONFLICT'});
+  await assert.rejects(call('science_revision',{kind:'report',id:'report',revision:1},'human','science-B'),{code:'NOT_FOUND'});
+  const route={schema:'deepscientist.science.research_route.v1',roadmapId:'route',objective:'比较两种方案',rootNodeId:'root',updatedAt:Date.now(),nodes:[{id:'root',title:'基线',summary:'已准备',order:0,lifecycle:'completed'},...['a','b'].map((id,i)=>({id,parentId:'root',title:id,summary:'候选方案',order:i+1,lifecycle:'proposed'}))],decision:{status:'pending',selectableNodeIds:['a','b'],updatedAt:Date.now()}};
+  await put('roadmap_put',{id:'route',expectedRevision:0,route},'agent');
+  await assert.rejects(put('roadmap_select',{id:'route',expectedRevision:1,nodeId:'a'},'agent'),{code:'FORBIDDEN'});
+  await assert.rejects(put('roadmap_put',{id:'route',expectedRevision:1,route:{...route,decision:undefined}},'agent'),{code:'FORBIDDEN'});
+  const selection={id:'route',expectedRevision:1,nodeId:'a',requestId:uid()};
+  const selected=await call('roadmap_select',selection); assert.equal(selected.data.route.decision.selectedNodeId,'a');
+  assert.deepEqual(await call('roadmap_select',selection),selected);
+  await assert.rejects(call('roadmap_select',{...selection,nodeId:'b'}),{code:'CONFLICT'});
+  const bad=structuredClone(selected.data.route);bad.nodes[1].parentId='a';
+  await assert.rejects(put('roadmap_put',{id:'route',expectedRevision:2,route:bad}),{code:'INVALID'});
+  const before=await call('science_export');store.close();store=openStore(dir);
+  const after=await call('science_export');assert.deepEqual(after.current,before.current);assert.deepEqual(after.revisions,before.revisions);
+  assert.equal(reviewed.revision,2);
+ } finally {store.close();rmSync(dir,{recursive:true,force:true});}
+});

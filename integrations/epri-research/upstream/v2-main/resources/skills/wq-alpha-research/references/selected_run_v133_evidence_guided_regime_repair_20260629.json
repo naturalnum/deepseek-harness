@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v133_comp_earnings_highvolume_absorb",
+    "family": "comp_earnings_regime_shift",
+    "hypothesis": "The strongest competitor/earnings parent is occupied in low-volume and low-market-correlation regimes; trading the same economic idea only on high relative-volume absorption days may isolate a different information-digestion path.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.65, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.170 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Materially different timing from E5w8oepG and 0m7Nl9nk; no cashflow_op leg."
+  },
+  {
+    "name": "v133_comp_earnings_largecap_no_cashflow",
+    "family": "comp_earnings_regime_shift",
+    "hypothesis": "Removing cashflow_op and using a large-cap regime may keep competitor/earnings strength while avoiding the acquired-goodwill/cashflow and low-volume news blockers.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.160 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.120 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.110 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether large-cap plus no cashflow can avoid E5w8oepG/6Xwo83wP without low-volume gating."
+  },
+  {
+    "name": "v133_intersegment_fx_lowvol_shave",
+    "family": "accounting_complexity_lowvol_repair",
+    "hypothesis": "A prior intersegment/FX low-volume candidate was just above the strict correlation gate; tightening the low-volume regime and adding beta/correlation relief may preserve the accounting-complexity edge while shaving overlap with e7OVQKGN.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.40, 0.270 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled repair of d5x3KvRK; reject if it remains an e7OVQKGN sibling."
+  },
+  {
+    "name": "v133_fscore_slow_market_reversal",
+    "family": "fscore_contrarian_slow_repair",
+    "hypothesis": "The slow fscore contrarian seed missed only Sharpe; a slightly stronger reversal sleeve with MARKET neutralization may lift Sharpe without returning to the high-turnover 3q7jJ130 sibling.",
+    "expression": "0.350 * group_rank(ts_rank(-1 * fscore_surface_accel, 252), industry) + 0.250 * group_rank(ts_rank(-1 * fscore_growth, 252), industry) + 0.210 * group_rank(ts_rank(fscore_value, 252), industry) + 0.110 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Small repair of kq3azalL; submit only if corr vs 3q7jJ130 stays below strict gate."
+  },
+  {
+    "name": "v133_fscore_slow_volume_confirm",
+    "family": "fscore_contrarian_slow_repair",
+    "hypothesis": "Replacing part of the daily open-close sleeve with return-volume exhaustion may make the slow fscore parent less like the existing fscore contrarian ACTIVE while keeping enough short-cycle timing.",
+    "expression": "0.330 * group_rank(ts_rank(-1 * fscore_surface_accel, 252), industry) + 0.240 * group_rank(ts_rank(-1 * fscore_growth, 252), industry) + 0.200 * group_rank(ts_rank(fscore_value, 252), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * rank(-(close / open - 1)) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Designed to differ from 3q7jJ130 by window and timing sleeve."
+  },
+  {
+    "name": "v133_callput_convexity_eventful",
+    "family": "option_call_put_convexity_repair",
+    "hypothesis": "The call/put breakeven convexity seed had strong headline metrics but sub-universe fragility under cap gates; an eventful-return regime may stabilize it without turning it into another long-breakeven/social sibling.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.320 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.160 * rank(cashflow_efficiency_rank_derivative) + 0.140 * rank(-(close / open - 1)) + 0.110 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No social/PCR; distinct from zq92joQo/GrwK89PO if it survives sub-universe."
+  },
+  {
+    "name": "v133_rd_patent_innovation_largecap",
+    "family": "rd_patent_innovation_quality",
+    "hypothesis": "Annual R&D estimate commitment with narrow dispersion and low patent-intangible overhang may capture innovation quality, using low-alphaCount fields as a new parent rather than another sales/EBIT delivery signal.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_mean / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_high - anl4_fs_detail_estimates_advanced_af_nd_rd_exp_low) / assets, 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_number, 126), industry) + 0.140 * group_rank(ts_rank(-1 * net_patent_ip_intangible_assets / assets, 126), industry) + 0.140 * rank(cashflow_efficiency_rank_derivative) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Fresh parent probe; abandon if it repeats old weak R&D guidance behavior."
+  },
+  {
+    "name": "v133_option_award_rd_largecap",
+    "family": "option_award_rd_dilution",
+    "hypothesis": "Option-award overhang was sub-universe fragile with forward curvature; pairing lower option dilution with R&D estimate commitment tests whether the signal is really human-capital investment quality rather than payout/forward timing.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_stock_shares_outstanding_count, 126), industry) + 0.190 * group_rank(ts_rank(-1 * option_awards_granted_count / common_stock_shares_outstanding_count, 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_mean / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_rd_exp_high - anl4_fs_detail_estimates_advanced_af_nd_rd_exp_low) / assets, 126), industry) + 0.140 * rank(cashflow_efficiency_rank_derivative) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Farther repair of option-award seed; no forward curve or dividend sleeve."
+  }
+]

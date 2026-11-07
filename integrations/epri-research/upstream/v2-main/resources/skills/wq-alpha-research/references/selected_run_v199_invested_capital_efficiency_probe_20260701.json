@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v199_invested_capital_turnover",
+    "family": "invested_capital_efficiency",
+    "hypothesis": "Firms that generate more sales and gross profit per unit of invested capital, while invested capital is not expanding, may be using capital more efficiently. This avoids inventory/receivable/backlog working-capital routes and the new goodwill/total-assets contraction ACTIVE.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.240 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.200 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_icapt / assets, 252), 126), industry) + 0.130 * group_rank(ts_rank(-1 * fnd6_newqv1300_icaptq / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "First direct invested-capital efficiency test. Strict-check against e7OW7dL6, MPpGzqwr, RRpm5LEo, and old working-capital failures."
+  },
+  {
+    "name": "v199_quarterly_icapt_discipline",
+    "family": "quarterly_invested_capital_discipline",
+    "hypothesis": "Quarterly invested-capital restraint should be more responsive than annual invested capital. Pair it with gross-profit efficiency to test whether capital productivity carries information without total-assets analyst fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_icaptq / assets, 126), 126), industry) + 0.230 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newqv1300_icaptq), 126), subindustry) + 0.190 * group_rank(ts_rank(sales / abs(fnd6_newqv1300_icaptq), 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * fnd6_newa2v1300_wcap / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses quarterly invested capital and only a broad working-capital level sleeve; no inventory, receivable, or backlog terms."
+  },
+  {
+    "name": "v199_event_icapt_no_overhang",
+    "family": "event_invested_capital_relief",
+    "hypothesis": "Event-vector invested capital reductions may capture discrete capital-allocation cleanups. Convert the vector with vec_avg and confirm with low annual invested-capital burden rather than debt, issuance, or goodwill.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.300 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_icaptq)) / assets, 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_icaptq)) / assets, 126), industry) + 0.190 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * fnd6_newqv1300_wcapq / assets, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A unit-safe event-vector test. Reject on weak metrics or LSUS; do not repair with debt/issuance/social/news sleeves."
+  },
+  {
+    "name": "v199_working_capital_assetlight",
+    "family": "working_capital_assetlight",
+    "hypothesis": "Lower working-capital burden can be useful only if paired with sales and gross-profit productivity, not inventory/receivable cycle terms. This tests a cleaner asset-light operating-capital signal.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * group_rank(ts_rank(-1 * fnd6_newa2v1300_wcap / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa2v1300_wcap / assets, 252), 126), industry) + 0.210 * group_rank(ts_rank(sales / abs(fnd6_newa2v1300_wcap), 126), subindustry) + 0.160 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa2v1300_wcap), 126), subindustry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Working-capital burden without inventory turnover, receivables, deferred revenue, or backlog. Stop if it repeats early working-capital weakness."
+  },
+  {
+    "name": "v199_icapt_margin_subindustry",
+    "family": "invested_capital_margin_local",
+    "hypothesis": "Capital efficiency should be judged locally. Subindustry ranks for gross-profit and sales productivity, plus industry rank for invested-capital contraction, may reduce old broad quality overlap.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.230 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_icaptq / assets, 126), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wcapq)) / assets, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 28,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Local peer version. Avoids analyst total-assets and goodwill terms; strict corr check with e7OW7dL6 is mandatory."
+  }
+]

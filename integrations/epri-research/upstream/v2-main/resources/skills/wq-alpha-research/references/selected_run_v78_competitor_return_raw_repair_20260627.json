@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v78_comp_raw_original_high_decay",
+    "family": "competitor_return_raw_repair",
+    "hypothesis": "The v24 raw competitor-return reversal was strong but TO 37.7%; keep the raw signal and raise decay instead of smoothing the input, which killed strength in v25.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.30 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct high-decay repair of mL8jgJkX; submit only if TO <=25% and corr remains clean."
+  },
+  {
+    "name": "v78_comp_raw_lower_reversal_risk",
+    "family": "competitor_return_raw_repair",
+    "hypothesis": "Lower the close/open parent and add risk relief to reduce turnover and correlation while preserving the raw competitor-return core.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.17 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether lower intraday-reversal weight can retain Sharpe while clearing turnover."
+  },
+  {
+    "name": "v78_comp_raw_social_small_confirm",
+    "family": "competitor_return_social_confirm",
+    "hypothesis": "Use the v76 social seed as a small stabilizer around raw competitor-return reversal, not as the main signal.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.14 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.08 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Strict corr gate vs JjpPv3N2 and mL8jgJkX-like close/open actives."
+  },
+  {
+    "name": "v78_comp_raw_fast_earnings_tiny_confirm",
+    "family": "competitor_return_fast_confirm",
+    "hypothesis": "A tiny fast-earnings sleeve may lift raw competitor-return fitness without making the alpha a fast-news clone.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.14 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.12 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.08 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Fast-news sleeve is small; reject if corr moves to e7OQoveE/JjpPv3N2."
+  },
+  {
+    "name": "v78_comp_raw_option_breakeven_small",
+    "family": "competitor_return_option_confirm",
+    "hypothesis": "Use option breakeven as a small confirmer for competitor weakness rather than the main QPa7KOGK-style option signal.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.14 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.14 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.14 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option sleeve must not dominate; strict corr gate vs QPa7KOGK/0m7p1Lb1."
+  },
+  {
+    "name": "v78_comp_raw_longer_rank_market",
+    "family": "competitor_return_raw_repair",
+    "hypothesis": "Use a longer rank window on the raw competitor-return reversal instead of ts_mean smoothing, aiming to lower turnover without destroying the short-term relative signal.",
+    "expression": "0.44 * group_rank(ts_rank(-1 * rel_ret_comp, 40), industry) + 0.16 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(pv13_com_rk_au, 90), industry) + 0.14 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Alternative repair: longer rank window, no social/fast/option sleeve."
+  }
+]

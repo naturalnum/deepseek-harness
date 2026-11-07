@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v73_issuance_subindustry_residual",
+    "family": "issuance_pressure_non_neighbor",
+    "source": "issuance_non_neighbor_expansion_v73_20260627",
+    "hypothesis": "Ranking new-stock-issuance pressure within subindustry may isolate idiosyncratic financing pressure while reducing overlap with the v72 industry-ranked ACTIVE.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), subindustry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * common_stock_issuance_proceeds / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Peer-axis change plus a small related issuance confirmation; strict corr gate against 1Y7jgeXX."
+  },
+  {
+    "name": "v73_issuance_change_dominant",
+    "family": "issuance_pressure_non_neighbor",
+    "source": "issuance_non_neighbor_expansion_v73_20260627",
+    "hypothesis": "Falling issuance pressure may be more incremental than static low issuance and less correlated to the v72 level signal.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), industry) + 0.20 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(common_stock_issuance_proceeds / assets, 252), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Change-dominant issuance relief; only useful if corr to 1Y7jgeXX falls materially."
+  },
+  {
+    "name": "v73_issuance_without_level",
+    "family": "issuance_pressure_non_neighbor",
+    "source": "issuance_non_neighbor_expansion_v73_20260627",
+    "hypothesis": "Removing the static issuance level may avoid becoming a direct sibling while retaining improvement in financing pressure.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), subindustry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(common_stock_issuance_proceeds_2 / assets, 252), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(stock_issued_new_issues_value) / cap, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Mostly change/normalization variant; risk of unit warning from cap is acceptable as a one-time probe."
+  },
+  {
+    "name": "v73_issuance_risk_regime_only",
+    "family": "issuance_pressure_non_neighbor",
+    "source": "issuance_non_neighbor_expansion_v73_20260627",
+    "hypothesis": "New issuance pressure may matter most when market and idiosyncratic risk are not rising; this tests a lower-signal, stronger-regime version.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), industry) + 0.25 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) + 0.25 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Lower signal weight to test whether risk-regime conditioning creates a separate sleeve."
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v260_netdebt_estimate_deleveraging",
+    "family": "exact_analyst_field_scout",
+    "hypothesis": "Companies with falling analyst net-debt expectations and rising estimate breadth may be healthier balance-sheet repair names, close to the user's deleveraging thesis but using underused analyst4 annual detail fields.",
+    "field_notes": "anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean coverage=0.6041 alphaCount=7; number coverage=0.6041 alphaCount=0.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 63), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v260_bvps_revision_book_value",
+    "family": "exact_analyst_field_scout",
+    "hypothesis": "Rising book-value-per-share estimates relative to price may capture a cleaner capital-base revision signal than crowded EPS/FCF yield, while estimate breadth helps avoid stale single-analyst values.",
+    "field_notes": "anl4_fs_detail_estimates_advanced_af_nd_bvps_mean coverage=0.6613 alphaCount=2; number coverage=0.6613 alphaCount=8.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v260_cff_financing_discipline",
+    "family": "exact_analyst_field_scout",
+    "hypothesis": "Lower expected financing cash flow relative to assets can indicate less dependence on external financing or more capital return/deleveraging, and the estimate-count leg rewards better analyst confirmation.",
+    "field_notes": "anl4_fs_detail_estimates_advanced_af_nd_cff_mean coverage=0.6905 alphaCount=2; number coverage=0.6905 alphaCount=0; no ACTIVE expression usage found locally for cff_mean.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v260_cfi_capex_investment_discipline",
+    "family": "exact_analyst_field_scout",
+    "hypothesis": "Less aggressive expected investing cash outflow and capex burden may capture capital discipline, while estimate breadth helps separate real revisions from stale coverage.",
+    "field_notes": "anl4_fs_detail_estimates_advanced_af_nd_cfi_mean coverage=0.692 alphaCount=2; cfi_number alphaCount=0; capex_mean coverage=0.7769 alphaCount=15; capex_number alphaCount=1.",
+    "expression": "0.35 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfi_mean / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number + anl4_fs_detail_estimates_advanced_af_nd_capex_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v260_expense_guidance_pressure",
+    "family": "exact_analyst_field_scout",
+    "hypothesis": "Lower management/analyst guidance for SG&A, R&D, and stock-option expense relative to scale may identify cleaner operating leverage without directly using operating-income/equity.",
+    "field_notes": "SG&A max guidance coverage=1.0 alphaCount=0; R&D max guidance coverage=1.0 alphaCount=0; SOE max guidance coverage=1.0 alphaCount=1; SG&A estimate number coverage=0.6144 alphaCount=0.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_sga_maxguidance / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_soe_maxguidance / assets, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v260_dividend_estimate_visibility",
+    "family": "exact_analyst_field_scout",
+    "hypothesis": "Higher and improving expected dividend yield, confirmed by more estimates, may give a payout-quality signal distinct from common-stock buyback and direct profitability carriers.",
+    "field_notes": "dividend_estimate_average coverage=0.6151 alphaCount=24; dividend_estimate_count coverage=0.6151 alphaCount=32; local ACTIVE usage count was 0 for dividend_estimate_average.",
+    "expression": "0.45 * group_rank(ts_rank(dividend_estimate_average / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(dividend_estimate_average / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(dividend_estimate_count, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

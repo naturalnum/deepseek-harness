@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v246_employee_productivity_cap55_industry",
+    "family": "employee_productivity_lsus_repair",
+    "hypothesis": "The v245 employee-productivity signal had strong headline metrics but narrowly failed sub-universe Sharpe. A stricter large-cap gate may retain the labor-efficiency edge while improving TOP1000 robustness.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.310 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.270 * group_rank(ts_rank(fnd6_newa1v1300_ib / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_emp, 252) / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.130 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct LSUS repair for KPbpp9aE. Reject unless LSUS passes and corr stays below 0.66."
+  },
+  {
+    "name": "v246_employee_productivity_subindustry_no_reversal",
+    "family": "employee_productivity_lsus_repair",
+    "hypothesis": "Subindustry ranking and removing the short-return sleeve may reduce hidden small-cap/reversal exposure while preserving sales and income per employee.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.320 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), subindustry) + 0.280 * group_rank(ts_rank(fnd6_newa1v1300_ib / (abs(fnd6_newa1v1300_emp) + 1), 126), subindustry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_emp, 252) / (abs(fnd6_newa1v1300_emp) + 1), 126), subindustry) + 0.110 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.080 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Tests whether KPbpp9aE's LSUS fail comes from broad industry/small-cap/reversal exposure."
+  },
+  {
+    "name": "v246_employee_sales_efficiency_no_income",
+    "family": "employee_productivity_lsus_repair",
+    "hypothesis": "If the income-per-employee leg is the hidden quality carrier, a cleaner sales-per-employee and headcount-discipline expression should produce a different PnL path, though likely weaker.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.360 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.260 * group_rank(ts_rank(ts_delta(sales / (abs(fnd6_newa1v1300_emp) + 1), 252), 126), industry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_emp, 252) / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Cleaner employee-count route without net income, cost, analyst, news, option, or open-close components."
+  },
+  {
+    "name": "v246_advertising_cap60_stability",
+    "family": "advertising_discipline_lsus_repair",
+    "hypothesis": "The v245 advertising candidate failed LSUS by a wider margin; a stricter large-cap/stability form tests whether advertising discipline is only a small-cap artifact.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.380 * group_rank(ts_rank(-1 * abs(fnd6_xad) / abs(sales), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_xad / abs(sales), 252)), 126), industry) + 0.170 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One narrow repair for gJ15591K; close advertising as immediate route if this loses Sharpe or still fails LSUS."
+  },
+  {
+    "name": "v246_rd_ad_investment_efficiency",
+    "family": "rd_ad_employee_efficiency",
+    "hypothesis": "Stable R&D investment intensity plus labor productivity may capture durable innovation/brand investment efficiency, a different surface from recent CFO/news/cost residuals.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(fnd6_newa2v1300_xrd / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newa2v1300_xrd / abs(sales), 252)), 126), industry) + 0.200 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.160 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Adds a genuinely different R&D/ad-investment surface rather than only repairing the v245 employee seed."
+  }
+]

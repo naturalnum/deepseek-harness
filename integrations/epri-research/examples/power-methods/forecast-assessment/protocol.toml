@@ -1,0 +1,4 @@
+[airalogy_protocol]
+id = "power-forecast-assessment"
+version = "1.0.0"
+name = "负荷预测结果评估"

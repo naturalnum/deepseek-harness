@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v248_contract_eps_minus_aqi_residual",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "hypothesis": "A local ACTIVE-PnL scan found that contract-liability growth plus EPS, explicitly residualized against the crowded AQI/debt/EPS/volume-risk active, has low estimated daily-PnL correlation to all ACTIVE alphas.",
+    "expression": "-1.000 * (0.300 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.167 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.132 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.099 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.102 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) + 0.700 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.700 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Local normalized-PnL pre-est top abs corr about 0.38. Submit only if live corr remains <0.60 and LSUS passes; otherwise close as old AQI/contract/EPS residual."
+  },
+  {
+    "name": "v248_option_ltv_payout_residual",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "hypothesis": "Long-term analyst revision can be subtracted from option convexity and payout/profitability to test a low-correlation timing residual that is not a simple sibling of any one ACTIVE parent.",
+    "expression": "-1.000 * (0.40 * group_rank(ts_rank(-1 * (vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_detailltv4_est), 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 0.700 * (trade_when(ts_rank(abs(returns), 20) > 0.55, 0.240 * group_rank(ts_rank((forward_price_1080 - forward_price_180) / close, 90), industry) + 0.190 * group_rank(ts_rank((option_breakeven_360 - option_breakeven_90) / close, 90), industry) + 0.180 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)) + 0.700 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry))",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Local normalized-PnL pre-est top abs corr about 0.40. Treat as thin residual; WQ_MAX_CORRELATION should be 0.60."
+  },
+  {
+    "name": "v248_sentiment_sheq_capex_residual",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "hypothesis": "A high-Sharpe earnings-sentiment/reversal active and a share-equity-guidance active can be residualized against capex/cashflow and contract-liability growth to form a low-correlation cross-parent shape.",
+    "expression": "-1.000 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 1.000 * (0.40 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)) -1.000 * (0.55 * group_rank(ts_rank(-1 * capital_expenditure_amount / assets, 126), industry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * rank(-(close / open - 1))) + 1.000 * (0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / abs(assets), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry))",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local normalized-PnL pre-est top abs corr about 0.39. Reject if it becomes hidden open-close/news/profitability clone or LSUS fails."
+  },
+  {
+    "name": "v248_peer_fcf_ev_residual_unused_groups",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "hypothesis": "Product-taxonomy peer rank minus industry rank may isolate relative cash-profitability value within less-used PV13 groups, rather than repeating the occupied FCF/EV group parent directly.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * (group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min30_3000_mapped_513_sector) - group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry)) + 0.280 * (group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min51_f3_513_sector) - group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)) + 0.220 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.180 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses unused/low-used PV13 GROUP fields; no direct relationship/news parent. Reject if too weak or high-corr to E5wRq3ZG/P0pA2QKK/58w2QKw6."
+  },
+  {
+    "name": "v248_peer_margin_capex_residual_unused_groups",
+    "family": "active_pnl_residual_peer_taxonomy",
+    "hypothesis": "Gross-margin and low-capex discipline evaluated within unused PV13 peer groups may capture product-market operating quality not visible in ordinary GICS industry ranks.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * (group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), pv13_hierarchy_min10_3k_all_sector) - group_rank(ts_rank(fnd6_newa1v1300_gp / abs(sales), 126), industry)) + 0.260 * (group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), pv13_hierarchy_min20_f3_513_sector) - group_rank(ts_rank(-1 * capital_expenditure_amount / abs(sales), 126), industry)) + 0.210 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.190 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure peer-taxonomy residual, no analyst/news/relationship parent. Reject if it maps to cost/capex or old profitability capacity."
+  }
+]

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "qgpt_vwap_decay_reversal_mkt",
+    "source": "QuantGPT-inspired",
+    "family": "vwap_reversion",
+    "expression": "-1 * rank(ts_decay_linear(close / vwap, 10))",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Exploratory technical mean-reversion candidate; keep strict turnover gate."
+  },
+  {
+    "name": "qgpt_vwap_decay_reversal_ind",
+    "source": "QuantGPT-inspired",
+    "family": "vwap_reversion",
+    "expression": "-1 * rank(ts_decay_linear(close / vwap, 10))",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Same signal with industry neutralization to test sector exposure sensitivity."
+  },
+  {
+    "name": "qgpt_returns_volume_decay_mkt",
+    "source": "QuantGPT-inspired",
+    "family": "returns_volume",
+    "expression": "-1 * rank(ts_decay_linear(returns * volume / adv20, 5))",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Returns-volume interaction; likely high turnover, so decay is intentionally high."
+  },
+  {
+    "name": "qgpt_returns_volume_decay_ind",
+    "source": "QuantGPT-inspired",
+    "family": "returns_volume",
+    "expression": "-1 * rank(ts_decay_linear(returns * volume / adv20, 5))",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Industry-neutral variant of returns-volume interaction."
+  },
+  {
+    "name": "qgpt_debt_price_composite_ind",
+    "source": "QuantGPT-inspired",
+    "family": "debt_value_price",
+    "expression": "0.5 * rank(-ts_av_diff(close, 10)) + 0.5 * rank(debt_st / enterprise_value)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Debt/value plus price-action composite; validate coverage and concentration."
+  },
+  {
+    "name": "qgpt_debt_price_composite_subind",
+    "source": "QuantGPT-inspired",
+    "family": "debt_value_price",
+    "expression": "0.5 * rank(-ts_av_diff(close, 10)) + 0.5 * rank(debt_st / enterprise_value)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Subindustry-neutral variant; compare with industry neutralization."
+  },
+  {
+    "name": "qgpt_vwap_fundamental_mix",
+    "source": "QuantGPT-inspired",
+    "family": "mixed_technical_fundamental",
+    "expression": "0.5 * rank(-ts_decay_linear(close / vwap, 10)) + 0.5 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Mixes a turnover-heavy VWAP signal with the proven profitability baseline."
+  },
+  {
+    "name": "qgpt_returns_volume_fundamental_mix",
+    "source": "QuantGPT-inspired",
+    "family": "mixed_technical_fundamental",
+    "expression": "0.5 * rank(-ts_decay_linear(returns * volume / adv20, 5)) + 0.5 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Returns-volume interaction blended with proven profitability baseline."
+  }
+]

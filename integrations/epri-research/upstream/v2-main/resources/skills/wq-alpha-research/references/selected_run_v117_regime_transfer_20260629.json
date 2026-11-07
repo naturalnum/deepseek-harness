@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v117_value_volume_lowcorr_trade",
+    "family": "value_volume_marketcorr_regime",
+    "hypothesis": "The v115 value/volume-risk parent was blocked by an old BVPS/value sleeve; trading it only when short SPY correlation is below long SPY correlation may move the timing path away from crowded value exposures.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.250 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.220 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.210 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.140 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.180 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v117_forward_short_largecap_trade",
+    "family": "forward_short_dividend_largecap",
+    "hypothesis": "The forward/short/dividend parent had good headline metrics but failed sub-universe Sharpe; a large-cap gate may remove small-name fragility while preserving option-forward dislocation and short-interest information.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank((close - forward_price_180) / close, 90), industry) + 0.180 * group_rank(ts_rank((forward_price_60 - forward_price_360) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v117_forward_short_eventful_trade",
+    "family": "forward_short_dividend_eventful",
+    "hypothesis": "If the forward/short/dividend signal works around price-dislocation days, high absolute-return gating may solve the prior sub-universe issue differently from a pure size gate.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank((close - forward_price_180) / close, 90), industry) + 0.180 * group_rank(ts_rank((forward_price_60 - forward_price_360) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v117_ppe_age_lowcorr_trade",
+    "family": "ppe_asset_age_lowcorr",
+    "hypothesis": "Older depreciated assets and lower capital intensity were strong but crowded; a low market-correlation regime may distinguish asset-age quality from old low-beta/value sleeves.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.390 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.230 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v117_employee_ppe_eventful_trade",
+    "family": "employee_stockcomp_asset_age_eventful",
+    "hypothesis": "Employee-cost discipline and stock-comp cleanliness were too value-like as a slow signal; combining them with asset-age quality and only trading eventful days may create a different path.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.220 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.200 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.160 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.140 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.100 * rank(-(close / open - 1)), -1)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v117_fscore_inventory_largecap_trade",
+    "family": "fscore_inventory_largecap",
+    "hypothesis": "F-score style acceleration plus lean inventories was previously obscured by a credit-facility unit issue; a corrected large-cap version tests whether the model/inventory parent has independent quality signal.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(fscore_surface_accel, 126), industry) + 0.180 * group_rank(ts_rank(fscore_surface, 126), industry) + 0.180 * group_rank(ts_rank(-1 * inventory_finished_goods_value / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * inventory_wip_amount / assets, 126), industry) + 0.120 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v117_goodwill_customer_lowcorr_trade",
+    "family": "goodwill_customer_marketcorr_regime",
+    "hypothesis": "Goodwill decline plus customer authority was near the threshold but mapped to old goodwill/cashflow sleeves; a low market-correlation regime may turn it into a more idiosyncratic quality path.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.480 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.230 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.180 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.070 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.040 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

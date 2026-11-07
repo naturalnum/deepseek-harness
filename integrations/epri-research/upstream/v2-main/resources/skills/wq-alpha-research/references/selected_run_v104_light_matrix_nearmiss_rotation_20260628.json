@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v104_partner_breadth_higher_return",
+    "family": "relationship_structure_no_return",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Partner breadth net competitors may need slightly more return/risk intensity to lift Fitness while still avoiding the occupied relationship-return residual family.",
+    "expression": "0.32 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), industry) + 0.22 * group_rank(ts_rank(rel_num_all - rel_num_comp, 126), industry) + 0.16 * group_rank(ts_rank(-1 * pv13_revere_key_sector_total, 126), industry) + 0.18 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.12 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair of v103 1Y7GY5NR; no rel_ret_* and no news/product sentiment."
+  },
+  {
+    "name": "v104_partner_breadth_subindustry",
+    "family": "relationship_structure_no_return",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Comparing partner breadth within subindustry may improve sub-universe robustness and Fitness for the count-only relationship structure.",
+    "expression": "0.34 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), subindustry) + 0.24 * group_rank(ts_rank(rel_num_all - rel_num_comp, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * pv13_revere_term_sector_total, 126), industry) + 0.22 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Peer-axis ablation for count-only structure; stop if weak or high-corr."
+  },
+  {
+    "name": "v104_senior_notes_liability_relief",
+    "family": "senior_notes_balance_relief",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Lower senior-note burden and falling note balances may capture simpler liability pressure than broad debt or lease-cleanliness routes.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * senior_notes_balance / assets, 126), industry) + 0.28 * group_rank(ts_rank(-1 * senior_notes_balance_2 / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * ts_delta(senior_notes_balance_2 / assets, 252), 126), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Low-use liability footnote, lightweight matrix fields."
+  },
+  {
+    "name": "v104_ppe_age_no_issuance_beta",
+    "family": "ppe_asset_age_structure",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Older depreciated fixed assets with lower gross PP&E intensity may indicate cash-harvesting capital discipline if stripped of issuance/payout overlap.",
+    "expression": "0.42 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.24 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.16 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cleaner PPE-age version; no stock issuance term because prior version collided with issuance/shareholder-yield."
+  },
+  {
+    "name": "v104_cash_liquidity_lowrisk",
+    "family": "cash_liquidity_safety",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Cash relative to current liabilities may be useful if treated as balance-sheet safety rather than ordinary operating quality.",
+    "expression": "0.48 * group_rank(ts_rank(cash_st / liabilities_curr, 126), industry) + 0.22 * group_rank(ts_rank(current_ratio, 126), industry) + 0.16 * group_rank(ts_rank(-1 * debt_st / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Liquidity-safety revisit without operating-income or close/open stabilizers."
+  },
+  {
+    "name": "v104_volume_absorption_decay32",
+    "family": "technical_liquidity_absorption",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Return-volume absorption was under the Sharpe gate; slower decay may reduce noise without adding crowded technical close-location terms.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * ts_corr(returns, volume / adv20, 30), 120), industry) + 0.24 * group_rank(ts_rank(-1 * abs(returns) * volume / adv20, 30), industry) + 0.18 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.18 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One slow repair of v103 RRp5R8me; no VWAP/open-close."
+  },
+  {
+    "name": "v104_1qf_balance_light_no_vwap",
+    "family": "one_qf_balance_expectation",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Low 1QF net-debt and total-asset expectations may still have low-turnover information if kept free of VWAP, social, and dry-up sleeves.",
+    "expression": "0.44 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.22 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.16 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Light balance-expectation probe; strict corr against d5xK1kmg."
+  },
+  {
+    "name": "v104_acquired_goodwill_credit_capacity",
+    "family": "acquired_goodwill_credit_capacity",
+    "source": "v104_light_matrix_nearmiss_rotation_20260628",
+    "hypothesis": "Low acquired-goodwill burden plus unused credit capacity may capture acquisition-risk relief without direct goodwill-growth, EPS, or close/open terms.",
+    "expression": "0.44 * group_rank(ts_rank(-1 * fnd6_acqgdwl / assets, 126), industry) + 0.24 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.18 * group_rank(ts_rank(rel_num_comp, 126), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Low acquired-goodwill with credit-capacity stabilizer; avoid O0pNbJ17/E5wVN6gm high-corr if it passes metrics."
+  }
+]

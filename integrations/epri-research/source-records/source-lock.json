@@ -1,0 +1,35 @@
+{
+  "delivery_version": "0.2.0",
+  "date": "2026-10-21",
+  "sources": [
+    {
+      "repo": "ResearAI/DeepScientist_V2",
+      "branch": "main",
+      "commit": "7eae8f1d521800e2e8351d20073e3417131b4c95",
+      "branch_rechecked": true,
+      "checkout_clean": true
+    },
+    {
+      "repo": "deepseek-ai/deepseek-harness",
+      "branch": "master",
+      "commit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+      "version": "0.2.1-rc.2",
+      "branch_rechecked": true,
+      "checkout_clean": true
+    },
+    {
+      "repo": "airalogy/airalogy",
+      "branch": "main",
+      "commit": "98c1357200487193d745517ad430398fd0fe9006",
+      "branch_rechecked": true,
+      "local_source_kind": "downloaded_archive_no_git"
+    }
+  ],
+  "actual_runtime": {
+    "harness": "@deepseek-ai/dsh@0.2.1-rc.2",
+    "aimd_core": "@airalogy/aimd-core@2.15.0",
+    "node_tested": "26.3.1"
+  },
+  "scope": "Runnable local plugin MVP; original full-skill sources and selected full source trees preserved; not all V2 tools operational",
+  "harness_core_files_modified": 0
+}

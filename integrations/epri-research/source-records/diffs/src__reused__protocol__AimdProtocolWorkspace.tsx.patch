@@ -1,0 +1,325 @@
+--- packages/desktop/src/renderer/pages/conversation/Preview/components/AimdProtocolWorkspace/AimdProtocolWorkspace.tsx
++++ src/reused/protocol/AimdProtocolWorkspace.tsx
+@@ -7,10 +7,11 @@
+ import type { AimdQuizNode, AimdSubvar, AimdVarNode, AimdVarTableField } from '@airalogy/aimd-core';
+ import { Button, Checkbox, Input, InputNumber, Message, Radio, Select, Switch, Tooltip } from '@arco-design/web-react';
+ import { ArrowLeft, CheckOne, CheckSmall, Delete, Download, Info, PlayOne, Plus, Refresh } from '@icon-park/react';
+-import React, { useEffect, useMemo, useRef, useState } from 'react';
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useTranslation } from 'react-i18next';
+-import { downloadTextContent } from '@/renderer/utils/file/download';
+-import MarkdownPreview from '../viewers/MarkdownViewer';
++import { downloadTextContent } from '../../ui/adapters/download';
++import MarkdownPreview from '../../ui/adapters/MarkdownPreview';
++import AttachmentField, { AttachmentBusyContext } from '../../ui/adapters/AttachmentField';
+ import {
+   buildAimdFieldOwnership,
+   createAimdRecordId,
+@@ -22,7 +23,7 @@
+   type ParsedAimdProtocol,
+ } from './aimdProtocolModel';
+ import ProtocolDocumentBrowser from './ProtocolDocumentBrowser';
+-import { useProtocolDocuments } from './useProtocolDocuments';
++import { useProtocolDocuments } from '../../ui/adapters/useProtocolDocuments';
+ import styles from './AimdProtocolWorkspace.module.css';
+ 
+ type RunStatus = 'ready' | 'running' | 'completed';
+@@ -47,7 +48,7 @@
+   detail?: string;
+ };
+ 
+-type AimdRunState = {
++export type AimdRunState = {
+   id: string;
+   status: RunStatus;
+   createdAt: string;
+@@ -63,6 +64,7 @@
+ };
+ 
+ export type AimdProtocolRunSeed = {
++  id?: string;
+   status?: RunStatus;
+   createdAt?: string;
+   startedAt?: string;
+@@ -80,6 +82,9 @@
+   workspace?: string;
+   revision?: string;
+   initialRun?: AimdProtocolRunSeed;
++  onDirtyChange?: (dirty: boolean) => void;
++  onBusyChange?: (busy: boolean) => void;
++  adapter?: { save: (run: AimdRunState) => Promise<AimdRunState>; submit: (run: AimdRunState) => Promise<AimdRunState>; create: () => Promise<void>; export: () => Promise<void> };
+ };
+ 
+ type Labels = {
+@@ -186,7 +191,7 @@
+     source: '源文件',
+     notStarted: '开始后会按顺序展示需要填写、执行和核验的内容。',
+     completedHint: '本次结论已形成，可导出或再次运行。',
+-    savedHint: '草稿会保留在本次应用会话中；导出后可作为正式运行记录留存。',
++    savedHint: '修改后点击“保存草稿”写入共享数据库；导出读取最后保存的版本。',
+     protocolError: '这个研究流程暂时无法读取，请检查流程定义。',
+     openMedia: '打开媒体',
+     automation: '自动化与来源',
+@@ -206,7 +211,7 @@
+     outcomeCompleted: '本次运行已完成并封存',
+     outcomeReadyDetail: '开始运行后，依次完成必要输入、执行步骤和检查点，最终结论不会被提前生成。',
+     outcomeRunningDetail: '当前内容仍是过程记录；只有必要项目全部完成后才能封存结果。',
+-    outcomeCompletedDetail: '必要输入、步骤与检查点已记录。可在下方查看关联报告，或导出本次结果。',
++    outcomeCompletedDetail: '必要输入、步骤与检查点已记录。可在下方查看固定的协议版本，或导出本次结果。',
+     remaining: '待完成',
+     items: '项',
+     humanInput: '人工填写',
+@@ -233,8 +238,8 @@
+     eventDecisionUpdated: '更新判断结果',
+     eventRunCompleted: '封存运行记录',
+     eventRecordExported: '导出正式记录',
+-    relatedDocuments: '关联结果',
+-    relatedDocumentsDescription: '查看这项流程的定义、报告与历次运行记录。',
++    relatedDocuments: '关联协议',
++    relatedDocumentsDescription: '查看本次记录固定使用的协议定义。',
+     runInformation: '运行信息',
+     runInformationDescription: '先确认当前状态与必要输入，再按顺序执行与核验。',
+     elapsed: '已运行',
+@@ -269,7 +274,7 @@
+     source: 'Source file',
+     notStarted: 'Start the run to reveal the required inputs, execution steps, and checks in order.',
+     completedHint: 'The run conclusion is ready to export or repeat.',
+-    savedHint: 'The draft stays in this app session; export it when it is ready to keep as a formal run record.',
++    savedHint: 'Save edits to the shared database before leaving. Export reads the last saved version.',
+     protocolError: 'This research workflow could not be read. Check the workflow definition.',
+     openMedia: 'Open media',
+     automation: 'Automation and sources',
+@@ -292,7 +297,7 @@
+     outcomeRunningDetail:
+       'Complete the remaining required items before sealing; incomplete work is never presented as final.',
+     outcomeCompletedDetail:
+-      'Required inputs, steps, and checks have been recorded. Review the linked report below or export this run result.',
++      'Required inputs, steps, and checks have been recorded. Review the pinned protocol below or export this run result.',
+     remaining: 'Remaining',
+     items: 'items',
+     humanInput: 'Human input',
+@@ -319,8 +324,8 @@
+     eventDecisionUpdated: 'Updated decision',
+     eventRunCompleted: 'Sealed run record',
+     eventRecordExported: 'Exported formal record',
+-    relatedDocuments: 'Related results',
+-    relatedDocumentsDescription: 'Review the workflow definition, reports, and prior run records in one place.',
++    relatedDocuments: 'Pinned protocol',
++    relatedDocumentsDescription: 'Review the exact protocol definition used by this record.',
+     runInformation: 'Run information',
+     runInformationDescription: 'Confirm the current state and required inputs before following the execution steps.',
+     elapsed: 'Elapsed',
+@@ -377,7 +382,7 @@
+   const createdAt = seed?.createdAt || new Date().toISOString();
+   const fieldOwnership = buildAimdFieldOwnership(protocol);
+   const base: AimdRunState = {
+-    id: createAimdRecordId(filePath),
++    id: seed?.id || createAimdRecordId(filePath),
+     status: seed?.status || 'ready',
+     createdAt,
+     startedAt: seed?.startedAt,
+@@ -463,6 +468,8 @@
+   const example = fieldExample(field);
+   const unit = fieldUnit(field);
+   const automaticallyManaged = ownership !== 'human';
++
++  if (type === 'file') return <span className={styles.inlineField}><span className={styles.inlineFieldLabel}>{title}</span><AttachmentField value={value} label={title} disabled={disabled || readOnly || automaticallyManaged} onChange={onChange} /></span>;
+ 
+   if (readOnly) {
+     return (
+@@ -587,8 +594,9 @@
+   run: AimdRunState;
+   labels: Labels;
+   recentlyUpdatedField?: string;
++  saving?: boolean;
+   onValue: (id: string, value: unknown) => void;
+-}> = ({ inlines, run, labels, recentlyUpdatedField, onValue }) => {
++}> = ({ inlines, run, labels, recentlyUpdatedField, saving, onValue }) => {
+   const fieldCount = inlines.filter((inline) => inline.kind === 'var').length;
+   const fieldOnly =
+     fieldCount > 1 &&
+@@ -613,7 +621,7 @@
+               key={`${inline.field.id}-${index}`}
+               field={inline.field}
+               value={run.values[inline.field.id]}
+-              disabled={run.status !== 'running'}
++              disabled={saving || run.status !== 'running'}
+               readOnly={run.status === 'completed'}
+               ownership={run.fieldOwnership[inline.field.id] || 'human'}
+               labels={labels}
+@@ -748,6 +756,8 @@
+   const enumValues = field.enum || field.kwargs?.enum;
+   const placeholder = Array.isArray(field.examples) && field.examples.length ? String(field.examples[0]) : undefined;
+ 
++  if (type === 'file') return <AttachmentField value={value} label={label} disabled={disabled} onChange={onChange} />;
++
+   if (Array.isArray(enumValues) && enumValues.length) {
+     return (
+       <Select
+@@ -1018,9 +1028,17 @@
+   workspace,
+   revision,
+   initialRun,
++  adapter,
++  onDirtyChange,
++  onBusyChange,
+ }) => {
++  const [savingRequest, setSaving] = useState(false);
++  const [uploads, setUploads] = useState(0);
++  const reportUpload = useCallback((busy: boolean) => setUploads(count => count + (busy ? 1 : -1)), []);
++  const saving = savingRequest || uploads > 0;
++  const [saveStatus, setSaveStatus] = useState("表单修改后请保存草稿；提交时会先保存并校验。");
+   const { i18n } = useTranslation();
+-  const locale: 'zh' | 'en' = i18n.resolvedLanguage?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
++  const locale: 'zh' | 'en' = (i18n.resolvedLanguage || i18n.language)?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+   const labels = LABELS[locale];
+   const parsed = useMemo<{ protocol?: ParsedAimdProtocol; error?: string }>(() => {
+     try {
+@@ -1041,6 +1059,12 @@
+       : ({} as AimdRunState)
+   );
+   const [view, setView] = useState<'protocol' | 'details'>('protocol');
++  const signature = (value: AimdRunState) => JSON.stringify([value.status, value.values, value.tables, value.steps, value.checks, value.quizzes]);
++  const savedSignature = useRef(signature(run));
++  const dirty = signature(run) !== savedSignature.current;
++  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
++  useEffect(() => { onBusyChange?.(saving); }, [saving, onBusyChange]);
++  useEffect(() => () => { onDirtyChange?.(false); onBusyChange?.(false); }, [onDirtyChange, onBusyChange]);
+   const [now, setNow] = useState(Date.now());
+   const [recentlyUpdatedField, setRecentlyUpdatedField] = useState<string>();
+   const recentUpdateTimer = useRef<number | undefined>(undefined);
+@@ -1059,7 +1083,7 @@
+   }, [filePath, initialRun, protocol, runSourceKey, sessionKey]);
+ 
+   useEffect(() => {
+-    if (!run?.id) return;
++    if (!run?.id || adapter) return;
+     try {
+       sessionStorage.setItem(sessionKey, JSON.stringify(run));
+     } catch {
+@@ -1132,6 +1156,7 @@
+   );
+ 
+   const startRun = () => {
++    if (adapter) setSaveStatus("运行状态尚未保存，请保存草稿");
+     setNow(Date.now());
+     setRun((current) => {
+       const startedAt = current.startedAt || new Date().toISOString();
+@@ -1147,11 +1172,24 @@
+     });
+   };
+   const newRun = () => {
++    if (adapter) { void adapter.create().catch(error => Message.error(String(error))); return; }
+     setNow(Date.now());
+     setRun(initialRunState(protocol, filePath));
+   };
++  const saveDraft = async () => {
++    if (!adapter || saving) return;
++    setSaving(true);
++    try { const saved = await adapter.save(run); savedSignature.current = signature(saved); setRun({ ...run, ...saved }); setSaveStatus("已保存至共享数据库"); }
++    catch (error) { setSaveStatus(String(error)); Message.error(String(error)); }
++    finally { setSaving(false); }
++  };
+   const completeRun = () => {
+-    if (!canFinish) return;
++    if (!canFinish || saving) return;
++    if (adapter) {
++      setSaving(true);
++      void adapter.submit(run).then(saved => { savedSignature.current = signature(saved); setRun({ ...run, ...saved }); setSaveStatus("已提交；历史版本已保留"); }).catch(error => { setSaveStatus(String(error)); Message.error(String(error)); }).finally(() => setSaving(false));
++      return;
++    }
+     setRun((current) => {
+       const completedAt = new Date().toISOString();
+       return {
+@@ -1166,6 +1204,7 @@
+     });
+   };
+   const exportRecord = () => {
++    if (adapter) { void adapter.export().catch(error => Message.error(String(error))); return; }
+     const exportedAt = new Date().toISOString();
+     const exportedRun = {
+       ...run,
+@@ -1192,6 +1231,7 @@
+     ).then(() => Message.success(labels.exported));
+   };
+   const setValue = (id: string, value: unknown) => {
++    if (adapter) setSaveStatus("有未保存的修改，请保存草稿");
+     setRun((current) => ({
+       ...current,
+       values: { ...current.values, [id]: value },
+@@ -1241,6 +1281,7 @@
+           run={run}
+           labels={labels}
+           recentlyUpdatedField={recentlyUpdatedField}
++          saving={saving}
+           onValue={setValue}
+         />
+       );
+@@ -1253,7 +1294,7 @@
+           key={`table-${table.id}`}
+           field={table}
+           rows={run.tables[table.id] || []}
+-          disabled={run.status !== 'running' || ownership !== 'human'}
++          disabled={saving || run.status !== 'running' || ownership !== 'human'}
+           readOnly={run.status === 'completed'}
+           labels={labels}
+           onChange={(rows) => setTable(table.id, rows)}
+@@ -1283,7 +1324,7 @@
+             type='button'
+             className={styles.stepMarker}
+             data-presentation='report-index'
+-            disabled={run.status !== 'running'}
++            disabled={saving || run.status !== 'running'}
+             aria-label={block.step.title || block.step.id}
+             aria-pressed={checked}
+             onClick={() => setStep(block.step.id, !checked)}
+@@ -1306,7 +1347,7 @@
+           <Checkbox
+             aria-label={checkLabel(block.check)}
+             checked={Boolean(run.checks[block.check.id])}
+-            disabled={run.status !== 'running'}
++            disabled={saving || run.status !== 'running'}
+             onChange={(value) => setCheck(block.check.id, value)}
+           />
+           <span>{checkLabel(block.check)}</span>
+@@ -1319,7 +1360,7 @@
+           key={`quiz-${block.quiz.id}`}
+           quiz={block.quiz}
+           value={run.quizzes[block.quiz.id]}
+-          disabled={run.status !== 'running'}
++          disabled={saving || run.status !== 'running'}
+           readOnly={run.status === 'completed'}
+           onChange={(value) => setQuiz(block.quiz.id, value)}
+         />
+@@ -1498,7 +1539,7 @@
+   }
+ 
+   return (
+-    <div className={styles.workspace} data-status={run.status} data-testid='aimd-protocol-workspace'>
++    <AttachmentBusyContext.Provider value={reportUpload}><div aria-busy={saving} style={saving ? { pointerEvents: 'none', opacity: 0.8 } : undefined} className={styles.workspace} data-status={run.status} data-testid='aimd-protocol-workspace'>
+       <div className={styles.scrollSurface}>
+         <header className={styles.protocolHeader}>
+           <div className={styles.eyebrowRow}>
+@@ -1531,10 +1572,12 @@
+                   {labels.newRun}
+                 </Button>
+               ) : (
+-                <Button type='primary' icon={<CheckOne />} disabled={!canFinish} onClick={completeRun}>
++                <Button type='primary' icon={<CheckOne />} disabled={!canFinish || saving} onClick={completeRun}>
+                   {labels.finish}
+                 </Button>
+               )}
++              {adapter && run.status !== "completed" && <Button loading={saving} onClick={() => void saveDraft()}>保存草稿</Button>}
++              {adapter && <span role="status" style={{ maxWidth: 360, fontSize: 12 }}>{saveStatus}</span>}
+               <Button icon={<Download />} onClick={exportRecord}>
+                 {labels.export}
+               </Button>
+@@ -1609,7 +1652,7 @@
+           </main>
+         </div>
+       </div>
+-    </div>
++    </div></AttachmentBusyContext.Provider>
+   );
+ };
+ 

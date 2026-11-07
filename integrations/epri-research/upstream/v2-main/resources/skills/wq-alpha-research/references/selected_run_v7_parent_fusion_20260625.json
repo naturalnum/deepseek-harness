@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v7_buyback_reversal_roe_fusion",
+    "family": "parent_fusion_payout_reversal",
+    "source": "parent_factor_fusion_v7_20260625",
+    "hypothesis": "The original close/open reversal parent is a useful de-correlation component; combine it with buyback yield and a reduced ROE-quality anchor to keep economic strength while avoiding a pure MPpGzqwr near-neighbor.",
+    "expression": "0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent 3 + payout branch + parent 1. Watch correlation with LLpGdlrm and MPpGzqwr."
+  },
+  {
+    "name": "v7_repurchase_eps_reversal_fusion",
+    "family": "parent_fusion_repurchase_eps",
+    "source": "parent_factor_fusion_v7_20260625",
+    "hypothesis": "Share-count repurchase was near threshold; adding a small EPS-yield parent and close/open reversal may improve Sharpe without becoming a pure EPS or payout clone.",
+    "expression": "0.45 * group_rank(ts_rank(shares_reacquired_during_period / common_stock_shares_outstanding_count, 252), industry) + 0.30 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent 2 + parent 3 + repurchase-count field. EPS weight intentionally capped."
+  },
+  {
+    "name": "v7_customer_authority_reversal_roe",
+    "family": "parent_fusion_relationship",
+    "source": "parent_factor_fusion_v7_20260625",
+    "hypothesis": "Pure customer authority was weak but positive; combine it with close/open reversal and a small ROE-quality anchor to test whether relationship centrality is useful when stabilized.",
+    "expression": "0.45 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent 3 + parent 1 + relationship graph. Avoids operating_income/assets anchor used in 58wp1x1o."
+  },
+  {
+    "name": "v7_news_sentiment_reversal_roe",
+    "family": "parent_fusion_news",
+    "source": "parent_factor_fusion_v7_20260625",
+    "hypothesis": "Earnings-news sentiment had Sharpe but quality-heavy versions were too correlated; add close/open reversal and lower quality weight to seek a more independent signal.",
+    "expression": "0.40 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent 3 + parent 1 + Ravenpack earnings sentiment. Correlation gate should reject if it collapses into quality."
+  },
+  {
+    "name": "v7_epsr_reversal_buyback_fusion",
+    "family": "parent_fusion_eps_variant",
+    "source": "parent_factor_fusion_v7_20260625",
+    "hypothesis": "Use GAAP EPS estimates instead of the crowded est_eps parent, then mix with close/open reversal and buyback yield to test a lower-correlation analyst/payout hybrid.",
+    "expression": "0.40 * group_rank(ts_rank(est_epsr / close, 126), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Parent 2 variant + parent 3 + payout. Strong EPS-correlation risk, so rely on daily-return gate."
+  }
+]

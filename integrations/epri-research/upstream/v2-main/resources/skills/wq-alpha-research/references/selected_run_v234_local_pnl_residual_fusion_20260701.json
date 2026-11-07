@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v234_buyback_epsr_ebit_delivery_exact_fusion",
+    "family": "shareholder_return_ebit_delivery_residual",
+    "source": "v234_local_daily_pnl_residual_fusion_20260701",
+    "hypothesis": "Shareholder return through buybacks and EPS revision may remain useful when blended with EBIT delivery and low estimate dispersion, but only if the combined daily PnL is less correlated than either parent.",
+    "expression": "0.400 * (0.40 * group_rank(ts_rank(est_epsr / close, 126), industry) + 0.35 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry)) + 0.600 * (trade_when(rank(cap) > 0.50, 0.260 * rank(-(close / open - 1)) + 0.230 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.180 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Local proxy from QPaGxpRM + 0m7arnRv gave combined top daily-PnL corr about +0.657 to 88zpWZ1X, with strong component metrics. Kill if it collides with buyback/EPS/open-close or EBIT-quality actives, fails LSUS, or shows unit warnings."
+  },
+  {
+    "name": "v234_buyback_epsr_ebit_delivery_clean",
+    "family": "shareholder_return_ebit_delivery_residual",
+    "source": "v234_local_daily_pnl_residual_fusion_20260701",
+    "hypothesis": "A cleaner version of the buyback/EPS-revision plus EBIT-delivery residual should reduce open-close dependence while preserving the economic link to shareholder yield and operating delivery.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.180 * group_rank(ts_rank(est_epsr / close, 126), industry) + 0.130 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.170 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.190 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Same economic parent as the exact fusion but removes the large open-close sleeve. Kill if Fitness collapses, turnover drops below 1%, LSUS fails, or corr remains near 0.68 despite simplification."
+  },
+  {
+    "name": "v234_ebit_delivery_sales_ev_value_exact_fusion",
+    "family": "ebit_delivery_sales_value_residual",
+    "source": "v234_local_daily_pnl_residual_fusion_20260701",
+    "hypothesis": "EBIT delivery and low EBIT estimate dispersion may diversify simple analyst value when combined with sales-to-enterprise-value and EPS yield.",
+    "expression": "0.700 * (trade_when(rank(cap) > 0.50, 0.260 * rank(-(close / open - 1)) + 0.230 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.180 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)) + 0.300 * (0.5 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.5 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Local proxy from 0m7arnRv + d5xZWARJ gave top daily-PnL corr about +0.634 to WjpxeKkk. This is close to old analyst/value capacity, so only submit if live corr and LSUS are clearly clean."
+  },
+  {
+    "name": "v234_ebit_delivery_sales_ev_value_clean",
+    "family": "ebit_delivery_sales_value_residual",
+    "source": "v234_local_daily_pnl_residual_fusion_20260701",
+    "hypothesis": "A no-open-close EBIT delivery/value blend tests whether operating delivery against analyst expectations adds signal beyond simple EPS and sales valuation.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.100 * group_rank(ts_rank(est_eps / close, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Cleaner simplification of the EBIT/value fusion. Kill if it maps back to EBIT/CFO quality actives, has LOW_SUB_UNIVERSE_SHARPE, or cannot clear Fitness >= 1.10 without open-close support."
+  },
+  {
+    "name": "v234_totassets_restraint_ebit_delivery_clean",
+    "family": "asset_growth_ebit_delivery_residual",
+    "source": "v234_local_daily_pnl_residual_fusion_20260701",
+    "hypothesis": "Firms with restrained analyst total-asset growth and clean EBIT delivery may reflect disciplined growth rather than balance-sheet expansion, but this must not become a total-assets estimate sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.180 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Inspired by rKo8GGb8 + EBIT delivery but removes option forward-price terms. Kill if it collides with 78wvjvW8/wpR9AnYd total-assets estimate capacity or fails LSUS."
+  }
+]

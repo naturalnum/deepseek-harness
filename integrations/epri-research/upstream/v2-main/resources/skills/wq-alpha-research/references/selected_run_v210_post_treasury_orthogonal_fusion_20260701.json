@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v210_treasury_news_book_clean",
+    "family": "post_treasury_orthogonal_fusion",
+    "hypothesis": "The two v209 ACTIVE alphas remain low-correlated with news18 chain staleness and PV13/book peer delivery. A compact treasury + news + unit-clean book blend tests whether the low-corr space can be used without returning to v209 reported-cashprofit or PCR/ROE sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_min20_3k_sector) + 0.110 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Unit-clean book terms only; no sh-equity actual-minus-estimate subtraction. Strict-check against KPbZ0eLg, WjpJwMdP, 2r72v5P8, and KPb2n2WE."
+  },
+  {
+    "name": "v210_treasury_contract_book_news",
+    "family": "post_treasury_orthogonal_fusion",
+    "hypothesis": "Contract-liability growth, news staleness, and book value are all low-to-moderate correlated with the new v209 actives. This tests whether a non-option/non-PCR fusion can carry treasury information without colliding with v193/v209 capacities.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.190 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.170 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No reported FCF, no PCR, no long-tenor option/alltype. Reject if it maps to LLprjdP9/WjpJwMdP or new v209 actives."
+  },
+  {
+    "name": "v210_treasury_pcr_news_book",
+    "family": "post_treasury_orthogonal_fusion",
+    "hypothesis": "PCR curve worked with treasury in KPb2n2WE, but that alpha used ROE/reversal. Replacing ROE/reversal with news and book tests whether PCR can act as a small timing sleeve rather than the dominant v209 PCR/ROE parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.150 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.160 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_min20_3k_sector) + 0.110 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Only one PCR sleeve and no ROE/reversal; close if it becomes a KPb2n2WE or 6XwKxVkO sibling."
+  },
+  {
+    "name": "v210_business_sale_news_book_recycle",
+    "family": "cold_asset_recycling_probe",
+    "hypothesis": "Business-sale proceeds were too weak in v209, but may work as a small asset-pruning sleeve when paired with news staleness and unit-clean book support. This avoids lease/fixed-commitment repair legs that would collide with 3q7PkXGN.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.180 * group_rank(ts_rank(proceeds_from_business_sales / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(fnd6_sppe / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A controlled weak-watchlist repair for business-sale only. Do not rescue with lease/fixed-commitment, buyback, or ordinary quality if it fails."
+  },
+  {
+    "name": "v210_treasury_book_dispersion_risk",
+    "family": "post_treasury_book_dispersion",
+    "hypothesis": "If the clean book sleeve is useful after v209, it should work with treasury release and risk/correlation structure without news or option support. This isolates whether book dispersion adds independent information or simply reconstructs KPbZ0eLg.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_min20_3k_sector) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 63), 126), industry) + 0.100 * group_rank(ts_rank(-1 * systematic_risk_last_90_days, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Isolation test for unit-clean book dispersion plus treasury. Reject if weak or high-corr to KPbZ0eLg/9qwE360V."
+  }
+]

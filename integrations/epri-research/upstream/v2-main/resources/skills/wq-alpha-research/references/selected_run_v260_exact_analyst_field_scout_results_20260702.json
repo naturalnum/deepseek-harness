@@ -1,0 +1,940 @@
+[
+  {
+    "name": "v260_bvps_revision_book_value",
+    "family": "exact_analyst_field_scout",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "idx": 2,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "zq9noV7o",
+      "sim_data": {
+        "id": "2Zf7Ld8sM5k8b6w5BK3KyjX",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 6,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "status": "COMPLETE",
+        "alpha": "zq9noV7o"
+      }
+    },
+    "metrics": {
+      "id": "zq9noV7o",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 6,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "description": null,
+        "operatorCount": 21
+      },
+      "dateCreated": "2026-07-01T12:10:50-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T12:10:51-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "GOOD",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 4443888,
+        "bookSize": 20000000,
+        "longCount": 1413,
+        "shortCount": 1725,
+        "turnover": 0.0758,
+        "returns": 0.0898,
+        "drawdown": 0.0851,
+        "margin": 0.00237,
+        "sharpe": 1.87,
+        "fitness": 1.58,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.87
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.58
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0758
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0758
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.81,
+            "value": 1.64
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "correlations": [
+      {
+        "alpha_id": "wpR9AnYd",
+        "corr": 0.8234289696078713,
+        "old_sharpe": 1.66,
+        "old_fitness": 1.39
+      },
+      {
+        "alpha_id": "9qwE360V",
+        "corr": 0.7148032641913115,
+        "old_sharpe": 1.49,
+        "old_fitness": 1.37
+      },
+      {
+        "alpha_id": "78wvjvW8",
+        "corr": 0.6398390727117604,
+        "old_sharpe": 1.54,
+        "old_fitness": 1.21
+      },
+      {
+        "alpha_id": "9qwWXNW9",
+        "corr": 0.518314209272943,
+        "old_sharpe": 1.64,
+        "old_fitness": 1.61
+      },
+      {
+        "alpha_id": "omKJ5nLl",
+        "corr": 0.5100864262364456,
+        "old_sharpe": 2.14,
+        "old_fitness": 1.87
+      }
+    ],
+    "submission": {
+      "submitted": false,
+      "reason": "high_corr_with_wpR9AnYd_+0.82"
+    }
+  },
+  {
+    "name": "v260_dividend_estimate_visibility",
+    "family": "exact_analyst_field_scout",
+    "expression": "0.45 * group_rank(ts_rank(dividend_estimate_average / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(dividend_estimate_average / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(dividend_estimate_count, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "idx": 6,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "78wRK2kQ",
+      "sim_data": {
+        "id": "3GW3t41pt55ZbzA10uPNs35b",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 6,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "0.45 * group_rank(ts_rank(dividend_estimate_average / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(dividend_estimate_average / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(dividend_estimate_count, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "status": "COMPLETE",
+        "alpha": "78wRK2kQ"
+      }
+    },
+    "metrics": {
+      "id": "78wRK2kQ",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 6,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.45 * group_rank(ts_rank(dividend_estimate_average / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(dividend_estimate_average / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(dividend_estimate_count, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "description": null,
+        "operatorCount": 21
+      },
+      "dateCreated": "2026-07-01T12:19:40-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T12:19:40-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "AVERAGE",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 4808840,
+        "bookSize": 20000000,
+        "longCount": 1324,
+        "shortCount": 1813,
+        "turnover": 0.0752,
+        "returns": 0.0972,
+        "drawdown": 0.1078,
+        "margin": 0.002586,
+        "sharpe": 1.24,
+        "fitness": 1.09,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 1.24
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "PASS",
+            "limit": 1.0,
+            "value": 1.09
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0752
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0752
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.54,
+            "value": 0.98
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "name": "v260_cff_financing_discipline",
+    "family": "exact_analyst_field_scout",
+    "expression": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.15 * rank(-(close / open - 1))",
+    "idx": 3,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "mL8WxxKE",
+      "sim_data": {
+        "id": "3uA8POgdY4KsctaHaAP0VZQ",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 6,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.15 * rank(-(close / open - 1))",
+        "status": "COMPLETE",
+        "alpha": "mL8WxxKE"
+      }
+    },
+    "metrics": {
+      "id": "mL8WxxKE",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 6,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.15 * rank(-(close / open - 1))",
+        "description": null,
+        "operatorCount": 23
+      },
+      "dateCreated": "2026-07-01T12:14:48-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T12:14:48-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 2314538,
+        "bookSize": 20000000,
+        "longCount": 1484,
+        "shortCount": 1653,
+        "turnover": 0.0829,
+        "returns": 0.0468,
+        "drawdown": 0.0881,
+        "margin": 0.001129,
+        "sharpe": 1.27,
+        "fitness": 0.78,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.27
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.78
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0829
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0829
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.55,
+            "value": 1.15
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "name": "v260_netdebt_estimate_deleveraging",
+    "family": "exact_analyst_field_scout",
+    "expression": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 63), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "idx": 1,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "RRpwagx1",
+      "sim_data": {
+        "id": "12m7fW9VB4TibF2o3H2TAgP",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 6,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 63), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "status": "COMPLETE",
+        "alpha": "RRpwagx1"
+      }
+    },
+    "metrics": {
+      "id": "RRpwagx1",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 6,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_mean / assets, 63), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netdebt_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "description": null,
+        "operatorCount": 23
+      },
+      "dateCreated": "2026-07-01T12:10:50-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T12:10:51-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 2558708,
+        "bookSize": 20000000,
+        "longCount": 1402,
+        "shortCount": 1735,
+        "turnover": 0.0615,
+        "returns": 0.0517,
+        "drawdown": 0.1241,
+        "margin": 0.001682,
+        "sharpe": 1.13,
+        "fitness": 0.73,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 1.13
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.73
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0615
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0615
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.49,
+            "value": 0.39
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "name": "v260_cfi_capex_investment_discipline",
+    "family": "exact_analyst_field_scout",
+    "expression": "0.35 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfi_mean / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number + anl4_fs_detail_estimates_advanced_af_nd_capex_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "idx": 4,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "akd9W2VW",
+      "sim_data": {
+        "id": "21zlB9c8U4gH8MELjUcVjif",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 6,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "0.35 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfi_mean / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number + anl4_fs_detail_estimates_advanced_af_nd_capex_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "status": "COMPLETE",
+        "alpha": "akd9W2VW"
+      }
+    },
+    "metrics": {
+      "id": "akd9W2VW",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 6,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.35 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfi_mean / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number + anl4_fs_detail_estimates_advanced_af_nd_capex_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+        "description": null,
+        "operatorCount": 22
+      },
+      "dateCreated": "2026-07-01T12:13:54-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T12:13:54-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 1449309,
+        "bookSize": 20000000,
+        "longCount": 1469,
+        "shortCount": 1668,
+        "turnover": 0.0692,
+        "returns": 0.0293,
+        "drawdown": 0.0947,
+        "margin": 0.000846,
+        "sharpe": 0.82,
+        "fitness": 0.4,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 0.82
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.4
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0692
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0692
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.36,
+            "value": 0.67
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "name": "v260_expense_guidance_pressure",
+    "family": "exact_analyst_field_scout",
+    "expression": "0.35 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_sga_maxguidance / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_soe_maxguidance / assets, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry)",
+    "idx": 5,
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "1Y7AndWR",
+      "sim_data": {
+        "id": "76xHWdbr51V9151dziJZse",
+        "type": "REGULAR",
+        "settings": {
+          "instrumentType": "EQUITY",
+          "region": "USA",
+          "universe": "TOP3000",
+          "delay": 1,
+          "decay": 6,
+          "neutralization": "INDUSTRY",
+          "truncation": 0.06,
+          "pasteurization": "ON",
+          "unitHandling": "VERIFY",
+          "nanHandling": "ON",
+          "maxTrade": "OFF",
+          "maxPosition": "OFF",
+          "language": "FASTEXPR",
+          "visualization": false
+        },
+        "regular": "0.35 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_sga_maxguidance / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_soe_maxguidance / assets, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry)",
+        "status": "COMPLETE",
+        "alpha": "1Y7AndWR"
+      }
+    },
+    "metrics": {
+      "id": "1Y7AndWR",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 6,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.35 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_sga_maxguidance / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_rd_exp_maxguidance / sales, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_af_nd_soe_maxguidance / assets, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry)",
+        "description": null,
+        "operatorCount": 22
+      },
+      "dateCreated": "2026-07-01T12:16:13-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T12:16:14-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 1517399,
+        "bookSize": 20000000,
+        "longCount": 1563,
+        "shortCount": 1574,
+        "turnover": 0.0559,
+        "returns": 0.0307,
+        "drawdown": 0.0858,
+        "margin": 0.001097,
+        "sharpe": 0.53,
+        "fitness": 0.26,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 0.53
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.26
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0559
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0559
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.23,
+            "value": 0.03
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  }
+]

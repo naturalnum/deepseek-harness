@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v231_option_term_top1000_market",
+    "family": "option_short_mid_term_lsus_repair",
+    "hypothesis": "If the v230 short-mid option term signal is genuinely useful but diluted by smaller TOP3000 names, restricting exposure to TOP1000 and using MARKET neutralization should preserve the term-structure information while improving the sub-universe check.",
+    "expression": "trade_when(top1000 > 0, 0.290 * group_rank(ts_rank((option_breakeven_180 - option_breakeven_20) / close, 90), industry) + 0.230 * group_rank(ts_rank((forward_price_180 - forward_price_20) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_150 - implied_volatility_mean_skew_10), 90), industry) + 0.140 * group_rank(ts_rank(-1 * abs(historical_volatility_20 - historical_volatility_150), 90), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Single TOP1000 robustness repair of 9qw3gv0r. Submit only if LSUS passes and corr stays <0.60 versus option/model frontier."
+  },
+  {
+    "name": "v231_option_term_sp500_market",
+    "family": "option_short_mid_term_lsus_repair",
+    "hypothesis": "The same option term structure may be cleaner in the most liquid S&P 500-like subset, where option surfaces are denser and less small-cap-sensitive.",
+    "expression": "trade_when(topsp500 > 0, 0.300 * group_rank(ts_rank((option_breakeven_180 - option_breakeven_20) / close, 90), industry) + 0.230 * group_rank(ts_rank((forward_price_180 - forward_price_20) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_150 - implied_volatility_mean_skew_10), 90), industry) + 0.130 * group_rank(ts_rank(-1 * abs(historical_volatility_20 - historical_volatility_150), 90), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Liquidity-focused repair. Kill on concentrated weight, low turnover, or weak Sharpe from too few names."
+  },
+  {
+    "name": "v231_midlong_option_term_largecap",
+    "family": "option_midlong_term_structure",
+    "hypothesis": "A less short-dated option term structure may be more stable in TOP1000 names than the 20d-vs-180d version, while still avoiding model/social/news/open-close stabilizers.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.300 * group_rank(ts_rank((option_breakeven_270 - option_breakeven_30) / close, 90), industry) + 0.220 * group_rank(ts_rank((forward_price_360 - forward_price_60) / close, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_270 - implied_volatility_mean_skew_30), 90), industry) + 0.140 * group_rank(ts_rank(-1 * abs(historical_volatility_30 - historical_volatility_180), 90), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Changes the term-structure horizon instead of only gating. Kill if it maps to existing long-option frontier or repeats LSUS."
+  },
+  {
+    "name": "v231_top1000_callput_asym_term",
+    "family": "option_callput_asymmetry_lsus_repair",
+    "hypothesis": "Call-put breakeven asymmetry across short and mid maturities may isolate directional option demand inside TOP1000, rather than the broader combined breakeven slope that failed LSUS.",
+    "expression": "trade_when(top1000 > 0, 0.300 * group_rank(ts_rank(((call_breakeven_180 - put_breakeven_180) - (call_breakeven_20 - put_breakeven_20)) / close, 90), industry) + 0.220 * group_rank(ts_rank((option_breakeven_180 - option_breakeven_20) / close, 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(implied_volatility_call_150 - implied_volatility_put_150), 90), industry) + 0.130 * group_rank(ts_rank(-1 * abs(implied_volatility_call_10 - implied_volatility_put_10), 90), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Asymmetry repair, not a full option frontier expansion. Require LSUS pass and corr <0.60; close route if it fails."
+  }
+]

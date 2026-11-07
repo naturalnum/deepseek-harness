@@ -1,0 +1,38 @@
+[
+  {
+    "name": "v285_product_comp_minus_product_030",
+    "family": "competitor_product_residual",
+    "hypothesis": "A strong product/competitor/volume candidate is blocked mainly by a product-news active alpha; a single compact exact subtraction may keep the competitor-pressure residual while avoiding the v283 dual-blocker expression failure.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.65, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.170 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1) - 0.30 * (0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v285_product_comp_minus_product_035",
+    "family": "competitor_product_residual",
+    "hypothesis": "A slightly stronger product blocker subtraction should provide more self-correlation margin if 0.30 remains near the boundary.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.65, 0.260 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.180 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.170 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1) - 0.35 * (0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v285_relret_cashflow_minus_comp_030",
+    "family": "competitor_cashflow_residual",
+    "hypothesis": "A rel-ret/earnings/cashflow frontier candidate is blocked by an existing competitor-news alpha; subtracting the competitor-news blocker may isolate cashflow-backed competitor pressure.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1) - 0.30 * (0.40 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v285_relret_cashflow_minus_comp_035",
+    "family": "competitor_cashflow_residual",
+    "hypothesis": "A stronger competitor-news blocker subtraction may cross the strict 0.58 correlation gate while preserving the high-Sharpe cashflow-backed residual.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry), -1) - 0.35 * (0.40 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

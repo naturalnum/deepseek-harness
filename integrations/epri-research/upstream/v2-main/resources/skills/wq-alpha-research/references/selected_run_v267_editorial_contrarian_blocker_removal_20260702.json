@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v267_editorial_equity_pure_no_story",
+    "family": "editorial_equity_contrarian_blocker_removal",
+    "hypothesis": "If the v266 edge is truly broad-sentiment contrarian rather than novelty/story-count event capacity, the pure editorial/equity fade should retain strength while reducing correlation to WjpJwMdP and omKZRRn2.",
+    "field_notes": "Removes news_impact_projection_score and story_event_record_count from qMAJxLd1 to cut the event-attention carrier.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.550 * group_rank(ts_rank(-1 * vec_avg(editorial_commentary_sentiment_2), 126), industry) + 0.450 * group_rank(ts_rank(-1 * vec_avg(equity_sentiment_score), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v267_editorial_sentiment_disagreement",
+    "family": "editorial_equity_contrarian_blocker_removal",
+    "hypothesis": "Broad editorial/equity sentiment is more independent when it is not aligned with event-level sentiment; disagreement may represent crowded narrative pressure rather than ordinary news impact.",
+    "field_notes": "Uses direct VECTOR sentiment disagreement, no story-count, no novelty-chain, no impact-projection sleeve.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.420 * group_rank(ts_rank(-1 * vec_avg(editorial_commentary_sentiment_2), 126), industry) + 0.320 * group_rank(ts_rank(-1 * vec_avg(equity_sentiment_score), 126), industry) + 0.260 * group_rank(ts_rank(abs(vec_avg(composite_sentiment_score_2) - vec_avg(event_sentiment_score)), 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v267_editorial_anti_novelty_blocker",
+    "family": "editorial_equity_contrarian_blocker_removal",
+    "hypothesis": "Explicitly offsetting the WjpJwMdP novelty/low-story-count carrier may keep the editorial contrarian sleeve but reduce self-correlation.",
+    "field_notes": "This is the only explicit blocker-removal expression; it subtracts novelty-chain exposure and flips the low-story-count exposure from WjpJwMdP.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.420 * group_rank(ts_rank(-1 * vec_avg(editorial_commentary_sentiment_2), 126), industry) + 0.300 * group_rank(ts_rank(-1 * vec_avg(equity_sentiment_score), 126), industry) - 0.160 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.120 * group_rank(ts_rank(vec_avg(story_event_record_count_fast_d1), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v267_editorial_largecap_subindustry_slow",
+    "family": "editorial_equity_contrarian_blocker_removal",
+    "hypothesis": "A slower, stricter large-cap, subindustry-ranked editorial/equity fade may reduce event-attention and payout-quality correlation while improving sub-universe robustness.",
+    "field_notes": "No direct event impact/story-count sleeves; changes group and cap gate as a robustness test rather than a minor window tweak.",
+    "expression": "trade_when(rank(cap) > 0.65, 0.600 * group_rank(ts_rank(-1 * vec_avg(editorial_commentary_sentiment_2), 180), subindustry) + 0.400 * group_rank(ts_rank(-1 * vec_avg(equity_sentiment_score), 180), subindustry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

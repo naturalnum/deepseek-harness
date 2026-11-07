@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v155_sbp_assumption_subindustry_cap60",
+    "family": "share_based_payment_assumptions_lsus_repair",
+    "hypothesis": "The v154 SBP assumption signal was strong but TOP1000-fragile; applying a stricter large-cap gate and subindustry peer ranking may keep the compensation-assumption information while reducing small-cap dependence.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.330 * group_rank(ts_rank(-1 * sbp_award_volatility_assumption_avg, 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / abs(assets), 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_stock_shares_outstanding_count, 126), subindustry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair of RRpzOWlj; stop if LSUS remains or metrics collapse."
+  },
+  {
+    "name": "v155_sbp_dividend_assumption_largecap",
+    "family": "share_based_payment_assumptions_lsus_repair",
+    "hypothesis": "Combining lower SBP volatility assumption with a higher option-award expected dividend assumption may create a more TOP1000-friendly assumption-quality signal than option overhang counts alone.",
+    "expression": "trade_when(rank(cap) > 0.62, 0.310 * group_rank(ts_rank(-1 * sbp_award_volatility_assumption_avg, 126), subindustry) + 0.260 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / abs(assets), 126), subindustry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Fuses the two v154 near-misses but avoids broad buyback/share-count/payout fields."
+  },
+  {
+    "name": "v155_option_dividend_confidence_return_lift",
+    "family": "option_award_dividend_assumption_repair",
+    "hypothesis": "O0pzLKpq missed local Fitness by 0.01 with no failed platform checks; a slightly higher weight on the alphaCount-0 dividend-assumption field plus a lower decay may lift return/Fitness without changing the parent mechanism.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.400 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.210 * group_rank(ts_rank(-1 * sbp_award_volatility_assumption_avg, 126), industry) + 0.170 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.040 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One micro-repair only; do not keep tuning if it fails or high-corrs."
+  },
+  {
+    "name": "v155_novelty_risk_absorption_largecap_subindustry",
+    "family": "risk_regime_event_absorption_lsus_repair",
+    "hypothesis": "The v154 novelty-risk signal was strong but sub-universe blocked; large-cap gating plus subindustry ranking may preserve the calm-risk-absorption mechanism while improving TOP1000 robustness.",
+    "expression": "trade_when(rank(cap) > 0.65, 0.300 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 90), subindustry) + 0.240 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), subindustry) + 0.190 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), subindustry) + 0.140 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.080 * rank(-1 * ts_rank(abs(returns) * volume / adv20, 20)) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "LSUS repair of leVGnQ18 with cap gate and no raw event fields."
+  },
+  {
+    "name": "v155_novelty_risk_absorption_trigger_cap55",
+    "family": "risk_regime_event_absorption_lsus_repair",
+    "hypothesis": "Keeping the novelty trigger but adding a moderate cap gate and lowering the price-volume sleeve may reduce small-cap dependence without turning the signal into generic low-risk exposure.",
+    "expression": "trade_when(rank(cap) > 0.55, trade_when(ts_rank(mean_event_novelty_score, 60) > 0.45, 0.300 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 90), industry) + 0.240 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), industry) + 0.190 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), industry) + 0.150 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.070 * rank(-1 * ts_rank(abs(returns) * volume / adv20, 20)) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests whether the original trigger can survive a cap gate. If nested trade_when is accepted but LSUS persists, close this route."
+  }
+]

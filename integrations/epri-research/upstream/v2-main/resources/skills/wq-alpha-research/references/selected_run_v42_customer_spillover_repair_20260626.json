@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v42_customer_spillover_no_authority_unit_clean",
+    "family": "customer_spillover_repair",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "O0pNLZxv was strong but collided with customer authority ACTIVE; removing authority and using dimensionless relative-return spread may reduce correlation and unit warning.",
+    "expression": "0.45 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.25 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.15 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Authority removed; rel_ret_cust normalized by close to avoid subtract unit warning."
+  },
+  {
+    "name": "v42_customer_spillover_market_neutral_low_authority",
+    "family": "customer_spillover_repair",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "MARKET neutralization may reduce collision with industry customer-authority quality alpha while preserving customer spillover signal.",
+    "expression": "0.45 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Keeps authority at only 15%; tests neutralization as structural decorrelator."
+  },
+  {
+    "name": "v42_customer_spillover_subindustry_clean",
+    "family": "customer_spillover_repair",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "Subindustry neutralization may improve sub-universe robustness for the customer-spillover mechanism.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), subindustry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), subindustry) + 0.20 * group_rank(ts_rank(rel_num_cust, 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "No customer authority; tests finer peer control and systematic-risk relief."
+  },
+  {
+    "name": "v42_customer_partner_spillover_blend",
+    "family": "customer_partner_spillover",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "Blending customer and partner return spillover may reduce dependence on the customer-authority graph while keeping related-entity information.",
+    "expression": "0.30 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.25 * group_rank(ts_rank(ts_mean(rel_ret_part / close, 5) - ts_mean(returns, 5), 60), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Partner return was weak alone, but small blend may decorrelate customer return."
+  },
+  {
+    "name": "v42_customer_competitor_relative_spread",
+    "family": "customer_competitor_spread",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "Customer strength versus competitor strength may capture demand-chain advantage without customer-authority exposure.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(rel_ret_comp / close, 5), 60), industry) + 0.25 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests relative network return spread; no authority and no own returns subtraction."
+  },
+  {
+    "name": "v42_customer_spillover_social_confirm",
+    "family": "customer_spillover_social",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "Social sentiment confirmation may replace customer authority as the stabilizer, lowering correlation with RRpmO2xb.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.25 * group_rank(ts_rank(snt_social_value_fast_d1, 45), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses v41 social field only as a stabilizer; social alone was weak."
+  },
+  {
+    "name": "v42_customer_spillover_bfl_growth_confirm",
+    "family": "customer_spillover_bfl",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "BFL growth may replace customer authority with a lower-crowding stabilizer, even though BFL alone was weak.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_growth, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "BFL as small decorrelating stabilizer; watch coverage/sub-universe."
+  },
+  {
+    "name": "v42_customer_spillover_signal_only_market",
+    "family": "customer_spillover_repair",
+    "source": "customer_spillover_repair_v42_20260626",
+    "hypothesis": "A minimal customer-spillover signal with market neutralization can test whether O0pNLZxv's alpha comes from spillover or from authority/risk additives.",
+    "expression": "0.70 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 5) - ts_mean(returns, 5), 60), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Signal-only-ish diagnostic; submit only if checks and correlation pass."
+  }
+]

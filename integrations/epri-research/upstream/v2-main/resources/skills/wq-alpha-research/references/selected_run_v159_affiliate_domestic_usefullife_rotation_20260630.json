@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v159_equity_method_dependency_relief",
+    "family": "affiliate_equity_method_dependency",
+    "hypothesis": "Large equity-method investment income can make reported earnings less transparent and more dependent on affiliates. Low affiliate-income dependence with low related-entity liabilities may capture cleaner core operations outside the intersegment/FX and ordinary profitability clusters.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank(-1 * abs(equity_method_investment_income) / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(equity_method_investment_income_total) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * liabilities_due_related_entities / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh affiliate-dependency probe. Avoids NCI/intersegment/FX fields, tax, debt, goodwill, buyback, and option/SBP routes."
+  },
+  {
+    "name": "v159_domestic_operating_focus",
+    "family": "domestic_operating_focus",
+    "hypothesis": "Companies with domestic EBIT supported by domestic revenue and assets may have simpler operating exposure and less translation/geographic complexity than cross-border firms, but this should differ from the existing intersegment/FX complexity alpha by avoiding FX/NCI fields.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.290 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.230 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.180 * group_rank(ts_rank(domestic_assets_total_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Domestic exposure route without foreign EBIT, FX OCI, NCI, or intersegment fields. Strict-check against e7OVQKGN/leV5MQ12."
+  },
+  {
+    "name": "v159_advertising_productivity_relief",
+    "family": "advertising_productivity",
+    "hypothesis": "Advertising expense can be productive when supported by sales, but excessive advertising burden without revenue support may signal weak demand quality. Low advertising intensity plus stable sales is a different marketing-cost parent from news marketing sentiment.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.330 * group_rank(ts_rank(-1 * abs(fnd6_xad) / sales, 126), industry) + 0.230 * group_rank(ts_rank(sales / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests advertising-cost productivity without rp_nip_marketing/rp_css_marketing and without ordinary operating-income profitability."
+  },
+  {
+    "name": "v159_nonoperating_noise_relief",
+    "family": "nonoperating_income_noise",
+    "hypothesis": "Large non-operating income or expense adds earnings noise and may be discounted. Low non-operating noise, especially excluding interest, should differ from direct interest/debt relief and from earnings-news routes.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.310 * group_rank(ts_rank(-1 * abs(fnd6_nopxs) / assets, 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(fnd6_newa2v1300_nopi) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(fnd6_nopio) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-operating noise route excluding direct interest expense/debt. Strict-check against accounting-quality and interest-carry actives."
+  },
+  {
+    "name": "v159_useful_life_conservatism",
+    "family": "useful_life_accounting_conservatism",
+    "hypothesis": "Shorter stated useful lives for equipment, buildings, and furniture can indicate more conservative depreciation assumptions, but the signal should be distinct from PPE age/lease asset-recycling if it uses useful-life policy fields rather than asset levels.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * min_equipment_useful_life, 126), industry) + 0.220 * group_rank(ts_rank(-1 * min_buildings_land_asset_lifespan_years, 126), industry) + 0.180 * group_rank(ts_rank(-1 * min_useful_life_furniture_fixtures, 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Policy/disclosure useful-life fields only. Reject if it maps to PPE aging or lease/asset-recycling actives."
+  },
+  {
+    "name": "v159_software_ip_burden_relief",
+    "family": "software_ip_intangible_burden",
+    "hypothesis": "Capitalized software and patent/IP balances can represent intangible asset overhang when not matched by clean operations. A small cap-gated burden signal tests a more specific IP/software parent rather than broad goodwill or total intangible assets.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.280 * group_rank(ts_rank(-1 * capitalized_software_gross_value / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * gross_patents_ip_intangible_assets / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * patents_ip_amortization_total / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Specific software/IP overhang probe. Avoids fnd6_intan, goodwill, acquisition payments, customer intangibles, and gross-profit stabilizers."
+  }
+]

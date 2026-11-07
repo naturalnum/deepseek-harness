@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v29_model_revision_derivative_rescue",
+    "family": "model16_revision_derivative",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Model16 analyst-revision derivative has medium-term revision information; combining it with option-flow and only a small intraday term may avoid pure EPS/reversal crowding.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.15 * rank(-(close / open - 1)) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Mutates high-Fitness e7OzRv5p by replacing operating quality with option-flow/risk stabilizers."
+  },
+  {
+    "name": "v29_model_value_growth_revision",
+    "family": "model16_value_growth_revision",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "A blend of model value, growth, and revision acceleration may capture style improvement without directly using EPS yield or operating income.",
+    "expression": "0.40 * rank(relative_valuation_rank_derivative) + 0.30 * rank(growth_potential_rank_derivative) + 0.30 * rank(-1 * analyst_revision_rank_derivative)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure model16 derivative blend; tests if model scores contain independent information."
+  },
+  {
+    "name": "v29_model_cashflow_certainty_low_risk",
+    "family": "model16_cashflow_certainty",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Cash-flow efficiency and earnings certainty should work better when idiosyncratic risk is low, while staying different from raw operating-income quality.",
+    "expression": "0.35 * rank(cashflow_efficiency_rank_derivative) + 0.35 * rank(earnings_certainty_rank_derivative) + 0.30 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Model quality/certainty test with risk relief instead of accounting fields."
+  },
+  {
+    "name": "v29_dilution_insider_without_reversal",
+    "family": "dilution_insider_orthogonal",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Share-count contraction is strong but crowded when paired with reversal; using insider news, model valuation, and no close/open may preserve strength with lower correlation.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.30 * group_rank(ts_rank(rp_css_insider, 60), industry) + 0.30 * rank(relative_valuation_rank_derivative)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues xAxj3wPb/1Y7wXvZJ by removing close/open and buyback-quality anchors."
+  },
+  {
+    "name": "v29_deferred_revenue_growth_model_value",
+    "family": "deferred_revenue_growth_value",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Deferred-revenue growth was a near-miss; model value and low risk may lift Fitness without returning to buyback/reversal parents.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.30 * rank(relative_valuation_rank_derivative) + 0.25 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues qMAj1o2O while avoiding sales_growth + close/open near-neighbor."
+  },
+  {
+    "name": "v29_rd_sales_growth_model_revision",
+    "family": "innovation_growth_revision",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "R&D intensity plus sales growth was near the gate; model revision acceleration may separate true innovation momentum from stale growth.",
+    "expression": "0.35 * group_rank(ts_rank(rd_expense / sales, 126), industry) + 0.35 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.30 * rank(-1 * analyst_revision_rank_derivative)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues 1Y7wE0Ez without close/open."
+  },
+  {
+    "name": "v29_writedown_legal_event_no_credit",
+    "family": "writedown_legal_event",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Low writedown burden plus favorable legal news may identify reduced event overhang without the credit-capacity stabilizer that caused high correlation in v27.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_wdpq)), 126), industry) + 0.30 * group_rank(ts_rank(rp_css_legal, 60), industry) + 0.25 * rank(earnings_certainty_rank_derivative)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues mL8mrvq9/KPbNwEXg with legal/model stabilizers, no credit/buyback/reversal."
+  },
+  {
+    "name": "v29_stockcomp_debt_model_certainty",
+    "family": "stockcomp_debt_model_certainty",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Stock-comp/debt event burden may become more orthogonal when paired with model earnings certainty rather than competitor graph or tax/prepaid accounting anchors.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.35 * rank(earnings_certainty_rank_derivative)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Rescues RRp7mKMg by replacing competitor graph with model certainty."
+  },
+  {
+    "name": "v29_event_rank_session_pressure_probe",
+    "family": "event_input_probe",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Direct cross-sectional ranking of event-input news12 session fields may be valid where ts_rank failed, letting us test session pressure syntax cheaply.",
+    "expression": "0.40 * group_rank(rank(nws12_mainz_sl), industry) + 0.30 * group_rank(rank(nws12_mainz_volstddev), industry) + 0.30 * group_rank(rank(-1 * abs(nws12_mainz_rangestddev)), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Syntax probe for event inputs; submit only if surprisingly strong and all checks pass."
+  },
+  {
+    "name": "v29_event_rank_vwap_acceptance_probe",
+    "family": "event_input_probe",
+    "source": "model_event_rescue_v29_20260626",
+    "hypothesis": "Direct event-field ranks for relative performance and VWAP acceptance may capture news-session follow-through without time-series operators.",
+    "expression": "0.45 * group_rank(rank(nws12_mainz_result_vs_index), industry) + 0.35 * group_rank(rank(news_eod_vwap - news_main_vwap), industry) + 0.20 * group_rank(rank(nws12_mainz_volstddev), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Second event-input syntax probe using ranks only."
+  }
+]

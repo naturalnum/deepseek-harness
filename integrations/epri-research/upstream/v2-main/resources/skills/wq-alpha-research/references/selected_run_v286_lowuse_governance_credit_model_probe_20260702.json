@@ -1,0 +1,56 @@
+[
+  {
+    "name": "v286_equity_comp_overhang_clean",
+    "family": "fundamental2_equity_comp",
+    "hypothesis": "Lower option-award overhang and fewer new option grants reduce future dilution risk; forfeitures/expirations reduce the overhang.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * option_award_outstanding_count / (cap / close), 126), industry) + 0.25 * group_rank(ts_rank(-1 * option_awards_granted_count / (cap / close), 126), industry) + 0.20 * group_rank(ts_rank(option_award_forfeitures_expirations_count / (cap / close), 126), industry) + 0.10 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_stock_options / assets, 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v286_equity_award_cost_discipline",
+    "family": "fundamental2_equity_comp",
+    "hypothesis": "Lower share-award expense and falling unrecognized compensation cost indicate less equity-compensation dilution pressure.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * share_award_expense_total / sales, 126), industry) + 0.35 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(unrecognized_compensation_cost_nonvested_awards / assets, 126), 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v286_credit_line_capacity_repayment",
+    "family": "fundamental2_credit_facility",
+    "hypothesis": "Companies with available credit capacity, line repayments, and lower outstanding facility use should carry lower short-term financing stress.",
+    "expression": "0.40 * group_rank(ts_rank(credit_facility_remaining_capacity / assets, 126), industry) + 0.30 * group_rank(ts_rank(line_of_credit_repayments / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * debt_issuance_proceeds_2 / assets, 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v286_model_bfl_lowcrowd_rebalance",
+    "family": "model16_bfl",
+    "hypothesis": "Low-alphaCount blended factor surfaces may capture a smoother model consensus that is less crowded than direct value/profitability fields.",
+    "expression": "0.35 * group_rank(ts_rank(fscore_bfl_total, 126), industry) + 0.25 * group_rank(ts_rank(fscore_bfl_growth, 126), industry) + 0.20 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.20 * group_rank(ts_rank(multi_factor_static_score_derivative - multi_factor_acceleration_score_derivative, 60), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v286_news18_low_impact_novelty_fade",
+    "family": "news18_low_impact",
+    "hypothesis": "Low-impact and low-novelty news under modest event crowding may mean temporary attention noise rather than durable information.",
+    "expression": "trade_when(ts_rank(story_event_record_count, 60) < 0.65, 0.45 * group_rank(ts_rank(-1 * news_impact_projection_score, 90), industry) + 0.25 * group_rank(ts_rank(-1 * global_event_novelty_score_2, 90), industry) + 0.15 * group_rank(ts_rank(-1 * nws18_ssc_fast_d1, 90), industry) + 0.15 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v286_pension_restruct_special_clean",
+    "family": "fundamental6_adjustment_cleanliness",
+    "hypothesis": "Lower pension, restructuring, and special-item adjustments relative to assets indicate cleaner reported earnings quality without using the ordinary EPS/OI carrier.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(fnd6_newqeventv110_pncwippq) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(fnd6_newqeventv110_rcaq) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(fnd6_newqeventv110_spiopq) / assets, 126), industry) + 0.15 * group_rank(ts_rank(fscore_bfl_quality, 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

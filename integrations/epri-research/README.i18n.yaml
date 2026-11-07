@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write integrations/epri-research/README.md
+/deepscientist-and-airalogy-for-deepseek-harness:
+  en: 66af3ee0df4c3b31
+  zh: 49c106817f8745f2
+/deepscientist-and-airalogy-for-deepseek-harness/run-locally:
+  en: 39dc139039efa7fe
+  zh: a310ab6c886d7723
+/deepscientist-and-airalogy-for-deepseek-harness/configure-airalogy-execution:
+  en: a921502fa828978c
+  zh: 09f6977d67c81229
+/deepscientist-and-airalogy-for-deepseek-harness/verify-the-workbench:
+  en: 1fb01c2d3ac38bd0
+  zh: 98aa34186fa85d4f
+/deepscientist-and-airalogy-for-deepseek-harness/register-in-an-existing-profile:
+  en: 1f82081d33e65b87
+  zh: 5398f3f8f27b6fdb

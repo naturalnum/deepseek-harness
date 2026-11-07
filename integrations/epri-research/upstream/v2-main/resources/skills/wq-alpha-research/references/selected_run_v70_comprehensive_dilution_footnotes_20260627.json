@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v70_comprehensive_income_quality_spread",
+    "family": "comprehensive_income_footnote",
+    "source": "comprehensive_dilution_footnotes_v70_20260627",
+    "hypothesis": "Firms whose comprehensive income is strong relative to reported net profit, with limited OCI drag, may have cleaner all-in earnings quality than firms relying on net-profit-only optics.",
+    "expression": "0.40 * group_rank(ts_rank((comprehensive_income_net_tax_value - net_profit_loss) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(net_other_comprehensive_income_loss_after_tax) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(accumulated_oci_net_of_tax_value) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Newer comprehensive-income fields; not a tax/lease/debt repayment repair, but will be abandoned if it maps to accounting quality actives."
+  },
+  {
+    "name": "v70_comprehensive_income_stability",
+    "family": "comprehensive_income_footnote",
+    "source": "comprehensive_dilution_footnotes_v70_20260627",
+    "hypothesis": "Stable comprehensive income and small other-comprehensive-income swings may proxy lower mark-to-market and pension/hedge noise.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(ts_delta(comprehensive_income_net_tax_value / assets, 252)), 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(net_other_comprehensive_income_loss_after_tax) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(ts_delta(accumulated_oci_net_of_tax_value / assets, 252)), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Stability-focused sign control; intentionally avoids profitability, FCF, EPS, and close/open stabilizers."
+  },
+  {
+    "name": "v70_potential_dilution_overhang_relief",
+    "family": "dilution_footnote_overhang",
+    "source": "comprehensive_dilution_footnotes_v70_20260627",
+    "hypothesis": "Lower diluted-share adjustments and fewer anti-dilutive securities may indicate less latent dilution overhang without directly using buyback or shares-reacquired fields.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs(diluted_shares_outstanding_adjustment) / abs(common_shares_outstanding_total), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(antidilutive_securities_excluded_eps) / abs(common_shares_outstanding_total), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(option_award_expected_dividend_rate), 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests latent dilution disclosure, not executed repurchase/share-count contraction."
+  },
+  {
+    "name": "v70_dilution_overhang_change",
+    "family": "dilution_footnote_overhang",
+    "source": "comprehensive_dilution_footnotes_v70_20260627",
+    "hypothesis": "Falling diluted-share adjustment and falling anti-dilutive excluded securities may capture improving dilution risk before it appears in realized share count.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * ts_delta(abs(diluted_shares_outstanding_adjustment_avg) / abs(common_shares_outstanding_total), 252), 126), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(abs(antidilutive_securities_excluded_eps) / abs(common_shares_outstanding_total), 252), 126), industry) + 0.20 * group_rank(ts_rank(-1 * common_stock_issuance_proceeds_2 / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Change-dominant version; common-stock issuance is a small confirmation term, not shareholder-yield."
+  },
+  {
+    "name": "v70_comprehensive_dilution_hybrid",
+    "family": "comprehensive_dilution_footnote_hybrid",
+    "source": "comprehensive_dilution_footnotes_v70_20260627",
+    "hypothesis": "All-in earnings quality plus lower latent dilution may be more distinct than either narrow footnote signal alone.",
+    "expression": "0.30 * group_rank(ts_rank((comprehensive_income_net_tax_value - net_profit_or_loss) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(net_other_comprehensive_income_loss_after_tax) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(diluted_shares_outstanding_adjustment) / abs(common_shares_outstanding_total), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Hybrid only to test whether two orthogonal footnote disclosures complement each other; no rescue if it correlates to payout/accounting actives."
+  }
+]

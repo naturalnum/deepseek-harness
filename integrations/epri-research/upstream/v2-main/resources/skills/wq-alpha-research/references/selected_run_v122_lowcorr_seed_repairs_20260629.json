@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v122_intangible_gp_lowcorr_conditioned",
+    "family": "intangibles_gross_profit_lowcorr",
+    "hypothesis": "The old intangibles/gross-profit seed was near-corr at +0.70; adding a market-correlation condition and reducing intraday reversal may preserve the accounting-quality edge with a different timing path.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.420 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.320 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.080 * rank(-(close / open - 1)) + 0.060 * rank(cashflow_efficiency_rank_derivative), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v122_intangible_gp_large_liquid",
+    "family": "intangibles_gross_profit_lowcorr",
+    "hypothesis": "A liquid large-stock version of the intangibles/gross-profit seed may reduce the mL8j98w9 overlap without the harsh top-cap simplification that broke v121 option seeds.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.380 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), subindustry) + 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.140 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.100 * rank(cashflow_efficiency_rank_derivative) + 0.080 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v122_value_volume_lowcorr_conditioned",
+    "family": "value_volume_risk_lowcorr",
+    "hypothesis": "The value + volume-risk seed had top corr around +0.71; using a low market-correlation trading regime may separate it from the 9qwE360V value sleeve.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.260 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.230 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.210 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.090 * rank(-(close / open - 1)) + 0.080 * rank(cashflow_efficiency_rank_derivative), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v122_value_volume_no_reversal_subindustry",
+    "family": "value_volume_risk_lowcorr",
+    "hypothesis": "Removing close/open reversal from the value-volume seed may reduce overlap with old value/reversal actives while keeping turnover controlled through decay.",
+    "expression": "0.300 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), subindustry) + 0.260 * group_rank(ts_rank(est_sales / enterprise_value, 126), subindustry) + 0.240 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.080 * rank(cashflow_efficiency_rank_derivative)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v122_epsr_product_no_option",
+    "family": "epsr_product_hierarchy_lowcorr",
+    "hypothesis": "The WjpYmJLk seed was strong but used option/partner legs; removing option terms and emphasizing product-hierarchy EPSR breadth may test whether the EPSR surface itself can pass correlation.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.320 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.160 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), pv13_hierarchy_min10_sector_3000_sector) + 0.130 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.080 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v122_ppe_age_guidance_conditioned",
+    "family": "ppe_age_guidance_lowcorr",
+    "hypothesis": "PPE age seeds were near-corr around +0.74; pairing asset-age discipline with gross-income/capex guidance under low market correlation may create a less crowded timing path.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_capex_minguidance + anl4_fs_guidances_advanced_af_nd_capex_maxguidance) / (2 * assets)), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.080 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v122_rd_salesgrowth_lowcorr",
+    "family": "rd_sales_growth_lowcorr",
+    "hypothesis": "R&D intensity plus sales growth is a farther accounting-growth parent; using low market-correlation timing may avoid old payout/quality sleeves.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.320 * group_rank(ts_rank(rd_expense / sales, 126), industry) + 0.250 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.160 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.090 * rank(cashflow_efficiency_rank_derivative) + 0.060 * rank(-(close / open - 1)), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

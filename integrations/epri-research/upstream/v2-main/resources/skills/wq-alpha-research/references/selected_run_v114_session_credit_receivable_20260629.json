@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v114_news12_main_session_reversal",
+    "family": "news12_session_reversal",
+    "hypothesis": "Market-adjusted post-news strength can mean-revert after the session; low abnormal news-session volume and BFL quality are used as stabilizers outside the crowded GHC/SSC and earnings-news sleeves.",
+    "expression": "0.340 * (1 - group_rank(ts_rank(nws12_mainz_result_vs_index, 60), industry)) + 0.220 * (1 - group_rank(ts_rank(nws12_mainz_60_min, 60), industry)) + 0.180 * group_rank(ts_rank(nws12_mainz_sl, 60), industry) + 0.140 * (1 - group_rank(ts_rank(nws12_mainz_volstddev, 60), industry)) + 0.120 * group_rank(ts_rank(fscore_bfl_quality, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v114_news12_presession_gap_absorption",
+    "family": "news12_presession_absorption",
+    "hypothesis": "Pre-session gaps and benchmark-relative pre-session news reactions may reverse when volume participation is muted, giving a different event-timing path from ordinary close/open reversal.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.85, 0.320 * (1 - group_rank(ts_rank(nws12_prez_result_vs_index, 60), industry)) + 0.220 * (1 - group_rank(ts_rank(nws12_prez_opengap, 60), industry)) + 0.160 * (1 - group_rank(ts_rank(nws12_prez_vol_ratio, 45), industry)) + 0.160 * group_rank(ts_rank(nws12_prez_sl, 60), industry) + 0.140 * (1 - group_rank(ts_rank(beta_last_90_days_spy, 126), industry)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v114_generic_news_advantage_quality",
+    "family": "generic_news_advantage",
+    "hypothesis": "Low-crowding generic news-session advantage and benchmark-performance fields can capture event-day overreaction, with profitability quality reducing small-cap fragility.",
+    "expression": "0.300 * group_rank(ts_rank(position_advantage_flag, 60), industry) + 0.260 * (1 - group_rank(ts_rank(performance_vs_benchmark, 60), industry)) + 0.180 * (1 - group_rank(ts_rank(price_range_deviation_std_1555, 60), industry)) + 0.140 * group_rank(ts_rank(pct_change_60m_post_news, 60), industry) + 0.120 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v114_corrected_credit_fscore_ratio",
+    "family": "credit_capacity_fscore_corrected",
+    "hypothesis": "Correcting the prior credit-facility unit problem with separate ranked ratios may isolate balance-sheet flexibility; BFL quality/value carry the slow parent rather than crowded FCF/value fields.",
+    "expression": "0.300 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.220 * group_rank(ts_rank(fscore_bfl_value, 126), industry) + 0.180 * group_rank(ts_rank(credit_facility_remaining_capacity / assets, 126), industry) + 0.150 * (1 - group_rank(ts_rank(credit_facility_outstanding_balance / assets, 126), industry)) + 0.100 * (1 - group_rank(ts_rank(credit_facility_outstanding_amount / credit_facility_max_borrowing, 126), industry)) + 0.050 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v114_receivable_credit_news_collection",
+    "family": "receivable_collection_credit_news",
+    "hypothesis": "Receivables collection improvement and lower doubtful-account allowance may be more robust when paired with credit-rating news and cashflow quality, rather than the old pure receivable/sales active sleeve.",
+    "expression": "0.300 * group_rank(ts_rank(fnd6_newa2v1300_recch / sales, 126), subindustry) + 0.220 * (1 - group_rank(ts_rank(fn_allowance_for_doubtful_accounts_receivable_a / sales, 126), subindustry)) + 0.180 * group_rank(ts_rank(rp_css_credit_ratings, 90), industry) + 0.140 * (1 - group_rank(ts_rank(receivable / sales, 126), subindustry)) + 0.100 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.060 * (1 - group_rank(ts_rank(beta_last_90_days_spy, 126), industry))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v114_forward_short_largecap_conditioned",
+    "family": "forward_short_subuniverse_repair",
+    "hypothesis": "The prior forward/short/dividend route had strength but failed sub-universe; restricting to larger-cap names and replacing dividend/reversal with BFL quality and news12 overreaction may test whether the parent has any clean capacity left.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.230 * group_rank(ts_rank((close - forward_price_180) / close, 90), industry) + 0.170 * group_rank(ts_rank((forward_price_60 - forward_price_360) / close, 90), industry) + 0.180 * (1 - group_rank(ts_rank(news_short_interest, 126), industry)) + 0.150 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.150 * (1 - group_rank(ts_rank(beta_last_90_days_spy, 126), industry)) + 0.120 * (1 - group_rank(ts_rank(nws12_mainz_result_vs_index, 60), industry)), -1)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v114_news12_lowcrowd_session_mix",
+    "family": "news12_lowcrowd_session_mix",
+    "hypothesis": "First-instance news, low volume participation, and pre-session overreaction may define a quieter event-reaction sleeve that avoids the crowded Ravenpack QMB/GHC/SSC families.",
+    "expression": "0.260 * (1 - group_rank(ts_rank(nws12_mainz_result_vs_index, 90), industry)) + 0.200 * group_rank(ts_rank(nws12_mainz_newrecord, 90), industry) + 0.180 * (1 - group_rank(ts_rank(nws12_mainz_vol_ratio, 60), industry)) + 0.160 * (1 - group_rank(ts_rank(nws12_prez_prevday, 60), industry)) + 0.120 * group_rank(ts_rank(advantageous_position_flag_pre_filter, 60), industry) + 0.080 * group_rank(ts_rank(fscore_bfl_growth, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

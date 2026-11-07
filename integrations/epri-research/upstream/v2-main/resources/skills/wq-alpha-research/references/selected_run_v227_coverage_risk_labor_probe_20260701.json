@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v227_sales_estimate_breadth_calm",
+    "family": "analyst_sales_visibility_non_eps",
+    "hypothesis": "Rising annual sales-estimate breadth with lower dispersion may capture demand visibility without using EPS yield, CFI guidance, FCF/capex, gross-income guidance, option, news-chain, or the new FND6 cost-conversion parent.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.270 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_sales_number, 63), 126), industry) + 0.230 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_af_v4_nd_sales_std / abs(anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean / abs(sales), 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_sales_high - anl4_fs_detail_estimates_basic_af_v4_nd_sales_low) / abs(anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean), 126), industry) + 0.110 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Unit-clean sales consensus breadth/dispersion test. Kill if it maps to EPS/sales/value/guidance actives, repeats sales-dispersion weakness, or Fitness is low."
+  },
+  {
+    "name": "v227_recommendation_neglect_lowcrowd",
+    "family": "analyst_recommendation_coverage_neglect",
+    "hypothesis": "Underfollowed names with fewer explicit recommendations but improving recommendation detail may reflect analyst attention catch-up; this tests recommendation coverage without EPS, news-chain, option, or treasury sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(anl4_norec / abs(anl4_total_rec + 1), 126), industry) + 0.220 * group_rank(ts_rank(-1 * vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_rec_v4_nd_estimate), 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * anl4_under / abs(anl4_total_rec + 1), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "One final non-news recommendation/coverage probe. Do not rescue if it repeats v26/v225 weak or high-turnover recommendation behavior."
+  },
+  {
+    "name": "v227_labor_cost_pressure_calm",
+    "family": "labor_sentiment_cost_auxiliary_probe",
+    "hypothesis": "Positive labor-news tone combined with lower compensation and defined-contribution cost pressure may identify firms with less labor-cost overhang; labor is tested as a small, slow auxiliary, not as a special-items sibling.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.200 * group_rank(ts_rank(rp_nip_labor, 126), industry) + 0.190 * group_rank(ts_rank(-1 * employee_compensation_liabilities / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests the v147 labor near-miss without settlement/restructuring special-items and without FND6 cost-conversion terms. Kill if it maps to d5xo7gvE or employee-liability/fixed-commitment capacity."
+  },
+  {
+    "name": "v227_model51_conditioned_sales_breadth",
+    "family": "risk_regime_conditioned_non_eps_sales",
+    "hypothesis": "Sales-estimate breadth may be more reliable only when market correlation is falling; model51 is used as a regime condition rather than a primary alpha, consistent with prior model51 lessons.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_sales_number, 63), 126), industry) + 0.230 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_af_v4_nd_sales_std / abs(anl4_fs_detail_estimates_basic_af_v4_nd_sales_mean), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_qf_v4_nd_sales_mean / abs(sales), 63), 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses model51 only as a regime gate/low-risk filter. Kill if turnover collapses, LSUS fails, or sales-breadth maps to old analyst/value capacity."
+  }
+]

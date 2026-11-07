@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v69_annual_share_guidance_discipline",
+    "family": "share_guidance_microprobe",
+    "source": "share_guidance_microprobe_v69_20260627",
+    "hypothesis": "Lower annual guided share count, narrower guidance bands, and falling guided dilution may indicate capital discipline without directly reusing executed buyback fields.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * ((anl4_fs_guidances_advanced_af_nd_shr_minguidance + anl4_fs_guidances_advanced_af_nd_shr_maxguidance) / (2 * abs(common_stock_shares_outstanding_count))), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_shr_maxguidance - anl4_fs_guidances_advanced_af_nd_shr_minguidance) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_shr_minguidance + anl4_fs_guidances_advanced_af_nd_shr_maxguidance) / (2 * abs(common_stock_shares_outstanding_count)), 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Guidance-specific version of shareholder dilution discipline; actual share-count level appears only as scale denominator."
+  },
+  {
+    "name": "v69_annual_basic_share_guidance_discipline",
+    "family": "share_guidance_microprobe",
+    "source": "share_guidance_microprobe_v69_20260627",
+    "hypothesis": "Basic-share guidance may capture a cleaner dilution expectation than common-share actual repurchase or treasury stock fields.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * ((anl4_fs_guidances_advanced_af_nd_shrb_minguidance + anl4_fs_guidances_advanced_af_nd_shrb_maxguidance) / (2 * abs(common_stock_shares_outstanding_count))), 126), industry) + 0.28 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_shrb_maxguidance - anl4_fs_guidances_advanced_af_nd_shrb_minguidance) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.15 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_shrb_minguidance + anl4_fs_guidances_advanced_af_nd_shrb_maxguidance) / (2 * abs(common_stock_shares_outstanding_count)), 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Uses zero-alpha-count annual SHRB guidance fields; expected to be sparse, so abandon if warnings or weak sub-universe checks appear."
+  },
+  {
+    "name": "v69_quarterly_share_guidance_timing",
+    "family": "share_guidance_microprobe",
+    "source": "share_guidance_microprobe_v69_20260627",
+    "hypothesis": "Quarterly share guidance may react faster than annual guidance and may avoid the long-horizon payout alpha cluster if ranked within subindustry.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * ((anl4_fs_guidances_advanced_qf_nd_shr_minguidance + anl4_fs_guidances_advanced_qf_nd_shr_maxguidance) / (2 * abs(common_stock_shares_outstanding_count))), 90), subindustry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_shr_maxguidance - anl4_fs_guidances_advanced_qf_nd_shr_minguidance) / abs(common_stock_shares_outstanding_count), 90), subindustry) + 0.25 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_qf_nd_shr_minguidance + anl4_fs_guidances_advanced_qf_nd_shr_maxguidance) / (2 * abs(common_stock_shares_outstanding_count)), 42), 90), subindustry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Quarterly timing version; if this fails, do not rescue qf share guidance by small window edits."
+  },
+  {
+    "name": "v69_guided_dilution_revision_blend",
+    "family": "share_guidance_microprobe",
+    "source": "share_guidance_microprobe_v69_20260627",
+    "hypothesis": "Falling annual and quarterly guided share counts may be more incremental than static low share guidance levels.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_af_nd_shr_minguidance + anl4_fs_guidances_advanced_af_nd_shr_maxguidance) / (2 * abs(common_stock_shares_outstanding_count)), 126), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta((anl4_fs_guidances_advanced_qf_nd_shrb_minguidance + anl4_fs_guidances_advanced_qf_nd_shrb_maxguidance) / (2 * abs(common_stock_shares_outstanding_count)), 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_shr_maxguidance - anl4_fs_guidances_advanced_af_nd_shr_minguidance) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Change-dominant variant intended to reduce overlap with static buyback/share-count alphas."
+  },
+  {
+    "name": "v69_share_guidance_uncertainty_only",
+    "family": "share_guidance_microprobe",
+    "source": "share_guidance_microprobe_v69_20260627",
+    "hypothesis": "Narrow and stable share guidance bands may proxy management visibility rather than payout execution, giving a cleaner low-correlation test.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_shr_maxguidance - anl4_fs_guidances_advanced_af_nd_shr_minguidance) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_shrb_maxguidance - anl4_fs_guidances_advanced_qf_nd_shrb_minguidance) / abs(common_stock_shares_outstanding_count), 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(ts_delta((anl4_fs_guidances_advanced_af_nd_shr_minguidance + anl4_fs_guidances_advanced_af_nd_shr_maxguidance) / (2 * abs(common_stock_shares_outstanding_count)), 126)), 126), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Pure uncertainty/visibility probe; useful only if it clears sub-universe and stays low-correlation."
+  }
+]

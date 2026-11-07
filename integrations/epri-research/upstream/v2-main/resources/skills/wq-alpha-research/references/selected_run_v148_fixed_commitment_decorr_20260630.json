@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v148_rent_expense_recycling_no_maturity",
+    "family": "rent_expense_asset_recycling",
+    "hypothesis": "Use rent-expense relief and current lease payments instead of the long-maturity lease fields occupied by 3q7PkXGN, while retaining asset recycling as the distinct confirmer.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.290 * group_rank(ts_rank(-1 * net_operating_lease_rent_expense / sales, 126), industry) + 0.230 * group_rank(ts_rank(-1 * current_minimum_operating_lease_payment / assets, 126), industry) + 0.190 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry) + 0.120 * group_rank(ts_rank(fnd6_sppe / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Not a direct long-maturity lease-window sibling; strict-check against 3q7PkXGN and old MPpGzqwr/pw6jz8ob quality sleeves."
+  },
+  {
+    "name": "v148_lease_burden_change_largecap",
+    "family": "lease_burden_change_only",
+    "hypothesis": "A change-only lease burden decline under large-cap gate may improve sub-universe robustness and reduce level exposure relative to 3q7PkXGN.",
+    "expression": "trade_when(rank(cap) > 0.58, 0.300 * group_rank(ts_rank(-1 * ts_delta(operating_leases_minimum_payments_due_thereafter / assets, 252), 126), industry) + 0.250 * group_rank(ts_rank(-1 * ts_delta(operating_lease_minimum_payments_due_five_years / assets, 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(net_operating_lease_rent_expense / sales, 252), 126), industry) + 0.130 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One change-dominant follow-up; abandon if high-corr to 3q7PkXGN or weak Fitness."
+  },
+  {
+    "name": "v148_asset_sale_gain_no_lease_level",
+    "family": "asset_sale_gain_nonlease_commitment",
+    "hypothesis": "Test whether PPE sale/investment gain can stand with current rent relief rather than future lease levels, reducing direct overlap with 3q7PkXGN.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.310 * group_rank(ts_rank(fnd6_sppiv / assets, 126), industry) + 0.230 * group_rank(ts_rank(fnd6_sppe / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * net_operating_lease_rent_expense / sales, 126), industry) + 0.120 * group_rank(ts_rank(-1 * employee_compensation_liabilities / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Asset-recycling-primary variant with non-lease fixed-cost relief; not a backlog or PPE-aging route."
+  },
+  {
+    "name": "v148_deferred_maturity_top1000_repair",
+    "family": "contract_liability_maturity_top1000",
+    "hypothesis": "mL870bRW was strong but LOW_SUB_UNIVERSE. A larger-cap gate and MARKET neutralization may improve TOP1000 robustness while keeping the current-vs-long-term deferred revenue maturity parent.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.360 * group_rank(ts_rank((fnd6_drc - fnd6_drlt) / assets, 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(fnd6_drc / assets, 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(fnd6_drlt / assets, 252), 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "TOP1000 robustness repair for mL870bRW; removes backlog to reduce sparse vector exposure."
+  },
+  {
+    "name": "v148_deferred_maturity_subindustry_repair",
+    "family": "contract_liability_maturity_peer_residual",
+    "hypothesis": "Subindustry neutralization may remove industry-specific deferred revenue maturity structure and repair the sub-universe issue without adding crowded receivable/gross-margin stabilizers.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.350 * group_rank(ts_rank((fnd6_drc - fnd6_drlt) / assets, 126), subindustry) + 0.220 * group_rank(ts_rank(ts_delta(fnd6_drc / assets, 252), 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(fnd6_drlt / assets, 252), 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Peer-residual repair of deferred maturity; strict-check against QPaze5zX/RRp7Q9Le and mL870bRW if it later becomes submit-safe."
+  }
+]

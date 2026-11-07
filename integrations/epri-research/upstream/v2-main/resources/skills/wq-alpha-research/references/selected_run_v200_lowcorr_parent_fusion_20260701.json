@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v200_special_book_peer_residual",
+    "family": "lowcorr_event_book_peer_fusion",
+    "hypothesis": "Special-items event shock and PV13 shareholder-equity delivery have modest local ACTIVE correlation but come from different economic channels. The event sleeve is kept below dominance while the book-delivery sleeve is peer-residualized, testing whether restructuring/labor execution plus realized balance-sheet delivery creates a new daily-PnL shape.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.180 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_rcpq)) / assets, 126), industry) + 0.150 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.230 * (group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) - group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), industry)) + 0.120 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), pv13_hierarchys32_513_sector) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Strict-check against d5xo7gvE and KPbZ0eLg. Avoid if it becomes a special-items/labor sibling or a shareholder-equity/BVPS peer-delivery sibling."
+  },
+  {
+    "name": "v200_option_book_peer_attention",
+    "family": "option_alltype_book_delivery_fusion",
+    "hypothesis": "Long-tenor option convexity/alltype attention stability is one of the lowest-correlation ACTIVE parents. Combining it with peer-relative shareholder-equity delivery tests whether market-implied convexity and realized book delivery complement each other without using news/current-liability/FCF/contract legs.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.150 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.210 * (group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) - group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), industry)) + 0.120 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_f3_513_sector) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No sales/short-option, no news-chain, no current-liability, no FCF/contract. Strict-check against Vkpeno3w, KPbZ0eLg, 88zXVMGl, and npgrXA3q."
+  },
+  {
+    "name": "v200_special_option_alltype_eventstable",
+    "family": "event_shock_option_attention_fusion",
+    "hypothesis": "Special-items/labor execution and option/alltype attention stability have low pairwise ACTIVE correlation. This candidate deliberately removes domestic EBIT and close/open reversal from the special-items parent, using option/alltype stability as the robustness layer instead.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.210 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.170 * group_rank(ts_rank(abs(vec_avg(fnd6_newqeventv110_spiq)) / assets, 126), industry) + 0.140 * group_rank(ts_rank(rp_css_labor, 126), industry) + 0.230 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.130 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "One-shot fusion of d5xo7gvE and Vkpeno3w parent families. Reject on high corr to either parent or to v192 option-news-current actives."
+  },
+  {
+    "name": "v200_news_book_delivery_sparse",
+    "family": "news_chain_book_delivery_fusion",
+    "hypothesis": "News18 chain-staleness is close to its self-correlation boundary, so this version keeps the news sleeve modest and pairs it with peer-relative shareholder-equity delivery and low systematic-risk drift. It tests whether sparse slow information absorption matters more when realized book delivery is strong.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.220 * (group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) - group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), industry)) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), pv13_hierarchys32_513_sector) + 0.130 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Designed as a controlled WjpJwMdP plus KPbZ0eLg fusion, not a news18 sibling. Reject if corr to WjpJwMdP exceeds the strict gate."
+  },
+  {
+    "name": "v200_basic_qf_revision_book_residual",
+    "family": "lowuse_analyst_revision_book_residual",
+    "hypothesis": "Direct generic/detail revision latency was weak or high-corr, but a small low-use basic-QF estimate revision sleeve may still help if the dominant parent is peer-relative book delivery. This is the batch's exploratory non-parent-fusion candidate and avoids long-term estimate, EPS value, sales delivery, FCF, and debt.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_qf_v4_nd_previosestimate)), 126), industry) + 0.220 * (group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) - group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), industry)) + 0.140 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), pv13_hierarchys32_513_sector) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Exploratory low-use analyst detail revision plus book-delivery residual. Reject if it maps to MPpGzqwr, 1Y7Z77YX, or KPbZ0eLg."
+  }
+]

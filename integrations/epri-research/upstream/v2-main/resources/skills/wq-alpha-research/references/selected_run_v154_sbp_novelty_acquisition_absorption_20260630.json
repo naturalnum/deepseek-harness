@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v154_sbp_assumption_conservatism",
+    "family": "share_based_payment_assumptions",
+    "hypothesis": "A lower share-based-payment volatility assumption combined with lower unrecognized nonvested-award cost can identify firms with less option-compensation overhang and less aggressive future dilution, using assumption fields rather than ordinary buyback or share-count signals.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(-1 * sbp_award_volatility_assumption_avg, 126), industry) + 0.240 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * option_award_outstanding_count / common_stock_shares_outstanding_count, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-alphaCount SBP assumption route; reject if it maps back to old stock-comp overhang or buyback/share-count clusters."
+  },
+  {
+    "name": "v154_option_award_dividend_confidence",
+    "family": "option_award_dividend_assumption",
+    "hypothesis": "A higher expected dividend-rate assumption in option awards may reflect management's confidence in shareholder distributions, but the expression controls for volatility-assumption aggressiveness and compensation-cost overhang to keep it distinct from generic payout/buyback factors.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.340 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.230 * group_rank(ts_rank(-1 * sbp_award_volatility_assumption_avg, 126), industry) + 0.180 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses an alphaCount-0 field. Submit only if corr is clean against payout, tax-quality, and quality actives."
+  },
+  {
+    "name": "v154_event_novelty_absorption",
+    "family": "news_event_novelty_absorption",
+    "hypothesis": "High event novelty with low story-record crowding and calm price/volume reaction can indicate under-absorbed new information rather than generic news sentiment or relationship-return exposure.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.300 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) + 0.210 * group_rank(ts_rank(global_event_novelty_score_2, 90), industry) + 0.180 * group_rank(ts_rank(-1 * story_event_record_count_fast_d1, 90), industry) + 0.120 * group_rank(ts_rank(-1 * mean_entity_relevance_score, 90), industry) + 0.110 * rank(-1 * ts_rank(abs(returns) * volume / adv20, 20)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No product/customer/competitor relationship returns; novelty is used as timing plus absorption, not raw sentiment."
+  },
+  {
+    "name": "v154_corporate_action_novelty_calm",
+    "family": "corporate_action_news_absorption",
+    "hypothesis": "Positive corporate-action sentiment that is novel but not heavily repeated can capture constructive balance-sheet or strategic announcements without using direct buyback, debt, or acquisition-accounting fields.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.75, 0.310 * group_rank(ts_rank(corporate_action_sentiment, 90), industry) + 0.220 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.190 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) + 0.120 * group_rank(ts_rank(-1 * story_event_record_count_fast_d1, 90), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "News-only corporate-action route; strict corr check against social/news and payout actives."
+  },
+  {
+    "name": "v154_acquisition_proforma_efficiency",
+    "family": "acquisition_proforma_efficiency",
+    "hypothesis": "Business combinations with higher pro-forma revenue relative to purchase price and lower acquisition-related cost intensity may represent more efficient acquired growth, different from goodwill level or contingent-liability overhang.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.310 * group_rank(ts_rank(acquisition_proforma_revenue / (abs(acquisition_total_purchase_price) + 1), 126), industry) + 0.230 * group_rank(ts_rank(-1 * acquisition_related_costs_expense / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * net_payments_for_acquisitions / abs(assets), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Sparse acquisition-footnote route; avoids AQI/goodwill level and direct contingent-liability formula from v153."
+  },
+  {
+    "name": "v154_risk_absorption_novelty_no_fundamental",
+    "family": "risk_regime_event_absorption",
+    "hypothesis": "When novel events arrive without a short-term idiosyncratic-risk or beta spike, subsequent returns may favor firms whose news is absorbed calmly rather than punished as uncertainty.",
+    "expression": "trade_when(ts_rank(mean_event_novelty_score, 60) > 0.45, 0.280 * group_rank(ts_rank(-1 * (unsystematic_risk_last_30_days - unsystematic_risk_last_360_days), 90), industry) + 0.230 * group_rank(ts_rank(-1 * (beta_last_30_days_spy - beta_last_360_days_spy), 90), industry) + 0.190 * group_rank(ts_rank(-1 * (correlation_last_30_days_spy - correlation_last_360_days_spy), 90), industry) + 0.140 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.100 * rank(-1 * ts_rank(abs(returns) * volume / adv20, 20)) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A final risk-regime test with novelty as trigger only; stop if it repeats prior weak risk-only results."
+  }
+]

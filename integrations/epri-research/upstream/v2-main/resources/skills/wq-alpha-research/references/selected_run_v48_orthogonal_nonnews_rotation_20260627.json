@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v48_model_revision_without_reversal_risk",
+    "family": "model16_revision_no_reversal",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "The negative analyst-revision derivative has signal, but prior versions became crowded through close/open, graph, news, or payout stabilizers; a risk-only stabilizer may test the model signal more cleanly.",
+    "expression": "0.55 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No close/open, option, graph, news, EPS, or accounting-quality anchor; strict corr gate vs MPpGzqwr/O0pNbJ17."
+  },
+  {
+    "name": "v48_model_revision_social_calm",
+    "family": "model16_revision_social_filter",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "A negative model revision signal may be less crowded when filtered by stable social sentiment rather than price reversal or option flow.",
+    "expression": "0.45 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 90), industry) + 0.15 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 90), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses social only as a calmness filter; social-alone was weak, so require the model signal to carry performance."
+  },
+  {
+    "name": "v48_ppne_asset_age_efficiency",
+    "family": "asset_age_capital_efficiency",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "Lower accumulated depreciation relative to gross PP&E plus lower machinery intensity may identify cleaner, newer productive assets without using ROE, cashflow, tax, lease, or goodwill parents.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.35 * group_rank(ts_rank(-1 * gross_machinery_equipment_value_2 / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Revisits PPE/asset-age without customer authority or operating-quality anchors; field gross_machinery_equipment_value_2 has high coverage and alphaCount 0."
+  },
+  {
+    "name": "v48_debt_maturity_ladder_relief",
+    "family": "debt_maturity_ladder",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "Companies with lower near/intermediate debt repayment pressure and lower stated debt rates should have cleaner refinancing risk than peers.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * debt_repayments_total_2 / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * debt_repayment_year_three / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * debt_instrument_interest_rate_percent, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Different from v34 debt-rate candidate by adding maturity ladder and removing cash-interest/current-tax style anchors; likely high accounting corr, so gate strictly."
+  },
+  {
+    "name": "v48_debt_issuance_avoidance",
+    "family": "debt_financing_pressure",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "Low debt issuance proceeds relative to assets and low interest expense may identify firms not dependent on fresh debt financing.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * debt_issuance_proceeds_2 / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * interest_expense / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Debt-financing pressure path without buyback, cashflow_op, credit-facility capacity, or close/open."
+  },
+  {
+    "name": "v48_social_negative_buzz_relief_slow",
+    "family": "social_slow_relief",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "A slower decline in negative social buzz and calmer fast sentiment may produce a lower-turnover social signal than previous fast-d1 attempts.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.30 * group_rank(ts_rank(-1 * snt_buzz_bfl_fast_d1, 126), industry) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 126), industry)",
+    "decay": 32,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests whether very slow social relief can overcome v41/v28 high-turnover weakness; no news/event or reversal parent."
+  },
+  {
+    "name": "v48_pcr_volume_curve_risk_only",
+    "family": "option_flow_non_breakeven",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "Put/call volume term-structure may contain positioning information independent of breakeven/skew if combined only with risk-state relief.",
+    "expression": "0.45 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_180), 90), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No call/put breakeven, no IV skew, no close/open; prior raw PCR was weak, but this tests a slow risk-conditioned curve."
+  },
+  {
+    "name": "v48_current_tax_mix_independent",
+    "family": "current_tax_mix",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "The mix of current federal and state/local tax expenses can proxy cleaner taxable income realization without using deferred-tax allowance or cashflow_op.",
+    "expression": "0.35 * group_rank(ts_rank(current_federal_tax_expense_amount / assets, 126), industry) + 0.25 * group_rank(ts_rank(current_state_local_tax_expense_amount / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(deferred_local_income_tax_expense) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Distinct from deferred-tax valuation allowance/prepaid tax ACTIVE, but likely accounting-corr; submit only if corr is clearly below gate."
+  },
+  {
+    "name": "v48_capital_lease_structure",
+    "family": "capital_lease_structure",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "Low capital lease obligations and near-term lease payments may capture fixed-cost flexibility separately from operating lease burden.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * capital_lease_liability_balance / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * current_minimum_capital_lease_payment / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * future_minimum_capital_lease_payments / assets, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests capital lease rather than operating lease; sparse coverage may create concentration/sub-universe failures."
+  },
+  {
+    "name": "v48_analyst_range_market_neutral_no_sales",
+    "family": "non_sales_uncertainty_market_neutral",
+    "source": "orthogonal_nonnews_rotation_v48_20260627",
+    "hypothesis": "Adjusted-income range tightening failed as an industry-neutral direct signal, but MARKET neutralization and higher decay may reduce sub-universe/turnover issues without reusing sales dispersion.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(max_adj_net_income_quarterly_estimate - min_adj_net_income_quarterly_estimate) / abs(assets), 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(num_adj_net_income_est, 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled rescue of v32 adjusted-income range; no sales-count term and no EPS level."
+  }
+]
