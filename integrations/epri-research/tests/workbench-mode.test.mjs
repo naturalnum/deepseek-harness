@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { transform } from 'esbuild';
 import React from 'react';
+import {workbenchBrowserApi} from './workbench-browser-fixture.mjs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { applyWorkbenchTheme } from '../src/ui/workbench-theme.mjs';
 
@@ -95,7 +96,31 @@ test('workbench accepts visual tokens only from its Harness parent', () => {
 test('workbench authentication errors are Chinese and retain HTTP status', async () => {
   const {code} = await transform(readFileSync(new URL('../src/ui/adapters/api.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs'});
   const module = {exports:{}};
-  runInNewContext(code,{module,exports:module.exports,window:{},require:specifier=>{if(specifier==='../../public-addresses.mjs')return {};throw new Error('Unexpected dependency')},URLSearchParams,location:{search:'?session=one'},fetch:async()=>({ok:false,status:401,json:async()=>({error:'Connect with the local workspace access key.'})})});
+  runInNewContext(code,{module,exports:module.exports,window:{},require:specifier=>{if(specifier==='../../public-addresses.mjs')return {};return createRequire(new URL('../src/ui/adapters/api.ts',import.meta.url))(specifier)},URLSearchParams,location:{search:'?session=one'},fetch:async()=>({ok:false,status:401,json:async()=>({error:'Connect with the local workspace access key.'})})});
   await assert.rejects(module.exports.api('state'),e=>e.status === 401 && e.message === '登录已失效，请在平台登录后重新载入。');
   await assert.rejects(module.exports.api('state',{},'invalid'),e=>e.status === 401 && e.message === '访问密钥不正确，请检查后重试。');
+});
+
+
+test('the actual native client and iframe MessageChannel preserve missing-version recovery and conflict decisions', async () => {
+  let saved;
+  const operations=[];
+  const api=await workbenchBrowserApi(async (_endpoint,_method,payload)=>{
+    const request=payload.args.request;operations.push(request.op);
+    if(request.op==='protocol_get')return saved?{ok:true,value:saved}:{ok:false,error:{code:'research/not-found',message:'Protocol version missing'}};
+    if(request.op==='protocol_put'){
+      if(saved)return {ok:false,error:{code:'research/conflict',message:'Version already exists'}};
+      saved=request.args;return {ok:true,value:saved};
+    }
+    return {ok:false,error:{code:'cloud/forbidden',message:'Original account refusal'}};
+  });
+  try { await api('protocol_get',{id:'fresh',version:'1'});assert.fail('A missing version must fail'); }
+  catch(error){
+    assert.equal(error.code,'NOT_FOUND');
+    await api('protocol_put',{id:'fresh',version:'1',content:'# Exact'});
+  }
+  assert.equal((await api('protocol_get',{id:'fresh',version:'1'})).content,'# Exact');
+  await assert.rejects(api('protocol_put',{id:'fresh',version:'1',content:'# Changed'}),error=>error.code==='CONFLICT');
+  await assert.rejects(api('state'),error=>error.code==='cloud/forbidden'&&error.message==='Original account refusal');
+  assert.deepEqual(operations,['protocol_get','protocol_put','protocol_get','protocol_put','state']);
 });

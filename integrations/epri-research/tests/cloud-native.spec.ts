@@ -10,6 +10,7 @@ import {policyFixture} from '../../../packages/cloud/pe-cloud-runtime/tests/acco
 import * as Cloud from '../plugins/cloud/index.ts'
 import * as Airalogy from '../plugins/airalogy/index.mjs'
 import * as Workbench from '../plugins/workbench/index.mjs'
+import {workbenchBrowserApi} from './workbench-browser-fixture.mjs'
 
 const limits={maxDatabaseBytes:1048576,maxRequestBytes:1048576,maxReplyBytes:1048576,maxPendingRequests:2,
   maxConcurrentResourcePreparations:1,maxSkillProviders:64,maxSkillFiles:1024,maxSkillBytes:33554432,maxSkillFileBytes:4194304,maxSkillPathBytes:256,executionTimeoutMs:10000,expectedPythonVersion:'3.13',expectedAiralogyVersion:'0.16.0',maxPayloadBytes:8388608,fileChunkBytes:65536,maxConcurrentFileTransfers:2,maxOutputBytes:32768,graceMs:1000,gitPath:'/usr/bin/git',pythonPath:'/usr/bin/python3'}
@@ -50,6 +51,33 @@ it('keeps actual account Stores and native Session access independent and refuse
   try{expect((await b.tool('fixture_forward')).isError).toBe(true)}finally{forwarded()}
   a.graph.closeBusiness()
   await expect(a.api('state')).rejects.toBeDefined()
+})
+
+it('preserves actual Store errors through Gateway, native client, MessageChannel and iframe recovery',async()=>{
+  const a=await fixture('research-recovery-errors'),failures:unknown[]=[]
+  const api=await workbenchBrowserApi(async(_endpoint:string,_method:string,payload:{args:{request:{sessionId:string;op:string;args:Record<string,unknown>;execute:boolean}}})=>{
+    expect(payload.args.request.sessionId).toBe(a.agent.session.id)
+    // The real HTTP carrier decodes JSON into Host records; VM objects retain foreign prototypes.
+    try{return {ok:true,value:await a.graph.ctx.typertGateway.invoke({namespace:'cloudResearch',method:'action',args:JSON.parse(JSON.stringify(payload.args)),peer:a.graph.localePeer})}}
+    catch(error){const failure=a.graph.ctx.typertGateway.wireStream.failure(error);failures.push(failure);return {ok:false,error:failure}}
+  },a.agent.session.id)
+  const original=a.graph.adapter.stream.bind(a.graph.adapter),called=new Set<string>()
+  vi.spyOn(a.graph.adapter,'stream').mockImplementation(async function*(options){
+    const text=options.messages.flatMap(message=>message.content).filter(block=>block.type==='text').map(block=>block.text).join('\n')
+    const requestId=[...text.matchAll(/requestId=([a-f0-9-]{36})/g)].at(-1)?.[1]
+    if(requestId&&!called.has(requestId)){called.add(requestId);yield {type:'block-start',index:0,blockType:'tool-call'};yield {type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('protocol-version-'+called.size),name:'research_workbench_execute',arguments:JSON.stringify({requestId})}};yield {type:'finish',reason:{kind:'tool-calls'}}}
+    else yield* original(options)
+  })
+  await expect(api('protocol_get',{id:'fresh',version:'1'})).rejects.toMatchObject({code:'NOT_FOUND',message:'Protocol version missing'})
+  expect(failures).toMatchObject([{code:'research/not-found',details:{}}])
+  expect(await api('protocol_put',{id:'fresh',version:'1',content:'# Exact\n{{var|x: int}}',requestId:'first'})).toMatchObject({id:'fresh',version:'1'})
+  await a.agent.whenIdle()
+  await expect(api('protocol_put',{id:'fresh',version:'1',content:'# Changed\n{{var|x: int}}',requestId:'conflict'})).rejects.toMatchObject({code:'CONFLICT'})
+  await a.agent.whenIdle()
+  expect(called.size).toBe(2)
+  expect(await api('protocol_get',{id:'fresh',version:'1'})).toMatchObject({content:'# Exact\n{{var|x: int}}'})
+  a.graph.closeBusiness()
+  await expect(api('protocol_get',{id:'fresh',version:'1'})).rejects.toMatchObject({code:'gateway/internal'})
 })
 
 it('records a real native workbench intent, executes only its stored parameters once and returns the actual Store result',async()=>{

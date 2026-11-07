@@ -1,7 +1,7 @@
 /** Account-scoped scientific suite using the original native Session, login Peer and execution services. */
 import { Context, symbols } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ToolRunContext, ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -11,7 +11,7 @@ import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID, createHash } from 'node:crypto'
 import { z } from 'zod'
-import { openStore } from '../../src/server/service.mjs'
+import { DomainError, openStore } from '../../src/server/service.mjs'
 import { openAccountDatabase } from '../../src/server/account-database.mjs'
 import { validateArgs, contracts } from '../../src/server/contracts.mjs'
 import { searchLiterature } from '../../src/reused/literature/literatureSearch.ts'
@@ -81,6 +81,12 @@ function fail(message: string): never { throw new CloudApiError('cloud/account-u
 function original(value: object): object { const raw: unknown = Reflect.get(value,symbols.original); return raw !== null && typeof raw === 'object' ? raw : value }
 
 declare module '@deepseek-ai/cordis' { interface Context { cloudResearch: CloudResearch } }
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'research/not-found': Record<string, never>
+    'research/conflict': Record<string, never>
+  }
+}
 
 /** Independent business Store; authentication, files, native execution and graph drain retain their original owners. */
 export class CloudResearch extends TypertRemoteService {
@@ -277,6 +283,13 @@ export class CloudResearch extends TypertRemoteService {
       await this.verifySession(value.sessionId,signal);check()
       if(Buffer.byteLength(JSON.stringify(result))>this.config.maxReplyBytes)fail('科研结果超过已配置容量，请缩小读取范围。')
       return result
+    }).catch((error:unknown)=>{
+      // Preserve the two original protocol-recovery decisions through the native Remote encoder.
+      if(error instanceof DomainError){
+        if(error.code==='NOT_FOUND')throw new RemoteError('research/not-found',error.message,{})
+        if(error.code==='CONFLICT')throw new RemoteError('research/conflict',error.message,{})
+      }
+      throw error
     })
   }
   /** Exact descriptor contribution for the shared Cloud API audit.

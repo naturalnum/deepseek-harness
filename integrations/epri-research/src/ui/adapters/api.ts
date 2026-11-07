@@ -1,4 +1,5 @@
 import {publicAddresses} from '../../public-addresses.mjs';
+import {researchError} from '../rpc-errors.mjs';
 export const cloudMode = Boolean((window as Window & {__DS_RESEARCH_PUBLIC__?:{cloud?:boolean}}).__DS_RESEARCH_PUBLIC__?.cloud);
 export const sessionId = new URLSearchParams(location.search).get("session") || null;
 export async function api(op: string, args: any = {}, token?: string, signal?: AbortSignal) {
@@ -30,7 +31,7 @@ function bridge(op:string,args:unknown,execute:boolean,signal?:AbortSignal):Prom
     const channel=new MessageChannel();
     const stop=()=>{channel.port1.postMessage({type:'cancel'});finish();reject(signal?.reason || new Error('请求已取消。'));};
     const finish=()=>{signal?.removeEventListener('abort',stop);channel.port1.close();};
-    channel.port1.onmessage=event=>{finish();if(event.data?.ok)resolve(event.data.value);else reject(new Error(event.data?.error || '科研操作未确认，请检查当前对话。'));};
+    channel.port1.onmessage=event=>{finish();if(event.data?.ok)resolve(event.data.value);else reject(researchError(event.data?.error,event.data?.code));};
     signal?.addEventListener('abort',stop,{once:true});
     window.parent.postMessage({type:'research-api',sessionId,op,args,execute},publicAddresses().harness.origin,[channel.port2]);
   });

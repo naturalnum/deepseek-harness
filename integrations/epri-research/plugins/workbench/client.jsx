@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { workbenchThemeTokens } from '../../src/ui/workbench-theme.mjs';
 import { publicAddresses } from '../../src/public-addresses.mjs';
+import {researchError,researchFailure} from '../../src/ui/rpc-errors.mjs';
 export const inject = ['slots', 'uiWorkspace', 'sessions', 'sidebarRightTabs', 'sidebarRight', 'connection'];
 const workbench = publicAddresses(window, 'harness').workbench;
 const base = workbench.href;
@@ -94,7 +95,7 @@ function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,
       if(event.data.type==='research-api' && callbacks.current.requestResearch && event.ports?.length===1){
         const port=event.ports[0],controller=new AbortController();operations.add(controller);
         port.onmessage=value=>{if(value.data?.type==='cancel')controller.abort(new Error('科研页面请求已取消。'));};
-        void callbacks.current.requestResearch(event.data.op,event.data.args,event.data.execute===true,controller.signal).then(value=>port.postMessage({ok:true,value}),error=>port.postMessage({ok:false,error:error.message})).finally(()=>{operations.delete(controller);port.close();});
+        void callbacks.current.requestResearch(event.data.op,event.data.args,event.data.execute===true,controller.signal).then(value=>port.postMessage({ok:true,value}),error=>port.postMessage(researchFailure(error))).finally(()=>{operations.delete(controller);port.close();});
       }
       if(event.data.type==='research-theme-ready')syncTheme();
       if(event.data.type==='research-open')callbacks.current.openTarget?.(event.data.target);
@@ -187,11 +188,12 @@ export function draftTaskRequest(ctx,sessionId,taskId,action){
   input.setDraft('请先调用 research_task_get 读取研究任务 '+taskId+'。'+prompts[action]);input.focus();
 }
 
-function researchApi(ctx,sessionId){
+/** Bind workbench calls to the current original native conversation and retain recovery errors. */
+export function researchApi(ctx,sessionId){
   return async(op,args,execute,signal)=>{
     if(ctx.sidebarRight.mounted.getSnapshot()!==sessionId)throw new Error('当前对话已切换，请重新打开科研工作台。');
     const result=await ctx.connection.rpc.call('/api','cloudResearch/action',{args:{request:{sessionId,op,args,execute}}},signal);
-    if(!result.ok)throw new Error(result.error.message);
+    if(!result.ok)throw researchError(result.error.message,result.error.code);
     if(ctx.sidebarRight.mounted.getSnapshot()!==sessionId)throw new Error('当前对话已切换；请回原对话查看执行结果。');
     return result.value;
   };
