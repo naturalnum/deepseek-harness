@@ -9,7 +9,7 @@ import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
 import { isPinnedWorkloadImageDigest, isQualifiedServerImageDigest, isQualifiedSupplierPair } from './qualified-suppliers.ts'
 export { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST, REMOTE_CLIENT_SERVER_IMAGE_DIGEST, OFFICE_SERVER_IMAGE_DIGEST,
-  isSessionDirectoryServerImageDigest } from './qualified-suppliers.ts'
+  OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, isSessionDirectoryServerImageDigest } from './qualified-suppliers.ts'
 
 /** Finite plan verification and retained-grant capacities for stable shared storage. */
 export interface SharedPathStorageLimits {

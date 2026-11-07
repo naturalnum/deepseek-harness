@@ -60,6 +60,8 @@ Root 必须通过 `commands.additionalTools` 精确批准以下工具，并按�
 
 Root 在独立 Linux 后端以本包和固定归档为 Docker context 构建。当前 classic builder 接受本地 `sha256:` 基础镜像选择；准备源码不会调用 Docker。Linux 按大小写敏感规则展开；在大小写不敏感的 macOS 文件系统中，内置 terminfo 名称可能冲突，因此该 Host 上的归档、指纹与 ELF 检查不能替代 Linux 执行验收。新不可变摘要仍须经过原 RootDeployment 及精确 SDK-server/image-policy 资格验证。须在原进程限制内检查实际受管 Python 版本/import、协议解析、变量赋值/验证、工作流转换、CSV 自动重算、生成文件及中英文扫描文档 OCR。缺少依赖时，相应状态保持不可用，实际操作明确失败；提供技能目录不代表其全部第三方服务、可执行程序和凭据已安装。
 
+[实际镜像构建记录](source-records/cloud-images.json) 固定已成功构建的 Linux arm64 工作负载及其精确的仅 COPY 服务端，登记为第六组封闭 v2 供应商配对。构建保留原 Office 十五层及受保护文件树、完整包表和运行时清单，并实际加载独立科研包 API 和三个离线 OCR 模型。这些观察不证明受管 Session 执行、Airalogy 解析/赋值/验证、工作流转换、CSV 重算、受管扫描文档 OCR 或认证 Web 验收；这些检查仍待完成。
+
 ## 开发与持续升级
 
 先在本包自己的真实 `node_modules` 中完成依赖安装。当前单仓库中先运行 `npm ci --omit=peer`，再运行 `node scripts/link-cloud-peers.mjs`；这些链接存在期间禁止运行安装命令。构建 Host artifacts，用 `node scripts/build.mjs` 构建本包，检查 `tsconfig.cloud.json`；从仓库根目录运行 `node node_modules/vitest/vitest.mjs run --config integrations/epri-research/vitest.cloud.config.ts`。原有包测试继续验证本地模式兼容。

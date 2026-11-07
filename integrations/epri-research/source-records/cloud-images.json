@@ -1,0 +1,117 @@
+{
+  "schema": "research-cloud-image-build-v1",
+  "workload": {
+    "imageDigest": "sha256:71c7afa35f5d774ec6a198c7233b645bc16275c56595369efa368d6fac025bf8",
+    "baseImageDigest": "sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461",
+    "os": "linux",
+    "architecture": "arm64",
+    "originalOfficeLayerPrefix": 15,
+    "contextSha256": "620152aea79d7ff8e2a876777f5961db4dc7cfdb34ebdefc85eda31f0f6d7a92",
+    "inputs": [
+      {
+        "path": "Dockerfile",
+        "bytes": 2145,
+        "sha256": "d1bf1f9aa5dbf769cbe3abf8f05c1cb4b8d0e7d4f16d95112520c83f1b64e8ea"
+      },
+      {
+        "path": "cloud-requirements.txt",
+        "bytes": 586,
+        "sha256": "ceb84efa3cd8b8d0156da886a70dbd62a4f9513d5e96e9b44903de877cbde63e"
+      },
+      {
+        "path": "scripts/cloud-runtime-probe.py",
+        "bytes": 7107,
+        "sha256": "fa1021620ac454584e25a65cdeb1f5fc454be9ae4287e1e2cc90cfe8f1b4d718"
+      },
+      {
+        "path": "scripts/install-cloud-python.py",
+        "bytes": 1617,
+        "sha256": "91856772f230add6613587678a14a208091e9b74b3c95197bbcb9e8cf44f3bbc"
+      },
+      {
+        "path": "source-records/cloud-python.json",
+        "bytes": 813,
+        "sha256": "a7f8ee60f479a630450e303dd8339cd38d4f77a8f4e8c019df74b12c127a335f"
+      },
+      {
+        "path": "src/server/document-native.py",
+        "bytes": 3623,
+        "sha256": "e62d917b1f0dc6c2e1be5f6ce1bf61e8be7fe03502ff2e3176d1d4bc2fb96671"
+      },
+      {
+        "path": "runtime-input/cpython-3.13.18-aarch64.tar.gz",
+        "bytes": 29492455,
+        "sha256": "578d9da1983463ffb0c8c98ab0da2f18177f44069328eb0af847860c1eb05c3e"
+      }
+    ]
+  },
+  "server": {
+    "imageDigest": "sha256:7d8a5f0bfe9d7db24ff396d57f930ef8a6be2d4651c05d229e6d2624cfc2e042",
+    "baseImageDigest": "sha256:1b7ec16bb1031eab0fd7024905fc03dc5f814fbfe46bbb2d5aa2f88e3813b628",
+    "originalSourceSha256": "f1a357ec42dce6fc67ed2db1e8a4d37528fa5df42226d0ba846fc9bee111229a",
+    "sourceChange": "selected_images assignment only; exact candidate creation, exact predecessors retained for closed audit",
+    "context": {
+      "bytes": 30720,
+      "sha256": "433fba9a0787380c1bf874901cca57506aa81966337375411a8a494ea5c31939",
+      "entries": 2
+    },
+    "files": [
+      {
+        "path": "Dockerfile",
+        "bytes": 207,
+        "sha256": "f9b6394fd33b0f83ef3d0d576dac2f212673558191a4d8c2aea056c6758244b1",
+        "mode": "0644"
+      },
+      {
+        "path": "completion_view.py",
+        "bytes": 24194,
+        "sha256": "72b1caeffa9528efa996c9feebff775e4a5ec8693ab983a2eab9acde345d3588",
+        "mode": "0644"
+      }
+    ]
+  },
+  "interpreters": {
+    "office": "/opt/dsh/runtime/dependencies/python/bin/python3",
+    "officeVersion": "3.12.13",
+    "science": "/opt/dsh/research/python/bin/python3",
+    "scienceVersion": "3.13.18",
+    "officeRuntimeManifestSha256": "13eeff1ee75f7a8fec8f82b91e2193f73316a8f53551ac3f5733082d5c496c68"
+  },
+  "observed": {
+    "independentLinuxImageBuild": true,
+    "originalOfficeLayerPrefixPreserved": true,
+    "originalOfficeProtectedTreesAndPackageListPreserved": true,
+    "scientificPackageAndExecutorApiImports": true,
+    "offlineOcrModelsLoaded": 3
+  },
+  "pending": [
+    "native-managed-session-execution",
+    "airalogy-protocol-assignment-and-validation",
+    "workflow-transitions",
+    "csv-auto-recalculation",
+    "managed-scanned-document-ocr",
+    "authenticated-web-composition"
+  ],
+  "evidence": [
+    {
+      "file": "research-image-build.v3.intent.json",
+      "bytes": 1540,
+      "sha256": "4430aed1c40c0211a56d96f161ad6e0e65d32736c41fe198f218a44e1b7fadef"
+    },
+    {
+      "file": "research-image-build.v3.terminal.json",
+      "bytes": 191,
+      "sha256": "3a779a585d8d755a0e651ee70ee78bd25e3013b60ba0b08da362abf381bbab32"
+    },
+    {
+      "file": "scientific-server-image-build.v1.intent.json",
+      "bytes": 385,
+      "sha256": "445eb5a477863103b5265a5b8b4e62532b01a7856ea674081f02b53b3986cbc3"
+    },
+    {
+      "file": "scientific-server-image-build.v1.terminal.json",
+      "bytes": 112,
+      "sha256": "190f1d83bb04e701b2456b7ddb0e2e19d0d355e7659f4145a9291dbdeac1f773"
+    }
+  ]
+}
