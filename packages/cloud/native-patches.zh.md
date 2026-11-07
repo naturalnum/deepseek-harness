@@ -57,3 +57,5 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 原生可选 `ProfileContext.entryAliases` 使受信启动期入口重命名在独立 boot/HMR 读取与原 ConfigEditor 中保持一致。Cloud 使用一个有界且显式选择的历史 `presets` 到 `agent-preset-registry` 别名，复用原受保护提供方；现有 profile 字节在显式原生保存前保持不变。普通原生 profile 不设别名。
 
 原生附件暂存提供方仅在释放自有描述符和临时名称后，对发布前自有 I/O 暴露带阶段的存储容量错误。Cloud 通过原修改结算和原生收据映射保留这一精确失败，不从源错误、队列预留或文件系统预检推定容量。
+
+独立账号插件通过 Runtime 原有的 `projectForSession` 回调复用 `CloudAccountApi.sessionProject(actualSession)`；缺少回调或当前业务准入时拒绝访问。该 Host 方法不创建 Session、Agent 或执行权限。

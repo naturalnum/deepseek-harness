@@ -238,6 +238,7 @@ export class AccountNativeIntegration {
       },
       assertBusinessCurrent: (current) => { rootBusinessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
+      sessionProject: session => requireGuards(ctx).projectForSession(session),
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
       retainOfficeLifecycle: (office) => {
         if (this.office !== undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Office lifecycle is already retained')

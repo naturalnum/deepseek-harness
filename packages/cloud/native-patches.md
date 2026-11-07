@@ -58,3 +58,5 @@ Native PTC and terminal spawn requests carry their resolved per-call sandbox pol
 The optional Native `ProfileContext.entryAliases` keeps trusted launch-time entry renames consistent across detached boot/HMR reads and the original ConfigEditor. Cloud uses one bounded, explicitly selected historical `presets` to `agent-preset-registry` alias with the original guarded provider; existing profile bytes remain unchanged until an explicit Native save. Ordinary Native profiles have no alias.
 
 The native attachment staging provider exposes a phase-scoped storage-capacity error for its own prepublication I/O only after its descriptor and temporary name are released. Cloud preserves that exact failure across its original mutation settlement and the original Native receipt mapping; it does not infer capacity from a source error, a queue reservation or a filesystem precheck.
+
+Independent account plugins reuse `CloudAccountApi.sessionProject(actualSession)` through Runtime's original `projectForSession` callback; missing callback or current business admission rejects access. This Host-only method creates no Session, Agent or execution authority.

@@ -22,6 +22,8 @@ This package stores PostgreSQL account ownership with expected-epoch CAS, record
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+Native account API preparation supplies the original `projectForSession` callback for independent account plugins. Plugins receive the actual registered Workspace only after the existing Session/project policy and current business admission pass; the callback grants no execution authority.
+
 -----
 
 <a id="use-this-package"></a>

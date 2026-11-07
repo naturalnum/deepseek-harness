@@ -22,6 +22,8 @@ kind: "package-reference"
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+原生账号 API 准备阶段向独立账号插件提供原有的 `projectForSession` 回调。只有既有 Session/项目策略和当前业务准入均通过后，插件才能获得实际注册的 Workspace；该回调不授予执行权限。
+
 -----
 
 <a id="use-this-package"></a>

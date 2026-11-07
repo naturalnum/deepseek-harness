@@ -10,6 +10,8 @@ English | [中文](README.zh.md)
 
 Choose exactly which native RPCs, logical streams, Fetch routes, and settings fields a cloud recipe may expose. Unknown operations remain closed, and a changed native inventory revokes its prior audit. Shared guards run before native Session delegation and actual model dispatch. Account mounting refuses incomplete runtime, project, and configuration-save integration.
 
+Trusted account plugins can call `sessionProject(actualSession)` to reuse Runtime's original Session, Workspace, membership and Preset checks. It returns the registered native Workspace, creates no Session or execution scope, and rejects when the original policy callback or account admission is unavailable.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

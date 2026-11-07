@@ -14,6 +14,8 @@ import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { prepareAccountApiInstall, type AccountApiInstall } from './account-install.ts'
 import { CloudApiError } from './errors.ts'
 import { bindModelKeyAccess, type ModelKeyAccess } from './model-key.ts'
@@ -64,6 +66,8 @@ export interface AccountApiPreparation {
   readonly timeFileInventory?: (work: () => void) => void
   /** Read the original shared project/Preset/default-model policy; absence keeps bootstrap assertions closed. */
   readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>
+  /** Original Runtime policy over the actual attached native Session; omission keeps plugin Session access closed. */
+  readonly sessionProject?: (session: Session) => Workspace
   /**
    * Recheck original Root registration; trusted assembly only, never Loader/client input.
    * @returns Actual exact Fetch routes within maxNativeInventoryEntries after original registration checks.
@@ -110,6 +114,7 @@ export class CloudAccountApi extends Service {
   private readonly timeFileInventory: AccountApiPreparation['timeFileInventory']
   private readonly rootFetch: AccountApiPreparation['inspectRootFetch']
   private readonly bootstrapCurrent: AccountApiPreparation['assertBootstrapCurrent']
+  private readonly resolveSessionProject: AccountApiPreparation['sessionProject']
   private readonly maxNativeInventoryEntries: AccountApiPreparation['maxNativeInventoryEntries']
   private readonly unpublished: AccountApiPreparation['assertUnpublished']
   private readonly reconfiguring: AccountApiPreparation['assertReconfiguring']
@@ -164,6 +169,7 @@ export class CloudAccountApi extends Service {
     this.timeFileInventory = input.timeFileInventory
     this.rootFetch = input.inspectRootFetch
     this.bootstrapCurrent = input.assertBootstrapCurrent
+    this.resolveSessionProject = input.sessionProject
     this.maxNativeInventoryEntries = input.maxNativeInventoryEntries
     this.unpublished = input.assertUnpublished
     this.reconfiguring = input.assertReconfiguring
@@ -365,6 +371,20 @@ export class CloudAccountApi extends Service {
     this.admit()
     const row = mode === 'rpc' ? this.installation.exposure.requireRpc(endpoint) : this.installation.exposure.requireStream(endpoint)
     return this.capabilityInventories.assertEndpoint(this.ctx, row, mode)
+  }
+
+  /**
+   * Reuse Runtime's original native Session/project admission for an account plugin operation.
+   * @param session Actual native Session, never a path-derived or browser-constructed object.
+   * @returns The original registered Workspace; this creates no project, Agent or execution scope.
+   */
+  sessionProject(session: Session): Workspace {
+    this.admit()
+    const resolve = this.resolveSessionProject
+    if (resolve === undefined) this.nativeUnavailable()
+    const workspace = resolve(session)
+    this.admit()
+    return workspace
   }
 
   /**
