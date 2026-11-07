@@ -1,0 +1,46 @@
+[
+  {
+    "name": "v6_customer_return_reversal_slow",
+    "family": "relationship_customer_reversal",
+    "source": "memory_guided_v6_20260625",
+    "hypothesis": "The raw customer-return signal had strongly negative Sharpe and high turnover; reversing the sign and using higher decay tests whether it is a noisy but real contrarian relationship signal.",
+    "expression": "-1 * group_rank(ts_rank(pv13_custretsig_retsig, 20), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Opposite sign of v5_customer_return_signal; stop this branch if Fitness remains weak."
+  },
+  {
+    "name": "v6_customer_authority_pure_slow",
+    "family": "relationship_customer",
+    "source": "memory_guided_v6_20260625",
+    "hypothesis": "Customer-network authority may be useful without a quality anchor; removing operating quality should reduce correlation with existing quality/payout alphas.",
+    "expression": "group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 120), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure relationship graph signal; should only submit if IS is good and correlation is clearly below threshold."
+  },
+  {
+    "name": "v6_repurchase_asset_turnover",
+    "family": "payout_asset_efficiency",
+    "source": "memory_guided_v6_20260625",
+    "hypothesis": "Share repurchase intensity was near the threshold; pairing it with asset turnover rather than operating-income quality may improve Sharpe while reducing correlation with MPpGzqwr.",
+    "expression": "0.6 * group_rank(ts_rank(shares_reacquired_during_period / common_stock_shares_outstanding_count, 252), industry) + 0.4 * group_rank(ts_rank(sales / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Mutation of RRpmPNO0: longer repurchase window and asset-turnover companion instead of operating-income/assets."
+  },
+  {
+    "name": "v6_short_interest_reversal_slow",
+    "family": "short_interest",
+    "source": "memory_guided_v6_20260625",
+    "hypothesis": "Short-interest quality had weak Fitness; a slower pure short-interest contrarian signal may isolate the positioning effect with lower turnover.",
+    "expression": "-1 * group_rank(ts_rank(news_short_interest, 120), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure short-interest branch, no quality anchor."
+  }
+]

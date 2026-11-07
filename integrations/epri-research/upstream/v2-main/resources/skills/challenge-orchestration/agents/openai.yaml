@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Challenge Orchestration'
+  short_description: 'Coordinate bounded Challenge search and integration'
+  default_prompt: 'Use $challenge-orchestration to coordinate this Challenge run through verified parallel candidates.'
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v22_ebitda_guidance_band_quality",
+    "family": "management_guidance_uncertainty",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "A narrower EBITDA guidance range relative to enterprise value may indicate better management visibility and lower forecast uncertainty.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(max_ebitda_guidance - min_ebitda_guidance) / enterprise_value, 126), industry) + 0.25 * group_rank(ts_rank(max_ebitda_guidance / enterprise_value, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Management guidance range; avoids EPS/ROE/CFO/close-open."
+  },
+  {
+    "name": "v22_pretax_guidance_band_quality",
+    "family": "management_guidance_uncertainty",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "A narrower pretax-profit guidance band with higher upper guidance may indicate earnings visibility outside the existing EPS-yield family.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * abs(max_pretax_profit_guidance - min_pretax_profit_guidance) / enterprise_value, 126), industry) + 0.25 * group_rank(ts_rank(max_pretax_profit_guidance / enterprise_value, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pretax guidance variant; compare with EBITDA guidance before expanding."
+  },
+  {
+    "name": "v22_capex_guidance_discipline",
+    "family": "management_guidance_investment_discipline",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "Lower maximum capex guidance relative to assets, when not paired with ROE/CFO, may capture planned investment discipline distinct from historical capex.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * max_capital_expenditure_guidance / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(max_capital_expenditure_guidance - min_capital_expenditure_guidance) / assets, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Guided capex, not historical capex; strict corr gate against MPp7RPxn."
+  },
+  {
+    "name": "v22_sga_guidance_discipline",
+    "family": "management_guidance_cost_discipline",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "Lower maximum SG&A guidance relative to sales may proxy management cost discipline and operating leverage.",
+    "expression": "0.70 * group_rank(ts_rank(-1 * max_selling_general_admin_guidance / sales, 126), industry) + 0.15 * group_rank(ts_rank(max_ebitda_guidance / enterprise_value, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Cost-guidance discipline; watch whether it becomes a generic quality proxy."
+  },
+  {
+    "name": "v22_core_earnings_yield",
+    "family": "sp_core_earnings_quality",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "Higher S&P core earnings relative to enterprise value may capture cleaner earnings quality distinct from analyst EPS yield.",
+    "expression": "0.65 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / enterprise_value, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(fnd6_pncepsq), 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "S&P core earnings 12MM; strict corr gate against EBITDA/EV and EPS-yield actives."
+  },
+  {
+    "name": "v22_core_eps_pension_clean",
+    "family": "sp_core_earnings_pension_adjustment",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "Core EPS is more useful when pension adjustment magnitude is low, reducing accounting adjustment noise.",
+    "expression": "0.55 * group_rank(ts_rank(fnd6_newqv1300_spceepsq, 126), industry) + 0.30 * group_rank(ts_rank(-1 * abs(fnd6_pncepsq), 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Core EPS without price denominator to reduce direct EPS-yield cloning."
+  },
+  {
+    "name": "v22_implied_option_expense_clean",
+    "family": "core_adjustment_option_expense",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "Lower implied option expense may indicate cleaner core earnings and less employee-option dilution.",
+    "expression": "0.65 * group_rank(ts_rank(-1 * abs(fnd6_xintopt) / assets, 126), industry) + 0.20 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / enterprise_value, 126), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option-expense accounting adjustment; distinct from market option skew active."
+  },
+  {
+    "name": "v22_guidance_core_composite",
+    "family": "guidance_core_composite",
+    "source": "guidance_core_adjustments_v22_20260626",
+    "hypothesis": "Combine management guidance visibility with core earnings cleanliness while keeping each component moderate to avoid cloning existing value/quality alphas.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * abs(max_ebitda_guidance - min_ebitda_guidance) / enterprise_value, 126), industry) + 0.35 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / enterprise_value, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(fnd6_pncepsq), 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Crossover only; submit only if it clears correlation to analyst/value actives."
+  }
+]

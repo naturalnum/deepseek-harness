@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v67_settlement_event_cleanliness",
+    "family": "offpath_fundamental_rotation",
+    "source": "offpath_fundamental_rotation_v67_20260627",
+    "hypothesis": "Litigation/insurance settlement burden is a distinct event-footnote channel; low absolute settlement impact plus low market correlation may avoid the saturated profitability/news/guidance clusters.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_setaq)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_setpq)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_seta12)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Avoids legal news/relationship terms that were weak in v26; uses low-user fundamental6 settlement vectors directly."
+  },
+  {
+    "name": "v67_domestic_profit_fx_stability",
+    "family": "offpath_fundamental_rotation",
+    "source": "offpath_fundamental_rotation_v67_20260627",
+    "hypothesis": "Domestic operating profitability with low FX translation noise may be an underused geographic-quality signal rather than another analyst-yield or reported-FCF near-neighbor.",
+    "expression": "0.40 * group_rank(ts_rank(domestic_ebit_value / abs(domestic_assets_total_value), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Uses domestic/foreign disclosure fields not present in prior candidate history, with only a light risk-relief term."
+  },
+  {
+    "name": "v67_noncontrolling_interest_leakage",
+    "family": "offpath_fundamental_rotation",
+    "source": "offpath_fundamental_rotation_v67_20260627",
+    "hypothesis": "Large noncontrolling-interest claims can dilute economic ownership and complicate earnings quality; lower NCI balance/income leakage may be a distinct structural accounting signal.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_mibtq)) / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_miiq)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_cimiiq)) / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "A new fundamental6 vector family not covered by employee/SBP/tax/lease cleanliness runs."
+  },
+  {
+    "name": "v67_intersegment_complexity_relief",
+    "family": "offpath_fundamental_rotation",
+    "source": "offpath_fundamental_rotation_v67_20260627",
+    "hypothesis": "Lower intersegment eliminations and lower FX income noise may proxy for cleaner segment economics without relying on product/customer graph counts.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_intseg)) / abs(sales), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Tests segment-complexity disclosure, intentionally avoiding PV13/product structure."
+  },
+  {
+    "name": "v67_advertising_intensity_growth",
+    "family": "offpath_fundamental_rotation",
+    "source": "offpath_fundamental_rotation_v67_20260627",
+    "hypothesis": "Sustained advertising intensity can proxy for demand investment; ranking it within subindustry may reduce sector-mix noise and create a non-guidance growth signal.",
+    "expression": "0.45 * group_rank(ts_rank(fnd6_xad / abs(sales), 126), subindustry) + 0.25 * group_rank(ts_rank(ts_delta(fnd6_xad / abs(sales), 252), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "A non-news marketing/brand-investment route, separate from the weak v58 marketing-news probe."
+  },
+  {
+    "name": "v67_useful_life_conservative_asset_policy",
+    "family": "offpath_fundamental_rotation",
+    "source": "offpath_fundamental_rotation_v67_20260627",
+    "hypothesis": "More conservative equipment useful-life assumptions and lower machinery burden may capture asset policy quality differently from the failed PP&E age ratios.",
+    "expression": "0.30 * group_rank(ts_rank(-1 * equipment_maximum_useful_life, 126), industry) + 0.25 * group_rank(ts_rank(-1 * max_useful_life_buildings_land, 126), industry) + 0.25 * group_rank(ts_rank(-1 * gross_machinery_equipment_value_2 / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Small, falsifiable useful-life probe; abandon if it repeats the weak PP&E age behavior."
+  }
+]

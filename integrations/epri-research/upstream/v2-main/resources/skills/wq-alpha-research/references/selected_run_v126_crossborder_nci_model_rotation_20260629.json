@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v126_foreign_profit_lowfx_largecap",
+    "family": "crossborder_profit_fx_clean",
+    "hypothesis": "Foreign operating profit may be rewarded when it is not dominated by FX translation noise; this tests a cross-border quality parent distinct from the v125 domestic-profit alpha.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.280 * group_rank(ts_rank(foreign_ebit_amount / assets, 126), industry) + 0.210 * group_rank(ts_rank(fnd6_pifo / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v126_foreign_domestic_spread_eventful",
+    "family": "crossborder_profit_spread",
+    "hypothesis": "A foreign-minus-domestic profit spread should react differently from v125's domestic-only quality signal, especially on high-information days.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.50, 0.300 * group_rank(ts_rank((fnd6_pifo - fnd6_pidom) / assets, 126), industry) + 0.220 * group_rank(ts_rank((foreign_ebit_amount - domestic_ebit_value) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(foreign_currency_translation_adjustment_net) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_fcaq) / assets, 126), industry) + 0.110 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v126_foreign_tax_efficiency_lowcorr",
+    "family": "foreign_tax_efficiency",
+    "hypothesis": "Low foreign tax complexity with positive unremitted foreign earnings may capture offshore cash-flow quality rather than general profitability or intersegment disclosure cleanliness.",
+    "expression": "trade_when(correlation_last_90_days_spy < 0.70, 0.240 * group_rank(ts_rank(unremitted_foreign_earnings_value / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(current_foreign_tax_expense_value) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(deferred_foreign_tax_expense) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(tax_rate_diff_foreign_income), 126), industry) + 0.110 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v126_nci_low_marketcorr_no_intersegment",
+    "family": "nci_clean_low_marketcorr",
+    "hypothesis": "Low noncontrolling-interest leakage may still work if isolated from intersegment and FX-complexity fields, with low market correlation as the timing regime.",
+    "expression": "trade_when(correlation_last_90_days_spy < 0.68, 0.300 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_mibtq) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_miiq) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_cimiiq) / assets, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.070 * rank(-(close / open - 1)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v126_nci_pcr_model_eventful",
+    "family": "nci_option_model_timing",
+    "hypothesis": "NCI cleanliness paired with a long-minus-short PCR-volume curve and model-score deterioration tests whether ownership-complexity alpha has a different timing channel from intersegment disclosure.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_mibtq) / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_miiq) / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(pcr_vol_720 - pcr_vol_90), 90), industry) + 0.130 * rank(-1 * multi_factor_static_score_derivative) + 0.120 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.130 * rank(-(close / open - 1)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v126_model_option_no_social_lowcorr",
+    "family": "model_option_no_social",
+    "hypothesis": "Model-score deterioration plus an IV term-structure compression signal avoids the crowded social/skew/VWAP and long-breakeven parents while keeping short-cycle behavior.",
+    "expression": "trade_when(correlation_last_90_days_spy < 0.75, 0.260 * rank(-1 * growth_potential_rank_derivative) + 0.210 * rank(-1 * earnings_certainty_rank_derivative) + 0.180 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_720 - implied_volatility_mean_90), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(pcr_oi_720 - pcr_oi_90), 90), industry) + 0.120 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v126_social_model_tax_eventful",
+    "family": "social_model_tax_hybrid",
+    "hypothesis": "Social sentiment can be used as a small timing layer for foreign-tax cleanliness and model deterioration rather than as another social/skew/VWAP alpha.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.220 * group_rank(ts_rank(-1 * abs(current_foreign_tax_expense_value) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(tax_rate_diff_foreign_income), 126), industry) + 0.180 * rank(-1 * analyst_revision_rank_derivative) + 0.150 * rank(-1 * relative_valuation_rank_derivative) + 0.140 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

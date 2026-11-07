@@ -1,0 +1,873 @@
+[
+  {
+    "idx": 1,
+    "name": "v282_assets_credit_news_minus_015",
+    "family": "news18_assets_credit_residual",
+    "hypothesis": "Asset and credit event sentiment may capture balance-sheet information not fully represented by the existing reversal/buyback/quality alpha; subtracting a small exact blocker sleeve should preserve the event signal while reducing portfolio overlap.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1) - 0.15 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+    "settings": {
+      "decay": 20,
+      "truncation": 0.06,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "xAx7300w"
+    },
+    "metrics": {
+      "id": "xAx7300w",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 20,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1) - 0.15 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+        "description": null,
+        "operatorCount": 55
+      },
+      "dateCreated": "2026-07-01T23:26:57-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T23:26:57-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 2303893,
+        "bookSize": 20000000,
+        "longCount": 975,
+        "shortCount": 1161,
+        "turnover": 0.0903,
+        "returns": 0.0466,
+        "drawdown": 0.0758,
+        "margin": 0.001031,
+        "sharpe": 1.08,
+        "fitness": 0.66,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 1.08
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.66
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0903
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0903
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.47,
+            "value": 0.34
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "failed_checks": [
+      "LOW_SHARPE",
+      "LOW_FITNESS",
+      "LOW_SUB_UNIVERSE_SHARPE"
+    ],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "idx": 2,
+    "name": "v282_assets_credit_news_minus_020",
+    "family": "news18_assets_credit_residual",
+    "hypothesis": "A slightly stronger blocker subtraction may be safer on self-correlation if the 0.15 boundary remains too close to existing ACTIVE PnL.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1) - 0.20 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+    "settings": {
+      "decay": 20,
+      "truncation": 0.06,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "npgGdRMa"
+    },
+    "metrics": {
+      "id": "npgGdRMa",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 20,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1) - 0.20 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+        "description": null,
+        "operatorCount": 55
+      },
+      "dateCreated": "2026-07-01T23:26:41-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T23:26:41-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 1493850,
+        "bookSize": 20000000,
+        "longCount": 986,
+        "shortCount": 1150,
+        "turnover": 0.0901,
+        "returns": 0.0302,
+        "drawdown": 0.0708,
+        "margin": 0.00067,
+        "sharpe": 0.77,
+        "fitness": 0.38,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 0.77
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.38
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0901
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0901
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": 0.33,
+            "value": 0.14
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "failed_checks": [
+      "LOW_SHARPE",
+      "LOW_FITNESS",
+      "LOW_SUB_UNIVERSE_SHARPE"
+    ],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "idx": 3,
+    "name": "v282_netprofit_guidance_confidence",
+    "family": "analyst_netprofit_guidance",
+    "hypothesis": "Positive annual net-profit guidance with a narrow guidance range can proxy management confidence while using a low-crowding net-profit surface rather than the occupied EPS/FCF route.",
+    "expression": "0.60 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_netprofit_minguidance + anl4_fs_guidances_advanced_af_nd_netprofit_maxguidance) / (2 * enterprise_value), 126), industry) + 0.40 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_netprofit_maxguidance - anl4_fs_guidances_advanced_af_nd_netprofit_minguidance) / abs(enterprise_value), 126), industry)",
+    "settings": {
+      "decay": 4,
+      "truncation": 0.06,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "LLpoNgve"
+    },
+    "metrics": {
+      "id": "LLpoNgve",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 4,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.60 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_netprofit_minguidance + anl4_fs_guidances_advanced_af_nd_netprofit_maxguidance) / (2 * enterprise_value), 126), industry) + 0.40 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_netprofit_maxguidance - anl4_fs_guidances_advanced_af_nd_netprofit_minguidance) / abs(enterprise_value), 126), industry)",
+        "description": null,
+        "operatorCount": 15
+      },
+      "dateCreated": "2026-07-01T23:29:46-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T23:29:47-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": -855283,
+        "bookSize": 20000000,
+        "longCount": 1396,
+        "shortCount": 1528,
+        "turnover": 0.1056,
+        "returns": -0.0173,
+        "drawdown": 0.1515,
+        "margin": -0.000327,
+        "sharpe": -0.27,
+        "fitness": -0.1,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": -0.27
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": -0.1
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.1056
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.1056
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "FAIL",
+            "limit": -0.12,
+            "value": -0.52
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "failed_checks": [
+      "LOW_SHARPE",
+      "LOW_FITNESS",
+      "LOW_SUB_UNIVERSE_SHARPE"
+    ],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "idx": 4,
+    "name": "v282_netprofit_estimate_revision_confidence",
+    "family": "analyst_netprofit_estimates",
+    "hypothesis": "Rising annual net-profit consensus with low analyst dispersion should identify improving earnings power without directly reusing EPS yield.",
+    "expression": "0.55 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 63), 126), industry) + 0.45 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_netprofit_high - anl4_fs_detail_estimates_advanced_af_nd_netprofit_low) / abs(enterprise_value), 126), industry)",
+    "settings": {
+      "decay": 4,
+      "truncation": 0.06,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "KPbAN6ep"
+    },
+    "metrics": {
+      "id": "KPbAN6ep",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 4,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.55 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 63), 126), industry) + 0.45 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_netprofit_high - anl4_fs_detail_estimates_advanced_af_nd_netprofit_low) / abs(enterprise_value), 126), industry)",
+        "description": null,
+        "operatorCount": 14
+      },
+      "dateCreated": "2026-07-01T23:28:49-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T23:28:49-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 2569106,
+        "bookSize": 20000000,
+        "longCount": 1348,
+        "shortCount": 1566,
+        "turnover": 0.0958,
+        "returns": 0.0519,
+        "drawdown": 0.0495,
+        "margin": 0.001084,
+        "sharpe": 1.49,
+        "fitness": 0.96,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "PASS",
+            "limit": 1.25,
+            "value": 1.49
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.96
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0958
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0958
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.65,
+            "value": 1.01
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "failed_checks": [
+      "LOW_FITNESS"
+    ],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "fitness_below_1.10"
+    }
+  },
+  {
+    "idx": 5,
+    "name": "v282_domestic_revenue_resilience",
+    "family": "fundamental_geographic_mix",
+    "hypothesis": "A higher domestic revenue mix can reduce foreign-currency and global demand exposure; within industries this may behave as a resilience signal distinct from ordinary profitability.",
+    "expression": "0.70 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "settings": {
+      "decay": 8,
+      "truncation": 0.06,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "A1wXNweY"
+    },
+    "metrics": {
+      "id": "A1wXNweY",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 8,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.06,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "0.70 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+        "description": null,
+        "operatorCount": 10
+      },
+      "dateCreated": "2026-07-01T23:30:49-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T23:30:50-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": 3597986,
+        "bookSize": 20000000,
+        "longCount": 1276,
+        "shortCount": 1858,
+        "turnover": 0.0606,
+        "returns": 0.0727,
+        "drawdown": 0.0702,
+        "margin": 0.0024,
+        "sharpe": 1.18,
+        "fitness": 0.9,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": 1.18
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": 0.9
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.0606
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.0606
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": 0.51,
+            "value": 0.55
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "failed_checks": [
+      "LOW_SHARPE",
+      "LOW_FITNESS"
+    ],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "idx": 6,
+    "name": "v282_news12_event_vwap_reversal",
+    "family": "news12_event_microstructure",
+    "hypothesis": "When event-day closing VWAP runs far above the main-session VWAP on abnormal event volume, the move may partly mean-revert after the news is absorbed.",
+    "expression": "trade_when(ts_rank(vec_avg(trading_volume_deviation_std_1555), 20) > 0.55, rank(-1 * ts_rank((vec_avg(end_of_day_vwap_3) - vec_avg(main_session_vwap_2)) / close, 20)), -1)",
+    "settings": {
+      "decay": 20,
+      "truncation": 0.05,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "YPp3bvgW"
+    },
+    "metrics": {
+      "id": "YPp3bvgW",
+      "type": "REGULAR",
+      "author": "YW26835",
+      "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 20,
+        "neutralization": "INDUSTRY",
+        "truncation": 0.05,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "ON",
+        "maxTrade": "OFF",
+        "maxPosition": "OFF",
+        "language": "FASTEXPR",
+        "visualization": false,
+        "startDate": "2019-01-01",
+        "endDate": "2023-12-31"
+      },
+      "regular": {
+        "code": "trade_when(ts_rank(vec_avg(trading_volume_deviation_std_1555), 20) > 0.55, rank(-1 * ts_rank((vec_avg(end_of_day_vwap_3) - vec_avg(main_session_vwap_2)) / close, 20)), -1)",
+        "description": null,
+        "operatorCount": 11
+      },
+      "dateCreated": "2026-07-01T23:31:32-04:00",
+      "dateSubmitted": null,
+      "dateModified": "2026-07-01T23:31:33-04:00",
+      "name": null,
+      "favorite": false,
+      "hidden": false,
+      "color": null,
+      "category": null,
+      "tags": [],
+      "classifications": [],
+      "grade": "INFERIOR",
+      "stage": "IS",
+      "status": "UNSUBMITTED",
+      "is": {
+        "pnl": -146842,
+        "bookSize": 20000000,
+        "longCount": 1467,
+        "shortCount": 1470,
+        "turnover": 0.1137,
+        "returns": -0.003,
+        "drawdown": 0.0612,
+        "margin": -5.2e-05,
+        "sharpe": -0.14,
+        "fitness": -0.02,
+        "startDate": "2019-01-01",
+        "checks": [
+          {
+            "name": "LOW_SHARPE",
+            "result": "FAIL",
+            "limit": 1.25,
+            "value": -0.14
+          },
+          {
+            "name": "LOW_FITNESS",
+            "result": "FAIL",
+            "limit": 1.0,
+            "value": -0.02
+          },
+          {
+            "name": "LOW_TURNOVER",
+            "result": "PASS",
+            "limit": 0.01,
+            "value": 0.1137
+          },
+          {
+            "name": "HIGH_TURNOVER",
+            "result": "PASS",
+            "limit": 0.7,
+            "value": 0.1137
+          },
+          {
+            "name": "CONCENTRATED_WEIGHT",
+            "result": "PASS"
+          },
+          {
+            "name": "LOW_SUB_UNIVERSE_SHARPE",
+            "result": "PASS",
+            "limit": -0.06,
+            "value": 0.0
+          },
+          {
+            "name": "SELF_CORRELATION",
+            "result": "PENDING"
+          },
+          {
+            "name": "MATCHES_COMPETITION",
+            "result": "PASS",
+            "competitions": [
+              {
+                "id": "challenge",
+                "name": "Challenge"
+              }
+            ]
+          }
+        ]
+      },
+      "os": null,
+      "train": null,
+      "test": null,
+      "prod": null,
+      "competitions": null,
+      "themes": null,
+      "pyramids": null,
+      "pyramidThemes": null,
+      "team": null,
+      "origin": "PLATFORM"
+    },
+    "failed_checks": [
+      "LOW_SHARPE",
+      "LOW_FITNESS"
+    ],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  },
+  {
+    "idx": 7,
+    "name": "v282_news12_open_gap_reversal",
+    "family": "news12_event_microstructure",
+    "hypothesis": "Large news-related opening gaps can overreact, especially when measured directly from the event module rather than ordinary daily OHLC.",
+    "expression": "trade_when(ts_rank(abs(vec_avg(opening_price_gap_percent)), 20) > 0.60, 0.70 * rank(-1 * ts_rank(vec_avg(opening_price_gap_percent), 20)) + 0.30 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "settings": {
+      "decay": 20,
+      "truncation": 0.05,
+      "neutralization": "INDUSTRY"
+    },
+    "sim": {
+      "status": "COMPLETE",
+      "alpha_id": "N1pEaK8q"
+    },
+    "metrics": {
+      "is": {
+        "sharpe": 0.03,
+        "fitness": 0.0,
+        "returns": 0.0007,
+        "turnover": 0.0647,
+        "drawdown": 0.0297,
+        "margin": 2.2e-05,
+        "longCount": 1530,
+        "shortCount": 1512,
+        "checks": []
+      }
+    },
+    "failed_checks": [],
+    "warnings": [],
+    "submission": {
+      "submitted": false,
+      "reason": "sharpe_below_1.35"
+    }
+  }
+]

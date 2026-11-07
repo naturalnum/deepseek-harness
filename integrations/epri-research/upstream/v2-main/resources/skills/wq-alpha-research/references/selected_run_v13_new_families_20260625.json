@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v13_revenue_news_reversal_margin",
+    "family": "revenue_news_quality",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "Positive Ravenpack revenue-event sentiment can identify firms with improving demand perception. Mix with gross margin and a small intraday reversal component.",
+    "expression": "0.55 * group_rank(ts_rank(rp_ess_revenue, 60), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Ravenpack revenue news, distinct from existing mean earnings-evaluation sentiment; strict correlation gate against RRpmOAWj."
+  },
+  {
+    "name": "v13_earnings_news_cash_quality",
+    "family": "earnings_news_cash_quality",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "Earnings news impact can be more reliable when backed by operating cash flow. Use fundamental cashflow_op rather than analyst CFO.",
+    "expression": "0.55 * group_rank(ts_rank(rp_nip_earnings, 60), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests Ravenpack earnings impact, but may correlate with existing news/reversal ACTIVE."
+  },
+  {
+    "name": "v13_cash_liquidity_quality",
+    "family": "liquidity_safety_quality",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "Cash and short-term investments relative to current liabilities can proxy liquidity safety. Pair with operating quality and small reversal.",
+    "expression": "0.55 * group_rank(ts_rank(cash_st / liabilities_curr, 126), industry) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Safety branch distinct from previous low-debt/systematic-risk tests."
+  },
+  {
+    "name": "v13_current_ratio_cashflow",
+    "family": "working_capital_safety",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "A stronger current ratio backed by operating cash flow may indicate balance-sheet resilience without relying on receivables or deferred revenue.",
+    "expression": "0.60 * group_rank(ts_rank(assets_curr / liabilities_curr, 126), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Current-ratio safety; watch correlation with cash-liquidity candidate."
+  },
+  {
+    "name": "v13_low_goodwill_cash_quality",
+    "family": "goodwill_burden_quality",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "Lower goodwill relative to assets can reduce acquisition-accounting and impairment risk. Pair with cash-flow quality and a small reversal stabilizer.",
+    "expression": "0.60 * group_rank(ts_rank(-1 * goodwill / assets, 126), industry) + 0.25 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Goodwill/intangible burden is a new balance-sheet-quality mechanism."
+  },
+  {
+    "name": "v13_intangible_light_margin",
+    "family": "intangible_burden_margin",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "Lower intangible-asset burden combined with stronger gross margin may capture cleaner capital structure and operating quality.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.35 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sibling to goodwill burden but uses total intangible assets and gross margin."
+  },
+  {
+    "name": "v13_rd_intensity_growth",
+    "family": "innovation_growth_quality",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "R&D intensity can proxy innovation when sales growth is positive. This tests innovation quality rather than treating R&D purely as a burden.",
+    "expression": "0.50 * group_rank(ts_rank(rd_expense / sales, 126), industry) + 0.35 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Previous R&D burden was weak; this tests the positive innovation-intensity sign."
+  },
+  {
+    "name": "v13_negative_analyst_revision_derivative",
+    "family": "model_revision_reversal",
+    "source": "new_families_v13_20260625",
+    "hypothesis": "Earlier model rank-derivative fields failed in the positive direction. Test the negative sign for analyst-revision derivative with quality/reversal stabilizers.",
+    "expression": "0.55 * rank(-1 * analyst_revision_rank_derivative) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Low priority exploratory model branch; keep strict metrics and correlation gates."
+  }
+]

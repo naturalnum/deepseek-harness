@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v51_range_volume_exhaustion_reversal",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Large recent returns on unusual volume and wide range can mark short-horizon exhaustion; use realized range and volume rather than the crowded close/open reversal parent.",
+    "expression": "0.40 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.30 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Unit-clean technical exhaustion probe; no close/open, option, news, social, graph, or accounting fields."
+  },
+  {
+    "name": "v51_vwap_close_acceptance_momentum",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Closing above VWAP on improving relative volume may indicate accepted demand pressure rather than temporary open-close reversal.",
+    "expression": "0.40 * rank(ts_rank((close - vwap) / close, 20)) + 0.25 * rank(ts_rank(volume / adv20, 20)) + 0.35 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 60), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests VWAP acceptance/continuation; compare carefully against close/open ACTIVE names."
+  },
+  {
+    "name": "v51_vwap_close_pressure_reversal",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "A close far above VWAP may also be temporary late-session pressure; the opposite sign tests reversal without using open.",
+    "expression": "0.40 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.25 * rank(ts_rank(volume / adv20, 20)) + 0.35 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Sign control for VWAP pressure; only one of continuation/reversal should be considered."
+  },
+  {
+    "name": "v51_close_location_breakout_acceptance",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Closing near the daily high within a range, confirmed by relative volume and low beta slope, may capture range breakout acceptance.",
+    "expression": "0.40 * rank(ts_rank((close - low) / (high - low + 0.01 * close), 20)) + 0.25 * rank(ts_rank(volume / adv20, 20)) + 0.35 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses intraday close location but not close/open ratio."
+  },
+  {
+    "name": "v51_close_location_late_pressure_reversal",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Closing near the high can also be late-session pressure that mean-reverts; this is the sign-control pair for close-location acceptance.",
+    "expression": "0.40 * rank(-1 * ts_rank((close - low) / (high - low + 0.01 * close), 20)) + 0.25 * rank(ts_rank(volume / adv20, 20)) + 0.35 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Mean-reversion sign control for close-location pressure."
+  },
+  {
+    "name": "v51_trend_quality_low_range",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Moderate positive trend with low realized return volatility and compressed range may be more robust than raw momentum.",
+    "expression": "0.40 * rank(ts_rank(ts_mean(returns, 20) / (ts_std_dev(returns, 60) + 0.01), 60)) + 0.30 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.30 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 60), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Clean trend-quality structure; watch momentum/reversal correlation."
+  },
+  {
+    "name": "v51_short_trend_volume_reversal",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Short positive trend on high relative volume may be overreaction; test a return/volume reversal without open-close information.",
+    "expression": "0.40 * rank(-1 * ts_rank(ts_mean(returns, 5) / (ts_std_dev(returns, 20) + 0.01), 60)) + 0.30 * rank(ts_rank(volume / adv20, 10)) + 0.30 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Potentially high turnover; decay 24 should smooth updates."
+  },
+  {
+    "name": "v51_price_volume_corr_reversal",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Strong recent price-volume correlation can indicate crowded participation; the reversal sign may diversify from ordinary momentum.",
+    "expression": "0.45 * rank(-1 * ts_rank(ts_corr(rank(close), rank(volume), 20), 60)) + 0.25 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.30 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Formulaic price-volume correlation probe; no direct return reversal."
+  },
+  {
+    "name": "v51_return_volume_corr_momentum",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Positive correlation between returns and relative volume may reflect confirmed accumulation when paired with low market correlation.",
+    "expression": "0.45 * rank(ts_rank(ts_corr(returns, volume / adv20, 20), 60)) + 0.25 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.30 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Return-volume correlation sign pair with the previous candidate."
+  },
+  {
+    "name": "v51_low_vol_vwap_stability",
+    "family": "price_volume_risk_regime",
+    "source": "price_volume_risk_regime_v51_20260627",
+    "hypothesis": "Low realized volatility plus small VWAP dislocation may capture stable demand and avoid event/accounting clusters.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * ts_std_dev(returns, 20), 60), industry) + 0.30 * rank(-1 * ts_rank(abs(close / vwap - 1), 20)) + 0.30 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 60), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Low-volatility/stability probe; likely weak but low overlap if it works."
+  }
+]

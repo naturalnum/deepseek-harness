@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v179_pcr_volume_term_compression",
+    "family": "option_pcr_volume_term",
+    "hypothesis": "A flatter put/call volume term structure may indicate less near-term hedging pressure and lower crowding; this tests option volume structure without quality/reversal support.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank(-1 * abs(pcr_vol_30 - pcr_vol_150), 90), industry) + 0.260 * group_rank(ts_rank(-1 * abs(pcr_vol_60 - pcr_vol_270), 90), industry) + 0.220 * group_rank(ts_rank(-1 * pcr_vol_30, 60), industry) + 0.120 * group_rank(ts_rank(-1 * abs(pcr_vol_120 - pcr_vol_360), 90), industry) + 0.080 * group_rank(ts_rank(-1 * ts_rank(abs(returns), 20), 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure PCR volume term-structure. No EPS, quality, news, or close/open reversal."
+  },
+  {
+    "name": "v179_pcr_oi_long_short_relief",
+    "family": "option_pcr_oi_term",
+    "hypothesis": "Lower long-dated put/call open-interest pressure relative to short-dated pressure may identify names with less structural downside hedging demand.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * (pcr_oi_360 - pcr_oi_30), 90), industry) + 0.240 * group_rank(ts_rank(-1 * (pcr_oi_1080 - pcr_oi_120), 90), industry) + 0.200 * group_rank(ts_rank(-1 * abs(pcr_oi_150 - pcr_oi_270), 90), industry) + 0.160 * group_rank(ts_rank(-1 * pcr_oi_30, 60), industry) + 0.100 * group_rank(ts_rank(-1 * ts_delta(pcr_oi_120, 60), 90), industry), -1)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses long-short PCR OI curve. Strict reject if it repeats old option-convexity LSUS."
+  },
+  {
+    "name": "v179_breakeven_forward_dislocation",
+    "family": "option_forward_breakeven",
+    "hypothesis": "A mismatch between synthetic forward prices and option breakeven prices across terms may capture option-market mispricing or risk-premium normalization.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.70, 0.300 * group_rank(ts_rank((forward_price_120 - option_breakeven_120) / close, 90), industry) + 0.240 * group_rank(ts_rank((forward_price_150 - option_breakeven_150) / close, 90), industry) + 0.200 * group_rank(ts_rank(-1 * abs(option_breakeven_270 - option_breakeven_30) / close, 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(forward_price_270 - forward_price_30) / close, 90), industry) + 0.100 * group_rank(ts_rank(-1 * pcr_vol_30, 60), industry), -1)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Forward/breakeven dislocation in low absolute-return regimes. Avoids social/news/model support."
+  },
+  {
+    "name": "v179_iv_vs_realized_long_term_gap",
+    "family": "option_iv_realized_gap",
+    "hypothesis": "Names with lower long-dated implied volatility relative to realized/Parkinson volatility may avoid option-market crash-risk premium, but the signal must survive without model derivatives.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * (implied_volatility_mean_270 - parkinson_volatility_90), 90), industry) + 0.240 * group_rank(ts_rank(-1 * (implied_volatility_mean_1080 - parkinson_volatility_150), 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(parkinson_volatility_90 - historical_volatility_150), 90), industry) + 0.160 * group_rank(ts_rank(-1 * pcr_oi_120, 60), industry) + 0.120 * group_rank(ts_rank(-1 * ts_rank(abs(returns), 20), 60), industry), -1)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option IV vs realized gap, without beta/fscore/model derivative sleeves."
+  },
+  {
+    "name": "v179_pcr_volume_event_quiet",
+    "family": "option_pcr_volume_quiet_regime",
+    "hypothesis": "Put/call volume relief should matter most outside high-volatility event regimes; quiet-regime gating may avoid the LSUS fragility seen in old option-convexity attempts.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.45, 0.340 * group_rank(ts_rank(-1 * pcr_vol_30, 60), industry) + 0.240 * group_rank(ts_rank(-1 * abs(pcr_vol_30 - pcr_vol_150), 90), industry) + 0.180 * group_rank(ts_rank(-1 * pcr_oi_30, 60), industry) + 0.150 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_270 - implied_volatility_mean_30), 90), industry) + 0.090 * group_rank(ts_rank(-1 * abs(option_breakeven_120 - option_breakeven_30) / close, 90), industry), -1)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Quiet-regime option pressure relief. Reject if LOW_TURNOVER or weak Sharpe."
+  },
+  {
+    "name": "v179_pcr_oi_volume_divergence",
+    "family": "option_pcr_flow_stock_divergence",
+    "hypothesis": "A divergence where short-term put/call volume is low relative to long-term put/call open interest may capture temporary easing of hedging pressure without requiring a fundamental quality anchor.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank((pcr_oi_360 - pcr_vol_30), 90), industry) + 0.240 * group_rank(ts_rank((pcr_oi_1080 - pcr_vol_120), 90), industry) - 0.180 * group_rank(ts_rank(abs(pcr_oi_30 - pcr_vol_30), 90), industry) - 0.160 * group_rank(ts_rank(pcr_vol_30, 60), industry) + 0.100 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_270 - parkinson_volatility_90), 90), industry), -1)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Flow-stock divergence in options. Direction is empirical; close if sign weak."
+  }
+]

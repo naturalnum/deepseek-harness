@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v236_dividend_estimate_visibility_pure",
+    "family": "dividend_expectation_visibility",
+    "source": "v236_dividend_interest_netting_20260701",
+    "hypothesis": "Firms with higher near-quarter dividend expectations, tighter dividend estimate ranges, and rising estimate coverage may reflect durable cash-return visibility rather than buyback or option-driven payout signals.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.340 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_qf_v4_nd_div_median / close, 126), industry) + 0.240 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_div_median / close, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_qf_v4_nd_div_high - anl4_fs_detail_estimates_basic_qf_v4_nd_div_low) / close, 126), industry) + 0.200 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_qf_v4_nd_div_number, 63), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure analyst dividend estimate surface. Kill if it maps back to A1wLWmwY / payout-option / buyback-EPS clusters, if Fitness is below 1.10, or if turnover falls below 1%."
+  },
+  {
+    "name": "v236_dividend_guidance_floor_stability",
+    "family": "dividend_expectation_visibility",
+    "source": "v236_dividend_interest_netting_20260701",
+    "hypothesis": "A firm that guides a higher and tighter dividend-per-share range should have cleaner cash-return visibility, distinct from repurchase and share-count contraction signals.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.360 * group_rank(ts_rank((anl4_fs_guidances_basic_qf_nd_div_minguidance + anl4_fs_guidances_basic_qf_nd_div_maxguidance) / (2 * close), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_basic_qf_nd_div_maxguidance - anl4_fs_guidances_basic_qf_nd_div_minguidance) / close, 126), industry) + 0.200 * group_rank(ts_rank(ts_delta(anl4_fs_guidances_basic_qf_nd_div_minguidance / close, 63), 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_qf_v4_nd_div_number, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests company dividend guidance, not buybacks. Kill on UNITS warning, high corr to payout/option actives, LOW_TURNOVER, or weak Fitness."
+  },
+  {
+    "name": "v236_cash_interest_penalty_discipline",
+    "family": "cash_interest_penalty_cleanliness",
+    "source": "v236_dividend_interest_netting_20260701",
+    "hypothesis": "Falling real cash interest paid and lower interest-or-penalty accruals may indicate improving financing discipline and cleaner tax/interest compliance without using raw debt reduction.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.340 * group_rank(ts_rank(-1 * ts_delta(net_interest_paid_total / abs(assets), 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * net_interest_paid_total / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(fnd6_txtubxintis) / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(fnd6_txtubxintbs) / abs(assets), 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Diagnostic only: this can still collapse into fixed-commitment/debt/tax capacity. Kill immediately if corr to MPpGzqwr / 3q7PkXGN / tax-quality actives is high or LSUS fails."
+  },
+  {
+    "name": "v236_balance_sheet_netting_cleanliness",
+    "family": "balance_sheet_netting_complexity",
+    "source": "v236_dividend_interest_netting_20260701",
+    "hypothesis": "Lower and less volatile asset/liability netting-and-other-adjustment balances may proxy cleaner balance-sheet presentation and fewer opaque adjustments.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_lnoq) / abs(assets), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_anoq) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newqv1300_lnoq / abs(assets), 252)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newqv1300_anoq / abs(assets), 252)), 126), industry) + 0.100 * group_rank(ts_rank(-1 * fnd6_newqv1300_acoq / abs(assets), 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-fair-value netting/other-adjustment test. Kill if it behaves like generic liabilities/assets quality, Level 2/3/fair-value, or current-accrual siblings."
+  },
+  {
+    "name": "v236_dividend_interest_self_funded_payout",
+    "family": "dividend_visibility_cash_interest_fusion",
+    "source": "v236_dividend_interest_netting_20260701",
+    "hypothesis": "Dividend visibility should be more reliable when paired with low cash-interest burden, forming a self-funded payout signal rather than a pure shareholder-yield or debt-reduction sibling.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.300 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_qf_v4_nd_div_median / close, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_qf_v4_nd_div_high - anl4_fs_detail_estimates_basic_qf_v4_nd_div_low) / close, 126), industry) + 0.220 * group_rank(ts_rank(-1 * net_interest_paid_total / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(net_interest_paid_total / abs(assets), 252), 126), industry) + 0.100 * group_rank(ts_rank(-1 * abs(fnd6_txtubxintis) / abs(assets), 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Small fusion of two v236 new surfaces. Submit only if local top daily-PnL corr is comfortably below 0.68 and neither dividend nor interest side maps to a closed payout/debt cluster."
+  }
+]

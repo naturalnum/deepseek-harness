@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v229_credit_line_repayment_residual",
+    "family": "credit_line_liquidity_discipline",
+    "hypothesis": "Firms repaying credit lines while keeping facility usage low may have improving short-term liquidity discipline; this tests credit-line flow rather than ordinary debt reduction, without option, news, competitor, dividend, or analyst guidance parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.270 * group_rank(ts_rank(repayments_of_credit_lines / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(line_of_credit_repayments / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(credit_facility_max_borrowing_2 / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Do not submit if it maps to MPpGzqwr / fixed-commitment / debt-quality capacity; old MPpz6xKk was metric-strong but high-corr."
+  },
+  {
+    "name": "v229_order_backlog_inventory_conversion",
+    "family": "order_backlog_operational_conversion",
+    "hypothesis": "Rising order backlog is more valuable when finished-goods and work-in-process inventory overhang is low, suggesting demand conversion rather than unsold stock accumulation.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_obs), 252) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(vec_avg(fnd6_obs) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * (fnd6_newqv1300_invfgq + fnd6_newqv1300_invwipq) / abs(assets), 126), subindustry) + 0.130 * group_rank(ts_rank(inventory_turnover, 126), subindustry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Backlog/inventory has prior weak or LSUS-prone evidence; this is a final clean conversion diagnostic, not an inventory sibling rescue."
+  },
+  {
+    "name": "v229_acquisition_intangible_amortization_clean",
+    "family": "acquisition_intangible_burden",
+    "hypothesis": "Lower acquisition cash outflow and a smaller near-term intangible amortization burden may indicate cleaner organic earnings and less purchase-accounting drag.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * abs(net_payments_for_acquisitions) / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(gross_payments_for_acquisitions) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(intangible_amortization_expense_year_three - annual_intangible_amortization_expense_second_year) / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * abs(intangible_amortization_expense_fourth_year - intangible_amortization_expense_year_three) / abs(assets), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.040 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Prior intangible/amortization versions were weak; kill on low Fitness, LSUS, or high corr to goodwill/PPE/accounting-quality actives."
+  },
+  {
+    "name": "v229_bfl_quality_value_no_option_news",
+    "family": "model_bfl_nonoption_quality_value",
+    "hypothesis": "A BFL model surface emphasizing quality/value/profitability and penalizing crowded growth may provide model information without the long-tenor option/news sleeves that now crowd leVYqdve and Wjpx2AEO.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.220 * group_rank(ts_rank(fscore_bfl_value, 126), industry) + 0.180 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.150 * group_rank(ts_rank(-1 * fscore_bfl_growth, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Because leVYqdve is model-related, require pre-submit top corr comfortably below 0.60; do not rescue by adding option, news, social, or open-close sleeves."
+  }
+]

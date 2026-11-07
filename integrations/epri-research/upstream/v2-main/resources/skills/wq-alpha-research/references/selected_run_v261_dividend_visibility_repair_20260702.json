@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v261_af_dividend_detail_visibility",
+    "family": "dividend_visibility_repair",
+    "hypothesis": "Annual dividend-per-share detail estimates have higher coverage than the quarterly estimate fields used in v260; rising expected dividend yield plus broader analyst confirmation may improve the near-miss without using book value or buyback fields.",
+    "field_notes": "anl4_fs_detail_estimates_basic_af_v4_nd_div_mean coverage=0.8016 alphaCount=3; number coverage=0.8016 alphaCount=2; no local ACTIVE usage.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v261_dividend_detail_dispersion_safety",
+    "family": "dividend_visibility_repair",
+    "hypothesis": "Expected dividend yield should be more reliable when analyst dispersion is low and estimate breadth is improving; adding news dividend yield gives a separate confirmation source.",
+    "field_notes": "Dividend high/low/mean/number annual detail estimates all coverage=0.8016 and alphaCount<=3 except number=2; news_dividend_yield coverage=0.8534.",
+    "expression": "0.38 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.22 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_div_high - anl4_fs_detail_estimates_basic_af_v4_nd_div_low) / close, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.10 * group_rank(ts_rank(news_dividend_yield, 60), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v261_dividend_guidance_floor_revision",
+    "family": "dividend_visibility_repair",
+    "hypothesis": "A rising management dividend guidance floor, especially with a narrow guidance range, may capture payout commitment rather than generic high dividend yield.",
+    "field_notes": "anl4_fs_guidances_basic_af_nd_div_minguidance coverage=1.0 alphaCount=7; maxguidance coverage=1.0 alphaCount=59; no local ACTIVE usage.",
+    "expression": "0.35 * group_rank(ts_rank(anl4_fs_guidances_basic_af_nd_div_minguidance / close, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_guidances_basic_af_nd_div_minguidance / close, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_basic_af_nd_div_maxguidance - anl4_fs_guidances_basic_af_nd_div_minguidance) / close, 126), industry) + 0.20 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v261_news_dividend_yield_confirmed",
+    "family": "dividend_visibility_repair",
+    "hypothesis": "Reported news dividend yield can act as an event-timed confirmation of analyst dividend estimates; a short reversal sleeve may improve timing without falling back to book/value.",
+    "field_notes": "news_dividend_yield coverage=0.8534 alphaCount=411 but local ACTIVE usage=0; paired with low-alpha annual dividend detail fields.",
+    "expression": "0.35 * group_rank(ts_rank(news_dividend_yield, 60), industry) + 0.30 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.15 * rank(-1 * ts_mean(returns, 5))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v261_option_award_dividend_assumption",
+    "family": "dividend_visibility_repair",
+    "hypothesis": "The expected dividend rate assumption used in share-based option awards may be a slow, underused proxy for management payout expectations, orthogonal to ordinary analyst EPS/book fields.",
+    "field_notes": "option_award_expected_dividend_rate coverage=0.6563 alphaCount=0, fundamental2; combined with analyst dividend detail estimates for confirmation.",
+    "expression": "0.35 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.30 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.15 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v261_dividend_financing_safety",
+    "family": "dividend_visibility_repair",
+    "hypothesis": "Dividend yield should be safer when it is paired with lower expected financing cash flow and low dividend estimate dispersion, reducing the risk that payout is funded externally.",
+    "field_notes": "Uses v260 CFF field only as a small safety sleeve; CFF standalone was weak but warning-free.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_mean / close, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_cff_mean / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_div_high - anl4_fs_detail_estimates_basic_af_v4_nd_div_low) / close, 126), industry) + 0.10 * rank(-(close / open - 1))",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  }
+]

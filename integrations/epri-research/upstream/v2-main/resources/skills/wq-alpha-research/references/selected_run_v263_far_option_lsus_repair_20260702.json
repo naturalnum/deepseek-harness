@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v263_far_option_skew_largecap_subindustry",
+    "family": "far_option_lsus_repair",
+    "hypothesis": "The v262 far-tenor option skew signal had headline strength but failed sub-universe robustness; a stricter large-cap gate, longer smoothing, and subindustry ranks may keep the slow insurance-demand normalization signal while reducing small-cap fragility.",
+    "source_alpha": "omK0VlEl",
+    "expression": "trade_when(rank(cap) > 0.65, 0.36 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_1080 - implied_volatility_mean_skew_720), 126), subindustry) + 0.28 * group_rank(ts_rank(-1 * abs(pcr_vol_1080 - pcr_vol_720), 126), subindustry) + 0.18 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(mean_event_novelty_score, 126), industry) + 0.08 * rank(-1 * ts_mean(returns, 10)), -1)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v263_far_put_breakeven_pcr_oi_largecap",
+    "family": "far_option_lsus_repair",
+    "hypothesis": "A far-tenor put breakeven and open-interest PCR curve may be a more institutionally anchored insurance-demand signal than option-volume PCR, and may improve TOP1000 robustness.",
+    "source_alpha": "omK0VlEl",
+    "expression": "trade_when(rank(cap) > 0.65, 0.34 * group_rank(ts_rank(-1 * abs((put_breakeven_1080 - put_breakeven_720) / close), 126), subindustry) + 0.28 * group_rank(ts_rank(-1 * abs(pcr_oi_1080 - pcr_oi_720), 126), subindustry) + 0.18 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.12 * group_rank(ts_rank(mean_event_novelty_score, 126), industry) + 0.08 * rank(-1 * ts_mean(returns, 10)), -1)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v263_far_iv_term_stability_largecap",
+    "family": "far_option_lsus_repair",
+    "hypothesis": "Slow stability in far-tenor implied volatility and skew may proxy lower long-horizon event insurance demand, potentially more robust than the v262 skew-only variant.",
+    "source_alpha": "omK0VlEl",
+    "expression": "trade_when(rank(cap) > 0.65, 0.30 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_1080 - implied_volatility_mean_720), 126), subindustry) + 0.24 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_1080 - implied_volatility_mean_skew_720), 126), subindustry) + 0.20 * group_rank(ts_rank(-1 * abs(pcr_oi_1080 - pcr_oi_720), 126), subindustry) + 0.16 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * rank(-1 * ts_mean(returns, 10)), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v263_far_option_model_certainty_largecap",
+    "family": "far_option_lsus_repair",
+    "hypothesis": "Far-tenor option calm may need a non-price confirmation sleeve; earnings-certainty improvement can filter option-calm names without using book, payout, or ordinary value fields.",
+    "source_alpha": "omK0VlEl",
+    "expression": "trade_when(rank(cap) > 0.65, 0.30 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_1080 - implied_volatility_mean_skew_720), 126), subindustry) + 0.24 * group_rank(ts_rank(-1 * abs(pcr_vol_1080 - pcr_vol_720), 126), subindustry) + 0.22 * rank(earnings_certainty_rank_derivative) + 0.14 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 90), industry) + 0.10 * rank(-1 * ts_mean(returns, 10)), -1)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

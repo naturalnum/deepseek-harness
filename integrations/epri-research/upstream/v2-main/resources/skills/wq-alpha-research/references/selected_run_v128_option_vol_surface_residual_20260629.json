@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v128_call_put_iv_asymmetry_eventful",
+    "family": "option_iv_call_put_asymmetry",
+    "hypothesis": "Direct call-vs-put implied volatility asymmetry may be different from the crowded call/put breakeven and PCR sleeves, especially when traded only on high-information days.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_put_720 - implied_volatility_call_720), 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.140 * rank(-1 * multi_factor_static_score_derivative) + 0.130 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v128_parkinson_iv_compression_lowvol",
+    "family": "realized_range_iv_compression",
+    "hypothesis": "Low high-low realized-volatility distortion relative to IV can be a cleaner risk-premium signal if used under low-volume regimes and without breakeven or PCR legs.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.250 * group_rank(ts_rank(-1 * (implied_volatility_mean_20 - parkinson_volatility_20), 60), industry) + 0.200 * group_rank(ts_rank(-1 * (implied_volatility_mean_720 - parkinson_volatility_60), 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(parkinson_volatility_10 - historical_volatility_10), 60), industry) + 0.150 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.120 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v128_short_call_iv_model_eventful",
+    "family": "short_call_iv_model",
+    "hypothesis": "Short-tenor call-IV compression plus model deterioration avoids PCR and social/skew while testing whether option demand asymmetry is exploitable on eventful days.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.260 * group_rank(ts_rank(-1 * abs(implied_volatility_call_20 - implied_volatility_call_90), 60), industry) + 0.200 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_put_90), 60), industry) + 0.170 * rank(-1 * growth_potential_rank_derivative) + 0.150 * rank(-1 * earnings_certainty_rank_derivative) + 0.120 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v128_forward_short_iv_no_breakeven",
+    "family": "forward_iv_no_breakeven",
+    "hypothesis": "Short forward-price curvature with IV compression tests a forward/option surface that avoids the long breakeven terms now occupied by zq92joQo and GrwK89PO.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.230 * group_rank(ts_rank((forward_price_90 - forward_price_30) / close, 60), industry) + 0.210 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.170 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.150 * rank(-1 * relative_valuation_rank_derivative) + 0.130 * rank(-(close / open - 1)) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v128_iv_social_no_skew_no_vwap",
+    "family": "iv_social_without_skew_vwap",
+    "hypothesis": "A light social attention layer may help IV asymmetry without recreating the social-skew-VWAP sleeves, because the option parent is call/put IV rather than skew or breakeven.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.240 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_put_720 - implied_volatility_call_720), 90), industry) + 0.160 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.150 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v128_operational_cold_iv_aux",
+    "family": "cold_operational_iv_aux",
+    "hypothesis": "Sparse inventory write-down / doubtful-reserve relief is too weak alone, but as a small auxiliary to IV asymmetry it may separate this from old option-only sleeves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.220 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.180 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.160 * group_rank(ts_rank(-1 * abs(inventory_valuation_write_down) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(doubtful_accounts_reserve_total) / assets, 126), industry) + 0.150 * rank(-(close / open - 1)) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v128_raw_finished_inventory_iv_eventful",
+    "family": "inventory_structure_iv",
+    "hypothesis": "Raw-materials versus finished-goods inventory structure is a different operational signal from receivables/deferred revenue; a small IV timing layer may provide enough turnover without making inventory the parent.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.210 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.180 * group_rank(ts_rank(-1 * abs(inventory_value_finished_goods) / assets, 126), industry) + 0.160 * group_rank(ts_rank(inventory_raw_materials_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.150 * rank(-(close / open - 1)) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v128_taxes_payable_iv_lowcorr",
+    "family": "taxes_payable_iv_aux",
+    "hypothesis": "Taxes payable is a non-foreign tax-liability field with low alphaCount; paired lightly with IV asymmetry it tests a non-geographic tax timing route.",
+    "expression": "trade_when(correlation_last_90_days_spy < 0.75, 0.230 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.190 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.180 * group_rank(ts_rank(-1 * abs(taxes_payable_total_value) / assets, 126), industry) + 0.150 * rank(-1 * multi_factor_static_score_derivative) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v187_news18_event_similarity_rare_underreaction",
+    "family": "news18_event_similarity_structure",
+    "hypothesis": "Days since a similar event is a recurrence structure field rather than raw news sentiment. Rare similar events with global novelty and sparse story records may be under-absorbed, while subtracting novelty-chain elapsed avoids rebuilding WjpJwMdP's chain-staleness ACTIVE.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.300 * group_rank(ts_rank(vec_avg(nws18_event_similarity_days), 126), industry) + 0.200 * group_rank(ts_rank(vec_avg(global_event_novelty_score_2), 90), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(nws18_event_relevance_fast_d1), 90), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.120 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) - 0.080 * group_rank(ts_rank(vec_avg(novelty_chain_elapsed_ms), 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests recurrence/similarity rather than chain elapsed. Reject if high-corr to WjpJwMdP/LLpKoQPa/Vkp0P130 or if anti-chain subtraction kills strength."
+  },
+  {
+    "name": "v187_news18_entity_story_sentiment_spread",
+    "family": "news18_entity_specific_sentiment_spread",
+    "hypothesis": "Entity-event sentiment exceeding the broader story sentiment can identify firm-specific positive information embedded in otherwise mixed news. This uses SSE-minus-SSC spread rather than product/business/M&A/credit/legal categories.",
+    "expression": "trade_when(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 20) > 0.45, 0.320 * group_rank(ts_rank(vec_avg(nws18_sse) - vec_avg(nws18_ssc), 90), industry) + 0.190 * group_rank(ts_rank(-1 * abs(vec_avg(nws18_sse) - vec_avg(nws18_ssc)), 20), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.130 * group_rank(ts_rank(vec_avg(nws18_event_similarity_days), 126), industry) + 0.110 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "New entity-vs-story spread. Avoids RP product/business/earnings/M&A/legal fields and chain elapsed."
+  },
+  {
+    "name": "v187_news18_relevance_asymmetry_duration",
+    "family": "news18_relevance_asymmetry_duration",
+    "hypothesis": "High event relevance but lower entity relevance can flag discrete events where the company is not part of a crowded entity narrative. Short event duration and sparse repetition test a different event-structure route from ordinary sentiment and chain staleness.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.260 * group_rank(ts_rank(vec_avg(nws18_event_relevance_fast_d1) - vec_avg(nws18_relevance_fast_d1), 90), industry) + 0.210 * group_rank(ts_rank(-1 * abs(vec_avg(event_end_time_utc) - vec_avg(event_start_time_utc)), 126), industry) + 0.170 * group_rank(ts_rank(vec_avg(nws18_event_similarity_days), 126), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Event structure only: relevance asymmetry, duration, recurrence. Reject if it behaves like WjpJwMdP's low-relevance chain-staleness sibling."
+  },
+  {
+    "name": "v187_customer_intangible_durability",
+    "family": "customer_related_intangible_durability",
+    "hypothesis": "Customer-related finite-lived intangible assets can represent acquired customer contracts or relationships. High customer-intangible base with lower accumulated amortization may proxy durable acquired customer relationships rather than generic goodwill or acquisition level.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.260 * group_rank(ts_rank(customer_related_intangibles_gross_value / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(gross_customer_related_intangibles / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(net_customer_intangible_assets / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * accumulated_amortization_customer_intangibles_2 / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Customer-intangible-specific route, not goodwill, customer graph, or acquisition-payment route. Kill if it maps to goodwill/acquisition/customer-network actives."
+  },
+  {
+    "name": "v187_customer_intangible_organic_relief",
+    "family": "customer_related_intangible_burden_relief",
+    "hypothesis": "The opposite economic interpretation is that low acquired customer-intangible dependence indicates more organic customer generation and less acquired-relationship amortization drag. This sign-control is included because the field's economics are ambiguous and has not been separately tested.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.300 * group_rank(ts_rank(-1 * customer_related_intangibles_gross_value / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * gross_customer_related_intangibles / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * net_customer_intangible_assets / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * accumulated_amortization_customer_intangibles_2 / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Sign-control for customer-related intangibles. If both customer-intangible candidates are weak/high-corr, close this parent."
+  },
+  {
+    "name": "v187_fnd6_event_nonop_retained_clean",
+    "family": "fnd6_cpt_event_nonoperating_retained_update",
+    "hypothesis": "FND6 cpt event vectors can capture fresh statement updates. Lower non-operating income noise plus retained-earnings/common-equity support may identify cleaner event-period accounting updates without direct EBIT, sales surprise, payables, contract liability, or employee-liability fields.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.270 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_cptnewqeventv110_nopiq)) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(vec_avg(fnd6_cptnewqeventv110_req) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(vec_avg(fnd6_cptnewqeventv110_ceqq) / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_cptnewqeventv110_dpq)) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh event-vector accounting update route. Reject if it maps to shareholder-equity/BVPS, core earnings, or ordinary quality actives."
+  }
+]

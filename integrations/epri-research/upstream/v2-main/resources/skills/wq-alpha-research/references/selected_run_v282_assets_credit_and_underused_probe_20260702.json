@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v282_assets_credit_news_minus_015",
+    "family": "news18_assets_credit_residual",
+    "hypothesis": "Asset and credit event sentiment may capture balance-sheet information not fully represented by the existing reversal/buyback/quality alpha; subtracting a small exact blocker sleeve should preserve the event signal while reducing portfolio overlap.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1) - 0.15 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v282_assets_credit_news_minus_020",
+    "family": "news18_assets_credit_residual",
+    "hypothesis": "A slightly stronger blocker subtraction may be safer on self-correlation if the 0.15 boundary remains too close to existing ACTIVE PnL.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.200 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1) - 0.20 * (0.40 * rank(-(close / open - 1)) + 0.35 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.25 * group_rank(ts_rank(operating_income / equity, 126), subindustry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v282_netprofit_guidance_confidence",
+    "family": "analyst_netprofit_guidance",
+    "hypothesis": "Positive annual net-profit guidance with a narrow guidance range can proxy management confidence while using a low-crowding net-profit surface rather than the occupied EPS/FCF route.",
+    "expression": "0.60 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_netprofit_minguidance + anl4_fs_guidances_advanced_af_nd_netprofit_maxguidance) / (2 * enterprise_value), 126), industry) + 0.40 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_netprofit_maxguidance - anl4_fs_guidances_advanced_af_nd_netprofit_minguidance) / abs(enterprise_value), 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v282_netprofit_estimate_revision_confidence",
+    "family": "analyst_netprofit_estimates",
+    "hypothesis": "Rising annual net-profit consensus with low analyst dispersion should identify improving earnings power without directly reusing EPS yield.",
+    "expression": "0.55 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_netprofit_median / enterprise_value, 63), 126), industry) + 0.45 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_netprofit_high - anl4_fs_detail_estimates_advanced_af_nd_netprofit_low) / abs(enterprise_value), 126), industry)",
+    "decay": 4,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v282_domestic_revenue_resilience",
+    "family": "fundamental_geographic_mix",
+    "hypothesis": "A higher domestic revenue mix can reduce foreign-currency and global demand exposure; within industries this may behave as a resilience signal distinct from ordinary profitability.",
+    "expression": "0.70 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v282_news12_event_vwap_reversal",
+    "family": "news12_event_microstructure",
+    "hypothesis": "When event-day closing VWAP runs far above the main-session VWAP on abnormal event volume, the move may partly mean-revert after the news is absorbed.",
+    "expression": "trade_when(ts_rank(vec_avg(trading_volume_deviation_std_1555), 20) > 0.55, rank(-1 * ts_rank((vec_avg(end_of_day_vwap_3) - vec_avg(main_session_vwap_2)) / close, 20)), -1)",
+    "decay": 20,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v282_news12_open_gap_reversal",
+    "family": "news12_event_microstructure",
+    "hypothesis": "Large news-related opening gaps can overreact, especially when measured directly from the event module rather than ordinary daily OHLC.",
+    "expression": "trade_when(ts_rank(abs(vec_avg(opening_price_gap_percent)), 20) > 0.60, 0.70 * rank(-1 * ts_rank(vec_avg(opening_price_gap_percent), 20)) + 0.30 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  }
+]

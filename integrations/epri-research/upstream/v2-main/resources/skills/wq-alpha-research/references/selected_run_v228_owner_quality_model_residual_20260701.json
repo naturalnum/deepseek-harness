@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v228_retained_nci_owner_compound",
+    "family": "owner_equity_retention_quality",
+    "hypothesis": "Firms that compound retained earnings while keeping non-controlling-interest leakage low may show owner-aligned earnings retention; this tests retained/NCI structure without analyst, news, option, debt, treasury, or FND6 cost-conversion parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_cptnewqeventv110_req), 252) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_newqeventv110_reunaq), 252) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_cimiiq)) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_miiq)) / abs(vec_avg(fnd6_newqeventv110_ibq)), 126), industry) + 0.110 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Retained earnings and NCI are VECTOR fields, converted with vec_avg. Kill if it repeats NCI/intersegment complexity, fixed-cost quality, or generic profitability capacity."
+  },
+  {
+    "name": "v228_ci_netprofit_cleanliness_matrix",
+    "family": "comprehensive_income_cleanliness",
+    "hypothesis": "Net profit that is close to comprehensive income and not dominated by accumulated OCI may be cleaner and more persistent; this uses high-coverage FND2 matrix footnotes rather than analyst guidance or FND6 cost conversion.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(net_profit_loss / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(comprehensive_income_net_tax - net_profit_loss) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_std_dev((comprehensive_income_net_tax - net_profit_loss) / abs(assets), 126), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(accumulated_oci_net_of_tax_value) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A controlled retest of comprehensive-income cleanliness with matrix fields only. Kill on weak metrics, LSUS, or corr to existing quality/profitability actives."
+  },
+  {
+    "name": "v228_nonoperating_hedge_clean_core",
+    "family": "nonoperating_noise_clean_core",
+    "hypothesis": "Core income before extraordinary items with low non-operating, hedge, and other-cost noise may identify cleaner recurring operations; this repairs prior nonoperating syntax with vec_avg but avoids cost-conversion siblings.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(vec_avg(fnd6_newqeventv110_ibcomq) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_nopxs)) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_ocaxs)) / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_hedgeglq)) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(fnd6_nopxs) / abs(assets), 126), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "A final small nonoperating-noise probe. Kill if it is weak like v161/v187 or high-corr to mL8lGN89 / generic quality."
+  },
+  {
+    "name": "v228_model_option_retained_no_news",
+    "family": "model_option_no_news_owner_retention",
+    "hypothesis": "Contrarian model style plus long-tenor option convexity may remain useful if news/alltype stabilizers are replaced by owner-retention quality; this is a materially different test from Wjpx2AEO but still has strict self-corr risk.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.190 * group_rank(ts_rank(-1 * fscore_surface_accel, 126), industry) + 0.150 * group_rank(ts_rank(-1 * fscore_growth, 126), industry) + 0.140 * group_rank(ts_rank(fscore_value, 126), industry) + 0.190 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.130 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_cptnewqeventv110_req), 252) / abs(assets), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No news-chain, no alltype, no open-close. Kill if it maps to Wjpx2AEO / 3q7jJ130 / option frontier, or if Fitness/LSUS is weak."
+  }
+]

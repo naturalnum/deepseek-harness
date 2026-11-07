@@ -1,0 +1,383 @@
+[
+  {
+    "name": "sel_debt_repayment_strength",
+    "family": "debt_safety",
+    "source": "local_selected_20260625",
+    "hypothesis": "Low-crowding debt repayment footnote; sign means balance-sheet repair.",
+    "expression": "group_rank(ts_rank(debt_repayments_total_2 / assets, 126), industry)",
+    "decay": 2,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.7449,
+    "field_score": 0.7212,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "assets",
+        "coverage": 0.5,
+        "users": 51358,
+        "alphas": 160763,
+        "category": "fundamental",
+        "type": "MATRIX"
+      },
+      {
+        "id": "debt_repayments_total_2",
+        "coverage": 0.7851,
+        "users": 3,
+        "alphas": 3,
+        "category": "fundamental",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Low-crowding debt repayment footnote; sign means balance-sheet repair."
+  },
+  {
+    "name": "sel_deferred_tax_balance_quality",
+    "family": "tax_accounting_quality",
+    "source": "local_selected_20260625",
+    "hypothesis": "Low-crowding tax/accounting quality; lower truncation for sparsity risk.",
+    "expression": "group_rank(ts_rank((deferred_tax_assets_net_value - deferred_tax_liabilities_total_4) / assets, 126), industry)",
+    "decay": 2,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.7301,
+    "field_score": 0.6861,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "assets",
+        "coverage": 0.5,
+        "users": 51358,
+        "alphas": 160763,
+        "category": "fundamental",
+        "type": "MATRIX"
+      },
+      {
+        "id": "deferred_tax_assets_net_value",
+        "coverage": 0.8294,
+        "users": 23,
+        "alphas": 26,
+        "category": "fundamental",
+        "type": "MATRIX"
+      },
+      {
+        "id": "deferred_tax_liabilities_total_4",
+        "coverage": 0.8385,
+        "users": 4,
+        "alphas": 5,
+        "category": "fundamental",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Low-crowding tax/accounting quality; lower truncation for sparsity risk."
+  },
+  {
+    "name": "sel_analyst_ebitda_ev_yield",
+    "family": "analyst_profitability",
+    "source": "local_selected_20260625",
+    "hypothesis": "High analyst EBITDA yield relative to EV; already showed strong IS in first run.",
+    "expression": "group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.7265,
+    "field_score": 0.6058,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "enterprise_value",
+        "coverage": 0.5,
+        "users": 11359,
+        "alphas": 43516,
+        "category": "fundamental",
+        "type": "MATRIX"
+      },
+      {
+        "id": "operating_profit_before_depr_amort",
+        "coverage": 0.8252,
+        "users": 43,
+        "alphas": 51,
+        "category": "analyst",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "High analyst EBITDA yield relative to EV; already showed strong IS in first run."
+  },
+  {
+    "name": "sel_option_pcr_vol20_reversal",
+    "family": "option_put_call",
+    "source": "local_selected_20260625",
+    "hypothesis": "Crowded short-dated put/call volume pressure may mean-revert.",
+    "expression": "-1 * group_rank(ts_rank(pcr_vol_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.715,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "pcr_vol_20",
+        "coverage": 0.981,
+        "users": 217,
+        "alphas": 328,
+        "category": "option",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Crowded short-dated put/call volume pressure may mean-revert."
+  },
+  {
+    "name": "sel_option_pcr_oi20_reversal",
+    "family": "option_put_call",
+    "source": "local_selected_20260625",
+    "hypothesis": "Open-interest based put/call pressure is slower than volume and may diversify.",
+    "expression": "-1 * group_rank(ts_rank(pcr_oi_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.715,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "pcr_oi_20",
+        "coverage": 0.9838,
+        "users": 464,
+        "alphas": 858,
+        "category": "option",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Open-interest based put/call pressure is slower than volume and may diversify."
+  },
+  {
+    "name": "sel_option_skew20_reversal",
+    "family": "option_skew",
+    "source": "local_selected_20260625",
+    "hypothesis": "Skew spikes can represent crowded downside demand; reverse sign tests fear mean-reversion.",
+    "expression": "-1 * group_rank(ts_rank(implied_volatility_mean_skew_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.715,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "implied_volatility_mean_skew_20",
+        "coverage": 0.9508,
+        "users": 507,
+        "alphas": 770,
+        "category": "option",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Skew spikes can represent crowded downside demand; reverse sign tests fear mean-reversion."
+  },
+  {
+    "name": "sel_social_sentiment_stability",
+    "family": "sentiment_stability",
+    "source": "local_selected_20260625",
+    "hypothesis": "Official Learn-inspired: unstable sentiment is noisy and may underperform.",
+    "expression": "-1 * group_rank(ts_std_dev(scl12_sentiment_fast_d1, 10), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.715,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "scl12_sentiment_fast_d1",
+        "coverage": 0.9756,
+        "users": 320,
+        "alphas": 450,
+        "category": "socialmedia",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Official Learn-inspired: unstable sentiment is noisy and may underperform."
+  },
+  {
+    "name": "sel_social_buzz_attention_reversal",
+    "family": "sentiment_attention",
+    "source": "local_selected_20260625",
+    "hypothesis": "Abnormal attention can be crowded; use fast_d1 low-crowding field.",
+    "expression": "-1 * group_rank(ts_rank(scl12_buzz_fast_d1, 20), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.715,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "scl12_buzz_fast_d1",
+        "coverage": 0.9756,
+        "users": 244,
+        "alphas": 351,
+        "category": "socialmedia",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Abnormal attention can be crowded; use fast_d1 low-crowding field."
+  },
+  {
+    "name": "sel_reverse_model_cashflow_efficiency",
+    "family": "model_quality_reversal",
+    "source": "local_selected_20260625",
+    "hypothesis": "First positive-sign model score failed symmetrically; reverse sign tests whether score derivative is constructed as lower-is-better.",
+    "expression": "-1 * group_rank(ts_rank(cashflow_efficiency_rank_derivative, 126), subindustry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "local_score": 0.67,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "cashflow_efficiency_rank_derivative",
+        "coverage": 1.0,
+        "users": 287,
+        "alphas": 417,
+        "category": "model",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "First positive-sign model score failed symmetrically; reverse sign tests whether score derivative is constructed as lower-is-better."
+  },
+  {
+    "name": "sel_reverse_model_relative_value",
+    "family": "model_value_reversal",
+    "source": "local_selected_20260625",
+    "hypothesis": "Reverse the failed positive relative valuation derivative; high coverage and low crowding.",
+    "expression": "-1 * group_rank(ts_rank(relative_valuation_rank_derivative, 126), industry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.67,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "relative_valuation_rank_derivative",
+        "coverage": 1.0,
+        "users": 164,
+        "alphas": 260,
+        "category": "model",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Reverse the failed positive relative valuation derivative; high coverage and low crowding."
+  },
+  {
+    "name": "sel_reverse_model_earnings_certainty",
+    "family": "model_earnings_reversal",
+    "source": "local_selected_20260625",
+    "hypothesis": "Reverse the failed positive earnings certainty derivative; test sign before discarding model16.",
+    "expression": "-1 * group_rank(ts_rank(earnings_certainty_rank_derivative, 126), subindustry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "local_score": 0.67,
+    "field_score": 0.65,
+    "diversity_score": 1,
+    "active_token_similarity": 0,
+    "field_meta": [
+      {
+        "id": "earnings_certainty_rank_derivative",
+        "coverage": 1.0,
+        "users": 304,
+        "alphas": 504,
+        "category": "model",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Reverse the failed positive earnings certainty derivative; test sign before discarding model16."
+  },
+  {
+    "name": "sel_analyst_sales_eps_yield_combo",
+    "family": "analyst_revision_value",
+    "source": "local_selected_20260625",
+    "hypothesis": "Sales yield plus EPS yield; already showed GOOD IS, but watch EPS correlation.",
+    "expression": "0.5 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.5 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.6385,
+    "field_score": 0.6187,
+    "diversity_score": 0.6667,
+    "active_token_similarity": 0.3333,
+    "field_meta": [
+      {
+        "id": "enterprise_value",
+        "coverage": 0.5,
+        "users": 11359,
+        "alphas": 43516,
+        "category": "fundamental",
+        "type": "MATRIX"
+      },
+      {
+        "id": "est_eps",
+        "coverage": 0.7848,
+        "users": 5377,
+        "alphas": 9850,
+        "category": "analyst",
+        "type": "MATRIX"
+      },
+      {
+        "id": "est_sales",
+        "coverage": 0.7458,
+        "users": 1064,
+        "alphas": 2878,
+        "category": "analyst",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "Sales yield plus EPS yield; already showed GOOD IS, but watch EPS correlation."
+  },
+  {
+    "name": "sel_gap_acceptance_quality_blend",
+    "family": "gap_quality_crossover",
+    "source": "local_selected_20260625",
+    "hypothesis": "QuantaAlpha gap acceptance blended with quality anchor; should be compared to existing mixed alpha.",
+    "expression": "0.5 * rank((open / ts_delay(close, 1) - 1) * ((close - open) / open)) + 0.5 * rank(ts_rank(operating_income / equity, 126))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "local_score": 0.3464,
+    "field_score": 0.4392,
+    "diversity_score": 0.0,
+    "active_token_similarity": 1.0,
+    "field_meta": [
+      {
+        "id": "equity",
+        "coverage": 0.5,
+        "users": 7291,
+        "alphas": 25074,
+        "category": "fundamental",
+        "type": "MATRIX"
+      },
+      {
+        "id": "operating_income",
+        "coverage": 0.5,
+        "users": 26366,
+        "alphas": 61753,
+        "category": "fundamental",
+        "type": "MATRIX"
+      }
+    ],
+    "notes": "QuantaAlpha gap acceptance blended with quality anchor; should be compared to existing mixed alpha."
+  }
+]

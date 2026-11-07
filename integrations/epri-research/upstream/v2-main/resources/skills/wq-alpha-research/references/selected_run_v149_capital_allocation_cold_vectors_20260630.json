@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v149_esop_preferred_obligation_relief",
+    "family": "esop_preferred_capital_overhang",
+    "hypothesis": "Firms with lower ESOP obligations, redeemable preferred stock, and preferred dividends have less hidden capital-structure overhang. This is a capital-overhang parent, not an ordinary debt, buyback, or employee/SBP expense signal.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_esopnrq)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_esopctq)) / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pstkrq)) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_dvpq)) / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Strict-check against employee/SBP actives akda9EW9 and pw6jz8ob, plus debt/payout actives. Abandon if it maps to compensation or shareholder-yield sleeves."
+  },
+  {
+    "name": "v149_preferred_capital_change_relief",
+    "family": "preferred_capital_change",
+    "hypothesis": "A decline in redeemable or total preferred capital can be a balance-sheet repair signal distinct from common-share buybacks and ordinary debt reduction.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_pstkrq)) / assets, 252), 126), industry) + 0.230 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_pstkq)) / assets, 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_dvpq)) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_esoptq)) / assets, 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Change-dominant preferred-capital repair. It intentionally avoids common share count, repurchase, debt, credit-line, and lease fields."
+  },
+  {
+    "name": "v149_longterm_investment_burden_relief",
+    "family": "longterm_investment_capital_allocation",
+    "hypothesis": "Lower and falling long-term investments and invested capital may proxy better capital allocation discipline without using CAPEX, PPE aging, deferred revenue, or ordinary profitability.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.300 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_ivltq)) / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_ivltq)) / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_ivaeqs)) / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_icaptq)) / assets, 252), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Not an equity-method income replay: the parent is total long-term investment / invested-capital burden. Strict-check against annual total-assets and PPE/CAPEX actives."
+  },
+  {
+    "name": "v149_interest_nonoperating_carry_clean",
+    "family": "interest_income_nonoperating_cleanliness",
+    "hypothesis": "Positive interest and net-interest carry with limited non-operating expense can identify cleaner balance-sheet income, especially within industries, without using debt repayment or credit-line fields.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.270 * group_rank(ts_rank(vec_avg(fnd6_iints) / assets, 126), industry) + 0.240 * group_rank(ts_rank(vec_avg(fnd6_nxints) / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_nopxs)) / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_nopxs)) / assets, 252), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One-shot interest-income/nonoperating carry test. If it behaves like debt/quality/value, close it instead of adding denominators."
+  },
+  {
+    "name": "v149_retained_earnings_adjustment_clean",
+    "family": "retained_earnings_balance_adjustment",
+    "hypothesis": "Low liabilities-netting adjustments and a small gap between retained earnings and unadjusted retained earnings may proxy cleaner balance-sheet accumulation, separate from simple profitability or book-value yield.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_lnoq)) / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_reunaq) - vec_avg(fnd6_cptnewqeventv110_req)) / assets, 126), industry) + 0.170 * group_rank(ts_rank(vec_avg(fnd6_cptnewqeventv110_req) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_lnoq)) / assets, 252), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cold balance-adjustment parent. Strict-check against BVPS/value, annual-balance, and accounting-cleanliness actives."
+  },
+  {
+    "name": "v149_capital_overhang_combo_lowcorr",
+    "family": "preferred_investment_overhang_combo",
+    "hypothesis": "A compact combination of preferred-capital overhang relief and long-term-investment discipline may be more robust than either sparse vector family alone while remaining outside debt, lease, deferred revenue, and buyback clusters.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_pstkrq)) / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_esopnrq)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_ivltq)) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_delta(abs(vec_avg(fnd6_newqeventv110_icaptq)) / assets, 252), 126), industry) + 0.090 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_lnoq)) / assets, 126), industry) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A deliberately compact cross-parent fusion. If the individual parents are weak and this only works through beta/reversal, do not repair."
+  }
+]

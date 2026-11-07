@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v163_customer_financed_deleveraging_lowcorr_regime",
+    "family": "contract_liability_timing_residual",
+    "hypothesis": "The v162 customer-financed deleveraging candidate was strong but too correlated to LLprjdP9. Trading it only when short-term market correlation is below long-term market correlation tests whether an external timing regime can separate the PnL path rather than merely changing weights.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(-1 * ts_delta(debt / assets, 252), 126), industry) + 0.230 * group_rank(ts_rank(ts_delta(fnd6_drc / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(-1 * ts_delta(fnd6_drlt / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * taxes_payable_total_value / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One external-timing follow-up to 1Y7Pbpez only. Reject if high-corr to LLprjdP9/QPaze5zX or metrics collapse."
+  },
+  {
+    "name": "v163_payable_accrual_flow_release",
+    "family": "payable_accrual_flow_change",
+    "hypothesis": "A1wmZ22l used low liability levels. This tests a different parent: declining or low-volatility accounts-payable/accrued-liability flow, which may indicate reduced supplier-financing dependence rather than simply low current accrued liabilities.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.290 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_apalch / abs(sales), 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * ts_delta(fnd6_mfma1_apalch / abs(sales), 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(fnd6_newa1v1300_apalch) / abs(sales), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Allowed extension of A1wmZ22l because it uses flow/change-only APALCH fields, not current_accrued_liabilities_total/accrued_liabilities_total_2/taxes_payable/interest_payable levels."
+  },
+  {
+    "name": "v163_financing_cost_amortization_relief",
+    "family": "financing_cost_friction_relief",
+    "hypothesis": "Low financing-cost amortization and low debt-issuance-cost balances may capture lower refinancing friction without directly using debt balances, interest expense, lease burden, or current payable levels.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.300 * group_rank(ts_rank(-1 * financing_costs_amortization / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * financing_costs_amortization_total / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * fn_debt_issuance_costs_a / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * fn_debt_issuance_costs_q / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Cold financing-friction parent. Stop if it maps to debt/quality actives or remains weak."
+  },
+  {
+    "name": "v163_total_liability_maturity_pressure",
+    "family": "liability_maturity_pressure",
+    "hypothesis": "Falling current and long-term liabilities as a share of assets may represent broad balance-sheet obligation relief outside the narrower accrued/payable fields used by A1wmZ22l and outside the deferred-revenue path.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.270 * group_rank(ts_rank(-1 * ts_delta(fnd6_cptnewqv1300_lctq / assets, 252), 126), industry) + 0.230 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_lltq / assets, 252), 126), industry) + 0.160 * group_rank(ts_rank(-1 * liabilities_curr / assets, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Broad liability-maturity probe; reject if it becomes generic debt/quality or A1wmZ22l sibling."
+  },
+  {
+    "name": "v163_multi_reserve_cleanup_cold",
+    "family": "reserve_overhang_cleanup",
+    "hypothesis": "Multiple low reserve overhangs across restructuring, doubtful accounts, and deferred-tax reserve accruals may capture cleaner accounting obligations than any single weak reserve field.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.240 * group_rank(ts_rank(-1 * restructuring_reserve_total / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * restructuring_reserve_total_value / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * doubtful_accounts_reserve_total / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(-1 * deferred_tax_assets_expense_reserves / abs(assets), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Cold reserve-overhang probe. Prior single reserve/tax/receivable lines were weak, so do not repair unless this produces a genuinely strong and low-corr near-miss."
+  }
+]

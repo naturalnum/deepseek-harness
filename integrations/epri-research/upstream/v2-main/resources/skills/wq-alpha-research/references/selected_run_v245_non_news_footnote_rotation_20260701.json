@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v245_advertising_discipline_low_risk",
+    "family": "non_news_footnote_rotation",
+    "hypothesis": "Companies that keep advertising expense intensity low and stable while avoiding high market-correlation regimes may be priced more defensively; this tests an unused advertising-expense footnote surface rather than another news or analyst parent.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.330 * group_rank(ts_rank(-1 * abs(fnd6_xad) / abs(sales), 126), industry) + 0.230 * group_rank(ts_rank(sales / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Rechecks a locally strong but PnL-unverified advertising discipline seed. No news, analyst, CFO, option, debt, PPE, or open-close term; reject if it maps to generic sales/value actives."
+  },
+  {
+    "name": "v245_employee_productivity_restrain_overhiring",
+    "family": "non_news_footnote_rotation",
+    "hypothesis": "Improving sales and income per employee with restrained headcount growth can capture operating leverage and avoid overhiring risk, using employee-count data that current ACTIVE alphas barely use.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(sales / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.260 * group_rank(ts_rank(fnd6_newa1v1300_ib / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_emp, 252) / (abs(fnd6_newa1v1300_emp) + 1), 126), industry) + 0.130 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Fresh employee-count productivity route. Avoids labor news, SBP, employee-liability, gross-cost residuals, open-close, and analyst guidance; reject if low Sharpe or hidden quality correlation dominates."
+  },
+  {
+    "name": "v245_actual_repurchase_dilution_balance",
+    "family": "non_news_footnote_rotation",
+    "hypothesis": "Actual repurchases and falling common share count should be healthier than dilution and antidilutive overhang, but this version avoids analyst share guidance, EPS, open-close, debt, and payout sleeves.",
+    "expression": "0.300 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.250 * group_rank(ts_rank(shares_reacquired_during_period / abs(common_stock_shares_outstanding_count), 252), industry) - 0.180 * group_rank(ts_rank(abs(diluted_shares_outstanding_adjustment_avg) / abs(common_stock_shares_outstanding_count), 126), industry) - 0.150 * group_rank(ts_rank(abs(antidilutive_securities_eps_exclusion_count) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests actual footnote buyback/dilution balance as a single diagnostic candidate, not a payout/buyback repair. Reject if it collides with 88zpWZ1X/MPpGzqwr or any payout-quality active."
+  },
+  {
+    "name": "v245_core_sale_gain_loss_cleanliness",
+    "family": "non_news_footnote_rotation",
+    "hypothesis": "Small gain/loss-on-sale effects and low beta may indicate cleaner recurring earnings and less accounting-event noise; this tests the GLCE fields without special-items expansion or news.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.380 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / abs(assets), 126), industry) + 0.340 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Narrow pure GLCE cleanliness variant. Avoids O0pVZ7MR's special-item parent and avoids option/news/open-close; reject if it remains high-corr to 3q7jJ130/WjpR68WG."
+  },
+  {
+    "name": "v245_comprehensive_income_oci_noise_clean",
+    "family": "non_news_footnote_rotation",
+    "hypothesis": "High comprehensive income with small OCI swings can indicate cleaner non-owner equity changes; this tests comprehensive-income/OCI footnotes without using net-profit delivery or analyst fields.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.320 * group_rank(ts_rank(comprehensive_income_net_tax_value / abs(assets), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(net_other_comprehensive_income_loss_after_tax) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(accumulated_oci_net_of_tax_value) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests OCI/comprehensive-income cleanliness without foreign-FX or tax repair framing. Reject if Fitness is weak or if it behaves like netprofit/FX/OCI closed routes."
+  }
+]

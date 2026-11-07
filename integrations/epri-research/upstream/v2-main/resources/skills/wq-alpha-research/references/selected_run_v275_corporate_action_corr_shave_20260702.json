@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v275_corp_action_minus_earn_eval_020",
+    "family": "corporate_action_corr_shave",
+    "hypothesis": "Corporate-action sentiment fade is strong but too correlated to the new earnings-evaluation carrier; subtracting a small earnings-evaluation sleeve may preserve corporate-action residual while moving top daily-PnL corr below the strict gate.",
+    "field_notes": "Local daily-PnL grid on 88zxYRQv suggested minus 0.20*npg5egk8 proxy keeps Sharpe proxy ~1.69 and top ACTIVE corr ~0.57.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(corporate_action_sentiment), 5), 180), industry) - 0.20 * group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v275_corp_action_minus_earn_eval_025",
+    "family": "corporate_action_corr_shave",
+    "hypothesis": "A slightly stronger earnings-evaluation subtraction may improve the correlation margin if the 0.20 residual remains too close to npg5egk8.",
+    "field_notes": "Local grid: minus 0.25*npg5egk8 proxy top corr ~0.55, Sharpe proxy ~1.63.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(corporate_action_sentiment), 5), 180), industry) - 0.25 * group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v275_corp_action_minus_earn_and_release",
+    "family": "corporate_action_corr_shave",
+    "hypothesis": "Corporate-action fade also had moderate correlation to the earnings-release indicator; a tiny release-indicator subtraction may balance both new carriers.",
+    "field_notes": "Local grid: minus 0.20*npg5egk8 and 0.05*qMAJGLQv proxy top corr ~0.56, Sharpe proxy ~1.63.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(corporate_action_sentiment), 5), 180), industry) - 0.20 * group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry) - 0.05 * group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_ber_fast_d1), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v275_acb_minus_earn_eval_020",
+    "family": "corporate_action_corr_shave",
+    "hypothesis": "The ACB corporate-action layer matched corporate_action_sentiment metrics but may have tiny implementation differences; the same 0.20 carrier subtraction tests whether either representation passes strict corr.",
+    "field_notes": "Local grid on 9qwOmdrr was essentially identical to 88zxYRQv, but strict platform corr can differ after resimulation.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_acb), 5), 180), industry) - 0.20 * group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v275_acb_minus_earn_eval_025",
+    "family": "corporate_action_corr_shave",
+    "hypothesis": "A stronger ACB carrier subtraction provides a lower-correlation fallback if the 0.20 variant remains above the strict threshold.",
+    "field_notes": "Local grid: minus 0.25 earnings-evaluation proxy top corr ~0.55 with acceptable Sharpe proxy.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_mean(-1 * vec_avg(nws18_acb), 5), 180), industry) - 0.25 * group_rank(ts_rank(ts_mean(-1 * vec_avg(earnings_evaluation_sentiment), 5), 180), industry), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

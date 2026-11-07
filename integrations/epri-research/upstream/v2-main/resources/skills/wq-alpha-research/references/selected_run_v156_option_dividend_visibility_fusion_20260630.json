@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v156_option_dividend_analyst_payout_visibility",
+    "family": "option_award_dividend_visibility_fusion",
+    "hypothesis": "The option-award expected dividend assumption repeatedly reached clean checks but missed Fitness by 0.01. Pairing it with analyst dividend estimate breadth and tightness may add payout-visibility return without using buyback or share-count fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.220 * group_rank(ts_rank(dividend_estimate_median_value / close, 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(dividend_estimate_count, 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(dividend_estimate_maximum / close - dividend_estimate_minimum / close), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Watchlist-field repair without buyback/share-count. Strict corr against payout/value/quality actives."
+  },
+  {
+    "name": "v156_option_dividend_fcf_breadth",
+    "family": "option_award_dividend_cashflow_visibility",
+    "hypothesis": "A high option-award dividend assumption should be more investable when annual free-cash-flow estimate coverage is improving and dispersion is tight, but the formula avoids direct FCF yield levels that are already occupied.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.310 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.240 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_fcf_low / abs(assets)), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No direct FCF/EV or FCF/equity level. Uses coverage and dispersion only as a confirmer."
+  },
+  {
+    "name": "v156_option_dividend_ebit_visibility",
+    "family": "option_award_dividend_operating_visibility",
+    "hypothesis": "Dividend assumption confidence may be more durable when EBIT estimate coverage is broad and annual EBIT dispersion is low, adding an operating-visibility layer without falling back to EBITDA/EV or EPS yield.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.240 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebit_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_ebit_low / abs(assets)), 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "EBIT visibility as auxiliary only; earlier EBIT standalone uncertainty was weak, so close quickly if metrics remain poor."
+  },
+  {
+    "name": "v156_option_dividend_sga_cost_visibility",
+    "family": "option_award_dividend_cost_visibility",
+    "hypothesis": "Expected dividends in option awards are more credible when analysts see controlled SG&A burden and tight SG&A estimate bands; this tests cost visibility as the missing return sleeve for the option-dividend near-miss.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.300 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.230 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high / abs(sales) - anl4_fs_detail_estimates_advanced_af_nd_sga_low / abs(sales)), 126), industry) + 0.120 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A controlled SG&A visibility retry; avoid guidance floors and total-assets/netprofit siblings."
+  },
+  {
+    "name": "v156_option_dividend_total_assets_guidance",
+    "family": "option_award_dividend_balance_guidance",
+    "hypothesis": "A credible option-dividend assumption may matter most when management guides restrained total assets with a tight range, suggesting capital discipline without direct debt, credit-line, BVPS, or buyback fields.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.300 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.260 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_totassets_minguidance + anl4_fs_guidances_advanced_af_nd_totassets_maxguidance) / (2 * abs(assets)), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_totassets_maxguidance / abs(assets) - anl4_fs_guidances_advanced_af_nd_totassets_minguidance / abs(assets)), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No netdebt/totassets estimate or BVPS fields. Reject if it maps back to 78wvjvW8/d5xK1kmg balance-expectation capacity."
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v44_p0_decay28_trunc006",
+    "family": "customer_spillover_last_subuniverse_push",
+    "source": "customer_spillover_last_subuniverse_push_v44_20260626",
+    "hypothesis": "P0pgJzqL missed sub-universe by only 0.02; slightly higher decay and mid truncation may add enough robustness.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Minimal robustification of P0pgJzqL."
+  },
+  {
+    "name": "v44_p0_decay32_trunc005",
+    "family": "customer_spillover_last_subuniverse_push",
+    "source": "customer_spillover_last_subuniverse_push_v44_20260626",
+    "hypothesis": "A slower decay may smooth weak sub-universe episodes while keeping the low-correlation profile.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 32,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Slower P0pgJzqL variant."
+  },
+  {
+    "name": "v44_p0_window120_decay28",
+    "family": "customer_spillover_last_subuniverse_push",
+    "source": "customer_spillover_last_subuniverse_push_v44_20260626",
+    "hypothesis": "Longer rank window may improve sub-universe consistency for the same customer-spillover mechanism.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 120), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Longer ts_rank and beta relief window."
+  },
+  {
+    "name": "v44_p0_lower_spillover_higher_beta",
+    "family": "customer_spillover_last_subuniverse_push",
+    "source": "customer_spillover_last_subuniverse_push_v44_20260626",
+    "hypothesis": "Reducing spillover weight and increasing beta relief may improve sub-universe without pushing correlation high.",
+    "expression": "0.35 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Conservative weight shift."
+  },
+  {
+    "name": "v44_p0_no_authority_beta_corr",
+    "family": "customer_spillover_last_subuniverse_push",
+    "source": "customer_spillover_last_subuniverse_push_v44_20260626",
+    "hypothesis": "Replacing the remaining authority weight with correlation relief may reduce sub-universe fragility and correlation to RRpmO2xb.",
+    "expression": "0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No customer authority; should lower correlation but may lower strength."
+  },
+  {
+    "name": "v44_xaxbaxgp_decay28_trunc006",
+    "family": "customer_spillover_last_subuniverse_push",
+    "source": "customer_spillover_last_subuniverse_push_v44_20260626",
+    "hypothesis": "xAxbAXGp also missed sub-universe by 0.02 with lower correlation; small decay/truncation adjustment may rescue it.",
+    "expression": "0.65 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 90), industry) + 0.35 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Low-correlation signal-only near-miss repair."
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v203_financing_runway_resilience",
+    "family": "debt_maturity_credit_runway",
+    "hypothesis": "The user's deleveraging idea should be tested through financing runway rather than generic debt decline: lower near-term debt maturities, falling maturity-wall pressure, unused credit capacity, and low cash interest burden may indicate healthier balance-sheet liquidity without copying ordinary debt/assets or credit-line repayment siblings.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * (group_rank(ts_rank(credit_facility_max_borrowing_2 / abs(assets), 126), industry) - group_rank(ts_rank(credit_facility_outstanding_amount / abs(assets), 126), industry)) + 0.220 * group_rank(ts_rank(-1 * debt_maturities_repayments_next12m / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(debt_maturities_repayments_next12m / abs(assets), 252), 126), industry) + 0.140 * group_rank(ts_rank(-1 * net_interest_paid / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Debt idea restructured away from raw debt delta. Strict-check against v139-v145 debt/credit-line failures and reject if LSUS or capital-return/quality corr appears."
+  },
+  {
+    "name": "v203_capital_surplus_sga_discipline",
+    "family": "dilution_control_overhead_visibility",
+    "hypothesis": "Capital-surplus expansion can proxy equity-financing or dilution pressure without direct buyback/share-count fields. Pairing lower capital-surplus growth with lower and tighter SG&A expectations tests a self-funded cost-discipline mechanism that may lift the v188/v164 near-misses without reverting to payout or ordinary quality.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.260 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_capsq)) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * sg_and_a_expense_median / abs(sales), 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(sg_and_a_expense_max - sg_and_a_expense_min) / abs(sales), 126), industry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Targets two clean but under-threshold watchlist parents: v188 capital-surplus dilution control and v164 standalone SG&A discipline. Avoids buyback, share-count, option-award, FCF, and EPS/value sleeves."
+  },
+  {
+    "name": "v203_external_financing_independence",
+    "family": "cff_capital_surplus_credit_independence",
+    "hypothesis": "Companies that need less external financing should show low absolute cash-flow-from-financing dependence, stable analyst coverage of CFF, lower capital-surplus expansion, and low credit-facility draw. This reframes CFF as financing independence rather than ordinary CFI/CFF guidance update.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / abs(assets), 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "CFF actual/estimate was weak alone; this uses it only inside a broader financing-independence surface. Reject on LOW_FITNESS/LSUS or corr to quality/capital-return actives."
+  },
+  {
+    "name": "v203_fairvalue_derivative_release",
+    "family": "fair_value_derivative_opacity_release",
+    "hypothesis": "Falling derivative and recurring fair-value liability exposure can indicate lower accounting mark-to-market opacity. Prior pure fair-value fields were weak; this version uses ts_av_diff to test release from historical exposure rather than static low exposure.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(-1 * ts_av_diff(derivative_liability_fair_value / abs(assets), 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * ts_av_diff(notional_value_derivative_contracts / abs(assets), 252), 126), industry) + 0.170 * group_rank(ts_rank(derivative_asset_fair_value_2 / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * recurring_liabilities_fair_value_level2 / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Construction-level change using ts_av_diff rather than another static derivative/AFS/OCI level. Stop if weak, high drawdown, concentrated, or maps to quality/low-risk actives."
+  },
+  {
+    "name": "v203_overhead_runway_compact",
+    "family": "cost_discipline_refinancing_resilience",
+    "hypothesis": "A company with lower expected overhead and less near-term refinancing pressure may have more operating flexibility. This compact blend tests whether SG&A cost visibility can stabilize the debt-runway idea without using buyback, ordinary profitability, EPS, FCF, option, or news sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(-1 * sg_and_a_expense_median / abs(sales), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(sg_and_a_expense_max - sg_and_a_expense_min) / abs(sales), 126), industry) + 0.190 * group_rank(ts_rank(-1 * debt_maturities_repayments_next12m / abs(assets), 126), industry) + 0.140 * (group_rank(ts_rank(credit_facility_max_borrowing / abs(assets), 126), industry) - group_rank(ts_rank(credit_facility_outstanding_amount / abs(assets), 126), industry)) + 0.120 * group_rank(ts_rank(-1 * net_interest_paid / abs(assets), 126), industry) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A compact, non-payout cost-and-refinancing test. If it only reproduces old fixed-commitment/debt/quality capacity or fails LSUS, close this blend."
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v71_generic_analyst_revision_vector",
+    "family": "generic_analyst_detail_vector",
+    "source": "generic_vector_directional_news_v71_20260627",
+    "hypothesis": "Broad analyst detail-vector revisions across basic financial items may capture cross-statement estimate pressure without committing to EPS, sales, FCF, or balance-sheet guidance near-neighbors.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) / abs(assets), 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Generic vector sign-control: negative broad revisions may behave differently from named EPS/PTP or long-term estimate fields."
+  },
+  {
+    "name": "v71_generic_actual_vs_estimate_vector",
+    "family": "generic_analyst_detail_vector",
+    "source": "generic_vector_directional_news_v71_20260627",
+    "hypothesis": "Generic actual values beating broad prior estimates may provide a field-agnostic delivery signal distinct from the already occupied sales actual surprise route.",
+    "expression": "0.40 * group_rank(ts_rank((vec_avg(anl4_fs_actual_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_actual_qf_v4_nd_actual) / abs(assets), 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Field-agnostic actual-vs-estimate probe; abandon if it maps to sales actual or earnings-news actives."
+  },
+  {
+    "name": "v71_news12_relative_underreaction",
+    "family": "news12_directional_microstructure",
+    "source": "generic_vector_directional_news_v71_20260627",
+    "hypothesis": "Event-day outperformance versus SPY after news may persist when paired with calm intraday movement, giving a directional event reaction signal rather than topic sentiment.",
+    "expression": "0.40 * group_rank(ts_rank(vec_avg(relative_performance_vs_benchmark_1555), 90), industry) + 0.25 * group_rank(ts_rank(vec_avg(long_short_advantage_flag_2_1555), 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(percent_price_change_90_minutes_post_news)), 90), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Directional news12 microstructure, not RavenPack topic/sentiment; strict check against e7OQoveE/Vkp0P130."
+  },
+  {
+    "name": "v71_news12_reversal_after_outperformance",
+    "family": "news12_directional_microstructure",
+    "source": "generic_vector_directional_news_v71_20260627",
+    "hypothesis": "Strong event-day relative outperformance can be overreaction; opposite sign tests whether news12 directional data is reversal rather than continuation.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * vec_avg(relative_performance_vs_benchmark_1555), 90), industry) + 0.25 * group_rank(ts_rank(-1 * vec_avg(long_short_advantage_flag_2_1555), 90), industry) + 0.20 * group_rank(ts_rank(vec_avg(main_pct_change_sixty_minute_post_news), 90), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Sign-pair for relative underreaction; if both weak, close directional news12 route."
+  },
+  {
+    "name": "v71_news12_benchmark_residual_calm",
+    "family": "news12_directional_microstructure",
+    "source": "generic_vector_directional_news_v71_20260627",
+    "hypothesis": "A calm positive benchmark residual after news may indicate clean event absorption with lower broad-market risk.",
+    "expression": "0.35 * group_rank(ts_rank(vec_avg(main_session_performance_vs_benchmark), 90), industry) + 0.25 * group_rank(ts_rank(vec_avg(advantageous_position_flag_pre_filter), 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(main_session_ninety_minute_change_pct)), 90), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Benchmark-residual absorption probe using low-alphaCount news12 fields."
+  }
+]

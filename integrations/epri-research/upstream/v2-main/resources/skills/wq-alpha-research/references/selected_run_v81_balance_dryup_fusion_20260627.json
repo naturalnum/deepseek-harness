@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v81_balance_dryup_core",
+    "family": "balance_expectation_liquidity_dryup",
+    "hypothesis": "Low near-term net-debt and restrained asset-growth expectations are low-turnover but slightly underfit; adding liquidity dry-up after short selloffs may capture balance-sheet names whose price pressure is exhausted without using VWAP, news, FCF, issuance, or relationship-return parents.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.12 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)) + 0.08 * rank(-1 * ts_rank(volume / adv20, 20))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "PnL-guided fusion of pw6vROeq and 88zv3nxv; submit only if metrics pass and corr remains below local gate, especially vs P0pgZllw, 1Y7Z77YX, 58wgxOM1, and kq3Jjmrk."
+  },
+  {
+    "name": "v81_balance_dryup_beta_relief",
+    "family": "balance_expectation_liquidity_dryup",
+    "hypothesis": "The same balance-expectation seed may need explicit beta-slope relief to keep sub-universe and drawdown behavior stable while dry-up adds Fitness.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.12 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)) + 0.07 * rank(-1 * ts_rank(volume / adv20, 20)) + 0.08 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Closer to 70/30 local PnL blend while retaining a small risk-relief sleeve from v79."
+  },
+  {
+    "name": "v81_balance_dryup_industry",
+    "family": "balance_expectation_liquidity_dryup",
+    "hypothesis": "Industry neutralization may reduce analyst balance-sheet crowding and make the dry-up component less like market-wide reversal.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.12 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)) + 0.08 * rank(-1 * ts_rank(volume / adv20, 20))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Neutralization ablation of the core expression; not a window/weight-only rescue if it changes PnL correlation."
+  },
+  {
+    "name": "v81_balance_ebit_dryup",
+    "family": "balance_operating_visibility_dryup",
+    "hypothesis": "Small 1Q EBIT dispersion resolution may confirm that low net-debt expectations are tied to operating visibility rather than pure balance-sheet defensiveness.",
+    "expression": "0.38 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.14 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.12 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_ebit_std / abs(assets), 126), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)) + 0.10 * rank(-1 * ts_rank(volume / adv20, 20))",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses the best subcomponent from v80 as a small confirmer; reject if it drifts to LLpZgaeL/O0p8JGJq analyst expectation capacity."
+  },
+  {
+    "name": "v81_balance_vwapdry_social_tiny",
+    "family": "balance_pressure_tiny_social",
+    "hypothesis": "A tiny low-correlation social sleeve may improve selection only if the balance/dry-up seed remains dominant; this is a control against the higher-correlation social/VWAP fusions from v76.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.10 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.18 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.08 * rank(ts_rank(volume / adv20, 20)) + 0.06 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Control candidate; likely risk is corr to P0pgZllw/JjpPv3N2/mL86Jle1, so require a clean corr gate."
+  }
+]

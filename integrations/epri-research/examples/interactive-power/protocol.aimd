@@ -1,0 +1,19 @@
+# 设备测点数据质量检查
+
+填写各测点的应有采样点和有效采样点，系统自动计算缺失率、汇总并更新图表。示例只计算数据质量指标，不能代替设备状态诊断。
+
+## 1. 填写测点数据
+
+{{step|inspect, check=True, checked_message="核对测点采样数"}}
+
+{{var|measurements, subvars=[var(channel: str, title="测点"), var(expected: int, title="应有采样点", ge=1), var(valid: int, title="有效采样点", ge=0), var(missing_rate: float, title="缺失率（%）", ge=0, le=100, owner="system")], title="测点数据表", owner="human"}}
+
+## 2. 查看自动汇总
+
+{{var|expected_total: int, title="应有采样点合计", owner="system"}}
+
+{{var|valid_total: int, title="有效采样点合计", owner="system"}}
+
+{{var|missing_rate: float, title="总体缺失率（%）", owner="system"}}
+
+{{check|verified, checked_message="已核对测点来源、采样数量与计算结果"}}

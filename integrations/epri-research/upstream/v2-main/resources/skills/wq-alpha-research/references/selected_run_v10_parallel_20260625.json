@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v10_doubtful_receivables_allowance_quality",
+    "family": "working_capital_quality",
+    "source": "parallel_v10_20260625",
+    "hypothesis": "Higher allowance for doubtful receivables relative to sales can indicate collection risk and lower revenue quality. Use a light profitability anchor, but keep the receivables-quality term dominant.",
+    "expression": "0.70 * group_rank(ts_rank(-1 * fn_allowance_for_doubtful_accounts_receivable_a / sales, 126), subindustry) + 0.30 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Extension of the successful v9 receivables/sales branch, but uses doubtful-account allowance rather than total receivables."
+  },
+  {
+    "name": "v10_trade_receivables_cashflow_quality",
+    "family": "working_capital_cashflow",
+    "source": "parallel_v10_20260625",
+    "hypothesis": "High trade receivables relative to sales is risky when cash-flow quality is not strong. Mix trade receivables with CFO/assets to reduce dependence on the exact v9 receivable field.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * fnd6_rectr / sales, 126), subindustry) + 0.30 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Designed to test receivable-quality plus cash conversion rather than simply reusing total receivables/sales."
+  },
+  {
+    "name": "v10_receivable_decrease_cashflow",
+    "family": "working_capital_change",
+    "source": "parallel_v10_20260625",
+    "hypothesis": "Accounts receivable decrease relative to sales can signal improving cash conversion. Combine with CFO/assets as a slow cash-quality mechanism.",
+    "expression": "0.65 * group_rank(ts_rank(fnd6_newa2v1300_recch / sales, 126), subindustry) + 0.35 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direction follows the field description: 'Accounts Receivable - Decrease (Increase)'. Submit only if correlation with v9 receivables is clearly below threshold."
+  },
+  {
+    "name": "v10_competitor_hub_quality_no_reversal",
+    "family": "competitor_graph_quality",
+    "source": "parallel_v10_20260625",
+    "hypothesis": "Competitor graph hub score may capture a different network role than competitor authority. Keep no close/open reversal to avoid repeating the v8 parent-fusion structure.",
+    "expression": "0.75 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Sibling of the successful v9 competitor authority alpha; strict correlation gate should block it if hub and authority are too close."
+  },
+  {
+    "name": "v10_competitor_customer_spread_quality",
+    "family": "relationship_graph_spread",
+    "source": "parallel_v10_20260625",
+    "hypothesis": "Competitor authority and customer authority describe different network positions. A spread may isolate firms that are central among competitors without being merely a customer-network clone.",
+    "expression": "0.55 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.30 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.15 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Designed as a graph-spread mechanism, not a pure authority near-neighbor."
+  },
+  {
+    "name": "v10_customer_breadth_cashflow_quality",
+    "family": "customer_network_breadth",
+    "source": "parallel_v10_20260625",
+    "hypothesis": "More customer relationships can indicate diversified demand, but it needs cash-flow quality to avoid low-margin breadth. This tests a graph-count signal rather than graph-rank centrality.",
+    "expression": "0.60 * group_rank(ts_rank(rel_num_cust, 60), industry) + 0.25 * group_rank(ts_rank(cash_flow_from_operations / assets, 126), industry) + 0.15 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses relationship breadth; expected to be distinct from v7/v9 authority if it works."
+  }
+]

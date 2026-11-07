@@ -1,0 +1,612 @@
+---
+name: draft-to-top-conference-oral
+description: Upgrade an existing ML/AI/systems paper draft into a top-conference oral-quality manuscript. Use when the paper already has content, results, figures, or appendix material, but still reads like a dense draft, result dump, rebuttal note, or LLM reconstruction and needs stronger story, reader onboarding, figure/table roles, experiments-analysis separation, reviewer concern handling, appendix packaging, and oral-level polish.
+---
+
+# Draft To Top Conference Oral
+
+## DeepScientist Medical Evidence Adaptation
+
+When this skill is invoked from Medical Evidence Mode, do not turn the answer
+into a full conference paper. It should shape the writing style from the first
+paragraph of the clinical report: open with reader orientation, give the
+clinical question a clear reason to matter, then move through evidence,
+interpretation, conclusion, and applicability. Reuse only the editorial
+discipline:
+
+- write for reader cognition, not maximum compression
+- give the report a clear story spine: background, why the question matters,
+  evidence route, conclusion, applicability boundary
+- give each paragraph one job
+- introduce tables, figures, and cards with plain-language interpretation before
+  asking the user to inspect them
+- usually consider one compact evidence-bound visual, preferably a draw.io,
+  Graphviz, or Mermaid-friendly pathway/source-weighting diagram when it improves
+  comprehension
+- use card `markdown` fields for short explanatory text blocks inside cards,
+  not only labels or metric chips
+- separate orientation sentences from evidence-bearing clinical claims
+- keep the final clinical answer compact, cautious, and evidence-bound
+- use Markdown bold only when emphasis is semantically useful; Medical Evidence
+  Mode should not force the bottom-line sentence to be highlighted
+
+Medical Evidence Mode remains the controlling safety contract. Do not invent
+clinical evidence, do not weaken citation requirements, and do not replace
+clinical caution with persuasive prose. Plain-language bridge sentences are
+allowed only when they orient the reader; diagnosis, treatment, safety,
+threshold, and applicability conclusions still require evidence ids and anchors.
+
+## Overview
+
+Use this skill when a paper already exists in draft form and the real problem is not "write a paper from zero" but "turn this draft into something that reads like a top-conference oral paper."
+
+This skill is for the transition:
+
+- from dense draft to memorable paper
+- from correct content to reviewer-facing writing
+- from result dump to staged evidence
+- from overloaded pages to intentional pacing
+- from LLM-like compression to human-like editorial judgment
+- from isolated main text to a deliberate oral package with appendix support
+
+Do not use this skill to invent missing evidence. If the draft has real evidence gaps, narrow claims or route to more experiments instead of hiding the weakness with better prose.
+
+## What This Skill Optimizes
+
+This skill is specifically about oral-paper upgrade work, not generic prose cleanup. It optimizes:
+
+- story spine and claim scope
+- reader onboarding and early intuition
+- evidence budget across main text and appendix
+- figure and table role clarity
+- division of labor between displays and prose
+- experiments versus analysis separation
+- trend-first, mechanism-aware data analysis
+- reviewer-concern handling
+- page pacing and readability
+- limitations, reproducibility, and trust signaling
+
+Read `references/oral_package_patterns.md` early when deciding what to add, cut, move, or split.
+
+## When to Use This Skill
+
+Use this skill when:
+
+- A full or partial scientific draft already exists
+- The user wants to upgrade a draft to conference-ready or oral-quality writing
+- The paper has results but the story, writing, figures, or analysis feel weak
+- The draft reads like a compressed summary, lab note, or LLM reconstruction
+- The task is to improve abstract, introduction, method explanation, result writing, figure/table communication, or analysis depth
+- The user wants the paper to feel more like ICLR/NeurIPS/ICML/CVML oral quality
+- Two paper versions exist and the job is to distill what made the stronger version feel more oral-ready, then reuse those patterns
+
+Do not use this skill when:
+
+- There is no meaningful draft yet
+- The core task is literature search only
+- The real blocker is missing experiments, missing baselines, or missing results
+- The request is for formal peer review rather than revision and upgrade
+
+## Workflow
+
+### 1. Audit the draft before rewriting
+
+Read the current abstract, introduction, method, experiments, analysis, conclusion, and appendix if present.
+
+Extract:
+
+- `C1-C3`: the 1 to 3 core claims
+- strongest current evidence
+- weakest current evidence
+- likely rejection reasons
+- which parts are writing problems versus evidence problems
+
+Classify the draft weakness into one or more of:
+
+- story
+- writing
+- method exposition
+- figure/table communication
+- experiment analysis
+- claim calibration
+- reproducibility/trust signaling
+
+If the main issue is evidence, do not proceed as if this were only a writing problem.
+
+### 2. Build an oral delta map before line editing
+
+Use `references/oral_package_patterns.md` to compare the current draft against an oral-ready target.
+
+Label the biggest gaps. Typical gaps include:
+
+- weak reader onboarding
+- no early intuition or mechanism figure
+- one page trying to carry too many claims
+- tables acting as storage rather than argument
+- experiments and analysis collapsed into one results block
+- analysis that only repeats numbers without extracting the trend
+- no memorable case study or failure-mode analysis
+- appendix functioning as a dump instead of a supplement package
+- claim language that extends beyond the strongest evidence zone
+- artifact availability described inconsistently across sections
+
+When two versions of the paper exist, explicitly write the delta:
+
+- what the stronger version added
+- which added elements improved persuasion rather than merely adding length
+- which patterns are reusable in the current rewrite
+
+### 3. Reallocate the evidence budget
+
+Top-conference oral papers are not just more polished. They spend pages and displays where reviewer friction is highest.
+
+Before rewriting paragraphs, decide:
+
+- which figures or tables belong in the main text
+- which evidence blocks should become standalone subsections
+- what must move to appendix
+- where to place the appendix bridge in the main text
+- which exact facts live in displays versus surrounding prose
+- which core claim or reviewer question each main-text display is responsible for defending
+- whether method defense is taking budget away from objection handling
+
+Default main-text priorities:
+
+- one early intuition or mechanism figure
+- one main result display
+- one interpretive analysis or tradeoff display
+- one practical-value or objection-handling block when it is central to the claim
+- one memorable qualitative example or case-study display when available
+
+If the paper's central claim is comparative, benchmark-driven, or baseline-beating, the "main result display" must stay competitor-inclusive.
+
+That usually means:
+
+- named baselines or nearest neighbors remain visible in the main text
+- the metric spread needed to justify the comparative wording remains visible
+- the reader can verify the claimed ranking or scope without reconstructing it from prose alone
+
+Do not collapse a broad benchmark story into a self-only summary table if the prose still makes broad comparative claims.
+
+When the gold oral package keeps both a compact setup or baseline taxonomy and a competitor-inclusive benchmark surface in main text, preserve both jobs in the rewrite. Do not jump straight from prose setup to compressed averages if the reviewer still needs to see who was compared, under which regime, and where the main ranking or boundary actually appears.
+
+When the paper has multiple proof obligations, do not present them as one continuous "results" stream.
+
+Instead, turn the main empirical body into explicit reviewer-question blocks, where each block has:
+
+- one concrete question the reviewer would naturally ask
+- one short setup line that states the regime or slice being tested
+- one named baseline, counterfactual, or comparison target when the draft package or staged artifacts provide one
+- one dominant display
+- one dominant takeaway
+- one explicit appendix bridge for overflow evidence
+- a clear handoff to the next question
+
+If the strong paper or staged package already separates a section into named internal jobs, preserve that internal scaffold in the rewrite.
+
+Do not collapse those jobs into one continuous wall of prose when reviewers need to inspect them separately.
+
+This is especially important for:
+
+- related work sections that need a distinct closest-comparator contrast
+- method sections that need separate blocks for workflow, component design, supervision, and action realization
+- experiments sections that need visibly separate headline evaluation, transfer breadth, and mechanism-validation blocks
+
+When the paper's credibility depends on first proving that a metric, proxy, or diagnostic predicts reviewer-relevant outcomes, allocate a standalone validation block before intervention or design-guidance blocks.
+
+Do not bury that proof inside later intervention subsections or leave `analysis` with only mechanism commentary if the draft package signals validation as the bridge into the rest of the paper.
+
+If the draft package or staged artifacts separate several intervention families, keep them separate in the rewrite.
+
+Each intervention family should still preserve:
+
+- its own setup line
+- its own baseline or counterfactual when one exists
+- its own dominant display
+- its own headline result
+- its own appendix bridge
+
+If the evidence package carries multiple transfer fronts, keep at least one non-headline transfer benchmark or cross-setting validation in the main experiments section beyond the primary deployment or headline benchmark.
+
+When the gold oral package uses multiple main-text displays to answer distinct reviewer questions, keep one explicit main-text boundary, robustness, or scope-setting display in addition to the headline comparison block. Do not push every non-headline empirical check into appendix overflow if the central claim still depends on visible claim-boundary evidence.
+
+Only move exhaustive rows, per-task detail, and secondary checks to the appendix; do not narrow the main paper to one deployment table plus appendix overflow when the central claim depends on visible generalization breadth.
+
+When the method makes a core claim operational, reserve method-local evidence for that claim.
+
+For claims about open-ended actions, executable control, retrieval-grounding, tool use, or interaction loops, include at least one concrete method artifact when available:
+
+- a compact code snippet
+- a local worked example
+- an input-output trace
+- a method-local schematic
+- a small table that makes the mechanism inspectable
+
+Do not push all operational concreteness into experiments or appendix material.
+
+Move exhaustive material to appendix:
+
+- full result tables
+- hyperparameter sweeps
+- annotation protocol details
+- extended examples
+- extra proofs and implementation detail
+
+Default appendix blueprint when the paper is mature enough:
+
+- methodology overflow that defends setup, measurement choices, and regime inventory
+- full-results overflow that keeps task-level or slice-level evidence inspectable
+- enlarged-display overflow for figures, tables, and curves that reviewers may need to inspect closely
+- literature overflow when related work has secondary breadth that would crowd the main text
+- transfer-overflow evidence when main experiments keep the headline transfer block but not all transfer rows
+- tuned baselines or sensitivity checks
+- protocol transparency or prompt detail when the gold package uses them to make the empirical story auditable
+- formal-properties or metric-support material when the main text relies on a new metric, proxy, or diagnostic
+- qualitative examples
+- failure cases
+- separate compliance or broader-impacts support when the gold package keeps that job distinct
+- reproducibility and artifact details
+
+Before drafting, record which main-text section must point to each appendix bucket.
+
+Method, experiments, and analysis should each know which overflow material they are delegating and where the bridge sentence will appear.
+
+Related work should also know whether it needs a bridge to an extended-literature appendix lane.
+
+Generic appendix references are not enough when the manuscript relies on overflow evidence for credibility.
+
+Each important bridge should name a precise appendix destination such as:
+
+- a labeled subsection
+- a labeled table or figure
+- a titled overflow lane that will later receive a stable label
+
+Do not write only "see the appendix" when the claim depends on protocol detail, method implementation detail, transfer overflow, extended literature, or worked traces.
+
+When compressing a strong paper, do not let the appendix degrade into a light method bridge.
+
+The appendix should still look like a reviewer-support package with explicit jobs, especially when the main text has compressed:
+
+- setup details that make comparisons interpretable
+- extra analyses that answer likely objections
+- qualitative or human-evaluation evidence
+- supporting tables that defend the main claim's breadth
+
+### 4. Rewrite the paper in oral-paper order
+
+Top-conference oral papers stage information in the order that minimizes reviewer friction.
+
+Rewrite in this order:
+
+1. story spine
+2. abstract and introduction
+3. method and related work
+4. main results
+5. analysis
+6. figures and tables with surrounding prose
+7. conclusion, limitations, reproducibility, appendix bridge
+
+When writing the paper in a sectioned workflow, use this concrete generation order:
+
+1. `section_plan`
+2. `introduction`
+3. `related_work`
+4. `method`
+5. `experiments`
+6. `analysis`
+7. `appendix`
+8. `limitations`
+9. `conclusion`
+10. `abstract`
+11. `integration`
+
+Use `section_plan` as an internal control document, not as manuscript prose. It should record:
+
+- `C1-C3`
+- which section owns the headline proof or validation burden for each main claim
+- the chosen main-text display program
+- the first-page evidence stack: at least one problem-scale anchor and one solution-shape anchor when staged artifacts support both
+- likely reviewer objections
+- the study regime inventory that must stay visible in main text
+- the closest-work novelty boundary
+- appendix overflow jobs
+- the appendix bridge map from method, experiments, and analysis into those jobs
+- any related-work-to-appendix bridge lane
+- any non-headline transfer benchmark that must remain in main text
+- any method-local operational artifact that must not be demoted
+- any closest-comparator contrast that must remain explicit in related work
+- any section-internal scaffold that must survive compression
+- the exact appendix labels or label candidates each main-text bridge should point to
+- any analysis taxonomy terms that must be defined before interpretation
+- one concise job description for each section
+- which concrete staged displays or authored tables will answer each objection
+
+Write the abstract last, after the paper's actual evidence order has stabilized.
+
+In sectioned mode, keep `main.tex` as the canonical top-level document and keep body prose in separate section files. Do not collapse the manuscript back into one giant draft while writing. Use the final integration pass only to repair consistency, sharpen transitions, synchronize claim wording, and remove staging artifacts from the prose.
+
+Do not reserve essential evidence allocation for integration. Each body section should already be locally complete enough that an interrupted integration pass does not erase key reviewer-defense blocks or appendix bridges.
+
+### 5. Apply oral-level writing rules
+
+Use the principles in `references/oral_writing_principles.md`.
+
+The most important rules are:
+
+- optimize for reader guidance, not maximum compression
+- every section must have a job
+- every paragraph should do one main thing
+- signpost transitions explicitly
+- explain why a result matters, not only what the number is
+- let displays carry detailed values while prose carries interpretation
+- make data analysis extract the trend, mechanism, and tradeoff instead of narrating values
+- defend the method from multiple angles, not just by giving formulas
+- keep claim wording inside the strongest evidence zone
+- use figures as narrative anchors, not just evidence containers
+- move low-priority detail to appendix and keep main text legible
+- calibrate claims instead of overselling
+
+### 6. Use section-specific rewrite checks
+
+When actively rewriting, use `references/section_rewrite_checklist.md`.
+
+That file gives a practical pass for:
+
+- abstract
+- introduction
+- related work
+- method
+- experiments
+- analysis
+- conclusion
+- appendix
+
+### 7. Convert reviewer objections into visible evidence blocks
+
+A mature oral paper does not merely mention likely reviewer concerns. It allocates explicit evidence to them.
+
+Typical evidence blocks include:
+
+- tuned-baseline results
+- transfer or cross-model checks
+- efficiency or cost analysis
+- diversity or conservatism analysis
+- human evaluation protocol details
+- failure cases
+- case studies that explain a mechanism
+
+If a likely objection matters, do not hide the answer in one sentence.
+
+If the draft package supports several objection-resolving blocks, keep them as separate visible subsections rather than folding them into one omnibus paragraph or one overloaded table.
+
+When the paper has enough evidence, reserve one explicit main-text block for reviewer-concern handling rather than hoping the reader infers those answers from the benchmark summary alone.
+
+Typical reviewer-concern blocks to surface in the main text include:
+
+- broader baseline coverage or competitor context
+- human-evaluation signal
+- efficiency or cost tradeoffs
+- qualitative traces or failure cases
+- transfer or robustness checks
+- mechanism-level evidence about why the method's policy changes behavior
+
+For each evidence block, make the prose-display contract explicit:
+
+- the table or figure carries the concrete values, examples, or traces
+- the surrounding prose states the question, takeaway, and mechanism
+- the analysis text explains why the observed pattern appears instead of re-reading visible numbers
+- the analysis text names the trend explicitly and says what underlying behavior or tradeoff it reveals
+
+### 8. Distinguish writing upgrades from evidence upgrades
+
+If a section feels weak, diagnose the real cause:
+
+- If the claim is unsupported, reduce or narrow the claim.
+- If the result exists but reads weakly, rewrite the framing and result prose.
+- If the mechanism is unexplained, add analysis or move analysis into the main text.
+- If the trend is visible but the section only lists values, rewrite around the pattern and its cause.
+- If the method section is crowding out reviewer-concern handling, compress repeated defense and reallocate the space.
+- If artifact status is described inconsistently, synchronize every mention across abstract, main text, reproducibility, and appendix.
+- If the page is crowded, rebalance main text versus appendix.
+
+Never use polished language to conceal an unaddressed scientific gap.
+
+## Sectioned Execution Pattern
+
+When the draft is dense enough to support staged writing, prefer generating the manuscript section by section rather than asking for the full paper in one turn.
+
+Use these operating rules:
+
+- The plan turn chooses the story spine, display program, reviewer-question blocks, and appendix jobs before body prose is written.
+- Each section turn should read the global plan plus only the small subset of earlier sections and staged artifacts it truly needs.
+- `Introduction` should not collapse a display-led first page into prose. When the staged package supports both problem scale and solution shape, preserve both roles with concrete displays, authored compact tables, or a figure-plus-table pairing.
+- `Introduction` should preserve one concrete first-page failure case, benchmark contrast, or payoff anchor when the gold oral package uses it to make the problem vivid before formal sections begin.
+- `Related Work` should name the closest prior and the exact novelty boundary rather than stopping at broad capability buckets.
+- `Method` should keep a short main-text audit surface for model suites, benchmark groups, or regime inventory when the gold paper uses one to make the method's evidence base inspectable.
+- `Experiments` should establish the main empirical pattern through explicit reviewer-question blocks, each anchored by one dominant display.
+- `Experiments` should keep one non-headline transfer or robustness block in main text when the staged package has several transfer fronts and the central claim needs visible generalization breadth.
+- `Experiments` should preserve visibly separate internal layers for headline evaluation, transfer breadth, and mechanism validation when the staged package distinguishes those jobs. Do not compress them into one undifferentiated benchmark narrative.
+- `Experiments` should preserve repeated setup/results scaffolds for distinct intervention families when the gold oral paper uses them to turn validation into actionability. Do not collapse several intervention families into one short summary block if reviewers still need to inspect them separately.
+- `Method` should preserve main-text setup and study-regime inventory when the draft package contains them. If the staged package distinguishes prediction settings, model suites, checkpoint slices, benchmark groups, or measurement definitions, keep those distinctions through separate subsections or strong subsection headings instead of pushing them all into appendix prose.
+- `Method` should keep at least one local operational artifact when a core mechanism claim depends on concreteness, especially for executable action spaces, tool calls, browser actions, retrieval grounding, or closed-loop control.
+- `Method` should preserve visible internal scaffold when the system explanation has distinct jobs such as workflow overview, specialist model design, supervision/data construction, and executable action realization. Strong paragraph heads are acceptable; one merged prose block is not.
+- `Analysis` should not continue the result dump. It should explain mechanism, trend, tradeoff, or failure behavior that the reviewer cannot infer from the visible numbers alone, and it should use a visible display or table when the interpretive claim depends on evidence the reader would otherwise not see.
+- `Analysis` should remain a standalone reviewer-facing layer after headline results. Keep at least two visible check blocks, subsections, or strongly signposted units when the staged package separates mechanism, credibility, robustness, tradeoff, sensitivity, or failure-boundary work instead of collapsing everything into one short afterword.
+- `Analysis` should own the headline validation burden when the paper first needs to prove that a metric, proxy, or diagnostic is meaningful before moving to interventions, recommendations, or downstream design guidance. Do not let `analysis` devolve into a leftover mechanism note if it is carrying primary credibility work in the staged evidence package.
+- `Analysis` should keep a minimum main-text evidence floor before deferring support to the appendix: preserve at least one mechanism or credibility display and at least one tradeoff, robustness, sensitivity, or quality-support display when the staged package uses them to answer different reviewer concerns.
+- `Analysis` should open with an explicit taxonomy, mechanism frame, or tradeoff frame when later interpretation depends on named categories. If the gold package distinguishes failure types such as programming, planning, and summarization, define those categories before interpreting shifts between them.
+- `Appendix` should be written before `limitations`, `conclusion`, and `abstract` so later sections can accurately describe the support package that actually exists.
+- `Integration` should check cross-section consistency, display roles, appendix bridges, and claim calibration, not rewrite the paper from scratch.
+- `Integration` should remove meta-signposting or planning language that still reads like drafting scaffolding, and it should preserve one memorable qualitative, human, or failure anchor when the staged package can support it.
+- `Integration` should replace generic appendix mentions with precise labeled destinations whenever the body section already knows the supporting overflow lane.
+- `Integration` should audit canonical section jobs, not just headings.
+
+This audit should flag:
+
+- introductions that lost a concrete first-page evidence or visual anchor
+- introductions that keep a problem anchor but lose the early solution-shape display
+- methods that dropped study-regime inventory or setup-to-definition staging
+- methods that make operational claims without a local example, code snippet, trace, or mechanism display
+- experiments that merged separate intervention proof blocks into one omnibus stream
+- experiments that moved all non-headline transfer evidence out of main text
+- analysis sections that lost the headline validation burden
+- analysis sections that collapsed multiple reviewer-facing checks into one short interpretive afterword
+- analysis sections that defer both mechanism or credibility support and tradeoff or boundary support to appendix references
+- analysis sections that interpret named failure shifts without first defining the failure categories
+- related work sections that stay thematic instead of naming the closest comparator and exact novelty boundary
+- related work sections that need but lack an explicit bridge to extended literature overflow
+- appendices that no longer expose the planned support buckets or their bridge sentences
+- body sections that say only "the appendix" where a specific appendix destination should be named
+
+In this mode, a strong default main-text display program is:
+
+- one early mechanism or intuition display
+- one competitor-inclusive main result display
+- one interpretive analysis or tradeoff display
+- one memorable qualitative, human-evaluation, or failure-case display when the package can support it
+
+If one of these roles is missing, do not merely mention it in prose. Either promote a staged artifact into that role or narrow the paper's claims to match the thinner package.
+
+### 9. Run a final oral-package pass
+
+Before stopping, check:
+
+- Can a reviewer summarize the paper after one read?
+- Is the central idea anchored early in both text and visuals?
+- Does each main-text page or section have one dominant job?
+- Is there at least one memorable figure or case study?
+- Does the analysis change the reader's understanding rather than repeat results?
+- Does the appendix feel prepared rather than improvised?
+- Are the strongest claims phrased no more strongly than the evidence package allows?
+- Is artifact availability described consistently everywhere it appears?
+
+## Operating Principles
+
+### Reader-first writing
+
+A draft often tries to maximize information density. An oral paper maximizes comprehension, recall, and trust.
+
+### Method defending, not just method defining
+
+A strong oral paper does not stop at the formula. It explains:
+
+- what the method is
+- why it is principled
+- how it differs from alternatives
+- why the observed empirical behavior makes sense
+
+### Result organization over result accumulation
+
+Do not pile all numbers into one page or paragraph. Break results into:
+
+- the main pattern
+- the mechanism or interpretation
+- the objection-handling evidence
+
+### Data analysis should expose trend and essence
+
+Strong oral papers do not treat analysis as number recitation.
+
+Use analysis to answer:
+
+- what trend is stable across settings
+- what tradeoff is actually being managed
+- what mechanism most plausibly drives the pattern
+- what this implies about the method's true scope
+
+### Writing around figures and tables matters
+
+The prose before and after a figure or table should tell the reader:
+
+- why this display appears here
+- what question it answers
+- what takeaway to retain
+
+### Prose explains, displays show
+
+In strong oral papers, main-text prose does not waste its budget by restating numbers the reader can already read from a table or plot.
+
+Use displays for:
+
+- exact values
+- full comparisons
+- trajectories and traces
+- qualitative examples
+
+Use prose for:
+
+- why the display matters here
+- what the dominant pattern is
+- why that pattern appears
+- what reviewer concern the display resolves
+
+When the display is a benchmark block, the prose may summarize the headline pattern, but it should not be the only place where the comparison surface exists.
+
+### Claims should stay inside the strongest evidence zone
+
+If the evidence supports "strong default," "wins or ties most settings," or "more robust under sweep," do not escalate the wording into universal dominance.
+
+Overclaiming wastes reviewer trust that the rest of the paper worked hard to build.
+
+If you removed competitor rows, compressed the metric spread, or moved key comparison context out of view, narrow the comparative wording accordingly.
+
+### Method defense should not crowd out objection handling
+
+A method section can be principled and still overconsume main-text budget.
+
+Compress repeated defense if that space is more valuable as:
+
+- tuned-baseline evidence
+- transfer evidence
+- limitations
+- practical-value discussion
+- a compact objection-handling block
+
+### Appendix is part of the oral package
+
+An oral paper is usually defended by main text plus appendix together. Treat the appendix as part of the persuasion system, not as detached storage.
+
+## Common Failure Modes To Remove
+
+These are strong signals that a draft still reads like a compressed or LLM-like paper:
+
+- abstract overloaded with numbers and no pacing
+- introduction that states conclusions before building motivation
+- related work arriving too late
+- method section that defines equations but never teaches the reader how to think about them
+- result sections that report averages without decomposing the pattern
+- analysis sections that feel like leftover support instead of part of the argument
+- analysis prose that simply narrates the visible table or plot
+- analysis that lists values without naming the trend or mechanism
+- no early mechanism figure
+- no memorable case study or failure-mode evidence
+- figures appearing late and functioning only as storage
+- one page carrying several unrelated local claims
+- tables dominating the main text
+- weak signposting
+- appendix that looks appended rather than designed
+- appendix without an explicit reviewer-defense structure
+- claim language that outruns the evidence package
+- artifact availability described inconsistently across sections
+- isolated claim-calibration sentences instead of structurally calibrated writing
+
+## Output Pattern
+
+When using this skill, leave behind one or more of the following:
+
+- a revised paper draft
+- a section-by-section rewrite plan
+- a claim-evidence map
+- an oral delta map
+- a figure/table revision plan
+- a main-text versus appendix reallocation plan
+- a list of writing-only fixes versus evidence-dependent fixes
+
+Prefer concrete edits over generic advice.
+
+## References
+
+- `references/oral_package_patterns.md`
+- `references/oral_writing_principles.md`
+- `references/section_rewrite_checklist.md`
+- `references/experiments_analysis_patterns.md`

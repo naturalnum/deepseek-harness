@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v164_pureplay_focus_low_complexity",
+    "family": "pureplay_business_focus",
+    "hypothesis": "Single-sector pure-play structure may proxy simpler business focus and cleaner investor interpretation without using customer/competitor returns, graph centrality, or intersegment/FX complexity fields.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.450 * group_rank(ts_rank(single_sector_pureplay_company_count, 126), industry) + 0.170 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.150 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * (volume / adv20), 20), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A PV13 structural-count probe, not relationship return or customer/competitor graph. Reject if weak or high-corr to 58wgxOM1, QPazq9nX, gJ1rA9VO, or e7OVQKGN."
+  },
+  {
+    "name": "v164_trademark_finite_life_overhang",
+    "family": "trademark_intangible_overhang",
+    "hypothesis": "Finite-lived trademark assets can represent acquisition-related brand overhang. Low trademark gross/net balances and low trademark amortization burden test a more specific brand-intangible parent than the repeatedly weak broad intangible/gross-profit route.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.310 * group_rank(ts_rank(-1 * trademarks_intangibles_gross_value / assets, 126), industry) + 0.250 * group_rank(ts_rank(-1 * net_trademark_intangible_assets / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * trademark_intangibles_amortization_total / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Specific low-alphaCount trademark fields only; no goodwill, fnd6_intan, gross-profit, customer intangible, or option/social stabilizer. Close if it repeats broad intangible weakness."
+  },
+  {
+    "name": "v164_acquisition_cash_absorption",
+    "family": "cash_rich_acquisition_absorption",
+    "hypothesis": "Acquisitions that bring cash and require less gross purchase outflow may be less dilutive and easier to absorb. This tests acquisition cash quality without goodwill, contingent liabilities, customer intangibles, or M&A news.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(acquired_cash_equivalents_business_combination / abs(gross_payments_for_acquisitions), 126), industry) + 0.240 * group_rank(ts_rank(-1 * gross_payments_for_acquisitions / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * acquisition_total_purchase_value / assets, 126), industry) + 0.110 * group_rank(ts_rank(proceeds_from_business_sales / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses acquired-cash and gross-payment fields, not goodwill/acquired-intangible or contingent-liability siblings. Reject if unit warnings, weak metrics, or high-corr to asset-recycling/PPE and goodwill actives."
+  },
+  {
+    "name": "v164_recurring_fair_value_opacity",
+    "family": "recurring_fair_value_opacity",
+    "hypothesis": "Large recurring fair-value assets and liabilities can make accounting marks noisier. Low level-1/level-2 recurring fair-value exposure tests a disclosure-opacity parent distinct from derivative/AFS OCI event fields.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.300 * group_rank(ts_rank(-1 * recurring_liabilities_fair_value_level2 / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * level1_liabilities_fair_value / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * recurring_assets_fair_value_2 / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One controlled fair-value-opacity probe using matrix recurring fair-value fields. Close if it behaves like prior derivative/AFS/fair-value weak routes."
+  },
+  {
+    "name": "v164_sga_expectation_discipline",
+    "family": "standalone_sga_cost_visibility",
+    "hypothesis": "Lower and tighter analyst SG&A expense expectations may proxy controllable overhead discipline. This tests SG&A visibility as a standalone cost parent, without option-award expected dividend, EBIT delivery, gross-income guidance, or total-assets guidance.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.310 * group_rank(ts_rank(-1 * sg_and_a_expense_median / abs(sales), 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(sg_and_a_expense_max - sg_and_a_expense_min) / abs(sales), 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_delta(sg_and_a_expense_median / abs(sales), 63), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against xAxGJjNn and SG&A/guidance/analyst-cost actives. Do not continue if standalone SG&A is weak or high-corr."
+  }
+]

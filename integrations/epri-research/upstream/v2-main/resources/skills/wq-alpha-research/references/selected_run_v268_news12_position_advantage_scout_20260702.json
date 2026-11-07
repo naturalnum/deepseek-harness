@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v268_news12_position_advantage_continuation",
+    "family": "news12_position_advantage_scout",
+    "hypothesis": "If the news12 post-event long/short advantage flag captures underreaction rather than only same-day noise, the indicated advantageous side may continue when the event range and volume shock are muted.",
+    "field_notes": "best_position_indicator alphaCount=21, advantageous_position_flag alphaCount=27, current_to_moving_avg_volume_ratio alphaCount=4; high-risk because news12 path fields have been weak.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.420 * group_rank(ts_rank(vec_avg(best_position_indicator), 60), industry) + 0.280 * group_rank(ts_rank(vec_avg(advantageous_position_flag), 60), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(range_to_atr_ratio), 60), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(current_to_moving_avg_volume_ratio), 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v268_news12_position_advantage_contrarian",
+    "family": "news12_position_advantage_scout",
+    "hypothesis": "The same post-event advantage flag may instead mean same-day overreaction; a contrarian version should work only when range and volume shock are high.",
+    "field_notes": "Tests sign directly rather than repairing with old open-close/VWAP carriers.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.400 * group_rank(ts_rank(-1 * vec_avg(best_position_indicator), 60), industry) + 0.270 * group_rank(ts_rank(-1 * vec_avg(advantageous_position_flag), 60), industry) + 0.190 * group_rank(ts_rank(vec_avg(range_to_atr_ratio), 60), industry) + 0.140 * group_rank(ts_rank(vec_avg(current_to_moving_avg_volume_ratio), 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v268_news12_low_tick_underreaction",
+    "family": "news12_position_advantage_scout",
+    "hypothesis": "A favorable post-event side under low tick count and low relative volume may reflect under-distributed information rather than crowded intraday pressure.",
+    "field_notes": "Uses tick and volume cold fields instead of minutes-to-threshold fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.380 * group_rank(ts_rank(vec_avg(best_position_indicator), 60), industry) + 0.260 * group_rank(ts_rank(vec_avg(position_advantage_flag), 60), industry) + 0.200 * group_rank(ts_rank(-1 * vec_avg(total_tick_count_pre), 60), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(current_to_moving_volume_ratio), 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v268_news12_muted_price_advantage",
+    "family": "news12_position_advantage_scout",
+    "hypothesis": "A favorable long/short event-side flag with muted immediate price change and range shock may leave more next-day continuation than events already fully repriced.",
+    "field_notes": "Combines direction flag with rank-space muted price response; no raw unit subtraction.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.400 * group_rank(ts_rank(vec_avg(best_position_indicator), 60), industry) + 0.220 * group_rank(ts_rank(vec_avg(advantageous_position_flag), 60), industry) + 0.200 * group_rank(ts_rank(-1 * abs(vec_avg(primary_price_change_pct)), 60), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(range_to_atr20_ratio), 60), industry), -1)",
+    "decay": 12,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  }
+]

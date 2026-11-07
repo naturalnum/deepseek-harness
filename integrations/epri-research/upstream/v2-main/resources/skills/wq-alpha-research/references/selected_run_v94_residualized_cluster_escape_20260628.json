@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v94_earnings_cashflow_minus_comp_risk_030",
+    "family": "residualized_cluster_escape_earnings_cashflow",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "The v93 earnings/cashflow/competitor fusion was very strong but blocked by the competitor-vwap-risk ACTIVE cluster; subtracting a light proxy of that cluster should reduce daily-PnL correlation while preserving earnings/cashflow strength.",
+    "expression": "(0.23 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.22 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.14 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.30 * (0.210 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.080 * rank(-(close / open - 1)) + 0.085 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.075 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.125 * rank(ts_rank(volume / adv20, 20)) + 0.175 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~2.08, top corr ~0.678 after subtracting 0.30 of 1Y7jOjvR proxy."
+  },
+  {
+    "name": "v94_earnings_cashflow_dual_residual_024_018",
+    "family": "residualized_cluster_escape_earnings_cashflow",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "Dual residualization against competitor-vwap-risk and competitor-news hubs may lower correlation more robustly than subtracting either blocker alone.",
+    "expression": "(0.23 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.22 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.14 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.24 * (0.210 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.080 * rank(-(close / open - 1)) + 0.085 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.075 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.125 * rank(ts_rank(volume / adv20, 20)) + 0.175 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)) - 0.18 * (0.40 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~2.10, top corr ~0.649."
+  },
+  {
+    "name": "v94_earnings_cashflow_dual_residual_030_022",
+    "family": "residualized_cluster_escape_earnings_cashflow",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "A stronger dual residualization should sacrifice some strength but aim for a larger correlation cushion below the 0.68 local gate.",
+    "expression": "(0.23 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.17 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.22 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.14 * rank(-(close / open - 1)) + 0.09 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.30 * (0.210 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.080 * rank(-(close / open - 1)) + 0.085 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.075 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.125 * rank(ts_rank(volume / adv20, 20)) + 0.175 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)) - 0.22 * (0.40 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.35 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.15 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(rel_num_comp, 126), industry))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.92, top corr ~0.611."
+  },
+  {
+    "name": "v94_css_option_minus_optionrisk_045",
+    "family": "residualized_cluster_escape_css_option",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "The v93 CSS earnings/option/sentiment fusion was blocked by the option-risk ACTIVE cluster; subtracting the option-risk proxy should leave a news/sentiment timing residual.",
+    "expression": "(0.22 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.16 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.10 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.11 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.05 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.45 * (0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry))",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~2.08, top corr ~0.645."
+  },
+  {
+    "name": "v94_css_option_dual_residual_040_015",
+    "family": "residualized_cluster_escape_css_option",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "After removing the option-risk proxy, a small competitor-vwap-risk subtraction may further reduce overlap with the second blocking ACTIVE cluster.",
+    "expression": "(0.22 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.16 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.10 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.11 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.05 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.06 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.40 * (0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) - 0.15 * (0.210 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.080 * rank(-(close / open - 1)) + 0.085 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.075 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.200 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.125 * rank(ts_rank(volume / adv20, 20)) + 0.175 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry))",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.85, top corr ~0.575."
+  },
+  {
+    "name": "v94_stockcomp_value_minus_fcf_guidance_035",
+    "family": "residualized_cluster_escape_stockcomp_value",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "The v93 stockcomp/debt/analyst-value fusion was blocked by the FCF/capex-guidance cluster; subtracting that proxy should retain stockcomp cleanliness while removing cash-yield guidance overlap.",
+    "expression": "(0.16 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.14 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.10 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.04 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.20 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.20 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.35 * (0.45 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.79, top corr ~0.624."
+  },
+  {
+    "name": "v94_stockcomp_value_dual_residual_035_020",
+    "family": "residualized_cluster_escape_stockcomp_value",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "Dual subtraction of FCF/capex guidance and option-risk clusters may create a cleaner stockcomp/analyst-value residual with a larger correlation cushion.",
+    "expression": "(0.16 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.14 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.10 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.08 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.04 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.20 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.20 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.08 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.35 * (0.45 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)) - 0.20 * (0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.35 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.61, top corr ~0.590."
+  },
+  {
+    "name": "v94_tax_quality_minus_aqi_option_065",
+    "family": "residualized_cluster_escape_tax_quality",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "The v93 tax/competitor fusion was blocked by the AQI-option ACTIVE cluster; a stronger subtraction may leave a tax/customer residual near the submission threshold but below correlation limits.",
+    "expression": "(0.23 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.12 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.10 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.25 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.15 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.65 * (0.22 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.08 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.20 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.08 * rank(-(close / open - 1)) + 0.07 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.11 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.05 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.05 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.39, top corr ~0.638; included as a threshold/correlation tradeoff probe."
+  },
+  {
+    "name": "v94_tax_quality_dual_residual_pw6_kq3",
+    "family": "residualized_cluster_escape_tax_quality",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "Subtracting deferred-tax/prepaid and competitor-social proxies may isolate the useful tax-quality residual without leaning on the AQI-option proxy directly.",
+    "expression": "(0.23 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.12 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.10 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) + 0.25 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.15 * rank(-(close / open - 1)) + 0.08 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.07 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)) - 0.95 * (0.45 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.35 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry)) - 0.24 * (0.40 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.16 * rank(-(close / open - 1)) + 0.16 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.14 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.08 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.06 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry))",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.59, top corr ~0.613."
+  },
+  {
+    "name": "v94_compval_dual_residual_aqi_fcf",
+    "family": "residualized_cluster_escape_graph_value",
+    "source": "residualized_cluster_escape_v94_20260628",
+    "hypothesis": "Competitor hub plus analyst value was blocked by AQI-option and FCF-guidance clusters; subtracting both proxies may leave a graph/value residual with lower cluster overlap.",
+    "expression": "(0.29 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.23 * rank(-(close / open - 1)) + 0.13 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.18 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.17 * group_rank(ts_rank(est_eps / close, 126), industry)) - 0.25 * (0.22 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.14 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.08 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.20 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.08 * rank(-(close / open - 1)) + 0.07 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.11 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.05 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.05 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)) - 0.15 * (0.45 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcf_mean / cap, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual estimate: Sharpe-like ~1.71, top corr ~0.562."
+  }
+]

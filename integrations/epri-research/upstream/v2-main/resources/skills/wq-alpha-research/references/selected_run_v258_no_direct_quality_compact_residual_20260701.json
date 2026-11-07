@@ -1,0 +1,67 @@
+[
+  {
+    "name": "v258_event_receivable_anti_buyback",
+    "family": "no_direct_quality_compact_residual",
+    "hypothesis": "Event-novelty/option-term repricing plus receivable discipline may keep a non-quality-core residual after subtracting the occupied buyback/profitability sleeve.",
+    "pre_estimated_top_abs_corr": 0.470,
+    "pre_estimated_qpa_corr": 0.066,
+    "pre_estimated_synthetic_sharpe": 2.05,
+    "source_alpha_ids": ["MPpGzqwr", "LLp7PRmM", "omKZRRn2"],
+    "expression": "-0.50 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 0.75 * (0.65 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.20 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1))) + 0.50 * (trade_when(rank(cap) > 0.45, 0.42 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.38 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.20 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry), -1))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v258_drc_event_anti_buyback",
+    "family": "no_direct_quality_compact_residual",
+    "hypothesis": "Deferred revenue/liability change and event-novelty timing may capture operational delivery under risk repricing, while subtracting buyback/profitability overlap.",
+    "pre_estimated_top_abs_corr": 0.420,
+    "pre_estimated_qpa_corr": -0.176,
+    "pre_estimated_synthetic_sharpe": 1.52,
+    "source_alpha_ids": ["MPpGzqwr", "RRp7Q9Le", "omKZRRn2"],
+    "expression": "-0.75 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 0.75 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) + 0.50 * (trade_when(rank(cap) > 0.45, 0.42 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms) - vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.38 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.20 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry), -1))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v258_drc_fcf_minus_epsr_guidance",
+    "family": "no_direct_quality_compact_residual",
+    "hypothesis": "Deferred-revenue delivery and FCF/value may form a cleaner value-delivery residual after removing EPSR estimate/dispersion exposure.",
+    "pre_estimated_top_abs_corr": 0.427,
+    "pre_estimated_qpa_corr": -0.001,
+    "pre_estimated_synthetic_sharpe": 1.49,
+    "source_alpha_ids": ["RRp7Q9Le", "LLpZgaeL", "omKJ5nLl"],
+    "expression": "0.75 * (0.55 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.25 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))) - 1.00 * (0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)) + 0.75 * (0.650 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.175 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.175 * group_rank(ts_rank(est_eps / close, 126), industry))",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v258_aqi_authority_anti_buyback",
+    "family": "no_direct_quality_compact_residual",
+    "hypothesis": "AQI/cashflow quality and relationship authority may become less quality-core correlated after subtracting the direct buyback/profitability sleeve.",
+    "pre_estimated_top_abs_corr": 0.442,
+    "pre_estimated_qpa_corr": -0.213,
+    "pre_estimated_synthetic_sharpe": 1.48,
+    "source_alpha_ids": ["MPpGzqwr", "d5xj5W5v", "9qwXgvQd"],
+    "expression": "-0.75 * (0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 0.75 * (0.75 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.25 * group_rank(ts_rank(operating_income / assets, 126), subindustry)) + 1.00 * (0.55 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.30 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.15 * rank(-(close / open - 1)))",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v258_eps_product_customer_residual",
+    "family": "no_direct_quality_compact_residual",
+    "hypothesis": "EPS yield plus product/business news may retain a differentiated signal after subtracting customer spillover/relationship return exposure.",
+    "pre_estimated_top_abs_corr": 0.499,
+    "pre_estimated_qpa_corr": 0.167,
+    "pre_estimated_synthetic_sharpe": 1.53,
+    "source_alpha_ids": ["akd1nQMW", "58wgxOM1", "Vkp0P130"],
+    "expression": "1.00 * (group_rank(ts_rank(est_eps / close, 126), industry)) - 0.75 * (0.40 * group_rank(ts_rank(ts_mean(rel_ret_cust / close, 10) - ts_mean(returns, 10), 120), industry) + 0.15 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry)) + 0.75 * (0.30 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.25 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.20 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry))",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  }
+]

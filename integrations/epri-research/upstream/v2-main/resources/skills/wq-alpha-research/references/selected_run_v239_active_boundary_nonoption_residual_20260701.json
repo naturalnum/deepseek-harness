@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v239_social_profit_chain_book_residual",
+    "family": "active_boundary_nonoption_residual",
+    "hypothesis": "A low-SPY-correlation regime may let social neglect, simple profitability, competitor-return absorption, and a small book-value yield sleeve combine into a residual path that is not a direct option/model/frontier sibling.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.190 * rank(-(close / open - 1)) + 0.170 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.170 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 90), industry) + 0.150 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.100 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local ACTIVE-PnL boundary scan showed the closest proxy around max corr ~0.64, so this must clear a stricter WQ_MAX_CORRELATION=0.66 live gate. Reject if it maps to RRpmOAWj, E5w8oepG, RRplYRpo, RRpmO2xb, or book/news/product actives."
+  },
+  {
+    "name": "v239_netdebt_social_profit_balance_residual",
+    "family": "active_boundary_nonoption_residual",
+    "hypothesis": "Balance-sheet expectation dry-up may be less crowded if paired with social attention calm and simple profitability, rather than the EBIT-delivery parent that already occupied net-debt/total-assets discipline.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.220 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.160 * group_rank(ts_rank(snt_social_value_fast_d1, 90), industry) + 0.120 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 90), industry) + 0.170 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Designed to avoid EBIT actual/estimate delivery, total-assets restraint, debt-deleveraging, option, and news-chain parents. Kill if it correlates to WjpxeKkk, 78wrdZ6x, d5xK1kmg, P0pgZllw, or social-option actives."
+  },
+  {
+    "name": "v239_customer_ppe_profit_residual",
+    "family": "active_boundary_nonoption_residual",
+    "hypothesis": "Customer-network breadth and PPE-age discipline may identify stable demand with mature asset bases when supported by operating profitability and low beta, while excluding shareholder-equity delivery, option, and news-chain sleeves.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.210 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.140 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.190 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.150 * group_rank(ts_rank(pv13_ustomergraphrank_page_rank, 60), industry) + 0.150 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.090 * rank(-1 * ts_mean(returns, 5)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No sh-equity delivery, no BVPS, no option/news/social, no open-close. Reject if it becomes an omKkJwA5 / 88zJ8RMW / QPazq9nX / RRpmO2xb sibling or fails LSUS."
+  },
+  {
+    "name": "v239_lowissuance_chain_profit_residual",
+    "family": "active_boundary_nonoption_residual",
+    "hypothesis": "Low issuance can be a small capital-discipline sleeve if the primary path is low-SPY-correlation competitor/cashflow attention and simple profitability, rather than the direct issuance or payout route.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.210 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_delta(stock_issued_new_issues_value / assets, 252), 126), industry) + 0.190 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.150 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.090 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Issuance is deliberately below one third of the expression and is not treated as a new direct issuance sibling. Reject if top corr is 1Y7jgeXX, A1wrAX3E, E5w8oepG, or competitor/news capacity."
+  }
+]

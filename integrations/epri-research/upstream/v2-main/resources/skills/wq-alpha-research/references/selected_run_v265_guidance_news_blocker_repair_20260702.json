@@ -1,0 +1,38 @@
+[
+  {
+    "name": "v265_assets_credit_guidance_minus_payout_quality",
+    "family": "guidance_news_blocker_repair",
+    "hypothesis": "The v264 assets/credit-news guidance parent was strong but correlated to buyback and operating-quality actives; subtracting a compact payout-quality blocker may preserve the event/guidance edge while reducing self-correlation.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.210 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.140 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.130 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) - 0.090 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.070 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v265_assets_credit_guidance_minus_option_model",
+    "family": "guidance_news_blocker_repair",
+    "hypothesis": "If the v264 parent is being pulled toward option/model calm, a small anti-option and anti-model-static sleeve should reduce e7OG3bmz overlap without relying on social or VWAP stabilizers.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.270 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.220 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.170 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.140 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry) - 0.050 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_720 - implied_volatility_mean_90), 90), industry) - 0.050 * rank(-1 * multi_factor_static_score_derivative) + 0.080 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 90), industry), -1)",
+    "decay": 8,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v265_assets_credit_guidance_strict_largecap_no_reversal",
+    "family": "guidance_news_blocker_repair",
+    "hypothesis": "Removing the short-reversal sleeve and using a stricter cap gate may reduce overlap with 88zpWZ1X and A1wrAX3E while testing whether assets/credit news plus guidance has an independent large-cap core.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.300 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.240 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.190 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(rank(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance)) - rank(vec_avg(anl4_fs_guidance_af_v4_nd_minguidance))), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v265_assets_credit_no_guidance_anti_blockers",
+    "family": "assets_credit_news_decorr_probe",
+    "hypothesis": "A pure assets/credit-news sentiment probe without generic guidance can test whether the guidance component is the main path into payout-quality correlation.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.330 * group_rank(ts_rank(rp_ess_assets, 90), industry) + 0.270 * group_rank(ts_rank(rp_ess_credit, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_assets), 90), industry) + 0.140 * group_rank(ts_rank(-1 * abs(rp_nip_credit), 90), industry) - 0.050 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.030 * rank(-1 * multi_factor_static_score_derivative), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY"
+  }
+]

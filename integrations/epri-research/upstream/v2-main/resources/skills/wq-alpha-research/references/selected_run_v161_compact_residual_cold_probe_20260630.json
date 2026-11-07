@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v161_comp_earnings_anti_product_residual",
+    "family": "compact_residual_competitor_earnings",
+    "hypothesis": "Strong competitor/earnings candidates such as vRLpamXw and akdQJlKw are submit-grade but remain too close to product/news and competitor-hub actives. A stronger anti-product and anti-hub sleeve tests whether low-volume competitor underreaction has independent residual capacity.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.200 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.130 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.100 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.120 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) - 0.090 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.070 * group_rank(ts_rank(rp_css_product, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "One compact residual attempt only. Reject if it remains above corr gate to O0pNbJ17, Vkp0P130, kq3Jjmrk, 9qwXgvQd, or 1Y7WOx9W."
+  },
+  {
+    "name": "v161_deferred_revenue_anti_grossincome_residual",
+    "family": "deferred_revenue_residual",
+    "hypothesis": "A1wzOPGg showed very strong deferred-revenue growth plus receivable discipline, but it mapped to QPaze5zX gross-income guidance. Subtracting a short gross-income guidance proxy tests whether billing/contract-liability strength has residual capacity beyond guided gross-income improvement.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.340 * group_rank(ts_rank(ts_delta(fnd6_drc + fnd6_drlt, 252) / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * receivable / sales, 126), subindustry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.130 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) - 0.070 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 63), 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests a compact anti-QPaze5zX residual. If it remains high-corr or loses metrics, close deferred-revenue/receivable direct residuals."
+  },
+  {
+    "name": "v161_option_fcf_anti_value_residual",
+    "family": "option_dividend_fcf_residual",
+    "hypothesis": "LLpz0nOM had strong metrics and passed LSUS but was marginally too correlated to E5wRq3ZG. Subtracting a compact FCF/operating-profit value proxy tests whether option-award dividend assumption plus FCF breadth has information beyond static cash-yield value.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(option_award_expected_dividend_rate, 126), industry) + 0.270 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcf_number, 63), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcf_high / abs(assets) - anl4_fs_detail_estimates_advanced_af_nd_fcf_low / abs(assets)), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.090 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry) - 0.070 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One residualized follow-up only; do not continue option-dividend + FCF siblings if still near E5wRq3ZG or xAxGJjNn."
+  },
+  {
+    "name": "v161_nonoperating_noise_vecavg_corrected",
+    "family": "nonoperating_noise_cleanliness",
+    "hypothesis": "v159 non-operating noise failed only because fnd6_nopxs is VECTOR. A corrected vec_avg version tests absolute non-operating noise excluding interest, distinct from the closed interest/nonoperating carry sign route.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_nopxs)) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(fnd6_newa2v1300_nopi) / assets, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_nopio) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(abs(fnd6_newa2v1300_nopi) / assets, 252), 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Corrects the v159 event/vector type error. Reject if it behaves like the v149/v150 weak interest/nonoperating carry route."
+  },
+  {
+    "name": "v161_social_deleveraging_anti_customer_residual",
+    "family": "social_deleveraging_residual",
+    "hypothesis": "The user-suggested debt-reduction idea is closed in pure form, but 9qwMJ8YK showed a strong social-calm + net-debt slope candidate that was too close to customer/social/news actives. A small anti-product and anti-customer sleeve tests whether deleveraging with quieter attention has residual capacity.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.62, 0.280 * group_rank(ts_rank(-1 * ts_delta(net_debt_amount / assets, 252), 126), industry) + 0.190 * group_rank(ts_rank(snt_social_value_fast_d1, 180), industry) + 0.150 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 180), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 126), industry) - 0.090 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.080 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry), -1)",
+    "decay": 36,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One residualized debt/social follow-up only. If still correlated to QPazq9nX, Vkp0P130, wpR9AnYd, or debt actives, do not continue debt/social variants."
+  }
+]

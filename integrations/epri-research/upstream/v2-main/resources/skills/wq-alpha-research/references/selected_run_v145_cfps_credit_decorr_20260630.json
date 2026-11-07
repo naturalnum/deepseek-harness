@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v145_cfps_revision_minus_bvps",
+    "family": "cfps_bvps_decorr_revision",
+    "hypothesis": "v144 CFPS level/delivery was strong but correlated with the BVPS/value ACTIVE wpR9AnYd. Shift from level to CFPS estimate revision and actual surprise, then subtract the BVPS consensus and close/open sleeves that dominate wpR9AnYd.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_mean / close, 63), 126), industry) + 0.240 * group_rank(ts_rank((anl4_fs_actuals_basic_af_nd_cfps_value - anl4_fs_detail_estimates_basic_af_v4_nd_cfps_mean) / close, 126), industry) + 0.160 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_number, 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_high / close - anl4_fs_detail_estimates_basic_af_v4_nd_cfps_low / close), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.320 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) - 0.100 * rank(-(close / open - 1)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Target blocker: wpR9AnYd. If metrics survive and top corr drops below 0.68, this is the clean CFPS rescue. If weak, close CFPS-level/residual route."
+  },
+  {
+    "name": "v145_cfps_qf_surprise_residual",
+    "family": "cfps_quarterly_surprise_residual",
+    "hypothesis": "A quarterly CFPS surprise/revision signal should be less value-like than annual CFPS level. Compare current quarter estimate/actual to delay-1 quarter estimate, add coverage change, and subtract annual BVPS exposure.",
+    "expression": "trade_when(rank(cap) > 0.30, 0.340 * group_rank(ts_rank((anl4_fs_detail_estimates_basic_qf_v4_nd_cfps_mean - anl4_fs_detail_estimates_basic_qf_delay1_v4_nd_cfps_mean) / close, 90), industry) + 0.240 * group_rank(ts_rank((anl4_fs_actuals_basic_qf_nd_cfps_value - anl4_fs_detail_estimates_basic_qf_v4_nd_cfps_mean) / close, 90), industry) + 0.160 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_qf_v4_nd_cfps_number, 20), 90), industry) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_qf_v4_nd_cfps_high / close - anl4_fs_detail_estimates_basic_qf_v4_nd_cfps_low / close), 90), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) - 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Lower-coverage qf probe. Worth trying once because the mechanism is revision/surprise, not level/value. Watch LOW_SUB_UNIVERSE_SHARPE."
+  },
+  {
+    "name": "v145_credit_net_repayment_minus_buyback_quality",
+    "family": "credit_line_net_repayment_decorr",
+    "hypothesis": "v144 credit-line repayment was strong but correlated with buyback/profitability ACTIVEs. Build a net-repayment signal by rewarding repayments and penalizing credit-line proceeds, then explicitly subtract buyback and operating-income sleeves.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.340 * group_rank(ts_rank(repayments_of_credit_lines / assets, 126), industry) - 0.240 * group_rank(ts_rank(proceeds_from_credit_lines / assets, 126), industry) + 0.180 * group_rank(ts_rank(line_of_credit_repayments / assets, 126), industry) - 0.180 * group_rank(ts_rank(credit_line_proceeds_total / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.220 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.160 * group_rank(ts_rank(operating_income / assets, 126), subindustry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Target blockers: MPpGzqwr and 88zpWZ1X. Rank-difference form avoids raw unit subtraction. If strong but still high-corr, credit repayment is probably not independent enough."
+  },
+  {
+    "name": "v145_credit_facility_utilization_residual",
+    "family": "credit_facility_utilization_decorr",
+    "hypothesis": "Use facility utilization and remaining capacity instead of repayment amount, then subtract buyback/profitability. This tests whether the credit relief mechanism can be independent of capital-return quality.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * credit_facility_outstanding_balance / assets, 126), industry) + 0.200 * group_rank(ts_rank(credit_facility_remaining_borrowing_capacity / assets, 126), industry) + 0.140 * group_rank(ts_rank(credit_facility_max_borrowing / assets, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) - 0.200 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.160 * group_rank(ts_rank(operating_income / assets, 126), subindustry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Historically credit-facility capacity is weaker/slower, so this is a disciplined one-shot decorrelation probe, not a route to keep repairing."
+  },
+  {
+    "name": "v145_credit_repayment_anti_buyback_reversal",
+    "family": "credit_line_repayment_anti_cluster",
+    "hypothesis": "Keep the strongest v144 repayment event but remove the known positive blockers more aggressively: buyback, profitability, and close/open reversal. This asks whether the remaining repayment event has standalone alpha.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.400 * group_rank(ts_rank(repayments_of_credit_lines / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(abs(repayments_of_credit_lines) / assets, 252), 126), industry) + 0.140 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.280 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.200 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.120 * rank(-(close / open - 1)), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Most direct decorrelation repair for MPpz6xKk. If Sharpe/Fitness collapse, the v144 strength was mainly the occupied buyback/profitability/reversal cluster."
+  }
+]

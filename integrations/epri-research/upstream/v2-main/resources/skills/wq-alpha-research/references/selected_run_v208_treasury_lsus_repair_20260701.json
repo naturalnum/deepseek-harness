@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v208_liquidity_release_market_neutral",
+    "family": "treasury_allocation_lsus_repair",
+    "hypothesis": "v207 O0p25QXb had submit-level Sharpe/Fitness but failed sub-universe. Re-test the same investment-sale release parent under MARKET neutralization to reduce industry-specific small-cap concentration.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.320 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Single neutralization repair of O0p25QXb. If LSUS remains blocked, do not keep neutralization-siblinging."
+  },
+  {
+    "name": "v208_liquidity_release_msa_stabilized",
+    "family": "treasury_allocation_lsus_repair",
+    "hypothesis": "3q72nWbQ passed LSUS while O0p25QXb did not. Increase marketable-securities stability weight and reduce investment-increase exposure to preserve Sharpe while stabilizing TOP1000 behavior.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_ivst / abs(assets), 252)), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Blend of O0p25QXb and LSUS-pass 3q72nWbQ. Strict submit only if Fitness >= 1.10 and LSUS passes."
+  },
+  {
+    "name": "v208_siv_msa_no_ivch_core",
+    "family": "treasury_allocation_no_ivch_core",
+    "hypothesis": "If IVCH is the LSUS-fragile leg, a cleaner sale-of-investments plus MSA/IVST stability core may clear sub-universe while keeping enough Sharpe.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_ivst / abs(assets), 252)), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)) + 0.050 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No-IVCH core, not an AFS/OCI route. Close if it behaves like 3q72nWbQ but still below local Sharpe/Fitness."
+  },
+  {
+    "name": "v208_liquidity_release_largecap_gate",
+    "family": "treasury_allocation_top1000_proxy",
+    "hypothesis": "O0p25QXb's LOW_SUB_UNIVERSE failure may come from small/mid-cap dependence. A stricter cap gate tests whether the signal is robust among larger, more liquid names.",
+    "expression": "trade_when(rank(cap) > 0.60, 0.330 * group_rank(ts_rank(fnd6_siv / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * fnd6_ivch / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(fnd6_msa) / abs(assets), 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One top-universe robustness check only. If it lowers Fitness or keeps LSUS fail, close cap-gate repair."
+  }
+]

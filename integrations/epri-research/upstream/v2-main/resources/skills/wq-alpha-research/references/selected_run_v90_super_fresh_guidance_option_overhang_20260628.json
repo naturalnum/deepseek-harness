@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v90_fcfps_guidance_confidence",
+    "family": "fcfps_guidance",
+    "hypothesis": "High free-cash-flow-per-share estimate yield with low forecast dispersion and rising coverage may capture cash-generation confidence without reusing reported FCF directly.",
+    "expression": "0.30 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcfps_mean / close, 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcfps_high - anl4_fs_detail_estimates_advanced_af_nd_fcfps_low) / close, 126), industry) + 0.16 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_fcfps_number, 63), 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_fcfps_capex_dividend_fusion",
+    "family": "fcfps_capex_dividend",
+    "hypothesis": "FCFPS confidence should be stronger when expected capex intensity is low and dividend estimate confidence is stable; this tests a cash-yield route distinct from BVPS.",
+    "expression": "0.26 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_fcfps_mean / close, 126), industry) + 0.16 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_fcfps_high - anl4_fs_detail_estimates_advanced_af_nd_fcfps_low) / close, 126), industry) + 0.18 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.14 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_capex_ebitda_efficiency",
+    "family": "capex_ebitda_guidance",
+    "hypothesis": "Companies with high expected EBITDA yield and disciplined expected capex may have better reinvestment efficiency than plain value or profitability screens.",
+    "expression": "0.28 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_capex_high - anl4_fs_detail_estimates_advanced_af_nd_capex_low) / assets, 126), industry) + 0.22 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebitda_mean / enterprise_value, 126), industry) + 0.12 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_capex_number, 63), 126), industry) + 0.10 * rank(-1 * ts_mean(returns, 5)) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_gross_income_capex_guidance",
+    "family": "gross_income_capex_guidance",
+    "hypothesis": "High gross-income guidance relative to assets combined with low capex guidance may capture expected operating leverage without using EPS or BVPS.",
+    "expression": "0.28 * group_rank(ts_rank((min_gross_income_guidance_2 + max_gross_income_guidance_2) / (2 * assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_capex_minguidance + anl4_fs_guidances_advanced_af_nd_capex_maxguidance) / (2 * assets), 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(max_gross_income_guidance_2 - min_gross_income_guidance_2) / assets, 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_stock_option_expense_guidance_relief",
+    "family": "stock_option_expense_guidance",
+    "hypothesis": "Low guided stock-option expense and lower unrecognized compensation overhang may identify less dilution pressure, but this version avoids old share-count/buyback as the main parent.",
+    "expression": "0.28 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_af_nd_soe_minguidance + anl4_fs_guidances_advanced_af_nd_soe_maxguidance) / (2 * sales), 126), industry) + 0.22 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / assets, 126), industry) + 0.16 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_stock_shares_outstanding_count, 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_antidilutive_overhang_dividend",
+    "family": "dilution_overhang_dividend",
+    "hypothesis": "Low antidilutive securities and low option-share issuance may be more useful when paired with stable dividend estimates instead of old buyback/share-count anchors.",
+    "expression": "0.24 * group_rank(ts_rank(-1 * antidilutive_securities_eps_exclusion_count / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(-1 * fn_antidilutive_securities_excl_from_eps_a / common_stock_shares_outstanding_count, 126), industry) + 0.16 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / common_stock_shares_outstanding_count, 126), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_forward_curve_dividend_carry",
+    "family": "option_forward_carry",
+    "hypothesis": "The synthetic option forward curve may contain implied dividend/carry information distinct from option breakeven and PCR surfaces; dividend estimates act only as a small economic confirmer.",
+    "expression": "0.28 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.20 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.18 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.14 * rank(-(close / open - 1)) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v90_forward_curve_short_pressure_relief",
+    "family": "option_forward_short_interest",
+    "hypothesis": "Forward-curve carry paired with low short-interest pressure may isolate a calmer shareholder-yield channel without relying on option breakeven or AQI.",
+    "expression": "0.26 * group_rank(ts_rank((close - forward_price_180) / close, 90), industry) + 0.18 * group_rank(ts_rank((forward_price_60 - forward_price_360) / close, 90), industry) + 0.18 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.14 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.12 * rank(-(close / open - 1)) + 0.12 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

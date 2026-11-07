@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v101_ghc_ssc_trade_calm",
+    "family": "conditional_news_vector_debug",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "GHC/SSC news residual had strong metrics but failed sub-universe; using the v100 calm-return gate may make the same news family investable without becoming a QMB/editorial sibling.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.430 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.250 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.170 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.150 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.120 * group_rank(ts_rank(rp_nip_product, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Conditional debug of v100 j2Zap1j9; different news parent from LLpKoQPa."
+  },
+  {
+    "name": "v101_ghc_ssc_trade_low_volume",
+    "family": "conditional_news_vector_debug",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "News vector may fail sub-universe when traded during high-volume attention spikes; a low-relative-volume gate tests whether calmer attention states generalize better.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.70, 0.430 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.250 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.170 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.150 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.120 * group_rank(ts_rank(rp_nip_product, 90), industry), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Same GHC/SSC parent as candidate 1, but a different gate; keep only if materially lower corr."
+  },
+  {
+    "name": "v101_qmb_storycount_trade_calm",
+    "family": "conditional_editorial_news_debug",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "A QMB/news-count variant can test whether LLpKoQPa's value comes from low story noise rather than the exact product-news subtraction.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.55, 0.380 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.220 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.180 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.120 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.100 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "One controlled close-cousin of LLpKoQPa; reject if corr gate sees it as the same sleeve."
+  },
+  {
+    "name": "v101_qmb_relevance_positive_gate",
+    "family": "conditional_editorial_news_debug",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "Editorial QMB may work better when the story is clearly company-relevant; this changes the gate to news relevance rather than market calm.",
+    "expression": "trade_when(ts_rank(vec_avg(nws18_event_relevance_fast_d1), 20) > 0.45, 0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.200 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.140 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.140 * group_rank(ts_rank(rp_nip_product, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Different gate from LLpKoQPa; likely high-corr but tests relevance-conditioned timing."
+  },
+  {
+    "name": "v101_equity_action_trade_calm",
+    "family": "conditional_non_earnings_news",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "Equity-action news was the nearest non-QMB RP theme; adding a calm-return gate may reduce drawdown and sub-universe weakness while staying away from buyback/share-count fields.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.360 * group_rank(ts_rank(rp_css_equity, 90), industry) + 0.240 * group_rank(ts_rank(rp_ess_equity, 90), industry) + 0.180 * group_rank(ts_rank(-1 * abs(rp_nip_equity), 90), industry) + 0.120 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Non-QMB news theme; included because v58 equity action was closest among non-earnings RP themes."
+  },
+  {
+    "name": "v101_product_news_trade_calm_no_qmb",
+    "family": "conditional_product_news",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "Product/business news is usually a blocker for QMB, but it may be a standalone demand-cycle signal under calm regimes if not used as a subtraction term.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.340 * group_rank(ts_rank(rp_nip_product, 90), industry) + 0.260 * group_rank(ts_rank(rp_css_product, 90), industry) + 0.200 * group_rank(ts_rank(rp_nip_business, 90), industry) + 0.120 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.080 * group_rank(ts_rank(operating_income / assets, 126), subindustry), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Standalone product/business news, not a QMB subtraction."
+  },
+  {
+    "name": "v101_aqi_compraw_trade_calm_no_eps",
+    "family": "conditional_accounting_competitor",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "AQI + competitor raw is strong but now occupied by 58wJ22nk; a calm-regime no-EPS version tests whether conditional timing can create a different path rather than a sibling.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.60, 0.300 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.120 * rank(-(close / open - 1)) + 0.080 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.060 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-news guardrail candidate; likely corr risk vs 58wJ22nk but condition and no EPS may shift timing."
+  },
+  {
+    "name": "v101_stockcomp_sentiment_lowvol_gate",
+    "family": "conditional_stockcomp_sentiment",
+    "source": "v101_after_LLpKoQPa",
+    "hypothesis": "Stockcomp/debt + sentiment-delta capacity is partly occupied by akda9EW9; a low-volume gate tests whether it can trade in a different attention regime.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.65, 0.300 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.120 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.100 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.070 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-news guardrail candidate; reject if it is an akda9EW9 sibling."
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v250_put_downside_social_no_vwap",
+    "family": "put_social_debt_diagnostic",
+    "hypothesis": "Put-breakeven downside term structure plus non-VWAP social sentiment may capture option downside repricing without reusing the occupied long-option/alltype/VWAP parent.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.330 * group_rank(ts_rank((put_breakeven_270 - put_breakeven_20) / close, 90), industry) + 0.230 * group_rank(ts_rank(-1 * abs(pcr_vol_720 - pcr_vol_20), 90), industry) + 0.190 * group_rank(ts_rank(scl12_sentiment_fast_d1, 60), industry) + 0.140 * rank(-1 * analyst_revision_rank_derivative) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No VWAP/open-close/alltype. Reject if it maps to zq92joQo, RRplYRpo, Vkpeno3w, Wjpx2AEO, or 6XwKxVkO."
+  },
+  {
+    "name": "v250_pcr_put_curve_signflip_lowcorr",
+    "family": "put_social_debt_diagnostic",
+    "hypothesis": "The early pcr_vol_20 reversal failed and PCR curve is crowded, but a sign-flipped long-vs-medium PCR curve under falling SPY-correlation may have a different timing profile.",
+    "expression": "trade_when(correlation_last_30_days_spy < correlation_last_360_days_spy, 0.320 * group_rank(ts_rank(pcr_vol_720 - pcr_vol_90, 90), industry) + 0.250 * group_rank(ts_rank((put_breakeven_360 - put_breakeven_60) / close, 90), industry) + 0.180 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.150 * group_rank(ts_rank(-1 * unsystematic_risk_last_30_days, 60), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Diagnostic only. If high-corr to 6XwKxVkO or technical/risk actives, close PCR curve again."
+  },
+  {
+    "name": "v250_social_fast_buzzret_model_no_option",
+    "family": "put_social_debt_diagnostic",
+    "hypothesis": "Fast social buzz-return reversal with sentiment confirmation and analyst-revision deterioration tests whether social matrix fields can stand without option/VWAP/alltype support.",
+    "expression": "trade_when(ts_rank(abs(snt_buzz_ret_fast_d1), 20) > 0.55, 0.320 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.260 * group_rank(ts_rank(scl12_sentiment_fast_d1, 60), industry) + 0.180 * rank(-1 * analyst_revision_rank_derivative) + 0.140 * group_rank(ts_rank(-1 * correlation_last_30_days_spy, 60), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure social/model diagnostic without options, VWAP, alltype, news-chain, or open-close."
+  },
+  {
+    "name": "v250_debt_repayment_put_regime",
+    "family": "put_social_debt_diagnostic",
+    "hypothesis": "Debt repayment was weak or LSUS-prone alone; pairing repayment and low interest burden with calm put downside structure tests whether balance-sheet repair only works when option downside pressure is not elevated.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.300 * group_rank(ts_rank(debt_repayments_total_2 / assets, 126), industry) + 0.240 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(put_breakeven_270 - put_breakeven_20) / close, 90), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One diagnostic revisit of user's debt theme with a non-social option downside regime. Reject on LSUS or quality-correlation."
+  }
+]

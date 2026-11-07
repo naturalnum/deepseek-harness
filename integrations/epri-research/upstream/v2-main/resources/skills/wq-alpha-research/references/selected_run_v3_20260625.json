@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v3_low_systematic_risk_quality",
+    "family": "risk_quality",
+    "source": "memory_guided_v3_20260625",
+    "hypothesis": "Quality signals may work better when tilted away from high market-driven risk; low systematic risk plus operating profitability should be less correlated with pure analyst yield.",
+    "expression": "0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.5 * group_rank(ts_rank(-systematic_risk_last_30_days, 20), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Combines quality with model risk metric; intended to diversify from EBITDA/EV."
+  },
+  {
+    "name": "v3_buyback_yield_quality",
+    "family": "payout_quality",
+    "source": "memory_guided_v3_20260625",
+    "hypothesis": "Share repurchase payments relative to market cap can proxy shareholder yield; combine with quality to avoid distressed buybacks.",
+    "expression": "0.5 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-crowding buyback field plus quality anchor; sparse field risk controlled by truncation."
+  },
+  {
+    "name": "v3_rd_efficiency_quality",
+    "family": "investment_efficiency",
+    "source": "memory_guided_v3_20260625",
+    "hypothesis": "R&D intensity is useful when paired with operating profitability; raw R&D expense alone may be sector exposure.",
+    "expression": "0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.5 * group_rank(ts_rank(rd_expense / sales, 126), subindustry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Tests investment efficiency rather than analyst yield; sign penalizes high R&D burden unless quality offsets it."
+  },
+  {
+    "name": "v3_news_earnings_sentiment_quality",
+    "family": "news_quality",
+    "source": "memory_guided_v3_20260625",
+    "hypothesis": "Average earnings-evaluation news sentiment may add event information when combined with slow operating quality.",
+    "expression": "0.5 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 20), industry) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses matrix Ravenpack aggregate instead of vector news fields."
+  },
+  {
+    "name": "v3_range_reversal_quality",
+    "family": "range_quality",
+    "source": "memory_guided_v3_20260625",
+    "hypothesis": "High recent range can indicate noisy overreaction; pairing range reversal with quality may lower turnover and avoid pure technical crowding.",
+    "expression": "0.5 * rank(-ts_zscore((high - low) / close, 20)) + 0.5 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "QuantaAlpha-inspired range reversal crossed with a quality anchor, but not EBITDA/EV."
+  }
+]

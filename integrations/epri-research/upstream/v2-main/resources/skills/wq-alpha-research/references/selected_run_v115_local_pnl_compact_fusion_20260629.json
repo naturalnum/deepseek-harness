@@ -1,0 +1,56 @@
+[
+  {
+    "name": "v115_sales_option_pcr_compact",
+    "family": "local_pnl_sales_option_pcr_fusion",
+    "hypothesis": "Local daily-PnL fusion suggests the sales-surprise/option compact near-miss can be partly de-correlated by adding PCR open-interest and ROE timing, while keeping the competitor leg small.",
+    "expression": "0.200 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.160 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.110 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.130 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.120 * rank(-(close / open - 1)) + 0.090 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.090 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.060 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) - 0.040 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v115_sales_option_taxallow_fusion",
+    "family": "local_pnl_sales_option_taxallow",
+    "hypothesis": "A high-quality local pair combines sales/option delivery with deferred-tax valuation allowance quality; the tax leg may offset the option blocker without returning to pure value or FCF.",
+    "expression": "0.250 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.110 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.180 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / assets, 126), industry) + 0.120 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.090 * rank(-(close / open - 1)) + 0.070 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) - 0.040 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v115_comp_earnings_volume_risk",
+    "family": "local_pnl_comp_earnings_volume_risk",
+    "hypothesis": "Local fusion found competitor/earnings/cashflow residual plus return-volume exhaustion has a cleaner daily-PnL path than either parent alone; this tests a compact version under current blockers.",
+    "expression": "0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.155 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.145 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.095 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.095 * rank(-(close / open - 1)) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.050 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v115_pcr_social_vwap_fcf",
+    "family": "local_pnl_pcr_social_vwap",
+    "hypothesis": "PCR open-interest timing and social/VWAP pressure have different active blockers; combining them may keep the option timing edge while reducing direct skew/PCR self-correlation.",
+    "expression": "0.240 * group_rank(ts_rank(pcr_oi_all, 60), industry) + 0.220 * rank(-(close / open - 1)) + 0.140 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.150 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.100 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.100 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.050 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry)",
+    "decay": 24,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v115_value_volume_risk",
+    "family": "local_pnl_value_volume_risk",
+    "hypothesis": "Operating value and sales value are crowded alone, but local fusion with return-volume exhaustion and beta-slope relief may create a cleaner timing profile.",
+    "expression": "0.260 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.240 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.190 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.190 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 22,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v115_aqi_credit_vwap_risk",
+    "family": "local_pnl_aqi_credit_vwap",
+    "hypothesis": "AQI plus credit-ratings news is usually too close to quality/EPS sleeves, but a VWAP/risk timing overlay may move the daily PnL away from the acquired-goodwill and AQI blockers.",
+    "expression": "0.280 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.180 * group_rank(ts_rank(rp_ess_credit_ratings, 90), industry) + 0.150 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.180 * rank(-1 * ts_rank((close - vwap) / close, 40)) + 0.100 * rank(ts_rank(volume / adv20, 30)) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  }
+]

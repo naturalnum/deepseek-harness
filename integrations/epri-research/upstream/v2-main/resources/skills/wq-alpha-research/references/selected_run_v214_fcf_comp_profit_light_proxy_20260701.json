@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v214_fcf_comp_profit_compact",
+    "family": "fcf_comp_profit_light_proxy",
+    "hypothesis": "Post-v213 local composite scan found the cleanest remaining low-corr blend around LLpGdlrm + A1wrAX3E + 9qwWXNW9. This compact proxy combines FCF yield/capex restraint with competitor-return absorption and operating profitability, without current-accrual, sales-delivery, or long-option terms from 58w2kxAz.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.170 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.140 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.150 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.140 * rank(-(close / open - 1)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Lightweight proxy for the best post-v213 composite. Strict-check against 9qwWXNW9, omKJ5nLl, A1wrAX3E, 58w2kxAz, and omKoaQMl."
+  },
+  {
+    "name": "v214_fcf_comp_non_eps_residual",
+    "family": "fcf_comp_profit_light_proxy",
+    "hypothesis": "FCF/capex guidance often collides with EPS/value capacity. This variant explicitly subtracts a small EPS value sleeve while keeping competitor-return and operating-profit confirmation, testing whether the FCF edge can avoid the EPS/contract/value blockers.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.190 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.170 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.140 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.100 * rank(-(close / open - 1)) - 0.140 * group_rank(ts_rank(est_eps / close, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests whether subtracting EPS value lowers corr to omKJ5nLl / akd1nQMW / 78wvg3wO without killing FCF strength."
+  },
+  {
+    "name": "v214_fcf_comp_lowcorr_regime",
+    "family": "fcf_comp_profit_light_proxy",
+    "hypothesis": "The FCF + competitor blend may be more independent when SPY correlation is falling. This uses a regime gate to reduce overlap with ordinary reversal/value actives while preserving FCF/capex and competitor/earnings signals.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.240 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.190 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.150 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.130 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.120 * group_rank(ts_rank(operating_income / equity, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Regime-gated version; reject if it maps back to E5w8oepG / A1wrAX3E / 9qwWXNW9."
+  },
+  {
+    "name": "v214_fcf_comp_no_reversal_lowrisk",
+    "family": "fcf_comp_profit_light_proxy",
+    "hypothesis": "If the compact blend's low-corr estimate depends too much on open-close reversal, this no-reversal version uses low beta/correlation and competitor authority instead. It should reveal whether the parent has strength without the common reversal sleeve.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(free_cash_flow_reported_value / equity, 126), industry) + 0.180 * group_rank(ts_rank(-1 * anl4_fs_guidances_advanced_qf_nd_capex_maxguidance / cap, 126), industry) + 0.180 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.130 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No open-close or current-accrual/sales/long-option terms. Submit only if it clears metrics and true daily-PnL corr."
+  }
+]

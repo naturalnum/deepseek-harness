@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v168_news12_120m_overreaction_absorption",
+    "family": "news12_event_absorption",
+    "hypothesis": "High-volume news sessions can overreact intraday; after large post-news moves, the next tradable delay may reward fading the 120-minute response, especially when the event is novel rather than routine.",
+    "expression": "trade_when(ts_rank(vec_avg(main_trading_volume_deviation_std), 20) > 0.55, 0.340 * group_rank(ts_rank(-1 * vec_avg(pct_change_120m_post_news), 45), industry) + 0.200 * group_rank(ts_rank(-1 * vec_avg(maximum_upward_movement_percent), 45), industry) + 0.170 * group_rank(ts_rank(abs(vec_avg(maximum_downward_movement_percent)), 45), industry) + 0.150 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses low-alphaCount news12 VECTOR fields only through vec_avg. Tests delayed absorption rather than ordinary news sentiment."
+  },
+  {
+    "name": "v168_news12_delayed_drift_confirmed",
+    "family": "news12_event_drift",
+    "hypothesis": "Some news reactions are not fully absorbed in the first session. Positive 30/120-minute reaction plus a favorable long/short event indicator and novelty may continue, while low short interest avoids crowded squeeze-only behavior.",
+    "expression": "trade_when(ts_rank(vec_avg(current_to_moving_volume_ratio_2_1555), 20) > 0.35, 0.280 * group_rank(ts_rank(vec_avg(pct_change_120m_post_news), 60), industry) + 0.200 * group_rank(ts_rank(vec_avg(pct_change_30m_post_news), 45), industry) + 0.180 * group_rank(ts_rank(vec_avg(optimal_position_indicator), 60), industry) + 0.150 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.110 * group_rank(ts_rank(-1 * news_short_interest, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Continuation sign pair to the absorption candidate; short interest is only a crowding penalty."
+  },
+  {
+    "name": "v168_news12_short_squeeze_shape",
+    "family": "news12_short_pressure_event_shape",
+    "hypothesis": "Short-interest alone has been weak, but a high-short-interest stock that reacts favorably to a novel event with fast upside and delayed downside can drift through covering pressure.",
+    "expression": "trade_when(ts_rank(vec_avg(main_trading_volume_deviation_std), 20) > 0.45, 0.240 * group_rank(ts_rank(news_short_interest, 126), industry) + 0.220 * group_rank(ts_rank(vec_avg(optimal_position_indicator), 60), industry) + 0.180 * group_rank(ts_rank(vec_avg(maximum_upward_movement_percent) - abs(vec_avg(maximum_downward_movement_percent)), 60), industry) + 0.150 * group_rank(ts_rank(vec_avg(main_session_minutes_to_one_pct_decline) - vec_avg(minutes_to_one_percent_gain), 60), industry) + 0.120 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Not a pure short-interest alpha; requires favorable event shape and novelty."
+  },
+  {
+    "name": "v168_news12_volume_exhaustion_reversal",
+    "family": "news12_volume_exhaustion",
+    "hypothesis": "Extreme event-day volume with a same-day price response can mark temporary liquidity exhaustion. Fading the 30/120-minute response under high volume may be a more distinct microstructure route than close/open reversal.",
+    "expression": "trade_when(ts_rank(vec_avg(main_trading_volume_deviation_std), 20) > 0.70, 0.310 * group_rank(ts_rank(-1 * vec_avg(pct_change_120m_post_news), 30), industry) + 0.230 * group_rank(ts_rank(-1 * vec_avg(pct_change_30m_post_news), 30), industry) + 0.160 * group_rank(ts_rank(vec_avg(main_trading_volume_deviation_std), 60), industry) + 0.150 * rank(-1 * ts_mean(returns, 5)) + 0.150 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "High-volume event fade. Expected risk is ordinary reversal correlation; reject if it maps to close/open actives."
+  },
+  {
+    "name": "v168_news12_intraday_shape_asymmetry",
+    "family": "news12_intraday_shape",
+    "hypothesis": "Event-day path shape can matter more than net return. Fast upside and slow downside after news suggest constructive absorption; fast downside and slow upside suggest poor absorption.",
+    "expression": "trade_when(ts_rank(vec_avg(current_to_moving_volume_ratio_2_1555), 20) > 0.40, 0.250 * group_rank(ts_rank(vec_avg(main_session_minutes_to_one_pct_decline) - vec_avg(minutes_to_one_percent_gain), 60), industry) + 0.220 * group_rank(ts_rank(vec_avg(maximum_upward_movement_percent) - abs(vec_avg(maximum_downward_movement_percent)), 60), industry) + 0.180 * group_rank(ts_rank(vec_avg(optimal_position_indicator), 60), industry) + 0.140 * group_rank(ts_rank(-1 * vec_avg(session_range_to_atr_ratio_3_1555), 60), industry) + 0.120 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure path-shape candidate with no analyst/fundamental parent."
+  }
+]

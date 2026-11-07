@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v24_peer_return_catchup_partner_breadth",
+    "family": "relationship_return_transmission",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "If related product-overlap companies outperform the stock, the stock may catch up; partner breadth and small intraday reversal stabilize without using ROE/CFO.",
+    "expression": "0.55 * group_rank(ts_rank(rel_ret_all - returns, 20), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Relationship-return channel, not graph centrality; strict corr gate against RRpmO2xb/d5xj5W5v."
+  },
+  {
+    "name": "v24_competitor_return_reversal_authority",
+    "family": "relationship_return_transmission",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Weak competitor returns may create relative opportunity for firms with competitor authority; small intraday reversal helps timing.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.30 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(pv13_com_rk_au, 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses competitor returns rather than competitor centrality alone; watch correlation with d5xj5W5v and close/open actives."
+  },
+  {
+    "name": "v24_partner_return_momentum_breadth",
+    "family": "relationship_return_transmission",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Partner returns may transmit through business links; breadth helps distinguish broad ecosystem moves from noisy one-name relationships.",
+    "expression": "0.50 * group_rank(ts_rank(rel_ret_part, 20), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.25 * rank(-(close / open - 1))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Partner-return continuation; if weak, stop relationship-return branch rather than flipping many small variants."
+  },
+  {
+    "name": "v24_option_forward_discount",
+    "family": "option_forward_breakeven",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Option-implied forward price above spot may contain expectations/carry information distinct from skew; small reversal and partner breadth stabilize.",
+    "expression": "0.55 * group_rank(ts_rank(forward_price_60 / close - 1, 20), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option price channel not implied-vol skew; strict corr gate against 0m7p1Lb1/LLpGdlrm."
+  },
+  {
+    "name": "v24_option_call_put_breakeven_spread",
+    "family": "option_forward_breakeven",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "The call-put breakeven spread may proxy option-market directional pressure without using PCR or skew directly.",
+    "expression": "0.55 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests option breakeven structure; avoid expanding if it simply clones skew+reversal."
+  },
+  {
+    "name": "v24_option_low_iv_risk_premium_growth",
+    "family": "option_vol_risk_premium",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Lower implied-minus-realized volatility can indicate lower priced uncertainty; sales growth provides a non-ROE stabilizer.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.30 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * rank(-(close / open - 1))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option volatility level rather than skew; watch correlation with 0m7p1Lb1 and RRp7Q9Le."
+  },
+  {
+    "name": "v24_partner_news_sentiment_breadth",
+    "family": "non_earnings_news_relationship",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Positive partnership news sentiment may matter more for firms embedded in broader partner networks; avoids earnings-news near-neighbor.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_partner, 60), industry) + 0.30 * rank(-(close / open - 1)) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-earnings RavenPack branch; strict corr gate against RRpmOAWj."
+  },
+  {
+    "name": "v24_insider_news_dilution_reversal",
+    "family": "insider_news_dilution",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Insider-news sentiment plus shrinking share count can capture management-aligned shareholder behavior distinct from cash buyback payments.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_insider, 60), industry) + 0.30 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.25 * rank(-(close / open - 1))",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Could collide with buyback actives; submit only if daily-return corr clears."
+  },
+  {
+    "name": "v24_share_count_dilution_partner",
+    "family": "dilution_shareholder_yield",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Declining shares outstanding is a broader shareholder-yield/dilution signal than cash buyback payments; partner breadth replaces operating quality.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.25 * rank(-(close / open - 1)) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Likely buyback-adjacent; included as one controlled test, not a family sweep."
+  },
+  {
+    "name": "v24_rd_sales_efficiency_partner",
+    "family": "innovation_efficiency",
+    "source": "active_informed_v24_20260626",
+    "hypothesis": "Sales growth with lower R&D burden may proxy efficient innovation/commercialization; partner breadth is a non-accounting stabilizer.",
+    "expression": "0.45 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.35 * group_rank(ts_rank(-1 * rd_expense / sales, 126), industry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids close/open and ROE; watch correlation with RRp7Q9Le and prior R&D near-miss."
+  }
+]

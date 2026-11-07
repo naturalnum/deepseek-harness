@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v86_aqi_comp_cross_relief",
+    "family": "aqi_competitor_cross_relief",
+    "source": "local_pnl_fusion_v86_20260627",
+    "hypothesis": "AQI/low-debt and raw competitor-return now each have ACTIVE variants, but a balanced cross-path blend may capture a different return path than either pure AQI-sentiment or competitor-social families.",
+    "expression": "0.270 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.150 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.168 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.064 * rank(-(close / open - 1)) + 0.068 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.060 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.040 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate d5xj87YE + RRpA7pQa at 60/40. Local blend after v85: Sharpe about 2.48, max ACTIVE corr about 0.67."
+  },
+  {
+    "name": "v86_earnings_cashflow_social_relief",
+    "family": "earnings_cashflow_social_relief",
+    "source": "local_pnl_fusion_v86_20260627",
+    "hypothesis": "The earnings-news/cashflow near-miss was strong but too close to payout/accounting actives; add slow reversal and social/correlation relief instead of more cashflow or close/open.",
+    "expression": "0.3375 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.1500 * rank(-(close / open - 1)) + 0.2625 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.1125 * rank(-1 * ts_mean(returns, 5)) + 0.0500 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.0375 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.0500 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate RRp7Ldae + JjpPx52W at 75/25. Local max corr about 0.62, but watch 88zpWZ1X/9qwXgvQd."
+  },
+  {
+    "name": "v86_css_earnings_cashflow_social_relief",
+    "family": "earnings_cashflow_social_relief",
+    "source": "local_pnl_fusion_v86_20260627",
+    "hypothesis": "Composite-sentiment earnings variant may diversify from NIP earnings while retaining the same slow social/correlation relief mechanism.",
+    "expression": "0.3375 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.1500 * rank(-(close / open - 1)) + 0.2625 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.1125 * rank(-1 * ts_mean(returns, 5)) + 0.0500 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.0375 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.0500 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate E5wlANAm + JjpPx52W at 75/25. Included as a sibling only because NIP vs CSS may select different names; serial gate will reject if the first occupies it."
+  },
+  {
+    "name": "v86_stockcomp_debt_sentiment_stability",
+    "family": "stockcomp_debt_sentiment_stability",
+    "source": "local_pnl_fusion_v86_20260627",
+    "hypothesis": "Stock-comp/debt-extinguishment cleanliness was strong but near pw6jz8ob; replacing graph authority with slow sentiment stability may change the PnL shape.",
+    "expression": "0.2600 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.2275 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.1625 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.1400 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.1050 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.0525 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.0525 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate RRp7mKMg + wpRbXmNp at 65/35. Local blend max corr about 0.65."
+  },
+  {
+    "name": "v86_employee_sbp_debt_ev_value",
+    "family": "employee_sbp_debt_value",
+    "source": "local_pnl_fusion_v86_20260627",
+    "hypothesis": "Employee/SBP/debt cleanliness was previously blocked by pw6jz8ob; an EV-value sleeve may lift return while reducing dependence on the old accounting-cleanliness path.",
+    "expression": "0.2280 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.1920 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), industry) + 0.1200 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.0600 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.2000 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.2000 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate omKWLpXn + omKNPNO5 at 60/40. Local max corr about 0.65."
+  },
+  {
+    "name": "v86_option_iv_sentiment_stability",
+    "family": "option_iv_sentiment_stability",
+    "source": "local_pnl_fusion_v86_20260627",
+    "hypothesis": "Option breakeven/IV premium is crowded alone, but slow sentiment stability may provide a non-AQI, non-competitor path with manageable correlation.",
+    "expression": "0.2700 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.1800 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.1500 * rank(-(close / open - 1)) + 0.1600 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry) + 0.1200 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.0600 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.0600 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Approximate 58wlgpKz + wpRbXmNp at 60/40. Local blend max corr about 0.62; strict gate against 0m7p1Lb1/akdbG2k5/e7O6NWzz."
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v77_news_vwap_social_fast_confirm",
+    "family": "event_session_absorption",
+    "hypothesis": "Replace daily VWAP in the v76 successful template with zero-user event-session VWAP-from-news; keep only a small fast-earnings confirmation sleeve.",
+    "expression": "0.28 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.18 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.22 * rank(-1 * ts_rank((close - vec_avg(main_session_vwap_from_news)) / close, 20)) + 0.14 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.08 * group_rank(ts_rank(-1 * vec_avg(main_session_thirty_minute_change_pct), 60), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Strict corr gate vs JjpPv3N2; mechanism changes the VWAP leg to news-time session absorption."
+  },
+  {
+    "name": "v77_news_to_close_absorption_social",
+    "family": "event_session_absorption",
+    "hypothesis": "Use the close relative to news-to-close VWAP plus first-30-minute reversal to capture overreaction/absorption after news without the fast-earnings sleeve.",
+    "expression": "0.30 * rank(-1 * ts_rank((vec_avg(session_closing_price_4_1555) - vec_avg(vwap_from_news_to_close_2_1555)) / close, 20)) + 0.20 * group_rank(ts_rank(-1 * vec_avg(main_session_thirty_minute_change_pct), 60), industry) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No news18 bee; tests whether event-session absorption alone can strengthen the low-corr social seed."
+  },
+  {
+    "name": "v77_session_volume_absorption",
+    "family": "event_session_absorption",
+    "hypothesis": "Low event-day range/volume stress plus close-below-VWAP absorption may identify calmer reversals than the prior daily VWAP route.",
+    "expression": "0.25 * rank(-1 * ts_rank((close - vec_avg(main_session_vwap_from_news)) / close, 20)) + 0.22 * group_rank(ts_rank(-1 * vec_avg(price_range_standard_deviation_2), 90), industry) + 0.18 * group_rank(ts_rank(-1 * vec_avg(main_session_volume_stddev), 90), industry) + 0.20 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests event-session calm/absorption rather than fast earnings or reported FCF."
+  },
+  {
+    "name": "v77_post_news_underreaction_fast_small",
+    "family": "event_session_absorption",
+    "hypothesis": "Positive social/earnings context with weak immediate post-news price reaction can capture underreaction while staying less FCF/news-parent heavy.",
+    "expression": "0.25 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.18 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry) + 0.22 * group_rank(ts_rank(-1 * vec_avg(main_session_ninety_minute_change_pct), 60), industry) + 0.20 * rank(-1 * ts_rank((close - vec_avg(vwap_from_news_to_close_2_1555)) / close, 20)) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Small fast-earnings context but event reaction is the largest differentiator; expected corr risk vs JjpPv3N2 must be checked."
+  },
+  {
+    "name": "v77_pre_to_post_session_absorption",
+    "family": "event_session_absorption",
+    "hypothesis": "Pre-market/news-session VWAP gap and social relief may capture overnight/pre-market overreaction rather than main-session daily reversal.",
+    "expression": "0.28 * rank(-1 * ts_rank((vec_avg(vwap_pre_session_1555) - vec_avg(vwap_from_news_to_close_2_1555)) / close, 20)) + 0.22 * group_rank(ts_rank(-1 * vec_avg(pct_change_thirty_minute_post_news_1555), 60), industry) + 0.22 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.13 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses pre-session and post-news zero-user fields; avoids reported FCF and ordinary options."
+  }
+]

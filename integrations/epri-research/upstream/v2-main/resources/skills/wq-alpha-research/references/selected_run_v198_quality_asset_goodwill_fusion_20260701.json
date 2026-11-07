@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v198_totgw_actual_stability",
+    "family": "quality_asset_goodwill_fusion",
+    "hypothesis": "Goodwill burden that is low, stable, and close to analyst total-goodwill expectations can identify cleaner acquisition accounting. Pairing it with operating cash profitability tests a non-news, non-option, non-liability quality sleeve outside the recent closed routes.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_actuals_advanced_af_nd_totgw_value / assets, 252), 126), industry) + 0.200 * group_rank(ts_rank(-1 * anl4_fs_actuals_advanced_af_nd_totgw_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totgw_high - anl4_fs_detail_estimates_advanced_af_nd_totgw_low) / assets, 126), industry) + 0.160 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.120 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No CFI/social/graph/news-chain/current-liability/sales-option/FCF-contract/tax/prepaid/WDPQ. Strict-check against mL8j98w9, RRpm5LEo, E5wRq3ZG, and 78wvjvW8."
+  },
+  {
+    "name": "v198_acquired_goodwill_discipline",
+    "family": "acquisition_goodwill_quality",
+    "hypothesis": "Acquisition quality should be better when the purchase price is not dominated by new goodwill and when operating profitability remains strong. This uses underused acquired-goodwill footnote fields rather than broad M&A/news sentiment.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.260 * group_rank(ts_rank(-1 * acquired_goodwill_value / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * acquisition_goodwill_amount / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * fn_business_combination_assets_aquired_goodwill_a / assets, 126), industry) + 0.150 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.110 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests acquisition-accounting discipline without competitor/customer graph, news M&A sentiment, debt, or ordinary EPS/value sleeves."
+  },
+  {
+    "name": "v198_asset_contraction_goodwill_profit",
+    "family": "asset_discipline_goodwill_profit",
+    "hypothesis": "Analysts reducing total-asset expectations while goodwill burden is also falling can mark balance-sheet discipline rather than simple value exposure. Operating EBITDA yield is only a stabilizer, not the parent.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.280 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(goodwill / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.110 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Boundary fusion of total-asset contraction and goodwill discipline. Reject if it maps to 78wvjvW8, mL8j98w9, RRpm5LEo, or old EPS/value clusters."
+  },
+  {
+    "name": "v198_aqi_goodwill_no_reversal",
+    "family": "asset_quality_goodwill_residual",
+    "hypothesis": "Asset quality and cash conversion are old but low-correlated parents; removing close/open reversal and adding goodwill improvement tests whether a cleaner accounting-quality residual remains.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.250 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(goodwill / assets, 252), 126), industry) + 0.150 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.110 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No direct debt, EPS, close/open, option, news, social, graph, or current-liability term. Checks whether AQI/cashflow quality still has independent capacity."
+  },
+  {
+    "name": "v198_bfl_totasset_goodwill",
+    "family": "bfl_quality_asset_discipline",
+    "hypothesis": "BFL profitability/quality scores are less crowded than standard fscore fields but weak alone. Combining them with total-asset estimate restraint and low expected goodwill tests a model-plus-accounting discipline signal.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(fscore_bfl_profitability, 126), industry) + 0.200 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.150 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totgw_mean / assets, 126), industry) + 0.120 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids fscore_surface/fscore_growth/fscore_value contrarian path and keeps BFL as a confirmation layer. Strict-check against 3q7jJ130 and wpR9AnYd."
+  },
+  {
+    "name": "v198_totgw_surprise_assetlight",
+    "family": "goodwill_estimate_surprise_assetlight",
+    "hypothesis": "Actual total goodwill below analyst expectation, low total-goodwill dispersion, and shrinking total-asset expectations should mark cleaner balance-sheet surprises. This is intended as a distinct goodwill-estimate path rather than a raw value or news route.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * group_rank(ts_rank(-1 * (anl4_fs_actuals_advanced_af_nd_totgw_value - anl4_fs_detail_estimates_advanced_af_nd_totgw_mean) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totgw_high - anl4_fs_detail_estimates_advanced_af_nd_totgw_low) / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.150 * group_rank(ts_rank(operating_income / assets, 126), subindustry) + 0.110 * group_rank(ts_rank(fscore_bfl_quality, 126), industry) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Uses low-alphaCount total-goodwill actual/estimate fields. Stop if sparse coverage causes LOW_SUB_UNIVERSE or if corr moves to 78wvjvW8/KPbZ0eLg."
+  }
+]

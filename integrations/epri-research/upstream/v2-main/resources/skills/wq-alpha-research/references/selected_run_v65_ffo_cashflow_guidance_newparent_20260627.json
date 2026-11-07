@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v65_ffoa_guidance_improvement",
+    "family": "ffo_ffoa_guidance_newparent",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Adjusted funds-from-operations guidance may capture a real-estate/cash-earning expectation channel that is distinct from reported FCF/equity and shareholder-equity guidance.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_ffoa_minguidance + anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance) / (2 * cap), 63), 126), industry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_ffoa_minguidance + anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance) / (2 * cap), 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance - anl4_fs_guidances_advanced_af_nd_ffoa_minguidance) / abs(cap), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Primary fresh guidance probe; reject if it maps to reported FCF or sh-equity guidance actives."
+  },
+  {
+    "name": "v65_ffoa_guidance_subindustry",
+    "family": "ffo_ffoa_guidance_newparent",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Subindustry peer-ranking may isolate FFOA guidance against more comparable firms and reduce broad analyst-expectation correlation.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_ffoa_minguidance + anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance) / (2 * cap), 63), 126), subindustry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_ffoa_minguidance + anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance) / (2 * cap), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance - anl4_fs_guidances_advanced_af_nd_ffoa_minguidance) / abs(cap), 126), subindustry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Peer-axis sibling only; do not rescue further if both FFOA variants fail or correlate."
+  },
+  {
+    "name": "v65_qf_ffo_guidance_improvement",
+    "family": "quarterly_ffo_guidance",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Quarterly FFO guidance may shift timing away from annual cash-profitability factors while preserving cash-earnings guidance information.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_qf_nd_ffo_minguidance + anl4_fs_guidances_advanced_qf_nd_ffo_maxguidance) / (2 * cap), 63), 126), industry) + 0.25 * group_rank(ts_rank((anl4_fs_guidances_advanced_qf_nd_ffo_minguidance + anl4_fs_guidances_advanced_qf_nd_ffo_maxguidance) / (2 * cap), 126), industry) + 0.15 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_ffo_maxguidance - anl4_fs_guidances_advanced_qf_nd_ffo_minguidance) / abs(cap), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Quarterly FFO timing test; strict correlation gate against P0pgZllw, 9qwWXNW9, and O0p8JGJq."
+  },
+  {
+    "name": "v65_ffoa_cfo_guidance_mix",
+    "family": "ffoa_cfo_guidance_mix",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "FFOA guidance may need a small CFO-guidance confirmation term to avoid being too narrow, while still keeping CFO below a supporting weight because prior CFO-only probes were weak.",
+    "expression": "0.40 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_ffoa_minguidance + anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance) / (2 * cap), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_ffoa_minguidance + anl4_fs_guidances_advanced_af_nd_ffoa_maxguidance) / (2 * cap), 63), 126), industry) + 0.20 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_cfo_minguidance + anl4_fs_guidances_advanced_af_nd_cfo_maxguidance) / (2 * cap), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 14,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "CFO is capped at 20% because CFO actual/guidance was weak in v37/v50/v56."
+  },
+  {
+    "name": "v65_cff_guidance_abs_discipline",
+    "family": "cashflow_financing_guidance",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Low absolute financing-cash-flow guidance may proxy less external financing dependence without using debt, buyback, or credit-facility fields.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cff_minguidance + anl4_fs_guidances_advanced_af_nd_cff_maxguidance) / (2 * assets)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cff_maxguidance - anl4_fs_guidances_advanced_af_nd_cff_minguidance) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "One-shot annual CFF guidance test; stop if it repeats weak v45 CFF forecast-stability behavior."
+  },
+  {
+    "name": "v65_cfi_guidance_abs_discipline",
+    "family": "cashflow_investing_guidance",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Low absolute investing-cash-flow guidance may capture restrained investment intensity without using capex guidance, which is now consumed by 9qwWXNW9.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cfi_maxguidance - anl4_fs_guidances_advanced_af_nd_cfi_minguidance) / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Different from capex guidance and CFI estimates; one-shot only."
+  },
+  {
+    "name": "v65_soe_guidance_burden",
+    "family": "stock_option_expense_guidance",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Lower stock-option-expense guidance may capture future dilution/compensation burden without using realized SBP expense, employee-liability, or share-count contraction fields.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * (anl4_fs_guidances_advanced_qf_nd_soe_minguidance + anl4_fs_guidances_advanced_qf_nd_soe_maxguidance) / (2 * abs(sales)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_qf_nd_soe_maxguidance - anl4_fs_guidances_advanced_qf_nd_soe_minguidance) / abs(sales), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Avoids allocated_sbp_expense_total and employee-liability fields that mapped to pw6jz8ob/MPpGzqwr."
+  },
+  {
+    "name": "v65_grossincome_guidance_improvement",
+    "family": "grossincome_guidance_retest",
+    "source": "ffo_cashflow_guidance_newparent_v65_20260627",
+    "hypothesis": "Prior gross-income guidance level was weak; testing improvement plus coverage rather than pure floor may reveal whether gross-income guidance has any usable direction.",
+    "expression": "0.40 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance - anl4_fs_guidances_advanced_af_nd_grossincome_minguidance) / abs(sales), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Final gross-income guidance retest; stop the family if weak again."
+  }
+]

@@ -1,0 +1,8 @@
+DeepScientist Harness Research Suite 0.2.0
+Integration, local service and adapters assembled 2026-10-21.
+Contains copied and adapted DeepScientist V2 source. The integrated package is AGPL-3.0-only.
+Original copyright notices and individual source-license headers are preserved.
+See licenses/DeepScientist-NOTICE, licenses/V2-THIRD_PARTY_NOTICES.md,
+licenses/Harness-LICENSE, licenses/Airalogy-LICENSE and upstream source notices.
+Source revisions and the patches applied to copied files are in source-records/.
+Third-party dependency licenses remain applicable; dependencies are installed from locked manifests.

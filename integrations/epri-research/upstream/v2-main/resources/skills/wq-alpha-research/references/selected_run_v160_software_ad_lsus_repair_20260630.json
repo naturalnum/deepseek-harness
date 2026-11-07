@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v160_software_ip_cap58_subindustry",
+    "family": "software_ip_lsus_repair",
+    "hypothesis": "The v159 software/IP burden signal was strong but TOP1000-fragile. A cap58/SUBINDUSTRY version tests whether the specific software and patent/IP overhang survives among larger, more comparable firms.",
+    "expression": "trade_when(rank(cap) > 0.58, 0.240 * group_rank(ts_rank(-1 * capitalized_software_gross_value / assets, 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * gross_patents_ip_intangible_assets / assets, 126), subindustry) + 0.150 * group_rank(ts_rank(-1 * patents_ip_amortization_total / assets, 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.140 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair for xAxWOnjq. Reject if Fitness drops below 1.10 or if it maps to goodwill/intangible/PPE actives."
+  },
+  {
+    "name": "v160_software_ip_domestic_confirm",
+    "family": "software_ip_lsus_repair",
+    "hypothesis": "If software/IP burden is unstable in the broad universe, requiring domestic operating support may separate clean software/IP asset-light firms from fragile intangible-heavy names.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.220 * group_rank(ts_rank(-1 * capitalized_software_gross_value / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * gross_patents_ip_intangible_assets / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * patents_ip_amortization_total / assets, 126), industry) + 0.180 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.120 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Adds the clean-check domestic-focus sleeve from v159, but keeps software/IP as the parent. Strict-check against e7OVQKGN and broad intangible actives."
+  },
+  {
+    "name": "v160_software_ip_lowbeta_no_reversal",
+    "family": "software_ip_lsus_repair",
+    "hypothesis": "Removing the 5-day reversal sleeve and using only low-beta/low-correlation stabilization tests whether the software/IP burden signal can stand without a technical component that may drive sub-universe fragility.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.270 * group_rank(ts_rank(-1 * capitalized_software_gross_value / assets, 126), industry) + 0.220 * group_rank(ts_rank(-1 * gross_patents_ip_intangible_assets / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * patents_ip_amortization_total / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.160 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No reversal sleeve. If this fails LSUS or correlation, close software/IP burden as primary."
+  },
+  {
+    "name": "v160_advertising_cap58_subindustry",
+    "family": "advertising_productivity_lsus_repair",
+    "hypothesis": "The v159 advertising productivity signal cleared Sharpe/Fitness but failed LOW_SUB_UNIVERSE. A cap58/SUBINDUSTRY version tests whether low advertising intensity plus asset turnover survives in larger peer groups.",
+    "expression": "trade_when(rank(cap) > 0.58, 0.300 * group_rank(ts_rank(-1 * abs(fnd6_xad) / sales, 126), subindustry) + 0.230 * group_rank(ts_rank(sales / assets, 126), subindustry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.130 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * ts_delta(abs(fnd6_xad) / sales, 252), 126), subindustry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Direct LSUS repair for Wjp01wGx; includes falling ad intensity as a distinct operating-discipline term."
+  },
+  {
+    "name": "v160_advertising_falling_intensity_largecap",
+    "family": "advertising_productivity_lsus_repair",
+    "hypothesis": "Falling advertising intensity may be cleaner than low advertising intensity alone, avoiding structurally low-ad industries while preserving the demand-quality interpretation.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.270 * group_rank(ts_rank(-1 * ts_delta(abs(fnd6_xad) / sales, 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(fnd6_xad) / sales, 126), industry) + 0.190 * group_rank(ts_rank(sales / assets, 126), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.150 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No 5-day reversal; larger-cap falling advertising intensity repair."
+  },
+  {
+    "name": "v160_advertising_domestic_focus",
+    "family": "advertising_productivity_lsus_repair",
+    "hypothesis": "Advertising discipline may be more stable for firms with domestic revenue support. Combining low ad intensity with domestic revenue/EBIT tests whether the v159 LSUS failure was a cross-border/geographic fragility issue.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.260 * group_rank(ts_rank(-1 * abs(fnd6_xad) / sales, 126), industry) + 0.210 * group_rank(ts_rank(domestic_revenue_amount / sales, 126), industry) + 0.180 * group_rank(ts_rank(domestic_ebit_value / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.090 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Advertising parent with domestic-focus confirmation; reject if it becomes ordinary domestic-profitability or intersegment/FX-like."
+  }
+]

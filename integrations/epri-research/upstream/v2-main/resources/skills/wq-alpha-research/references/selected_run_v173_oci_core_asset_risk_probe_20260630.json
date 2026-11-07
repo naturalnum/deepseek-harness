@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v173_oci_hedge_noise_relief",
+    "family": "oci_hedge_noise_relief",
+    "hypothesis": "Large AFS, derivative-hedge, cash-flow hedge, and FX-translation OCI swings can represent mark-to-market noise and balance-sheet opacity. Companies with cleaner OCI/hedge exposure after price shocks may have lower hidden risk without using foreign/domestic profit, debt, news, or analyst operational sleeves.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.220 * group_rank(ts_rank(-1 * abs(available_for_sale_securities_oci_adjustment) / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(oci_derivatives_hedge_net) / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(cumulative_oci_cash_flow_hedge_net) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fx_translation_oci_net_tax) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure OCI/hedge cleanliness, no foreign profit, no intersegment, no domestic EBIT. Strict-check against 9qwdEajr, P0pgZllw, omKoPEb6, and old derivative/AFS weak probes."
+  },
+  {
+    "name": "v173_oci_delta_core_stability",
+    "family": "oci_delta_core_stability",
+    "hypothesis": "The level of OCI disclosures was historically weak, but low year-over-year OCI/hedge shock combined with a low-use S&P core-earnings signal may capture accounting stability rather than ordinary profitability or foreign exposure.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.230 * group_rank(ts_rank(-1 * abs(ts_delta(available_for_sale_securities_oci_adjustment / assets, 252)), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(ts_delta(oci_derivatives_hedge_net / assets, 252)), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(ts_delta(foreign_currency_translation_oci_net / assets, 252)), 126), industry) + 0.160 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests delta-stability instead of absolute OCI level. Core earnings is a small confirmer only; reject if it maps to ordinary quality/value actives."
+  },
+  {
+    "name": "v173_core_earnings_nonrecurring_gap",
+    "family": "sp_core_earnings_nonrecurring_gap",
+    "hypothesis": "S&P core earnings fields may isolate persistent operating earnings after non-core sale/gain adjustments. A clean core-earnings basket can test whether low-use FND6 core fields add capacity outside ordinary operating-income, FCF, netprofit, and guidance actives.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(fnd6_newqv1300_spceq / assets, 126), industry) + 0.220 * group_rank(ts_rank(fnd6_newqv1300_spcep12 / assets, 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glced12) / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_glcea12) / assets, 126), industry) + 0.110 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No operating_income, EPS yield, FCF, or analyst estimates. Stop if high-corr to ordinary quality/profitability actives."
+  },
+  {
+    "name": "v173_prepaid_retirement_cost_relief",
+    "family": "prepaid_retirement_future_cost_relief",
+    "hypothesis": "High prepaid expenses and retirement/post-retirement plan costs can represent expenses shifted forward or future labor-benefit drag. A low burden signal may capture future expense relief without using v169 employee-liability/labor-news fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * prepaid_expense_total_2 / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * prepaid_expense_total / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(fnd6_newqv1300_prcaq) / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Prepaid/future benefit-cost burden, not current payable, lease, debt, labor CSS/NIP, or employee compensation liability."
+  },
+  {
+    "name": "v173_total_assets_guidance_discipline",
+    "family": "total_assets_guidance_discipline",
+    "hypothesis": "Analyst and management expectations for total assets may measure balance-sheet expansion discipline. Tight, conservative asset forecasts with improving estimate breadth could indicate asset-light control outside sales, SG&A, CFO, capex, and netprofit estimate routes.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.250 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 126), industry) + 0.200 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totassets_high - anl4_fs_detail_estimates_advanced_af_nd_totassets_low) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_number, 63), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_totassets_minguidance + anl4_fs_guidances_advanced_af_nd_totassets_maxguidance) / (2 * assets)), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Asset-base forecast discipline only. Reject if it simply becomes total-assets/netprofit/geographic quality capacity."
+  },
+  {
+    "name": "v173_return_volume_model_dryup",
+    "family": "return_volume_model_risk_dryup",
+    "hypothesis": "When returns are weakly coupled to volume shocks and short-horizon idiosyncratic risk is compressing, price pressure may be less crowded. Adding contrarian model-derivative ranks tests a construction-level timing profile without news, social, option, debt, analyst financial-statement estimates, or fundamental quality fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.250 * group_rank(ts_rank(-1 * ts_corr(returns, volume / adv20, 20), 90), industry) + 0.200 * group_rank(ts_rank(-1 * abs(returns) * volume / adv20, 20), industry) + 0.170 * rank(-1 * ts_rank(analyst_revision_rank_derivative, 90)) + 0.140 * rank(-1 * ts_rank(multi_factor_static_score_derivative, 90)) + 0.130 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "A construction probe, not an option/model sibling: no option surface, no social/news, no EPS/operating-income/value. Strict-check vs mL86Jle1, 1Y7jOjvR, MPpGzqwr, and e7OG3bmz."
+  }
+]

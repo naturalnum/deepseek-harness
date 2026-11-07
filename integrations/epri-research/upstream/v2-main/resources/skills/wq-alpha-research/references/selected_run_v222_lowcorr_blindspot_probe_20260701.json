@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v222_ppe_balance_delivery_proxy",
+    "family": "lowcorr_active_pnl_proxy",
+    "hypothesis": "A compact blend of equipment-age discipline, shareholder-equity delivery versus analyst expectations, and a small simple profitability/reversal sleeve may capture asset quality and balance-sheet delivery without relying on the closed EV/competitor, EBIT/netdebt, FCF/capex, or gross-guidance routes.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.220 * rank(-(close / open - 1)) + 0.170 * group_rank(ts_rank(operating_income / equity, 126), industry) + 0.220 * group_rank(ts_rank(accumulated_depreciation_depletion_amortization_ppne / ppe_gross_value, 126), industry) + 0.140 * group_rank(ts_rank(-1 * ppe_gross_value / assets, 126), industry) + 0.170 * group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_sh_equity_value - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean) / abs(assets), 126), pv13_hierarchy_min51_f1_513_sector) + 0.080 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "ACTIVE-PnL scan prior suggested the LLpGdlrm + PPE-age + sh-equity-delivery corner has max corr around 0.61. Treat this as a strict corr-gated proxy, not a sibling; reject if it correlates to 88zJ8RMW, KPbZ0eLg, LLpGdlrm, or book/PPE actives above 0.68."
+  },
+  {
+    "name": "v222_news12_tick_calm_reversal",
+    "family": "news12_event_microstructure_blindspot",
+    "hypothesis": "After-news sessions with low abnormal tick/volume intensity, narrow range, and negative 120-minute reaction may indicate low-crowding temporary pressure rather than broad event attention; this tests a tick-count microstructure surface distinct from threshold-time path speed.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * vec_avg(main_session_volume_stddev), 20), industry) + 0.210 * group_rank(ts_rank(-1 * vec_avg(total_tick_count_4_1555), 20), industry) + 0.230 * rank(-1 * vec_avg(main_pct_change_one_twenty_minute_post_news)) + 0.170 * group_rank(ts_rank(-1 * vec_avg(price_range_standard_deviation_2), 20), industry) + 0.130 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses news12 VECTOR fields only through vec_avg. This is a blindspot probe; close if it repeats the weak news12 path-speed / reaction-calm failures."
+  },
+  {
+    "name": "v222_sbp_exercisable_overhang_relief",
+    "family": "share_based_payment_structure",
+    "hypothesis": "Low exercisable option overhang and low nonvested equity count, combined with high forfeiture/expiration relief and higher grant exercise prices, may reflect lower future dilution pressure without using ordinary buyback/share-count or broad payout fields.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.300 * group_rank(ts_rank(-1 * exercisable_options_count / common_stock_shares_outstanding_count, 126), industry) + 0.230 * group_rank(ts_rank(-1 * sbp_equity_nonvested_count / common_stock_shares_outstanding_count, 126), industry) + 0.190 * group_rank(ts_rank(option_award_forfeitures_expirations_count / common_stock_shares_outstanding_count, 126), industry) + 0.140 * group_rank(ts_rank(option_grant_avg_exercise_price / close, 126), industry) + 0.140 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Related award/forfeiture fields have been strong but often LSUS/high-corr. This version avoids fair-value, buyback, stock-comp expense, and payout sleeves; reject if it maps to 3q7PkXGN / MPpGzqwr / option-dividend capacity."
+  },
+  {
+    "name": "v222_cfps_guidance_credibility",
+    "family": "cashflow_per_share_guidance",
+    "hypothesis": "Companies with higher and tighter cash-flow-per-share guidance and analyst CFPS estimates may have cleaner per-share cash generation visibility. This tests a low-crowding CFPS guidance surface without reported FCF/EV or capex-guidance parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank((anl4_fs_guidances_basic_qf_nd_cfps_minguidance + anl4_fs_guidances_basic_qf_nd_cfps_maxguidance) / (2 * close), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_basic_qf_nd_cfps_maxguidance - anl4_fs_guidances_basic_qf_nd_cfps_minguidance) / close, 126), industry) + 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_mean / close, 126), industry) + 0.160 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_high - anl4_fs_detail_estimates_basic_af_v4_nd_cfps_low) / close, 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_cfps_number, 63), 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "CFPS/FCFPS has past high-corr history, so this is a one-shot credibility surface probe. Do not repair with EPS, FCF/EV, capex, book/BVPS, buyback, or ordinary profitability sleeves."
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v177_cash_tax_accrual_quality",
+    "family": "tax_cash_quality",
+    "hypothesis": "Cash taxes paid and current tax expense relative to pretax/book tax expense can proxy for earnings backed by real taxable income, while heavy deferred tax expense and valuation allowance indicate lower-quality accrual tax benefits.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank(income_taxes_paid_total / abs(pretax_income), 126), industry) + 0.250 * group_rank(ts_rank(current_income_tax_expense_amount / abs(income_tax_expense_total), 126), industry) - 0.230 * group_rank(ts_rank(annual_deferred_income_tax_expense / abs(income_tax_expense_total), 126), industry) - 0.200 * group_rank(ts_rank(deferred_tax_assets_valuation_allowance_value / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "High-coverage, low-crowding tax footnote fields. Reject if it maps to old accounting-quality/prepaid-tax actives or LSUS fails."
+  },
+  {
+    "name": "v177_deferred_tax_asset_recovery_clean",
+    "family": "tax_dta_recovery",
+    "hypothesis": "Falling deferred-tax valuation allowance and smaller loss-carryforward burden may indicate improving confidence in future taxable income; a cashflow support term tests whether the recovery is economically backed.",
+    "expression": "trade_when(rank(cap) > 0.35, -0.300 * group_rank(ts_rank(ts_delta(deferred_tax_assets_valuation_allowance_value / abs(assets), 252), 126), industry) - 0.240 * group_rank(ts_rank(deferred_tax_assets_loss_carryforward / abs(assets), 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * abs(net_deferred_tax_assets_liabilities_2) / abs(assets), 126), industry) + 0.140 * group_rank(ts_rank(cashflow_op / abs(assets), 126), subindustry) - 0.100 * group_rank(ts_rank(annual_deferred_income_tax_expense / abs(assets), 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "A DTA/valuation-allowance recovery route, not a generic low-tax route. Cashflow term is small and only a credibility support."
+  },
+  {
+    "name": "v177_deferred_federal_current_tax_spread",
+    "family": "tax_current_vs_deferred",
+    "hypothesis": "Companies paying/recognizing current tax rather than relying on deferred federal tax benefits should have cleaner reported earnings; this tests a less-used federal/current/deferred tax spread.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.310 * group_rank(ts_rank(current_income_tax_expense_amount / abs(pretax_income), 126), industry) + 0.250 * group_rank(ts_rank(income_tax_payments / abs(pretax_income), 126), industry) - 0.240 * group_rank(ts_rank(deferred_federal_income_tax_expense / abs(pretax_income), 126), industry) - 0.200 * group_rank(ts_rank(deferred_tax_liabilities_total_4 / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses very low-alphaCount tax fields. Watch for sparse denominator problems and concentrated weight despite high reported coverage."
+  },
+  {
+    "name": "v177_future_intangible_amortization_relief",
+    "family": "intangible_amortization_schedule",
+    "hypothesis": "Lower scheduled future amortization relative to sales and finite-lived intangible base should reduce future EPS drag without being the same as goodwill impairment or broad profitability.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.280 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), industry) + 0.220 * group_rank(ts_rank(-1 * annual_intangible_amortization_expense_second_year / abs(sales), 126), industry) + 0.190 * group_rank(ts_rank(-1 * intangible_amortization_expense_year_three / abs(sales), 126), industry) + 0.160 * group_rank(ts_rank(-1 * intangible_amortization_expense_fourth_year / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(finite_intangibles_gross_value / abs(assets), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Cold finite-lived intangible amortization schedule. Avoids ordinary goodwill guidance and impairment fields."
+  },
+  {
+    "name": "v177_intangible_amortization_burden_falling",
+    "family": "intangible_amortization_burden",
+    "hypothesis": "A falling amortization burden and lower accumulated-amortization intensity can signal fading acquisition-related EPS drag, a different mechanism from standard operating profitability.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * ts_delta(intangible_assets_amortization / abs(sales), 252), 126), industry) + 0.240 * group_rank(ts_rank(-1 * accumulated_amortization_finite_intangibles / abs(finite_intangibles_gross_value), 126), industry) + 0.200 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / abs(sales), 126), industry) + 0.160 * group_rank(ts_rank(annual_intangible_assets_net_carrying_value / abs(assets), 126), subindustry) + 0.100 * group_rank(ts_rank(-1 * year5_intangible_amortization_expense / abs(sales), 126), industry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Burden-change variant. Reject if it simply recreates acquisition/goodwill or operating-quality actives."
+  },
+  {
+    "name": "v177_ptpr_guidance_tax_clean_gap",
+    "family": "guidance_tax_divergence",
+    "hypothesis": "Reported pretax-income guidance above analyst mean is more credible when current/cash tax support is strong and deferred-tax valuation allowance is not rising; this tests guidance-footnote divergence rather than pure guidance.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank((anl4_fs_guidances_advanced_qf_nd_ptpr_minguidance - anl4_fs_detail_estimates_advanced_af_nd_ptpr_mean) / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(current_income_tax_expense_amount / abs(pretax_income), 126), industry) + 0.180 * group_rank(ts_rank(income_taxes_paid_total / abs(pretax_income), 126), industry) - 0.180 * group_rank(ts_rank(annual_deferred_income_tax_expense / abs(pretax_income), 126), industry) - 0.100 * group_rank(ts_rank(ts_delta(deferred_tax_assets_valuation_allowance_value / abs(assets), 252), 126), subindustry), -1)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "One guidance-divergence candidate only; pure management guidance was closed in v166, so this must be carried by tax cleanliness."
+  }
+]

@@ -1,0 +1,32 @@
+--- resources/skills/science/SKILL.md
++++ plugins/deepscientist/skills/research-science/SKILL.md
+@@ -1,7 +1,19 @@
+ ---
+-name: deepscientist-science
++name: research-science
+ description: Guide scientific work in DeepScientist. Use real tools for analysis, keep the sources and files behind important conclusions, choose extra domain Skills only when needed, and publish a clear Science report for user-facing results.
+ ---
++
++# Harness runtime mapping
++
++This is the copied V2 science skill with an explicit transport adapter. The complete source body follows. This mapping takes precedence over legacy tool names below.
++
++- Use research_state to inspect this configured single research workspace; it is shared across conversations, not automatically session-isolated.
++- research_protocol_put and research_record_* own protocol versions and experimental records. Read the latest revision before updates. Never override human-owned fields.
++- research_chart_render implements chart validation/rendering, not the full science_artifact ledger.
++- research_literature_search returns candidate metadata, not verified full-text evidence.
++- science_artifact, project_workspace, research_evidence and user_input names below belong to V2. Do not call nonexistent tools. Use Harness filesystem/Git/ask-user tools where available, and report unsupported domain actions.
++- Scientific reports and other files remain ordinary workspace files. The copied complete skill corpus is available by v2-<folder> names for explicit user invocation; it is not a claim that every external runtime is installed.
++- Relative ../ resources below are under the packaged upstream/v2-main/resources/skills/science directory; use the absolute sibling resource base published by this package or locate that folder before reading.
+ 
+ # DeepScientist Science
+ 
+@@ -22,7 +34,7 @@
+ - Before presenting a command as runnable, record its working directory and run
+   a small relevant check from that directory. If data, software, hardware, or
+   credentials are unavailable, say that the result was not verified.
+-- Use `research_evidence` to find and read papers or database records.
++- Use `research_literature_search` to find paper metadata; read full text using native web/file tools before asserting findings.
+ - Use `science_artifact` to save evidence, conclusions, reports, files,
+   versions, and Preview pages.
+ - Use `deepscientist-scientific-visuals` when deciding whether a visual helps

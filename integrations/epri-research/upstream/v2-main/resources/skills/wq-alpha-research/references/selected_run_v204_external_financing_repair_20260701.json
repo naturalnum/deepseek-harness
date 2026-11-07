@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v204_cff_independence_return_lift",
+    "family": "external_financing_independence_repair",
+    "hypothesis": "The v203 seed was low-correlation and check-clean but missed Fitness by 0.04. A small 5-day return-lift term and CFF dispersion control may raise returns without changing the parent away from external-financing independence.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / abs(assets), 126), industry) + 0.210 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_high - anl4_fs_detail_estimates_advanced_af_nd_cff_low) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.070 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / abs(assets), 126), industry) + 0.040 * rank(-1 * ts_mean(returns, 5)) + 0.020 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Most direct Fitness repair for 9qw2gXGe. Reject if corr to QPaze5zX/e7OW7dL6/3q7PkXGN crosses 0.68."
+  },
+  {
+    "name": "v204_cff_independence_tight_market",
+    "family": "external_financing_independence_repair",
+    "hypothesis": "Removing most credit-facility exposure and emphasizing tight CFF estimate dispersion tests whether the low-correlation edge comes from external-financing stability rather than debt/fixed-commitment or quality capacity.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / abs(assets), 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_high - anl4_fs_detail_estimates_advanced_af_nd_cff_low) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.100 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "MARKET neutral and low truncation variant to test whether industry grouping was suppressing returns or creating the near-corr boundary."
+  },
+  {
+    "name": "v204_cff_independence_hump_smooth",
+    "family": "external_financing_independence_repair",
+    "hypothesis": "A hump-smoothed CFF independence signal may improve realized Sharpe by limiting noisy changes in analyst CFF fields, while preserving the same economic parent and avoiding extra quality or news sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, hump(0.270 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.160 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_high - anl4_fs_detail_estimates_advanced_af_nd_cff_low) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.040 * rank(-1 * ts_mean(returns, 5))), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Construction-level smoothing probe. If hump reduces returns/Fitness or causes platform issue, do not keep smoothing this route."
+  },
+  {
+    "name": "v204_cff_pure_independence_no_caps_credit",
+    "family": "external_financing_independence_repair",
+    "hypothesis": "Dropping capital-surplus and credit-facility sleeves tests the pure CFF independence parent. If this remains near the gate with lower correlation, it is a cleaner future repair seed; if weak, v203 strength relied on old balance-sheet sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.310 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_cff_value) / abs(assets), 126), industry) + 0.250 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_high - anl4_fs_detail_estimates_advanced_af_nd_cff_low) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cff_number, 63), 126), industry) + 0.060 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.040 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure-parent ablation. Submit only if it unexpectedly clears Fitness and corr; otherwise do not continue pure CFF variants."
+  }
+]

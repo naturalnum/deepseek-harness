@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v98_comp_raw_minus_social_016",
+    "family": "fresh_residual_competitor_raw",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "Competitor underperformance plus intraday reversal remains strong, but the social-competitor ACTIVE cluster is occupied; a light social/news-risk subtraction may leave a cleaner competitor raw residual.",
+    "expression": "0.436 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.274 * rank(-(close / open - 1)) + 0.174 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.022 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.013 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.010 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: 1Y7jwanz minus 0.16*kq3Jjmrk; top ACTIVE corr about 0.62."
+  },
+  {
+    "name": "v98_comp_raw_minus_social_025",
+    "family": "fresh_residual_competitor_raw",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "A stronger social-competitor subtraction tests whether the raw competitor sleeve can trade a little strength for a larger self-correlation cushion.",
+    "expression": "0.400 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.260 * rank(-(close / open - 1)) + 0.160 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.035 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.020 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.015 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: 1Y7jwanz minus 0.25*kq3Jjmrk; top ACTIVE corr about 0.58."
+  },
+  {
+    "name": "v98_comp_option_minus_social_045",
+    "family": "fresh_residual_competitor_option",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "The competitor-option core is high fitness but partly maps to the social competitor cluster; subtracting that cluster should isolate a relationship/option timing residual.",
+    "expression": "0.240 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.068 * rank(-(close / open - 1)) + 0.088 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.140 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.140 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) - 0.063 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.036 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) - 0.027 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: leVMjWne minus 0.45*kq3Jjmrk; top ACTIVE corr about 0.66."
+  },
+  {
+    "name": "v98_news_vector_minus_social_045",
+    "family": "fresh_residual_news_vector",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "News-vector quality and editorial commentary are strong but overlap with social/news ACTIVE alphas; a moderate subtraction may keep the editorial signal while reducing social and VWAP-news overlap.",
+    "expression": "0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.180 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.050 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.095 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.135 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.113 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.068 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: 78wooKa1 minus 0.45*JjpPv3N2; top ACTIVE corr about 0.67."
+  },
+  {
+    "name": "v98_news_vector_minus_social_055",
+    "family": "fresh_residual_news_vector",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "A stronger social/news subtraction tests whether the editorial and news-QMB components survive after removing the crowded social/VWAP reaction sleeve.",
+    "expression": "0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.180 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.180 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.030 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.085 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) - 0.165 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) - 0.138 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.083 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: 78wooKa1 minus 0.55*JjpPv3N2; top ACTIVE corr about 0.62."
+  },
+  {
+    "name": "v98_customer_debt_aqi_minus_buyback_025",
+    "family": "fresh_residual_customer_debt_aqi",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "Low debt-extinguishment noise plus customer authority and AQI has borderline standalone quality; subtracting buyback/profitability should reduce payout-cluster overlap.",
+    "expression": "0.550 * group_rank(ts_rank(-1 * abs(debt_extinguishment_gain_loss_value) / assets, 126), industry) + 0.250 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.200 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.125 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.125 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Local PnL residual: O0p7kd3R minus 0.25*MPpGzqwr; top ACTIVE corr about 0.58."
+  },
+  {
+    "name": "v98_comp_hub_value_minus_aqi_option_030",
+    "family": "fresh_residual_competitor_hub_value",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "Competitor hub rank plus analyst value is strong but crowded through AQI/option and stockcomp/value routes; a compact AQI-option subtraction may leave a graph-value residual.",
+    "expression": "0.290 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.206 * rank(-(close / open - 1)) + 0.130 * group_rank(ts_rank(operating_income / equity, 126), subindustry) + 0.180 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.146 * group_rank(ts_rank(est_eps / close, 126), industry) - 0.066 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) - 0.042 * group_rank(ts_rank(-1 * debt / assets, 126), industry) - 0.060 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.033 * rank(-1 * ts_rank(returns * (volume / adv20), 10))",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: 2r755R08 minus 0.30*omKoaQMl, compacted to main blocking components; top ACTIVE corr about 0.66."
+  },
+  {
+    "name": "v98_aqi_comp_raw_minus_aqi_option_045",
+    "family": "fresh_residual_aqi_competitor_raw",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "AQI/value residual failed in v97, but AQI plus competitor raw may be different; subtracting the AQI-option ACTIVE proxy tests whether the competitor sleeve can rescue the remaining accounting-quality signal.",
+    "expression": "0.121 * group_rank(ts_rank(fnd6_aqi / assets, 126), industry) + 0.087 * group_rank(ts_rank(-1 * debt / assets, 126), industry) + 0.084 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.250 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.124 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) - 0.090 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) - 0.050 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) - 0.032 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Local PnL residual: KPbggqZx minus 0.45*omKoaQMl; not the v97 AQI/value route."
+  },
+  {
+    "name": "v98_forward_curve_minus_compvwap_020",
+    "family": "fresh_residual_forward_curve",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "Forward-curve carry was blocked by competitor/VWAP-risk rather than fscore; a direct compact subtraction of the competitor-VWAP proxy is the only remaining forward-curve test worth trying.",
+    "expression": "0.280 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.200 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.124 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.042 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) - 0.040 * rank(-1 * ts_rank((close - vwap) / close, 20)) - 0.025 * rank(ts_rank(volume / adv20, 20)) - 0.035 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 20,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Low-priority rescue: QPa033rr minus 0.20*1Y7jOjvR, compacted to the main blocker terms."
+  },
+  {
+    "name": "v98_css_earnings_minus_1y7w_045",
+    "family": "fresh_residual_css_earnings",
+    "source": "v98_local_pnl_residual_scan_20260628",
+    "hypothesis": "CSS earnings/cashflow is now partly occupied by 1Y7WOx9W; subtracting that exact option/sentiment residual tests whether the older CSS core has any remaining independent capacity.",
+    "expression": "0.239 * group_rank(ts_rank(rp_css_earnings, 90), industry) + 0.191 * group_rank(ts_rank(cashflow_op / assets, 126), subindustry) + 0.105 * rank(-(close / open - 1)) + 0.113 * rank(-1 * ts_mean(returns, 5)) + 0.050 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.011 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.050 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.023 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) - 0.036 * group_rank(ts_rank(ts_delta(scl12_sentiment_fast_d1, 20), 126), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Compacted local residual: QPaYNbjX minus the main 1Y7WOx9W CSS/option/sentiment terms; tiny IVRP/beta terms removed to stay below operator cap."
+  }
+]

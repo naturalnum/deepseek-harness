@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v56_pv13_cfo_capex_conversion",
+    "family": "pv13_product_group_cash_conversion",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Companies whose expected operating cash flow covers capex better than product peers may reflect capital-efficient cash conversion distinct from plain FCF/EV.",
+    "expression": "0.40 * group_rank(ts_rank((anl4_fs_detail_estimates_advanced_af_nd_cfo_mean - capital_expenditure_amount) / enterprise_value, 126), pv13_di_6l) + 0.25 * group_rank(ts_rank(-1 * capital_expenditure_amount / sales, 126), pv13_di_6l) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfo_high - anl4_fs_detail_estimates_advanced_af_nd_cfo_low) / assets, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses pv13_di_6l and CFO/capex conversion rather than the v55 FCF/EV + EBITDA/EV pair; strict corr gate vs E5wRq3ZG and MPp7RPxn."
+  },
+  {
+    "name": "v56_pv13_cash_tax_interest_quality",
+    "family": "pv13_cash_tax_interest",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Cash taxes paid can proxy durable taxable profitability, while low cash interest burden avoids levered value traps inside product groups.",
+    "expression": "0.45 * group_rank(ts_rank(income_taxes_paid_total / enterprise_value, 126), pv13_rcsed_6l) + 0.30 * group_rank(ts_rank(-1 * net_interest_paid / enterprise_value, 126), pv13_rcsed_6l) + 0.25 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoids deferred-tax allowance/prepaid-tax active branch; tests realized cash tax and interest burden as a different accounting-quality route."
+  },
+  {
+    "name": "v56_stock_comp_burden_product_peer",
+    "family": "share_based_compensation_burden",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Lower share-based compensation burden relative to product peers may indicate cleaner cash economics without using buyback, EPS, or close-open reversal.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * allocated_sbp_expense_total / sales, 126), pv13_di_5l) + 0.30 * group_rank(ts_rank(-1 * unrecognized_compensation_cost_nonvested_awards / assets, 126), pv13_di_5l) + 0.15 * group_rank(ts_rank(-1 * share_award_expense_total / sales, 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Revisits stock-compensation burden with product-peer ranking and no goodwill/tax/high-score stabilizer."
+  },
+  {
+    "name": "v56_credit_facility_unused_capacity",
+    "family": "credit_facility_liquidity",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Low drawn credit-facility usage and available borrowing capacity may identify liquidity-flexible firms without relying on broad debt or net-debt fields.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * credit_facility_outstanding_amount / credit_facility_max_borrowing, 126), industry) + 0.30 * group_rank(ts_rank(credit_facility_remaining_capacity / credit_facility_max_borrowing, 126), industry) + 0.25 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "New credit-facility route, separate from debt maturity/lease/debt-issuance branches that previously weakened or correlated."
+  },
+  {
+    "name": "v56_analyst_total_assets_discipline",
+    "family": "analyst_balance_sheet_discipline",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Lower expected asset base with tight analyst range may capture conservative investment discipline outside EPS growth and sales delivery.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_totassets_high - anl4_fs_detail_estimates_advanced_af_nd_totassets_low) / assets, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-EPS analyst balance-sheet surface; avoids sales actual surprise, EPSR, pretax visibility, and price-target/recommendation fields."
+  },
+  {
+    "name": "v56_analyst_shareholder_equity_cushion",
+    "family": "analyst_balance_sheet_cushion",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "A higher expected shareholder-equity cushion with narrow analyst disagreement may represent balance-sheet quality not identical to operating income or EPS yield.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_high - anl4_fs_detail_estimates_advanced_af_nd_sh_equity_low) / assets, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests shareholder-equity forecast confidence rather than EPS, sales, FCF, or price-target analyst surfaces."
+  },
+  {
+    "name": "v56_sga_discipline_visibility",
+    "family": "analyst_cost_discipline",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Lower expected SG&A intensity with tight analyst range may capture operating leverage and cost discipline distinct from raw profitability.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / sales, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high - anl4_fs_detail_estimates_advanced_af_nd_sga_low) / sales, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sga_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "A non-EPS, non-sales-delivery analyst cost surface; stop if it collapses into ordinary quality."
+  },
+  {
+    "name": "v56_pv13_cfo_forecast_confidence",
+    "family": "pv13_cfo_forecast_confidence",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "Expected operating cash flow strength and narrow CFO estimate range may work better inside product peer groups than standard industry comparisons.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), pv13_rcsed_6l) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfo_high - anl4_fs_detail_estimates_advanced_af_nd_cfo_low) / assets, 126), pv13_rcsed_6l) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "CFO forecast confidence, not FCF/EV valuation; watch corr vs E5wRq3ZG and cash-flow quality actives."
+  },
+  {
+    "name": "v56_dividend_guidance_confidence",
+    "family": "dividend_guidance_defensive_yield",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "High and narrow dividend guidance relative to price may capture defensive shareholder return without using buyback or share-count decline.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_guidances_basic_af_nd_div_minguidance / close, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_basic_af_nd_div_maxguidance - anl4_fs_guidances_basic_af_nd_div_minguidance) / close, 126), industry) + 0.30 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Dividend guidance route avoids buyback authorization/reacquired-shares branches that previously hit payout correlation."
+  },
+  {
+    "name": "v56_cash_tax_minus_interest_spread",
+    "family": "realized_profit_financing_spread",
+    "source": "balance_sheet_cashdiscipline_rotation_v56_20260627",
+    "hypothesis": "A high cash-tax-minus-interest spread relative to assets may represent realized profitability net of financing burden, with less direct overlap to ordinary FCF/EV.",
+    "expression": "0.50 * group_rank(ts_rank((income_taxes_paid_total - net_interest_paid) / assets, 126), pv13_di_6l) + 0.25 * group_rank(ts_rank(-1 * net_interest_paid / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A compact cash-profitability minus financing-burden signal; separate from deferred-tax/prepaid-tax active alpha."
+  }
+]

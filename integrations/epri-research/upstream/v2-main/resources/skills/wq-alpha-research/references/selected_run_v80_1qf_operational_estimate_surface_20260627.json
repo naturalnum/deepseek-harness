@@ -1,0 +1,52 @@
+[
+  {
+    "name": "v80_1qf_grossincome_visibility",
+    "family": "1qf_operational_estimate_surface",
+    "hypothesis": "Low-use 1Q forward gross income estimate quality may capture near-term operating leverage outside EPSR/long-term estimate routes.",
+    "expression": "0.38 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_grossincome_mean / sales, 126), industry) + 0.24 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_grossincome_high - anl4_fs_detail_estimate_1qf_v4_nd_grossincome_low) / abs(sales), 126), industry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_grossincome_number, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-EPSR operational estimate; reject if it maps to LLpZgaeL or grossincome guidance weak route."
+  },
+  {
+    "name": "v80_1qf_cfo_visibility",
+    "family": "1qf_operational_estimate_surface",
+    "hypothesis": "Near-term CFO estimate level plus narrow range may capture cash-conversion visibility without reported FCF or annual CFO delivery.",
+    "expression": "0.36 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_cfo_mean / assets, 126), industry) + 0.26 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_cfo_high - anl4_fs_detail_estimate_1qf_v4_nd_cfo_low) / abs(assets), 126), industry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_cfo_number, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Avoid reported FCF; strict corr gate vs P0pgZllw and 9qwWXNW9."
+  },
+  {
+    "name": "v80_1qf_sga_discipline",
+    "family": "1qf_operational_estimate_surface",
+    "hypothesis": "Low expected SG&A burden with narrow estimate range may identify near-term cost discipline in a different horizon from prior annual SG&A attempts.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_sga_mean / sales, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_sga_high - anl4_fs_detail_estimate_1qf_v4_nd_sga_low) / abs(sales), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_sga_number, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Prior annual SG&A/expense routes were weak; this is a one-pass horizon shift, not a broad rescue."
+  },
+  {
+    "name": "v80_1qf_ebit_dispersion_resolution",
+    "family": "1qf_operational_estimate_surface",
+    "hypothesis": "High-coverage 1Q EBIT with falling dispersion and rising coverage may provide a non-EPS operating visibility signal.",
+    "expression": "0.34 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_ebit_mean / assets, 126), industry) + 0.30 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_ebit_std / abs(assets), 126), industry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_ebit_number, 63), 126), industry) + 0.18 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses EBIT not EPSR/PTP; compare against akdb1ZqR/LLpZgaeL."
+  },
+  {
+    "name": "v80_1qf_balance_expectation_light",
+    "family": "1qf_operational_estimate_surface",
+    "hypothesis": "Low expected net debt plus disciplined total-asset expectation may capture balance-sheet quality without reported FCF or issuance fields.",
+    "expression": "0.35 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_totassets_number, 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Netdebt coverage is lower; strict corr gate vs P0pgZllw and balance-sheet expectation actives."
+  }
+]

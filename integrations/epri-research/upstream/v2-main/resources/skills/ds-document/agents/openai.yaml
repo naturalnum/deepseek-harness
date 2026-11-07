@@ -1,0 +1,8 @@
+interface:
+  display_name: "Chinese Official Documents"
+  short_description: "Draft Chinese official documents with verified facts"
+  brand_color: "#4B5563"
+  default_prompt: "Use $ds-document to draft a clear Chinese official document or decision report; add ds-write for evidence-heavy claims and oral for executive narrative polish when needed."
+
+policy:
+  allow_implicit_invocation: true

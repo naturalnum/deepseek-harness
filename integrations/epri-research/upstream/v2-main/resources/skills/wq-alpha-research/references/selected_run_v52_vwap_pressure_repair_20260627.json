@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v52_vwap_pressure_longer_window",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "Longer ranking window and slightly slower decay may improve Fitness for the low-correlation VWAP pressure reversal near-miss without moving into close-location capacity.",
+    "expression": "0.45 * rank(-1 * ts_rank((close - vwap) / close, 40)) + 0.20 * rank(ts_rank(volume / adv20, 30)) + 0.35 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repairs v51 pw65od6V by smoothing the VWAP-pressure signal; no close-location or close/open."
+  },
+  {
+    "name": "v52_vwap_pressure_low_range",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "Late-session VWAP pressure may reverse more cleanly when recent range is not elevated; replace the volume term with low range.",
+    "expression": "0.45 * rank(-1 * ts_rank((close - vwap) / close, 30)) + 0.25 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 28,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Should be less close-location-like than E5wRYVQR; strict correlation gate required."
+  },
+  {
+    "name": "v52_vwap_pressure_no_volume",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "The relative-volume term may add turnover without enough Fitness; pure VWAP pressure plus range/risk may be cleaner.",
+    "expression": "0.50 * rank(-1 * ts_rank((close - vwap) / close, 30)) + 0.20 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.30 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "A lower-turnover cleaner variant of v51 VWAP pressure reversal."
+  },
+  {
+    "name": "v52_vwap_pressure_group_ranked",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "Industry group ranking the VWAP pressure component may improve sub-universe robustness and reduce exposure to broad intraday pressure regimes.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * (close - vwap) / close, 30), industry) + 0.20 * group_rank(ts_rank(volume / adv20, 30), industry) + 0.35 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests group_rank instead of global rank; watch strength loss."
+  },
+  {
+    "name": "v52_vwap_pressure_industry_neutral",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "INDUSTRY neutralization may improve Fitness if MARKET neutralization leaves sector-level VWAP pressure noise.",
+    "expression": "0.40 * rank(-1 * ts_rank((close - vwap) / close, 30)) + 0.25 * rank(ts_rank(volume / adv20, 30)) + 0.35 * group_rank(ts_rank(-1 * (unsystematic_risk_last_90_days - unsystematic_risk_last_360_days), 90), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Neutralization ablation of pw65od6V-style structure."
+  },
+  {
+    "name": "v52_vwap_pressure_beta_corr_relief",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "Combining beta-slope and correlation-slope relief may stabilize the VWAP pressure reversal across sub-universes.",
+    "expression": "0.40 * rank(-1 * ts_rank((close - vwap) / close, 30)) + 0.20 * rank(ts_rank(volume / adv20, 20)) + 0.20 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Risk-stabilized version; reject if it maps to mL86Jle1 or option/news actives."
+  },
+  {
+    "name": "v52_vwap_pressure_low_turnover_hump",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "Hump smoothing may preserve VWAP reversal strength while lowering churn enough to improve Fitness.",
+    "expression": "hump(0.45 * rank(-1 * ts_rank((close - vwap) / close, 30)) + 0.20 * rank(ts_rank(volume / adv20, 30)) + 0.35 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry))",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Operator-smoothing probe; kill if hump reduces signal too much."
+  },
+  {
+    "name": "v52_vwap_pressure_abs_stability",
+    "family": "vwap_pressure_reversal_repair",
+    "source": "vwap_pressure_repair_v52_20260627",
+    "hypothesis": "Names with smaller absolute VWAP dislocation and low correlation may be stable; this tests whether the near-miss was truly directional or just stability.",
+    "expression": "0.45 * rank(-1 * ts_rank(abs(close / vwap - 1), 30)) + 0.25 * rank(-1 * ts_rank((high - low) / close, 20)) + 0.30 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Stability sign-control; likely lower Sharpe but different from directional VWAP pressure."
+  }
+]

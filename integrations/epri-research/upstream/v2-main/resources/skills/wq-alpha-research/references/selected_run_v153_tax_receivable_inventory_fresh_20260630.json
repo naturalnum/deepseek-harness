@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v153_uncertain_tax_position_relief",
+    "family": "tax_uncertainty_footnote",
+    "hypothesis": "Lower and declining unrecognized tax-position exposure indicates fewer hidden tax contingencies and cleaner future earnings quality, distinct from ordinary debt or profitability screens.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.330 * group_rank(ts_rank(-1 * unrecognized_tax_positions / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * unrecognized_tax_benefit_increase_current_period / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(tax_benefit_decrease_settlement / abs(assets), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-alphaCount tax footnote route; reject if it merely maps to generic quality/profitability actives."
+  },
+  {
+    "name": "v153_deferred_tax_realizability_clean",
+    "family": "deferred_tax_asset_quality",
+    "hypothesis": "Companies with lower valuation allowance against deferred tax assets and stable net deferred tax positions may have more credible future taxable income and cleaner accounting quality.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.310 * group_rank(ts_rank(-1 * deferred_tax_assets_valuation_allowance_value / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(deferred_tax_assets_net_value / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(ts_delta(net_deferred_tax_assets_liabilities_2 / abs(assets), 252)), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests DTA realizability, not ordinary tax expense; watch for value/quality correlation."
+  },
+  {
+    "name": "v153_cash_tax_quality_low_payable",
+    "family": "cash_tax_quality",
+    "hypothesis": "Paying cash taxes while carrying low taxes-payable overhang may signal real taxable earnings and less aggressive accrual/tax timing.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.320 * group_rank(ts_rank(income_taxes_paid_total / abs(assets), 126), industry) + 0.250 * group_rank(ts_rank(-1 * taxes_payable_total_value / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(ts_delta(income_taxes_paid_total / abs(assets), 252)), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Footnote cash-tax route; may correlate with ordinary profitability, so submit only if local corr is clean."
+  },
+  {
+    "name": "v153_receivable_allowance_quality",
+    "family": "receivable_credit_quality",
+    "hypothesis": "Lower doubtful-account allowance and falling allowance intensity can identify cleaner receivable quality before it appears in headline profitability.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.340 * group_rank(ts_rank(-1 * allowance_for_doubtful_accounts_2 / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(allowance_for_doubtful_accounts_2 / abs(assets), 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(ts_delta(receivable / abs(assets), 252)), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Distinct from debt/credit-line; focused on customer collectability and allowance footnotes."
+  },
+  {
+    "name": "v153_inventory_mix_overhang",
+    "family": "inventory_structure",
+    "hypothesis": "Lower finished-goods and work-in-process inventory intensity, with controlled raw-material exposure, may capture less demand overhang and better working-capital discipline.",
+    "expression": "trade_when(rank(cap) > 0.38, 0.320 * group_rank(ts_rank(-1 * fnd6_newqeventv110_invfgq / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * fnd6_newqeventv110_invwipq / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(ts_delta(fnd6_newqeventv110_invrmq / abs(assets), 252)), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses less-crowded FND6 inventory composition fields rather than total inventory turnover."
+  },
+  {
+    "name": "v153_contingent_merger_liability_relief",
+    "family": "ma_contingent_liability",
+    "hypothesis": "Low and falling contingent consideration or merger liabilities can reflect reduced acquisition earn-out/integration overhang after business combinations.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.350 * group_rank(ts_rank(-1 * abs(contingent_consideration_liability_acquisition) / abs(assets), 126), industry) + 0.230 * group_rank(ts_rank(-1 * abs(contingent_merger_liability) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * ts_delta(abs(contingent_consideration_liability_acquisition) / abs(assets), 252), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.050 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Sparse acquisition-footnote mechanism; likely close if it fails coverage/concentration or LSUS."
+  }
+]

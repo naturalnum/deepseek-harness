@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v191_new_issue_value_anti_buyback_residual",
+    "family": "equity_issuance_discipline_residual",
+    "hypothesis": "Lower value of newly issued stock can represent less dilution and less external-equity financing need. Explicit buyback and share-count-contraction penalties test whether this is independent of the occupied payout/repurchase capacity.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / abs(cap), 126), industry) + 0.240 * group_rank(ts_rank(-1 * new_issued_stock_value / abs(cap), 126), industry) + 0.170 * group_rank(ts_rank(-1 * new_issued_shares_count / abs(common_stock_shares_outstanding_count), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.120 * group_rank(ts_rank(common_stock_repurchase_payment / abs(cap), 126), industry) - 0.090 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / abs(common_stock_shares_outstanding_count), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One controlled low-issuance residual. Strict-check against 88zpWZ1X, MPpGzqwr, KPbgz6xp, j2ZaGlVE."
+  },
+  {
+    "name": "v191_capital_surplus_no_reversal_residual",
+    "family": "capital_surplus_dilution_residual",
+    "hypothesis": "v188 capital-surplus dilution control was a near-miss but used reversal/beta. This version removes reversal and uses direct new-issue penalties while subtracting buyback and quality sleeves.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_caps / abs(assets), 252), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(fnd6_newqeventv110_capsq)) / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank(-1 * new_shares_issued_count / abs(common_stock_shares_outstanding_count), 126), industry) + 0.110 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry) - 0.120 * group_rank(ts_rank(common_stock_repurchase_payment / abs(cap), 126), industry) - 0.070 * group_rank(ts_rank(operating_income / abs(assets), 126), subindustry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Revisits only the v188 watchlist with a materially different anti-blocker structure."
+  },
+  {
+    "name": "v191_option_exercise_issuance_relief",
+    "family": "option_exercise_issuance_residual",
+    "hypothesis": "Shares issued from option exercise are a direct dilution flow. Low option-exercise issuance may be cleaner than option-award overhang if buyback/share-count contraction is penalized.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * shares_issued_stock_options_exercised / abs(common_stock_shares_outstanding_count), 126), industry) + 0.220 * group_rank(ts_rank(-1 * shares_issued_option_exercise / abs(common_stock_shares_outstanding_count), 126), industry) + 0.170 * group_rank(ts_rank(stock_option_exercise_proceeds / abs(cap), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.120 * group_rank(ts_rank(common_stock_repurchase_payment / abs(cap), 126), industry) - 0.080 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / abs(common_stock_shares_outstanding_count), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "High-risk stock-option dilution test; reject if it maps to option/SBP or share-count actives."
+  },
+  {
+    "name": "v191_acquisition_stock_issuance_penalty",
+    "family": "acquisition_stock_issuance_residual",
+    "hypothesis": "Stock issued for acquisitions can indicate dilution-financed dealmaking. Penalizing acquisition issuance while subtracting buyback and broad acquisition/goodwill paths tests a narrower financing-quality route.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.300 * group_rank(ts_rank(-1 * stock_issued_acquisition_value / abs(cap), 126), industry) + 0.240 * group_rank(ts_rank(-1 * shares_issued_for_acquisitions / abs(common_stock_shares_outstanding_count), 126), industry) + 0.150 * group_rank(ts_rank(-1 * new_issued_stock_value / abs(cap), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.100 * group_rank(ts_rank(common_stock_repurchase_payment / abs(cap), 126), industry) - 0.080 * group_rank(ts_rank(-1 * ts_delta(goodwill / abs(assets), 252), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids direct acquisition-news/proforma routes; tests financing method of acquisitions."
+  },
+  {
+    "name": "v191_low_issuance_subindustry_clean",
+    "family": "equity_issuance_subindustry_residual",
+    "hypothesis": "Comparing low new issuance within subindustry may reduce broad size/payout exposure. No reversal, no EPS, no operating quality long leg.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.310 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / abs(cap), 126), subindustry) + 0.250 * group_rank(ts_rank(-1 * new_issued_shares_count / abs(common_stock_shares_outstanding_count), 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * new_shares_issued_count / abs(common_stock_shares_outstanding_count), 126), subindustry) + 0.100 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 126), industry) - 0.120 * group_rank(ts_rank(value_of_shares_reacquired_during_period / abs(cap), 126), industry) - 0.060 * group_rank(ts_rank(est_eps / close, 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Subindustry version with explicit payout/analyst penalties."
+  },
+  {
+    "name": "v191_diluted_adjustment_low_overhang",
+    "family": "diluted_share_adjustment_residual",
+    "hypothesis": "Low diluted-share adjustment and low antidilutive exclusions can capture lower latent dilution. This is distinct from actual buybacks only if explicit repurchase/share-count-contraction penalties keep correlation low.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * abs(diluted_shares_outstanding_adjustment_avg) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(diluted_shares_outstanding_adjustment) / abs(common_stock_shares_outstanding_count), 126), industry) + 0.180 * group_rank(ts_rank(-1 * antidilutive_securities_excluded_eps / abs(common_stock_shares_outstanding_count), 126), industry) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.120 * group_rank(ts_rank(common_stock_repurchase_payment / abs(cap), 126), industry) - 0.080 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / abs(common_stock_shares_outstanding_count), 126), industry), -1)",
+    "decay": 12,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Latent dilution residual. Strict-check against j2ZaGlVE and KPbgz6xp."
+  }
+]

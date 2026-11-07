@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v54_longterm_estimate_revision",
+    "family": "longterm_estimate_revision_vector",
+    "source": "longterm_estimate_revision_v54_20260627",
+    "hypothesis": "Positive revisions in long-term analyst estimates may capture slower expectation drift distinct from recommendation, sales dispersion, actual surprise, and model16 revision derivative.",
+    "expression": "0.45 * group_rank(ts_rank(vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest), 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(vec_avg(anl4_detailltv4_est), 63), 126), industry) + 0.30 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses long-term analyst estimate current-vs-previous vector fields; expected to be cleaner than generic recommendation vector."
+  },
+  {
+    "name": "v54_longterm_estimate_revision_slow",
+    "family": "longterm_estimate_revision_vector",
+    "source": "longterm_estimate_revision_v54_20260627",
+    "hypothesis": "A slower long-term estimate revision signal may reduce turnover and improve Fitness if the raw revision path is noisy.",
+    "expression": "0.50 * group_rank(ts_rank(ts_delta(vec_avg(anl4_detailltv4_est), 126), 252), industry) + 0.20 * group_rank(ts_rank(vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest), 252), industry) + 0.30 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Longer window/decay variant; not a near-neighbor submit unless it has low corr and strong metrics."
+  },
+  {
+    "name": "v54_longterm_estimate_revision_sign_control",
+    "family": "longterm_estimate_revision_vector",
+    "source": "longterm_estimate_revision_v54_20260627",
+    "hypothesis": "If long-term estimate revisions are overoptimistic, fading upward revisions may outperform; this sign-control prevents assuming direction.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * (vec_avg(anl4_detailltv4_est) - vec_avg(anl4_detailltv4_preest)), 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_detailltv4_est), 63), 126), industry) + 0.30 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Sign-control for long-term analyst estimate revision; stop if both signs are weak."
+  },
+  {
+    "name": "v54_eps_growth_mean_confidence",
+    "family": "eps_growth_rate_surface",
+    "source": "longterm_estimate_revision_v54_20260627",
+    "hypothesis": "Higher expected EPS growth should be more useful when high and mean growth estimates are close, indicating confidence rather than wide upside speculation.",
+    "expression": "0.40 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimate_1qf_v4_nd_epsr_high - anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses EPS growth-rate fields, not EPS yield. Watch corr against analyst/EPS ACTIVE names."
+  },
+  {
+    "name": "v54_eps_growth_revision",
+    "family": "eps_growth_rate_surface",
+    "source": "longterm_estimate_revision_v54_20260627",
+    "hypothesis": "Improving expected EPS growth rate with rising estimate participation may capture growth expectation drift without using price-scaled EPS yield.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 63), 126), industry) + 0.25 * group_rank(ts_rank(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Growth-rate revision rather than EPS level/yield; strict correlation gate against RRpm5LEo, akdb1ZqR, rKoO0M89."
+  },
+  {
+    "name": "v54_eps_growth_overoptimism_control",
+    "family": "eps_growth_rate_surface",
+    "source": "longterm_estimate_revision_v54_20260627",
+    "hypothesis": "Very high EPS growth expectations may be overoptimistic unless supported by stable risk; this sign-control tests fading crowded growth expectations.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 126), industry) + 0.25 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_mean, 63), 126), industry) + 0.15 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_epsr_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_90_days - systematic_risk_last_360_days), 90), industry)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Opposite sign-control for EPS growth-rate surface."
+  }
+]

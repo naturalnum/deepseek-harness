@@ -1,0 +1,68 @@
+[
+  {
+    "name": "v106_comp_hub_minus_rrpm002",
+    "family": "competitor_graph_rrpm_residual",
+    "source": "v106_comp_hub_corr_shave_20260628",
+    "hypothesis": "The v105 comp-hub residual missed the strict corr gate by only 0.003; subtracting a tiny earnings-sentiment/reversal/ROE proxy should preserve the very high Sharpe while clearing RRpmOAWj.",
+    "expression": "0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.291 * rank(-(close / open - 1)) + 0.195 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.008 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "gJ1rAZrg minus about 0.02*RRpmOAWj; local synthetic top corr RRpmOAWj ~0.670, Sharpe ~2.81."
+  },
+  {
+    "name": "v106_comp_hub_minus_rrpm004",
+    "family": "competitor_graph_rrpm_residual",
+    "source": "v106_comp_hub_corr_shave_20260628",
+    "hypothesis": "Slightly stronger anti-RRpmOAWj subtraction for more correlation cushion if the 0.02 version remains too close to the gate.",
+    "expression": "0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.284 * rank(-(close / open - 1)) + 0.190 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.016 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "gJ1rAZrg minus about 0.04*RRpmOAWj; local synthetic top corr RRpmOAWj ~0.656, Sharpe ~2.78."
+  },
+  {
+    "name": "v106_comp_hub_minus_rrpm006",
+    "family": "competitor_graph_rrpm_residual",
+    "source": "v106_comp_hub_corr_shave_20260628",
+    "hypothesis": "Middle anti-RRpmOAWj version designed to avoid both the earnings-sentiment ACTIVE and the option/reversal sibling that becomes top corr at larger subtraction.",
+    "expression": "0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.277 * rank(-(close / open - 1)) + 0.185 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.024 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "gJ1rAZrg minus about 0.06*RRpmOAWj; local synthetic top corr RRpmOAWj ~0.641, then 0m7p1Lb1 ~0.629."
+  },
+  {
+    "name": "v106_comp_hub_minus_rrpm008",
+    "family": "competitor_graph_rrpm_residual",
+    "source": "v106_comp_hub_corr_shave_20260628",
+    "hypothesis": "More conservative anti-RRpmOAWj version in case expression-level simulation differs from cached PnL arithmetic.",
+    "expression": "0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.270 * rank(-(close / open - 1)) + 0.180 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.032 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "gJ1rAZrg minus about 0.08*RRpmOAWj; local synthetic top corr RRpmOAWj/0m7p1Lb1 about 0.626/0.624."
+  },
+  {
+    "name": "v106_comp_hub_low_reversal_boost",
+    "family": "competitor_graph_rrpm_residual",
+    "source": "v106_comp_hub_corr_shave_20260628",
+    "hypothesis": "Lower the shared open-close reversal further and shift weight back to the competitor hub to avoid the RRpmOAWj/0m7p1Lb1 technical sleeve.",
+    "expression": "0.350 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.240 * rank(-(close / open - 1)) + 0.185 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.024 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Mechanism-shift variant: more competitor hub, less shared reversal. Use only if direct subtraction siblings fail corr."
+  },
+  {
+    "name": "v106_comp_hub_market_neutral_rrpm004",
+    "family": "competitor_graph_rrpm_residual",
+    "source": "v106_comp_hub_corr_shave_20260628",
+    "hypothesis": "MARKET neutralization may slightly alter the PnL path while keeping the same compact anti-RRpmOAWj economics.",
+    "expression": "0.310 * group_rank(ts_rank(pv13_ompetitorgraphrank_hub_rank, 60), industry) + 0.284 * rank(-(close / open - 1)) + 0.190 * group_rank(ts_rank(operating_income / equity, 126), subindustry) - 0.123 * group_rank(ts_rank(rp_nip_earnings, 90), industry) - 0.035 * group_rank(ts_rank(rel_num_comp, 126), industry) - 0.016 * group_rank(ts_rank(mean_earnings_evaluation_sentiment, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "MARKET",
+    "notes": "Neutralization ablation of the 0.04 anti-RRpmOAWj candidate."
+  }
+]

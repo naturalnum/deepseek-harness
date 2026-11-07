@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v28_option_pcr_volume_term_structure",
+    "family": "option_volume_term_structure",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "A steep short-term versus medium-term put/call volume ratio can indicate transient option-flow demand; the term-structure spread should be less crowded than breakeven or skew.",
+    "expression": "0.55 * group_rank(ts_rank(pcr_vol_10 - pcr_vol_180, 60), industry) + 0.25 * group_rank(ts_rank(pcr_vol_all, 90), industry) + 0.20 * group_rank(ts_rank(-1 * news_short_interest, 90), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests option volume term structure, not breakeven/skew. Short-interest term is a small stabilizer only."
+  },
+  {
+    "name": "v28_option_pcr_oi_curve_compression",
+    "family": "option_open_interest_curve",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Open-interest positioning that is flatter from short to longer tenors may reflect less crowded downside demand and better forward risk appetite.",
+    "expression": "0.50 * group_rank(ts_rank(-1 * abs(pcr_oi_10 - pcr_oi_180), 90), industry) + 0.30 * group_rank(ts_rank(pcr_oi_all, 90), industry) + 0.20 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses PCR OI curve shape rather than single-tenor positive/reversal signal; risk term avoids quality/reversal parents."
+  },
+  {
+    "name": "v28_short_pressure_product_news",
+    "family": "short_interest_product_news",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "High short interest combined with improving product-news sentiment can create delayed covering pressure after product/service news.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_product, 60), industry) + 0.35 * group_rank(ts_rank(news_short_interest, 90), industry) + 0.20 * group_rank(ts_rank(nws12_mainz_volstddev, 60), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Revisits short interest only under an event/product-news catalyst; no operating quality anchor."
+  },
+  {
+    "name": "v28_short_interest_option_flow_confirm",
+    "family": "short_interest_option_flow",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Short interest confirmed by put/call volume and open interest can capture persistent informed bearish positioning rather than simple short squeeze reversal.",
+    "expression": "0.40 * group_rank(ts_rank(news_short_interest, 90), industry) + 0.35 * group_rank(ts_rank(pcr_vol_60, 60), industry) + 0.25 * group_rank(ts_rank(pcr_oi_60 - pcr_oi_10, 90), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests informed bearish positioning sign; strict corr gate will catch overlap with option actives."
+  },
+  {
+    "name": "v28_social_attention_positive_regime",
+    "family": "social_attention_regime",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Rising social attention is more useful when sentiment is positive; combining attention and value should avoid pure noisy-buzz exposure.",
+    "expression": "0.45 * group_rank(ts_rank(snt_social_volume, 45), industry) + 0.35 * group_rank(ts_rank(snt_social_value, 45), industry) + 0.20 * group_rank(ts_rank(-1 * ts_std_dev(snt_social_value, 20), 60), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Different from old sentiment-stability single factor: attention and sentiment must align."
+  },
+  {
+    "name": "v28_social_buzz_reversal_with_calm",
+    "family": "social_attention_reversal",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Negative change in relative buzz after a high-attention episode may mark fading attention; calm sentiment volatility may make the reversal cleaner.",
+    "expression": "0.45 * group_rank(ts_rank(snt_buzz_ret, 45), industry) + 0.30 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment, 20), 60), industry) + 0.25 * group_rank(ts_rank(scl12_buzz, 45), industry)",
+    "decay": 14,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses social attention regime only, no earnings/reversal/quality parent."
+  },
+  {
+    "name": "v28_news_session_pressure_residual",
+    "family": "news_session_microstructure",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Session-level news pressure with unusual volume/range can capture event underreaction distinct from aggregated earnings news.",
+    "expression": "0.40 * group_rank(ts_rank(nws12_mainz_sl, 30), industry) + 0.30 * group_rank(ts_rank(nws12_mainz_volstddev, 45), industry) + 0.30 * group_rank(ts_rank(-1 * abs(nws12_mainz_rangestddev), 45), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses news12 session fields rather than rp_nip_earnings or close/open."
+  },
+  {
+    "name": "v28_news_vwap_acceptance",
+    "family": "news_session_vwap",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "When post-news VWAP and market-relative performance are strong together, the market may be accepting news rather than temporarily overreacting.",
+    "expression": "0.45 * group_rank(ts_rank(news_indx_perf, 45), industry) + 0.35 * group_rank(ts_rank((news_eod_vwap - news_main_vwap) / close, 45), industry) + 0.20 * group_rank(ts_rank(nws12_mainz_volstddev, 45), industry)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Revisits event-relative performance with a VWAP acceptance companion after pure news_indx_perf failed."
+  },
+  {
+    "name": "v28_dividend_guidance_short_pressure",
+    "family": "dividend_guidance_short_pressure",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Positive dividend guidance spread under elevated short interest can signal shareholder-return commitment that shorts may underprice.",
+    "expression": "0.45 * group_rank(ts_rank((dividend_max_guidance_value - dividend_min_guidance_value) / close, 90), industry) + 0.30 * group_rank(ts_rank(-1 * news_short_interest, 90), industry) + 0.25 * group_rank(ts_rank(dividend, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests payout guidance without buyback/dilution parent; dividend level only small stabilizer."
+  },
+  {
+    "name": "v28_financing_guidance_risk_relief",
+    "family": "financing_guidance_risk",
+    "source": "short_option_social_rotation_v28_20260626",
+    "hypothesis": "Improving financing-cash-flow guidance combined with lower idiosyncratic risk can identify balance-sheet relief without using credit-facility fields.",
+    "expression": "0.45 * group_rank(ts_rank(cash_flow_financing_max_guidance / assets, 90), industry) + 0.30 * group_rank(ts_rank(-1 * unsystematic_risk_last_90_days, 90), industry) + 0.25 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids credit_facility_* after v27; risk relief should be mechanistically different from accounting pressure."
+  }
+]

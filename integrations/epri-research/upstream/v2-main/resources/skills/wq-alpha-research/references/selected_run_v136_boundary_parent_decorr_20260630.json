@@ -1,0 +1,82 @@
+[
+  {
+    "name": "v136_goodwill_eps_largecap_no_customer",
+    "family": "goodwill_delta_eps_decorr",
+    "hypothesis": "Goodwill contraction plus EPS yield still has strong historical signal, but customer-authority and operating-profit legs pull it toward existing goodwill/value actives. A large-cap regime with market-risk relief may keep the parent while reducing overlap.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.500 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.250 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.120 * group_rank(ts_rank(-1 * (correlation_last_90_days_spy - correlation_last_360_days_spy), 90), industry) + 0.080 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed: O0p7wNOp/VkpMqjRM family, but removes pv13 customer authority and operating-profit subtraction. Strict watch against E5wVN6gm, RRpm5LEo, and akd1nQMW."
+  },
+  {
+    "name": "v136_goodwill_eps_eventful_reversal",
+    "family": "goodwill_delta_eps_decorr",
+    "hypothesis": "The same goodwill contraction parent may become less like the calm social-goodwill active when expressed only in eventful/high-absolute-return windows with short reversal absorption.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.460 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.230 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.130 * rank(-1 * ts_mean(returns, 5)) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.080 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Eventful regime variant to avoid the calm E5wVN6gm social-goodwill path; no customer authority, cashflow_op, or operating-income leg."
+  },
+  {
+    "name": "v136_intangible_grossprofit_largecap_clean",
+    "family": "intangible_burden_gross_profit",
+    "hypothesis": "Low intangible burden with durable gross profit can be a capital-light quality signal distinct from goodwill write-down and PPE aging, if traded in larger names without the raw intraday reversal leg.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.460 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_rank((high - low) / close, 10)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed: akd7vaO9 was only slightly above corr gate. Removes close/open reversal and avoids goodwill, cashflow, customer authority, fscore, and options."
+  },
+  {
+    "name": "v136_customer_intangible_acquisition_clean",
+    "family": "customer_intangible_acquisition_cleanliness",
+    "hypothesis": "Customer-related acquired intangible burden and forward amortization can proxy for acquisition-quality drag, a different accounting-footnote parent than goodwill level or goodwill delta.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.330 * group_rank(ts_rank(-1 * customer_related_intangibles_gross_value / assets, 126), industry) + 0.230 * group_rank(ts_rank(-1 * intangible_amortization_next_12m / assets, 126), industry) + 0.180 * group_rank(ts_rank(-1 * proforma_revenue_business_acquisition / assets, 126), industry) + 0.140 * rank(-1 * ts_mean(returns, 5)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "True-parent probe from underused intangible-acquisition fields; tests whether goodwill-adjacent alpha can survive without goodwill/cashflow/customer-graph fields."
+  },
+  {
+    "name": "v136_totassets_sga_largecap_no_netprofit",
+    "family": "annual_balance_cost_discipline_decorr",
+    "hypothesis": "Analyst-expected asset restraint plus SG&A discipline had near-threshold strength but overlapped with net-profit/PTP and total-asset actives. Removing net-profit and adding a large-cap gate may isolate cost-discipline visibility.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.290 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.210 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sga_mean / abs(sales), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_sga_high - anl4_fs_detail_estimates_advanced_af_nd_sga_low) / abs(sales), 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed: KPb5NopN/v124 cost discipline. Avoids netprofit, PTP, capex guidance, share-equity guidance, and option terms."
+  },
+  {
+    "name": "v136_grossincome_guidance_no_capex",
+    "family": "gross_income_guidance_visibility",
+    "hypothesis": "Gross-income guidance improvement and tightness may be a different guidance parent from the existing capex/gross-income and shareholder-equity guidance actives when capex and share-equity fields are absent.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.360 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_grossincome_minguidance + anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance) / (2 * sales), 63), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance - anl4_fs_guidances_advanced_af_nd_grossincome_minguidance) / abs(sales), 126), industry) + 0.200 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_number, 63), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Repair seed: akdxKzPw was strong enough but too close to guidance/news/value actives. No capex, CFI, or shareholder-equity guidance."
+  },
+  {
+    "name": "v136_value_sales_ev_highvolume_absorb",
+    "family": "value_quality_event_absorption",
+    "hypothesis": "EBITDA yield plus sales yield is crowded as a static value signal, but high relative-volume absorption with volatility control may separate it from BVPS/value and operating-profit actives.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.60, 0.250 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.220 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.180 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.130 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.120 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed: Vkpmn7nb/omKNPNO5 value-sales parent. High-volume timing aims to move away from RRpm5LEo, 9qwE360V, and omKJ5nLl."
+  },
+  {
+    "name": "v136_ghc_ssc_highvolume_no_product",
+    "family": "ghc_ssc_news_decorr",
+    "hypothesis": "GHC/SSC news vectors were near-threshold but correlated with product/legal/M&A news actives. Dropping product penalties and moving to high-volume absorption may test a distinct event digestion sleeve.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) > 0.55, 0.360 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), subindustry) + 0.220 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), subindustry) + 0.170 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), subindustry) + 0.130 * rank(-1 * ts_rank((close - vwap) / close, 20)) + 0.120 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Repair seed: Xgpa02k5/LLpK07a2 family. No rp_nip_product, rp_css_product, qmb, editorial commentary, M&A, legal, credit, or option fields."
+  }
+]

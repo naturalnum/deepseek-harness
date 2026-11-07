@@ -1,0 +1,178 @@
+[
+  {
+    "name": "auto_model_cashflow_quality_derivative",
+    "source": "brain_dataset_model16",
+    "family": "model_quality_cashflow",
+    "hypothesis": "A proprietary cashflow-efficiency derivative score may capture changes in operational quality with full coverage and lower crowding than raw fundamentals.",
+    "expression": "group_rank(ts_rank(cashflow_efficiency_rank_derivative, 126), subindustry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "High coverage model field; compare correlation to profitability active alpha."
+  },
+  {
+    "name": "auto_model_relative_value_derivative",
+    "source": "brain_dataset_model16",
+    "family": "model_value",
+    "hypothesis": "A valuation derivative score may identify under/overpriced stocks with a different construction than raw enterprise-value ratios.",
+    "expression": "group_rank(ts_rank(relative_valuation_rank_derivative, 126), industry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Model value branch; likely lower turnover than pure price signals."
+  },
+  {
+    "name": "auto_model_earnings_certainty",
+    "source": "brain_dataset_model16",
+    "family": "model_earnings_quality",
+    "hypothesis": "Sustainable and certain earnings quality should be rewarded within comparable industries.",
+    "expression": "group_rank(ts_rank(earnings_certainty_rank_derivative, 126), subindustry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Quality family but distinct field source from operating_income/equity."
+  },
+  {
+    "name": "auto_model_growth_value_blend",
+    "source": "brain_dataset_model16",
+    "family": "model_growth_value",
+    "hypothesis": "Growth potential is more valuable when not accompanied by poor relative valuation; blending ranks can reduce single-score noise.",
+    "expression": "0.5 * rank(ts_rank(growth_potential_rank_derivative, 126)) + 0.5 * rank(ts_rank(relative_valuation_rank_derivative, 126))",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Crossover of two model scores; keep only if correlation is acceptable."
+  },
+  {
+    "name": "auto_analyst_ebitda_yield",
+    "source": "brain_dataset_analyst4",
+    "family": "analyst_profitability",
+    "hypothesis": "Higher estimated EBITDA relative to enterprise value should proxy attractive operating yield among peers.",
+    "expression": "group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Analyst EBITDA field has high coverage and low alpha count."
+  },
+  {
+    "name": "auto_analyst_fcf_ops_quality",
+    "source": "brain_dataset_analyst4",
+    "family": "analyst_cashflow",
+    "hypothesis": "Companies with stronger operating cash flow relative to assets may exhibit better earnings quality.",
+    "expression": "group_rank(ts_rank(cash_flow_from_operations / assets, 126), subindustry)",
+    "decay": 2,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Cashflow quality branch distinct from EPS yield."
+  },
+  {
+    "name": "auto_analyst_sales_eps_combo",
+    "source": "brain_dataset_analyst4",
+    "family": "analyst_revision_value",
+    "hypothesis": "Sales expectations and EPS yield together may capture top-line plus bottom-line expectation quality.",
+    "expression": "0.5 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry) + 0.5 * group_rank(ts_rank(est_eps / close, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "May correlate with existing EPS alpha; correlation gate should decide."
+  },
+  {
+    "name": "auto_fundamental_debt_repayment_strength",
+    "source": "brain_dataset_fundamental2",
+    "family": "debt_safety",
+    "hypothesis": "Higher debt repayment relative to assets may signal balance-sheet repair and financial discipline.",
+    "expression": "group_rank(ts_rank(debt_repayments_total_2 / assets, 126), industry)",
+    "decay": 2,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-crowding footnote field with decent coverage; monitor concentrated weight."
+  },
+  {
+    "name": "auto_fundamental_debt_issuance_pressure",
+    "source": "brain_dataset_fundamental2",
+    "family": "debt_safety",
+    "hypothesis": "Large debt issuance relative to assets can indicate financing pressure, so the sign is reversed.",
+    "expression": "-1 * group_rank(ts_rank(debt_issuance_proceeds_2 / assets, 126), industry)",
+    "decay": 2,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-crowding debt issuance branch; sparse but high enough coverage."
+  },
+  {
+    "name": "auto_deferred_tax_quality",
+    "source": "brain_dataset_fundamental2",
+    "family": "tax_accounting_quality",
+    "hypothesis": "Deferred tax asset/liability structure may contain accounting-quality information within industry peers.",
+    "expression": "group_rank(ts_rank((deferred_tax_assets_net_value - deferred_tax_liabilities_total_4) / assets, 126), industry)",
+    "decay": 2,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Footnote accounting branch; use lower truncation due sparsity risk."
+  },
+  {
+    "name": "auto_option_put_call_short_interest_reversal",
+    "source": "brain_dataset_option9",
+    "family": "option_put_call",
+    "hypothesis": "Short-dated put/call volume pressure can reflect crowded fear that may mean-revert after smoothing.",
+    "expression": "-1 * group_rank(ts_rank(pcr_vol_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "High coverage option field; turnover controlled with decay."
+  },
+  {
+    "name": "auto_option_skew_risk_compensation",
+    "source": "brain_dataset_option8",
+    "family": "option_skew",
+    "hypothesis": "Implied volatility skew may proxy downside demand and risk compensation after peer ranking.",
+    "expression": "group_rank(ts_rank(implied_volatility_mean_skew_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Alternative option channel; sign may be regime-dependent."
+  },
+  {
+    "name": "auto_option_breakeven_dislocation",
+    "source": "brain_dataset_option9",
+    "family": "option_breakeven_price",
+    "hypothesis": "Option breakeven relative to spot may contain market-implied directional information at medium horizon.",
+    "expression": "group_rank(ts_rank(option_breakeven_150 / close, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Medium-dated options signal; watch correlation with momentum."
+  },
+  {
+    "name": "auto_social_sentiment_stability",
+    "source": "brain_dataset_socialmedia12",
+    "family": "sentiment_stability",
+    "hypothesis": "Stable positive sentiment is more useful than noisy attention spikes, so penalize high short-term sentiment volatility.",
+    "expression": "-1 * group_rank(ts_std_dev(scl12_sentiment_fast_d1, 10), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "BRAIN Learn-inspired sentiment volatility idea."
+  },
+  {
+    "name": "auto_social_buzz_reversal",
+    "source": "brain_dataset_socialmedia12",
+    "family": "sentiment_attention",
+    "hypothesis": "Abnormal social buzz often reflects crowded attention and may reverse after smoothing.",
+    "expression": "-1 * group_rank(ts_rank(scl12_buzz_fast_d1, 20), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Less crowded fast_d1 buzz field; likely higher turnover."
+  },
+  {
+    "name": "auto_gap_acceptance_quality_blend",
+    "source": "pv_plus_fundamental",
+    "family": "gap_quality_crossover",
+    "hypothesis": "Gap acceptance is more useful when paired with slow quality, improving correlation and turnover versus pure technical signals.",
+    "expression": "0.5 * rank((open / ts_delay(close, 1) - 1) * ((close - open) / open)) + 0.5 * rank(ts_rank(operating_income / equity, 126))",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "QuantaAlpha-inspired gap acceptance crossed with proven quality anchor."
+  }
+]

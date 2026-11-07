@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v46_fast_news_sentiment_low_relevance_noise",
+    "family": "news18_fast_vector",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "Fast-d1 news sentiment averaged from vector events may capture immediate story tone while novelty/relevance noise is penalized with low market beta relief.",
+    "expression": "0.35 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.25 * group_rank(ts_rank(vec_avg(nws18_qep_fast_d1), 45), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses news18 VECTOR fields via vec_avg; avoids news12 event-input direct ranking."
+  },
+  {
+    "name": "v46_fast_news_ma_positive_calm",
+    "family": "news18_fast_mna_vector",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "Fast M&A sentiment and granular event sentiment may matter when event relevance is not extreme and market correlation is stable.",
+    "expression": "0.40 * group_rank(ts_rank(vec_avg(nws18_bam_fast_d1), 45), industry) + 0.25 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(nws18_event_relevance_fast_d1), 45), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests fast M&A vector event tone instead of old rp_nip_mna matrix."
+  },
+  {
+    "name": "v46_fast_earnings_eval_no_earnings_matrix",
+    "family": "news18_fast_vector",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "Fast-d1 earnings evaluation vector may differ from the crowded mean_earnings_evaluation_sentiment matrix because it is event-level and shorter horizon.",
+    "expression": "0.45 * group_rank(ts_rank(vec_avg(nws18_bee_fast_d1), 45), industry) + 0.20 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.20 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 45), industry) + 0.15 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Likely correlation risk vs RRpmOAWj; submit only if local daily-PnL corr is clean."
+  },
+  {
+    "name": "v46_fast_news_recommendation_change",
+    "family": "news18_recommendation_vector",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "News-detected analyst recommendation changes may differ from stale recommendation-level vectors if averaged and slowed.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.25 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.15 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Distinct from weak v26 recommendation vector; uses news18 GHC change field."
+  },
+  {
+    "name": "v46_mean_mna_credit_legal_sentiment",
+    "family": "non_earnings_news_matrix",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "A non-earnings event basket focused on M&A, credit ratings, and legal sentiment may be slower and more robust than the v41 broad non-earnings sentiment basket.",
+    "expression": "0.30 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) + 0.25 * group_rank(ts_rank(rp_nip_legal, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Narrower than RRpbOXlg; no earnings/revenue/product news."
+  },
+  {
+    "name": "v46_buyback_authorization_yield",
+    "family": "buyback_authorization",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "Authorized buyback amount relative to market cap may be a forward-looking shareholder-return signal distinct from realized buyback payments.",
+    "expression": "0.45 * group_rank(ts_rank(authorized_stock_buyback_amount / cap, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(authorized_stock_buyback_amount / cap, 126), 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Forward authorization, not common_stock_buyback_payments; high corr risk vs buyback ACTIVE."
+  },
+  {
+    "name": "v46_reacquired_shares_execution",
+    "family": "buyback_execution_new_fields",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "Shares reacquired as a count and value may capture execution intensity through low-alphaCount footnote fields rather than the crowded payment field.",
+    "expression": "0.35 * group_rank(ts_rank(shares_reacquired_during_period / common_stock_shares_outstanding_count, 126), industry) + 0.30 * group_rank(ts_rank(value_of_shares_reacquired_during_period / cap, 126), industry) + 0.20 * group_rank(ts_rank(-1 * ts_delta(common_stock_shares_outstanding_count, 252) / common_stock_shares_outstanding_count, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Low-alphaCount repurchase execution fields; strict corr gate against 88zpWZ1X/MPpGzqwr."
+  },
+  {
+    "name": "v46_treasury_stock_accumulation",
+    "family": "buyback_treasury_stock",
+    "source": "fastnews_buyback_authorization_v46_20260626",
+    "hypothesis": "Treasury stock accumulation relative to shares outstanding may reflect sustained repurchase behavior, but should be slower and lower turnover than payment-flow factors.",
+    "expression": "0.45 * group_rank(ts_rank(treasury_stock_share_count / common_stock_shares_outstanding_count, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(treasury_stock_share_count / common_stock_shares_outstanding_count, 252), 126), industry) + 0.15 * group_rank(ts_rank(authorized_stock_repurchase_amount / cap, 126), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Treasury-stock accumulation path; may be sparse."
+  }
+]

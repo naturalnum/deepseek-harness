@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v103_generic_actual_delivery_vector",
+    "family": "generic_analyst_vector",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "A field-agnostic analyst actual-vs-estimate delivery vector may capture broad reporting delivery without committing to the already occupied sales, EPS, FCF, or shareholder-equity families.",
+    "expression": "0.36 * group_rank(ts_rank((vec_avg(anl4_fs_actual_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.24 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_actual_qf_v4_nd_actual) / abs(assets), 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_actual_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate)) / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Generic vector delivery probe; strict corr gate versus sales delivery, EPSR, and P0pgZllw."
+  },
+  {
+    "name": "v103_generic_revision_contrarian_vector",
+    "family": "generic_analyst_vector",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "Broad analyst estimate upgrades can be overextended when risk is falling; a negative generic revision vector may differ from long-term estimate and named EPS/PTP routes.",
+    "expression": "0.42 * group_rank(ts_rank(-1 * (vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.24 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) / abs(assets), 63), 126), industry) + 0.18 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate)) / abs(assets), 126), industry) + 0.16 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One broad analyst sign-control probe; abandon if it maps to 1Y7Z77YX or LLpZgaeL."
+  },
+  {
+    "name": "v103_pv13_cash_yield_low_investment",
+    "family": "pv13_product_cash_yield_nonneighbor",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "Cash profitability compared inside product peers may still have residual capacity if paired with investment restraint rather than the exact FCF/operating-profit mix used by E5wRq3ZG.",
+    "expression": "0.32 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), pv13_hierarchy_min20_3k_sector) + 0.24 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), pv13_hierarchy_min10_sector_3000_sector) + 0.22 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_capex_mean / assets, 126), pv13_hierarchy_min20_3k_sector) + 0.22 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "PV13 product-peer value, but not a pure E5wRq3ZG sibling; corr gate is expected to be the main risk."
+  },
+  {
+    "name": "v103_partner_breadth_no_return",
+    "family": "relationship_structure_no_return",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "Partner breadth net of competitor breadth may capture ecosystem reach without using the occupied relationship-return residual core.",
+    "expression": "0.34 * group_rank(ts_rank(rel_num_part - rel_num_comp, 126), industry) + 0.24 * group_rank(ts_rank(rel_num_all - rel_num_comp, 126), industry) + 0.20 * group_rank(ts_rank(-1 * pv13_revere_key_sector_total, 126), industry) + 0.22 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "No rel_ret_* term; tests structure only, with strict corr gate vs Vkp0P130/e7OQoveE/58wgxOM1."
+  },
+  {
+    "name": "v103_pcr_term_structure_decrowding",
+    "family": "option_pcr_term_structure",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "A flatter short-vs-long put/call volume curve and low absolute option-volume imbalance may capture option decrowding differently from breakeven and IV-skew actives.",
+    "expression": "0.34 * group_rank(ts_rank(-1 * abs(pcr_vol_10 - pcr_vol_180), 90), industry) + 0.24 * group_rank(ts_rank(-1 * abs(pcr_vol_30 - pcr_vol_270), 90), industry) + 0.22 * group_rank(ts_rank(-1 * pcr_vol_all, 90), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "PCR volume term structure; not breakeven/IV spread. Prior option routes are crowded, so this is a disciplined one-shot."
+  },
+  {
+    "name": "v103_volume_absorption_risk_clean",
+    "family": "technical_liquidity_absorption",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "Weak coupling between return shocks and relative volume may identify less crowded flow without using close/open, VWAP, or close-location signals.",
+    "expression": "0.38 * group_rank(ts_rank(-1 * ts_corr(returns, volume / adv20, 20), 90), industry) + 0.24 * group_rank(ts_rank(-1 * abs(returns) * volume / adv20, 20), industry) + 0.20 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.18 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Non-close-location technical statistic; previous v59 version was weak, this is a slightly cleaner risk version."
+  },
+  {
+    "name": "v103_forward_curve_low_pcr_residual",
+    "family": "option_forward_pcr_residual",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "Forward-curve carry has been crowded when paired with dividend or reversal; combining it with option-volume decrowding may test a different option-implied balance.",
+    "expression": "0.30 * group_rank(ts_rank((close - forward_price_270) / close, 90), industry) + 0.20 * group_rank(ts_rank((forward_price_30 - forward_price_270) / close, 90), industry) + 0.25 * group_rank(ts_rank(-1 * abs(pcr_vol_10 - pcr_vol_180), 90), industry) + 0.25 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "One forward-curve residual retest; submit only if it avoids 1Y7jOjvR, 3q7jJ130, and option actives."
+  },
+  {
+    "name": "v103_news12_benchmark_absorption_tiny",
+    "family": "news12_directional_microstructure",
+    "source": "v103_fresh_parent_wide_rotation_20260628",
+    "hypothesis": "A calm positive post-news benchmark residual might be a directional event absorption signal rather than RavenPack topic sentiment.",
+    "expression": "0.34 * group_rank(ts_rank(vec_avg(main_session_performance_vs_benchmark), 90), industry) + 0.22 * group_rank(ts_rank(vec_avg(advantageous_position_flag_pre_filter), 90), industry) + 0.20 * group_rank(ts_rank(-1 * abs(vec_avg(main_session_ninety_minute_change_pct)), 90), industry) + 0.24 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 90), industry)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tiny event-direction probe; previous news12 microstructure was weak, included only as a differentiated parent."
+  }
+]

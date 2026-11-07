@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v143_realized_vol_smooth_market",
+    "family": "realized_vol_model_fitness_repair",
+    "hypothesis": "KPbzORql passed Sharpe but missed Fitness. Longer vol windows, MARKET neutralization, and a cap/liquidity regime may reduce churn while preserving realized-vol term compression.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.320 * group_rank(ts_rank(-1 * abs(historical_volatility_20 - historical_volatility_180), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - parkinson_volatility_180), 126), industry) + 0.180 * rank(-1 * ts_rank(multi_factor_acceleration_score_derivative, 90)) + 0.140 * rank(-1 * ts_rank(earnings_certainty_rank_derivative, 90)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 16,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Fitness repair for KPbzORql; broader and smoother, no implied-vol mean leg to test realized-vol independence."
+  },
+  {
+    "name": "v143_realized_meaniv_compact",
+    "family": "realized_vol_mean_iv_blend",
+    "hypothesis": "A small mean-IV compression leg may lift Fitness for realized-vol compression while still being different enough from e7OG3bmz because realized volatility remains the parent.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.45, 0.250 * group_rank(ts_rank(-1 * abs(historical_volatility_20 - historical_volatility_180), 90), industry) + 0.220 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - parkinson_volatility_180), 90), industry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_360 - implied_volatility_mean_30), 90), industry) + 0.160 * rank(-1 * multi_factor_acceleration_score_derivative) + 0.100 * rank(-1 * earnings_certainty_rank_derivative) + 0.080 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 10,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "If this passes metrics, correlation gate must decide whether the mean-IV leg makes it too close to e7OG3bmz."
+  },
+  {
+    "name": "v143_smoothed_model_realized_confirm",
+    "family": "model_led_realized_confirm",
+    "hypothesis": "P0pzZzkW suggested model-led structure has returns but not Sharpe. Smoothing the model derivatives and confirming with realized-vol compression may improve stability.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.40, 0.300 * rank(-1 * ts_rank(multi_factor_acceleration_score_derivative, 90)) + 0.240 * rank(-1 * ts_rank(earnings_certainty_rank_derivative, 90)) + 0.190 * group_rank(ts_rank(-1 * abs(historical_volatility_30 - historical_volatility_180), 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(parkinson_volatility_30 - parkinson_volatility_180), 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Model-led repair without skew; tests whether skew was noisy in P0pzZzkW."
+  },
+  {
+    "name": "v143_model_skew_cap_smooth",
+    "family": "model_led_skew_smooth_repair",
+    "hypothesis": "A cap-gated and smoothed version of model-led skew may keep P0pzZzkW's returns while reducing low-quality event noise.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.310 * rank(-1 * ts_rank(multi_factor_acceleration_score_derivative, 90)) + 0.240 * rank(-1 * ts_rank(earnings_certainty_rank_derivative, 90)) + 0.170 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_20 - implied_volatility_mean_skew_120), 126), industry) + 0.150 * rank(-1 * ts_rank(returns * (volume / adv20), 20)) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 14,
+    "truncation": 0.05,
+    "neutralization": "MARKET",
+    "notes": "Compact Sharpe repair for P0pzZzkW; no pure skew/call-put expansion."
+  }
+]

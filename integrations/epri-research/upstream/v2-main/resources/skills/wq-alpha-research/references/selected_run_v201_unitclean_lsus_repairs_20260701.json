@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v201_option_bvps_largecap_clean",
+    "family": "option_alltype_bvps_lsus_repair",
+    "hypothesis": "xAxE8x7n had submit-grade headline metrics and passed local ACTIVE correlation, but failed LOW_SUB_UNIVERSE and used a unit-warning sh-equity subtract sleeve. This unit-clean repair keeps the option/alltype parent and replaces the subtract with BVPS estimate value, BVPS actual value, sh-equity estimate tightness, and estimate breadth under a stricter cap gate.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.280 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.150 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.140 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_f3_513_sector) + 0.120 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), industry) + 0.080 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), pv13_hierarchys32_513_sector) + 0.060 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 63), 126), industry), -1)",
+    "decay": 26,
+    "truncation": 0.04,
+    "neutralization": "MARKET",
+    "notes": "Primary xAxE8x7n repair. No sh-equity actual-minus-estimate subtract, no news/current-liability/FCF/contract/sales. Submit only if LSUS and corr pass."
+  },
+  {
+    "name": "v201_option_bvps_subindustry_clean",
+    "family": "option_alltype_bvps_lsus_repair",
+    "hypothesis": "A subindustry-neutral, lower option-weight version tests whether xAxE8x7n's sub-universe fragility comes from broad book/option exposure. It keeps only unit-clean BVPS, estimate tightness, and alltype stability terms.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.240 * group_rank(ts_rank(((call_breakeven_720 - put_breakeven_720) - (call_breakeven_90 - put_breakeven_90)) / close, 90), industry) + 0.130 * group_rank(ts_rank(-1 * abs(implied_volatility_call_360 - implied_volatility_put_360), 90), industry) + 0.130 * group_rank(ts_rank(-1 * ts_std_dev(vec_avg(scl12_alltype_sentvec), 20), 126), industry) + 0.180 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_min51_f1_513_sector) + 0.130 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), subindustry) + 0.100 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 28,
+    "truncation": 0.04,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Second and final xAxE8x7n repair in this round. Reject if it becomes a Vkpeno3w or KPbZ0eLg sibling."
+  },
+  {
+    "name": "v201_news_bvps_clean_sparse",
+    "family": "news_chain_bvps_unitclean",
+    "hypothesis": "RRpvQGpa was close on Sharpe but missed Fitness and used the same unit-warning sh-equity subtract. This unit-clean variant uses sparse news-chain timing with BVPS value/tightness only, reducing the book sleeve complexity and dropping systematic-risk slope.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.280 * group_rank(ts_rank(vec_avg(global_novelty_chain_elapsed_ms), 126), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.160 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), pv13_hierarchy_f3_513_sector) + 0.100 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.130 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 24,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Controlled RRpvQGpa repair. Stop if corr to WjpJwMdP/omKZRRn2 is high or Fitness remains below 1.10."
+  },
+  {
+    "name": "v201_foreign_fx_backfill_light",
+    "family": "foreign_fx_light_recheck",
+    "hypothesis": "Foreign/FX was closed after v190, but the backfill version preserved Sharpe while missing Fitness. This lightweight recheck uses fewer moving parts, a larger cap gate, and no eventful/reversal gate to see whether a calmer foreign-profit spread can provide a non-book, non-option contrast.",
+    "expression": "trade_when(rank(cap) > 0.55, 0.300 * group_rank(ts_rank(ts_backfill(foreign_ebit_amount, 252) / abs(assets), 126), industry) + 0.220 * group_rank(ts_rank(ts_backfill(fnd6_pifo, 252) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(ts_backfill(foreign_currency_translation_adjustment_net, 252)) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(unremitted_foreign_earnings_value / abs(assets), 126), industry) - 0.110 * group_rank(ts_rank(ts_backfill(domestic_ebit_value, 252) / abs(domestic_assets_total_value), 126), industry) + 0.070 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 22,
+    "truncation": 0.05,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-book/non-option contrast candidate. Do not repair if it repeats v190 LOW_FITNESS or quality/reversal correlation."
+  }
+]

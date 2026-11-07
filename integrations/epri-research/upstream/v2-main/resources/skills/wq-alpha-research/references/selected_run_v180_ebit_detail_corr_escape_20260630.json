@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v180_ebit_pure_no_risk_residual",
+    "family": "analyst_ebit_delivery_corr_escape",
+    "hypothesis": "EBIT actual delivery and analyst-consensus tightness may contain an operational-delivery residual even after removing the close/open reversal and beta sleeves used by the existing ACTIVE EBIT alpha.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.280 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), subindustry) + 0.240 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), subindustry) + 0.160 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), subindustry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 63), 126), subindustry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Pure EBIT delivery residual. No close/open, beta, fscore, news, or option support; close this branch if strength collapses or remains e7OVEPxp-correlated."
+  },
+  {
+    "name": "v180_ebit_cfo_delivery_support",
+    "family": "analyst_ebit_cfo_delivery",
+    "hypothesis": "EBIT delivery confirmed by cash-flow-from-operations delivery should be more economic than a pure earnings-consensus signal and may separate from the existing EBIT/reversal path.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.210 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.180 * group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_cfo_value - anl4_fs_detail_estimates_advanced_af_nd_cfo_mean) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.080 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Adds CFO actual-vs-estimate confirmation and removes close/open and beta. Reject if it is only a weaker e7OVEPxp sibling."
+  },
+  {
+    "name": "v180_ebit_dispersion_breadth_only",
+    "family": "analyst_ebit_visibility",
+    "hypothesis": "Tight and broad EBIT analyst coverage may proxy operating visibility without relying on actual EBIT delivery, which should reduce overlap with the existing EBIT actual-delivery ACTIVE alpha.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), industry) + 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebit_high - anl4_fs_detail_estimates_advanced_af_nd_ebit_low) / abs(assets), 126), industry) + 0.190 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), industry) + 0.140 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 63), 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "No actual EBIT value and no price-risk sleeve; tests whether analyst visibility itself is a different parent."
+  },
+  {
+    "name": "v180_ebit_ptpr_cross_validation",
+    "family": "analyst_ebit_ptpr_delivery",
+    "hypothesis": "EBIT delivery that is also confirmed by reported pretax-income delivery may identify cleaner operating follow-through than EBIT alone, while using lower-crowding PTPR detail fields.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.180 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), industry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), industry) + 0.140 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), industry) + 0.170 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ptpr_value / assets, 126), industry) + 0.140 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ptpr_mean / assets, 126), industry) + 0.120 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ptpr_high - anl4_fs_detail_estimates_advanced_af_nd_ptpr_low) / abs(assets), 126), industry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ptpr_number, 63), 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses low-crowding PTPR actual/estimate detail as a cross-check. Watch coverage and concentrated-weight failures."
+  },
+  {
+    "name": "v180_ebit_low_volume_path",
+    "family": "analyst_ebit_delivery_path_change",
+    "hypothesis": "If the EBIT residual is real but the main candidate is path-correlated to e7OVEPxp, activating it in quieter low-volume regimes may keep the slow analyst signal while changing daily PnL timing.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.260 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_ebit_value / assets, 126), subindustry) + 0.220 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), subindustry) + 0.200 * group_rank(ts_rank(-1 * abs(anl4_fs_actuals_advanced_af_nd_ebit_value - anl4_fs_detail_estimates_advanced_af_nd_ebit_mean) / abs(assets), 126), subindustry) + 0.170 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), subindustry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 63), 126), subindustry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Path-change test only; do not keep iterating low-volume gates if it fails metrics or remains correlated."
+  },
+  {
+    "name": "v180_ebit_estimate_residual_no_actual",
+    "family": "analyst_ebit_estimate_residual",
+    "hypothesis": "A consensus-quality residual built from EBIT mean, dispersion, and estimate breadth without actual EBIT delivery may preserve analyst operating visibility while avoiding the active actual-delivery cluster.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.280 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_mean / assets, 126), subindustry) + 0.230 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_ebit_std / abs(assets), 126), subindustry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_ebit_high - anl4_fs_detail_estimates_advanced_af_nd_ebit_low) / abs(assets), 126), subindustry) + 0.150 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 126), subindustry) + 0.100 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_ebit_number, 63), 126), subindustry) + 0.050 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), subindustry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "No actual EBIT, no price-risk sleeve. Reject if it maps to MPpgA0zn / estimate-confidence actives or lacks Sharpe."
+  }
+]

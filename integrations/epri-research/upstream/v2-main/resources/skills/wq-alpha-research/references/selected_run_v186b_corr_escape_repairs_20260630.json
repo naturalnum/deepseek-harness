@@ -1,0 +1,32 @@
+[
+  {
+    "name": "v186b_corpaction_downside_relief_fixed",
+    "family": "corporate_action_sparse_downside_relief_syntax_fix",
+    "hypothesis": "Constructive corporate-action tone may matter more after muted downside pressure and sparse event repetition. This is only a syntax repair of the v186 candidate that failed because ts_min is unavailable; downside pressure is proxied by the mean negative-return magnitude instead.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(mean_corporate_action_sentiment, 126), industry) + 0.210 * group_rank(ts_rank(vec_avg(corporate_action_sentiment), 126), industry) + 0.170 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 126), industry) + 0.140 * group_rank(ts_rank(-1 * ts_mean(abs(returns) - returns, 20), 90), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_rank(returns * (volume / adv20), 10)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Syntax-only repair. If it is weak or still high-corr to news/product sleeves, close the sparse downside corporate-action variant."
+  },
+  {
+    "name": "v186b_corpaction_lowcorr_antillp",
+    "family": "corporate_action_news_absorption_antiblocker",
+    "hypothesis": "The corrected corporate-action matrix signal was strong but high-corr to LLpKoQPa and product/news semantic actives. A low short-vs-long SPY-correlation regime plus explicit subtraction of QMB/editorial commentary proxies tests whether corporate-action sentiment has any independent residual.",
+    "expression": "trade_when(ts_rank(correlation_last_90_days_spy - correlation_last_360_days_spy, 90) < 0.45, 0.320 * group_rank(ts_rank(mean_corporate_action_sentiment, 90), industry) + 0.220 * group_rank(ts_rank(vec_avg(corporate_action_sentiment), 90), industry) + 0.160 * group_rank(ts_rank(mean_event_novelty_score, 90), industry) + 0.120 * group_rank(ts_rank(-1 * vec_avg(story_event_record_count_fast_d1), 90), industry) + 0.100 * group_rank(ts_rank(-1 * mean_entity_relevance_score, 90), industry) + 0.080 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) - 0.120 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) - 0.080 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One anti-blocker attempt after JjprdqNe. Do not continue if the signal collapses or the blocker shifts among LLpKoQPa/Vkp0P130/O0pNbJ17/WjpJwMdP."
+  },
+  {
+    "name": "v186b_employee_release_anti_fixed_commitment",
+    "family": "employee_liability_release_antiblocker",
+    "hypothesis": "The no-domestic employee-liability release passed basic metrics but correlated 0.86 with the fixed-commitment/lease ACTIVE 3q7PkXGN and 0.73 with buyback/quality. Explicitly subtracting those blocker proxies tests whether there is any independent employee-liability residual worth preserving.",
+    "expression": "trade_when(rank(cap) > 0.42, 0.330 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_liabilities / abs(assets), 252), 126), industry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(employee_compensation_benefit_liabilities / abs(assets), 252), 126), industry) + 0.170 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / abs(assets), 126), industry) + 0.120 * group_rank(ts_rank(-1 * recognized_cost_defined_contribution_plan / abs(sales), 126), industry) + 0.080 * rank(-1 * ts_mean(returns, 5)) - 0.120 * group_rank(ts_rank(-1 * operating_leases_minimum_payments_due_thereafter / abs(assets), 126), industry) - 0.100 * group_rank(ts_rank(common_stock_buyback_payments / cap, 126), industry) - 0.080 * group_rank(ts_rank(operating_income / abs(assets), 126), subindustry), -1)",
+    "decay": 16,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Direct residual test after A1wE3R9l. If this fails, close employee-liability release as an independent route for now."
+  }
+]

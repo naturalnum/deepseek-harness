@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v220_icapt_efficiency_return_lift",
+    "family": "invested_capital_efficiency_repair",
+    "hypothesis": "Companies producing more gross profit and sales per unit of invested capital, while quarterly invested capital and working-capital burden are falling, may be using capital more efficiently. This is a narrow repair of the v199 QPaoMZXg near-miss, aiming to lift Fitness without adding debt, issuance, news, option, FCF/EV, or competitor sleeves.",
+    "expression": "trade_when(rank(cap) > 0.48, 0.270 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newqv1300_icaptq), 126), subindustry) + 0.230 * group_rank(ts_rank(sales / abs(fnd6_newqv1300_icaptq), 126), subindustry) + 0.220 * group_rank(ts_rank(-1 * ts_delta(fnd6_newqv1300_icaptq / assets, 126), 126), industry) + 0.120 * group_rank(ts_rank(-1 * fnd6_newa2v1300_wcap / assets, 126), industry) + 0.090 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.070 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 22,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "QPaoMZXg was S1.65/F1.08 with clean checks but below Fitness gate. This version increases productivity weight and slightly lowers decay to seek return lift. Stop if LSUS fails or corr maps to operating-quality / working-capital actives."
+  },
+  {
+    "name": "v220_icapt_productivity_assetlight",
+    "family": "invested_capital_efficiency_repair",
+    "hypothesis": "A slower annual invested-capital productivity view may be more robust than the quarterly-only version: high GP/sales productivity per invested capital plus falling invested-capital intensity should identify asset-light capital discipline without using total-assets analyst estimates or goodwill/AQI routes.",
+    "expression": "trade_when(rank(cap) > 0.50, 0.300 * group_rank(ts_rank(fnd6_newa1v1300_gp / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.240 * group_rank(ts_rank(sales / abs(fnd6_newa1v1300_icapt), 126), subindustry) + 0.210 * group_rank(ts_rank(-1 * ts_delta(fnd6_newa1v1300_icapt / assets, 252), 126), industry) + 0.120 * group_rank(ts_rank(-1 * fnd6_newqv1300_wcapq / assets, 126), industry) + 0.070 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 90), industry) + 0.060 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Annual/quarterly balance of invested-capital productivity. Reject if it behaves like ordinary operating-quality, goodwill/AQI, or working-capital inventory/receivable routes."
+  },
+  {
+    "name": "v220_adjusted_eps_quality_gap",
+    "family": "adjusted_eps_guidance_quality",
+    "hypothesis": "When adjusted EPS guidance is not far above reported EPS guidance and custom-EPS ranges are tight, management's earnings presentation is less dependent on aggressive add-backs. This tests an adjustment-quality gap rather than ordinary EPS level, gross-income guidance, or EV/FCF value.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.240 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_epsa_minguidance - anl4_fs_guidances_advanced_af_nd_epsr_minguidance) / close, 126), industry) + 0.190 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_epsr_minguidance + anl4_fs_guidances_advanced_af_nd_epsr_maxguidance) / (2 * close), 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance - anl4_fs_guidances_advanced_af_nd_custom_eps_minguidance) / close, 126), industry) + 0.150 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_custom_eps_maxguidance - anl4_fs_guidances_advanced_af_nd_epsr_maxguidance) / close, 126), industry) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.110 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Uses low-crowding EPSA/custom-EPS guidance fields. Strictly reject if it becomes an LLpZgaeL/EPSR or gross-guidance sibling; this is only valid if the adjustment-gap carries independent information."
+  },
+  {
+    "name": "v220_cfo_visibility_self_funding",
+    "family": "cfo_cff_self_funding_visibility",
+    "hypothesis": "High and tightly estimated CFO, combined with low absolute CFF dependence and narrow CFF guidance, may identify self-funding operating visibility. This avoids reported FCF/EV, direct debt, credit-facility, buyback, and gross-income guidance parents.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_cfo_mean / assets, 126), industry) + 0.190 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfo_high - anl4_fs_detail_estimates_advanced_af_nd_cfo_low) / abs(assets), 126), industry) + 0.150 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfo_number, 63), 126), industry) + 0.180 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.130 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_cff_maxguidance - anl4_fs_guidances_advanced_af_nd_cff_minguidance) / abs(assets), 126), industry) + 0.090 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "CFO visibility plus self-funding discipline. Stop if it simply revives the old CFI/CFF guidance or reported-FCF cashprofit clusters, or if Fitness remains below gate."
+  }
+]

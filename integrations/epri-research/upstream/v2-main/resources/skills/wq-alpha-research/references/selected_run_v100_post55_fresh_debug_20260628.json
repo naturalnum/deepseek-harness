@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v100_news_quality_minus_product_045",
+    "family": "post55_news_vector_conditional_debug",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "The news-vector quality anchor had strong headline metrics but collided with product/business news; subtracting that blocker may leave editorial/QMB-specific information.",
+    "expression": "0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.180 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.120 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.150 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.120 * group_rank(ts_rank(rp_css_product, 90), industry) - 0.090 * group_rank(ts_rank(rp_nip_business, 90), industry)",
+    "decay": 28,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Compressed akda9VRO residual: QMB/editorial/sentiment-stability/quality core minus product/business blockers to reduce expression complexity."
+  },
+  {
+    "name": "v100_news_quality_trade_calm",
+    "family": "post55_news_vector_conditional_debug",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "News-vector alpha failed either sub-universe or product-news correlation; trading it only in calmer absolute-return regimes may change when it trades rather than just linearly residualizing it.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) < 0.65, 0.360 * group_rank(ts_rank(vec_avg(nws18_qmb_fast_d1), 90), industry) + 0.180 * group_rank(ts_rank(mean_editorial_commentary_sentiment, 126), industry) + 0.160 * group_rank(ts_rank(-1 * ts_std_dev(scl12_sentiment_fast_d1, 20), 126), industry) + 0.120 * group_rank(ts_rank(operating_income / assets, 126), subindustry) - 0.120 * group_rank(ts_rank(rp_nip_product, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.05,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Compressed conditional debug of akda9VRO; calmer-return trade gate plus one product-news blocker to alter timing without exceeding complexity."
+  },
+  {
+    "name": "v100_intan_option_minus_sheq_045",
+    "family": "post55_intangible_option_residual",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "Intangible/margin plus option-volume had decent strength but mapped to shareholder-equity guidance; a direct sh-equity subtraction may isolate capital-light option confirmation.",
+    "expression": "0.300 * group_rank(ts_rank(-1 * fnd6_intan / assets, 126), industry) + 0.200 * group_rank(ts_rank(fnd6_newa1v1300_gp / sales, 126), subindustry) + 0.180 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 20), industry) + 0.120 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.060 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.203 * group_rank(ts_rank(ts_delta((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 63), 126), subindustry) - 0.113 * group_rank(ts_rank((anl4_fs_guidances_advanced_af_nd_sh_equity_minguidance + anl4_fs_guidances_advanced_af_nd_sh_equity_maxguidance) / (2 * assets), 126), subindustry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Compressed vRLOAmxG minus 0.45*O0p8JGJq main terms; removed low-value rel_num_part/range/dispersion terms to stay under expression complexity."
+  },
+  {
+    "name": "v100_goodwill_eps_minus_ebitda_045",
+    "family": "post55_goodwill_eps_residual",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "Goodwill decline plus EPS and customer authority is strong but crowded through EBITDA/profitability; subtracting that profitability sleeve may keep a goodwill/EPS residual.",
+    "expression": "0.550 * group_rank(ts_rank(-1 * ts_delta(goodwill, 252) / assets, 126), industry) + 0.250 * group_rank(ts_rank(est_eps / close, 126), industry) + 0.200 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 60), industry) - 0.270 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) - 0.180 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "O0p7wNOp minus 0.45*RRpm5LEo; local top corr about 0.65 but risk of losing strength."
+  },
+  {
+    "name": "v100_iv_callput_minus_news_045",
+    "family": "post55_option_surface_residual",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "Call-put IV spread across maturities is an option-surface signal but collided with M&A/news risk; subtracting that news-risk sleeve tests a cleaner option surface residual.",
+    "expression": "0.450 * group_rank(ts_rank(implied_volatility_call_60 - implied_volatility_put_60, 90), industry) + 0.250 * group_rank(ts_rank(implied_volatility_call_180 - implied_volatility_put_180, 90), industry) + 0.150 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 90), industry) + 0.150 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) - 0.135 * group_rank(ts_rank(mean_merger_acquisition_sentiment, 90), industry) - 0.113 * group_rank(ts_rank(rp_nip_credit_ratings, 90), industry) - 0.113 * group_rank(ts_rank(rp_nip_legal, 90), industry) - 0.090 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "GrwOeeax minus 0.45*e7OQoveE; local top corr around 0.60."
+  },
+  {
+    "name": "v100_volume_risk_minus_vwap_045",
+    "family": "post55_volume_risk_residual",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "Short-horizon volume/range pressure plus beta-slope has decent standalone metrics but maps to the VWAP pressure ACTIVE; subtracting that pressure proxy may leave a lower-corr microstructure residual.",
+    "expression": "0.220 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.165 * rank(-1 * ts_rank((high - low) / close, 10)) + 0.300 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.180 * rank(-1 * ts_rank((close - low) / (high - low + 0.01 * close), 20)) - 0.113 * rank(ts_rank(volume / adv20, 20)) - 0.158 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 60), industry)",
+    "decay": 24,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "E5wRYVQR minus 0.45*mL86Jle1; local top corr around 0.51 but strength may be fragile."
+  },
+  {
+    "name": "v100_news_ghc_minus_product_045",
+    "family": "post55_news_ghc_residual",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "GHC/LNA + SSC news had good metrics but collided with product/business news; a product-news subtraction may preserve a different generic news vector.",
+    "expression": "0.450 * group_rank(ts_rank(-1 * vec_avg(nws18_ghc_lna), 90), industry) + 0.250 * group_rank(ts_rank(vec_avg(nws18_ssc_fast_d1), 45), industry) + 0.150 * group_rank(ts_rank(-1 * vec_avg(nws18_relevance_fast_d1), 45), industry) + 0.150 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry) - 0.135 * group_rank(ts_rank(rp_nip_product, 90), industry) - 0.113 * group_rank(ts_rank(rp_css_product, 90), industry) - 0.090 * group_rank(ts_rank(rp_nip_business, 90), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Vkp0g5qb minus 0.45*Vkp0P130 product/business terms; local top corr around 0.66."
+  },
+  {
+    "name": "v100_vwap_pressure_minus_range_055",
+    "family": "post55_vwap_pressure_residual",
+    "source": "v100_post55_residual_scan_20260628",
+    "hypothesis": "VWAP pressure became low-corr locally after a strong subtraction of range/volume pressure; this is a final non-forward technical residual test.",
+    "expression": "0.450 * group_rank(ts_rank(-1 * (close - vwap) / close, 30), industry) + 0.200 * group_rank(ts_rank(volume / adv20, 30), industry) + 0.350 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 90), industry) - 0.220 * rank(-1 * ts_rank((close - low) / (high - low + 0.01 * close), 20)) - 0.138 * rank(ts_rank(volume / adv20, 20)) - 0.193 * group_rank(ts_rank(-1 * correlation_last_60_days_spy, 60), industry)",
+    "decay": 30,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "d5x1mrwK minus 0.55*mL86Jle1; local top corr around 0.61, but base Sharpe is only near gate."
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "v2_analyst_ebitda_quality_mix",
+    "family": "analyst_profitability_quality",
+    "source": "memory_guided_v2_20260625",
+    "hypothesis": "EBITDA yield worked in the first run; mixing it with slow operating quality may reduce noise while staying economically coherent.",
+    "expression": "0.6 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.4 * group_rank(ts_rank(operating_income / assets, 126), subindustry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Follow-up to E5wGRdrK; may correlate with quality active, so correlation gate is important."
+  },
+  {
+    "name": "v2_analyst_ebitda_sales_yield",
+    "family": "analyst_profitability_sales",
+    "source": "memory_guided_v2_20260625",
+    "hypothesis": "Sales yield plus EBITDA yield tests whether top-line value and operating profitability jointly improve robustness without relying on EPS.",
+    "expression": "0.5 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry) + 0.5 * group_rank(ts_rank(est_sales / enterprise_value, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids est_eps to reduce direct correlation with the existing EPS active alpha."
+  },
+  {
+    "name": "v2_analyst_fcf_ebitda_yield",
+    "family": "analyst_cashflow_profitability",
+    "source": "memory_guided_v2_20260625",
+    "hypothesis": "Free cash flow and EBITDA yield should capture valuation-supported cash profitability with lower EPS dependence.",
+    "expression": "0.5 * group_rank(ts_rank(free_cash_flow_total / enterprise_value, 126), industry) + 0.5 * group_rank(ts_rank(operating_profit_before_depr_amort / enterprise_value, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses analyst FCF total instead of lower-coverage reported quarterly FCF."
+  },
+  {
+    "name": "v2_option_pcr_oi20_positive",
+    "family": "option_put_call_positive",
+    "source": "memory_guided_v2_20260625",
+    "hypothesis": "The prior put/call reversal sign failed strongly; test the positive sign with the slower open-interest measure.",
+    "expression": "group_rank(ts_rank(pcr_oi_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Only one positive put/call test to avoid over-spending simulations."
+  },
+  {
+    "name": "v2_option_skew20_positive",
+    "family": "option_skew_positive",
+    "source": "memory_guided_v2_20260625",
+    "hypothesis": "The prior skew reversal sign failed; test whether short-dated skew is rewarded as risk compensation rather than reversed.",
+    "expression": "group_rank(ts_rank(implied_volatility_mean_skew_20, 20), industry)",
+    "decay": 16,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Positive skew test; stop option sign search if this also fails."
+  }
+]

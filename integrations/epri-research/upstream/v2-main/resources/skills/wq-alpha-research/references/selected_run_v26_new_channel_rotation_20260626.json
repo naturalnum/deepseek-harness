@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v26_option_forward_iv_term_structure",
+    "family": "option_term_structure",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "A positive medium-minus-short option forward slope combined with lower near-term IV stress may capture option-market expectations without reusing breakeven+dilution.",
+    "expression": "0.50 * group_rank(ts_rank(forward_price_180 / close - forward_price_30 / close, 60), industry) + 0.30 * group_rank(ts_rank(-1 * (implied_volatility_mean_30 - implied_volatility_mean_180), 60), industry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Option term-structure channel; no share-count, no close/open parent, strict corr gate against QPa7KOGK and 0m7p1Lb1."
+  },
+  {
+    "name": "v26_option_vol_term_structure_breadth",
+    "family": "option_vol_term_structure",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Lower short-term implied-volatility stress relative to longer maturities may identify stocks with cleaner near-term risk pricing; partner breadth stabilizes coverage.",
+    "expression": "0.55 * group_rank(ts_rank(-1 * (implied_volatility_mean_10 - implied_volatility_mean_120), 60), industry) + 0.25 * group_rank(ts_rank(-1 * (historical_volatility_10 - historical_volatility_120), 60), industry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 12,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Tests option volatility term structure rather than skew or breakeven spread."
+  },
+  {
+    "name": "v26_order_backlog_growth_quality",
+    "family": "order_backlog_revenue_visibility",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Growing order backlog relative to assets, when paired with sales growth and partner breadth, may indicate future revenue visibility distinct from deferred revenue.",
+    "expression": "0.50 * group_rank(ts_rank(ts_delta(vec_avg(fnd6_obs), 252) / assets, 126), industry) + 0.30 * group_rank(ts_rank(sales_growth, 126), subindustry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY",
+    "notes": "Uses vector order backlog via vec_avg; compare carefully to RRp7Q9Le deferred-revenue active."
+  },
+  {
+    "name": "v26_legal_sentiment_settlement_clean",
+    "family": "legal_event_quality",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Positive legal-news sentiment and low legal-settlement payments may proxy lower litigation overhang without relying on accounting-pressure fields.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_legal, 60), industry) + 0.30 * group_rank(ts_rank(-1 * legal_settlement_payment_amount / assets, 126), industry) + 0.25 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Non-earnings news branch with a sparse but interpretable legal settlement anchor."
+  },
+  {
+    "name": "v26_labor_sentiment_benefit_burden",
+    "family": "labor_quality",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Positive labor-news sentiment with lower employee-benefit liability burden may identify firms with fewer labor-cost overhangs.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_labor, 60), industry) + 0.35 * group_rank(ts_rank(-1 * employee_compensation_benefit_liabilities / assets, 126), industry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Labor/news channel; benefit liability is auxiliary, not a pw6jz8ob-style accounting-pressure rescue."
+  },
+  {
+    "name": "v26_credit_rating_capacity",
+    "family": "credit_capacity_news",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Positive credit-rating news plus unused credit capacity may capture financing flexibility distinct from leverage and tax/prepaid accounting pressure.",
+    "expression": "0.45 * group_rank(ts_rank(rp_css_credit_ratings, 60), industry) + 0.35 * group_rank(ts_rank((credit_facility_remaining_capacity - credit_facility_outstanding_balance) / assets, 126), industry) + 0.20 * group_rank(ts_rank(rel_num_comp, 126), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Credit-news/capacity channel; expected sparse coverage, submit only if weight and sub-universe checks pass."
+  },
+  {
+    "name": "v26_analyst_recommendation_upgrade",
+    "family": "analyst_recommendation",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Better current analyst recommendations and recent recommendation upgrades may predict returns through a channel different from EPS yield.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * vec_avg(anl4_eaz2lrec_ratingvalue), 126), industry) + 0.35 * group_rank(ts_rank(-1 * ts_delta(vec_avg(anl4_eaz2lrec_ratingvalue), 63), 126), industry) + 0.20 * group_rank(ts_rank(rel_num_part, 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Analyst recommendation vector converted with vec_avg; strict corr gate against akd1nQMW and RRpm5LEo."
+  },
+  {
+    "name": "v26_relationship_breadth_residual",
+    "family": "relationship_breadth",
+    "source": "new_channel_rotation_v26_20260626",
+    "hypothesis": "Broad product-overlap relationships in excess of direct competitor count may represent ecosystem breadth rather than competitor centrality.",
+    "expression": "0.45 * group_rank(ts_rank(rel_num_all - rel_num_comp, 126), industry) + 0.35 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Relationship breadth residual; avoids customer authority/page-rank near-neighbors and uses competitor return only as a small timing term."
+  }
+]

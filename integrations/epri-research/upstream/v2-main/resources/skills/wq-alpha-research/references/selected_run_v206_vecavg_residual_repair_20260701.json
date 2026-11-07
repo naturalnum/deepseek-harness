@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v206_vecavg_guidance_actual_residual",
+    "family": "generic_guidance_actual_residual_vecavg",
+    "hypothesis": "v205 proved these generic guidance fields are event/vector inputs. After matrix conversion with vec_avg, actual-vs-guidance and range compression may capture broad guidance credibility without naming EPS/sales/BVPS.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.300 * group_rank(ts_rank(vec_avg(anl4_fs_actual_af_v4_nd_actual) - vec_avg(anl4_fs_guidance_af_v4_nd_estimate), 126), industry) + 0.220 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_guidance_af_v4_nd_maxguidance) - vec_avg(anl4_fs_guidance_af_v4_nd_minguidance)), 126), industry) + 0.180 * group_rank(ts_rank(ts_delta(vec_avg(anl4_fs_guidance_af_v4_nd_estimate), 63), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.080 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Syntax repair for v205 generic guidance actual residual. Stop if weak or high-corr to generic analyst revision actives."
+  },
+  {
+    "name": "v206_vecavg_detail_previous_estimate_latency",
+    "family": "analyst_detail_latency_residual_vecavg",
+    "hypothesis": "Previous-estimate latency should be tested only after converting event inputs. This version keeps v205's unnamed detail fields and low-correlation regime, without sales/EPS/BVPS named sleeves.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.310 * group_rank(ts_rank(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate), 126), industry) + 0.240 * group_rank(ts_rank(vec_avg(anl4_fs_actual_basic_af_v4_nd_actual) - vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_previosestimate), 126), industry) + 0.170 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_estimate_basic_af_v4_nd_estimate) - vec_avg(anl4_fs_actual_basic_af_v4_nd_actual)), 126), industry) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.100 * rank(-1 * ts_mean(returns, 5)) + 0.060 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Syntax repair for v205 previous-estimate latency. Reject if it repeats v183 high-corr generic revision behavior."
+  },
+  {
+    "name": "v206_vecavg_longterm_revision_compression",
+    "family": "longterm_revision_latency_vecavg",
+    "hypothesis": "Long-term revision compression may be slower and less crowded than quarterly generic revision if vector conversion fixes the v205 syntax issue.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.360 * group_rank(ts_rank(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate), 126), industry) + 0.260 * group_rank(ts_rank(-1 * abs(vec_avg(anl4_fs_detail_lt_v4_nd_estimate) - vec_avg(anl4_fs_detail_lt_v4_nd_previosestimate)), 126), industry) + 0.160 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.120 * rank(-1 * ts_mean(returns, 5)) + 0.100 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Syntax repair for v205 LT revision. Stop if weak as in v183."
+  },
+  {
+    "name": "v206_comp_earnings_lowcorr_nocashflow_light",
+    "family": "conditional_competitor_earnings_nocashflow_light",
+    "hypothesis": "v205's no-cashflow competitor/earnings version passed Sharpe and LSUS but missed Fitness. A lighter decay and slightly more return-volume timing tests whether Fitness can improve without reintroducing cashflow or becoming an A1wrAX3E sibling.",
+    "expression": "trade_when(correlation_last_60_days_spy < correlation_last_360_days_spy, 0.280 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.210 * group_rank(ts_rank(rp_nip_earnings, 90), industry) + 0.140 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.180 * rank(-1 * ts_rank(returns * (volume / adv20), 10)) + 0.110 * rank(-(close / open - 1)) + 0.050 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry) + 0.030 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "One allowed light ablation for `0m7addk6`. Strict-check against `A1wrAX3E`, `E5w8oepG`, `O0pNbJ17`, `Vkp0P130`, and `6Xwo83wP` if it reaches correlation gate."
+  }
+]

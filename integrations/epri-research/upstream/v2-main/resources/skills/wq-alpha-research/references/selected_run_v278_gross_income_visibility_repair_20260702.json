@@ -1,0 +1,42 @@
+[
+  {
+    "name": "v278_gross_income_level_only",
+    "hypothesis": "The v277 gross-income signal may have been diluted by a low-coverage dispersion sleeve; pure consensus gross income scaled by assets tests the parent strength directly.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_grossincome_median / abs(assets), 126), subindustry), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v278_gross_income_delivery_surprise",
+    "hypothesis": "Positive actual gross income relative to consensus can reveal cost pass-through or demand quality before it appears in crowded EPS and EBIT surfaces.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank((anl4_fs_actuals_advanced_af_nd_grossincome_value - anl4_fs_detail_estimates_advanced_af_nd_grossincome_median) / abs(assets), 126), industry), -1)",
+    "decay": 6,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v278_gross_income_revision_slow",
+    "hypothesis": "Upward revision in expected gross income should capture improving unit economics without directly using EPS, EBIT, or operating-income carriers.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_grossincome_median / abs(assets), 63), 126), industry), -1)",
+    "decay": 10,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v278_gross_income_guidance_floor",
+    "hypothesis": "A strong minimum gross-income guidance floor may indicate management confidence in cost pass-through and revenue quality.",
+    "expression": "trade_when(rank(cap) > 0.45, group_rank(ts_rank(anl4_fs_guidances_advanced_af_nd_grossincome_minguidance / abs(assets), 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v278_gross_income_guidance_confidence",
+    "hypothesis": "High gross-income guidance floor combined with a narrow guidance range should represent confidence rather than generic scale.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.75 * group_rank(ts_rank(anl4_fs_guidances_advanced_af_nd_grossincome_minguidance / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_guidances_advanced_af_nd_grossincome_maxguidance - anl4_fs_guidances_advanced_af_nd_grossincome_minguidance) / abs(assets), 126), industry), -1)",
+    "decay": 8,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

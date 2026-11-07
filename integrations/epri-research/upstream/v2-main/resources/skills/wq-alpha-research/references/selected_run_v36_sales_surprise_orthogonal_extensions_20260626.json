@@ -1,0 +1,90 @@
+[
+  {
+    "name": "v36_sales_surprise_event_novelty",
+    "family": "sales_actual_surprise_orthogonal",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Actual sales beats should be more informative when the firm is connected to novel and entity-relevant news, because the market may underreact to demand information arriving through less routine events.",
+    "expression": "0.40 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.25 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.20 * group_rank(ts_rank(mean_entity_relevance_score, 60), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "First non-neighbor extension of rKoO0M89: sales actual surprise reduced to 40%, with low-alphaCount news18 novelty/relevance."
+  },
+  {
+    "name": "v36_sales_surprise_option_confirmation",
+    "family": "sales_actual_surprise_orthogonal",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Sales delivery above consensus may be stronger when option-market directional pressure confirms upside and IV risk premium is not elevated.",
+    "expression": "0.40 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.30 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.20 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.10 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Combines sales actual surprise with option confirmation; reject if it maps to QPa7KOGK or rKoO0M89."
+  },
+  {
+    "name": "v36_sales_surprise_partner_breadth",
+    "family": "sales_actual_surprise_orthogonal",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Actual sales beats may be more persistent when the firm has broader partner relationships, suggesting demand channel breadth rather than one-off accounting noise.",
+    "expression": "0.40 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.30 * group_rank(ts_rank(rel_num_part, 126), industry) + 0.15 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.15 * group_rank(ts_rank(-1 * (unsystematic_risk_last_60_days - unsystematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Partner breadth is crowded but economically different from sales estimate dispersion; strict corr gate required."
+  },
+  {
+    "name": "v36_sales_surprise_guidance_midpoint",
+    "family": "sales_guidance_actual",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "A sales actual beat is more credible when the company's own quarterly guidance midpoint is above sell-side consensus.",
+    "expression": "0.45 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) + 0.35 * group_rank(ts_rank((sales_min_guidance_quarterly + sales_max_guidance_quarterly) / (2 * sales_estimate_average_quarterly), 126), industry) + 0.20 * group_rank(ts_rank(-1 * sales_estimate_stddev_quarterly / abs(sales_estimate_average_quarterly), 126), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Uses guidance midpoint and sales dispersion, but not estimate count; watch correlation to akdb1ZqR and rKoO0M89."
+  },
+  {
+    "name": "v36_sales_guidance_event_novelty",
+    "family": "sales_guidance_actual",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Positive company sales guidance relative to consensus, paired with novel/relevant news, may capture forward demand without using actual sales realization directly.",
+    "expression": "0.45 * group_rank(ts_rank((sales_min_guidance_quarterly + sales_max_guidance_quarterly) / (2 * sales_estimate_average_quarterly), 126), industry) + 0.25 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.15 * group_rank(ts_rank(mean_entity_relevance_score, 60), industry) + 0.15 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 6,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "No actual-sales term; checks whether guidance + novelty can be an independent follow-up."
+  },
+  {
+    "name": "v36_quarterly_sales_over_annual_context",
+    "family": "sales_actual_context",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Quarterly sales beats should matter more when they exceed the firm's slower annual sales delivery context, isolating acceleration rather than persistent high sales scale.",
+    "expression": "0.55 * group_rank(ts_rank(actual_sales_value_quarterly / sales_estimate_average_quarterly, 126), industry) - 0.25 * group_rank(ts_rank(actual_sales_value_annual / sales_estimate_average_annual, 252), industry) + 0.20 * group_rank(ts_rank(mean_entity_relevance_score, 60), industry)",
+    "decay": 4,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Quarterly-vs-annual context; intentionally subtracts annual sales delivery rank to avoid cloning rKoO0M89."
+  },
+  {
+    "name": "v36_option_breakeven_event_novelty",
+    "family": "option_event_novelty",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Option directional pressure may be more robust when it coincides with novel firm-specific news and low IV risk premium, without using accounting or share-count anchors.",
+    "expression": "0.45 * group_rank(ts_rank((call_breakeven_60 - put_breakeven_60) / close, 60), industry) + 0.25 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.20 * group_rank(ts_rank(-1 * (implied_volatility_mean_60 - historical_volatility_60), 60), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 10,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Low-correlation option rescue without sales actual, dilution, close/open, or accounting quality."
+  },
+  {
+    "name": "v36_event_novelty_relevance_risk",
+    "family": "news18_novelty_risk",
+    "source": "sales_surprise_orthogonal_extensions_v36_20260626",
+    "hypothesis": "Novel and entity-relevant news under low systematic-risk deterioration may carry residual information independent of earnings/revenue RavenPack fields.",
+    "expression": "0.45 * group_rank(ts_rank(mean_event_novelty_score, 60), industry) + 0.30 * group_rank(ts_rank(mean_entity_relevance_score, 60), industry) + 0.25 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 8,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY",
+    "notes": "Pure news18 novelty/relevance probe; likely weaker, but useful to assess whether novelty is more than a stabilizer."
+  }
+]

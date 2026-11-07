@@ -1,0 +1,112 @@
+[
+  {
+    "name": "v45_shareholder_equity_revision_low_dispersion",
+    "family": "analyst_book_forecast",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Rising shareholder-equity forecasts with lower analyst dispersion may capture balance-sheet visibility outside the crowded EPS/sales/EBITDA yield channels.",
+    "expression": "0.45 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean / assets, 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_number, 63), 126), industry) + 0.10 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "New analyst4 balance-sheet forecast path; no sales, EPS, EBITDA, close/open, graph, or option fields."
+  },
+  {
+    "name": "v45_shareholder_equity_actual_delivery",
+    "family": "analyst_book_actual_delivery",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Actual shareholder equity above the analyst mean, especially when improving and forecast dispersion is low, may identify durable book-value delivery.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_sh_equity_value / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_af_nd_sh_equity_value / anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.10 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Actual-vs-forecast delivery on book equity; distinct from v37 total-assets delivery."
+  },
+  {
+    "name": "v45_bvps_yield_confidence",
+    "family": "analyst_book_value_yield",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Book-value-per-share yield plus a tight analyst range may be less crowded than EPS/EBITDA yield while keeping a valuation interpretation.",
+    "expression": "0.50 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_bvps_mean / close, 126), industry) + 0.20 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_bvps_high - anl4_fs_detail_estimates_advanced_af_nd_bvps_low) / close, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_bvps_number, 63), 126), industry) + 0.10 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests whether book yield has room after EPS and EBITDA/EV actives; strict PnL-corr gate required."
+  },
+  {
+    "name": "v45_bvps_actual_surprise",
+    "family": "analyst_book_actual_delivery",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Actual BVPS above consensus and improving may capture book-value delivery without using sales or earnings surprise.",
+    "expression": "0.50 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / anl4_fs_detail_estimates_advanced_af_nd_bvps_mean, 126), industry) + 0.30 * group_rank(ts_rank(ts_delta(anl4_fs_actuals_advanced_af_nd_bvps_value / anl4_fs_detail_estimates_advanced_af_nd_bvps_mean, 63), 126), industry) + 0.20 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Book-value actual surprise, deliberately avoiding sales actual surprise."
+  },
+  {
+    "name": "v45_dividend_yield_stability",
+    "family": "analyst_dividend_forecast",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Consensus dividend yield with low dispersion and rising analyst participation may capture payout stability, unlike the failed raw dividend-guidance spread.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_basic_af_v4_nd_div_median / close, 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_basic_af_v4_nd_div_std / close, 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_basic_af_v4_nd_div_number, 63), 126), industry) + 0.10 * group_rank(ts_rank(-1 * unsystematic_risk_last_60_days, 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Different from v28 dividend-guidance spread; still watch drawdown and value correlation."
+  },
+  {
+    "name": "v45_total_assets_revision_discipline",
+    "family": "analyst_balance_sheet_forecast",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Declining forecast asset intensity, tight total-asset dispersion, and rising coverage may indicate balance-sheet discipline.",
+    "expression": "0.40 * group_rank(ts_rank(-1 * ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_mean / assets, 63), 126), industry) + 0.25 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_totassets_std / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_totassets_number, 63), 126), industry) + 0.15 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean / anl4_fs_detail_estimates_advanced_af_nd_totassets_mean, 126), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Forecast discipline rather than actual total-assets surprise."
+  },
+  {
+    "name": "v45_book_equity_forecast_ratio",
+    "family": "analyst_balance_sheet_forecast",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "A higher and improving forecast shareholder-equity-to-assets ratio may proxy expected balance-sheet resilience.",
+    "expression": "0.45 * group_rank(ts_rank(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean / anl4_fs_detail_estimates_advanced_af_nd_totassets_mean, 126), industry) + 0.25 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_sh_equity_mean / anl4_fs_detail_estimates_advanced_af_nd_totassets_mean, 63), 126), industry) + 0.15 * group_rank(ts_rank(-1 * anl4_fs_detail_estimates_advanced_af_nd_sh_equity_std / abs(assets), 126), industry) + 0.15 * group_rank(ts_rank(-1 * (correlation_last_60_days_spy - correlation_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Expected book-capital ratio with low dispersion."
+  },
+  {
+    "name": "v45_cfi_forecast_discipline",
+    "family": "analyst_cashflow_statement_forecast",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Lower expected investing-cash-flow magnitude with a tighter analyst range may capture investment discipline without using capex guidance or historical capex.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfi_mean) / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cfi_high - anl4_fs_detail_estimates_advanced_af_nd_cfi_low) / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_cfi_number, 63), 126), industry) + 0.10 * group_rank(ts_rank(-1 * (beta_last_60_days_spy - beta_last_360_days_spy), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Cash-flow statement forecast field, not the v37 capex actual-delivery expression."
+  },
+  {
+    "name": "v45_cff_forecast_stability",
+    "family": "analyst_cashflow_statement_forecast",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Lower expected financing-cash-flow magnitude and tighter forecast range may identify firms with less external-financing pressure.",
+    "expression": "0.45 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_mean) / abs(assets), 126), industry) + 0.25 * group_rank(ts_rank(-1 * abs(anl4_fs_detail_estimates_advanced_af_nd_cff_high - anl4_fs_detail_estimates_advanced_af_nd_cff_low) / abs(assets), 126), industry) + 0.20 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimate_1qf_v4_nd_cff_number, 63), 126), industry) + 0.10 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Tests financing-cash-flow forecast stability after direct financing guidance was weak."
+  },
+  {
+    "name": "v45_actual_book_yield_lowrisk",
+    "family": "analyst_book_value_yield",
+    "source": "book_forecast_rotation_v45_20260626",
+    "hypothesis": "Actual book value per share yield combined with shareholder-equity asset strength may form a slower book-value factor distinct from EPS yield.",
+    "expression": "0.55 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_bvps_value / close, 126), industry) + 0.25 * group_rank(ts_rank(anl4_fs_actuals_advanced_af_nd_sh_equity_value / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * (systematic_risk_last_60_days - systematic_risk_last_360_days), 60), industry)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "MARKET",
+    "notes": "Pure book-value actual-yield probe; submit only if local PnL correlation is clean."
+  }
+]

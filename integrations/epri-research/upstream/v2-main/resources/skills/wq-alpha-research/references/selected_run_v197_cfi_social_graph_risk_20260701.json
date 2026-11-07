@@ -1,0 +1,62 @@
+[
+  {
+    "name": "v197_cfi_social_lowrisk",
+    "family": "cfi_social_graph_risk",
+    "hypothesis": "Low absolute CFI guidance, improving CFI coverage, positive social value with fading negative buzz, and low correlation risk may form a cleaner capital-allocation + attention signal without tax/prepaid/WDPQ, EPS, sales-option, or contract sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.32 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.18 * group_rank(ts_rank(ts_delta(anl4_fs_detail_estimates_advanced_af_nd_cfi_number, 63), 126), industry) + 0.24 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.16 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against omKWa3jn, RRplYRpo, 3q7J5J1e, and npgrXA3q."
+  },
+  {
+    "name": "v197_netdebt_comp_graph",
+    "family": "cfi_social_graph_risk",
+    "hypothesis": "Lower net-debt expectations, competitor relative-return weakness, and PV13 graph authority form a balance/risk/graph residual distinct from EPS and tax/prepaid/WDPQ families.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.26 * group_rank(ts_rank(-1 * rel_ret_comp, 20), industry) + 0.22 * group_rank(ts_rank(pv13_com_rk_au, 60), industry) + 0.18 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Reject if it maps to xAx1V79m/kq3Jjmrk/old competitor graph capacity."
+  },
+  {
+    "name": "v197_social_skew_lowvolume",
+    "family": "cfi_social_graph_risk",
+    "hypothesis": "Social value, fading negative buzz, option skew term-structure, and low-volume regime retest the RRplYRpo family but with simpler sleeves and no VWAP pressure or sales-option fields.",
+    "expression": "trade_when(ts_rank(volume / adv20, 20) < 0.60, 0.30 * group_rank(ts_rank(snt_social_value_fast_d1, 90), industry) + 0.24 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 90), industry) + 0.24 * group_rank(ts_rank(-1 * abs(implied_volatility_mean_skew_30 - implied_volatility_mean_skew_180), 90), industry) + 0.14 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry) + 0.08 * rank(-1 * ts_mean(returns, 5)), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Must clear corr with RRplYRpo, N1pJ51Rw, 6XwKxVkO, and social/option actives."
+  },
+  {
+    "name": "v197_customer_comp_netdebt",
+    "family": "cfi_social_graph_risk",
+    "hypothesis": "Customer relationship breadth/quality, fewer competitor links, and lower net-debt expectations test a relationship balance-sheet signal without M&A/credit/legal legs occupied by 3q7J5J1e.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.30 * group_rank(ts_rank(rel_num_cust, 126), industry) + 0.22 * group_rank(ts_rank(pv13_ustomergraphrank_auth_rank, 126), industry) + 0.20 * group_rank(ts_rank(-1 * rel_num_comp, 126), industry) + 0.18 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Avoids M&A/credit/legal used by 3q7J5J1e; reject if customer graph sibling corr is high."
+  },
+  {
+    "name": "v197_low_issuance_social_risk",
+    "family": "cfi_social_graph_risk",
+    "hypothesis": "Low new issue value alone was weak in v191, but pairing it with social value and low risk may test whether issuance restraint has an attention/risk-conditioned residual distinct from buyback/share-count sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.32 * group_rank(ts_rank(-1 * stock_issued_new_issues_value / assets, 126), industry) + 0.24 * group_rank(ts_rank(snt_social_value_fast_d1, 126), industry) + 0.18 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 126), industry) + 0.16 * group_rank(ts_rank(-1 * (beta_last_90_days_spy - beta_last_360_days_spy), 90), industry) + 0.10 * group_rank(ts_rank(-1 * correlation_last_90_days_spy, 126), industry), -1)",
+    "decay": 18,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "One disciplined retest only; close if it repeats v191 weakness or maps to KPbgz6xp/j2ZaGlVE."
+  },
+  {
+    "name": "v197_cfi_netdebt_totasset",
+    "family": "cfi_social_graph_risk",
+    "hypothesis": "Low CFI guidance magnitude plus lower net-debt and lower total-asset expectations tests a capital-light financing discipline signal that avoids EPS/value and current-liability sleeves.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.34 * group_rank(ts_rank(-1 * abs((anl4_fs_guidances_advanced_af_nd_cfi_minguidance + anl4_fs_guidances_advanced_af_nd_cfi_maxguidance) / (2 * assets)), 126), industry) + 0.24 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_netdebt_mean / assets, 126), industry) + 0.20 * group_rank(ts_rank(-1 * anl4_fs_detail_estimate_1qf_v4_nd_totassets_mean / assets, 126), industry) + 0.12 * rank(-1 * ts_mean(returns, 5)) + 0.10 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 126), industry), -1)",
+    "decay": 20,
+    "truncation": 0.06,
+    "neutralization": "INDUSTRY",
+    "notes": "Strict-check against omKWa3jn/d5xK1kmg and CFI guidance LSUS history."
+  }
+]

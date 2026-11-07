@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v129_iv_social_largecap_market",
+    "family": "iv_social_lsus_repair",
+    "hypothesis": "A large-cap gate may keep the IV-social no-skew/no-VWAP signal while fixing the TOP1000 weakness from kq3WWV9L.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.250 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_put_720 - implied_volatility_call_720), 90), industry) + 0.160 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.140 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v129_iv_social_cap45_subindustry",
+    "family": "iv_social_lsus_repair",
+    "hypothesis": "A stricter cap gate plus subindustry neutralization tests whether kq3WWV9L's LSUS fail is mostly small-cap industry composition.",
+    "expression": "trade_when(rank(cap) > 0.45, 0.260 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), subindustry) + 0.190 * group_rank(ts_rank(-1 * abs(implied_volatility_put_720 - implied_volatility_call_720), 90), subindustry) + 0.150 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.130 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.130 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v129_iv_social_less_social_cap",
+    "family": "iv_social_lsus_repair",
+    "hypothesis": "Reducing social weight may preserve IV parent strength while avoiding the social small-cap bias that can hurt sub-universe Sharpe.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.300 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.220 * group_rank(ts_rank(-1 * abs(implied_volatility_put_720 - implied_volatility_call_720), 90), industry) + 0.120 * group_rank(ts_rank(snt_social_value_fast_d1, 60), industry) + 0.100 * group_rank(ts_rank(-1 * snt_buzz_ret_fast_d1, 60), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v129_parkinson_eventful_no_lowvol",
+    "family": "parkinson_iv_lsus_repair",
+    "hypothesis": "Replacing the low-volume gate with a high-abs-return regime may remove the small-cap dependence in P0pYYjxp while keeping the IV-realized volatility compression parent.",
+    "expression": "trade_when(ts_rank(abs(returns), 20) > 0.55, 0.270 * group_rank(ts_rank(-1 * (implied_volatility_mean_20 - parkinson_volatility_20), 60), industry) + 0.210 * group_rank(ts_rank(-1 * (implied_volatility_mean_720 - parkinson_volatility_60), 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(parkinson_volatility_10 - historical_volatility_10), 60), industry) + 0.140 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.120 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "INDUSTRY"
+  },
+  {
+    "name": "v129_parkinson_largecap_market",
+    "family": "parkinson_iv_lsus_repair",
+    "hypothesis": "A large-cap gate may stabilize the Parkinson-IV compression seed without needing a low-volume condition.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.270 * group_rank(ts_rank(-1 * (implied_volatility_mean_20 - parkinson_volatility_20), 60), industry) + 0.210 * group_rank(ts_rank(-1 * (implied_volatility_mean_720 - parkinson_volatility_60), 90), industry) + 0.160 * group_rank(ts_rank(-1 * abs(parkinson_volatility_10 - historical_volatility_10), 60), industry) + 0.140 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.120 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v129_parkinson_subindustry_cap35",
+    "family": "parkinson_iv_lsus_repair",
+    "hypothesis": "Subindustry ranking plus moderate cap filter tests whether P0pYYjxp's LSUS issue is cross-industry rather than signal weakness.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.270 * group_rank(ts_rank(-1 * (implied_volatility_mean_20 - parkinson_volatility_20), 60), subindustry) + 0.210 * group_rank(ts_rank(-1 * (implied_volatility_mean_720 - parkinson_volatility_60), 90), subindustry) + 0.160 * group_rank(ts_rank(-1 * abs(parkinson_volatility_10 - historical_volatility_10), 60), subindustry) + 0.140 * rank(-1 * cashflow_efficiency_rank_derivative) + 0.120 * rank(-(close / open - 1)) + 0.100 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 28,
+    "truncation": 0.08,
+    "neutralization": "SUBINDUSTRY"
+  },
+  {
+    "name": "v129_inventory_iv_largecap_simplified",
+    "family": "inventory_iv_lsus_repair",
+    "hypothesis": "Simplifying LLpmm3A6 and adding a cap gate may keep the inventory-structure separation while reducing sparse small-cap exposure.",
+    "expression": "trade_when(rank(cap) > 0.40, 0.260 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), industry) + 0.200 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), industry) + 0.160 * group_rank(ts_rank(-1 * abs(inventory_value_finished_goods) / assets, 126), industry) + 0.120 * group_rank(ts_rank(inventory_raw_materials_value / assets, 126), industry) + 0.140 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "MARKET"
+  },
+  {
+    "name": "v129_inventory_iv_low_weight_subindustry",
+    "family": "inventory_iv_lsus_repair",
+    "hypothesis": "Lowering inventory weight and using subindustry neutralization tests whether the sparse operational auxiliary can help without causing sub-universe failure.",
+    "expression": "trade_when(rank(cap) > 0.35, 0.310 * group_rank(ts_rank(-1 * abs(implied_volatility_put_20 - implied_volatility_call_20), 60), subindustry) + 0.230 * group_rank(ts_rank(-1 * abs(parkinson_volatility_20 - historical_volatility_20), 60), subindustry) + 0.100 * group_rank(ts_rank(-1 * abs(inventory_value_finished_goods) / assets, 126), subindustry) + 0.090 * group_rank(ts_rank(inventory_raw_materials_value / assets, 126), subindustry) + 0.150 * rank(-(close / open - 1)) + 0.120 * group_rank(ts_rank(-1 * beta_last_90_days_spy, 90), industry), -1)",
+    "decay": 26,
+    "truncation": 0.06,
+    "neutralization": "SUBINDUSTRY"
+  }
+]

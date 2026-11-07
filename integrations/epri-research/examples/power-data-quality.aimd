@@ -1,0 +1,35 @@
+# 电力设备运行数据质量检查
+
+核对设备运行数据的来源、时间范围与完整性，形成可复核的数据质量记录。示例用于离线数据分析，检查结论由人工确认。
+
+## 1. 确认数据来源
+
+{{step|register_inputs, title="确认设备与数据来源", check=True}}
+
+{{var|equipment_id: str, title="设备编号", owner="human"}}
+
+{{var|data_source: str, title="数据来源与采集时间范围", owner="human"}}
+
+{{var|operator: str, title="核查人", owner="human"}}
+
+## 2. 核查质量指标
+
+{{step|inspect_metrics, title="核对采样点与异常数据", check=True}}
+
+{{var|expected_points: int, title="应有采样点数", ge=1, owner="human"}}
+
+{{var|valid_points: int, title="有效采样点数", ge=0, owner="human"}}
+
+{{var|missing_rate: float, title="缺失比例（%）", ge=0, le=100, owner="human"}}
+
+{{var_table|channel_metrics: list, subvars=[var(channel: str, title="测点"), var(unit: str, title="单位"), var(valid_points: int, title="有效点数"), var(note: str, title="异常说明")], title="测点质量明细", owner="human"}}
+
+{{check|source_verified, checked_message="已核对原始数据、时间范围及单位"}}
+
+## 3. 人工复核
+
+{{step|seal_record, title="确认检查结论", check=True}}
+
+{{var|conclusion: str, title="质量结论与后续处理", owner="human"}}
+
+{{check|conclusion_reviewed, checked_message="已复核质量结论"}}

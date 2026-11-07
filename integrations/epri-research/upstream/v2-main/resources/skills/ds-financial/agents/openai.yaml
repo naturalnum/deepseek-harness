@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Financial Mode'
+  short_description: 'Route traceable financial research workflows'
+  default_prompt: 'Use $ds-financial to route this financial research request.'
