@@ -57,7 +57,7 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 部署 v2 显式选择 `storage.mode: shared-path`，引用 files 既有的受保护存储计划。[共享挂载拥有者](src/shared-mounts.ts) 根据该计划选择稳定的项目和 Session 环境来源，测量当前源目录身份及硬配额，并将目录描述符保留到 allocation 释放借用。此模式不收养 keeper 或 FIFO，也不发布导出清单。计划租约检查受保护配置，每次借用还必须通过原 files/native 当前授权回调。授权失效会拒绝新执行，但保留物理停止责任及未结算借用。持久挂载由部署持有，账户销毁不卸载用户卷；实际原生及网页执行仍须验收。 共享路径 v2 要求单独固定的 Native 服务镜像，支持同一账户的 `projects/<leaf>` 与 `environments/slot-0` 或 `slot-1` 布局；旧 v1 保留原镜像。两者都保留认证的代际及 socket 绑定与物理删除完成检查。受保护的环境池选择 `mode: session-directories` 时，Root 只接受 `bootstrap/deployment-input.ts` 固定的新镜像；Native 守卫还检查环境路径是同一账户原环境池下的直接 UUID 子目录。[目录守卫覆盖层](runtime/server/Dockerfile)及[显式 Native 创建覆盖层](runtime/server/Dockerfile.native-profile)保留原 SDK 引导、工作负载镜像及配额。创建覆盖层核对精确源码摘要，移除不受支持的重复系统路径选项，并在请求隔离时保留精确 Native seccomp 配置及能力；旧分支保留既有行为。
 
-Office 工作负载及其服务端在 `bootstrap/workload-images.ts` 和 `bootstrap/deployment-input.ts` 中按精确摘要配对。[离线上下文生成器](runtime/server/prepare_office_context.py) 要求原 SSH 服务端策略源码的精确字节，并生成[仅 COPY 的覆盖层](runtime/server/Dockerfile.office)。其 Native 创建策略只接受 Office 工作负载；关闭创建准入时，仍保留原工作负载的精确摘要用于只读历史验证。原系统调用过滤、capabilities、资源限额及删除责任拥有者保持不变。摘要声明不代表 CLI 行为合格，不会启用 Office provider 或发布账户就绪。
+封闭的[供应商清单](src/bootstrap/qualified-suppliers.ts) 固定每一组完整的存储 schema、工作负载与服务端组合。受保护选择、SDK bootstrap 和共享挂载的 Session 目录检查从同一清单派生；调用方不能注册供应商，也不能组合各自获准但未配对的镜像。原有五种组合仍须由 Root 显式选择。Office [离线上下文生成器](runtime/server/prepare_office_context.py) 要求原 SSH 服务端策略源码的精确字节，并生成[仅 COPY 的覆盖层](runtime/server/Dockerfile.office)。其 Native 创建策略只接受 Office 工作负载；关闭创建准入时，仍保留原工作负载的精确摘要用于只读历史验证。原系统调用过滤、capabilities、资源限额及删除责任拥有者保持不变。摘要声明不代表 CLI 行为合格，不会启用 Office provider 或发布账户就绪。
 
 当前 Office 供应者保留 UTF-8 目录文本及 Markdown 显式二、三级标题编号。其配对服务端仅接受该工作负载的新建请求；此前 Office 及原始工作负载的摘要仅供关闭创建准入后的只读审计。原始发布归档、模板及内容版本保持不变。
 

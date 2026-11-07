@@ -6,7 +6,8 @@ import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SkillProjectGrant } from '../src/skill-files-types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRetainedExecutionExports, createSharedPathExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
-import { REMOTE_CLIENT_SERVER_IMAGE_DIGEST, SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
+import { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST } from '../src/bootstrap/deployment-input.ts'
+import { qualifiedSupplierTuples } from '../src/bootstrap/qualified-suppliers.ts'
 
 interface Directory { readonly path: string; readonly device: string; readonly inode: string; readonly mountId: string }
 type Opened = { readonly kind: 'directory'; readonly value: Directory } | { readonly kind: 'proc'; readonly bytes: Buffer; offset: number }
@@ -257,7 +258,8 @@ it('requires the original protected plan capability, digest, bounded capacities 
   expect(fs.open).not.toHaveBeenCalled()
 })
 
-it.each([undefined, 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd'])(
+it.each([undefined, ...qualifiedSupplierTuples.filter(row => !row.sessionDirectories).map(row => row.serverImageDigest),
+  'sha256:' + '0'.repeat(64)])(
   'refuses Session directory storage with Native guard %s before opening sources', (serverImage) => {
     const f = fixture('shared-path', true)
     expect(() => createSharedPathExecutionExports(f.planBytes, f.digest, f.planCurrent, f.limits, serverImage))
@@ -266,18 +268,19 @@ it.each([undefined, 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847
   },
 )
 
-it('retains the original Session-directory grant and descriptors with the paired SSH server', async () => {
-  const f = fixture('shared-path', true)
-  const selected = createSharedPathExecutionExports(f.planBytes, f.digest, f.planCurrent, f.limits,
-    REMOTE_CLIENT_SERVER_IMAGE_DIGEST)
-  const share = await selected.share(f.grant, f.current)
-  expect(share.value.grant).toBe(f.grant)
-  expect(share.value.exports.environment).toBe(f.environmentAlias)
-  expect(f.opened.size).toBeGreaterThan(0)
-  share.release()
-  expect(f.opened.size).toBe(0)
-  expect(() => { selected.assertEpochReleased(f.grant.binding) }).not.toThrow()
-})
+it.each(qualifiedSupplierTuples.filter(row => row.sessionDirectories).map(row => row.serverImageDigest))(
+  'retains the original Session-directory grant and descriptors with reviewed server %s', async (serverImage) => {
+    const f = fixture('shared-path', true)
+    const selected = createSharedPathExecutionExports(f.planBytes, f.digest, f.planCurrent, f.limits,
+      serverImage)
+    const share = await selected.share(f.grant, f.current)
+    expect(share.value.grant).toBe(f.grant)
+    expect(share.value.exports.environment).toBe(f.environmentAlias)
+    expect(f.opened.size).toBeGreaterThan(0)
+    share.release()
+    expect(f.opened.size).toBe(0)
+    expect(() => { selected.assertEpochReleased(f.grant.binding) }).not.toThrow()
+  })
 
 it.each(['account', 'recipe', 'slot', 'quota', 'project'] as const)('refuses shared-path %s mismatch before opening sources', async (changed) => {
   const f = fixture('shared-path')

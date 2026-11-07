@@ -10,7 +10,7 @@ import type { SkillProjectGrant } from './skill-files-types.ts'
 import type { ExecutionExportShare, ManagedExecutionDeployment } from './managed-coordinator.ts'
 import type { RetainedExecutionExports } from './export-share.ts'
 import { ExecutionStateError } from './errors.ts'
-import { isSessionDirectoryServerImageDigest } from './bootstrap/deployment-input.ts'
+import { isSessionDirectoryServerImageDigest } from './bootstrap/qualified-suppliers.ts'
 
 /** Private Root failure; native callers receive the existing secret-free execution classification. */
 export class ExecutionExportFailure extends ExecutionStateError {
