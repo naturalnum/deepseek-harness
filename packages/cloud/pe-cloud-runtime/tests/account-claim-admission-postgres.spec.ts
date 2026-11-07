@@ -1,6 +1,6 @@
 /** Actual two-instance PostgreSQL claim/stop ordering; no native graph or physical readiness is supplied here. */
 import { readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -13,12 +13,75 @@ import type { OwnerPgExecutor } from '../src/owner-types.ts'
 import { AccountFactory, type AccountFactoryRequest } from '../src/account-factory.ts'
 import { RuntimeCapacity } from '../src/capacity.ts'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { createStaticStorageInventory } from '../../pe-cloud-files/src/static-inventory.ts'
+import { parseStorageDeploymentPlan } from '../../pe-cloud-files/src/storage-probe.ts'
+import { physicalInventoryPlan, remountInventoryPlan } from '../../pe-cloud-files/tests/fixtures/static-inventory.ts'
 
 const configPath = process.env.PE_ACCOUNT_CLAIM_GATE_POSTGRES_CONFIG
 const databaseName = 'dsh_admin_claim_gate_20261107'
 const limits = { maxMountedAccounts: 4, maxConcurrentMounts: 4, maxConcurrentDrains: 4 }
 
 describe.skipIf(configPath === undefined)('durable account claim admission', () => {
+  it('restores the original B/C bindings after namespace remeasurement and refuses changed physical slots', async () => {
+    if (configPath === undefined) throw new Error('Dedicated claim-gate database configuration required')
+    const config: pg.PoolConfig = JSON.parse(readFileSync(configPath, 'utf8'))
+    if (config.database !== databaseName) throw new Error('Only the dedicated claim-gate database is authorized')
+    const firstPool = new pg.Pool({ ...config, max: 1, connectionTimeoutMillis: 2000, statement_timeout: 10000 })
+    const nextPool = new pg.Pool({ ...config, max: 1, connectionTimeoutMillis: 2000, statement_timeout: 10000 })
+    const metadata = (pool: pg.Pool): RootMetadataDatabase => ({ wasNotSubmitted: () => false,
+      query: (text, values) => pool.query(text, [...values]) })
+    const inventory = (raw: ReturnType<typeof physicalInventoryPlan>) => {
+      const parsed = parseStorageDeploymentPlan(new TextEncoder().encode(JSON.stringify(raw)), 1024)
+      if (parsed.version !== 3) throw new Error('Expected v3 inventory')
+      return createStaticStorageInventory(parsed)
+    }
+    const prefix = 'inventory-restart-' + randomUUID(), ids = ['A', 'B', 'C'].map(value => brandString<AccountId>(prefix + value))
+    const originalPlan = physicalInventoryPlan(), original = inventory(originalPlan)
+    const first = new StaticAccountBindings(metadata(firstPool), original, () => {})
+    const registries = [first]
+    let firstEnded = false
+    try {
+      await first.initialize()
+      await first.seed(ids[0]!, original.slots[0]!.slotId)
+      const b = await first.reserve(ids[1]!, 'standard', 'create-B'), c = await first.reserve(ids[2]!, 'standard', 'create-C')
+      await first.transition(b, 'failed', 'retry-B-keeps-original-slot')
+      const before = (await firstPool.query('SELECT * FROM public.pe_account_static_bindings WHERE account_id = ANY($1::text[]) ORDER BY account_id', [ids])).rows
+      await first.close(); await firstPool.end(); firstEnded = true
+
+      const nextPlan = physicalInventoryPlan()
+      remountInventoryPlan(nextPlan)
+      nextPlan.slots.reverse()
+      const next = inventory(nextPlan)
+      expect(createHash('sha256').update(JSON.stringify(nextPlan)).digest('hex'))
+        .not.toBe(createHash('sha256').update(JSON.stringify(originalPlan)).digest('hex'))
+      expect(next.sha256).toBe(original.sha256)
+      const restarted = new StaticAccountBindings(metadata(nextPool), next, () => {})
+      registries.push(restarted); await restarted.initialize()
+      expect(restarted.lookup(ids[1]!)).toEqual(b.assignment)
+      expect(restarted.lookup(ids[2]!)).toEqual(c.assignment)
+      expect(restarted.status(ids[1]!)?.phase).toBe('failed')
+      expect((await restarted.reserve(ids[1]!, 'standard', 'retry-B')).assignment).toBe(restarted.lookup(ids[1]!))
+      expect(restarted.lookup(ids[1]!)?.slotId).not.toBe(restarted.lookup(ids[2]!)?.slotId)
+
+      for (const change of [
+        (plan: ReturnType<typeof physicalInventoryPlan>) => { plan.slots[1]!.private.backing.inode = '9999' },
+        (plan: ReturnType<typeof physicalInventoryPlan>) => { plan.slots[1]!.private.maximumBytes = '12288' },
+        (plan: ReturnType<typeof physicalInventoryPlan>) => { plan.slots[1]!.slotId = 'replacement-slot' },
+      ]) {
+        const changed = physicalInventoryPlan(); remountInventoryPlan(changed); change(changed)
+        const rejected = new StaticAccountBindings(metadata(nextPool), inventory(changed), () => {})
+        registries.push(rejected)
+        await expect(rejected.initialize()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+      }
+      expect((await nextPool.query('SELECT * FROM public.pe_account_static_bindings WHERE account_id = ANY($1::text[]) ORDER BY account_id', [ids])).rows).toEqual(before)
+    } finally {
+      await Promise.all(registries.map(registry => registry.close()))
+      await nextPool.query('DELETE FROM public.pe_account_static_bindings WHERE account_id = ANY($1::text[])', [ids])
+      await nextPool.end()
+      if (!firstEnded) await firstPool.end()
+    }
+  }, 20000)
+
   it('serializes the original owner claim and stop fence in either order across two instances', async () => {
     if (configPath === undefined) throw new Error('Dedicated claim-gate database configuration required')
     const config: pg.PoolConfig = JSON.parse(readFileSync(configPath, 'utf8'))

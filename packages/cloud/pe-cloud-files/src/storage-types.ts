@@ -4,6 +4,7 @@ import type { AccountId, AccountStorageKey } from '@deepseek-ai/dsh-pe-cloud-run
 /** Optional root-only deployment verification; omission grants no storage owner. */
 export interface StaticStorageConfig {
   readonly planPath: string
+  /** Complete deployment-record byte hash, including current namespace facts; not the persistent inventory digest. */
   readonly planSha256: string
   readonly probeHelperPath: string
   readonly probeHelperSha256: string
@@ -141,6 +142,7 @@ export interface StaticAccountAssignments {
 
 /** Nonsecret deployment capacity for trusted provisioning; addresses and measured facts stay private. */
 export interface StaticStorageInventory {
+  /** Stable physical-slot identity for persistent associations, never the full plan pin or Files authority. */
   readonly sha256: string
   readonly maxAccounts: number
   readonly slots: readonly Readonly<{ slotId: string; templateId: string }>[]

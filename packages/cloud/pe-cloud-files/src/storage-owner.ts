@@ -1,6 +1,7 @@
 /** Measured preallocated storage admission; Runtime owns user assignments and the original pool owns actual I/O. */
 import { posix } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { createStaticStorageInventory } from './static-inventory.ts'
 import type { AccountBinding, AccountMountInput, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { AccountFilesPreparation } from './account-service.ts'
 import type { PoolReadPort } from './worker-pool.ts'
@@ -156,7 +157,8 @@ export class RootStorageOwner {
         if (this.plan.version !== 3 && this.assignments !== undefined) failure()
         await this.verify(this.plan)
         if (this.plan.version === 3 && this.initializeAccountInventory !== undefined) {
-          await this.initializeAccountInventory(this.inventory(this.plan), resolver => this.installAccountAssignments(resolver))
+          await this.initializeAccountInventory(createStaticStorageInventory(this.plan),
+            resolver => this.installAccountAssignments(resolver))
           if (this.state !== 'checking') stale()
           this.driver.assertPoolCurrent()
         }
@@ -203,18 +205,13 @@ export class RootStorageOwner {
 
   /**
    * Read verified deployment capacity without exposing storage addresses or issuing a lease.
-   * @returns Slot identifiers and templates for v3; legacy deployments have no dynamic inventory.
+   * @returns Stable physical association digest and slot identifiers for v3; legacy deployments have no dynamic inventory.
    */
   staticInventory(): StaticStorageInventory | undefined {
     this.assertRootCurrent()
     const plan = this.plan
     if (plan === undefined || plan.version !== 3) return undefined
-    return this.inventory(plan)
-  }
-
-  private inventory(plan: StaticStoragePlanV3): StaticStorageInventory {
-    return Object.freeze({ sha256: this.config.planSha256, maxAccounts: plan.maxAccounts,
-      slots: Object.freeze(plan.slots.map(slot => Object.freeze({ slotId: slot.slotId, templateId: slot.templateId }))) })
+    return createStaticStorageInventory(plan)
   }
 
   /**
