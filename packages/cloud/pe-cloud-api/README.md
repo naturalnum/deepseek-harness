@@ -195,6 +195,10 @@ Root may select `native.workspaceTransfers` with explicit `maxFileBytes`, `maxFi
 
 The optional [workspace upload consumer](src/workspace-upload.ts) requires an exact Access-owned binary response route and the original account/Peer/Use borrow through HTTP finish/close. Its selector captures the original native Session/project policy and supplies the same files owner's `stageWorkspaceUploads` operation. Requests supply `sessionId`, `directory` and `name`, an exact `Content-Length`, and `x-content-sha256`; a declaration grants no storage or account authority. Success returns a Cloud workspace file publication with its actual collision-resolved path, verified SHA-256 and byte count, not a Native conversation attachment receipt. Early rejection keeps the socket alive until its complete response finishes. Confirmed cancellation joins source and worker cleanup; unknown settlement retains original responsibility. The installed account adapter enables only an explicitly selected POST `/api/workspace-files/upload` with handler `cloud:workspaceUpload` and guard `account-session`. Its existing HEAD transfer preflight projects `workspace-upload-v1`, the same selected workspace root and chunk ceiling only after the installed upload and staging checks pass. Access reuses the original authenticated response owner. Conversation upload limits and historical attachments stay unchanged; HTTP success cannot confirm a later failed result release.
 
+### Optional account HTTP MCP assembly
+
+`AccountMcpConnections` mounts only the official `dsh-mcp-client` in the original account context. It restores enabled account-private definitions, joins client replacement and disposal, and checks account/Agent admission around MCP calls. Connection tests use a separate native registration scope and do not publish tools to models. HTTP and HTTPS endpoints are accepted; stdio and OAuth are not provided. This assembly helper does not expose a management endpoint or establish complete Cloud or Web activation.
+
 <a id="model-experience"></a>
 ## Model Experience
 

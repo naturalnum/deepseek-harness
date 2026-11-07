@@ -183,6 +183,10 @@ New conversation uploads retain the native private attachment object and publish
 
 `stageWorkspaceUploads` accepts a distinct raw-upload claim containing the expected SHA-256, byte count and filename, plus an authorized source and workspace directory. Claims are comparison values, never Native attachment references or path grants. The raw-upload planner rejects the protected `.pe` leaf independently of client validation; existing Native attachment naming is unchanged. The same staging planner, borrowed worker and atomic transaction verify actual bytes and source closure before returning a `workspace-upload` file publication. Raw HTTP source buffering is included in the existing staging reservation. The queue wait deadline bounds admission; once a raw upload starts, its original staging operation deadline controls execution. Running cancellation waits for actual settlement and retains any durable result until the response owner releases it. Cancellation before the original mutation executor is invoked returns a known not-published failure with its original cause; an already unknown mutation remains unknown. Cancellation signals the actual operation while its caller waits for final source/worker settlement; confirmed cancellation keeps the same mutation owner usable, while unknown cleanup retains its fault and charge. Workspace-only bytes consume project storage; they do not create a private attachment object or a Native prompt receipt.
 
+### Optional HTTP MCP definitions
+
+`openMcpConnectionStore` uses the installed account's native StorageDomain and credential provider. Definitions contain only names, HTTP(S) URLs, enabled state and tool timeouts. Headers are separate credential records and never appear in list results. All mutations use the supplied account save barrier; omitted headers retain the current record. Identifier lookup, duplicate names and finite input limits reject before storage changes. This helper neither activates clients nor authorizes requests.
+
 <a id="model-experience"></a>
 ## Model Experience
 
