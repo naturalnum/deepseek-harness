@@ -25,7 +25,7 @@ function isAccountFace(value: unknown): value is AccountFace {
   return store !== null && typeof store === 'object' && typeof Reflect.get(store, 'getSnapshot') === 'function'
     && typeof Reflect.get(store, 'subscribe') === 'function'
 }
-async function fixture(role: 'admin' | 'user') {
+async function fixture(role: 'admin' | 'user', respond?: (body: object) => Response) {
   const disabled = { state: 'disabled', reason: 'not-approved' } as const
   const bootstrap: CloudBootstrap = { account: { id: 'actor', displayName: 'Actor', role }, recipeVersion: 'accounts', connectionGeneration: 'original',
     capabilities: { accountAdministration: role === 'admin' ? { state: 'available' } : disabled,
@@ -45,6 +45,7 @@ async function fixture(role: 'admin' | 'user') {
       if (String(target).endsWith('/cloud/bootstrap')) return Response.json(bootstrap)
       const body: object = JSON.parse(String(init.body))
       requests.push({ target: String(target), headers: new Headers(init.headers), body })
+      if (respond !== undefined) return respond(body)
       if (Reflect.get(body, 'op') === 'list') return Response.json({ accounts: [{ id: 'target', email: 'user@example.test',
         displayName: 'Ordinary', role: 'user', enabled: false, resourceState: 'failed' }], total: 1, offset: 0, limit: 10,
       templates: [{ id: 'standard', available: 1 }] })
@@ -68,6 +69,40 @@ it('keeps the account menu and management HTTP absent for ordinary users', async
   const f = await fixture('user')
   expect(f.slots.entries('settings.section').some(row => row.options.id === 'cloud-account-management')).toBe(false)
   expect(f.requests).toHaveLength(0)
+})
+
+it('reads back a rejected disable after sign-in was already blocked and removes stale rows if that read is unavailable', async () => {
+  let disabled = false, unavailable = false
+  const f = await fixture('admin', (body) => {
+    if (Reflect.get(body, 'op') === 'enabled') {
+      disabled = true
+      return Response.json({ error: { code: 'cloud/account-stop-unconfirmed' } }, { status: 503 })
+    }
+    if (unavailable) return Response.json({ error: { code: 'cloud/account-unavailable' } }, { status: 503 })
+    return Response.json({ accounts: [{ id: 'target', email: 'user@example.test', displayName: 'Ordinary', role: 'user',
+      enabled: !disabled, resourceState: disabled ? 'stop-unknown' : 'ready' }], total: 1, offset: 0, limit: 10,
+    templates: [{ id: 'standard', available: 1 }] })
+  })
+  const entry = f.slots.entries('settings.section').find(row => row.options.id === 'cloud-account-management')
+  const face: unknown = entry?.inject?.()
+  if (!isAccountFace(face)) throw new Error('Account settings injection differs from the registered face')
+  await vi.waitFor(() => { expect(face.hooks.accountManagement.getSnapshot().rows[0]?.enabled).toBe(true) })
+  face.submit({ op: 'enabled', id: 'target', enabled: false })
+  await vi.waitFor(() => {
+    const state = face.hooks.accountManagement.getSnapshot()
+    expect(state.failed).toBe(true)
+    expect(state.pending).toBe(false)
+    expect(state.rows[0]).toMatchObject({ enabled: false, resourceState: 'stop-unknown' })
+  })
+  expect(f.requests.map(row => Reflect.get(row.body, 'op'))).toEqual(['list', 'enabled', 'list'])
+  unavailable = true
+  face.submit({ op: 'enabled', id: 'target', enabled: false })
+  await vi.waitFor(() => {
+    const state = face.hooks.accountManagement.getSnapshot()
+    expect(state.failed).toBe(true)
+    expect(state.pending).toBe(false)
+    expect(state.rows).toEqual([])
+  })
 })
 it('loads on opening the admin settings entry and preserves the captured actor/transport for target operations', async () => {
   const f = await fixture('admin')

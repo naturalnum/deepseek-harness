@@ -206,3 +206,7 @@ These limits remain outside local bootstrap and native-entry wiring.
 The cloud client consumes the existing access binding types through the package's `/types` export. Root source aliases, compiler aggregates, lockfile registration, public bootstrap fields, and build artifacts are coordinated outside this package.
 
 </details>
+
+## Account administration
+
+The administrator settings entry uses the account-bound transport and authoritative server roles. After an unsuccessful mutation it reads the listing again without repeating the operation. If that read also fails, it clears old account and template rows and retains the failure notice.

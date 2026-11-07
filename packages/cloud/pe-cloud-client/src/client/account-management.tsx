@@ -132,7 +132,15 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
       state.set({ ...state.getSnapshot(), pending: true, failed: false, created: false })
       actual = (async () => {
         try {
-          const result = await send(value), listing = rows(result)
+          let result: unknown, operationFailed = false
+          try { result = await send(value) }
+          catch (error) {
+            if (error instanceof ClientFailure && error.code === 'close-unconfirmed') cleanupFailure = error
+            if (Reflect.get(value, 'op') === 'list') throw error
+            operationFailed = true
+            result = await send({ op: 'list', search: state.getSnapshot().search, offset: state.getSnapshot().offset })
+          }
+          const listing = rows(result)
           const response = listing === undefined ? await send({ op: 'list', search: state.getSnapshot().search, offset: state.getSnapshot().offset }) : result
           const refreshed = listing ?? rows(response)
           if (response === null || typeof response !== 'object' || refreshed === undefined) throw new TypeError('Invalid account listing')
@@ -146,13 +154,13 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
             return { id, available }
           })
           const resourceState: unknown = result !== null && typeof result === 'object' ? Reflect.get(result, 'resourceState') : undefined
-          const resourceFailed = Reflect.get(value, 'op') === 'create' && resourceState !== 'ready'
+          const resourceFailed = operationFailed || Reflect.get(value, 'op') === 'create' && resourceState !== 'ready'
           current(); state.set({ rows: refreshed, templates, offset, pageSize, total,
             search: Reflect.get(value, 'op') === 'list' && typeof Reflect.get(value, 'search') === 'string' ? String(Reflect.get(value, 'search')) : state.getSnapshot().search,
             pending: false, failed: resourceFailed, created: Reflect.get(value, 'op') === 'create' && !resourceFailed })
         } catch (error) {
           if (error instanceof ClientFailure && error.code === 'close-unconfirmed') cleanupFailure = error
-          if (!signal.aborted) state.set({ ...state.getSnapshot(), pending: false, failed: true })
+          if (!signal.aborted) state.set({ ...state.getSnapshot(), rows: [], templates: [], total: 0, pending: false, failed: true })
         }
       })()
     } }
