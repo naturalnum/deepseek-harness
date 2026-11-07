@@ -60,6 +60,8 @@ kind: "package-reference"
 | `url` / `headers` | — | streamable-http：端点 URL 与额外请求标头 |
 | `toolCallTimeoutMs` | `60,000` | 每次 `tools/call` 或资源请求的超时 |
 | `maxInstructionBytes` | `32,768` | 包括服务器归属信息在内的服务器指令 UTF-8 字节上限；超出时连接失败 |
+| `maxIncomingResponseBytes` | 未设置 | Streamable HTTP：SDK 解析 JSON/SSE 前每个响应的解码后字节上限 |
+| `listMaxPages` | SDK 默认值（`64`） | 发现分页的页数上限；`0` 关闭 SDK 页数限制 |
 | `failOnStartupError` | `false` | 初始连接或工具同步失败时拒绝插件激活 |
 | `reconnect.enabled` | `true` | 连接丢失后自动重新连接 |
 | `reconnect.initialDelayMs` | `500` | 首次重连延迟；每次连续失败尝试翻倍 |
@@ -67,6 +69,8 @@ kind: "package-reference"
 | `reconnect.maxAttempts` | `10` | 每次中断内连续失败尝试次数上限，超出后放弃 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-mcp-client)是每个受支持字段的穷尽式真源。
+
+显式设置 `maxIncomingResponseBytes` 后，官方 SDK 解析成功或错误响应之前会累计解码后的正文块字节，包括初始化、发现和工具结果。每个 HTTP 响应分别累计，长时间 SSE 流也受同一上限约束；达到上限时取消该 reader，由 SDK 和原连接监督器负责重试或重连。原响应的 URL、重定向和类型元数据保持不变。销毁会等待原请求 reader 结束后再确认关闭。省略此字段保持原生 HTTP 行为，不施加入站正文上限。
 
 启动后，服务器的工具会以 `mcp__<serverName>__<tool>` 形式出现——试着用一条提示词调用其中一个。如果初始连接失败，harness 仍会启动，但该服务器的工具不会出现，并会记录一条错误。设置 `failOnStartupError: true` 会拒绝插件激活；[app-boot 的启动策略](../../boot/app-boot/README.zh.md)仍允许可选 MCP 配置项失败，而不中止 harness。
 
@@ -141,6 +145,7 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器�
 -----
 
 <a id="further-exploration"></a>
+
 程序化宿主可向 `apply(ctx, config, observeLifecycle)` 传入可选的第三个生命周期观察参数，在启动等待前获得观察口。其 `close()` 等待原生监督器，只有传输关闭已确认才返回 `true`；即使普通插件销毁已完成，`false` 仍表示关闭未知。该扩展不改变配置或默认插件行为。
 
 ## 进一步探索
@@ -208,7 +213,7 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器�
 这些限制说明你无法用本插件做什么、以及何时需要运维注意。它们是当前包约束，不是与其他 MCP 客户端的对比，也不是任务积压。
 
 - **资源按需读取**——随附 profile 提供[共享资源服务](../mcp-resources/README.zh.md)；资源订阅与 MCP 提示词模板不受支持。
-- **启动与发现超时继承自 MCP SDK**——插件不暴露单独的连接或发现超时。协商与发现使用 SDK 默认的 60 秒请求超时；发现也使用 SDK 的页数上限。插件卸载先关闭传输以中断待处理的启动请求，再等待清理。
+- **启动与发现超时继承自 MCP SDK**——插件不暴露单独的连接或发现超时。协商与发现使用 SDK 默认的 60 秒请求超时；`listMaxPages` 选择其发现页数上限。插件卸载先关闭传输以中断待处理的启动请求，再等待清理。
 - **重连处理协商失败与传输关闭**——初始探测失败或 stdio 子进程崩溃都会使用配置的重连预算。HTTP 建立连接后，请求失败使用 SDK 传输的恢复机制，而非重新创建连接。
 - **图片是唯一的持久丰富结果桥接**——PNG、JPEG、WebP 与 GIF 在确切能力得到证明后进入 Native 上下文。音频与嵌入资源载荷仍只存在于执行局部并带明确诊断，资源链接只以文本保留名称与 URI。
 - **无效的协议结果或输出 schema 由 SDK 拒绝**——桥接器不接受旧式 `toolResult` 替代结果，也不绕过已声明的 schema 校验。

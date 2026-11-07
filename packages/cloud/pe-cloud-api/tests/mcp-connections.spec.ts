@@ -16,11 +16,21 @@ import { openMcpConnectionStore, mcpConnectionInput, type McpConnectionInput } f
 import { expect, it } from 'vitest'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
 import { AccountMcpConnections } from '../src/mcp-connection-runtime.ts'
+import { mcpConnectionsPolicy } from '../src/mcp-policy.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
 
 const limits = { maxConnections: 4, maxUrlBytes: 2048, maxHeaderBytes: 2048, maxHeaderCount: 8, maxToolCallTimeoutMs: 2000 }
-const policy = { maxInstructionBytes: 4096,
+const policy = { maxInstructionBytes: 4096, maxIncomingResponseBytes: 4194304, listMaxPages: 4,
   reconnect: { enabled: true, initialDelayMs: 20, maxDelayMs: 50, maxAttempts: 2 } }
+
+it('requires finite incoming HTTP and SDK page budgets before enabling account MCP', () => {
+  const selected = { limits: { ...limits, maxRequestBytes: 20000, maxReplyBytes: 65536 }, runtime: policy }
+  expect(mcpConnectionsPolicy(selected).runtime).toMatchObject({ maxIncomingResponseBytes: 4194304, listMaxPages: 4 })
+  for (const patch of [{ maxIncomingResponseBytes: undefined }, { maxIncomingResponseBytes: 0 },
+    { maxIncomingResponseBytes: 67108865 }, { listMaxPages: undefined }, { listMaxPages: 0 }, { listMaxPages: 65 }]) {
+    expect(() => mcpConnectionsPolicy({ ...selected, runtime: { ...policy, ...patch } })).toThrow()
+  }
+})
 
 it('keeps credentials, tool scopes and restored HTTP connections within the original account', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cloud-mcp-native-')), contexts: Context[] = []

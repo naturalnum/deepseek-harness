@@ -15,10 +15,11 @@ import Credentials from '@deepseek-ai/dsh-credentials-local'
 const policy: ApprovedMcpConnections = {
   limits: { maxConnections: 4, maxUrlBytes: 2048, maxHeaderBytes: 4096, maxHeaderCount: 8,
     maxToolCallTimeoutMs: 2000, maxRequestBytes: 20000, maxReplyBytes: 65536 },
-  runtime: { maxInstructionBytes: 4096, reconnect: { enabled: true, initialDelayMs: 20, maxDelayMs: 50, maxAttempts: 2 } },
+  runtime: { maxInstructionBytes: 4096, maxIncomingResponseBytes: 4194304, listMaxPages: 4,
+    reconnect: { enabled: true, initialDelayMs: 20, maxDelayMs: 50, maxAttempts: 2 } },
 }
 
-async function account(name: string) {
+async function account(name: string, selectedPolicy: ApprovedMcpConnections = policy) {
   const login = new AbortController()
   const fixture = policyFixture([{ endpoint: 'cloudMcpConnections/action', handlerId: 'native:cloudMcpConnections', guard: 'authenticated-account' }],
     undefined, name, { selected: [], inspectRootFetch: () => [] }, undefined, undefined, undefined, undefined, [], false, undefined, {
@@ -40,7 +41,7 @@ async function account(name: string) {
           async apply(owner: Context) {
             const api = owner.get('peCloudApi'), files = owner.get('peCloudFiles')
             if (api === undefined || files === undefined) throw new Error('Original account providers are absent')
-            await api.prepareCloudMcpConnections(owner, { files, policy,
+            await api.prepareCloudMcpConnections(owner, { files, policy: selectedPolicy,
               assertBusinessCurrent: () => { owner.fiber.assertActive(); binding.lifetime.throwIfAborted(); api.requireRpc('session/create') },
               assertToolCurrent: (exec) => {
                 if (exec.agent === undefined) throw new Error('Native MCP requires the original Agent')
@@ -122,6 +123,33 @@ it('discovers and calls an HTTP MCP tool through an original guarded account Age
   } finally { await external.close() }
 }, 20000)
 
+it('contains an oversized remote HTTP result to its original account and admits later bounded results', async () => {
+  const external = await startHttpMcpFixture(), other = await startHttpMcpFixture()
+  try {
+    const boundedPolicy = { ...policy, runtime: { ...policy.runtime, maxIncomingResponseBytes: 4096 } }
+    const a = await account('mcp-byte-a', boundedPolicy), b = await account('mcp-byte-b', boundedPolicy)
+    for (const [graph, service] of [[a, external], [b, other]] as const) {
+      const initial = await graph.invokeMcp({ action: 'list' })
+      await graph.invokeMcp({ action: 'save', version: initial.version, connection: { serverName: 'compute',
+        url: service.url, enabled: true, toolCallTimeoutMs: 2000 } })
+    }
+    const createdA = await a.ctx.sessionController.create({}), createdB = await b.ctx.sessionController.create({})
+    const agentA = a.ctx.agents.get(createdA.sessionId), agentB = b.ctx.agents.get(createdB.sessionId)
+    if (agentA === undefined || agentB === undefined) throw new Error('Original native Agents absent')
+    external.setToolText('x'.repeat(8192))
+    const invoke = (graph: typeof a, agent: typeof agentA, id: string) => graph.ctx.tools.execute({ agent,
+      name: 'mcp__compute__ping', arguments: {}, callId: ToolCallId(id), signal: new AbortController().signal })
+    expect((await invoke(a, agentA, 'oversized-a')).isError).toBe(true)
+    expect(await invoke(b, agentB, 'bounded-b')).toMatchObject({ isError: false,
+      value: { content: [{ type: 'text', text: 'pong' }] } })
+    external.setToolText('pong')
+    expect(await invoke(a, agentA, 'recovered-a')).toMatchObject({ isError: false,
+      value: { content: [{ type: 'text', text: 'pong' }] } })
+    expect(a.saveBarrier.snapshot().failures).toEqual([])
+    expect(b.saveBarrier.snapshot().failures).toEqual([])
+  } finally { await external.close(); await other.close() }
+}, 20000)
+
 it('recovers real HTTP discovery after a temporary outage and reports a bounded native tool timeout', async () => {
   const external = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-reconnect-token' })
   try {
@@ -175,8 +203,8 @@ it('cancels a negotiating HTTP probe on login withdrawal, joins transport dispos
 it('retains a real native HTTP probe whose transport rejects closure and refuses to treat a resolved fiber disposer as release', async () => {
   const external = await startHttpMcpFixture(), create = nativeTransport.createTransport
   const originalClosers: Array<() => Promise<void>> = []
-  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config) => {
-    const actual = create(config)
+  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config, observeIncoming) => {
+    const actual = create(config, observeIncoming)
     originalClosers.push(actual.close.bind(actual))
     actual.close = () => Promise.reject(new Error('synthetic transport close failure'))
     return actual

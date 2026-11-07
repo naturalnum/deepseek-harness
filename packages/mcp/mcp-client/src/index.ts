@@ -56,6 +56,8 @@ const activeServerNames = new WeakMap<object, Set<string>>()
 
 /** Config for connecting to an MCP server via a spawned child process over stdio. */
 export interface StdioConfig {
+  /** Optional SDK list pagination cap; omission preserves its default, zero disables it. */
+  listMaxPages?: number
   /** Selects child-process stdio transport. */
   transport: 'stdio'
   /**
@@ -84,6 +86,10 @@ export interface StdioConfig {
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
 export interface StreamableHttpConfig {
+  /** Optional decoded-byte cap per HTTP response, including cumulative SSE stream bytes. */
+  maxIncomingResponseBytes?: number
+  /** Optional SDK list pagination cap; omission preserves its default, zero disables it. */
+  listMaxPages?: number
   /** Selects Streamable HTTP transport. */
   transport: 'streamable-http'
   /**
@@ -125,6 +131,7 @@ const Reconnect: z<ReconnectConfig> = z.object({
 export const Config = z.union([
   z.object({
     transport: z.const('stdio'),
+    listMaxPages: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER),
     serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
     command: z.string().required(),
     args: z.array(String).default([]),
@@ -137,6 +144,8 @@ export const Config = z.union([
   }),
   z.object({
     transport: z.const('streamable-http'),
+    maxIncomingResponseBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
+    listMaxPages: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER),
     serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
     url: z.string().required(),
     headers: z.dict(String).default({}),
@@ -159,6 +168,13 @@ export const Config = z.union([
  * @returns startup readiness after connection and initial tool discovery settle.
  */
 export async function apply(ctx: Context, config: Config, observeLifecycle?: (lifecycle: McpClientLifecycle) => void): Promise<void> {
+  if (config.listMaxPages !== undefined && (!Number.isSafeInteger(config.listMaxPages) || config.listMaxPages < 0)) {
+    throw new TypeError('mcp-client: nonnegative finite listMaxPages required')
+  }
+  if (config.transport === 'streamable-http' && config.maxIncomingResponseBytes !== undefined
+    && (!Number.isSafeInteger(config.maxIncomingResponseBytes) || config.maxIncomingResponseBytes < 1)) {
+    throw new TypeError('mcp-client: positive finite maxIncomingResponseBytes required')
+  }
   // Fail loud at load: reconnect misconfiguration (including programmatic
   // construction that bypassed Schemastery) rejects THIS instance before any
   // effect registers.

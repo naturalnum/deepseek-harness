@@ -60,6 +60,8 @@ Add one entry per server; nothing else is required. After the harness starts, th
 | `url` / `headers` | — | streamable-http: endpoint URL and extra request headers |
 | `toolCallTimeoutMs` | `60,000` | Timeout per `tools/call` or resource request |
 | `maxInstructionBytes` | `32,768` | Maximum UTF-8 bytes of server instructions including attribution; an oversized value rejects the connection |
+| `maxIncomingResponseBytes` | unset | Streamable HTTP: maximum decoded bytes per response before SDK JSON/SSE parsing |
+| `listMaxPages` | SDK default (`64`) | Maximum discovery pages; `0` disables the SDK cap |
 | `failOnStartupError` | `false` | Reject plugin activation when the initial connection or tool synchronization fails |
 | `reconnect.enabled` | `true` | Reconnect automatically after a lost connection |
 | `reconnect.initialDelayMs` | `500` | First reconnect delay; doubles per consecutive failed attempt |
@@ -67,6 +69,8 @@ Add one entry per server; nothing else is required. After the harness starts, th
 | `reconnect.maxAttempts` | `10` | Consecutive failed attempts per outage before giving up |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-mcp-client) is the exhaustive source for every accepted field.
+
+An explicit `maxIncomingResponseBytes` counts decoded body chunks before the official SDK parses success or error responses, including initialization, discovery and tool results. The limit is cumulative for each HTTP response, including a long SSE stream; reaching it cancels that reader and leaves retry/reconnection to the SDK and original connection supervisor. Original response URL, redirect and type metadata are retained. Disposal joins original pending readers before confirming closure. Omitting this field preserves native HTTP behavior; it does not impose an incoming-body limit.
 
 After startup, the server's tools appear as `mcp__<serverName>__<tool>` — try a prompt that uses one. If the initial connection fails, the harness still starts but no tools from that server appear, and an error is logged. Setting `failOnStartupError: true` rejects plugin activation; [app-boot's startup policy](../../boot/app-boot/README.md) still permits an optional MCP entry to fail without aborting the harness.
 
@@ -141,6 +145,7 @@ The child environment starts from the subprocess seam's `scrubbedParentEnv()` �
 -----
 
 <a id="further-exploration"></a>
+
 Programmatic hosts may pass an optional third lifecycle observer to `apply(ctx, config, observeLifecycle)`. It runs before startup awaits. The observed `close()` joins the original supervisor and returns `true` only when transport closure was confirmed; `false` retains an unknown closure even if the ordinary plugin disposer resolved. This does not alter configuration or default plugin behavior.
 
 ## Further Exploration
@@ -208,7 +213,7 @@ Unchanged instructions retain identical prompt text. Updated or removed instruct
 These limits describe what you cannot do with this plugin and when it needs operational attention. They are current package constraints, not a comparison with other MCP clients or a task backlog.
 
 - **Resources are read on demand** — shipped profiles provide the [shared resource service](../mcp-resources/README.md); resource subscriptions and MCP prompt templates are unsupported.
-- **Startup and discovery timeouts are inherited from the MCP SDK** — the plugin exposes no separate connection or discovery timeout. Negotiation and discovery use the SDK's 60-second request default; discovery also uses its page limit. Plugin unload closes the transport to interrupt pending startup requests before awaiting teardown.
+- **Startup and discovery timeouts are inherited from the MCP SDK** — the plugin exposes no separate connection or discovery timeout. Negotiation and discovery use the SDK's 60-second request default; `listMaxPages` selects its discovery page limit. Plugin unload closes the transport to interrupt pending startup requests before awaiting teardown.
 - **Reconnect handles failed negotiation and transport close** — a failed initial probe or crashed stdio child uses the configured reconnect budget. Once HTTP is connected, request failures use the SDK transport's recovery rather than respawning the connection.
 - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
 - **Invalid protocol results or output schemas fail through the SDK** — the bridge does not accept legacy `toolResult` substitutes or bypass advertised schema validation.

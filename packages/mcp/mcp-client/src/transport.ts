@@ -11,6 +11,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import type { Config } from './index.ts'
+import { boundedHttpIncoming, type HttpIncomingOwner } from './http-incoming.ts'
 
 /**
  * The subprocess seam's scrubbed parent env (credential-shaped and stale
@@ -26,9 +27,10 @@ function buildChildEnv(extra: Record<string, string>): Record<string, string> {
  * Create an MCP transport from the resolved plugin config.
  *
  * @param config - Resolved plugin config discriminated on `transport`.
+ * @param observeIncoming - Enroll optional HTTP readers in their original supervisor generation.
  * @returns A connected-ready MCP Transport (stdio or Streamable HTTP).
  */
-export function createTransport(config: Config): Transport {
+export function createTransport(config: Config, observeIncoming?: (owner: HttpIncomingOwner) => void): Transport {
   switch (config.transport) {
     case 'stdio':
       return new StdioClientTransport({
@@ -37,10 +39,14 @@ export function createTransport(config: Config): Transport {
         env: buildChildEnv(config.env),
         cwd: config.cwd,
       })
-    case 'streamable-http':
-      return new StreamableHTTPClientTransport(
+    case 'streamable-http': {
+      const incoming = config.maxIncomingResponseBytes === undefined ? undefined : boundedHttpIncoming(config.maxIncomingResponseBytes)
+      const transport = new StreamableHTTPClientTransport(
         new URL(config.url),
-        { requestInit: { headers: config.headers } },
+        { requestInit: { headers: config.headers }, ...incoming === undefined ? {} : { fetch: incoming.fetch } },
       )
+      if (incoming !== undefined) observeIncoming?.(incoming)
+      return transport
+    }
   }
 }

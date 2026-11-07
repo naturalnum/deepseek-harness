@@ -28,7 +28,8 @@ const catalog: ApprovedConfigurationCatalog = {
   ], skills: { mode: 'closed' }, credentials: { mode: 'read-only' }, fields: [], mcp: {
     limits: { maxConnections: 4, maxUrlBytes: 2048, maxHeaderBytes: 4096, maxHeaderCount: 8,
       maxToolCallTimeoutMs: 2000, maxRequestBytes: 20000, maxReplyBytes: 65536 },
-    runtime: { maxInstructionBytes: 4096, reconnect: { enabled: true, initialDelayMs: 20, maxDelayMs: 50, maxAttempts: 2 } },
+    runtime: { maxInstructionBytes: 4096, maxIncomingResponseBytes: 4194304, listMaxPages: 4,
+      reconnect: { enabled: true, initialDelayMs: 20, maxDelayMs: 50, maxAttempts: 2 } },
   },
 }
 const bounds = { maxHomeBytes: 4096, maxCollectionItems: 512, maxFrameBytes: 262144, maxQueuedEvents: 128, maxQueuedBytes: 4194304 }

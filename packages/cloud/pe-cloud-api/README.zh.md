@@ -203,7 +203,7 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 
 ### 可选账户 HTTP MCP 装配
 
-`AccountMcpConnections` 仅在原账户上下文挂载官方 `dsh-mcp-client`，恢复启用的账户私有定义，等待客户端替换与销毁，并在 MCP 调用前后检查账户和 Agent 准入。连接测试使用独立的原生注册作用域，不向模型发布工具。支持 HTTP 与 HTTPS；不提供 stdio 和 OAuth。`prepareCloudMcpConnections` 可选安装经账号鉴权的 `cloudMcpConnections/action` Remote，提供列表、保存、启停、移除及隔离连接测试。请求头仅作为凭据输入；返回元数据包含代际修订值和发现工具数。每次修改由原账户单个保存回合负责到原生客户端应用完成，版本冲突或重名拒绝不发生写入。原生生命周期观察口保留未确认的传输关闭责任并阻止替换。探测失败在原生依赖作用域内收容，等待外部工作前合并请求、真实登录 Peer 与账号取消信号；探测清理未确认时仍保留未知保存结果。显式空请求头会删除原生凭据记录，省略请求头则保留。真实 Cloud 部署及浏览器验收仍需单独的集成证据。
+`AccountMcpConnections` 仅在原账户上下文挂载官方 `dsh-mcp-client`，恢复启用的账户私有定义，等待客户端替换与销毁，并在 MCP 调用前后检查账户和 Agent 准入。连接测试使用独立的原生注册作用域，不向模型发布工具。支持 HTTP 与 HTTPS；不提供 stdio 和 OAuth。运行策略要求显式正整数 `maxIncomingResponseBytes`（最高 64 MiB）和 `listMaxPages`（最高 64），用于选择[官方客户端解析前 HTTP 限制及 SDK 分页限制](../../mcp/mcp-client/README.zh.md)；`limits.maxReplyBytes` 仅独立限制管理回复，不限制远端 HTTP 正文。`prepareCloudMcpConnections` 可选安装经账号鉴权的 `cloudMcpConnections/action` Remote，提供列表、保存、启停、移除及隔离连接测试。请求头仅作为凭据输入；返回元数据包含代际修订值和发现工具数。每次修改由原账户单个保存回合负责到原生客户端应用完成，版本冲突或重名拒绝不发生写入。原生生命周期观察口保留未确认的传输关闭责任并阻止替换。探测失败在原生依赖作用域内收容，等待外部工作前合并请求、真实登录 Peer 与账号取消信号；探测清理未确认时仍保留未知保存结果。显式空请求头会删除原生凭据记录，省略请求头则保留。真实 Cloud 部署及浏览器验收仍需单独的集成证据。
 
 ## Model Experience
 

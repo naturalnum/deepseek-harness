@@ -17,13 +17,15 @@ export function mcpConnectionsPolicy(input: unknown): ApprovedMcpConnections {
   const value = z.strictObject({ limits: z.strictObject({ maxConnections: positive.max(64),
     maxUrlBytes: positive.max(65536), maxHeaderBytes: positive.max(65536), maxHeaderCount: positive.max(64),
     maxToolCallTimeoutMs: positive, maxRequestBytes: positive.max(1048576), maxReplyBytes: positive.max(1048576) }),
-  runtime: z.strictObject({ maxInstructionBytes: positive.max(1048576), reconnect: z.strictObject({
-    enabled: z.boolean(), initialDelayMs: positive, maxDelayMs: positive, maxAttempts: positive }) }) }).parse(input)
+  runtime: z.strictObject({ maxInstructionBytes: positive.max(1048576), maxIncomingResponseBytes: positive.max(67108864),
+    listMaxPages: positive.max(64), reconnect: z.strictObject({
+      enabled: z.boolean(), initialDelayMs: positive, maxDelayMs: positive, maxAttempts: positive }) }) }).parse(input)
   if (value.runtime.reconnect.maxDelayMs < value.runtime.reconnect.initialDelayMs
     || value.limits.maxReplyBytes < value.limits.maxConnections * (6 * value.limits.maxUrlBytes + 512) + 512
     || value.limits.maxRequestBytes < value.limits.maxHeaderBytes + 6 * value.limits.maxUrlBytes + 512) {
     throw new Error('cloud/invalid-mcp-budgets')
   }
   return Object.freeze({ limits: Object.freeze(value.limits), runtime: Object.freeze({
-    maxInstructionBytes: value.runtime.maxInstructionBytes, reconnect: Object.freeze(value.runtime.reconnect) }) })
+    maxInstructionBytes: value.runtime.maxInstructionBytes, maxIncomingResponseBytes: value.runtime.maxIncomingResponseBytes,
+    listMaxPages: value.runtime.listMaxPages, reconnect: Object.freeze(value.runtime.reconnect) }) })
 }
