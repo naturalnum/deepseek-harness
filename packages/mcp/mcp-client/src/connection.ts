@@ -113,6 +113,8 @@ export interface ConnectionHandle extends ServerContext {
    * unregister every tool this server still owns.
    */
   dispose(): Promise<void>
+  /** True only when every transport generation owned by this instance confirmed closure. */
+  closureConfirmed(): boolean
 }
 
 /**
@@ -155,6 +157,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   let connectedAt: number | undefined
   /** The real error from the first connection attempt, for startup-await diagnostics. */
   let firstAttemptError: unknown
+  let closureConfirmed = true
 
   /** A generation may act only while it is the current one on a live plugin. */
   const isCurrent = (generation: Client): boolean => !disposed && client === generation
@@ -286,12 +289,19 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     /** Unattached probes close through their transport; attached clients must also report transport closure. */
     async function closeGeneration(): Promise<boolean> {
       const attached = generation.transport !== undefined
+      let confirmed: boolean
       try {
         await (attached ? generation.close() : transport?.close())
       } catch (_error) {
-        if (!attached) return hasClosed()
+        if (!attached) {
+          confirmed = hasClosed()
+          if (!confirmed) closureConfirmed = false
+          return confirmed
+        }
       }
-      return !attached || hasClosed() || await waitForClose(closed.promise)
+      confirmed = !attached || hasClosed() || await waitForClose(closed.promise)
+      if (!confirmed) closureConfirmed = false
+      return confirmed
     }
     async function refreshTools(): Promise<void> {
       if (!isCurrent(generation)) return
@@ -362,6 +372,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
 
   return {
     ready,
+    closureConfirmed: () => disposed && closureConfirmed,
     instructions: () => serverInstructions,
     resources: {
       async request(request, exec): Promise<JsonValue> {

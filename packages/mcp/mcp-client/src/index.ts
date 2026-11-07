@@ -27,6 +27,12 @@ export { createMcpToolDefinition } from './tools.ts'
 export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
 export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 
+/** Original supervisor teardown observation for hosts that must retain unconfirmed resource responsibility. */
+export interface McpClientLifecycle {
+  /** Stop and join the original supervisor; false retains an unconfirmed transport generation. */
+  close(): Promise<boolean>
+}
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-client'
 
@@ -149,9 +155,10 @@ export const Config = z.union([
  * ordinary function as a constructor, whose returned Promise is not startup work.
  * @param ctx - plugin context carrying the tool registry.
  * @param config - resolved transport and server namespace configuration.
+ * @param observeLifecycle - optional programmatic host observer, called before startup awaits; never configuration data.
  * @returns startup readiness after connection and initial tool discovery settle.
  */
-export async function apply(ctx: Context, config: Config): Promise<void> {
+export async function apply(ctx: Context, config: Config, observeLifecycle?: (lifecycle: McpClientLifecycle) => void): Promise<void> {
   // Fail loud at load: reconnect misconfiguration (including programmatic
   // construction that bypassed Schemastery) rejects THIS instance before any
   // effect registers.
@@ -190,6 +197,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return dispose()
   }, { global: true })
   ctx.effect(() => dispose, 'mcp-client.connection')
+  observeLifecycle?.({ async close() { await dispose(); return connection.closureConfirmed() } })
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.

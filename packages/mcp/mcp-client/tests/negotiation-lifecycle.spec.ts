@@ -86,6 +86,7 @@ describe('SDK negotiation lifecycle', () => {
     const starts = (await events()).filter(item => item.event === 'start')
     expect(starts).toHaveLength(1)
     for (const item of starts) expect(() => process.kill(item.pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    expect(handle.closureConfirmed()).toBe(true)
     expect(handle.errors).toEqual([])
   })
 
@@ -145,5 +146,7 @@ describe('SDK negotiation lifecycle', () => {
     ])
     expect(handle.warns.some(line => line.includes('connection failed; retrying'))).toBe(false)
     expect(handle.transports).toHaveLength(1)
+    await expect(handle.dispose()).resolves.toBeUndefined()
+    expect(handle.closureConfirmed()).toBe(false)
   })
 })
