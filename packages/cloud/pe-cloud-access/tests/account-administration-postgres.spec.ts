@@ -68,11 +68,40 @@ describe.skipIf(configPath === undefined)('real account administration with Post
       expect((await post('/cloud/auth/sign-up/email', { email: 'closed@example.test', name: 'Closed', password: 'Long-test-password-123' })).status).toBe(400)
       expect((await post('/cloud/admin/accounts', { op: 'list', search: '', offset: 0 }, user.cookie)).status).toBe(403)
       expect((await post('/cloud/auth/admin/create-user', {}, a.cookie)).status).toBe(403)
-      const created = await post('/cloud/admin/accounts', { op: 'create', email: 'pending-'+randomUUID()+'@example.test', displayName: 'Pending', password: 'Long-test-password-123', role: 'user' }, a.cookie)
+      const creation = { op: 'create', email: 'pending-'+randomUUID()+'@example.test', displayName: 'Pending',
+        password: 'Long-test-password-123', role: 'user', templateId: 'standard', requestId: randomUUID() }
+      const created = await post('/cloud/admin/accounts', creation, a.cookie)
       expect(created.status).toBe(200)
       const createdBody = await created.json() as { id: string; resourceState: string }
       expect(createdBody.resourceState).toBe('not-provisioned')
+      const repeated = await post('/cloud/admin/accounts', creation, a.cookie)
+      expect((await repeated.json() as { id: string }).id).toBe(createdBody.id)
+      expect((await post('/cloud/admin/accounts', { ...creation, displayName: 'Changed payload' }, a.cookie)).status).toBe(403)
       expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
+      let prepared = 0, unknownStop = true
+      adapter.installAccountResources({
+        templates: async () => [{ id: 'standard', available: 1 }], states: async () => [],
+        prepare: async (id) => {
+          expect(id).toBe(createdBody.id)
+          expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [id])).rows[0]?.banned).toBe(true)
+          prepared++
+        },
+        disable: async (id) => {
+          expect((await pool.query<{ count: string }>('SELECT count(*) FROM "session" WHERE "userId"=$1', [id])).rows[0]?.count).toBe('0')
+          return unknownStop ? 'stop-unknown' : 'disabled'
+        },
+      })
+      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      expect(prepared).toBe(1)
+      expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(false)
+      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      expect(prepared).toBe(1)
+      expect((await post('/cloud/admin/accounts', { op: 'enabled', id: createdBody.id, enabled: false }, a.cookie)).status).toBe(503)
+      expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
+      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      expect(prepared).toBe(1)
+      unknownStop = false
+      expect((await post('/cloud/admin/accounts', { op: 'enabled', id: createdBody.id, enabled: false }, a.cookie)).status).toBe(200)
       const results = await Promise.all([
         post('/cloud/admin/accounts', { op: 'role', id: a.id, role: 'user' }, a.cookie),
         post('/cloud/admin/accounts', { op: 'role', id: b.id, role: 'user' }, b.cookie),

@@ -11,7 +11,7 @@ import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
 import { CloudIngress } from './ingress.ts'
 import { OwnerRouting } from './owner-routing.ts'
 import type { IngressObservation } from './types.ts'
-import type { AccountBinding, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountUse, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { ConfigurationPeerOperation } from './peers.ts'
@@ -198,6 +198,17 @@ export class PeAuthService extends Service {
       const web = this.ctx.get('webServer'), runtime = this.ctx.get('peAccountRuntime'), exposure = this.ctx.get('peExposure')
       if (web === undefined || runtime === undefined || !(exposure instanceof ExposureService)) {
         throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+      }
+      if (this.config.accountAdministration !== undefined) {
+        const initialize = runtime.initializeAccountAdministration?.bind(runtime)
+        const templates = runtime.accountResourceTemplates?.bind(runtime)
+        const states = runtime.accountResourceStates?.bind(runtime), prepare = runtime.prepareManagedAccount?.bind(runtime)
+        const disable = runtime.disableManagedAccount?.bind(runtime)
+        if (initialize === undefined || templates === undefined || states === undefined || prepare === undefined || disable === undefined) {
+          throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+        }
+        await initialize(this.config.accountAdministration.initialAdministratorIds.map(id => id as AccountId))
+        this.auth.installAccountResources({ templates, states, prepare, disable })
       }
       this.ingress = new CloudIngress(this.ctx, this.config, this.config.ingress, this.auth, {
         web, runtime, exposure, recipeVersion: exposure.policy.manifest.recipeVersion,

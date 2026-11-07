@@ -76,7 +76,8 @@ describe('pinned Better Auth/PostgreSQL adapter denial paths', () => {
     const { adapter } = await create()
     const native = Reflect.get(adapter, 'auth') as Auth
     const mutate = vi.spyOn(native, 'handler')
-    for (const path of ['/cloud/auth/admin/create-user', '/cloud/auth/admin/set-role', '/cloud/auth/admin/impersonate-user']) {
+    for (const path of ['/cloud/auth/admin/create-user', '/cloud/auth/admin/set-role', '/cloud/auth/admin/impersonate-user',
+      '/cloud/auth//admin/create-user', '/cloud/auth/%61dmin/create-user', '/cloud/auth/%2fadmin/set-role']) {
       const { request, response, socket } = carrier(path, 'POST', ['Content-Type', 'application/json'])
       try {
         await expect(adapter.handleNodeRequest(request, response, requestId)).rejects.toMatchObject({ code: 'cloud/forbidden' })

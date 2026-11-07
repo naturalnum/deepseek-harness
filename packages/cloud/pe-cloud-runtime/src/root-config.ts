@@ -18,6 +18,8 @@ export interface RuntimeRootConfig extends RuntimeConfig {
   readonly fileReadTiming?: boolean
   /** Explicit maintenance-only authority; omission preserves ordinary runtime admission and closes recovery. */
   readonly recovery?: Readonly<{ readonly verifierId: RecoveryVerifierId; readonly limits: OwnerRecoveryLimits }>
+  /** Trusted startup assignments for an immutable v3 preallocated inventory. */
+  readonly staticAccounts?: { readonly initialAssignments: { readonly accountId: AccountId; readonly slotId: string }[] }
   readonly recipeVersion: string
   readonly internalAddress: string
   readonly heartbeatIntervalMs: number
@@ -131,6 +133,9 @@ const rootFields: z<RuntimeRootConfig> = z.object({
   }).required()]),
   maxMountedAccounts: positive(), maxConcurrentMounts: positive(), maxConcurrentDrains: positive(),
   subagentCapacity: z.union([SubagentCapacityLimitsSchema]),
+  staticAccounts: z.union([z.object({ initialAssignments: z.array(z.object({
+    accountId: z.transform(text(), value => brandString<AccountId>(value)), slotId: text(),
+  }).required()).required() }).required()]),
   recipeVersion: text(), internalAddress: text(),
   heartbeatIntervalMs: timer(), heartbeatTimeoutMs: timer(), startupTimeoutMs: timer(),
   shutdownTimeoutMs: timer(), secretResolveTimeoutMs: timer(),

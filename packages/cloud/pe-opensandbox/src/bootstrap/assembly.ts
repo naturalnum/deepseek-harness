@@ -6,6 +6,7 @@ import { adoptExportKeeperLive, type ExportKeeperLive, type ExportKeeperLiveInpu
 import { readRootDeploymentReference, RootDeploymentLease, type RootDeploymentReference } from './deployment-reference.ts'
 import { parseRootDeploymentInput } from './deployment-input.ts'
 import { createRootSdkExecutionOwner, type RootSdkExecutionOwner } from './factory.ts'
+import type { SharedStorageAccountResolver } from '../shared-mounts.ts'
 import { BootstrapFailure } from './bootstrap.ts'
 
 /** Only the original Root caller may retain this assembly; it provides no Loader/account configuration entry. */
@@ -41,7 +42,7 @@ function keeperInput(value: unknown, digest: string, assertManifestCurrent: () =
  * @throws On protected input, storage/legacy keeper or construction failure; private cause retains startup cleanup ownership.
  */
 export async function assembleRootExecutionDeployment(reference: RootDeploymentReference,
-  limits: ManagedCoordinatorConfig): Promise<RootExecutionAssembly> {
+  limits: ManagedCoordinatorConfig, resolveSharedAccount?: SharedStorageAccountResolver): Promise<RootExecutionAssembly> {
   if (process.platform !== 'linux' || process.getuid?.() !== 2000 || process.getgid?.() !== 2000) {
     throw new ExecutionStateError('cloud/invalid-config', 'Root execution assembly requires the original non-root Linux CLI.')
   }
@@ -91,7 +92,7 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
       // Publication bytes only; share admission separately checks original files grants and live source mounts.
       const planCurrent = (): void => { selection.assertCurrent(); plan.assertCurrent() }
       state.exports = createSharedPathExecutionExports(plan.bytes(), input.storage.plan.sha256, planCurrent,
-        input.storage.limits, input.selection.serverImageDigest)
+        input.storage.limits, input.selection.serverImageDigest, resolveSharedAccount)
       state.exports.assertCurrent()
     }
     const storageFile = state.storageFile
