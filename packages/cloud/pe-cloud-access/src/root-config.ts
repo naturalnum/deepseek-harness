@@ -1,3 +1,4 @@
+import type { AccountAdministrationConfig } from './account-administration.ts'
 /** Host-only authentication database and secret budgets; browser configuration stays separate. */
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -62,6 +63,7 @@ export interface AuthIngressConfig {
 export interface AuthRootConfig extends AccessConfig {
   /** Omission retains component compatibility; first-trial deployment explicitly disables library sign-up. */
   readonly disableSignUp?: boolean
+  readonly accountAdministration?: AccountAdministrationConfig
   readonly database: {
     readonly host: string
     readonly port: number
@@ -110,6 +112,8 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
   AccessConfigSchema,
   z.object({
     disableSignUp: z.boolean(),
+    accountAdministration: z.union([z.object({ maxAccounts: positive(), maxPageSize: positive(),
+      initialAdministratorIds: z.array(text()).required() }).required()]),
     database: z.object({
       host: text(), port: z.natural().min(1).max(65535).required(), user: text(), database: text(),
       passwordRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).required(), ssl: z.boolean().required(),
@@ -159,6 +163,11 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
       .some(name => name.toLowerCase() === OWNER_HOP_HEADER)) throw new TypeError()
     credentialRef(config.authSecretRef)
     credentialRef(config.database.passwordRef)
+    if (config.accountAdministration !== undefined && (config.pool.maxConnections < 2
+      || config.accountAdministration.maxPageSize > config.accountAdministration.maxAccounts
+      || config.accountAdministration.initialAdministratorIds.length > config.accountAdministration.maxAccounts
+      || new Set(config.accountAdministration.initialAdministratorIds).size
+        !== config.accountAdministration.initialAdministratorIds.length)) throw new TypeError()
     if (config.maxSecretBytes < 32 || config.pool.lockTimeoutMs > config.pool.statementTimeoutMs) throw new TypeError()
     if (config.ingress !== undefined && (config.ingress.sessionRecheckLeadMs >= config.sessionRecheckMs
       || config.ingress.maxOperationsPerAccount > config.ingress.maxOperations)) throw new TypeError()

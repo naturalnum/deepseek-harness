@@ -72,6 +72,19 @@ describe('pinned Better Auth/PostgreSQL adapter denial paths', () => {
       } finally { request.destroy(); response.destroy(); socket.destroy() }
     })
 
+  it('blocks direct library admin paths before any underlying handler or database operation', async () => {
+    const { adapter } = await create()
+    const native = Reflect.get(adapter, 'auth') as Auth
+    const mutate = vi.spyOn(native, 'handler')
+    for (const path of ['/cloud/auth/admin/create-user', '/cloud/auth/admin/set-role', '/cloud/auth/admin/impersonate-user']) {
+      const { request, response, socket } = carrier(path, 'POST', ['Content-Type', 'application/json'])
+      try {
+        await expect(adapter.handleNodeRequest(request, response, requestId)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+        expect(mutate).not.toHaveBeenCalled()
+      } finally { request.destroy(); response.destroy(); socket.destroy() }
+    }
+  })
+
   it('reports sign-out-required with a typed status/code and never suggests a retry', () => {
     const failure = new AuthAccessError('cloud/login-active', requestId)
     expect({ status: failure.status, body: failure.toJSON() }).toMatchInlineSnapshot(`

@@ -192,6 +192,7 @@ export class PeAuthService extends Service {
     this.assertStarting()
     const plan = await this.auth.planMigrations(this.requestId)
     assertAuthSchemaCurrent(plan, this.requestId)
+    await this.auth.initializeAdministrators(() => this.assertStarting())
     this.assertStarting()
     if (this.config.ingress !== undefined) {
       const web = this.ctx.get('webServer'), runtime = this.ctx.get('peAccountRuntime'), exposure = this.ctx.get('peExposure')

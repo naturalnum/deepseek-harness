@@ -1,3 +1,4 @@
+import { installCloudAccountManagement } from './account-management.tsx'
 import { installCloudRemoteServers } from './remote-servers/install.ts'
 /** Browser Loader entry consuming the exact pre-Cordis prepared page owner. */
 import { installCloudApprovedSettings } from './approved-settings.ts'
@@ -40,6 +41,7 @@ export function apply(ctx: Context, config: Config): void {
   installCloudModelSettings(ctx, owner)
   installCloudSkillSettings(ctx, owner)
   installCloudManagement(ctx, owner)
+  installCloudAccountManagement(ctx, owner)
   installCloudApprovedSettings(ctx, owner)
   installCloudSidebarAccount(ctx, owner)
 }

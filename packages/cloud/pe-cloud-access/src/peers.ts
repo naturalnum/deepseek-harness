@@ -28,6 +28,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cloud/unauthenticated': SafeDetails
     'cloud/forbidden': {}
     'cloud/login-active': SafeDetails
+    'cloud/last-administrator': SafeDetails
     'cloud/account-unavailable': {}
     'cloud/capacity': {}
     'cloud/stop-unconfirmed': SafeDetails

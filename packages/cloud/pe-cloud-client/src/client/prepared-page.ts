@@ -123,10 +123,13 @@ export class PreparedCloudPage {
   private connection: ConnectionHandle | undefined
   private uploadHooks: ClientFileUploadHooks | undefined
   private exportIntegration: SessionLogDownloadIntegration | undefined
+  /** Existing bootstrap byte budget also bounds account-administration results. */
+  readonly accountAdministrationMaxResponseBytes: number
   private readonly config: Readonly<CloudClientConfig>
   private readonly location: { readonly hostname: string }
 
   private constructor(bootstrap: CloudBootstrap, input: CloudPagePreparationInput) {
+    this.accountAdministrationMaxResponseBytes = input.decodeLimits.maxBodyBytes
     this.bootstrap = bootstrap
     this.config = Object.freeze({ ...input.config,
       ...input.config.skillSettings === undefined ? {} : { skillSettings: Object.freeze({ ...input.config.skillSettings }) },

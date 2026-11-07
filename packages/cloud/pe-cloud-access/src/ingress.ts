@@ -46,7 +46,7 @@ type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.c
   | 'owner.hop' | 'owner.resolve' | 'owner.borrow' | 'owner.forward' | 'owner.recheck'
 
 const FAILURE_CODES: readonly string[] = Object.freeze([
-  'cloud/unauthenticated', 'cloud/forbidden', 'cloud/login-active', 'cloud/account-unavailable',
+  'cloud/unauthenticated', 'cloud/forbidden', 'cloud/login-active', 'cloud/last-administrator', 'cloud/account-unavailable',
   'cloud/account-starting', 'cloud/account-quarantined', 'cloud/stop-unconfirmed', 'cloud/capacity',
   'cloud/invalid-config', 'cloud/config-conflict', 'cloud/config-busy', 'cloud/stale-generation',
   'cloud/model-not-allowed', 'cloud/invalid-project-title',
@@ -186,6 +186,7 @@ export class CloudIngress {
       this.state = 'installing'
       const routes: WebRoute[] = [
         { kind: 'prefix', path: '/cloud/auth', handler: (req, res) => this.handleHttp(req, res) },
+        ...this.auth.accountAdministrationEnabled ? [{ kind: 'exact' as const, path: '/cloud/admin/accounts', handler: (req: IncomingMessage, res: ServerResponse) => this.handleHttp(req, res) }] : [],
         { kind: 'exact', path: '/cloud/bootstrap', handler: (req, res) => this.handleHttp(req, res) },
         { kind: 'exact', path: '/cloud/settings', handler: (req, res) => this.handleHttp(req, res) },
         { kind: 'prefix', path: API_PATH, handler: (req, res) => this.handleHttp(req, res) },
@@ -344,6 +345,28 @@ export class CloudIngress {
         })
         operation.stage = 'ingress.current'
         this.assertCurrent(operation.id)
+        return
+      }
+      if (url.pathname === '/cloud/admin/accounts') {
+        if (request.method !== 'POST') throw new AuthAccessError('cloud/forbidden', operation.id)
+        const chunks: Buffer[] = []
+        let bytes = 0
+        for await (const chunk of request) {
+          const body = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+          bytes += body.byteLength
+          if (bytes > this.limits.maxAuthRequestBodyBytes) throw new AuthAccessError('cloud/capacity', operation.id)
+          chunks.push(body)
+          this.assertOperation(operation)
+        }
+        let input: unknown
+        try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
+        catch (_invalidJson) { throw new AuthAccessError('cloud/forbidden', operation.id) }
+        const result = await this.auth.administer(request, input, operation.id, () => this.assertOperation(operation))
+        this.assertOperation(operation)
+        const body = JSON.stringify(result)
+        if (Buffer.byteLength(body) > this.limits.maxBootstrapResponseBytes) throw new AuthAccessError('cloud/capacity', operation.id)
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        response.end(body)
         return
       }
       if (url.pathname === '/cloud/bootstrap' && request.method === 'GET') {
