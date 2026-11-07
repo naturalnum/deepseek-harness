@@ -65,6 +65,8 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 第六组仅允许精确的 v2 Office 依赖扩展工作负载与其配对的仅 COPY 服务端，见独立插件的[镜像构建记录](../../../integrations/epri-research/source-records/cloud-images.json)。实际 Linux 构建保留原 Office 的十五层、受保护文件树、包表及运行时清单；独立解释器实际核对所需包 API、三个离线 OCR 模型文件及引擎构造。模型在推理时延迟实例化，仍需实际运行证据。这仅记录镜像证据；受管 Session 执行、插件工作流及认证 Web 行为仍须单独验收。登记不改变默认选择或就绪规则。
 
+Git 组合将 Office/科研工作负载的独立 `/opt/dsh/research/git` 依赖目录与其精确的仅 COPY 服务端配对。前六组原值保持不变，仍支持同一 v2 共享路径部署和 Session 目录守卫，包括受保护的 v3 存储计划。登记镜像不会选择该组合或改变执行限额；受管 Git 与认证 Web 行为仍须单独验收。
+
 [Guest 上下文生成器](runtime/office-completion/heading-numbering/prepare_context.py) 是当前保留标题编号的 Office 工作负载的重建入口。在仓库根目录调用 `python3 packages/cloud/pe-opensandbox/runtime/office-completion/heading-numbering/prepare_context.py <retained-context-v6.tar> <exclusive-output-directory>`。须保留 SHA256 为 `4f17e2e7f6c92c9a5ce0c3b5e018e43c9d312d8a5bcb51f9d318f87e32962a90`、大小为 5,099,520 字节的原始上下文，以及外部不可变 UTF-8 Office 基础镜像 `sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97`；生成器拒绝不同的上下文字节。[单文件 COPY 配方](runtime/office-completion/heading-numbering/Dockerfile) 直接使用该基础镜像。仅执行 v6 依赖配方不会应用此修正。
 
 生成器校验原始归档及适配脚本，应用[两表达式补丁](runtime/office-completion/heading-numbering/heading-numbering.patch)，并在新输出目录写入 `context.tar` 和 `MANIFEST.json`。清单分别记录原始、补丁和运行时摘要。仅规范路径下的运行时适配脚本与原包不同；其余资源均须保留原字节，包括归档、模板和许可。源码准备不启动镜像构建，不代表执行合格，不激活已选配对或启用调用；实际构建与部署仍由唯一运行负责人执行。

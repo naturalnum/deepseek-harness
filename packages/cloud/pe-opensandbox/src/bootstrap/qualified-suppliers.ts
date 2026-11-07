@@ -18,6 +18,11 @@ export const OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST = 'sha256:71c7afa35f5d774ec6a
 /** COPY-only Office server overlay that creates only the paired immutable superset workload. */
 export const OFFICE_RESEARCH_SERVER_IMAGE_DIGEST = 'sha256:7d8a5f0bfe9d7db24ff396d57f930ef8a6be2d4651c05d229e6d2624cfc2e042'
 
+/** Office/research dependency superset with the qualified independent Git prefix. */
+export const OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST = 'sha256:44e26197f73faece822111f939e23a14816cf4fd5eb53362e0088087c42a8c1e'
+/** COPY-only server paired exclusively with the Git dependency superset. */
+export const OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST = 'sha256:c0e629914f5b62c74f63e6a0632fd75de47ef6c4abc2321f277525350848894f'
+
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
   readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
@@ -41,6 +46,8 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
     serverImageDigest: OFFICE_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST,
     serverImageDigest: OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**

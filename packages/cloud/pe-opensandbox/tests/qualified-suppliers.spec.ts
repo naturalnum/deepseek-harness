@@ -5,9 +5,9 @@ import { expect, it } from 'vitest'
 import { loadBootstrapPayload, TrustedSdkBootstrap } from '../src/bootstrap/bootstrap.ts'
 import { parseRootDeploymentInput } from '../src/bootstrap/deployment-input.ts'
 import { NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, OFFICE_WORKLOAD_IMAGE_DIGEST,
-  OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST,
+  OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST,
   SESSION_DIRECTORY_SERVER_IMAGE_DIGEST, REMOTE_CLIENT_SERVER_IMAGE_DIGEST, OFFICE_SERVER_IMAGE_DIGEST,
-  OFFICE_RESEARCH_SERVER_IMAGE_DIGEST,
+  OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST,
   qualifiedSupplierTuples, isPinnedWorkloadImageDigest, isSessionDirectoryServerImageDigest } from '../src/bootstrap/qualified-suppliers.ts'
 import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/root-deployment.ts'
 
@@ -30,13 +30,20 @@ const suppliers = [...existing, {
   workloadImageDigest: OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST,
   serverImageDigest: OFFICE_RESEARCH_SERVER_IMAGE_DIGEST,
   sessionDirectories: true,
+}, {
+  schema: 'pe-opensandbox-root-deployment-v2',
+  workloadImageDigest: OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST,
+  serverImageDigest: OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST,
+  sessionDirectories: true,
 }] as const
 
-it('retains the original five suppliers and adds only the exact built v2 superset pair', () => {
+it('retains the original suppliers and permits only the exact built v2 superset pairs', () => {
   expect(qualifiedSupplierTuples.slice(0, 5)).toEqual(existing)
   expect(qualifiedSupplierTuples).toEqual(suppliers)
   expect(OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST).toBe('sha256:71c7afa35f5d774ec6a198c7233b645bc16275c56595369efa368d6fac025bf8')
   expect(OFFICE_RESEARCH_SERVER_IMAGE_DIGEST).toBe('sha256:7d8a5f0bfe9d7db24ff396d57f930ef8a6be2d4651c05d229e6d2624cfc2e042')
+  expect(OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST).toBe('sha256:44e26197f73faece822111f939e23a14816cf4fd5eb53362e0088087c42a8c1e')
+  expect(OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST).toBe('sha256:c0e629914f5b62c74f63e6a0632fd75de47ef6c4abc2321f277525350848894f')
   expect(Object.isFrozen(qualifiedSupplierTuples)).toBe(true)
   expect(qualifiedSupplierTuples.every(Object.isFrozen)).toBe(true)
   for (const row of suppliers) {
