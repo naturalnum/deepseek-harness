@@ -256,7 +256,7 @@ v3 Files 库存包含有限、不可变且已完成物理供应的存储槽位�
 
 持久化库存摘要使用 Files 的稳定物理槽位摘要，与其包含命名空间身份的完整部署计划摘要分开。同一物理清单的新验证计划恢复原账号与槽位映射及绑定修订。backing 身份、配额或槽位清单变化会拒绝启动，不会改写既有行。每个最终命名空间都须重新量测并固定完整计划；关联摘要既不授予存储权限，也不豁免 Files 或 OpenSandbox 校验。
 
-可信配置 `staticAccounts.initialAssignments: [{ accountId, slotId }]` 对明确的既有身份幂等初始化，并拒绝冲突映射。`auth.accountAdministration.initialAdministratorIds` 必须明确指定具备这些绑定、有效且已存在的身份；不会自动提升首次登录者。Files 仅在测量原库存后、解析冷启动技能证明前调用 `prepareStaticAccountInventory`；运行时在 Files 开放准入前初始化种子并安装解析器。绑定解析器保留原映射对象，准备流程修订变化不会替换它。Files 从自身验证过的库存解析地址，原生工厂与 OpenSandbox 使用同一获准布局。解析器自身不授予存储租约。
+可信配置 `staticAccounts.initialAssignments: [{ accountId, slotId }]` 对明确的既有身份幂等初始化，并拒绝冲突映射。`auth.accountAdministration.initialAdministratorIds` 必须明确指定具备这些绑定、有效且已存在的身份；不会自动提升首次登录者。管理初始化等待原 Files 启动完成后才读取其存储所有者，并在等待后重新核验原 Root 仍有效。Files 仅在测量原库存后、解析冷启动技能证明前调用 `prepareStaticAccountInventory`；此回调直接初始化绑定，因此不会等待自身所属的 Files 启动。运行时在 Files 开放准入前初始化种子并安装解析器。绑定解析器保留原映射对象，准备流程修订变化不会替换它。Files 从自身验证过的库存解析地址，原生工厂与 OpenSandbox 使用同一获准布局。解析器自身不授予存储租约。
 
 `prepareManagedAccount` 占用真实模板槽位，持久化 `preparing`，调用原账号工厂，仅在实际 `AccountUse` 仍有效后登记 `ready`。Access 收到该结果后才可解除禁止登录。创建失败持久化 `failed`，重试不会重复创建身份或改绑槽位。冷启动获取账号会重新核验持久化准入状态和实际工厂。较早的准备不能覆盖并发停用。`disableManagedAccount` 等待 `AccountFactory.stopNative`，保留持久数据，并将未知 owner 或停止结果报告为 `stop-unknown`。
 

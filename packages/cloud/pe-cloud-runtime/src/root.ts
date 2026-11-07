@@ -396,10 +396,20 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     return borrowed
   }
 
-  private staticBindings(control: RootControl): Promise<StaticAccountBindings | undefined> {
+  private async staticBindings(control: RootControl): Promise<StaticAccountBindings | undefined> {
     if (control.staticBindingsStarting !== undefined) return control.staticBindingsStarting
-    const storage = this.ctx.root.get('peFilesPool')?.requireStorageOwner(), inventory = storage?.staticInventory()
-    if (storage === undefined || inventory === undefined) return Promise.resolve(undefined)
+    const files = this.ctx.root.get('peFilesPool', false)
+    if (files === undefined) return undefined
+    // Files publishes its service before workers and inventory settle. Its inventory callback
+    // initializes bindings directly, without joining the startup operation that owns that callback.
+    await files.start()
+    const current = this.activeControl()
+    if (current !== control) {
+      throw new AccountRuntimeError('cloud/stale-generation', 'The original Root control changed during Files startup')
+    }
+    if (current.staticBindingsStarting !== undefined) return current.staticBindingsStarting
+    const storage = files.requireStorageOwner(), inventory = storage.staticInventory()
+    if (inventory === undefined) return undefined
     return this.initializeStaticBindings(control, inventory, resolver => storage.installAccountAssignments(resolver))
   }
 
@@ -441,7 +451,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       for (const initial of control.config.staticAccounts?.initialAssignments ?? []) await bindings.seed(initial.accountId, initial.slotId)
       control.owners.installStaticAccountAdmission(inventory.sha256)
       control.revokeStaticBindings = installAssignments({
-        lookup: id => bindings.lookup(id), list: () => bindings.list(), assertCurrent: row => bindings.assertCurrent(row),
+        lookup: id => bindings.lookup(id), list: () => bindings.list(), assertCurrent: (row) => { bindings.assertCurrent(row) },
       })
       return bindings
     })()
