@@ -1,13 +1,14 @@
-/** Static two-account guest storage admission; actual native services and shared-pool lifetime keep their original owners. */
+/** Measured preallocated storage admission; Runtime owns user assignments and the original pool owns actual I/O. */
 import { posix } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import type { AccountBinding, AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountMountInput, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { AccountFilesPreparation } from './account-service.ts'
 import type { PoolReadPort } from './worker-pool.ts'
 import type { FdRootIdentity, FdStorageView } from './worker-protocol.ts'
-import type { StaticStorageAccount, StaticStorageConfig, StaticStorageDomain, StaticStoragePlan,
+import type { StaticStorageAccount, StaticStorageAccountV2, StaticStorageConfig, StaticStorageDomain, StaticStorageDeploymentPlan,
+  StaticStoragePlanV3, StaticStorageSlot, StaticAccountAssignment, StaticAccountAssignments, StaticStorageInventory,
   StorageProbeFacts } from './storage-types.ts'
-import { accountEnvironmentBank, parseStaticStoragePlan } from './storage-probe.ts'
+import { accountEnvironmentBank, parseStorageDeploymentPlan } from './storage-probe.ts'
 import { FilesFailure } from './error.ts'
 import type { ResolveAccountFileProject } from './text-project.ts'
 import { parseRootSkillRevalidations, assertRootSkillRevalidation } from './skill-revalidation.ts'
@@ -69,13 +70,22 @@ function readonlyObject(facts: StorageProbeFacts): void {
     || (facts.flags & 4) !== 0 || (facts.flags & 8) === 0) failure()
 }
 
+function physicalAccounts(plan: StaticStorageDeploymentPlan): readonly (StaticStorageAccount | StaticStorageSlot)[] {
+  return plan.version === 3 ? plan.slots : plan.accounts
+}
+
+function assignedAccount(slot: StaticStorageSlot, accountId: AccountId): StaticStorageAccountV2 {
+  const { slotId: _slotId, templateId: _templateId, ...storage } = slot
+  return Object.freeze({ accountId, ...storage })
+}
+
 /**
  * Decode the bounded process view and require the actual non-root, no-capability application identity.
  * @param view Closed-FD bounded proc results from the actual worker.
  * @param plan Protected deployment requirements, not permission assertions.
  * @returns The bounded live mount inventory for driver and writable-surface matching.
  */
-export function validateStorageView(view: FdStorageView, plan: StaticStoragePlan): readonly Mount[] {
+export function validateStorageView(view: FdStorageView, plan: StaticStorageDeploymentPlan): readonly Mount[] {
   const status = new Map<string, string>()
   for (const line of text(view.status).split('\n').filter(Boolean)) {
     const separator = line.indexOf(':'), key = line.slice(0, separator)
@@ -109,7 +119,12 @@ export function validateStorageView(view: FdStorageView, plan: StaticStoragePlan
 export class RootStorageOwner {
   private state: 'new' | 'checking' | 'open' | 'closed' | 'failed' = 'new'
   private initialization?: Promise<void>
-  private plan?: StaticStoragePlan
+  private plan?: StaticStorageDeploymentPlan
+  private assignments?: { readonly resolver: StaticAccountAssignments; active: boolean }
+  private readonly selectedAccounts = new Map<AccountId, {
+    readonly assignment: StaticAccountAssignment
+    readonly account: StaticStorageAccountV2
+  }>()
   private skillProofs: readonly SkillRevalidationQualification[] = []
   private preparationTail: Promise<void> = Promise.resolve()
   private readonly leases: Array<{ input: AccountMountInput; result: Promise<StaticAccountStorageLease> }> = []
@@ -135,6 +150,7 @@ export class RootStorageOwner {
       this.state = 'checking'
       try {
         this.plan = await this.readPlan()
+        if (this.plan.version !== 3 && this.assignments !== undefined) failure()
         await this.verify(this.plan)
         if (this.config.skillRevalidation !== undefined) {
           if (this.driver.skillProof === undefined) failure()
@@ -142,7 +158,7 @@ export class RootStorageOwner {
           if (protectedProof.bytes.byteLength > this.config.maxPlanBytes || createHash('sha256').update(protectedProof.bytes).digest('hex')
             !== this.config.skillRevalidation.proofSha256) failure()
           const proofs = parseRootSkillRevalidations(protectedProof.bytes, protectedProof.process, this.config.planSha256,
-            this.plan.accounts, this.maxSkillProjects)
+            this.proofAccounts(this.plan), this.maxSkillProjects)
           this.skillProofs = proofs.map(proof => ({ proof }))
         }
         this.finishInitialization()
@@ -158,10 +174,48 @@ export class RootStorageOwner {
     if (this.state !== 'open' || this.plan === undefined) failure()
   }
 
-  /** Require the actually verified v2 inventory; v1 remains valid only for closed execution. */
+  /** Require a verified inventory with execution banks; v1 remains valid only for closed execution. */
   assertExecutionStorageAvailable(): void {
     this.assertRootCurrent()
-    if (this.plan?.version !== 2) failure()
+    if (this.plan?.version === 1) failure()
+  }
+
+  /**
+   * Install Runtime's sole assignment registry before or after physical initialization.
+   * @param resolver Root-owned registry; user requests cannot supply paths or assignment objects.
+   * @returns Idempotent withdrawal; existing leases retain cleanup ownership and reject new work.
+   */
+  installAccountAssignments(resolver: StaticAccountAssignments): () => void {
+    if (this.assignments !== undefined || this.state === 'closed' || this.state === 'failed'
+      || this.plan !== undefined && this.plan.version !== 3) failure()
+    const installed = { resolver, active: true }
+    this.assignments = installed
+    return () => { installed.active = false }
+  }
+
+  /**
+   * Read verified deployment capacity without exposing storage addresses or issuing a lease.
+   * @returns Slot identifiers and templates for v3; legacy deployments have no dynamic inventory.
+   */
+  staticInventory(): StaticStorageInventory | undefined {
+    this.assertRootCurrent()
+    const plan = this.plan
+    if (plan === undefined || plan.version !== 3) return undefined
+    return Object.freeze({ sha256: this.config.planSha256, maxAccounts: plan.maxAccounts,
+      slots: Object.freeze(plan.slots.map(slot => Object.freeze({ slotId: slot.slotId, templateId: slot.templateId }))) })
+  }
+
+  /**
+   * Resolve Runtime's current account assignment against already measured physical domains.
+   * @param accountId Server-authenticated user identity supplied by trusted Runtime.
+   * @returns Immutable addresses only; callers still need the original preparation and installed binding.
+   */
+  resolveAccountStorage(accountId: AccountId): StaticStorageAccount {
+    this.assertRootCurrent()
+    const plan = this.plan
+    if (plan === undefined) failure()
+    if (plan.version !== 3) return plan.accounts.find(row => row.accountId === accountId) ?? failure()
+    return this.selectAssignedAccount(plan, accountId).account
   }
 
   /**
@@ -174,8 +228,10 @@ export class RootStorageOwner {
     this.assertRootCurrent()
     const plan = this.plan
     if (plan === undefined) failure()
-    const account = plan.accounts.find(row => row.accountId === input.binding.accountId && row.storageKey === input.layout.storageKey)
-    if (account === undefined || input.binding.recipeVersion !== plan.recipeVersion || input.binding.lifetime.aborted) failure()
+    const account = this.resolveAccountStorage(input.binding.accountId)
+    const assertAssignment = plan.version === 3 ? this.selectAssignedAccount(plan, input.binding.accountId).current : () => {}
+    if (account.storageKey !== input.layout.storageKey || input.binding.recipeVersion !== plan.recipeVersion
+      || input.binding.lifetime.aborted) failure()
     const skillProofs = this.skillProofs.filter(row => row.proof.accountId === account.accountId
       && row.proof.storageKey === account.storageKey)
     const existing = this.leases.find(row => row.input.binding.accountId === input.binding.accountId)
@@ -184,21 +240,23 @@ export class RootStorageOwner {
         || existing.input.instanceId !== input.instanceId) stale()
       return existing.result
     }
-    if (this.leases.length >= 2) failure()
+    if (this.leases.length >= (plan.version === 3 ? plan.maxAccounts : 2)) failure()
     const entry: { input: AccountMountInput; result: Promise<StaticAccountStorageLease> } = {
       input, result: this.preparationTail.then(async () => {
         this.assertRootCurrent()
+        assertAssignment()
         assertLifetime(input.binding.lifetime)
         try {
           await this.readPlan()
           await this.verify(plan)
         } catch (error) { this.failedInitialization(); throw error }
         this.assertRootCurrent()
+        assertAssignment()
         assertLifetime(input.binding.lifetime)
         const lease = new StaticAccountStorageLease(this, account, input, plan, this.driver, () => {
           const index = this.leases.indexOf(entry)
           if (index >= 0) this.leases.splice(index, 1)
-        }, skillProofs)
+        }, skillProofs, assertAssignment)
         lease.assertLayout()
         return lease
       }),
@@ -224,8 +282,9 @@ export class RootStorageOwner {
     const entry = this.leases.find(row => row.input.binding.accountId === binding.accountId
       && row.input.binding.epoch === binding.epoch && row.input.binding.lifetime === binding.lifetime
       && row.input.binding.recipeVersion === binding.recipeVersion)
-    const account = plan?.accounts.find(row => row.accountId === binding.accountId && row.storageKey === entry?.input.layout.storageKey)
-    if (entry === undefined || account === undefined || plan === undefined || binding.lifetime.aborted
+    if (entry === undefined || plan === undefined || binding.lifetime.aborted) stale()
+    const account = this.resolveAccountStorage(binding.accountId)
+    if (account.storageKey !== entry.input.layout.storageKey
       || root.rootPath !== account.private.rootPath || root.rootDevice !== account.private.rootDevice
       || root.rootInode !== account.private.rootInode || root.rootMountId !== account.private.rootMountId) stale()
     return Object.freeze({ uid: plan.appUid, gid: plan.appGid, projects: account.projects, privateDomain: account.private })
@@ -238,22 +297,67 @@ export class RootStorageOwner {
 
   private failedInitialization(): void { if (this.state !== 'closed') this.state = 'failed' }
 
-  private async readPlan(): Promise<StaticStoragePlan> {
+  private async readPlan(): Promise<StaticStorageDeploymentPlan> {
     const record = await this.driver.record()
     if (record.byteLength > this.config.maxPlanBytes
       || createHash('sha256').update(record).digest('hex') !== this.config.planSha256) failure()
-    return parseStaticStoragePlan(record, this.maxPathBytes)
+    return parseStorageDeploymentPlan(record, this.maxPathBytes)
   }
 
-  private async verify(plan: StaticStoragePlan): Promise<void> {
+  private selectAssignedAccount(plan: StaticStoragePlanV3, accountId: AccountId): {
+    readonly account: StaticStorageAccountV2
+    readonly current: () => void
+  } {
+    const installed = this.assignments
+    if (installed === undefined || !installed.active) failure()
+    const assignment = installed.resolver.lookup(accountId)
+    if (assignment === undefined || assignment.accountId !== accountId) failure()
+    installed.resolver.assertCurrent(assignment)
+    const slot = plan.slots.find(row => row.slotId === assignment.slotId)
+    if (slot === undefined) failure()
+    let selected = this.selectedAccounts.get(accountId)
+    if (selected === undefined) {
+      if (this.selectedAccounts.size >= plan.maxAccounts
+        || [...this.selectedAccounts.values()].some(row => row.assignment.slotId === assignment.slotId)) failure()
+      selected = { assignment, account: assignedAccount(slot, accountId) }
+      this.selectedAccounts.set(accountId, selected)
+    }
+    if (selected.assignment !== assignment) stale()
+    const current = (): void => {
+      this.assertRootCurrent()
+      if (this.assignments !== installed || !installed.active || installed.resolver.lookup(accountId) !== assignment) stale()
+      installed.resolver.assertCurrent(assignment)
+    }
+    return { account: selected.account, current }
+  }
+
+  private proofAccounts(plan: StaticStorageDeploymentPlan): readonly StaticStorageAccount[] {
+    if (plan.version !== 3) return plan.accounts
+    const installed = this.assignments
+    if (installed === undefined || !installed.active) failure()
+    const assignments = installed.resolver.list()
+    if (assignments.length > plan.maxAccounts
+      || new Set(assignments.map(row => row.accountId)).size !== assignments.length
+      || new Set(assignments.map(row => row.slotId)).size !== assignments.length) failure()
+    return assignments.map((assignment) => {
+      if (installed.resolver.lookup(assignment.accountId) !== assignment) failure()
+      installed.resolver.assertCurrent(assignment)
+      const slot = plan.slots.find(row => row.slotId === assignment.slotId)
+      if (slot === undefined) failure()
+      return assignedAccount(slot, assignment.accountId)
+    })
+  }
+
+  private async verify(plan: StaticStorageDeploymentPlan): Promise<void> {
     const mounts = validateStorageView(await this.driver.view(), plan)
     const root = await this.driver.probe('/')
     if (!directory(root) || (root.flags & 32) === 0 || (root.flags & 4) !== 0
       || root.appUid !== plan.appUid || root.appGid !== plan.appGid) failure()
     for (const path of [plan.baseConfigPath, plan.installAnchor]) readonlyObject(await this.driver.probe(path))
-    const domains = [plan.arena, plan.control, ...plan.accounts.flatMap(account => [account.private, account.projects,
+    const accounts = physicalAccounts(plan)
+    const domains = [plan.arena, plan.control, ...accounts.flatMap(account => [account.private, account.projects,
       ...accountEnvironmentBank(account)?.slots.map(slot => slot.domain) ?? []])]
-    const bankIds = plan.accounts.flatMap((account) => {
+    const bankIds = accounts.flatMap((account) => {
       const bank = accountEnvironmentBank(account)
       return bank === undefined ? [] : [bank.bankId]
     })
@@ -288,7 +392,7 @@ export class RootStorageOwner {
     if (assigned > bytes(arena) || BigInt(arena.availableBlocks) * BigInt(arena.blockBytes) < BigInt(plan.arenaReserveBytes)
       || domains.slice(1).some(domain => domain.backing.device !== arena.device)) failure()
     const writableIds = new Set<string>()
-    for (const account of plan.accounts) {
+    for (const account of accounts) {
       if (account.accountRoot !== posix.join(posix.dirname(account.accountRoot), account.storageKey)
         || account.private.rootPath !== posix.join(account.accountRoot, 'private')
         || account.projects.rootPath !== posix.join(account.accountRoot, 'projects')) failure()
@@ -308,7 +412,7 @@ export class RootStorageOwner {
         || BigInt(observed.inodes) <= 0 || BigInt(observed.inodes) > BigInt(auxiliary.maximumInodes)) failure()
       writableIds.add(observed.mountId)
     }
-    const exportRoots = plan.accounts.flatMap(account => [account.projects.rootPath, posix.join(account.accountRoot, 'environments')])
+    const exportRoots = accounts.flatMap(account => [account.projects.rootPath, posix.join(account.accountRoot, 'environments')])
     // Exported trees admit only declared domains, including when a foreign submount is read-only or a pseudo filesystem.
     const pseudo = new Set(['proc', 'sysfs', 'cgroup2', 'cgroup', 'devpts', 'mqueue', 'pstore', 'securityfs', 'debugfs',
       'tracefs', 'fusectl', 'configfs', 'binfmt_misc', 'autofs', 'hugetlbfs', 'nsfs', 'bpf', 'rpc_pipefs'])
@@ -336,15 +440,18 @@ export class StaticAccountStorageLease {
    * @param driver Original shared-pool operations.
    * @param release Remove only this actual runtime lease after its files lane has ended.
    * @param skillProofs Original Root qualifications for this account; ordinary account admission is unchanged.
+   * @param assertAssignment Original v3 binding check; omission preserves legacy fixed-account admission.
    */
   constructor(private readonly owner: RootStorageOwner, private readonly account: StaticStorageAccount,
-    private readonly input: AccountMountInput, private readonly plan: StaticStoragePlan,
+    private readonly input: AccountMountInput, private readonly plan: StaticStorageDeploymentPlan,
     private readonly driver: StaticStorageDriver, private readonly release: () => void,
-    private readonly skillProofs: readonly SkillRevalidationQualification[] = []) {}
+    private readonly skillProofs: readonly SkillRevalidationQualification[] = [],
+    private readonly assertAssignment: () => void = () => {}) {}
 
   /** Require current root and original graph lifetime without granting business readiness. */
   assertCurrent(): void {
     this.owner.assertRootCurrent()
+    this.assertAssignment()
     if (this.closing !== undefined || this.input.binding.lifetime.aborted || this.installed?.binding.lifetime.aborted) stale()
   }
 

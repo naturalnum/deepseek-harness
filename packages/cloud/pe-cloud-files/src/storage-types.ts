@@ -108,6 +108,44 @@ export interface StaticStoragePlanV2 extends StaticStoragePlanFields {
 /** Explicit record versions; a v1 deployment can never infer an environment bank. */
 export type StaticStoragePlan = StaticStoragePlanV1 | StaticStoragePlanV2
 
+/** One preallocated physical account slot; assignment to a user is held separately by Runtime. */
+export interface StaticStorageSlot extends Omit<StaticStorageAccountV2, 'accountId'> {
+  readonly slotId: string
+  readonly templateId: string
+}
+
+/** Immutable physical inventory for accounts assigned after deployment initialization. */
+export interface StaticStoragePlanV3 extends StaticStoragePlanFields {
+  readonly version: 3
+  /** Equals the preallocated slot count; Runtime separately limits resident account graphs. */
+  readonly maxAccounts: number
+  readonly slots: readonly StaticStorageSlot[]
+}
+
+/** Supported physical inventories; released fixed-account records retain their original decoding. */
+export type StaticStorageDeploymentPlan = StaticStoragePlan | StaticStoragePlanV3
+
+/** Runtime's persistent user-to-slot association; workflow status does not change its revision. */
+export interface StaticAccountAssignment {
+  readonly accountId: AccountId
+  readonly slotId: string
+  readonly revision: string
+}
+
+/** Root-installed synchronous view of Runtime's authenticated, bounded assignment registry. */
+export interface StaticAccountAssignments {
+  lookup(accountId: AccountId): StaticAccountAssignment | undefined
+  list(): readonly StaticAccountAssignment[]
+  assertCurrent(assignment: StaticAccountAssignment): void
+}
+
+/** Nonsecret deployment capacity for trusted provisioning; addresses and measured facts stay private. */
+export interface StaticStorageInventory {
+  readonly sha256: string
+  readonly maxAccounts: number
+  readonly slots: readonly Readonly<{ slotId: string; templateId: string }>[]
+}
+
 /** Exact closed-FD probe ABI1 facts. Decimal strings keep kernel-sized quantities lossless. */
 export interface StorageProbeFacts {
   readonly flags: number
