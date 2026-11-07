@@ -103,6 +103,7 @@ def observe_science(record, office, document_script):
         if not Path(module.__file__).resolve().is_relative_to(RESEARCH_ROOT):
             raise RuntimeError('Scientific package was loaded from outside its interpreter: ' + module.__name__)
     source = runpy.run_path(document_script)
+    # RapidOCR3.10 defers model instantiation until inference; construction verifies configuration only.
     source['create_ocr']()
     models = {}
     for name in ['PP-OCRv6_det_small.onnx', 'ch_ppocr_mobile_v2.0_cls_mobile.onnx', 'PP-OCRv6_rec_small.onnx']:
@@ -114,7 +115,7 @@ def observe_science(record, office, document_script):
     return {'schema': 2, 'python': platform.python_version(), 'executable': sys.executable,
             'executableSha256': sha256(Path(sys.executable).resolve()), 'pythonSource': record,
             'packages': observed, 'ocrModels': models, 'sharedLibraries': linked,
-            'officePreserved': office, 'qualification': 'separate-interpreters-imports-and-offline-model-load-only'}
+            'officePreserved': office, 'qualification': 'separate-interpreters-imports-model-files-and-engine-construction-only'}
 
 
 def main():

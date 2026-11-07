@@ -1,0 +1,117 @@
+{
+  "schema": "research-ocr-resource-regression-v1",
+  "imageDigest": "sha256:71c7afa35f5d774ec6a198c7233b645bc16275c56595369efa368d6fac025bf8",
+  "formalDocumentSourceSha256": "462dc9158f9f93761615098f1d85ed555c927ba26dbd5d3a556d32d9e6b8aa6c",
+  "candidateDocumentSourceSha256": "73938c5a58785083508620099a618600b060e8d0c883813a6397dd30a604ee36",
+  "sourceCorrespondence": "The candidate added the same two official detector parameters; its wrapper applied cv2.setNumThreads(1) at the same point before original engine construction. The formal source owns that process-local setting directly.",
+  "limits": {
+    "childCpuSeconds": 75,
+    "childAddressBytes": 536870912,
+    "childFileBytes": 67108864,
+    "childOpenFiles": 32,
+    "childProcesses": 32,
+    "childCoreBytes": 0
+  },
+  "limitTiming": "AS applied after stdlib startup and before scientific imports; actual Native guardian applies it before exec. This is resource-regression evidence only.",
+  "observations": [
+    {
+      "candidate": "original defaults",
+      "result": "failed",
+      "failure": "NumPy42.6MiB float64 allocation at detector preprocessing",
+      "peakKiB": 513048,
+      "threadsAfterFailure": 9
+    },
+    {
+      "candidate": "OpenCV1 only",
+      "result": "failed",
+      "failure": "ONNX detector Conv.2 std::bad_alloc",
+      "peakKiB": 499928,
+      "threadsAfterFailure": 2
+    },
+    {
+      "candidate": "OpenCV1 + official Det.max1024",
+      "result": "succeeded",
+      "resources": {
+        "stage": "complete",
+        "wallSeconds": 1.3701,
+        "cpuSeconds": 1.3025,
+        "maxRssKiB": 227660,
+        "VmPeak": "437400 kB",
+        "VmSize": "437400 kB",
+        "VmHWM": "228396 kB",
+        "VmRSS": "228396 kB",
+        "Threads": "2",
+        "addressHeadroomBytes": 88973312
+      },
+      "inputSha256": "2c335d8d66eca08095fe7a90460ced45222a2de1f71bbab9888c2e80e023482c",
+      "recognizedExpectedText": {
+        "科研验收": true,
+        "Research 42": true,
+        "Temperature 25 C": true
+      },
+      "actualText": "科研验收\nResearch 42\nTemperature 25 C"
+    }
+  ],
+  "qualification": {
+    "realCompleteOnePageOcr": true,
+    "managedSessionAccepted": false,
+    "pdfAndQualityMatrixAccepted": false,
+    "authenticatedWebAccepted": false
+  },
+  "evidence": [
+    {
+      "case": "v1",
+      "file": "actual.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "v1",
+      "file": "actual.stderr.log",
+      "bytes": 6953,
+      "sha256": "fe3a83ea8e61e35bad6095239aae24761c883653ca0049571e7065a35956a18d"
+    },
+    {
+      "case": "v1",
+      "file": "actual.terminal.json",
+      "bytes": 367,
+      "sha256": "24d5ff6527c0a503c6b70269ed8ac8e122d497c98fbc91dd149f0aa9953f92e7"
+    },
+    {
+      "case": "v2",
+      "file": "actual.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "v2",
+      "file": "actual.stderr.log",
+      "bytes": 9303,
+      "sha256": "d7fb31169513cef06bdfe3291cbed0cdce283541dc0594da26ec4444b045ea90"
+    },
+    {
+      "case": "v2",
+      "file": "actual.terminal.json",
+      "bytes": 260,
+      "sha256": "f94e61961b8b8b099762a878599d95c5689ccfacd92229cdebaddf47528dd5af"
+    },
+    {
+      "case": "v3",
+      "file": "actual.stdout.log",
+      "bytes": 1035,
+      "sha256": "26feb42407ddf24f617f2d12b0fbc7abdf9def472431189476ea6315e32c32c2"
+    },
+    {
+      "case": "v3",
+      "file": "actual.stderr.log",
+      "bytes": 5447,
+      "sha256": "d8c28d6dcfa97ddb4eae8115f394359c5b60c2dfc99248ef153defde38f7b6ce"
+    },
+    {
+      "case": "v3",
+      "file": "actual.terminal.json",
+      "bytes": 293,
+      "sha256": "a1b23e8097949eadcc259090a735959c107355edc54e89de819d599a01cd2cdb"
+    }
+  ]
+}

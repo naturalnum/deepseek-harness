@@ -82,7 +82,8 @@
     "originalOfficeLayerPrefixPreserved": true,
     "originalOfficeProtectedTreesAndPackageListPreserved": true,
     "scientificPackageAndExecutorApiImports": true,
-    "offlineOcrModelsLoaded": 3
+    "offlineOcrModelFilesVerified": 3,
+    "ocrEngineConstructed": true
   },
   "pending": [
     "native-managed-session-execution",
@@ -113,5 +114,6 @@
       "bytes": 112,
       "sha256": "190f1d83bb04e701b2456b7ddb0e2e19d0d355e7659f4145a9291dbdeac1f773"
     }
-  ]
+  ],
+  "qualificationClarification": "The immutable image manifest used a model-load label, but RapidOCR3.10 lazily instantiates its three models on inference. Its actual build probe verifies package APIs, model files/hashes and engine construction, not completed OCR. Host document source is sent by the native runner; the resource tuning needs no library/model image rebuild."
 }

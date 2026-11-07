@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -92,6 +93,35 @@ class ScientificRuntimeTests(unittest.TestCase):
         with patch.object(probe.platform, 'python_version', return_value='3.12.13'):
             with self.assertRaisesRegex(RuntimeError, 'scientific interpreter version'):
                 probe.observe_science(record, {}, 'not-opened')
+
+    def test_original_document_constructor_bounds_threads_and_detector_without_accepting_missing_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / 'rapidocr'
+            models = package / 'models'
+            models.mkdir(parents=True)
+            for name in ['PP-OCRv6_det_small.onnx', 'ch_ppocr_mobile_v2.0_cls_mobile.onnx', 'PP-OCRv6_rec_small.onnx']:
+                (models / name).write_bytes(b'synthetic constructor-only fixture')
+            threads, calls = [], []
+            def engine(params):
+                self.assertEqual(threads[-1], 1)
+                calls.append(params)
+                return object()
+            modules = {'numpy': SimpleNamespace(), 'pymupdf': SimpleNamespace(),
+                       'PIL': SimpleNamespace(Image=None, ImageOps=None, ImageSequence=None),
+                       'cv2': SimpleNamespace(setNumThreads=threads.append),
+                       'rapidocr': SimpleNamespace(__file__=str(package / '__init__.py'), RapidOCR=engine),
+                       'onnxruntime': SimpleNamespace()}
+            with patch.dict('sys.modules', modules):
+                document = load('document_resource_constructor', ROOT / 'src/server/document-native.py')
+                document.create_ocr()
+                self.assertEqual(calls[0]['Det.limit_type'], 'max')
+                self.assertEqual(calls[0]['Det.limit_side_len'], 1024)
+                self.assertEqual(calls[0]['EngineConfig.onnxruntime.intra_op_num_threads'], 1)
+                self.assertEqual(calls[0]['EngineConfig.onnxruntime.inter_op_num_threads'], 1)
+                (models / 'PP-OCRv6_rec_small.onnx').unlink()
+                with self.assertRaisesRegex(FileNotFoundError, 'OCR'):
+                    document.create_ocr()
+                self.assertEqual(len(calls), 1)
 
     def test_build_uses_one_original_base_and_installs_packages_only_in_the_new_interpreter(self):
         lines = (ROOT / 'Dockerfile.cloud').read_text().replace('\\\n', '').splitlines()

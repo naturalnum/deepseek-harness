@@ -63,7 +63,7 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 [候选供应商上下文生成器](runtime/server/prepare_supplier_context.py) 接受精确的 Office 服务端公开源码、一个显式不可变候选工作负载摘要和独占输出目录。它生成基于固定 Office 服务端的确定性双文件、仅 COPY 上下文，并记录源码、文件及上下文指纹。仅 `selected_images` 发生变化：创建仅选择候选镜像，关闭准入后的审计保留全部精确前驱及候选镜像。生成上下文不会构建镜像、注册供应商或修改 Root 选择。执行所有者须另行构建并验证实际不可变配对，再将其记入封闭清单；业务依赖仍由各自所属包维护。
 
-第六组仅允许精确的 v2 Office 依赖扩展工作负载与其配对的仅 COPY 服务端，见独立插件的[镜像构建记录](../../../integrations/epri-research/source-records/cloud-images.json)。实际 Linux 构建保留原 Office 的十五层、受保护文件树、包表及运行时清单；独立解释器实际加载所需包 API 和三个离线 OCR 模型。这仅记录镜像证据；受管 Session 执行、插件工作流及认证 Web 行为仍须单独验收。登记不改变默认选择或就绪规则。
+第六组仅允许精确的 v2 Office 依赖扩展工作负载与其配对的仅 COPY 服务端，见独立插件的[镜像构建记录](../../../integrations/epri-research/source-records/cloud-images.json)。实际 Linux 构建保留原 Office 的十五层、受保护文件树、包表及运行时清单；独立解释器实际核对所需包 API、三个离线 OCR 模型文件及引擎构造。模型在推理时延迟实例化，仍需实际运行证据。这仅记录镜像证据；受管 Session 执行、插件工作流及认证 Web 行为仍须单独验收。登记不改变默认选择或就绪规则。
 
 [Guest 上下文生成器](runtime/office-completion/heading-numbering/prepare_context.py) 是当前保留标题编号的 Office 工作负载的重建入口。在仓库根目录调用 `python3 packages/cloud/pe-opensandbox/runtime/office-completion/heading-numbering/prepare_context.py <retained-context-v6.tar> <exclusive-output-directory>`。须保留 SHA256 为 `4f17e2e7f6c92c9a5ce0c3b5e018e43c9d312d8a5bcb51f9d318f87e32962a90`、大小为 5,099,520 字节的原始上下文，以及外部不可变 UTF-8 Office 基础镜像 `sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97`；生成器拒绝不同的上下文字节。[单文件 COPY 配方](runtime/office-completion/heading-numbering/Dockerfile) 直接使用该基础镜像。仅执行 v6 依赖配方不会应用此修正。
 

@@ -11,6 +11,9 @@ from PIL import Image, ImageOps, ImageSequence
 
 
 def create_ocr():
+    import cv2
+    # Bound the worker pool inside this isolated scientific process, before any model operation.
+    cv2.setNumThreads(1)
     import rapidocr
     import onnxruntime  # Probe native DLLs even though RapidOCR loads models lazily.
     models = Path(rapidocr.__file__).parent / 'models'
@@ -19,7 +22,7 @@ def create_ocr():
         if not (models / name).is_file():
             raise FileNotFoundError('OCR 模型缺失，请完整解压 App：' + name)
     params = {stage + '.model_path': str(models / name) for stage, name in files.items()}
-    params.update({'Global.log_level': 'error', 'EngineConfig.onnxruntime.intra_op_num_threads': 1, 'EngineConfig.onnxruntime.inter_op_num_threads': 1})
+    params.update({'Det.limit_type': 'max', 'Det.limit_side_len': 1024, 'Global.log_level': 'error', 'EngineConfig.onnxruntime.intra_op_num_threads': 1, 'EngineConfig.onnxruntime.inter_op_num_threads': 1})
     return rapidocr.RapidOCR(params=params)
 
 
