@@ -5,9 +5,6 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
-import pymupdf
-from PIL import Image, ImageOps, ImageSequence
 
 
 def create_ocr():
@@ -26,6 +23,90 @@ def create_ocr():
     return rapidocr.RapidOCR(params=params)
 
 
+def _run_image_child(payload):
+    """One joined image child in this managed process group; no library-heavy PDF/OCR overlap."""
+    import subprocess
+    import threading
+    request = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    maximum, stderr_maximum = 8 * 1024 * 1024, 32768
+    if len(request) > maximum:
+        raise ValueError('OCR image input exceeds 8 MiB')
+    process = subprocess.Popen([sys.executable, '-I', '-B', '-X', 'utf8', str(Path(__file__).resolve()), '--image-child'],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+    output, diagnostic, errors = bytearray(), bytearray(), []
+    workers = []
+
+    def stop():
+        if process.poll() is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+
+    def read(stream, target, limit):
+        try:
+            while True:
+                part = stream.read(65536)
+                if not part:
+                    break
+                if len(target) + len(part) > limit:
+                    errors.append('OCR child output exceeds its bounded pipe capacity')
+                    stop()
+                    break
+                target.extend(part)
+        except Exception as error:
+            errors.append(str(error)[:1000])
+            stop()
+        finally:
+            stream.close()
+
+    def write():
+        try:
+            offset = 0
+            while offset < len(request):
+                count = process.stdin.write(memoryview(request)[offset:offset + 65536])
+                if not count:
+                    raise BrokenPipeError('OCR child input closed')
+                offset += count
+        except BrokenPipeError:
+            pass
+        except Exception as error:
+            errors.append(str(error)[:1000])
+            stop()
+        finally:
+            process.stdin.close()
+
+    try:
+        workers = [threading.Thread(target=read, args=(process.stdout, output, maximum)),
+                   threading.Thread(target=read, args=(process.stderr, diagnostic, stderr_maximum)),
+                   threading.Thread(target=write)]
+        for worker in workers:
+            worker.start()
+        try:
+            process.wait(timeout=60)
+        except subprocess.TimeoutExpired as error:
+            raise TimeoutError('OCR page exceeded 60 seconds') from error
+    finally:
+        stop()
+        process.wait()
+        for worker in workers:
+            if worker.ident is not None:
+                worker.join()
+        for stream in [process.stdin, process.stdout, process.stderr]:
+            stream.close()
+    if errors:
+        raise RuntimeError(errors[0])
+    if process.returncode != 0:
+        raise RuntimeError('OCR child failed: ' + diagnostic.decode('utf-8', errors='replace')[:3000])
+    result = json.loads(output)
+    if not isinstance(result, dict) or not isinstance(result.get('pages'), list) or len(result['pages']) != 1:
+        raise ValueError('OCR image child returned an invalid page result')
+    page = result['pages'][0]
+    if page.get('page') != 1 or page.get('method') != 'ocr' or not isinstance(page.get('text'), str):
+        raise ValueError('OCR image child returned invalid text metadata')
+    return page['text']
+
+
 def extract(payload):
     content = base64.b64decode(payload['contentBase64'], validate=True)
     pages = []
@@ -33,35 +114,67 @@ def extract(payload):
 
     def recognize(image):
         nonlocal ocr
-        if ocr is None:
-            ocr = create_ocr()
-        result = ocr(np.array(image.convert('RGB')))
-        return '\n'.join(result.txts or [])
+        rgb = image if image.mode == 'RGB' else image.convert('RGB')
+        array = result = None
+        try:
+            array = np.array(rgb, copy=True)
+            if rgb is not image:
+                rgb.close()
+            image.close()
+            if ocr is None:
+                ocr = create_ocr()
+            result = ocr(array)
+            return '\n'.join(result.txts or [])
+        finally:
+            result = array = None
+            if rgb is not image:
+                rgb.close()
 
     if payload['extension'] == '.pdf':
+        import pymupdf
         with pymupdf.open(stream=content, filetype='pdf') as document:
             if document.needs_pass:
                 raise ValueError('PDF 已加密，请提供可读取的文件。')
             if document.page_count > 80:
                 raise ValueError('文件超过 80 页，请按章节拆分。')
+            total_bytes = 0
             for index, page in enumerate(document):
                 text = page.get_text(sort=True).strip()
                 method = 'text'
                 if len(text) < 12:
                     scale = min(160 / 72, 2600 / max(page.rect.width, page.rect.height))
                     pixels = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False, colorspace=pymupdf.csRGB)
-                    text = recognize(Image.frombytes('RGB', (pixels.width, pixels.height), pixels.samples))
+                    try:
+                        png = pixels.tobytes('png')
+                    finally:
+                        del pixels
+                        pymupdf.TOOLS.store_shrink(100)
+                    try:
+                        text = _run_image_child({'extension':'.png', 'language':payload['language'],
+                                                 'contentBase64':base64.b64encode(png).decode('ascii')})
+                    finally:
+                        del png
+                        pymupdf.TOOLS.store_shrink(100)
                     method = 'ocr'
-                pages.append({'page': index + 1, 'text': text, 'method': method})
+                entry = {'page': index + 1, 'text': text, 'method': method}
+                total_bytes += len(json.dumps(entry, ensure_ascii=False).encode('utf-8'))
+                if total_bytes > 8 * 1024 * 1024 - 1024:
+                    raise ValueError('Document text exceeds 8 MiB')
+                pages.append(entry)
     else:
         import io
+        import numpy as np
+        from PIL import Image, ImageOps, ImageSequence
         with Image.open(io.BytesIO(content)) as image:
             if getattr(image, 'n_frames', 1) > 80:
                 raise ValueError('文件超过 80 页，请拆分。')
             for index, frame in enumerate(ImageSequence.Iterator(image)):
                 frame = ImageOps.exif_transpose(frame).convert('RGB')
-                frame.thumbnail((2600, 2600))
-                pages.append({'page': index + 1, 'text': recognize(frame), 'method': 'ocr'})
+                try:
+                    frame.thumbnail((2600, 2600))
+                    pages.append({'page': index + 1, 'text': recognize(frame), 'method': 'ocr'})
+                finally:
+                    frame.close()
     return {'pages': pages, 'language': payload['language'], 'engine': 'pymupdf+rapidocr-onnx', 'reviewRequired': True}
 
 
@@ -76,6 +189,8 @@ if __name__ == '__main__':
             raise ValueError('Unsupported document')
         if payload['language'] not in ['chi_sim+eng', 'eng', 'chi_sim']:
             raise ValueError('Unsupported language')
+        if '--image-child' in sys.argv and payload['extension'] == '.pdf':
+            raise ValueError('Internal image child does not accept PDF input')
         with contextlib.redirect_stdout(sys.stderr):
             result = extract(payload)
         print(json.dumps(result, ensure_ascii=False))

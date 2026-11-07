@@ -1,9 +1,9 @@
 {
   "schema": "research-ocr-resource-regression-v1",
   "imageDigest": "sha256:71c7afa35f5d774ec6a198c7233b645bc16275c56595369efa368d6fac025bf8",
-  "formalDocumentSourceSha256": "462dc9158f9f93761615098f1d85ed555c927ba26dbd5d3a556d32d9e6b8aa6c",
+  "formalDocumentSourceSha256": "f53116a24826569a3f4426d30ba2524e35d07a612a363435d34f8b3fbc36b75d",
   "candidateDocumentSourceSha256": "73938c5a58785083508620099a618600b060e8d0c883813a6397dd30a604ee36",
-  "sourceCorrespondence": "The candidate added the same two official detector parameters; its wrapper applied cv2.setNumThreads(1) at the same point before original engine construction. The formal source owns that process-local setting directly.",
+  "sourceCorrespondence": "The current formal source exactly matches the successful v6 two-page PDF probe. The earlier v3 record proves only its earlier one-page candidate; it is retained separately below.",
   "limits": {
     "childCpuSeconds": 75,
     "childAddressBytes": 536870912,
@@ -50,13 +50,606 @@
         "Temperature 25 C": true
       },
       "actualText": "科研验收\nResearch 42\nTemperature 25 C"
+    },
+    {
+      "candidate": "prior formal single-process8case matrix",
+      "sourceSha256": "462dc9158f9f93761615098f1d85ed555c927ba26dbd5d3a556d32d9e6b8aa6c",
+      "passedCases": 7,
+      "failedCases": [
+        "a4-scanned-2pages"
+      ],
+      "result": "7/8; two-page A4 PDF allocation failed"
+    },
+    {
+      "candidate": "v4 buffer-lifetime-only",
+      "result": "failed",
+      "failure": "ONNX std::bad_alloc",
+      "resources": {
+        "stage": "failure",
+        "wallSeconds": 1.7791,
+        "cpuSeconds": 1.7482,
+        "maxRssKiB": 300988,
+        "VmPeak": "510116 kB",
+        "VmSize": "483580 kB",
+        "VmHWM": "300988 kB",
+        "VmRSS": "278832 kB",
+        "Threads": "2",
+        "addressHeadroomBytes": 41684992
+      }
+    },
+    {
+      "candidate": "v5 buffer-lifetime-only",
+      "result": "failed",
+      "failure": "ONNX std::bad_alloc",
+      "resources": {
+        "stage": "failure",
+        "wallSeconds": 1.7421,
+        "cpuSeconds": 1.7295,
+        "maxRssKiB": 308060,
+        "VmPeak": "514360 kB",
+        "VmSize": "443724 kB",
+        "VmHWM": "308060 kB",
+        "VmRSS": "238988 kB",
+        "Threads": "2",
+        "addressHeadroomBytes": 82497536
+      }
+    },
+    {
+      "candidate": "current formal same-script sequential image child",
+      "sourceSha256": "f53116a24826569a3f4426d30ba2524e35d07a612a363435d34f8b3fbc36b75d",
+      "result": "succeeded",
+      "resources": {
+        "stage": "complete",
+        "wallSeconds": 3.7553,
+        "cpuSeconds": 0.605,
+        "maxRssKiB": 158624,
+        "VmPeak": "215832 kB",
+        "VmSize": "201324 kB",
+        "VmHWM": "158624 kB",
+        "VmRSS": "127604 kB",
+        "Threads": "1",
+        "addressHeadroomBytes": 330715136
+      },
+      "parentHeavyModules": {
+        "pymupdf": true,
+        "numpy": false,
+        "rapidocr": false,
+        "onnxruntime": false,
+        "PIL": false
+      },
+      "childObservations": [
+        {
+          "pid": 7,
+          "sameProcessGroup": true,
+          "maxObservedVmPeakKiB": 481492,
+          "maxObservedRssKiB": 298840,
+          "maxObservedThreads": 2,
+          "limits": {
+            "childCpuSeconds": [
+              75,
+              75
+            ],
+            "childAddressBytes": [
+              536870912,
+              536870912
+            ],
+            "childFileBytes": [
+              67108864,
+              67108864
+            ],
+            "childOpenFiles": [
+              32,
+              32
+            ],
+            "childProcesses": [
+              32,
+              32
+            ],
+            "childCoreBytes": [
+              0,
+              0
+            ]
+          },
+          "mappedPyMuPDF": false,
+          "mapsSamples": 228,
+          "exitCode": 0
+        },
+        {
+          "pid": 13,
+          "sameProcessGroup": true,
+          "maxObservedVmPeakKiB": 481488,
+          "maxObservedRssKiB": 303444,
+          "maxObservedThreads": 2,
+          "limits": {
+            "childCpuSeconds": [
+              75,
+              75
+            ],
+            "childAddressBytes": [
+              536870912,
+              536870912
+            ],
+            "childFileBytes": [
+              67108864,
+              67108864
+            ],
+            "childOpenFiles": [
+              32,
+              32
+            ],
+            "childProcesses": [
+              32,
+              32
+            ],
+            "childCoreBytes": [
+              0,
+              0
+            ]
+          },
+          "mappedPyMuPDF": false,
+          "mapsSamples": 186,
+          "exitCode": 0
+        }
+      ],
+      "maxLiveChildren": 1,
+      "childrenCpuSeconds": 2.916,
+      "inputSha256": "563a249c01bd38ad313c6e4cda99eff4d45ce1702945a0ca31e56a61a0d6c31c",
+      "pages": [
+        {
+          "page": 1,
+          "text": "科研验收\nA4 Research 42\n测量温度 25 C\nSmall text 12345\n小字复核2026\nData source is synthetic acceptance input.",
+          "method": "ocr"
+        },
+        {
+          "page": 2,
+          "text": "科研验收\nA4 Research 42\n测量温度 25 C\nSmall text 12345\n小字复核2026\nData source is synthetic acceptance input.",
+          "method": "ocr"
+        }
+      ],
+      "recognizedExpectedText": {
+        "科研验收": true,
+        "A4 Research 42": true,
+        "测量温度 25 C": true,
+        "Small text 12345": true,
+        "小字复核 2026": true
+      }
+    },
+    {
+      "candidate": "current formal eight-case resource and quality matrix",
+      "sourceSha256": "f53116a24826569a3f4426d30ba2524e35d07a612a363435d34f8b3fbc36b75d",
+      "result": "8/8 succeeded",
+      "managedSessionAccepted": false,
+      "cases": [
+        {
+          "id": "known-png",
+          "inputSha256": "2c335d8d66eca08095fe7a90460ced45222a2de1f71bbab9888c2e80e023482c",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 1.0473,
+            "cpuSeconds": 1.0487,
+            "maxRssKiB": 198736,
+            "VmPeak": "373940 kB",
+            "VmSize": "373940 kB",
+            "VmHWM": "199260 kB",
+            "VmRSS": "199260 kB",
+            "Threads": "2",
+            "addressHeadroomBytes": 153956352
+          },
+          "children": [],
+          "maxLiveChildren": 0,
+          "parentHeavyModules": {
+            "pymupdf": false,
+            "numpy": true,
+            "rapidocr": true,
+            "onnxruntime": true,
+            "PIL": true
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "Research 42": true,
+                "Temperature 25 C": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "known-scanned-pdf",
+          "inputSha256": "6d4602859dce435208aaff56b8f4c6bb402f64127f2d4b2a3efb91851d4927c9",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 1.4193,
+            "cpuSeconds": 0.4291,
+            "maxRssKiB": 158092,
+            "VmPeak": "200752 kB",
+            "VmSize": "200688 kB",
+            "VmHWM": "158092 kB",
+            "VmRSS": "126912 kB",
+            "Threads": "1",
+            "addressHeadroomBytes": 331366400
+          },
+          "children": [
+            {
+              "pid": 7,
+              "sameProcessGroup": true,
+              "maxObservedVmPeakKiB": 384176,
+              "maxObservedRssKiB": 209340,
+              "maxObservedThreads": 2,
+              "limits": {
+                "childCpuSeconds": [
+                  75,
+                  75
+                ],
+                "childAddressBytes": [
+                  536870912,
+                  536870912
+                ],
+                "childFileBytes": [
+                  67108864,
+                  67108864
+                ],
+                "childOpenFiles": [
+                  32,
+                  32
+                ],
+                "childProcesses": [
+                  32,
+                  32
+                ],
+                "childCoreBytes": [
+                  0,
+                  0
+                ]
+              },
+              "mappedPyMuPDF": false,
+              "mapsSamples": 111,
+              "exitCode": 0
+            }
+          ],
+          "maxLiveChildren": 1,
+          "parentHeavyModules": {
+            "pymupdf": true,
+            "numpy": false,
+            "rapidocr": false,
+            "onnxruntime": false,
+            "PIL": false
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "Research 42": true,
+                "Temperature 25 C": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "a4-small-png",
+          "inputSha256": "1c834371f4e4d54391ce5d640fad895edfb7200bd74778aeb9217b2d43ac2ed3",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 1.3549,
+            "cpuSeconds": 1.4132,
+            "maxRssKiB": 286976,
+            "VmPeak": "461720 kB",
+            "VmSize": "390680 kB",
+            "VmHWM": "286976 kB",
+            "VmRSS": "216168 kB",
+            "Threads": "2",
+            "addressHeadroomBytes": 136814592
+          },
+          "children": [],
+          "maxLiveChildren": 0,
+          "parentHeavyModules": {
+            "pymupdf": false,
+            "numpy": true,
+            "rapidocr": true,
+            "onnxruntime": true,
+            "PIL": true
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "A4 Research 42": true,
+                "测量温度 25 C": true,
+                "Small text 12345": true,
+                "小字复核 2026": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "a4-scanned-2pages",
+          "inputSha256": "563a249c01bd38ad313c6e4cda99eff4d45ce1702945a0ca31e56a61a0d6c31c",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 3.3839,
+            "cpuSeconds": 0.5865,
+            "maxRssKiB": 158832,
+            "VmPeak": "223084 kB",
+            "VmSize": "208576 kB",
+            "VmHWM": "158832 kB",
+            "VmRSS": "127800 kB",
+            "Threads": "1",
+            "addressHeadroomBytes": 323289088
+          },
+          "children": [
+            {
+              "pid": 7,
+              "sameProcessGroup": true,
+              "maxObservedVmPeakKiB": 461392,
+              "maxObservedRssKiB": 276860,
+              "maxObservedThreads": 2,
+              "limits": {
+                "childCpuSeconds": [
+                  75,
+                  75
+                ],
+                "childAddressBytes": [
+                  536870912,
+                  536870912
+                ],
+                "childFileBytes": [
+                  67108864,
+                  67108864
+                ],
+                "childOpenFiles": [
+                  32,
+                  32
+                ],
+                "childProcesses": [
+                  32,
+                  32
+                ],
+                "childCoreBytes": [
+                  0,
+                  0
+                ]
+              },
+              "mappedPyMuPDF": false,
+              "mapsSamples": 164,
+              "exitCode": 0
+            },
+            {
+              "pid": 13,
+              "sameProcessGroup": true,
+              "maxObservedVmPeakKiB": 481488,
+              "maxObservedRssKiB": 272484,
+              "maxObservedThreads": 2,
+              "limits": {
+                "childCpuSeconds": [
+                  75,
+                  75
+                ],
+                "childAddressBytes": [
+                  536870912,
+                  536870912
+                ],
+                "childFileBytes": [
+                  67108864,
+                  67108864
+                ],
+                "childOpenFiles": [
+                  32,
+                  32
+                ],
+                "childProcesses": [
+                  32,
+                  32
+                ],
+                "childCoreBytes": [
+                  0,
+                  0
+                ]
+              },
+              "mappedPyMuPDF": false,
+              "mapsSamples": 166,
+              "exitCode": 0
+            }
+          ],
+          "maxLiveChildren": 1,
+          "parentHeavyModules": {
+            "pymupdf": true,
+            "numpy": false,
+            "rapidocr": false,
+            "onnxruntime": false,
+            "PIL": false
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "A4 Research 42": true,
+                "测量温度 25 C": true,
+                "Small text 12345": true,
+                "小字复核 2026": true
+              }
+            },
+            {
+              "page": 2,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "A4 Research 42": true,
+                "测量温度 25 C": true,
+                "Small text 12345": true,
+                "小字复核 2026": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "rotated90",
+          "inputSha256": "e4f2f5de54541366e0dc0457be46e54fc2efdf3f148b10fdcbc760d0edb89bdd",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 0.9324,
+            "cpuSeconds": 0.9894,
+            "maxRssKiB": 185064,
+            "VmPeak": "359632 kB",
+            "VmSize": "359632 kB",
+            "VmHWM": "185124 kB",
+            "VmRSS": "185124 kB",
+            "Threads": "2",
+            "addressHeadroomBytes": 168607744
+          },
+          "children": [],
+          "maxLiveChildren": 0,
+          "parentHeavyModules": {
+            "pymupdf": false,
+            "numpy": true,
+            "rapidocr": true,
+            "onnxruntime": true,
+            "PIL": true
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "Research 42": true,
+                "Temperature 25 C": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "wide10to1",
+          "inputSha256": "af980065766e302a57af37f8e34a6afc1560d616afacbac00410596b4ea89543",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 0.8989,
+            "cpuSeconds": 0.9589,
+            "maxRssKiB": 188148,
+            "VmPeak": "362880 kB",
+            "VmSize": "362880 kB",
+            "VmHWM": "188292 kB",
+            "VmRSS": "188292 kB",
+            "Threads": "2",
+            "addressHeadroomBytes": 165281792
+          },
+          "children": [],
+          "maxLiveChildren": 0,
+          "parentHeavyModules": {
+            "pymupdf": false,
+            "numpy": true,
+            "rapidocr": true,
+            "onnxruntime": true,
+            "PIL": true
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "Research 42": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "tall1to10",
+          "inputSha256": "c24cf496b10a5fb99d804b0cabc9763ec7bd56ae3ea8eb97e00ea61a229eec89",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 0.8864,
+            "cpuSeconds": 0.9459,
+            "maxRssKiB": 183560,
+            "VmPeak": "358136 kB",
+            "VmSize": "340592 kB",
+            "VmHWM": "183560 kB",
+            "VmRSS": "166192 kB",
+            "Threads": "2",
+            "addressHeadroomBytes": 188104704
+          },
+          "children": [],
+          "maxLiveChildren": 0,
+          "parentHeavyModules": {
+            "pymupdf": false,
+            "numpy": true,
+            "rapidocr": true,
+            "onnxruntime": true,
+            "PIL": true
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "ocr",
+              "matches": {
+                "科研验收": true,
+                "Research 42": true,
+                "Temperature 25 C": true
+              }
+            }
+          ],
+          "passed": true
+        },
+        {
+          "id": "text-pdf",
+          "inputSha256": "936edab35d4f2f5802391efa1e0be3072dd6f9a538bfebbb1f4e67f8a4928b1f",
+          "resources": {
+            "stage": "complete",
+            "wallSeconds": 0.3367,
+            "cpuSeconds": 0.3949,
+            "maxRssKiB": 157956,
+            "VmPeak": "200236 kB",
+            "VmSize": "167512 kB",
+            "VmHWM": "157956 kB",
+            "VmRSS": "126600 kB",
+            "Threads": "1",
+            "addressHeadroomBytes": 365338624
+          },
+          "children": [],
+          "maxLiveChildren": 0,
+          "parentHeavyModules": {
+            "pymupdf": true,
+            "numpy": false,
+            "rapidocr": false,
+            "onnxruntime": false,
+            "PIL": false
+          },
+          "perPageTextChecks": [
+            {
+              "page": 1,
+              "method": "text",
+              "matches": {
+                "Research text extraction 42": true,
+                "Temperature 25 C": true
+              }
+            }
+          ],
+          "passed": true
+        }
+      ]
     }
   ],
   "qualification": {
     "realCompleteOnePageOcr": true,
     "managedSessionAccepted": false,
-    "pdfAndQualityMatrixAccepted": false,
-    "authenticatedWebAccepted": false
+    "pdfAndQualityMatrixAccepted": true,
+    "authenticatedWebAccepted": false,
+    "realScannedTwoPagePdf": true,
+    "sameProcessGroupAndSixInheritedLimits": true,
+    "sameImageResourceAndQualityMatrix": true
   },
   "evidence": [
     {
@@ -112,6 +705,236 @@
       "file": "actual.terminal.json",
       "bytes": 293,
       "sha256": "a1b23e8097949eadcc259090a735959c107355edc54e89de819d599a01cd2cdb"
+    },
+    {
+      "case": "v4",
+      "file": "actual.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "v4",
+      "file": "actual.stderr.log",
+      "bytes": 8793,
+      "sha256": "d9fd53f81502eae2083418c6ff830cd858491bb2c02dd2972bfb2e4cf612a0bd"
+    },
+    {
+      "case": "v4",
+      "file": "actual.terminal.json",
+      "bytes": 293,
+      "sha256": "f9e46267341d2eb46d064f7a9783be5534b285f8c327811f4d96ca27719ee515"
+    },
+    {
+      "case": "v5",
+      "file": "actual.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "v5",
+      "file": "actual.stderr.log",
+      "bytes": 8793,
+      "sha256": "cc464f386295cab40af7681e94c52b690d2d8359f8401fb1a0840153f05dfb7a"
+    },
+    {
+      "case": "v5",
+      "file": "actual.terminal.json",
+      "bytes": 293,
+      "sha256": "521c31c7d8f8179b0619f8cc953d45999769f6117d88e2f0e50b4fdb6879818d"
+    },
+    {
+      "case": "v6",
+      "file": "actual.stdout.log",
+      "bytes": 2319,
+      "sha256": "52427f932cafaf0d9ab454539fc2b71cf0cb621cde4bd5bcd8797ea5b37df059"
+    },
+    {
+      "case": "v6",
+      "file": "actual.stderr.log",
+      "bytes": 1982,
+      "sha256": "c7c3f7e362f20d3040d637f6f455836c91fb8c5c2430c4d86808b26f01334a51"
+    },
+    {
+      "case": "v6",
+      "file": "actual.terminal.json",
+      "bytes": 293,
+      "sha256": "913d873614766cf4195325705f0969b787c0ad2ee77f7b500600d39c4f7897c1"
+    },
+    {
+      "case": "prior-formal-matrix-v1",
+      "file": "SUMMARY.json",
+      "bytes": 6941,
+      "sha256": "1a694013ac3b646603f3091704fedc4c17bed0952fef9a76a576984e4fa7db71"
+    },
+    {
+      "case": "formal-matrix-v2",
+      "file": "MANIFEST.json",
+      "bytes": 5120,
+      "sha256": "7cc826c184e0a303dbf454f3be04a021635947eb6e4666890a8cc360008a30b6"
+    },
+    {
+      "case": "formal-matrix-v2",
+      "file": "actual-20261107T162625930480Z/SUMMARY.json",
+      "bytes": 12221,
+      "sha256": "cd5bbcf4ed9a3d60ad0e58bc2c1c57135dc6c3218f04d5be54d21d6f0d76f018"
+    },
+    {
+      "case": "formal-matrix-v2/known-png",
+      "file": "known-png.stdout.log",
+      "bytes": 1222,
+      "sha256": "861b1e61cdefa4b4fd7c02a698497b116783ad4406d9a60a9d5288b9da477817"
+    },
+    {
+      "case": "formal-matrix-v2/known-png",
+      "file": "known-png.stderr.log",
+      "bytes": 4555,
+      "sha256": "1f1744d33fbfeb107d41f8401f2b9dec938e9365cb58596ee90cb0d82b4c0272"
+    },
+    {
+      "case": "formal-matrix-v2/known-png",
+      "file": "known-png.terminal.json",
+      "bytes": 944,
+      "sha256": "c7dcefc5526f7cd5b0b261452c22e1bb7914b2fbf48dbc3099dc0d3617117f31"
+    },
+    {
+      "case": "formal-matrix-v2/known-scanned-pdf",
+      "file": "known-scanned-pdf.stdout.log",
+      "bytes": 1617,
+      "sha256": "8b47ec9caa7601c3fe9693964d7e2f1320b8005ef111b1e6e7d06a53c9e4e100"
+    },
+    {
+      "case": "formal-matrix-v2/known-scanned-pdf",
+      "file": "known-scanned-pdf.stderr.log",
+      "bytes": 1982,
+      "sha256": "e395e850089f0f2faa9bfa76c349bcd8e98f7c7558ab04ee64d138dddb86303f"
+    },
+    {
+      "case": "formal-matrix-v2/known-scanned-pdf",
+      "file": "known-scanned-pdf.terminal.json",
+      "bytes": 1656,
+      "sha256": "94de422be20437a018000c5eba58e43c741b057d62a09bf3dafa838d1e8be5c2"
+    },
+    {
+      "case": "formal-matrix-v2/a4-small-png",
+      "file": "a4-small-png.stdout.log",
+      "bytes": 1363,
+      "sha256": "e2bf7ca256b1c7514a92d4ae7a948bc83757f9c55238503f7dcd11e909d22e3a"
+    },
+    {
+      "case": "formal-matrix-v2/a4-small-png",
+      "file": "a4-small-png.stderr.log",
+      "bytes": 4557,
+      "sha256": "1867d8863dca3600860781701c6e7bda5672ccc0ddb9f380bba699e652182aed"
+    },
+    {
+      "case": "formal-matrix-v2/a4-small-png",
+      "file": "a4-small-png.terminal.json",
+      "bytes": 1023,
+      "sha256": "a1577f87f8a3f7987993c795c00cc4e860233f94dde7832d01aaa0b162bba0c2"
+    },
+    {
+      "case": "formal-matrix-v2/a4-scanned-2pages",
+      "file": "a4-scanned-2pages.stdout.log",
+      "bytes": 2319,
+      "sha256": "bbf310fb2394e731d63071f2a35272d507f1d4ee59df8357ef7da4f491fb3b19"
+    },
+    {
+      "case": "formal-matrix-v2/a4-scanned-2pages",
+      "file": "a4-scanned-2pages.stderr.log",
+      "bytes": 1984,
+      "sha256": "9abb8c909596aadaba5c248d9965e722e565d23d348bb39a238d518136c1a076"
+    },
+    {
+      "case": "formal-matrix-v2/a4-scanned-2pages",
+      "file": "a4-scanned-2pages.terminal.json",
+      "bytes": 2666,
+      "sha256": "887fdb558fc9680f6924aa0092fe1ca756bb5d5e09055df4c9437fb8d9230470"
+    },
+    {
+      "case": "formal-matrix-v2/rotated90",
+      "file": "rotated90.stdout.log",
+      "bytes": 1222,
+      "sha256": "d3c8907a738ad6cb35c7be1e3cbd21d116a55d168ac6d39c646f11ae70a11d3d"
+    },
+    {
+      "case": "formal-matrix-v2/rotated90",
+      "file": "rotated90.stderr.log",
+      "bytes": 4557,
+      "sha256": "5adcfa6057aaa96acb71c152d7f78d5fa1ac8ee058ded71bc1616d42baf8267f"
+    },
+    {
+      "case": "formal-matrix-v2/rotated90",
+      "file": "rotated90.terminal.json",
+      "bytes": 944,
+      "sha256": "af939c2eb6b2ea4cb7ac3c4d4c45d9245f30b8d3dd285592f4a7c64c732692bc"
+    },
+    {
+      "case": "formal-matrix-v2/wide10to1",
+      "file": "wide10to1.stdout.log",
+      "bytes": 1177,
+      "sha256": "e119004c08344e5d88f7b001b8da699c1f7c52eb23abd04a5196713accba5720"
+    },
+    {
+      "case": "formal-matrix-v2/wide10to1",
+      "file": "wide10to1.stderr.log",
+      "bytes": 4558,
+      "sha256": "4b2b0609fb3524c2f5a3782be5d0f81c74b0df84c88e6960f63d7774740b1a16"
+    },
+    {
+      "case": "formal-matrix-v2/wide10to1",
+      "file": "wide10to1.terminal.json",
+      "bytes": 910,
+      "sha256": "249f430344b307028eb2e56199617175ae627691d6d32140e737f3dd709747ef"
+    },
+    {
+      "case": "formal-matrix-v2/tall1to10",
+      "file": "tall1to10.stdout.log",
+      "bytes": 1222,
+      "sha256": "0d4b71a51753c6795021fd990a0c98126ffebea4c8553e8b2712ed3c35bdc6fe"
+    },
+    {
+      "case": "formal-matrix-v2/tall1to10",
+      "file": "tall1to10.stderr.log",
+      "bytes": 4560,
+      "sha256": "c082ce46feea0c73773240f4dfeeaca4cccd6dd552b06f78076a8b6455125e20"
+    },
+    {
+      "case": "formal-matrix-v2/tall1to10",
+      "file": "tall1to10.terminal.json",
+      "bytes": 944,
+      "sha256": "86d24e27177f842dfb32eb9fd5f123e0e65d04de33038deb8bd094d4845b12ce"
+    },
+    {
+      "case": "formal-matrix-v2/text-pdf",
+      "file": "text-pdf.stdout.log",
+      "bytes": 1222,
+      "sha256": "3ed44d7f426dd699613c2e701222b05d637153e43b87cd5c37a8417cb39f7826"
+    },
+    {
+      "case": "formal-matrix-v2/text-pdf",
+      "file": "text-pdf.stderr.log",
+      "bytes": 1985,
+      "sha256": "03e12e96b02fa8a8fce36baabbd7005506db1fc41381183bdbbc8a3fa3407a68"
+    },
+    {
+      "case": "formal-matrix-v2/text-pdf",
+      "file": "text-pdf.terminal.json",
+      "bytes": 932,
+      "sha256": "55421474f674be29ea98a219caa769b72cec86f339d0425fa73b9fbdd5e915a2"
     }
-  ]
+  ],
+  "previousFormalDocumentSourceSha256": "462dc9158f9f93761615098f1d85ed555c927ba26dbd5d3a556d32d9e6b8aa6c",
+  "executionStructure": {
+    "parent": "PyMuPDF only; no NumPy/PIL/RapidOCR/ONNX",
+    "child": "same file --image-child reuses original PNG extract; no PyMuPDF",
+    "activeChildren": 1,
+    "childWallSeconds": 60,
+    "inputAndStdoutBytes": 8388608,
+    "stderrBytes": 32768,
+    "join": "kill if live, wait, join3 bounded I/O workers before next page",
+    "outerOwner": "original Native process group/range and cancellation",
+    "configuredGuestMemoryBytes": 1073741824,
+    "configuredGuestPids": 128,
+    "note": "CPU75 is per process, while total document wall remains with the original Native job deadline."
+  }
 }
