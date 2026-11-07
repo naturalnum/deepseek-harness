@@ -73,7 +73,7 @@ interface LocaleCallOptions {
 }
 
 export async function localeFixture(name = 'a', enabled = true, fields: readonly ApprovedConfigurationField[] = [{ namespace: 'locale', field: 'preference', values: ['zh', 'en'] }],
-  layout: 'normal' | 'duplicate' | 'override' = 'normal') {
+  layout: 'normal' | 'duplicate' | 'override' = 'normal', eventNotifications = false) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'locale-field-'))), dir = join(home, 'profile')
   mkdirSync(dir); initProfile(dir, [])
   writeFileSync(join(home, 'package.json'), JSON.stringify({ name: 'locale-native-owned-fixture', private: true,
@@ -156,6 +156,7 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
     ], streamEndpoints: [
       { endpoint: 'workspace/follow', handlerId: 'native:workspaceController', guard: 'account-project' },
       { endpoint: 'remoteAccess/follow', handlerId: 'native:remoteAccess', guard: 'authenticated-account' },
+      ...eventNotifications ? [{ endpoint: '$events', handlerId: 'native:typertGateway', guard: 'authenticated-account' } as const] : [],
     ] })
   const saves = new ConfigSaveCoordinator({ maxAccounts: 1, maxRunning: 1, maxQueued: 4, maxQueuedPerAccount: 4,
     maxTrackedOperations: 8, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 3, maxWaitersPerAccount: 2 })
@@ -298,9 +299,12 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
   if (api === undefined || native === undefined || barrier === undefined) throw new Error('Fixture owners missing')
   await ctx.cloudModelKey.auditProvider()
   await ctx.cloudSkills.restore()
+  const events = eventNotifications ? api.installFirstScreenEvents(ctx, { home, maxHomeBytes: 4096,
+    maxInventoryEntries: 256, maxQueuedEvents: 8, maxQueuedBytes: 16384, maxFrameBytes: 4096 }) : undefined
   const inventory = native.inspect()
   api.audit({ ...inventory, rpcEndpoints: [...inventory.rpcEndpoints, ...ctx.cloudModelKey.inspect().rpcEndpoints,
-    ...ctx.cloudSkills.inspect().rpcEndpoints] })
+    ...ctx.cloudSkills.inspect().rpcEndpoints], streamEndpoints: [...inventory.streamEndpoints,
+    ...events === undefined ? [] : [{ endpoint: events.inspect().endpoint, handlerId: 'native:typertGateway', guard: 'authenticated-account' } as const]] })
   const abort = new AbortController()
   const peer: PeerScope = { id: brandString<PeerScope['id']>('peer-' + name), ctx, principal: { kind: 'owner' },
     interactions: 'answer', signal: abort.signal, dispose: () => Promise.resolve() }
@@ -315,7 +319,20 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
   accepted = Promise.withResolvers<undefined>()
   const sourceBefore = readFileSync(skillPointer), keyBefore = readFileSync(credentialPath)
   const ownedApi = api, ownedBarrier = barrier, originalPeer = peer
+  const eventStreams: Array<{ abort: AbortController; iterator: AsyncIterator<unknown> }> = []
+  onTestFinished(async () => {
+    for (const stream of eventStreams) { stream.abort.abort(); await stream.iterator.return?.() }
+  })
   return { ctx, api: ownedApi, barrier: ownedBarrier, saves, profile, configPath, binding, lifetime,
+    events,
+    async openEvents() {
+      if (events === undefined) throw new Error('Fixture event source is not selected')
+      const abort = new AbortController()
+      const stream = await ctx.typertGateway.wireStream.open('$events', { args: {} }, (async function* () {})(), originalPeer, abort.signal)
+      const iterator = stream[Symbol.asyncIterator]()
+      eventStreams.push({ abort, iterator })
+      return iterator
+    },
     credentialPath, skillPointer, sourceBefore, keyBefore, ref, keyState, keyStateBefore, initialKey,
     writeKey: (version: typeof keyStateBefore.version, value: string) => ctx.typertGateway.invoke({ namespace: 'cloudModelKey',
       method: 'set', args: { request: { ref, value, version } }, peer: originalPeer }),

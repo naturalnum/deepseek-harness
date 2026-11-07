@@ -129,7 +129,7 @@ export class CloudAccountApi extends Service {
   private readonly native: Partial<Record<NativeKey, NativeInstallation>> = {}
   private readonly streamGuard: { dispose?: () => void } = {}
   private readonly firstScreen: { native?: NativeFirstScreen; events?: FirstScreenEvents } = {}
-  private readonly modelKey: { native?: CloudModelKeyService } = {}
+  private readonly modelKey: { native?: CloudModelKeyService; references?: readonly string[] } = {}
   private readonly remoteServers: { native?: CloudRemoteServerService } = {}
   private readonly skills: { native?: CloudSkillService } = {}
   private readonly plugins: { control?: AccountPluginControl; native?: CloudPluginService } = {}
@@ -635,6 +635,7 @@ export class CloudAccountApi extends Service {
     const webSearchSettings = this.installation.exposure.manifest.allowedSettings.some(row => row.namespace === 'web-search-deepseek')
     const native = new CloudModelKeyService(owner, this, input, webSearchSettings)
     this.modelKey.native = native
+    this.modelKey.references = Object.freeze(input.limits.bindings.map(binding => binding.ref))
     return native
   }
   /**
@@ -839,7 +840,7 @@ export class CloudAccountApi extends Service {
       controls: { commands: selected('commands/list'), goals: selected('goals/get'), permissions: selected('permissionPresets/catalog'),
         approval: selected('permissionPresets/catalog') && selected('$events/result'),
         questions: selected('userQuestions/answer'), schedule: selected('schedule/catalog') },
-    })
+    }, this.modelKey.references)
     this.firstScreen.events = events
     return events
   }

@@ -11,6 +11,7 @@ import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-skill/types'
 import type {} from '@deepseek-ai/dsh-goal/types'
 import type {} from '@deepseek-ai/dsh-commands/types'
@@ -76,12 +77,17 @@ function unavailable(): never {
  * the original Remote waterfall listener; unacknowledged questions retain their queue budget.
  * @param ctx - original event registration Loader fiber inside the independent account graph.
  * @param input - original owners, exact profile home and required finite budgets.
+ * @param modelKeyReferences - Root-approved credential references; omission forwards no credential notifications.
  * @returns the retained registration and actual withdrawal handle, not a ready certificate.
  */
-export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventInput): FirstScreenEvents {
+export function registerFirstScreenEvents(
+  ctx: Context, input: FirstScreenEventInput, modelKeyReferences: readonly string[] = [],
+): FirstScreenEvents {
   for (const value of [input.maxHomeBytes, input.maxInventoryEntries, input.maxQueuedEvents, input.maxQueuedBytes, input.maxFrameBytes]) {
     if (!Number.isSafeInteger(value) || value < 1) unavailable()
   }
+  if (modelKeyReferences.length > input.maxInventoryEntries) unavailable()
+  const references = new Set(modelKeyReferences)
   const profile = ctx.get('profileContext'), gateway = ctx.get('typertGateway')
   const skills = ctx.get('cloudSkills')
   const skillIdentity: unknown = skills === undefined ? undefined : Reflect.get(skills, symbols.original) ?? skills
@@ -253,6 +259,9 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
       ctx.on('api-session/error', (id, message) => { session({ event: 'api-session/error', args: [id, message] }, id) }),
       ctx.on('settings/document-updated', (ns, revision) => {
         if (input.settingsNamespaces.includes(ns)) push({ event: 'settings/document-updated', args: [ns, revision] })
+      }),
+      ctx.on('credentials/reference-updated', (ref) => {
+        if (references.has(ref)) push({ event: 'credentials/reference-updated', args: [ref] })
       }),
     )
     if (skills !== undefined) removers.push(ctx.on('skills/change', () => { push({ event: 'skills/change', args: [] }) }))

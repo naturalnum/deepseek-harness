@@ -204,6 +204,32 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
 const projection = (id: string) => ({ sessionId: sid(id) })
 
 describe('ui-model-selection dual entry', () => {
+  it('refreshes a cached empty catalog in both selectors after reference save and removal without reconnecting', async () => {
+    const b = await bench()
+    try {
+      b.setRoutable(false)
+      b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
+      b.mint('model-key')
+      const input = projection('model-key'), seat = b.seat().inject!(sid('model-key'))
+      expect(await b.popup().options(input, new AbortController().signal)).toEqual([])
+      const directory = b.ctx.modelDirectories.directoryFor(sid('model-key'))
+      expect(directory.store).toBe(seat.directory)
+      const before = b.calls.models
+
+      b.setRoutable(true)
+      b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
+      await vi.waitFor(() => { expect(seat.directory.getSnapshot().groups).toEqual(GROUPS) })
+      expect((await b.popup().options(input, new AbortController().signal)).length).toBeGreaterThan(0)
+      expect(b.calls.models).toBe(before + 1)
+
+      b.setRoutable(false)
+      b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
+      await vi.waitFor(() => { expect(seat.directory.getSnapshot().groups).toEqual([]) })
+      expect(await b.popup().options(input, new AbortController().signal)).toEqual([])
+      expect(b.calls.models).toBe(before + 2)
+    } finally { await b.ctx.fiber.dispose() }
+  })
+
   it('carries writer contention to the model seat and localizes the command failure', async () => {
     const b = await bench()
     b.mint('owned')
