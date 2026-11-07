@@ -90,6 +90,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   preserveProfile = false, initialLoopLimit?: number,
   presetOptions?: {
     readonly defaultId: string
+    readonly withPeerUse?: ModelKeyPeerConsumer['withModelKeyPeerUse']
     readonly inheritedDefaultId?: string
     readonly legacyDefaultPresetId?: string
     readonly legacyRegistryId?: boolean
@@ -324,6 +325,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
           assertMountCurrent: actualGraph, assertBusinessCurrent: businessGraph,
           ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
           ...bootstrapInventory,
+          ...presetOptions?.withPeerUse === undefined ? {} : { withPeerUse: presetOptions.withPeerUse },
           ...rootFetch?.inspectRootFetch === undefined ? {} : { inspectRootFetch: rootFetch.inspectRootFetch },
           assertUnpublished: () => { actualGraph(binding) },
         })

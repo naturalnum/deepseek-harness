@@ -43,6 +43,12 @@ export interface AccountMcpConnectionStore {
   withHeaders<T>(id: McpConnectionId, consume: (headers: Record<string, string>) => Promise<T>): Promise<T>
 }
 
+/** The original mutation refused before submitting a credential or definition publication. */
+export class McpConnectionWriteRefused extends Error {
+  /** @param reason Original refusal, consumed only by the original configuration save owner. */
+  constructor(readonly reason: unknown) { super('cloud/mcp-connection-not-written') }
+}
+
 const recordSchema = z.strictObject({ id: z.uuid(), serverName: z.string().regex(/^[A-Za-z0-9_-]{1,32}$/),
   url: z.string(), enabled: z.boolean(), toolCallTimeoutMs: z.number().int().positive() })
 const headersSchema = z.strictObject({ version: z.literal(1), headers: z.record(z.string(), z.string()) })
@@ -119,7 +125,7 @@ export async function openMcpConnectionStore(ctx: Context, binding: AccountBindi
       try { return { ok: true as const, value: await work(() => { state.started = true }) } }
       catch (error) { if (state.started) throw error; return { ok: false as const, error } }
     })
-    if (!result.ok) throw result.error
+    if (!result.ok) throw new McpConnectionWriteRefused(result.error)
     return result.value
   }
   return {
@@ -139,8 +145,15 @@ export async function openMcpConnectionStore(ctx: Context, binding: AccountBindi
           if (Object.keys(value.headers).length === 0) {
             submitted(); await provider.deleteRecord(key(selected))
           } else {
-            await provider.modifyRecord(key(selected), () => { active(); submitted(); return Promise.resolve({ kind: 'grant' as const,
-              payload: { version: 1, headers: { ...value.headers } } }) })
+            let refusal: { error: unknown } | undefined
+            await provider.modifyRecord(key(selected), () => {
+              // Native undefined means a confirmed no-write. Do not turn a revoked login
+              // into a failed nested native save before the outer owner can observe it.
+              try { active() } catch (error) { refusal = { error }; return Promise.resolve(undefined) }
+              submitted()
+              return Promise.resolve({ kind: 'grant' as const, payload: { version: 1, headers: { ...value.headers } } })
+            })
+            if (refusal !== undefined) throw refusal.error
           }
           active()
         }

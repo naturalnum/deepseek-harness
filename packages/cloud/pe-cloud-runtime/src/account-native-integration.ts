@@ -106,6 +106,7 @@ export interface AccountNativePreparation {
   readonly withPeerUse?: import('@deepseek-ai/dsh-pe-cloud-api').ModelKeyPeerConsumer['withModelKeyPeerUse']
   readonly mcp?: Omit<import('@deepseek-ai/dsh-pe-cloud-api').CloudMcpConnectionPreparation,
     'files' | 'assertBusinessCurrent' | 'assertToolCurrent'>
+  readonly withPeerUse?: import('@deepseek-ai/dsh-pe-cloud-api').ModelKeyPeerConsumer['withModelKeyPeerUse']
   readonly modelKey?: CloudModelKeyPreparation
   readonly skills?: Omit<CloudSkillPreparation, 'files' | 'resources' | 'managed'> & {
     readonly managed: Omit<ManagedSkillPreparation, 'assertWorkspace' | 'resources'>

@@ -2,11 +2,11 @@
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { mcpConnectionInput, type CloudAccountFiles, type AccountMcpConnectionStore, type McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
+import { mcpConnectionInput, McpConnectionWriteRefused, type CloudAccountFiles,
+  type AccountMcpConnectionStore, type McpConnectionId, type McpConnectionRecord } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { z } from 'zod'
 import type { CloudAccountApi } from './account-service.ts'
-import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
 import type { ConfigSaveBarrier } from './save-hooks.ts'
 import type { ExposureInventory } from './types.ts'
 import type { CloudMcpConnectionRequest, CloudMcpConnectionReply } from './mcp-types.ts'
@@ -15,7 +15,7 @@ import { AccountMcpConnections, McpConnectionCleanupError } from './mcp-connecti
 import { CloudApiError } from './errors.ts'
 
 /** Original Root callbacks and selected policy; no authority comes from request JSON. */
-export interface CloudMcpConnectionPreparation extends ModelKeyPeerConsumer {
+export interface CloudMcpConnectionPreparation {
   readonly files: CloudAccountFiles
   readonly policy: ApprovedMcpConnections
   readonly assertBusinessCurrent: () => void
@@ -75,10 +75,9 @@ export class CloudMcpConnectionService extends TypertRemoteService {
       || Object.keys(invocation.request.args).length !== 1 || !Object.hasOwn(invocation.request.args, 'request')) unavailable()
     const value = this.parse(invocation.request.args.request)
     const operationSignal = AbortSignal.any([signal, invocation.peer.signal, this.api.binding.lifetime])
-    return this.input.withModelKeyPeerUse(invocation.peer, async (use, principal) => {
+    return this.api.withPeerUse(invocation.peer, async (_use, principal) => {
       const check = (): void => {
-        operationSignal.throwIfAborted(); principal(); use.assertCurrent(); this.current()
-        if (use.binding !== this.api.binding || use.context.root !== this.ctx.root) unavailable()
+        operationSignal.throwIfAborted(); principal(); this.current()
         this.api.requireRpc(namespace + '/action')
       }
       check(); await this.runtime.restore(); check()
@@ -122,7 +121,12 @@ export class CloudMcpConnectionService extends TypertRemoteService {
               const { id: _id, ...definition } = previous
               return { ...definition, enabled: value.enabled }
             })()
-            const row = await this.data.save(value.id, connection, check)
+            let row: McpConnectionRecord
+            try { row = await this.data.save(value.id, connection, check) }
+            catch (error) {
+              if (error instanceof McpConnectionWriteRefused) return { refused: true as const, error: error.reason }
+              throw error
+            }
             check(); await this.runtime.apply(row)
           }
           check(); return { conflict: false as const }

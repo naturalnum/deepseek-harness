@@ -937,7 +937,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           maxNativeInventoryEntries: config.native.maxEntries,
           ...pluginPreparation === undefined ? {} : { plugins: pluginPreparation },
           ...settingsWrites ? { settingsWrites: { withModelKeyPeerUse, fields: settingsFields } } : {},
-          ...mcp === undefined ? {} : { mcp: { policy: mcp, withModelKeyPeerUse } },
+          ...mcp === undefined ? {} : { mcp: { policy: mcp } },
           ...remoteServers === undefined ? {} : { remoteServers: { ...remoteServers, withModelKeyPeerUse } },
           ...modelKey === undefined ? {} : { modelKey: {
             limits: modelKey, maxNativeInventoryEntries: config.native.maxEntries,
