@@ -1,6 +1,16 @@
 # Classic builder accepts this exact local image ID. Root qualifies the resulting new workload/server pair separately.
 ARG BASE_IMAGE=sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS git-supplier
+USER root
+COPY scripts/install-cloud-git.py scripts/prepare-cloud-git-verifier.py source-records/cloud-git.json source-records/cloud-git-verifier.json /opt/dsh/research/.git-build/
+COPY runtime-input/git/ /opt/dsh/research/.git-build/inputs/
+RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.git-build/prepare-cloud-git-verifier.py --record /opt/dsh/research/.git-build/cloud-git-verifier.json --inputs /opt/dsh/research/.git-build/inputs --index /opt/dsh/research/.git-build/inputs/debian-trixie-arm64.Packages.xz --destination /opt/dsh/research/.git-build/tools --output /opt/dsh/research/.git-build/verifier-files.json \
+    && /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.git-build/install-cloud-git.py --record /opt/dsh/research/.git-build/cloud-git.json --input-dir /opt/dsh/research/.git-build/inputs --gpgv /opt/dsh/research/.git-build/tools/bin/gpgv \
+    && cp /opt/dsh/research/.git-build/verifier-files.json /opt/dsh/research/git/build-verifier.json \
+    && chmod -R a-w /opt/dsh/research/git \
+    && rm -rf /opt/dsh/research/.git-build
+
+FROM ${BASE_IMAGE} AS research-runtime
 USER root
 COPY cloud-requirements.txt scripts/cloud-runtime-probe.py scripts/install-cloud-python.py source-records/cloud-python.json src/server/document-native.py runtime-input/cpython-3.13.18-aarch64.tar.gz /opt/dsh/research/.build/
 RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.build/cloud-runtime-probe.py snapshot-office --output /opt/dsh/research/.build/office-before.json \
@@ -12,3 +22,8 @@ RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.bu
     && /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.build/cloud-runtime-probe.py verify-office --baseline /opt/dsh/research/.build/office-before.json --output /opt/dsh/research/.build/office-preserved.json \
     && rm -rf /opt/dsh/research/.build \
     && chmod -R a-w /opt/dsh/research
+COPY --from=git-supplier /opt/dsh/research/git /opt/dsh/research/git
+COPY scripts/cloud-git-probe.py /tmp/research-git-probe.py
+RUN /opt/dsh/research/python/bin/python3 -I -S -B /tmp/research-git-probe.py --output /opt/dsh/research/git/qualification.json \
+    && chmod -R a-w /opt/dsh/research/git \
+    && rm /tmp/research-git-probe.py

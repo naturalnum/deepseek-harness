@@ -14,7 +14,7 @@
         maxOutputBytes: 4096
         graceMs: 1000
         pythonPath: /opt/dsh/research/python/bin/python3
-        gitPath: /usr/bin/git
+        gitPath: /opt/dsh/research/git/bin/git
         maxConcurrentResourcePreparations: 1
         maxSkillProviders: 64
         maxSkillFiles: 1024

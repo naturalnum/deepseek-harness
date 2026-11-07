@@ -1,0 +1,73 @@
+{
+  "schema": "dsh-research-git-build-toolchain/v1",
+  "createdAt": "2026-11-07T22:13:28.242192+00:00",
+  "immutableBaseKeyring": {
+    "path": "/usr/share/keyrings/debian-archive-keyring.gpg",
+    "bytes": 55918,
+    "sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017"
+  },
+  "signedIndex": {
+    "name": "debian-trixie-arm64.Packages.xz",
+    "bytes": 9614192,
+    "sha256": "be16b37b2f740f066ea93d35d56f04f94d63693e5a3eb421b052bf86fae75bcd"
+  },
+  "requiredPrimarySigningKeys": [
+    "04B54C3CDCA79751B16BC6B5225629DF75B188BD",
+    "41587F7DB8C774BCCF131416762F67A0B2C39DE4",
+    "B8B80B5B623EAB6AD8775C45B7C5D7D6350947F8"
+  ],
+  "temporaryOnly": true,
+  "packages": [
+    {
+      "package": "libbz2-1.0",
+      "version": "1.0.8-6",
+      "architecture": "arm64",
+      "url": "https://deb.debian.org/debian/pool/main/b/bzip2/libbz2-1.0_1.0.8-6_arm64.deb",
+      "name": "libbz2-1.0_1.0.8-6_arm64.deb",
+      "bytes": 37772,
+      "sha256": "3537fe4fc577a60c8a9568873cd577db7ebc135eb8bb1825f18caf8972d9d2f2",
+      "depends": "libc6 (>= 2.17)"
+    },
+    {
+      "package": "gpgv",
+      "version": "2.4.7-21+deb13u1+b5",
+      "architecture": "arm64",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gpgv_2.4.7-21+deb13u1+b5_arm64.deb",
+      "name": "gpgv_2.4.7-21+deb13u1+b5_arm64.deb",
+      "bytes": 220732,
+      "sha256": "3ccb7bffaede2ccf120ba1c9477b69588cc23ef2afe9a7105cf8cda92464b114",
+      "depends": "libbz2-1.0, libc6 (>= 2.38), libgcrypt20 (>= 1.11.0), libgpg-error0 (>= 1.49), zlib1g (>= 1:1.1.4)"
+    },
+    {
+      "package": "libgcrypt20",
+      "version": "1.11.0-7+deb13u1",
+      "architecture": "arm64",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libgcrypt20/libgcrypt20_1.11.0-7+deb13u1_arm64.deb",
+      "name": "libgcrypt20_1.11.0-7+deb13u1_arm64.deb",
+      "bytes": 741128,
+      "sha256": "243a42b879c6675348279a3f9a40e535d57185af00dbfd51b7481e777f163da6",
+      "depends": "libc6 (>= 2.38), libgpg-error0 (>= 1.50)"
+    },
+    {
+      "package": "libgpg-error0",
+      "version": "1.51-4",
+      "architecture": "arm64",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libgpg-error/libgpg-error0_1.51-4_arm64.deb",
+      "name": "libgpg-error0_1.51-4_arm64.deb",
+      "bytes": 78544,
+      "sha256": "f9a8ee3f325360dbbb1c98331c60c7aa454a054a8a4564bc36b3e52fb53e019e",
+      "depends": "libc6 (>= 2.38)"
+    },
+    {
+      "package": "zlib1g",
+      "version": "1:1.3.dfsg+really1.3.1-1+b1",
+      "architecture": "arm64",
+      "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib1g_1.3.dfsg+really1.3.1-1+b1_arm64.deb",
+      "name": "zlib1g_1.3.dfsg+really1.3.1-1+b1_arm64.deb",
+      "bytes": 85116,
+      "sha256": "209aa5cf671e97b9eb0410844fa6df4cae2e75b0c72e7802ab6c8ece13e6ddef",
+      "depends": "libc6 (>= 2.17)"
+    }
+  ],
+  "observedBaseImageDigest": "sha256:71c7afa35f5d774ec6a198c7233b645bc16275c56595369efa368d6fac025bf8"
+}

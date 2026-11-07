@@ -14,3 +14,7 @@ it('joins bounded same-script image children and defers PDF and OCR libraries to
 it('keeps absent optional models quiet and preserves actual module-resolution and dependency failures',()=>{
   execFileSync('python3',['-I','-B',fileURLToPath(new URL('./test_optional_model.py',import.meta.url))],{timeout:10000,stdio:'pipe'})
 })
+
+it('verifies the offline Git signature chain, private payload and original qualification limits',()=>{
+  execFileSync('python3',['-I','-B',fileURLToPath(new URL('./test_cloud_git.py',import.meta.url))],{timeout:10000,stdio:'pipe'})
+})

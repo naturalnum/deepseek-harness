@@ -123,13 +123,15 @@ class ScientificRuntimeTests(unittest.TestCase):
                     document.create_ocr()
                 self.assertEqual(len(calls), 1)
 
-    def test_build_uses_one_original_base_and_installs_packages_only_in_the_new_interpreter(self):
+    def test_build_reuses_the_original_base_and_installs_packages_only_in_the_new_interpreter(self):
         lines = (ROOT / 'Dockerfile.cloud').read_text().replace('\\\n', '').splitlines()
-        self.assertEqual(len([line for line in lines if line.startswith('FROM ')]), 1)
+        self.assertEqual({line.split()[1] for line in lines if line.startswith('FROM ')}, {'${BASE_IMAGE}'})
+        self.assertEqual([line for line in lines if line.startswith('COPY --from=')],
+                         ['COPY --from=git-supplier /opt/dsh/research/git /opt/dsh/research/git'])
         self.assertFalse(any(line.startswith('ENV ') for line in lines))
         self.assertIn('COPY ', '\n'.join(lines))
-        self.assertTrue(next(line for line in lines if line.startswith('COPY ')).endswith('/opt/dsh/research/.build/'))
-        run = next(line for line in lines if line.startswith('RUN '))
+        self.assertTrue(next(line for line in lines if line.startswith('COPY cloud-requirements.txt ')).endswith('/opt/dsh/research/.build/'))
+        run = next(line for line in lines if line.startswith('RUN ') and '-m pip --isolated install' in line)
         self.assertIn('/opt/dsh/research/python/bin/python3 -I -B -m pip --isolated install', run)
         self.assertIn('--only-binary=:all: --no-binary=antlr4-python3-runtime --prefix /opt/dsh/research/python', run)
         self.assertNotIn('chmod -R u+w /opt/dsh/runtime', run)
