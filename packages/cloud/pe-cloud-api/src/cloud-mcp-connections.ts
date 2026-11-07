@@ -35,8 +35,11 @@ export class CloudMcpConnectionService extends TypertRemoteService {
     super(ctx, 'cloudMcpConnections', { namespace: 'cloudMcpConnections' })
     this.runtime = new AccountMcpConnections(ctx, data, input.policy.runtime,
       () => { this.current(); input.assertBusinessCurrent() }, input.assertToolCurrent)
-    ctx.on('agent/pre-step', async (_payload, next) => {
+    ctx.on('system-prompt/prepare', async (context, next) => {
+      if (context.agent === undefined) return next()
+      context.signal?.throwIfAborted()
       await this.runtime.restore()
+      context.signal?.throwIfAborted()
       return next()
     })
     const owner = ctx.get('peCloudApi')

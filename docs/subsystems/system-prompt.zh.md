@@ -23,6 +23,8 @@ interface AssembleContext {
 }
 ```
 
+组装在收集提供方值之前等待作用域 `system-prompt/prepare` waterfall。准备阶段可完成提供方拥有的发现操作；拒绝时不会生成部分快照。既有 `system-prompt/assemble` waterfall 仍在之后接收完整收集值。
+
 ## 工具提供方结果
 
 `ToolProviderResult.schemas` 是当前组装中对模型可见的工具 schema 集合。`knownNames` 是提供方在限制前的名称全集，用于区分「配置名拼写错误」与「已知工具在此作用域中被有意隐藏」。

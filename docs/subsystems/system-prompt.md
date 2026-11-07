@@ -23,6 +23,8 @@ interface AssembleContext {
 }
 ```
 
+Assembly awaits the scoped `system-prompt/prepare` waterfall before collecting provider values. Preparation can finish provider-owned discovery; a rejection prevents a partial snapshot. The existing `system-prompt/assemble` waterfall still receives the complete collected values afterwards.
+
 ## Tool-provider result
 
 `ToolProviderResult.schemas` is the model-visible set for the current assembly. `knownNames` is the provider's pre-restriction name universe used to distinguish a configured-name typo from a known tool that is deliberately hidden in this scope.

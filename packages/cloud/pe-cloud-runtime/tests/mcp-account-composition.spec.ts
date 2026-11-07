@@ -20,16 +20,13 @@ const policy: ApprovedMcpConnections = {
 }
 
 async function account(name: string, selectedPolicy: ApprovedMcpConnections = policy) {
-  const login = new AbortController()
+  const uses = new Map<PeerScope, AccountUse>()
   const fixture = policyFixture([{ endpoint: 'cloudMcpConnections/action', handlerId: 'native:cloudMcpConnections', guard: 'authenticated-account' }],
     undefined, name, { selected: [], inspectRootFetch: () => [] }, undefined, undefined, undefined, undefined, [], false, undefined, {
       withPeerUse(peer, consume) {
-        if (peer !== authenticated) throw new Error('Foreign test authentication Peer')
-        const current = (): void => {
-          peer.signal.throwIfAborted(); graph.binding.lifetime.throwIfAborted(); graph.ctx.fiber.assertActive()
-        }
-        const use: AccountUse = { binding: graph.binding, context: graph.ctx, assertCurrent: current, release() {} }
-        return consume(use, current)
+        const use = uses.get(peer)
+        if (use === undefined) throw new Error('Foreign test authentication Peer')
+        return consume(use, () => { use.assertCurrent() })
       },
       defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', selectable: true, config: { id: 'cloud-chat', plugins: [
         { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
@@ -52,15 +49,69 @@ async function account(name: string, selectedPolicy: ApprovedMcpConnections = po
         }
       },
     })
-  const graph = await fixture.start()
-  const authenticated: PeerScope = { id: brandString<PeerId>('mcp-peer-' + name), ctx: graph.ctx, principal: { kind: 'owner' },
-    interactions: 'answer', signal: login.signal, dispose: () => Promise.resolve() }
-  const peer = authenticated
-  const invoke = (request: CloudMcpConnectionRequest): Promise<CloudMcpConnectionReply> => graph.ctx.typertGateway.invoke({
-    namespace: 'cloudMcpConnections', method: 'action', args: { request }, peer,
-  }) as Promise<CloudMcpConnectionReply>
-  return { ...graph, invokeMcp: invoke, peer, revokeLogin: () => { login.abort() } }
+  const start = async (epoch: string) => {
+    const graph = await fixture.start(epoch), login = new AbortController()
+    const peer: PeerScope = { id: brandString<PeerId>('mcp-peer-' + name + '-' + epoch), ctx: graph.ctx, principal: { kind: 'owner' },
+      interactions: 'answer', signal: login.signal, dispose: () => Promise.resolve() }
+    const current = (): void => {
+      peer.signal.throwIfAborted(); graph.binding.lifetime.throwIfAborted(); graph.ctx.fiber.assertActive()
+    }
+    uses.set(peer, { binding: graph.binding, context: graph.ctx, assertCurrent: current, release() {} })
+    const invoke = (request: CloudMcpConnectionRequest): Promise<CloudMcpConnectionReply> => graph.ctx.typertGateway.invoke({
+      namespace: 'cloudMcpConnections', method: 'action', args: { request }, peer,
+    }) as Promise<CloudMcpConnectionReply>
+    return { ...graph, invokeMcp: invoke, peer, revokeLogin: () => { login.abort() } }
+  }
+  return { ...await start('1'), coldStart: () => start('2') }
 }
+
+it('restores persisted HTTP tools before a cold account Agent assembles its first model request without visiting MCP settings', async () => {
+  const external = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-cold-account-token' })
+  try {
+    const warm = await account('mcp-cold'), first = await warm.invokeMcp({ action: 'list' })
+    await warm.invokeMcp({ action: 'save', version: first.version, connection: { serverName: 'compute', url: external.url,
+      enabled: true, toolCallTimeoutMs: 2000, headers: { Authorization: 'Bearer synthetic-cold-account-token' } } })
+    await warm.close()
+    const cold = await warm.coldStart(), foreign = await account('mcp-cold-foreign')
+    expect(cold.ctx.tools.schemas().filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
+    const requests = external.authorization.length
+    expect((await cold.ctx.systemPrompt.assemble()).tools.filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
+    expect(external.authorization).toHaveLength(requests)
+    let calls = 0
+    vi.spyOn(cold.adapter, 'stream').mockImplementation(async function* (options: GenerateOptions): AsyncIterable<StreamChunk> {
+      expect(options.tools?.some(tool => tool.name === 'mcp__compute__ping')).toBe(true)
+      if (calls++ === 0) yield* toolCallResponse('cold-first-model-mcp', 'mcp__compute__ping', {})
+      else yield* textResponse('The real MCP replied pong.')
+    })
+    const created = await cold.ctx.sessionController.create({})
+    const completed: PromiseWithResolvers<void> = Promise.withResolvers()
+    cold.ctx.on('session/event', (session, event) => {
+      if (session.id === created.sessionId && event.type === 'turn/end') completed.resolve()
+    })
+    // No MCP list/test/save is sent to this new account graph before its first model turn.
+    await cold.invoke('prompt', { sessionId: created.sessionId, requestId: 'cold-mcp-first-turn', mode: 'followup',
+      content: [{ type: 'text', text: 'Use the configured MCP ping tool.' }] })
+    await completed.promise; await cold.ctx.sessionPersistence.flush()
+    expect(calls).toBe(2)
+    expect(external.calls).toEqual(['ping'])
+    const history = JSON.stringify(cold.ctx.sessions.get(created.sessionId)?.snapshotEvents())
+    expect(history).toContain('cold-first-model-mcp'); expect(history).toContain('pong')
+    expect(history).not.toContain('synthetic-cold-account-token')
+    const other = await foreign.ctx.sessionController.create({})
+    const otherCompleted: PromiseWithResolvers<void> = Promise.withResolvers()
+    vi.spyOn(foreign.adapter, 'stream').mockImplementation(async function* (options: GenerateOptions): AsyncIterable<StreamChunk> {
+      expect(options.tools?.some(tool => tool.name.startsWith('mcp__')) ?? false).toBe(false)
+      yield* textResponse('No MCP tool is configured for this account.')
+    })
+    foreign.ctx.on('session/event', (session, event) => {
+      if (session.id === other.sessionId && event.type === 'turn/end') otherCompleted.resolve()
+    })
+    await foreign.invoke('prompt', { sessionId: other.sessionId, requestId: 'cold-foreign-first-turn', mode: 'followup',
+      content: [{ type: 'text', text: 'Use an MCP tool if configured.' }] })
+    await otherCompleted.promise
+    expect(external.calls).toEqual(['ping'])
+  } finally { await external.close() }
+}, 20000)
 
 it('discovers and calls an HTTP MCP tool through an original guarded account Agent and keeps the other account isolated', async () => {
   const external = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-composition-token' })

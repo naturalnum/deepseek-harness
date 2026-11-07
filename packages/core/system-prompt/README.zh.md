@@ -81,6 +81,8 @@ ctx.systemPrompt.variable('response_language', () => 'English')
 
 工具 schema 提供方在每次组装时求值，并贡献模型可见的 `ToolSchema` 集合；`ToolRuntime` 会自动注册自身，因此大多数工具在此无需手动接线。提供方返回限制后的可见集合，外加 `toolOrder` 使用的限制前名称全集。
 
+`system-prompt/prepare` 是按作用域筛选的异步 waterfall，在读取任何段、变量、上下文或工具提供方之前运行。可用它在首个模型快照前完成提供方拥有的发现操作；准备后调用 `next()` 继续。准备被拒绝时，组装直接失败，不发布部分快照。单次组装信号不拥有共享提供方的生命周期。没有监听器时，提供方收集和输出保持不变。
+
 ### 抑制运行时上下文
 
 `suppressRuntimeContext()` 移除调用作用域的可选动态上下文，但不禁用拥有这些事实的服务。标记为 `required` 的贡献仍然可见。多个抑制器独立组合；不再存在抑制器时，可选上下文恢复。

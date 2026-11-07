@@ -81,6 +81,8 @@ Custom persona templates must not depend on a built-in `{{cwd}}` variable: the l
 
 Tool-schema providers are evaluated per assembly and contribute the model-visible `ToolSchema` set; `ToolRuntime` registers itself automatically, so most tools need no manual wiring here. A provider returns the post-restriction visible set plus the pre-restriction name universe used by `toolOrder`.
 
+`system-prompt/prepare` is a scope-filtered asynchronous waterfall before any section, variable, context or tool provider is read. Use it to finish provider-owned discovery before the first model snapshot; call `next()` after preparation. Rejection stops assembly without a partial snapshot. The per-assembly signal does not own shared provider lifetimes. With no listener, provider collection and output are unchanged.
+
 ### Suppress runtime context
 
 `suppressRuntimeContext()` removes optional dynamic context for the calling scope without disabling the owning services. Contributions marked `required` remain visible. Multiple suppressors compose; optional context returns when none remains.
