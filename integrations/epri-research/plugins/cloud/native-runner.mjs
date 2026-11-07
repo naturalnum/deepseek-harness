@@ -10,7 +10,27 @@ const engineRoot=join(sourceRoot,'../../src/reused/engine');
 const resourceScript=join(sourceRoot,'../../plugins/cloud/resource-materializer.py');
 const documentScript=join(sourceRoot,'../../src/server/document-native.py');
 const unavailable=message=>{throw Object.assign(new Error(message),{code:'UNAVAILABLE'});};
-const bootstrap="import sys,os,runpy,shutil,io,contextlib,json,hashlib; p,r,w,o,m=sys.argv[1:]; os.environ['EPRI_EXECUTION_ROOT']=w; sys.stdin=open(p,encoding='utf8'); sys.argv=[r]; capture=io.StringIO(); exec(\"try:\\n with contextlib.redirect_stdout(capture): runpy.run_path(r,run_name='__main__')\\n data=capture.getvalue().encode('utf8')\\n if len(data)>int(m): raise ValueError('Scientific result exceeds configured capacity')\\n with open(o,'xb') as f: f.write(data)\\n print(json.dumps({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}))\\nfinally:\\n sys.stdin.close()\\n for f in (p,r):\\n  if os.path.isfile(f): os.unlink(f)\\n if os.path.isdir(w): shutil.rmtree(w)\")";
+const bootstrap=`import sys,os,runpy,shutil,io,contextlib,json,hashlib
+p,r,w,o,m=sys.argv[1:]
+os.environ['EPRI_EXECUTION_ROOT']=w
+sys.stdin=open(p,encoding='utf8')
+sys.argv=[r]
+capture=io.StringIO()
+try:
+ with contextlib.redirect_stdout(capture):
+  try: runpy.run_path(r,run_name='__main__')
+  except SystemExit as result:
+   if result.code not in (None,0): raise
+ data=capture.getvalue().encode('utf8')
+ if len(data)>int(m): raise ValueError('Scientific result exceeds configured capacity')
+ with open(o,'xb') as f: f.write(data)
+ print(json.dumps({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}))
+finally:
+ sys.stdin.close()
+ for f in (p,r):
+  if os.path.isfile(f): os.unlink(f)
+ if os.path.isdir(w): shutil.rmtree(w)
+`;
 
 /** Keep one actual native tool execution available through asynchronous scientific calculations. */
 export function createNativeResearchRuntime(config,assertToolCurrent,projectPath) {

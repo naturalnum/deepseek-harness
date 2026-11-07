@@ -86,7 +86,7 @@ it('runs an approved package through actual native confinement and managed subpr
   expect(charges).toEqual({resident:0,active:0})
 })
 
-async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false){
+async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string){
   const {NativeCommandAccount}=await import('../../../packages/cloud/pe-opensandbox/src/native-command-account.ts')
   const {CloudSubprocessRuntime}=await import('../../../packages/cloud/pe-opensandbox/src/native-providers.ts')
   const {CloudSandboxProvider}=await import('../../../packages/cloud/pe-opensandbox/src/native-sandbox.ts')
@@ -104,6 +104,7 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
     let stdout='',argv:readonly string[]=[]
     return {async prepare(spec:{argv:readonly string[]}){argv=spec.argv;return empty},async commit(){
       if(physical){
+        if(probeScript!==undefined&&argv[9]!==undefined)await writeFile(argv[7]!,probeScript)
         const {execFile}=await import('node:child_process'),{promisify}=await import('node:util')
         let code=0,err=''
         try{const result=await promisify(execFile)(argv[0]!,argv.slice(1),{cwd:a.f.project,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8'},maxBuffer:32768});stdout=result.stdout}
@@ -125,13 +126,23 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const commands=new NativeCommandAccount(a.graph.ctx,a.graph.binding,{assertBusinessCurrent(){a.graph.api.sessionProject(a.agent.session)},
     getAgent:id=>a.graph.ctx.agents.get(id),projectForAgent:agent=>a.graph.guards.projectForAgent(agent),projectForSession:session=>a.graph.guards.projectForSession(session),
     assertRetainedExecutionOwner(){throw new Error('No background job in fixture')},files(){throw new Error('Only the external channel is scripted')}},
-    {enforceSessionFilePolicy:true,allowedTools:['research_engine_run','skill'],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
+    {enforceSessionFilePolicy:true,allowedTools:['research_engine_run','research_document_status','skill'],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
       maxObservedBytes:65536,pollIntervalMs:1000,maxWaiters:2,maxLifetimeMs:10000,stopWaitMs:1000}},root)
   const sandbox=new CloudSandboxProvider(a.graph.ctx,commands.calls,{current(){return {enforcement:'partial',denialSignatures:[],runnerFailureRules:[]}}},{maxArgvBytes:4096,maxArgvEntries:16})
   new CloudSubprocessRuntime(a.graph.ctx,commands,sandbox)
   onTestFinished(async()=>{await commands.closeProvider();sandbox.close()})
   return {observations,payloads,charges,domainResult}
 }
+
+it('retains a complete managed probe result after the source-style successful Python SystemExit',async()=>{
+  const a=await fixture('research-probe'),managed=await managedFixture(a,true,'import sys,json\nprint(json.dumps({"available":True}))\nsys.exit(0)\n')
+  const result=await a.tool('research_document_status')
+  expect(result,JSON.stringify(result)).toMatchObject({isError:false,value:{available:true,execution:'managed-native'}})
+  expect(managed.observations).toEqual(['research_document_status','research_document_status']);expect(managed.charges).toEqual({resident:0,active:0})
+  const b=await fixture('research-probe-failed'),failed=await managedFixture(b,true,'import sys,json\nprint(json.dumps({"available":True}))\nsys.exit(7)\n')
+  expect(await b.tool('research_document_status')).toMatchObject({isError:false,value:{available:false,execution:'managed-native'}})
+  expect(failed.observations).toEqual(['research_document_status']);expect(failed.charges).toEqual({resident:0,active:0})
+})
 
 it('keeps workflow transitions in the preserved engine while its assigner uses the same real native tool scope',async()=>{
   const a=await fixture('research-workflow'),managed=await managedFixture(a)
