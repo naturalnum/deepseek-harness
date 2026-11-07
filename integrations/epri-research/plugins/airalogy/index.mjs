@@ -20,7 +20,7 @@ export function apply(ctx) {
       parameters: schema,
       ...(provider?{timeoutMs:provider.toolTimeoutMs}:{}),
       output: {
-        schema: { type: "object", additionalProperties: true },
+        schema: { oneOf:[{type:"object",additionalProperties:true},{type:"array",items:{type:"object",additionalProperties:true}}] },
         render: (_args, value) => [
           { type: "text", text: JSON.stringify(value) },
         ],

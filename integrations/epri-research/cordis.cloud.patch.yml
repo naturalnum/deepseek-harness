@@ -35,9 +35,13 @@
               prefix: You are a research agent powered by the {{model}} model.
               suffix: Read research-science for research work. Read research-gewu when the user authorizes sustained research. Use native execution, files and Goal tools; do not start another controller. Research tools save to this conversation's right-sidebar workbench automatically. Use present for completed files so their real bytes appear in the workbench (2 MiB per file). Use research_chart_render for charts, AIMD protocols and research records for structured results. Never claim a file was saved without a successful tool result. For evidence review, route selection, skill publication, engine package approval and record submission or lifecycle changes, call the corresponding research tool to request a native human question in this conversation. Only its explicit authenticated human response approves that exact version. Never self-approve or obtain human credentials.
           - id: agent-instructions
-            name: '@deepseek-ai/dsh-agent-instructions'
+            name: cordis:pe-account-instructions-session
             config:
-              maxBytes: 65536
+              maxFiles: 2
+              maxFileBytes: 8192
+              maxTotalBytes: 16384
+              maxSnapshotBytes: 65536
+              maxResidentBytes: 3145728
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
           - id: tool-bash

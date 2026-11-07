@@ -63,6 +63,7 @@ export const Config: schema<Config> = schema.object({
 interface ResearchRequest { readonly sessionId: string; readonly op: string; readonly args: Record<string, unknown>; readonly execute?:boolean }
 interface Pending {
   readonly request: ResearchRequest
+  readonly inputSha256: string
   readonly check: () => void
   readonly resolve: (value: unknown) => void
   readonly reject: (cause: unknown) => void
@@ -125,7 +126,7 @@ export class CloudResearch extends TypertRemoteService {
         const owned={...exec,signal}
         try {
           const result=await this.perform(item.request.op,item.request.args,owned,'human',item.check)
-          item.check();item.resolve(result);return result
+          item.check();item.resolve(result);return {requestId,operation:item.request.op,inputSha256:item.inputSha256,result}
         } catch(error) { item.reject(error);throw error }
       },
     })
@@ -150,6 +151,18 @@ export class CloudResearch extends TypertRemoteService {
     this.api.sessionProject(session)
     if(this.ctx.get('sessionProjections')!.stateOf(session,'agentPreset')!=='research-suite')fail('科研工作台仅在科研模式中使用。')
     return session
+  }
+  private async verifySession(id:string,signal:AbortSignal):Promise<void> {
+    if(this.ctx.get('sessions')!.get(SessionId(id))!==undefined){this.session(id);return}
+    // The original cold follow validates membership/header/Preset and promotes only after its snapshot yield.
+    this.api.requireStream('session/follow')
+    const source=this.ctx.get('sessionController')!.follow({address:{kind:'session',sessionId:SessionId(id)},maxMessages:1},signal)[Symbol.asyncIterator]()
+    try {
+      const first=await source.next()
+      if(first.done||first.value.type!=='snapshot'||first.value.header.id!==id)fail('原生科研对话不可读取。')
+      const preset=first.value.projections.values.agentPreset ?? first.value.header.agentPreset
+      if(preset!=='research-suite')fail('科研工作台仅在科研模式中使用。')
+    } finally {await source.return?.()}
   }
   private assertToolCurrent(exec:ToolExecution): void {
     this.assertCurrent()
@@ -222,6 +235,7 @@ export class CloudResearch extends TypertRemoteService {
    * @returns Actual domain result or an explicit unconfirmed-operation failure. */
   @Remote({name:'action',resources:{session:(request:ResearchRequest)=>SessionId(request.sessionId)}})
   action(request:ResearchRequest,signal:AbortSignal):Promise<unknown> {
+    void request // Consume only the original Gateway request below; a direct argument grants no identity.
     this.api.requireRpc('cloudResearch/action');this.assertCurrent();signal.throwIfAborted()
     const invocation=this.ctx.invocation
     if(invocation?.service!=='cloudResearch' || invocation.request.namespace!=='cloudResearch' || invocation.request.method!=='action')fail('科研请求缺少原生账号调用上下文。')
@@ -230,8 +244,8 @@ export class CloudResearch extends TypertRemoteService {
     if(Buffer.byteLength(JSON.stringify(raw))>this.config.maxRequestBytes)fail('科研请求超过已配置容量。')
     const value=z.object({sessionId:z.string().min(1).max(200),op:z.string().refine(op=>Object.hasOwn(contracts,op)),args:z.record(z.unknown()),execute:z.boolean().optional()}).strict().parse(raw)
     return this.api.withPeerUse(invocation.peer,async(_use,current)=>{
-      const check=()=>{current();this.api.requireRpc('cloudResearch/action');this.session(value.sessionId);signal.throwIfAborted()}
-      check();const args:Record<string,unknown>=JSON.parse(JSON.stringify(validateArgs(value.op,value.args)))
+      const check=()=>{current();this.api.requireRpc('cloudResearch/action');if(this.ctx.get('sessions')!.get(SessionId(value.sessionId))!==undefined)this.session(value.sessionId);signal.throwIfAborted()}
+      check();await this.verifySession(value.sessionId,signal);check();const args:Record<string,unknown>=JSON.parse(JSON.stringify(validateArgs(value.op,value.args)))
       let result:unknown
       if(reads.has(value.op) && !value.execute)result=await this.store.execute(value.op,args,'human',signal,value.sessionId)
       else {
@@ -239,7 +253,7 @@ export class CloudResearch extends TypertRemoteService {
         const requestId=randomUUID(),completion=Promise.withResolvers<unknown>()
         const inputSha256=createHash('sha256').update(JSON.stringify({op:value.op,args})).digest('hex')
         const control=AbortSignal.any([signal,this.binding.lifetime,AbortSignal.timeout(this.config.executionTimeoutMs)])
-        const item:Pending={request:{...value,args},check,resolve:completion.resolve,reject:completion.reject,signal:control,running:false}
+        const item:Pending={request:{sessionId:value.sessionId,op:value.op,args},inputSha256,check,resolve:completion.resolve,reject:completion.reject,signal:control,running:false}
         this.pending.set(requestId,item)
         const aborted=()=>completion.reject(new Error('科研执行未确认；请检查当前对话及执行记录后重试。'))
         control.addEventListener('abort',aborted,{once:true})
@@ -250,7 +264,7 @@ export class CloudResearch extends TypertRemoteService {
           check();result=await completion.promise
         } finally {control.removeEventListener('abort',aborted);this.pending.delete(requestId)}
       }
-      check()
+      await this.verifySession(value.sessionId,signal);check()
       if(Buffer.byteLength(JSON.stringify(result))>this.config.maxReplyBytes)fail('科研结果超过已配置容量，请缩小读取范围。')
       return result
     })

@@ -39,6 +39,7 @@ async function fixture(accountId:string) {
 it('keeps actual account Stores and native Session access independent and refuses foreign/native-less invocations',async()=>{
   const a=await fixture('research-a'),b=await fixture('research-b')
   expect(await a.api('state')).toMatchObject({records:[],protocols:[],artifacts:[]})
+  expect(await a.tool('research_engine_packages')).toMatchObject({isError:false,value:[]})
   const call=await a.tool('research_protocol_put',{id:'private-protocol',version:'1',content:'# Private\n{{var|x: int}}',requestId:randomUUID()})
   expect(call,JSON.stringify(call)).toMatchObject({isError:false})
   expect(await a.api('state')).toMatchObject({protocols:[{id:'private-protocol'}]})
@@ -90,11 +91,11 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const {CloudSubprocessRuntime}=await import('../../../packages/cloud/pe-opensandbox/src/native-providers.ts')
   const {CloudSandboxProvider}=await import('../../../packages/cloud/pe-opensandbox/src/native-sandbox.ts')
   const {default:SandboxPolicy}=await import('@deepseek-ai/dsh-sandbox-policy')
-  const {writeFile,unlink}=await import('node:fs/promises')
+  const {writeFile,readFile,unlink}=await import('node:fs/promises')
   const {createHash}=await import('node:crypto')
   const {onTestFinished}=await import('vitest')
   await a.graph.ctx.plugin(SandboxPolicy,{mode:'workspace-write',workspaceRoot:a.f.project})
-  const observations:string[]=[],charges={resident:0,active:0}
+  const observations:string[]=[],payloads:Record<string,unknown>[]=[],charges={resident:0,active:0}
   const empty={prepared:true,submitted:false,commitClosed:false,rangeEmpty:false,ioClosed:false,physicalStopRequired:false,providerFailure:false,direct:undefined,
     stdout:{bytes:Buffer.alloc(0),observedBytes:0,eof:false},stderr:{bytes:Buffer.alloc(0),observedBytes:0,eof:false}}
   const domainResult={success:true,data:{transportFixture:true,value:42}}
@@ -110,7 +111,11 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
         return {...empty,submitted:true,commitClosed:true,rangeEmpty:true,ioClosed:true,direct:{exitCode:code,signal:null},stdout:{bytes:Buffer.from(stdout),observedBytes:Buffer.byteLength(stdout),eof:true},stderr:{bytes:Buffer.from(err),observedBytes:Buffer.byteLength(err),eof:true}}
       }
       const output=argv[9]
-      if(output!==undefined){const bytes=Buffer.from(JSON.stringify(domainResult));await writeFile(output,bytes,{flag:'wx'});stdout=JSON.stringify({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})}
+      if(output!==undefined){
+        const payload:Record<string,unknown>=JSON.parse(await readFile(argv[6]!,'utf8'));payloads.push(payload)
+        const result=payload.action==='workflow_assign'?{success:true,data:{outputs:{y:42}}}:domainResult
+        const bytes=Buffer.from(JSON.stringify(result));await writeFile(output,bytes,{flag:'wx'});stdout=JSON.stringify({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})
+      }
       else if(argv[3]?.includes('os.unlink')){await unlink(argv[4]!)}
       return {...empty,submitted:true,commitClosed:true,rangeEmpty:true,ioClosed:true,direct:{exitCode:0,signal:null},
         stdout:{bytes:Buffer.from(stdout),observedBytes:Buffer.byteLength(stdout),eof:true},stderr:{bytes:Buffer.alloc(0),observedBytes:0,eof:true}}
@@ -125,8 +130,26 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const sandbox=new CloudSandboxProvider(a.graph.ctx,commands.calls,{current(){return {enforcement:'partial',denialSignatures:[],runnerFailureRules:[]}}},{maxArgvBytes:4096,maxArgvEntries:16})
   new CloudSubprocessRuntime(a.graph.ctx,commands,sandbox)
   onTestFinished(async()=>{await commands.closeProvider();sandbox.close()})
-  return {observations,charges,domainResult}
+  return {observations,payloads,charges,domainResult}
 }
+
+it('keeps workflow transitions in the preserved engine while its assigner uses the same real native tool scope',async()=>{
+  const a=await fixture('research-workflow'),managed=await managedFixture(a)
+  const files={
+    'workflow.aimd':'version: airalogy.workflow.v1\nid: native_flow\nnodes:\n  - id: input\n    protocol_id: input_protocol\n  - id: result\n    protocol_id: result_protocol\nassigners:\n  - id: double\n    runtime: python\n    entrypoint: calculate.py:assign\ntransitions:\n  - id: calculate\n    from: [input]\n    to: [result]\n    run: double\n    inputs:\n      x: ${input.var.x}\n    assign:\n      result:\n        var.y: ${calculate.outputs.y}\n',
+    'calculate.py':'def assign(x):\n    return {"y": x * 2}\n',
+  }
+  const prepare=a.graph.ctx.tools.register({name:'fixture_prepare_flow',description:'Synthetic approved workflow setup',parameters:{type:'object',additionalProperties:false},
+    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},async execute(_args,exec){
+      const stored=await a.graph.ctx.cloudResearch.reviewedCall('engine_package_put',{id:'native-flow',version:'1',title:'Native workflow',kind:'workflow',files,requestId:'flow-upload'},exec) as {sha256:string}
+      return a.graph.ctx.cloudResearch.reviewedCall('engine_package_review',{id:'native-flow',version:'1',sha256:stored.sha256,approved:true,reason:'Synthetic workflow transport fixture'},exec)
+    }})
+  try{expect((await a.tool('fixture_prepare_flow')).isError).toBe(false)}finally{prepare()}
+  const run=await a.tool('research_engine_run',{packageId:'native-flow',version:'1',action:'workflow',params:{records:{input:{var:{x:21}}}},requestId:'native-flow-run'})
+  expect(run,JSON.stringify(run)).toMatchObject({isError:false,value:{status:'succeeded',result:{data:{records:{result:{data:{var:{y:42}}}},executed_transitions:[{id:'calculate'}]}}}})
+  expect(managed.payloads).toMatchObject([{action:'workflow_assign',params:{entrypoint:'calculate.py:assign',inputs:{x:21}}}])
+  expect(managed.observations).toEqual(['research_engine_run','research_engine_run']);expect(managed.charges).toEqual({resident:0,active:0})
+})
 
 
 it('keeps resource previews inert, copies real nested resources in the original skill scope, preserves edits and refuses cross-account links',async()=>{
@@ -181,4 +204,18 @@ it('invalidates the original skill registry immediately after account-local publ
     expect((await a.tool('fixture_publish',{edit:true})).isError).toBe(false)
     expect((await list(a)).some(skill=>skill.name.startsWith('lab-'))).toBe(false)
   }finally{unregister()}
+})
+
+
+it('reads the existing research Store after native graph restart through cold native history without creating another Agent',async()=>{
+  const a=await fixture('research-cold')
+  expect((await a.tool('research_protocol_put',{id:'cold-protocol',version:'1',content:'# Cold\n{{var|x: int}}',requestId:'cold-write'})).isError).toBe(false)
+  const id=a.agent.id
+  await a.graph.ctx.sessionPersistence.flush()
+  await a.graph.close()
+  const next=await a.f.start('2')
+  expect(next.ctx.sessions.get(id)).toBeUndefined();expect(next.ctx.agents.get(id)).toBeUndefined()
+  const result=await next.ctx.typertGateway.invoke({namespace:'cloudResearch',method:'action',args:{request:{sessionId:id,op:'state',args:{}}},peer:next.localePeer})
+  expect(result).toMatchObject({protocols:[{id:'cold-protocol'}]})
+  expect(next.ctx.sessions.get(id)).toBeUndefined();expect(next.ctx.agents.get(id)).toBeUndefined()
 })

@@ -77,7 +77,8 @@ export function restoreResearchConversation(ctx, browser = window) {
   return () => { restored = true; unsubscribe(); };
 }
 function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,requestConversation,requestResearch}) {
-  const frame=useRef(null);
+  const frame=useRef(null),callbacks=useRef({openTarget,requestConversation,requestResearch});
+  callbacks.current={openTarget,requestConversation,requestResearch};
   const params=new URLSearchParams({session:researchSessionId,embed:'1',...(compact?{view:'compact'}:{}),...target});
   const syncTheme=()=>{
     const style=getComputedStyle(document.body);
@@ -90,21 +91,21 @@ function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,
     observer.observe(document.body,{attributes:true,attributeFilter:['data-ds-dark-theme','style','class']});
     const receive=event=>{
       if(event.origin!==workbench.origin||event.source!==frame.current?.contentWindow||event.data?.sessionId!==researchSessionId)return;
-      if(event.data.type==='research-api' && requestResearch && event.ports?.length===1){
+      if(event.data.type==='research-api' && callbacks.current.requestResearch && event.ports?.length===1){
         const port=event.ports[0],controller=new AbortController();operations.add(controller);
         port.onmessage=value=>{if(value.data?.type==='cancel')controller.abort(new Error('科研页面请求已取消。'));};
-        void requestResearch(event.data.op,event.data.args,event.data.execute===true,controller.signal).then(value=>port.postMessage({ok:true,value}),error=>port.postMessage({ok:false,error:error.message})).finally(()=>{operations.delete(controller);port.close();});
+        void callbacks.current.requestResearch(event.data.op,event.data.args,event.data.execute===true,controller.signal).then(value=>port.postMessage({ok:true,value}),error=>port.postMessage({ok:false,error:error.message})).finally(()=>{operations.delete(controller);port.close();});
       }
       if(event.data.type==='research-theme-ready')syncTheme();
-      if(event.data.type==='research-open')openTarget?.(event.data.target);
+      if(event.data.type==='research-open')callbacks.current.openTarget?.(event.data.target);
       if(event.data.type==='research-task-request'){
-        try{requestConversation?.(event.data.taskId,event.data.action);event.source.postMessage({type:'research-task-request-result',requestId:event.data.requestId,ok:Boolean(requestConversation)},event.origin);}
+        try{callbacks.current.requestConversation?.(event.data.taskId,event.data.action);event.source.postMessage({type:'research-task-request-result',requestId:event.data.requestId,ok:Boolean(callbacks.current.requestConversation)},event.origin);}
         catch(error){event.source.postMessage({type:'research-task-request-result',requestId:event.data.requestId,ok:false,error:error.message},event.origin);}
       }
     };
     window.addEventListener('message',receive);
     return()=>{observer.disconnect();window.removeEventListener('message',receive);for(const controller of operations)controller.abort(new Error('科研页面已关闭。'));};
-  },[researchSessionId,openTarget,requestConversation,requestResearch]);
+  },[researchSessionId]);
   return <iframe ref={frame} title={compact?'当前对话科研成果':target.view==='detail'?'科研成果详情':'DeepScientist 科研工作台'} src={base+'?'+params} onLoad={syncTheme} className="research-dock-frame" style={compact?{height:184}:undefined}/>;
 }
 export function openResearchTarget(actions,target={}) {
