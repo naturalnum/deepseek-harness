@@ -20,6 +20,8 @@ interface AccountRow {
 interface ResourceTemplate { readonly id: string; readonly available: number }
 /** Sanitized management view bound to the original native settings slot. */
 export interface AccountState {
+  /** Advances only when a complete authoritative listing replaces the row forms. */
+  readonly listingRevision: number
   readonly templates: readonly ResourceTemplate[]
   readonly search: string
   readonly offset: number
@@ -56,7 +58,7 @@ function AccountManagement(props: Props) {
       <label>{t('template')}<select name="templateId" required>{state.templates.filter(row => row.available > 0).map(row => <option key={row.id} value={row.id}>{row.id}</option>)}</select></label>
       <button disabled={state.pending || !state.templates.some(row => row.available > 0)}>{t('create')}</button>
     </form>
-    {state.rows.map(row => <article key={row.id}><h2>{row.email}</h2><p>{row.enabled ? t('enabled') : row.resourceState === 'disabled' ? t('disabled') : t('loginBlocked')}</p>
+    {state.rows.map(row => <article key={`${state.listingRevision}:${row.id}`}><h2>{row.email}</h2><p>{row.enabled ? t('enabled') : row.resourceState === 'disabled' ? t('disabled') : t('loginBlocked')}</p>
       <p>{row.resourceState === 'ready' ? t('resourcesReady') : row.resourceState === 'legacy' ? t('resourcesLegacy')
         : row.resourceState === 'stop-unknown' ? t('resourcesUnknown') : t('resourcesPending')}</p>
       {!row.enabled && row.resourceState !== 'ready' && row.resourceState !== 'stop-unknown' && <form onSubmit={(event) => { event.preventDefault(); props.submit({ op: 'prepare', id: row.id, templateId: text(new FormData(event.currentTarget), 'templateId') }) }}>
@@ -116,7 +118,7 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
     let actual: Promise<void> | undefined, cleanupFailure: unknown
     owner.effect(() => async () => { retired.abort(); await actual; if (cleanupFailure !== undefined) throw cleanupFailure })
     const current = (): void => { page.assertAccountManagementCurrent(owner); signal.throwIfAborted() }
-    const state = createSnapshotStore<AccountState>({ rows: [], templates: [], search: '', offset: 0, pageSize: 0, total: 0,
+    const state = createSnapshotStore<AccountState>({ listingRevision: 0, rows: [], templates: [], search: '', offset: 0, pageSize: 0, total: 0,
       pending: false, failed: false, created: false })
     const send = async (value: object): Promise<unknown> => {
       current()
@@ -156,6 +158,7 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
           const resourceState: unknown = result !== null && typeof result === 'object' ? Reflect.get(result, 'resourceState') : undefined
           const resourceFailed = operationFailed || Reflect.get(value, 'op') === 'create' && resourceState !== 'ready'
           current(); state.set({ rows: refreshed, templates, offset, pageSize, total,
+            listingRevision: state.getSnapshot().listingRevision + 1,
             search: Reflect.get(value, 'op') === 'list' && typeof Reflect.get(value, 'search') === 'string' ? String(Reflect.get(value, 'search')) : state.getSnapshot().search,
             pending: false, failed: resourceFailed, created: Reflect.get(value, 'op') === 'create' && !resourceFailed })
         } catch (error) {

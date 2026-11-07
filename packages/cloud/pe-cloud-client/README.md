@@ -115,6 +115,8 @@ Every submission requires an explicit `if-idle` or `stop-and-apply` choice. The 
 
 When the original bootstrap approves remote management, the native Settings Servers section supports ordered account CRUD, uploaded key/known_hosts files and text-only SSH config import. Facts stay unknown until a real chat probe; refresh reads observations. The native `@` source offers only configured current references and rechecks them before message serialization. Account-page withdrawal removes the section/source and clears local form/file state.  The server instructions explain that cancellation and timeout stop local waiting while the remote program may continue; users must check remote state before retrying.
 
+The approved administrator's Account management section reads the authoritative account list before replacing its row forms. Every complete listing refresh restores the returned role and display name, including unchanged values after a refused edit. Processing updates and unrelated renders preserve the current drafts. Failed list reads remove stale account rows and resource templates. A refused mutation triggers one list read and is never replayed.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
