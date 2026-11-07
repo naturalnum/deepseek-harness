@@ -18,7 +18,8 @@ OFFICE_RUNTIME = Path('/opt/dsh/runtime/runtime.json')
 OFFICE_RUNTIME_SHA256 = '13eeff1ee75f7a8fec8f82b91e2193f73316a8f53551ac3f5733082d5c496c68'
 RESEARCH_ROOT = Path('/opt/dsh/research/python')
 SCIENTIFIC_PACKAGES = {'airalogy': '0.16.0', 'pymupdf': '1.26.7', 'rapidocr': '3.10.0',
-                       'onnxruntime': '1.31.1', 'numpy': '2.3.4', 'pillow': '12.0.0', 'pandas': '2.3.3'}
+                       'onnxruntime': '1.31.1', 'numpy': '2.3.4', 'pillow': '12.0.0', 'pandas': '2.3.3',
+                       'omegaconf': '2.3.0', 'antlr4-python3-runtime': '4.9.3'}
 
 
 def sha256(path):

@@ -101,7 +101,7 @@ class ScientificRuntimeTests(unittest.TestCase):
         self.assertTrue(next(line for line in lines if line.startswith('COPY ')).endswith('/opt/dsh/research/.build/'))
         run = next(line for line in lines if line.startswith('RUN '))
         self.assertIn('/opt/dsh/research/python/bin/python3 -I -B -m pip --isolated install', run)
-        self.assertIn('--only-binary=:all: --prefix /opt/dsh/research/python', run)
+        self.assertIn('--only-binary=:all: --no-binary=antlr4-python3-runtime --prefix /opt/dsh/research/python', run)
         self.assertNotIn('chmod -R u+w /opt/dsh/runtime', run)
         self.assertIn('chmod -R a-w /opt/dsh/research', run)
 
