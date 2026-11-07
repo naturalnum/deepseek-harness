@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {startServer} from '../dist/server/main.mjs';
 import {reviewInConversation} from '../plugins/airalogy/conversation-review.mjs';
 
-test('conversation review waits for the exact human choice, rejects stale/cancelled/cloud requests and preserves API actor boundaries',async()=>{
+test('conversation review waits for the exact human choice, rejects stale/cancelled/unadapted-cloud requests and preserves API actor boundaries',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'conversation-review-')),prior=process.env.DS_RESEARCH_DATA_DIR;
   process.env.DS_RESEARCH_DATA_DIR=directory;
   const app=await startServer({directory,port:0}),sessionId='synthetic-review';
@@ -39,7 +39,7 @@ test('conversation review waits for the exact human choice, rejects stale/cancel
     answer=async request=>{abort.abort();return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
     await assert.rejects(reviewInConversation(ctx,'evidence_review',{...args,expectedRevision:4,requestId:randomUUID()},{...exec,signal:abort.signal},sessionId));
     const count=asked;
-    await assert.rejects(reviewInConversation(ctx,'evidence_review',args,{...exec,agent:{ctx:{get:()=>({})}}},sessionId),/平台账号权限适配/);
+    await assert.rejects(reviewInConversation(ctx,'evidence_review',args,{...exec,agent:{ctx:{get:()=>({})}}},sessionId),/尚未接入当前账号/);
     assert.equal(asked,count);
     await put('protocol_put',{id:'checks',version:'1',content:'# 合成记录\n\n{{var|result: str, owner="agent"}}\n\n{{check|reviewed, checked_message="已核对合成输入"}}\n'});
     let record=(await put('record_create',{protocolId:'checks',protocolVersion:'1'})).result;

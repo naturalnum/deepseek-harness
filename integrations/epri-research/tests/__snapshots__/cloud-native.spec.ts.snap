@@ -1,0 +1,55 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`records a real native workbench intent, executes only its stored parameters once and returns the actual Store result > native workbench request and actual tool result 1`] = `
+[
+  {
+    "parts": [
+      "text",
+    ],
+    "role": "system",
+    "source": undefined,
+  },
+  {
+    "parts": [
+      "text",
+    ],
+    "role": "user",
+    "source": "user",
+  },
+  {
+    "parts": [
+      "text",
+    ],
+    "role": "user",
+    "source": "runtime-context",
+  },
+  {
+    "parts": [
+      "text",
+    ],
+    "role": "user",
+    "source": "skill-catalog",
+  },
+  {
+    "parts": [
+      "tool-call",
+    ],
+    "role": "assistant",
+    "source": undefined,
+  },
+  {
+    "parts": [
+      "text",
+    ],
+    "role": "tool",
+    "source": undefined,
+  },
+  {
+    "parts": [
+      "text",
+    ],
+    "role": "assistant",
+    "source": undefined,
+  },
+]
+`;

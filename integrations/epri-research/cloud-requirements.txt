@@ -1,0 +1,5 @@
+# Additional packages only; the Docker build constrains every inherited Office distribution.
+airalogy==0.16.0
+PyMuPDF==1.26.7
+rapidocr==3.10.0
+onnxruntime==1.31.1

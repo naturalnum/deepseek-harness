@@ -1,6 +1,6 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {realpath,mkdir,readFile,stat} from 'node:fs/promises';
+import {realpath as localRealpath,mkdir as localMkdir,readFile as localReadFile,stat as localStat} from 'node:fs/promises';
 import {isAbsolute,join,resolve,relative} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -22,7 +22,7 @@ export const gitContracts = {
   project_git_policy:{description:'Human-only: enable/disable automatic checkpoints for exact files in an existing managed worktree. Triggers when saved research stages finish.',shape:{enabled:z.boolean(),worktreeId:z.string(),files:paths}},
 };
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
-async function git(path,args,signal,allowMissing=false) {
+async function localGit(path,args,signal,allowMissing=false) {
   try {
     return (await exec('git',['--no-pager','-c','core.quotepath=false','-c','core.fsmonitor=false','-C',path,...args],{
       windowsHide:true,encoding:'utf8',timeout:15000,maxBuffer:8*1024*1024,signal,
@@ -58,7 +58,8 @@ export function parseGitHistory(text) {
   }
   return commits;
 }
-export function projectGitStore(db,directory) {
+export function projectGitStore(db,directory,runtime={run:localGit,realpath:localRealpath,mkdir:localMkdir,readFile:localReadFile,stat:localStat}) {
+  const {run:git,realpath,mkdir,readFile,stat}=runtime;
   db.exec('CREATE TABLE IF NOT EXISTS research_git_bindings(session TEXT PRIMARY KEY, path TEXT NOT NULL, updatedAt TEXT NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS research_git_worktrees(session TEXT NOT NULL,id TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS research_git_policies(session TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS research_git_requests(session TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(session,id))');
   db.exec('CREATE TABLE IF NOT EXISTS research_git_auto(session TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(session,id,revision))');
@@ -121,7 +122,7 @@ export function projectGitStore(db,directory) {
         let result;
         if(op==='project_git_branch'){
           const id=randomUUID(),branch='research/'+digest(session).slice(0,10)+'/'+a.name;
-          const parent=resolve(directory,'git-worktrees');await mkdir(parent,{recursive:true});const treePath=join(parent,id);
+          const parent=runtime.worktreeParent?runtime.worktreeParent():resolve(directory,'git-worktrees');await mkdir(parent,{recursive:true});const treePath=join(parent,id);
           await git(root,['worktree','add','-b',branch,treePath,current.head],signal);
           result={id,path:treePath,branch,baseSha:current.head,repository:root,createdAt:new Date().toISOString()};
           db.prepare('INSERT INTO research_git_worktrees VALUES(?,?,?)').run(session,id,JSON.stringify(result));

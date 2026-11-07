@@ -1,5 +1,5 @@
 // Reused Airalogy engine 0.0.5; upstream license retained in LICENSE.airalogy.
-// Workflow parser and transition logic are copied; runtime transport uses restricted Docker.
+// Workflow parser and transition logic are copied; the Host can inject execution transport.
 import {parseDocument} from 'yaml';
 import {existsSync,readFileSync,statSync} from 'node:fs';
 import path from 'node:path';
@@ -34,6 +34,8 @@ export interface SandboxFileBridgeOptions {
 }
 
 export interface SandboxOptions {
+  /** Host-selected execution transport; workflow parsing and transition logic remain unchanged. */
+  executor?: typeof runDockerExecutor;
   signal?: AbortSignal;
   image?: string;
   rootfsPath?: string;
@@ -155,6 +157,7 @@ function isSandboxOptions(value: EnvVars | SandboxOptions | WorkflowRunOptions |
   }
 
   return [
+    "executor",
     "signal",
     "image",
     "rootfsPath",
@@ -884,9 +887,9 @@ function resolveWorkflowInputs(
   return inputs;
 }
 
-async function executeInSandbox(action:string, protocolPath:string, params:Record<string,unknown>, envVars?:EnvVars, options:SandboxOptions={}) { return runDockerExecutor(action,protocolPath,params,options); }
+async function executeInSandbox(action:string, protocolPath:string, params:Record<string,unknown>, envVars?:EnvVars, options:SandboxOptions={}) { return (options.executor ?? runDockerExecutor)(action,protocolPath,params,options); }
 async function runWorkflowAssignerInSandbox(root:string,entrypoint:string,inputs:Record<string,unknown>,envVars?:EnvVars,options:SandboxOptions={}) {
-  const result=await runDockerExecutor('workflow_assign',root,{entrypoint,inputs},options);
+  const result=await (options.executor ?? runDockerExecutor)('workflow_assign',root,{entrypoint,inputs},options);
   if(!result.success)throw new Error(result.message || 'Workflow assigner failed');
   return result.data?.outputs || {};
 }

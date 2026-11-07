@@ -5,6 +5,8 @@ import { parse } from "yaml";
 import {createHash} from 'node:crypto';
 import {call} from '../../src/server/client.mjs';
 import {customerSkillEnabled} from './customer-scope.mjs';
+import {previewResearchSkill} from '../cloud/resources.mjs';
+import {cloudResearch} from '../cloud/client-for.mjs';
 export const name = "deepscientist-research-skills";
 export const inject = ["skills"];
 const root = fileURLToPath(
@@ -66,13 +68,30 @@ export function apply(ctx) {
     if (existsSync(path)) entries.push(load(path, true));
   }
   const byPath = new Map(entries.filter(Boolean).map((x) => [x.path, x]));
+  const cloudByLocator=new Map([...byPath.values()].map(skill=>[previewResearchSkill(skill).locator,skill]));
   const published=async(signal)=>{
-    const skills=await call('lab_skills',{},signal);
+    const cloud=cloudResearch(ctx);
+    const skills=cloud?await cloud.publishedSkills(signal):await call('lab_skills',{},signal);
     return skills.map(skill=>({name:'lab-'+createHash('sha256').update(skill.sessionId+':'+skill.id).digest('hex').slice(0,16),description:skill.title,source:'custom',provider:'deepscientist-suite',rank:550,invocation:{modelInvocable:true,userInvocable:true},resourceBase:{kind:'opaque',description:'Human-published local lab skill; evidence snapshots are embedded. No implicit filesystem or external-service access.'},content:skill.markdown+'\n\n## Reviewed source snapshots\n\n'+JSON.stringify(skill.evidence,null,2),locator:'published:'+skill.sessionId+':'+skill.id}));
   };
-  ctx.skills.registerProvider(() => ({
-    name: "deepscientist-suite",
-    list: async (options) => [...byPath.values(),...await published(options?.signal).catch(()=>[])],
-    get: async (candidate,options) => byPath.get(candidate.locator) || (await published(options?.signal)).find(x=>x.locator===candidate.locator),
-  }));
+  ctx.skills.registerProvider(control => {
+    let watched;
+    const currentCloud=()=>{
+      const cloud=cloudResearch(ctx);
+      if(cloud&&!watched){cloud.watchSkills(ctx,()=>control.invalidate());watched=true;}
+      return cloud;
+    };
+    return {
+      name: "deepscientist-suite",
+      list: async (options) => {
+        const cloud=currentCloud();
+        const dynamic=cloud?await published(options?.signal):await published(options?.signal).catch(()=>[]);
+        return [...[...byPath.values()].map(skill=>cloud?previewResearchSkill(skill):skill),...dynamic];
+      },
+      get: async (candidate,options) => {
+        const item=byPath.get(candidate.locator)||cloudByLocator.get(candidate.locator),cloud=currentCloud();
+        return item?(cloud?cloud.materializeSkill(item,options):item):(await published(options?.signal)).find(x=>x.locator===candidate.locator);
+      },
+    };
+  });
 }

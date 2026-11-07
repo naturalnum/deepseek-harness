@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "sourceRepository": "https://github.com/naturalnum/deepseek-harness",
+  "sourceBranch": "GMZ/deepscientist-airalogy-native",
+  "sourceCommit": "3a0d6b45f8bd429e8de62fde2ad92d89adfa00d2",
+  "sourceBaseCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "cloudBaseCommit": "edcd1ea91ca0ddde78dedde322c600f43021920e",
+  "importedSuiteTree": "2fb896ab57a04abba370e3e2b1c851f685127239",
+  "transportPatch": "diffs/cloud-transports.patch",
+  "transportPatchSha256": "669a765289c856ea2251229323580c01d1206c9c2363bd16e805ebbb5186a174",
+  "files": [
+    {
+      "path": "src/reused/engine/index.ts",
+      "importedSha256": "5045fb4dac379771c76ca732750dac8b1ff478cc7375a38e0b5ac8523eefb5b5",
+      "cloudSha256": "850484642d1fb3ba376993cfff23488832241d3f20dcf47ccbb21b46083dac65",
+      "change": "transport-injection"
+    },
+    {
+      "path": "src/reused/literature/literatureSearch.ts",
+      "importedSha256": "08a71a1cf5d2b6abb1feb397b057fbf1336183ac8621bae87b67c85d70f09701",
+      "cloudSha256": "d7603bff24c34c05775e43adc1944dacb0568142143ac10310565b518cdfb87f",
+      "change": "transport-injection"
+    },
+    {
+      "path": "src/reused/engine/runner.py",
+      "importedSha256": "f9501884177a32d46ff0d4b41849fb34c8ab310bfb092da2d2fea4be886c7334",
+      "cloudSha256": "f9501884177a32d46ff0d4b41849fb34c8ab310bfb092da2d2fea4be886c7334",
+      "change": "retained-original"
+    },
+    {
+      "path": "src/reused/engine/protocol_executor.py",
+      "importedSha256": "aba618a10fba303d2332f85b972629ce44aea4e53a2b104cd277bb3d81b0c62f",
+      "cloudSha256": "aba618a10fba303d2332f85b972629ce44aea4e53a2b104cd277bb3d81b0c62f",
+      "change": "retained-original"
+    },
+    {
+      "path": "src/reused/engine/workflow_executor.py",
+      "importedSha256": "6510d91a5f480451dd22f8b571694d932481f1c945ae4c2344e49971385fd613",
+      "cloudSha256": "6510d91a5f480451dd22f8b571694d932481f1c945ae4c2344e49971385fd613",
+      "change": "retained-original"
+    }
+  ],
+  "qualification": "Component tests only; separate native Linux image and authenticated Web acceptance required."
+}

@@ -1,0 +1,13 @@
+node_modules
+harness-runtime
+upstream
+.data
+dist
+verification
+*.sqlite*
+.env*
+connection.json
+.credentials.yaml
+*.sqlite*
+.git
+*.log

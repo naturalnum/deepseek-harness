@@ -7,6 +7,10 @@ This plugin adds a research preset, tools, skills and a workbench to a Harness w
 - **DeepScientist** adds the **科学研究 · DeepScientist** preset. Use it to search the literature, manage research tasks, inspect artifacts and generate reports within the current conversation. Online search and model access require their respective services.
 - **Airalogy** provides AIMD protocols, research records and workflow executors. The workbench accepts CSV data, computes results and charts, and imports and exports `.aira` archives. It scopes uploads, approvals and changes to the current research conversation.
 
+## Use the Cloud account integration
+
+The independent Cloud adapter and deployment requirements are documented in [Cloud integration](CLOUD.md). Cloud mode keeps this package and its three research, Airalogy and workbench plugins, and reuses the existing account login, native Sessions, sidebar, files and managed execution. It does not start the local research HTTP server or accept its global tokens.
+
 ## Run locally
 
 Install Node.js 24.14 or newer and make npm and pnpm available on PATH. For a dedicated Harness home and research data directory, set `DS_SUITE_HOME` and `DS_RESEARCH_DATA_DIR` before installation and use the same settings at launch. From the repository root, run the following commands.

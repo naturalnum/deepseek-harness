@@ -96,9 +96,11 @@ function scalar(field, value, attachmentExists) {
 export const operations = Object.keys(contracts);
 export {parseAimdProtocol};
 const humanOnly = new Set(["record_bind_engine", "record_submit", "record_reopen", "record_archive", "record_restore", "history_list", "history_associate", "workspace_import"]);
-export function openStore(directory) {
+export function openStore(directory, options = {}) {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(join(directory, "research.sqlite"));
+  const db = options.openDatabase
+    ? options.openDatabase(join(directory, "research.sqlite"))
+    : new DatabaseSync(join(directory, "research.sqlite"));
   db.exec(
     "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, hash TEXT NOT NULL, response TEXT NOT NULL);",
   );
@@ -114,10 +116,10 @@ export function openStore(directory) {
   const read = () =>
     JSON.parse(db.prepare("SELECT body FROM state WHERE id=1").get().body);
   const access=accessStore(db);
-  const documents=documentStore(db,directory);
+  const documents=documentStore(db,directory,options.documents);
   const science = scienceStore(db, read);
-  const projectGit = projectGitStore(db,directory);
-  const engine = engineStore(db, directory);
+  const projectGit = projectGitStore(db,directory,options.git);
+  const engine = engineStore(db, directory,options.engine);
   const tasks = researchTaskStore({db,read,mutate,execute,science,engine});
   // Add pre-conversation attachments once; retain all historical bytes and references.
   const initial = read();
@@ -388,7 +390,7 @@ export function openStore(directory) {
       const n = a.max_results ?? 5;
       if (!Number.isInteger(n) || n < 1 || n > 20)
         fail("INVALID", "max_results must be 1..20");
-      const result = await searchLiterature({
+      const result = await (options.literatureSearch || searchLiterature)({
         query: a.query,
         maxResults: n,
         sources: [a.source || "openalex"],
@@ -680,5 +682,9 @@ export function openStore(directory) {
       fail("INVALID", "Unsupported operation");
     }, sessionId);
   }
-  return { execute, access, close: () => {engine.close();db.close();} };
+  return { execute, access, waitForRun: (id,session) => engine.waitForRun(id,session), close: () => {
+    const stopped=engine.close();
+    if(stopped)return stopped.finally(()=>db.close());
+    db.close();
+  } };
 }

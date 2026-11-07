@@ -10,7 +10,7 @@ import {openStore} from '../dist/server/service.mjs';
 
 test('customer catalog excludes specialist life-science skills and retains engineering tools; power protocol creates a valid record',async()=>{
   let provider;
-  apply({skills:{registerProvider(factory){provider=factory();}}});
+  apply({get:()=>undefined,skills:{registerProvider(factory){provider=factory();}}});
   const skills=await provider.list({signal:AbortSignal.abort()});
   const names=new Set(skills.map(s=>s.name));
   for(const name of excludedSkills)assert.ok(!names.has('v2-'+name),name);
