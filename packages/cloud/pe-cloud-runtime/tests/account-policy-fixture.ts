@@ -90,6 +90,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   preserveProfile = false, initialLoopLimit?: number,
   presetOptions?: {
     readonly defaultId: string
+    readonly projectDirectoryName?: string
     readonly withPeerUse?: ModelKeyPeerConsumer['withModelKeyPeerUse']
     readonly inheritedDefaultId?: string
     readonly legacyDefaultPresetId?: string
@@ -110,7 +111,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     }[]
   }) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
-  const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
+  const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, presetOptions?.projectDirectoryName ?? 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
   mkdirSync(project, { recursive: true }); initProfile(profileRoot, [])
   const patchPath = join(profileRoot, 'cordis.patch.yml'), configPath = join(profileRoot, 'cordis.yml')

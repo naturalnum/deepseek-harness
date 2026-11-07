@@ -11,12 +11,15 @@ import * as Cloud from '../plugins/cloud/index.ts'
 import * as Airalogy from '../plugins/airalogy/index.mjs'
 import * as Workbench from '../plugins/workbench/index.mjs'
 import {workbenchBrowserApi} from './workbench-browser-fixture.mjs'
+import {guardianEncodedBudget,guardianWorkingCopiesBudget} from '../../../packages/cloud/pe-opensandbox/src/agent-data/encoded-budget.ts'
+import type {OperationSpec} from '../../../packages/cloud/pe-opensandbox/src/agent-data/types.ts'
+import type {SkillWorld} from '../../../packages/cloud/pe-opensandbox/src/agent-data/skill-world.ts'
 
 const limits={maxDatabaseBytes:1048576,maxRequestBytes:1048576,maxReplyBytes:1048576,maxPendingRequests:2,
   maxConcurrentResourcePreparations:1,maxSkillProviders:64,maxSkillFiles:1024,maxSkillBytes:33554432,maxSkillFileBytes:4194304,maxSkillPathBytes:256,executionTimeoutMs:10000,expectedPythonVersion:'3.13',expectedAiralogyVersion:'0.16.0',maxPayloadBytes:8388608,fileChunkBytes:65536,maxConcurrentFileTransfers:2,maxOutputBytes:32768,graceMs:1000,gitPath:'/usr/bin/git',pythonPath:'/usr/bin/python3'}
 const endpoint={endpoint:'cloudResearch/action',handlerId:'native:cloudResearch',guard:'account-session' as const}
-async function fixture(accountId:string,overrides:Partial<Cloud.Config>={}) {
-  const options={defaultId:'research-suite',declarations:[{entryId:'research-preset',selectable:true,config:{id:'research-suite',plugins:[
+async function fixture(accountId:string,overrides:Partial<Cloud.Config>={},projectDirectoryName?:string) {
+  const options={defaultId:'research-suite',...projectDirectoryName===undefined?{}:{projectDirectoryName},declarations:[{entryId:'research-preset',selectable:true,config:{id:'research-suite',plugins:[
     {id:'persona',name:'cordis:m8z-persona',config:{prefix:'Research fixture.',complete:true,includeRuntimeContext:false}},
     {id:'research-tools',name:'deepscientist-harness-suite/airalogy'},
     {id:'research-skills',name:'deepscientist-harness-suite/research'},
@@ -34,7 +37,7 @@ async function fixture(accountId:string,overrides:Partial<Cloud.Config>={}) {
   if(agent===undefined)throw new Error('Original Agent absent')
   const api=(op:string,args:Record<string,unknown>={},execute=false)=>graph.ctx.typertGateway.invoke({namespace:'cloudResearch',method:'action',
     args:{request:{sessionId,op,args,execute}},peer:graph.localePeer})
-  const tool=async(name:string,args:Record<string,unknown>={})=>graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name,arguments:args,agent,signal:new AbortController().signal})
+  const tool=async(name:string,args:Record<string,unknown>={},signal=new AbortController().signal)=>graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name,arguments:args,agent,signal})
   return {f,graph,agent,api,tool}
 }
 
@@ -115,7 +118,7 @@ it('runs an approved package through actual native confinement and managed subpr
   expect(charges).toEqual({resident:0,active:0})
 })
 
-async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string){
+async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=false,probeScript?:string,maxSkillCopiesPerOperation?:number){
   const {NativeCommandAccount}=await import('../../../packages/cloud/pe-opensandbox/src/native-command-account.ts')
   const {CloudSubprocessRuntime}=await import('../../../packages/cloud/pe-opensandbox/src/native-providers.ts')
   const {CloudSandboxProvider}=await import('../../../packages/cloud/pe-opensandbox/src/native-sandbox.ts')
@@ -124,28 +127,28 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const {createHash}=await import('node:crypto')
   const {onTestFinished}=await import('vitest')
   await a.graph.ctx.plugin(SandboxPolicy,{mode:'workspace-write',workspaceRoot:a.f.project})
-  const observations:string[]=[],payloads:Record<string,unknown>[]=[],charges={resident:0,active:0}
+  const observations:string[]=[],payloads:Record<string,unknown>[]=[],charges={resident:0,active:0},specs:OperationSpec[]=[]
   const empty={prepared:true,submitted:false,commitClosed:false,rangeEmpty:false,ioClosed:false,physicalStopRequired:false,providerFailure:false,direct:undefined,
     stdout:{bytes:Buffer.alloc(0),observedBytes:0,eof:false},stderr:{bytes:Buffer.alloc(0),observedBytes:0,eof:false}}
   const domainResult={success:true,data:{transportFixture:true,value:42}}
   const root={async acquire(scope: {consumerId:string}){
     observations.push(scope.consumerId)
     let stdout='',argv:readonly string[]=[]
-    return {async prepare(spec:{argv:readonly string[]}){argv=spec.argv;return empty},async commit(){
+    return {async prepare(spec:OperationSpec){argv=spec.argv;specs.push(spec);return empty},async commit(){
       if(physical){
-        if(probeScript!==undefined&&argv[9]!==undefined)await writeFile(argv[7]!,probeScript)
+        if(probeScript!==undefined&&argv[8]!==undefined)await writeFile(join(a.f.project,argv[6]!),probeScript)
         const {execFile}=await import('node:child_process'),{promisify}=await import('node:util')
         let code=0,err=''
         try{const result=await promisify(execFile)(argv[0]!,argv.slice(1),{cwd:a.f.project,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8'},maxBuffer:32768});stdout=result.stdout}
         catch(error){if(error===null||typeof error!=='object')throw error;const row=error as {code?:number;stderr?:string};code=typeof row.code==='number'?row.code:1;err=row.stderr||''}
         return {...empty,submitted:true,commitClosed:true,rangeEmpty:true,ioClosed:true,direct:{exitCode:code,signal:null},stdout:{bytes:Buffer.from(stdout),observedBytes:Buffer.byteLength(stdout),eof:true},stderr:{bytes:Buffer.from(err),observedBytes:Buffer.byteLength(err),eof:true}}
       }
-      const output=argv[9]
+      const output=argv[8]
       if(output!==undefined){
-        const parts=[];for(let index=0;index<Number(argv[11]);index++)parts.push(Buffer.from(await readFile(argv[6]+'.'+index,'utf8'),'base64'));
+        const parts=[];for(let index=0;index<Number(argv[10]);index++)parts.push(Buffer.from(await readFile(join(a.f.project,argv[5]+'.'+index),'utf8'),'base64'));
         const payload:Record<string,unknown>=JSON.parse(Buffer.concat(parts).toString('utf8'));payloads.push(payload)
         const result=payload.action==='workflow_assign'?{success:true,data:{outputs:{y:42}}}:domainResult
-        const bytes=Buffer.from(JSON.stringify(result));await writeFile(output,bytes,{flag:'wx'});stdout=JSON.stringify({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})
+        const bytes=Buffer.from(JSON.stringify(result));await writeFile(join(a.f.project,output),bytes,{flag:'wx'});stdout=JSON.stringify({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})
       }
       else if(argv[3]?.includes('os.unlink')){await unlink(argv[4]!)}
       return {...empty,submitted:true,commitClosed:true,rangeEmpty:true,ioClosed:true,direct:{exitCode:0,signal:null},
@@ -156,12 +159,12 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const commands=new NativeCommandAccount(a.graph.ctx,a.graph.binding,{assertBusinessCurrent(){a.graph.api.sessionProject(a.agent.session)},
     getAgent:id=>a.graph.ctx.agents.get(id),projectForAgent:agent=>a.graph.guards.projectForAgent(agent),projectForSession:session=>a.graph.guards.projectForSession(session),
     assertRetainedExecutionOwner(){throw new Error('No background job in fixture')},files(){throw new Error('Only the external channel is scripted')}},
-    {enforceSessionFilePolicy:true,allowedTools:['research_engine_run','research_document_status','skill'],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
+    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['research_engine_run','research_document_status','skill'],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes:32768,
       maxObservedBytes:65536,pollIntervalMs:1000,maxWaiters:2,maxLifetimeMs:10000,stopWaitMs:1000}},root)
   const sandbox=new CloudSandboxProvider(a.graph.ctx,commands.calls,{current(){return {enforcement:'partial',denialSignatures:[],runnerFailureRules:[]}}},{maxArgvBytes:4096,maxArgvEntries:16})
   new CloudSubprocessRuntime(a.graph.ctx,commands,sandbox)
   onTestFinished(async()=>{await commands.closeProvider();sandbox.close()})
-  return {observations,payloads,charges,domainResult}
+  return {observations,payloads,charges,domainResult,specs}
 }
 
 it('retains a complete managed probe result after the source-style successful Python SystemExit',async()=>{
@@ -172,6 +175,63 @@ it('retains a complete managed probe result after the source-style successful Py
   const b=await fixture('research-probe-failed'),failed=await managedFixture(b,true,'import sys,json\nprint(json.dumps({"available":True}))\nsys.exit(7)\n')
   expect(await b.tool('research_document_status')).toMatchObject({isError:false,value:{available:false,execution:'managed-native'}})
   expect(failed.observations).toEqual(['research_document_status']);expect(failed.charges).toEqual({resident:0,active:0})
+})
+
+it.each([2,8])('runs staged Python in a real long project under the complete guardian and %s-copy ceilings',async(copies)=>{
+  const {readdir}=await import('node:fs/promises')
+  const a=await fixture('research-frame-'+copies,{},'research-project-'+ 'p'.repeat(170))
+  const deployedLength=('/srv/dsh-features-'+randomUUID()+'/accounts/v1-'+ 'a'.repeat(64)+'/projects/default-workspace').length
+  expect(a.f.project.length).toBeGreaterThanOrEqual(deployedLength)
+  let loader=''
+  const fs=a.agent.ctx.get('fs')!,write=fs.writeText.bind(fs)
+  vi.spyOn(fs,'writeText').mockImplementation((target,text,...args)=>{
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(limits.fileChunkBytes)
+    if(target.displayPath.endsWith('-bootstrap.py'))loader=text
+    return write(target,text,...args)
+  })
+  const code="import json,os,pathlib\nroot=os.environ['EPRI_EXECUTION_ROOT']\nassert os.path.isabs(root) and os.path.isabs(__file__)\nassert os.path.dirname(root)==os.path.dirname(__file__)\npathlib.Path(root).mkdir()\nprint(json.dumps({'available':True}))\n"
+  const managed=await managedFixture(a,true,code,copies)
+  expect(await a.tool('research_document_status')).toMatchObject({isError:false,value:{available:true}})
+  expect(managed.specs).toHaveLength(2)
+  const policy={mode:'danger-full-access' as const},device='18446744073709551615'
+  const world:SkillWorld={metadata:{device,inode:'1'},skills:{device,inode:'2'},maxCopies:copies,
+    copies:Array.from({length:copies},(_,index)=>({version:randomUUID(),identity:{device,inode:String(index+3)}}))}
+  for(const spec of managed.specs){
+    expect(guardianEncodedBudget(a.f.project,spec,world,policy)).toBeLessThanOrEqual(4096)
+    expect(guardianWorkingCopiesBudget(a.f.project,spec,copies,policy)).toBeLessThanOrEqual(4096)
+  }
+  const spec=managed.specs[0]!
+  expect(spec.argv.slice(4,9).every(name=>/^\.research-[a-f0-9-]{36}(?:-bootstrap\.py|\.json|\.py|-work|\.result\.json)$/.test(name))).toBe(true)
+  const previous:OperationSpec={...spec,argv:[...spec.argv.slice(0,4),'-c',loader,
+    ...spec.argv.slice(5,9).map(name=>join(a.f.project,name)),...spec.argv.slice(9)]}
+  expect(()=>guardianWorkingCopiesBudget(a.f.project,previous,copies,policy)).toThrow(expect.objectContaining({code:'guardian_config_budget'}))
+  expect((await readdir(a.f.project)).filter(name=>name.startsWith('.research-'))).toEqual([])
+  expect(managed.charges).toEqual({resident:0,active:0})
+})
+
+it('removes the staged loader, script, input parts and work directory after a real Python failure',async()=>{
+  const {readdir}=await import('node:fs/promises')
+  const a=await fixture('research-stage-failure'),managed=await managedFixture(a,true,
+    "import os,pathlib\npathlib.Path(os.environ['EPRI_EXECUTION_ROOT']).mkdir()\nraise RuntimeError('Synthetic scientific failure')\n",8)
+  expect(await a.tool('research_document_status')).toMatchObject({isError:false,value:{available:false,message:expect.stringContaining('Synthetic scientific failure')}})
+  expect((await readdir(a.f.project)).filter(name=>name.startsWith('.research-'))).toEqual([])
+  expect(managed.observations).toEqual(['research_document_status'])
+  expect(managed.charges).toEqual({resident:0,active:0})
+})
+
+it('retains the uncollected result after cancellation and joins the original completed command without a cleanup bypass',async()=>{
+  const {readdir}=await import('node:fs/promises')
+  const a=await fixture('research-cancel-collection'),controller=new AbortController()
+  const managed=await managedFixture(a,true,"import json\nprint(json.dumps({'available':True}))\n",8)
+  const fs=a.agent.ctx.get('fs')!,read=fs.readByteRange.bind(fs)
+  vi.spyOn(fs,'readByteRange').mockImplementation(async(...args)=>{
+    const bytes=await read(...args);controller.abort(new Error('Synthetic collection cancellation'));return bytes
+  })
+  await a.tool('research_document_status',{},controller.signal)
+  const retained=(await readdir(a.f.project)).filter(name=>name.startsWith('.research-'))
+  expect(retained).toHaveLength(1);expect(retained[0]).toMatch(/^\.research-[a-f0-9-]{36}\.result\.json$/)
+  expect(managed.observations).toEqual(['research_document_status'])
+  expect(managed.charges).toEqual({resident:0,active:0})
 })
 
 it('stages a large input and collects a multibyte managed result through original 64 KiB FS calls without whole-file reads',async()=>{
@@ -206,6 +266,8 @@ it('stages a large input and collects a multibyte managed result through origina
   corrupt=true
   expect((await a.tool('research_engine_run',{...request,requestId:'corrupted-execute'})).value).toMatchObject({status:'failed'})
   expect(managed.charges).toEqual({resident:0,active:0})
+  const {readdir}=await import('node:fs/promises')
+  expect((await readdir(a.f.project)).filter(name=>name.startsWith('.research-'))).toEqual([])
 })
 
 it('captures accepted native present bytes through bounded windows and preserves the original binary snapshot',async()=>{
@@ -218,7 +280,7 @@ it('captures accepted native present bytes through bounded windows and preserves
     if(range.length>65536)throw new Error('Native single reply limit');return read(target,range,signal)
   })
   const unregister=a.graph.ctx.tools.register({name:'present',description:'Accepted native presentation fixture',parameters:{type:'object',additionalProperties:false},
-    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},execute:()=>({files:[{path}]})})
+    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},execute:async()=>({files:[{path}]})})
   try{expect((await a.tool('present')).isError).toBe(false)}finally{unregister()}
   const reference='attachment:'+createHash('sha256').update(bytes).digest('hex')
   expect(await a.api('attachment_get',{reference})).toMatchObject({contentBase64:bytes.toString('base64')})

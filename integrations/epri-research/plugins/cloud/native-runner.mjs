@@ -13,6 +13,8 @@ const documentScript=join(sourceRoot,'../../src/server/document-native.py');
 const unavailable=message=>{throw Object.assign(new Error(message),{code:'UNAVAILABLE'});};
 const bootstrap=`import sys,os,runpy,shutil,io,contextlib,json,hashlib,base64
 p,r,w,o,m,n,b,h,s=sys.argv[1:]
+p,r,w,o=map(os.path.abspath,(p,r,w,o))
+loader=os.path.abspath(__file__)
 os.environ['EPRI_EXECUTION_ROOT']=w
 parts=[p+'.'+str(i) for i in range(int(n))]
 try:
@@ -39,7 +41,7 @@ try:
  with open(o,'xb') as f: f.write(data)
  print(json.dumps({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}))
 finally:
- for f in [r]+parts:
+ for f in [loader,r]+parts:
   if os.path.lexists(f): os.unlink(f)
  if os.path.isdir(w): shutil.rmtree(w)
 `;
@@ -65,14 +67,12 @@ export function createNativeResearchRuntime(config,assertToolCurrent,projectPath
     const control=AbortSignal.any([exec.signal,closing.signal,signal ?? exec.signal,AbortSignal.timeout(config.executionTimeoutMs)]);
     const cwd=await ctx.get('workingDirectory').ensure(agent,control);
     current();
-    const id='.research-'+randomUUID(),root=posix.join(cwd,id+'-work');
+    const id='.research-'+randomUUID();
     const policy=ctx.get('sandboxPolicy').resolve({session:agent.session});
     let input=Buffer.from(JSON.stringify(payload));
-    if(input.length>config.maxPayloadBytes||Buffer.byteLength(script)>config.fileChunkBytes)unavailable('科研输入或执行脚本超过配置容量。');
+    if(input.length>config.maxPayloadBytes||Buffer.byteLength(script)>config.fileChunkBytes||Buffer.byteLength(bootstrap)>config.fileChunkBytes)unavailable('科研输入或执行脚本超过配置容量。');
     const inputBytes=input.length,inputSha256=createHash('sha256').update(input).digest('hex');
     const partBytes=Math.floor(config.fileChunkBytes/4)*3,parts=Math.ceil(input.length/partBytes);
-    const prefix=await ctx.get('fs').resolve(id+'.json',{cwd,signal:control});
-    const inputPath=ctx.get('fs').processPath(prefix);
     for(let index=0;index<parts;index++){
       const part=await ctx.get('fs').resolve(id+'.json.'+index,{cwd,signal:control});current();
       await ctx.get('fs').writeText(part,input.subarray(index*partBytes,(index+1)*partBytes).toString('base64'),{kind:'createIfAbsent'},control,policy);current();
@@ -80,10 +80,11 @@ export function createNativeResearchRuntime(config,assertToolCurrent,projectPath
     input=undefined;
     const scriptTarget=await ctx.get('fs').resolve(id+'.py',{cwd,signal:control});current();
     await ctx.get('fs').writeText(scriptTarget,script,{kind:'createIfAbsent'},control,policy);current();
-    const scriptPath=ctx.get('fs').processPath(scriptTarget);
+    const loaderTarget=await ctx.get('fs').resolve(id+'-bootstrap.py',{cwd,signal:control});current();
+    await ctx.get('fs').writeText(loaderTarget,bootstrap,{kind:'createIfAbsent'},control,policy);current();
     const resultTarget=await ctx.get('fs').resolve(id+'.result.json',{cwd,signal:control});
     const resultPath=ctx.get('fs').processPath(resultTarget);
-    const output=await command([config.pythonPath,'-I','-X','utf8','-c',bootstrap,inputPath,scriptPath,root,resultPath,String(config.maxPayloadBytes),String(parts),String(inputBytes),inputSha256,String(config.fileChunkBytes)],cwd,control);
+    const output=await command([config.pythonPath,'-I','-X','utf8',id+'-bootstrap.py',id+'.json',id+'.py',id+'-work',id+'.result.json',String(config.maxPayloadBytes),String(parts),String(inputBytes),inputSha256,String(config.fileChunkBytes)],cwd,control);
     const manifest=JSON.parse(output);
     if(!Number.isSafeInteger(manifest.bytes)||manifest.bytes<0||manifest.bytes>config.maxPayloadBytes||typeof manifest.sha256!=='string')unavailable('计算结果回执无效。');
     const bytes=await readNativeFile(ctx.get('fs'),resultTarget,{maxBytes:config.maxPayloadBytes,chunkBytes:config.fileChunkBytes,signal:control,check:current,expectedBytes:manifest.bytes,expectedSha256:manifest.sha256});
