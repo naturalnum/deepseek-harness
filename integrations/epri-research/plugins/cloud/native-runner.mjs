@@ -10,6 +10,7 @@ const sourceRoot=dirname(fileURLToPath(import.meta.url));
 const engineRoot=join(sourceRoot,'../../src/reused/engine');
 const resourceScript=join(sourceRoot,'../../plugins/cloud/resource-materializer.py');
 const documentScript=join(sourceRoot,'../../src/server/document-native.py');
+const gitScript=join(sourceRoot,'../../plugins/cloud/git-runner.py');
 const unavailable=message=>{throw Object.assign(new Error(message),{code:'UNAVAILABLE'});};
 const bootstrap=`import sys,os,runpy,shutil,io,contextlib,json,hashlib,base64
 p,r,w,o,m,n,b,h,s=sys.argv[1:]
@@ -29,6 +30,7 @@ try:
   data.extend(part)
  if len(data)!=int(b) or hashlib.sha256(data).hexdigest()!=h: raise ValueError('Scientific input manifest does not match')
  sys.stdin=io.StringIO(data.decode('utf8'))
+ for name in parts: os.unlink(name)
  del data,part,raw
  sys.argv=[r]
  capture=io.StringIO()
@@ -49,7 +51,7 @@ finally:
 /** Keep one actual native tool execution available through asynchronous scientific calculations. */
 export function createNativeResearchRuntime(config,assertToolCurrent,projectPath) {
   const executions=new AsyncLocalStorage(),closing=new AbortController();
-  let transfers=0;
+  let transfers=0,gitRunning=false;
   async function withTransfer(work){
     if(transfers>=config.maxConcurrentFileTransfers)unavailable('科研文件传输达到配置并发容量，请稍后重试。');
     transfers++;try{return await work();}finally{transfers--;}
@@ -128,12 +130,33 @@ export function createNativeResearchRuntime(config,assertToolCurrent,projectPath
     return readNativeFile(exec.agent.ctx.get('fs'),value,{maxBytes:Math.min(maxBytes,config.maxPayloadBytes),chunkBytes:config.fileChunkBytes,signal:exec.signal,check:current});
   });}
   const git={
-    async run(path,args,signal,allowMissing=false){await target(path);return command([config.gitPath,'--no-pager','-c','core.quotepath=false','-c','core.fsmonitor=false','-C',path,...args],projectPath(current()),signal,allowMissing);},
+    async run(path,args,signal,allowMissing=false){
+      if(gitRunning)unavailable('当前账号的 Git 传输尚未结束，请稍后重试。');
+      gitRunning=true;
+      let releaseAdmission=true;
+      try{
+        const value=await target(path),exec=current();
+        if(!Array.isArray(args)||args.some(arg=>typeof arg!=='string'||arg.includes('\0')))unavailable('Git 参数无效。');
+        const result=await python(readFileSync(gitScript,'utf8'),{gitPath:config.gitPath,path:exec.agent.ctx.get('fs').processPath(value),args,maxPayloadBytes:config.maxPayloadBytes,graceMs:config.graceMs},signal);
+        if(!Number.isInteger(result?.exitCode)||typeof result.stdout!=='string'||typeof result.stderr!=='string')unavailable('Git 结果回执无效。');
+        if(allowMissing&&result.exitCode===1)return '';
+        if(result.exitCode!==0)unavailable((result.stderr||'Git 未成功退出。').slice(0,3000));
+        return result.stdout;
+      }catch(error){
+        if(error?.executionUnconfirmed)releaseAdmission=false;
+        throw error;
+      }finally{if(releaseAdmission)gitRunning=false;}
+    },
     async realpath(path){const exec=current(),value=await target(path);const info=await exec.agent.ctx.get('fs').stat(value,exec.signal);if(info?.type!=='directory')unavailable('项目目录不存在。');return exec.agent.ctx.get('fs').processPath(value);},
     readFile(path){return readProjectFile(path,config.maxPayloadBytes);},
     async stat(path){const exec=current(),value=await target(path);const info=await exec.agent.ctx.get('fs').stat(value,exec.signal);if(!info)throw Object.assign(new Error('File missing'),{code:'ENOENT'});return info;},
     async mkdir(path){await target(path);await python("import os,json,sys; os.makedirs(json.load(sys.stdin)['path'],exist_ok=True); print('null')",{path});},
-    worktreeParent(){return posix.join(projectPath(current()),'.research-worktrees');},
+    async worktreeParent(path){
+      const common=(await git.run(path,['rev-parse','--path-format=absolute','--git-common-dir'])).trim();
+      const exec=current(),value=await target(common),fs=exec.agent.ctx.get('fs');
+      if((await fs.stat(value,exec.signal))?.type!=='directory')unavailable('Git 元数据目录不可用。');
+      return posix.join(fs.processPath(value),'research-worktrees');
+    },
   };
   const runtime={
     git,readProjectFile,

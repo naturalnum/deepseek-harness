@@ -208,7 +208,7 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
   const commands=new NativeCommandAccount(a.graph.ctx,a.graph.binding,{assertBusinessCurrent(){a.graph.api.sessionProject(a.agent.session)},
     getAgent:id=>a.graph.ctx.agents.get(id),projectForAgent:agent=>a.graph.guards.projectForAgent(agent),projectForSession:session=>a.graph.guards.projectForSession(session),
     assertRetainedExecutionOwner(){throw new Error('No background job in fixture')},files(){throw new Error('Only the external channel is scripted')}},
-    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['research_engine_run','research_engine_status','research_document_status','skill',...reply?['research_workbench_execute']:[]],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes,
+    {enforceSessionFilePolicy:true,...maxSkillCopiesPerOperation===undefined?{}:{maxSkillCopiesPerOperation},allowedTools:['fixture_git','research_engine_run','research_engine_status','research_document_status','skill',...reply?['research_workbench_execute']:[]],maxScopes:2,commandLimits:{maxArgvBytes:4096,maxArgvEntries:16,maxPathBytes:512,maxStdinBytes:4096,maxTailBytes,
       maxObservedBytes:65536,pollIntervalMs:1000,maxWaiters:2,maxLifetimeMs:10000,stopWaitMs:1000}},root)
   const sandbox=new CloudSandboxProvider(a.graph.ctx,commands.calls,{current(){return {enforcement:'partial',denialSignatures:[],runnerFailureRules:[]}}},{maxArgvBytes:4096,maxArgvEntries:16})
   new CloudSubprocessRuntime(a.graph.ctx,commands,sandbox)
@@ -460,3 +460,76 @@ it('reads the existing research Store after native graph restart through cold na
   expect(result).toMatchObject({protocols:[{id:'cold-protocol'}]})
   expect(next.ctx.sessions.get(id)).toBeUndefined();expect(next.ctx.agents.get(id)).toBeUndefined()
 })
+
+
+it('runs the original Git writes and full patches through staged managed Python without changing preview tokens',async()=>{
+  const {writeFile,readdir}=await import('node:fs/promises')
+  const {execFile}=await import('node:child_process'),{promisify}=await import('node:util')
+  const a=await fixture('research-real-git',{maxOutputBytes:4096},'research-git-'+ 'g'.repeat(170))
+  const hostGit=(...args:string[])=>promisify(execFile)('/usr/bin/git',args,{cwd:a.f.project})
+  await hostGit('init','-b','main');await writeFile(join(a.f.project,'seed.txt'),'seed\n')
+  await hostGit('add','seed.txt');await hostGit('-c','user.name=Fixture','-c','user.email=fixture@localhost','commit','-m','seed')
+  const managed=await managedFixture(a,true,undefined,8,undefined,4096)
+  let request:{op:string;args:Record<string,unknown>}={op:'project_git_bind',args:{path:a.f.project}}
+  const release=a.graph.ctx.tools.register({name:'fixture_git',description:'Exact reviewed Git fixture',parameters:{type:'object',additionalProperties:false},
+    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},execute:(_args,exec)=>a.graph.ctx.cloudResearch.reviewedCall(request.op,request.args,exec)})
+  async function call<T extends object>(op:string,args:Record<string,unknown>={}):Promise<T>{
+    request={op,args};const result=await a.tool('fixture_git');expect(result,JSON.stringify(result)).toMatchObject({isError:false});return result.value as T
+  }
+  type Working={token:string;head:string;changes:{path:string}[]}
+  try{
+    expect(await call('project_git_bind',{path:a.f.project})).toMatchObject({bound:true})
+    const fs=a.agent.ctx.get('fs')!,read=fs.readByteRange.bind(fs)
+    let reached!:()=>void,releaseRead!:()=>void
+    const entered=new Promise<void>(resolve=>{reached=resolve}),resume=new Promise<void>(resolve=>{releaseRead=resolve})
+    const paused=vi.spyOn(fs,'readByteRange').mockImplementationOnce(async(...args)=>{reached();await resume;return read(...args)})
+    request={op:'project_git_working',args:{}}
+    const pending=a.tool('fixture_git');await entered
+    try{expect(await a.tool('fixture_git')).toMatchObject({isError:true,error:{message:expect.stringContaining('Git 传输尚未结束')}})}finally{releaseRead()}
+    expect(await pending).toMatchObject({isError:false});paused.mockRestore()
+    const first=await call<Working>('project_git_working'),again=await call<Working>('project_git_working')
+    expect(again.token).toBe(first.token);expect(first.changes).toEqual([])
+    // User files with a similar prefix remain visible; only this invocation's exact staging names are removed.
+    await writeFile(join(a.f.project,'.research-user-notes'),'real user data')
+    const files=['.research-user-notes',...Array.from({length:12},(_,i)=>'selected-'+i+'.txt')]
+    for(const file of files.slice(1))await writeFile(join(a.f.project,file),'synthetic patch '+file+'\n'.repeat(50))
+    const changed=await call<Working>('project_git_working')
+    expect(changed.changes.map(row=>row.path).sort()).toEqual([...files].sort())
+    expect((await call<Working>('project_git_working')).token).toBe(changed.token)
+    const args={files,message:'长消息'.repeat(160),expectedToken:changed.token,requestId:'checkpoint-exact'}
+    const saved=await call<{sha:string}>('project_git_checkpoint',args)
+    expect(await call('project_git_checkpoint',args)).toEqual(saved)
+    const patch=await call<{patch:string;message:string}>('project_git_commit',{sha:saved.sha})
+    expect(Buffer.byteLength(patch.patch)).toBeGreaterThan(4096);expect(patch.message).toContain(args.message)
+    const clean=await call<Working>('project_git_working');expect(clean.changes).toEqual([])
+    const branch=await call<{id:string;path:string}>('project_git_branch',{name:'transport',expectedToken:clean.token,requestId:'branch-exact'})
+    expect(branch.path).toContain('/.git/research-worktrees/')
+    await writeFile(join(branch.path,'branch.txt'),'managed branch change\n')
+    const branchWork=await call<Working>('project_git_working',{worktreeId:branch.id})
+    const branchCommit=await call<{sha:string}>('project_git_checkpoint',{worktreeId:branch.id,files:['branch.txt'],message:'branch checkpoint',expectedToken:branchWork.token,requestId:'branch-save'})
+    const beforeMerge=await call<Working>('project_git_working')
+    const merged=await call<{sha:string}>('project_git_merge',{worktreeId:branch.id,sourceSha:branchCommit.sha,expectedToken:beforeMerge.token,requestId:'merge-exact'})
+    const beforeRevert=await call<Working>('project_git_working')
+    await call('project_git_revert',{sha:merged.sha,mainline:1,expectedToken:beforeRevert.token,requestId:'revert-exact'})
+    expect((await hostGit('show','HEAD:seed.txt')).stdout).toBe('seed\n')
+    await expect(hostGit('show','HEAD:branch.txt')).rejects.toBeDefined()
+    expect((await readdir(a.f.project)).filter(name=>name.startsWith('.research-'))).toEqual(['.research-user-notes'])
+    const policy={mode:'danger-full-access' as const},device='18446744073709551615'
+    const world:SkillWorld={metadata:{device,inode:'1'},skills:{device,inode:'2'},maxCopies:8,copies:Array.from({length:8},(_,i)=>({version:randomUUID(),identity:{device,inode:String(i+3)}}))}
+    for(const spec of managed.specs){expect(spec.argv.length).toBeLessThanOrEqual(14);expect(guardianEncodedBudget(a.f.project,spec,world,policy)).toBeLessThanOrEqual(4096);expect(guardianWorkingCopiesBudget(a.f.project,spec,8,policy)).toBeLessThanOrEqual(4096)}
+    await call('project_git_bind',{path:branch.path})
+    const linked=await call<Working>('project_git_working')
+    const nested=await call<{path:string}>('project_git_branch',{name:'linked-transport',expectedToken:linked.token,requestId:'linked-branch'})
+    expect(nested.path).toContain(join(a.f.project,'.git','research-worktrees'))
+    // An associated repository may be inside the project, but outside common metadata cannot receive a managed worktree.
+    const outside=join(a.f.project,'..','external-git-metadata'),sub=join(a.f.project,'external-metadata-repo')
+    await hostGit('init','-b','main','--separate-git-dir='+outside,sub)
+    await writeFile(join(sub,'seed.txt'),'external metadata fixture')
+    await hostGit('-C',sub,'add','seed.txt');await hostGit('-C',sub,'-c','user.name=Fixture','-c','user.email=fixture@localhost','commit','-m','seed')
+    await call('project_git_bind',{path:sub})
+    const external=await call<Working>('project_git_working')
+    request={op:'project_git_branch',args:{name:'refused',expectedToken:external.token,requestId:'external-refused'}}
+    expect(await a.tool('fixture_git')).toMatchObject({isError:true,error:{message:expect.stringContaining('当前原生会话项目')}})
+    expect(managed.charges).toEqual({resident:0,active:0})
+  }finally{release()}
+},45000)

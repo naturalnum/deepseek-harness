@@ -122,7 +122,7 @@ export function projectGitStore(db,directory,runtime={run:localGit,realpath:loca
         let result;
         if(op==='project_git_branch'){
           const id=randomUUID(),branch='research/'+digest(session).slice(0,10)+'/'+a.name;
-          const parent=runtime.worktreeParent?runtime.worktreeParent():resolve(directory,'git-worktrees');await mkdir(parent,{recursive:true});const treePath=join(parent,id);
+          const parent=runtime.worktreeParent?await runtime.worktreeParent(root):resolve(directory,'git-worktrees');await mkdir(parent,{recursive:true});const treePath=join(parent,id);
           await git(root,['worktree','add','-b',branch,treePath,current.head],signal);
           result={id,path:treePath,branch,baseSha:current.head,repository:root,createdAt:new Date().toISOString()};
           db.prepare('INSERT INTO research_git_worktrees VALUES(?,?,?)').run(session,id,JSON.stringify(result));
