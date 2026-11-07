@@ -39,6 +39,8 @@ Native `FileSystem.scopeRoot` 提供可选的调用者作用域发现元数据�
 
 Native 内置技能提供方接收可选部署调用上限：`skill-office.invocation` 与 `skill-filesystem.bundledInvocation`。Cloud 可展示完整不可变包供检查和下载，同时在执行环境合格前关闭模型和用户调用。文件系统上限不会启用来源已关闭的调用入口，也不影响其他根目录；省略配置时保留 Native 行为。原技能消费者执行调用策略，包字节保持原样。
 
+Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检查供账户能力审核使用。它要求调用方 fiber 有效，不执行查找、授权或业务调用；普通分派保留全部原检查。
+
 ## 升级步骤
 
 1. 修改前记录当前干净源码、实际部署、目标上游修订及可信配置。源码测试与旧运行版本是不同证据。

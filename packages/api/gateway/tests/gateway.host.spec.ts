@@ -399,6 +399,30 @@ class InheritedMethodBase extends Service {
 class InheritedMethodService extends InheritedMethodBase {}
 
 describe('TypertGatewayService', () => {
+  it('inspects strict and SRC definitions without a business call or lookup resolution', async () => {
+    const { ctx, service } = await setup()
+    registerAgentLookup(ctx, { id: 'agent-1' })
+    const source = ctx.typertGateway.inspectInvocation('goals', 'create')
+    expect(source.parameters[0]).toMatchObject({ source: 'lookup', lookup: 'gatewayFixture' })
+    const strict = createDescriptor()
+    const dispose = registerStrict(ctx, [strict])
+    expect(ctx.typertGateway.inspectInvocation('goals', 'create')).toBe(strict)
+    expect(service.calls).toEqual([])
+    await dispose()
+    expect(() => ctx.typertGateway.inspectInvocation('goals', 'create'))
+      .toThrow(expect.objectContaining({ code: 'gateway/definition-unavailable' }))
+  })
+
+  it('refuses absent and ambiguous definitions during readonly inspection', async () => {
+    const ctx = await setupGateway()
+    expect(() => ctx.typertGateway.inspectInvocation('missing', 'read'))
+      .toThrow(expect.objectContaining({ code: 'gateway/invocation-unavailable' }))
+    await ctx.plugin(FirstSharedService)
+    await ctx.plugin(SecondSharedService)
+    expect(() => ctx.typertGateway.inspectInvocation('shared', 'run'))
+      .toThrow(expect.objectContaining({ code: 'gateway/ambiguous-endpoint' }))
+  })
+
   it('invokes a strict direct method with schema decoding and a live lookup', async () => {
     const { ctx, service } = await setup()
     const agent = { id: 'agent-1' }

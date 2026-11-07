@@ -40,6 +40,8 @@ Native `FileSystem.scopeRoot` provides optional caller-scoped discovery metadata
 
 Native bundled skill providers accept optional deployment invocation ceilings: `skill-office.invocation` and `skill-filesystem.bundledInvocation`. Cloud can expose complete immutable packages for inspection and download while withholding model and user invocation until the execution environment is qualified. The filesystem ceiling cannot enable source-disabled invocation or affect other roots; omission preserves Native behavior. Original skill consumers enforce invocation policy, and package bytes remain unchanged.
 
+Gateway `inspectInvocation` exposes its existing strict/SRC resolver as a readonly Host inspection for account capability auditing. It requires an active calling fiber and performs no lookup, authorization or business invocation; normal dispatch retains every original check.
+
 ## Upgrade procedure
 
 1. Record the current clean source revision, deployment revision, chosen upstream revision and trusted configuration before changing anything. Source tests and an old running release are different evidence.

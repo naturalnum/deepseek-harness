@@ -463,6 +463,17 @@ export class TypertGatewayService extends Service implements TypertGateway {
     return this.invokePrepared(await this.prepareInvocation(request, new AbortController()))
   }
 
+  /**
+   * Inspect the same strict or source definition used by a real invocation, without resolving resources or calling it.
+   * @param namespace Exact wire namespace.
+   * @param method Exact exported method.
+   * @returns Current native invocation definition; inspection grants no call or resource authorization.
+   */
+  inspectInvocation(namespace: string, method: string): InvocationDescriptor {
+    this.ctx.fiber.assertActive()
+    return this.resolveDescriptor(namespace, method, endpointOf(namespace, method))
+  }
+
   private async invokePrepared(prepared: PreparedInvocation): Promise<unknown> {
     if (prepared.descriptor.mode !== undefined) {
       throw new TypertGatewayError(

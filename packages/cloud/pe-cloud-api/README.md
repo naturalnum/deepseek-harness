@@ -30,6 +30,8 @@ Mount the root entry in a deployment-owned composition; account mounting require
 
 Use this package to enforce reviewed cloud exposure while retaining native Session DTOs and business operations. Authentication, owner selection, project filesystem verification, and account readiness remain prerequisites.
 
+Trusted account plugins can register their own Remote inventory with `CloudAccountApi.registerCapabilityInventory(namespace, inspect)`. The first audit captures the registering fiber's active service, checks every method through the original Gateway and verifies Session resources for account-session rows. Registration and withdrawal revoke the preceding audit; dispatch rechecks the same contribution. The deployment must still approve each exact endpoint, handler and guard. This registration adds neither Fetch routes nor a transport or persistence owner.
+
 ### Minimal configuration
 
 The [executed Loader fixture](tests/fixtures/root.cordis.yml) shows the root configuration with empty lists, which expose no operations. A product composition selects the package's `/root` and `/account` entries; the account entry rejects mounting until its required integration exists.
