@@ -50,7 +50,6 @@ async function fixture() {
           scope.typert.register(contribution)
           if (catalog.mcp === undefined) throw new Error('Explicit fixture policy absent')
           await scope.peCloudApi.prepareCloudMcpConnections(scope, { policy: catalog.mcp, files: scope.peCloudFiles,
-            withModelKeyPeerUse() { throw new Error('Bootstrap cannot borrow a business Peer') },
             assertBusinessCurrent() { scope.peAccount.lifetime.throwIfAborted() },
             assertToolCurrent() { throw new Error('Bootstrap cannot execute a tool') },
           })

@@ -10,6 +10,7 @@ import { textResponse, toolCallResponse } from '../../../core/agent-loop/tests/m
 import { policyFixture } from './account-policy-fixture.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
 import * as nativeTransport from '../../../mcp/mcp-client/src/transport.ts'
+import Credentials from '@deepseek-ai/dsh-credentials-local'
 
 const policy: ApprovedMcpConnections = {
   limits: { maxConnections: 4, maxUrlBytes: 2048, maxHeaderBytes: 4096, maxHeaderCount: 8,
@@ -21,6 +22,14 @@ async function account(name: string) {
   const login = new AbortController()
   const fixture = policyFixture([{ endpoint: 'cloudMcpConnections/action', handlerId: 'native:cloudMcpConnections', guard: 'authenticated-account' }],
     undefined, name, { selected: [], inspectRootFetch: () => [] }, undefined, undefined, undefined, undefined, [], false, undefined, {
+      withPeerUse(peer, consume) {
+        if (peer !== authenticated) throw new Error('Foreign test authentication Peer')
+        const current = (): void => {
+          peer.signal.throwIfAborted(); graph.binding.lifetime.throwIfAborted(); graph.ctx.fiber.assertActive()
+        }
+        const use: AccountUse = { binding: graph.binding, context: graph.ctx, assertCurrent: current, release() {} }
+        return consume(use, current)
+      },
       defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', selectable: true, config: { id: 'cloud-chat', plugins: [
         { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
       ] } }],
@@ -36,12 +45,6 @@ async function account(name: string) {
               assertToolCurrent: (exec) => {
                 if (exec.agent === undefined) throw new Error('Native MCP requires the original Agent')
                 guards.projectForAgent(exec.agent)
-              },
-              withModelKeyPeerUse(peer, consume) {
-                if (peer !== authenticated) throw new Error('Foreign test authentication Peer')
-                const current = (): void => { peer.signal.throwIfAborted(); binding.lifetime.throwIfAborted(); owner.fiber.assertActive() }
-                const use: AccountUse = { binding, context: ctx, assertCurrent: current, release() {} }
-                return consume(use, current)
               },
             })
           },
@@ -191,6 +194,29 @@ it('retains a real native HTTP probe whose transport rejects closure and refuses
     for (const close of originalClosers) await close()
     await external.close()
   }
+}, 20000)
+
+it('rechecks the original login inside the actual native credential mutation and certifies a revoked zero-write refusal', async () => {
+  const external = await startHttpMcpFixture()
+  try {
+    const a = await account('mcp-credential-revoke'), initial = await a.invokeMcp({ action: 'list' })
+    // oxlint-disable-next-line typescript/unbound-method -- Invoked below with the original provider as explicit receiver.
+    const modify = Credentials.prototype.modifyRecord
+    const gate = vi.spyOn(Credentials.prototype, 'modifyRecord').mockImplementation(function (this: Credentials, key, mutate) {
+      a.revokeLogin()
+      return modify.call(this, key, mutate)
+    })
+    try {
+      await expect(a.invokeMcp({ action: 'save', version: initial.version, connection: {
+        serverName: 'must-not-publish', url: external.url, enabled: true, toolCallTimeoutMs: 2000,
+        headers: { Authorization: 'Bearer synthetic-revoked-before-commit' } } })).rejects.toThrow()
+      expect(gate).toHaveBeenCalledOnce()
+      expect(await a.ctx.credentials.listRecords()).toEqual([])
+      expect(a.ctx.tools.schemas().filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
+      expect(external.authorization).toEqual([])
+      expect(a.saveBarrier.snapshot().failures).toEqual([])
+    } finally { gate.mockRestore() }
+  } finally { await external.close() }
 }, 20000)
 
 it('serializes competing edit/toggle/remove operations with the provider apply and rejects the stale version without retaining failure', async () => {

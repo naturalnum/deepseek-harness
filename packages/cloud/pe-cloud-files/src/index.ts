@@ -23,5 +23,5 @@ export type { RemoteStoreLimits, RemoteCredential, AccountRemoteServerStore } fr
 export type { WorkspaceUploadClaim, WorkspaceUploadSource, WorkspaceUploadResult } from './stage-bridge.ts'
 export type { ResidentResult } from './work-queue.ts'
 
-export { openMcpConnectionStore, mcpConnectionInput } from './mcp-connection-store.ts'
+export { openMcpConnectionStore, mcpConnectionInput, McpConnectionWriteRefused } from './mcp-connection-store.ts'
 export type { AccountMcpConnectionStore, McpConnectionId, McpConnectionRecord, McpConnectionInput, McpStoreLimits } from './mcp-connection-store.ts'
