@@ -1,0 +1,77 @@
+/** Closed reviewed SDK suppliers; these declarations neither select a deployment nor enable account features. */
+
+/** Original Native workload supplier. */
+export const NATIVE_WORKLOAD_IMAGE_DIGEST = 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a'
+/** Native layers plus the pinned OpenSSH client dependency layer. */
+export const REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST = 'sha256:c75632ff5ced1d239c688e836c383ce3629ef1a93f7b698294345f2aa8074f2d'
+/** Immutable Office dependency supplier; actual CLI/model execution requires separate qualification. */
+export const OFFICE_WORKLOAD_IMAGE_DIGEST = 'sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461'
+/** Reviewed Session-directory guard with the original Native creation profile. */
+export const SESSION_DIRECTORY_SERVER_IMAGE_DIGEST = 'sha256:7a41332aef7bcc74414b1434c7e10ee057c420e213d082fc79ac791c921af6ba'
+/** Directory-aware server paired with the OpenSSH workload. */
+export const REMOTE_CLIENT_SERVER_IMAGE_DIGEST = 'sha256:6497790ee3398569aef7d8f35d442e76c33c9be08633a6a2732dbcb2ee1fe01e'
+/** Office-only creation policy; predecessor workloads remain closed-admission audit inputs. */
+export const OFFICE_SERVER_IMAGE_DIGEST = 'sha256:1b7ec16bb1031eab0fd7024905fc03dc5f814fbfe46bbb2d5aa2f88e3813b628'
+
+/** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
+export interface QualifiedSupplierTuple {
+  readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
+  readonly workloadImageDigest: string
+  readonly serverImageDigest: string
+  /** The exact server includes the original direct-UUID-child Session environment guard. */
+  readonly sessionDirectories: boolean
+}
+
+/** Complete creation-admission inventory; readonly audit predecessors are not creation suppliers. */
+export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object.freeze([
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v1', workloadImageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17', sessionDirectories: false }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd', sessionDirectories: false }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: SESSION_DIRECTORY_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: REMOTE_CLIENT_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: OFFICE_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+])
+
+/**
+ * Check the workload projection shared by protected selection and the original SDK bootstrap.
+ * @param value Decoded workload selector.
+ * @returns Whether an exact reviewed tuple contains the workload.
+ */
+export function isPinnedWorkloadImageDigest(value: unknown): value is string {
+  return qualifiedSupplierTuples.some(row => row.workloadImageDigest === value)
+}
+
+/**
+ * Check the server projection before validating a complete protected selection.
+ * @param schema Original deployment storage schema.
+ * @param image Decoded server selector.
+ * @returns Whether an exact reviewed tuple contains this server and storage schema.
+ */
+export function isQualifiedServerImageDigest(schema: QualifiedSupplierTuple['schema'], image: string): boolean {
+  return qualifiedSupplierTuples.some(row => row.schema === schema && row.serverImageDigest === image)
+}
+
+/**
+ * Require the complete reviewed selection, rather than combining separate image inventories.
+ * @param schema Original deployment storage schema.
+ * @param workload Exact decoded workload selector.
+ * @param server Exact decoded server selector.
+ * @returns Whether one reviewed tuple matches all three inputs.
+ */
+export function isQualifiedSupplierPair(schema: QualifiedSupplierTuple['schema'], workload: string, server: string): boolean {
+  return qualifiedSupplierTuples.some(row => row.schema === schema && row.workloadImageDigest === workload
+    && row.serverImageDigest === server)
+}
+
+/**
+ * Identify reviewed implementations of the original Session-directory guard for shared mounts.
+ * @param image Explicit protected server selection, absent for legacy callers.
+ * @returns Whether an exact reviewed server includes that directory guard.
+ */
+export function isSessionDirectoryServerImageDigest(image: string | undefined): boolean {
+  return qualifiedSupplierTuples.some(row => row.sessionDirectories && row.serverImageDigest === image)
+}
