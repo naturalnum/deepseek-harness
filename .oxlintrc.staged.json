@@ -13,6 +13,8 @@
     "**/.node-next-types-*/**",
     "website/.generated/**",
     "vendor/**",
+    "integrations/epri-research/upstream/**",
+    "integrations/epri-research/src/reused/**",
     "native/**",
     "**/*.js",
     "**/*.mjs",

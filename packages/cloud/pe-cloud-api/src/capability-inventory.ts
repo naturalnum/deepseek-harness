@@ -70,15 +70,18 @@ export class AccountCapabilityInventories {
   }
 
   /** Recheck a selected contribution immediately before ordinary dispatch.
-   * @param account Original account graph. @param row Already approved exact exposure. @param mode Actual carrier mode. */
-  assertEndpoint(account: Context, row: EndpointExposure, mode: 'rpc' | 'stream'): void {
+   * @param account Original account graph. @param row Already approved exact exposure. @param mode Actual carrier mode.
+   * @returns Whether this exact operation belongs to an installed contribution; an invalid installed contribution rejects.
+   */
+  assertEndpoint(account: Context, row: EndpointExposure, mode: 'rpc' | 'stream'): boolean {
     const namespace = row.endpoint.split('/')[0]
     const entry = namespace === undefined ? undefined : this.contributions.get(namespace)
-    if (entry === undefined || namespace === undefined) return
+    if (entry === undefined || namespace === undefined) return false
     const value = this.inspectOne(account, namespace, entry)
     const rows = mode === 'rpc' ? value.rpcEndpoints : value.streamEndpoints
     if (!rows.some(actual => actual.endpoint === row.endpoint && actual.handlerId === row.handlerId
       && actual.guard === row.guard)) unavailable()
+    return true
   }
 
   private inspectOne(account: Context, namespace: string, entry: Contribution): ExposureInventory {
