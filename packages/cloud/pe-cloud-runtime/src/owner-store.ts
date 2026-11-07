@@ -7,7 +7,7 @@ import { beginOwnerDrainSql, claimOwnerSql, finishOwnerDrainSql, heartbeatOwnerS
 import { recoveryAuditMigrationSql } from './migrations/recovery-audit.ts'
 import { beginOwnerReconfigurationSql, finishOwnerReconfigurationSql } from './owner-sql.ts'
 import { bindRecoveryAuthority, readRecoveryAudit, readRecoveryProof } from './owner-recovery.ts'
-import { inspectRecoverySql, recoverReleasedSql, closeRecoveredInstanceSql, inspectRecoveredInstanceSql } from './owner-sql.ts'
+import { inspectRecoverySql, recoverReleasedSql, closeRecoveredInstanceSql, inspectRecoveredInstanceSql, claimStaticOwnerSql } from './owner-sql.ts'
 import { RuntimeConfigSchema } from './schema.ts'
 import type { AccountId, AccountOwner, OwnerEpoch, RuntimeConfig } from './types.ts'
 import type { OwnerClaim, OwnerDrainEvidence, OwnerExpectation, OwnerPgExecutor, OwnerStoreIdentity,
@@ -16,6 +16,11 @@ import type { OwnerClaim, OwnerDrainEvidence, OwnerExpectation, OwnerPgExecutor,
 
 interface PendingClaim { readonly expectedEpoch: OwnerClaim['expectedEpoch']; readonly recipeVersion: string; readonly actual: Promise<AccountOwner> }
 interface MutationResponsibility { readonly epoch: OwnerEpoch; state: 'pending' | 'unknown' }
+
+/** The original SQL confirmed that admission was closed and no owner row was changed. */
+export class OwnerClaimAdmissionClosed extends AccountRuntimeError {
+  constructor() { super('cloud/account-unavailable', 'Account mounting admission is closed.') }
+}
 
 /** Parameterized owner storage; bounded per-account responsibility survives unknown mutation outcomes. */
 export class PostgresOwnerStore {
@@ -27,6 +32,7 @@ export class PostgresOwnerStore {
   private recoveryMigrated = false
   private recoveryMigration: Promise<void> | undefined
   private readonly recovery: OwnerRecoveryAuthority | undefined
+  private staticInventorySha256?: string
 
   /**
    * Bind a real root-owned database driver and server-generated instance identity.
@@ -67,6 +73,17 @@ export class PostgresOwnerStore {
     return this.decode(rows)
   }
 
+  /** Bind the verified v3 inventory before any account claim; omission preserves legacy claim behavior.
+   * @param sha256 Original Files inventory digest, never client configuration or an account path.
+   */
+  installStaticAccountAdmission(sha256: string): void {
+    this.assertMigrated()
+    if (this.staticInventorySha256 !== undefined || this.claims.size !== 0 || this.responsibilities.size !== 0) {
+      throw new AccountRuntimeError('cloud/config-conflict', 'Static claim admission must be installed before account ownership work.')
+    }
+    this.staticInventorySha256 = sha256
+  }
+
   /**
    * Atomically claim only a missing, unowned, or same-instance parked account, incrementing epoch.
    * Concurrent identical local claims share the actual DB Promise. This does not merge or start a graph;
@@ -96,9 +113,12 @@ export class PostgresOwnerStore {
       throw new AccountRuntimeError('cloud/capacity', 'Concurrent owner claim capacity is exhausted')
     }
     const attemptedEpoch = ownerEpoch(input.expectedEpoch === null ? '1' : (BigInt(input.expectedEpoch) + 1n).toString())
-    const actual = this.mutate(claimOwnerSql, [input.accountId, this.identity.instanceId, input.recipeVersion, input.expectedEpoch], {
-      accountId: input.accountId, epoch: attemptedEpoch,
-    })
+    const staticAdmission = this.staticInventorySha256
+    const actual = this.mutate(staticAdmission === undefined ? claimOwnerSql : claimStaticOwnerSql,
+      [input.accountId, this.identity.instanceId, input.recipeVersion, input.expectedEpoch,
+        ...staticAdmission === undefined ? [] : [staticAdmission]], {
+        accountId: input.accountId, epoch: attemptedEpoch,
+      }, staticAdmission !== undefined)
     this.claims.set(input.accountId, { expectedEpoch: input.expectedEpoch, recipeVersion: input.recipeVersion, actual })
     void actual.then(() => { this.claims.delete(input.accountId) }, () => { this.claims.delete(input.accountId) })
     return actual
@@ -393,7 +413,8 @@ export class PostgresOwnerStore {
     return this.mutate(finishOwnerDrainSql, [...this.expectedValues(expected), target], expected)
   }
 
-  private async mutate(sql: string, values: readonly (string | null)[], expected: OwnerExpectation): Promise<AccountOwner> {
+  private async mutate(sql: string, values: readonly (string | null)[], expected: OwnerExpectation,
+    staticClaim = false): Promise<AccountOwner> {
     this.assertAccountWritable(expected.accountId)
     if (this.responsibilities.has(expected.accountId)) {
       throw new AccountRuntimeError('cloud/config-busy', 'An owner write for this account is still pending')
@@ -404,13 +425,20 @@ export class PostgresOwnerStore {
     const responsibility: MutationResponsibility = { epoch: expected.epoch, state: 'pending' }
     this.responsibilities.set(expected.accountId, responsibility)
     let owner: AccountOwner | undefined
-    try { owner = this.decode(await this.query(sql, values, true)) }
+    let admissionClosed = false
+    try {
+      const rows = await this.query(sql, values, true), row = rows[0]
+      admissionClosed = staticClaim && rows.length === 1 && row !== null && typeof row === 'object'
+        && Reflect.get(row, 'admission_closed') === true && Reflect.get(row, 'owner') === null
+      if (!admissionClosed) owner = this.decode(rows)
+    }
     catch (error) {
       if (error instanceof OwnerPgNotSubmittedError) this.responsibilities.delete(expected.accountId)
       else responsibility.state = 'unknown'
       throw error
     }
     this.responsibilities.delete(expected.accountId)
+    if (admissionClosed) throw new OwnerClaimAdmissionClosed()
     if (owner === undefined) throw new AccountRuntimeError('cloud/stale-generation', 'Owner CAS did not match; inspect current ownership before retrying')
     return owner
   }

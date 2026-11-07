@@ -13,21 +13,36 @@ const projection = `${ownerJsonSql} AS owner`
 /** Read ownership without acquiring it or interpreting lease expiry. */
 export const locateOwnerSql = `SELECT ${projection} FROM public.pe_account_owners WHERE account_id = $1`
 
-/** One atomic initial insert or expected-epoch update; a retained row is never deleted or reset. */
-export const claimOwnerSql = `WITH changed AS (
+function claimRowsSql(staticAdmission: boolean): string {
+  const allowed = staticAdmission ? 'AND EXISTS (SELECT 1 FROM admitted)' : ''
+  const result = staticAdmission ? 'owner, false AS admission_closed' : 'owner'
+  return `changed AS (
   UPDATE public.pe_account_owners
   SET owner_instance_id = $2, epoch = epoch + 1, phase = 'mounting', recipe_version = $3,
       heartbeat_at = statement_timestamp(), updated_at = statement_timestamp()
   WHERE account_id = $1 AND epoch = $4::bigint
     AND (phase = 'unowned' OR (phase = 'parked' AND owner_instance_id = $2))
+    ${allowed}
   RETURNING ${projection}
 ), initial AS (
   INSERT INTO public.pe_account_owners (account_id, owner_instance_id, epoch, phase, recipe_version)
-  SELECT $1, $2, 1, 'mounting', $3 WHERE $4::bigint IS NULL
+  SELECT $1, $2, 1, 'mounting', $3 WHERE $4::bigint IS NULL ${allowed}
   ON CONFLICT (account_id) DO NOTHING
   RETURNING ${projection}
 )
-SELECT owner FROM changed UNION ALL SELECT owner FROM initial`
+SELECT ${result} FROM changed UNION ALL SELECT ${result} FROM initial`
+}
+
+/** One atomic initial insert or expected-epoch update; a retained row is never deleted or reset. */
+export const claimOwnerSql = `WITH ${claimRowsSql(false)}`
+
+/** Lock the admitted static binding through the original owner CAS; a concurrent stop must wait for that claim to commit. */
+export const claimStaticOwnerSql = `WITH admitted AS MATERIALIZED (
+  SELECT account_id FROM public.pe_account_static_bindings
+  WHERE account_id = $1 AND inventory_sha256 = $5 AND phase IN ('reserved', 'preparing', 'ready')
+  FOR SHARE
+), ${claimRowsSql(true)}
+UNION ALL SELECT NULL::jsonb AS owner, true AS admission_closed WHERE NOT EXISTS (SELECT 1 FROM admitted)`
 
 /** Heartbeat observes an exact owned generation; it never changes phase or owner. */
 export const heartbeatOwnerSql = `UPDATE public.pe_account_owners
