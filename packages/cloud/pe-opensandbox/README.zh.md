@@ -61,6 +61,8 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 当前 Office 供应者保留 UTF-8 目录文本及 Markdown 显式二、三级标题编号。其配对服务端仅接受该工作负载的新建请求；此前 Office 及原始工作负载的摘要仅供关闭创建准入后的只读审计。原始发布归档、模板及内容版本保持不变。
 
+[候选供应商上下文生成器](runtime/server/prepare_supplier_context.py) 接受精确的 Office 服务端公开源码、一个显式不可变候选工作负载摘要和独占输出目录。它生成基于固定 Office 服务端的确定性双文件、仅 COPY 上下文，并记录源码、文件及上下文指纹。仅 `selected_images` 发生变化：创建仅选择候选镜像，关闭准入后的审计保留全部精确前驱及候选镜像。生成上下文不会构建镜像、注册供应商或修改 Root 选择。执行所有者须另行构建并验证实际不可变配对，再将其记入封闭清单；业务依赖仍由各自所属包维护。
+
 [Guest 上下文生成器](runtime/office-completion/heading-numbering/prepare_context.py) 是当前保留标题编号的 Office 工作负载的重建入口。在仓库根目录调用 `python3 packages/cloud/pe-opensandbox/runtime/office-completion/heading-numbering/prepare_context.py <retained-context-v6.tar> <exclusive-output-directory>`。须保留 SHA256 为 `4f17e2e7f6c92c9a5ce0c3b5e018e43c9d312d8a5bcb51f9d318f87e32962a90`、大小为 5,099,520 字节的原始上下文，以及外部不可变 UTF-8 Office 基础镜像 `sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97`；生成器拒绝不同的上下文字节。[单文件 COPY 配方](runtime/office-completion/heading-numbering/Dockerfile) 直接使用该基础镜像。仅执行 v6 依赖配方不会应用此修正。
 
 生成器校验原始归档及适配脚本，应用[两表达式补丁](runtime/office-completion/heading-numbering/heading-numbering.patch)，并在新输出目录写入 `context.tar` 和 `MANIFEST.json`。清单分别记录原始、补丁和运行时摘要。仅规范路径下的运行时适配脚本与原包不同；其余资源均须保留原字节，包括归档、模板和许可。源码准备不启动镜像构建，不代表执行合格，不激活已选配对或启用调用；实际构建与部署仍由唯一运行负责人执行。
