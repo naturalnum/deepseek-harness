@@ -1,6 +1,5 @@
 /** Root control composition retains original PG/storage/native work through ready and drain settlement. */
-import { StaticAccountBindings, accountAdministrationTransactionBudget, type AccountAdministrationBudgets, type StaticAccountInventory,
-  type StaticAccountAssignmentResolver } from './static-account-bindings.ts'
+import { StaticAccountBindings, accountAdministrationTransactionBudget } from './static-account-bindings.ts'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { posix } from 'node:path'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
@@ -49,7 +48,8 @@ import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
 import type { AccountBinding, AccountId, AccountOwner, AccountOwnerResolver, AccountRecoveryRuntime,
   AccountRuntimeService, AccountUse, InstanceId, RuntimeControlObservation, DrainCapacityReservation,
   DrainParticipant, MountCapacityReservation, ParticipantId, RootMetadataDatabase, RootIngressCloseOwner,
-  RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig } from './types.ts'
+  RootRecipeInput, RootRecipeObservation, RootRecoveryVerifier, RuntimeConfig, AccountAdministrationBudgets, StaticAccountInventory,
+  StaticAccountAssignmentResolver } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
