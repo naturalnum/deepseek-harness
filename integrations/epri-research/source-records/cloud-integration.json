@@ -7,7 +7,7 @@
   "cloudBaseCommit": "edcd1ea91ca0ddde78dedde322c600f43021920e",
   "importedSuiteTree": "2fb896ab57a04abba370e3e2b1c851f685127239",
   "transportPatch": "diffs/cloud-transports.patch",
-  "transportPatchSha256": "e4591135557a4025143f1ffa64804972132e4b6a8d301d027e40f75a358b2ae1",
+  "transportPatchSha256": "70a9e8b26b4e2732552ea0d0b49a7da3fb9ab3e5a172e4cf2d63878e8a28f79b",
   "files": [
     {
       "path": "src/reused/engine/index.ts",
@@ -38,6 +38,12 @@
       "importedSha256": "6510d91a5f480451dd22f8b571694d932481f1c945ae4c2344e49971385fd613",
       "cloudSha256": "6510d91a5f480451dd22f8b571694d932481f1c945ae4c2344e49971385fd613",
       "change": "retained-original"
+    },
+    {
+      "path": "src/server/service.mjs",
+      "importedSha256": "23772d8c4c3808587f820973bde4473fef9b7070e38d932ae416dab2cff6028b",
+      "cloudSha256": "65d72aee06b4152b2508230de6de4bdc1fb1eb4eb5c04a7d720ed747468efb54",
+      "change": "native-store-and-complete-chart-pagination"
     }
   ],
   "qualification": "Component tests only; separate native Linux image and authenticated Web acceptance required."

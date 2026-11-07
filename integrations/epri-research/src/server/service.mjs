@@ -637,11 +637,19 @@ export function openStore(directory, options = {}) {
           for(const chart of r.calculationBinding.charts){
             const rows=r.run.tables[chart.table] || [];
             const data=rows.filter(row=>Number.isFinite(row[chart.value])&&row[chart.label]).map((row,i)=>({id:String(i),label:String(row[chart.label]),value:row[chart.value]}));
-            const existing=s.artifacts.find(x=>belongs(x)&&x.sourceRecordId===r.id&&x.interactionChartId===chart.id);
-            if(!data.length || r.calculation.errors.length || r.calculation.pending.length){if(existing)s.artifacts=s.artifacts.filter(x=>x!==existing);continue;}
-            const spec=reportChartSpecSchema.parse({schema:'deepscientist.report_chart.v1',kind:'bar',title:chart.title,data});
-            const item={id:existing?.id || randomUUID(),sessionId,kind:'chart',sourceRecordId:r.id,interactionChartId:chart.id,title:chart.title,spec,svg:renderReportChartSvg(spec),createdAt:existing?.createdAt || now(),updatedAt:now(),calculation:calculated.execution};
-            if(existing)Object.assign(existing,item);else s.artifacts.push(item);
+            const pagePrefix=chart.id+':page:';
+            const existing=s.artifacts.filter(x=>belongs(x)&&x.kind==='chart'&&x.sourceRecordId===r.id&&(x.interactionChartId===chart.id||x.interactionChartId?.startsWith(pagePrefix)));
+            s.artifacts=s.artifacts.filter(x=>!existing.includes(x));
+            if(!data.length || r.calculation.errors.length || r.calculation.pending.length)continue;
+            // The retained bar-chart schema permits at most 200 points per artifact.
+            const pageSize=200,pages=Math.ceil(data.length/pageSize);
+            for(let page=0;page<pages;page++){
+              const interactionChartId=page===0?chart.id:pagePrefix+(page+1),previous=existing.find(x=>x.interactionChartId===interactionChartId);
+              const title=pages===1?chart.title:chart.title+'（第 '+(page+1)+'/'+pages+' 页，共 '+data.length+' 项）';
+              const spec=reportChartSpecSchema.parse({schema:'deepscientist.report_chart.v1',kind:'bar',title,data:data.slice(page*pageSize,(page+1)*pageSize),
+                ...(pages===1?{}:{caption:'按原始顺序完整分页；本页展示第 '+(page*pageSize+1)+'–'+Math.min((page+1)*pageSize,data.length)+' 项，共 '+data.length+' 项，未抽样或省略。'})});
+              s.artifacts.push({id:previous?.id || randomUUID(),sessionId,kind:'chart',sourceRecordId:r.id,interactionChartId,title,spec,svg:renderReportChartSvg(spec),createdAt:previous?.createdAt || now(),updatedAt:now(),calculation:calculated.execution});
+            }
           }
         }
         event(r, op, actor, calculated?'Airalogy run '+calculated.execution.runId+'; input '+calculated.execution.inputSha256+(agentChangedData?'; review checks reset':''):agentChangedData ? "draft saved; review checks reset after agent changes" : "draft saved");

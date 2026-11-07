@@ -2,6 +2,7 @@
 import {join} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
 import {fileURLToPath} from 'node:url'
+import {readFileSync} from 'node:fs'
 import {loadOverlayPatches} from '@deepseek-ai/dsh-app-boot'
 import {expect,it,vi} from 'vitest'
 import {ToolCallId} from '@deepseek-ai/dsh-llm'
@@ -210,6 +211,62 @@ it('returns committed task create/get/open views as bounded lossless JSON throug
   const other=await a.graph.ctx.sessionController.create({}),otherAgent=a.graph.ctx.agents.get(other.sessionId)
   if(otherAgent===undefined)throw new Error('Original second Session Agent absent')
   expect((await a.graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name:'research_task_get',arguments:{id:task.id},agent:otherAgent,signal:new AbortController().signal})).isError).toBe(true)
+})
+
+it('preserves all 500 imported rows in bounded chart pages and removes only obsolete generated pages on a two-row revision',async()=>{
+  const a=await fixture('research-chart-pages',{maxOutputBytes:4096}),targets=['measurements.missing_rate','expected_total','valid_total','missing_rate']
+  const observed:number[]=[]
+  const original=a.graph.adapter.stream.bind(a.graph.adapter),called=new Set<string>()
+  vi.spyOn(a.graph.adapter,'stream').mockImplementation(async function*(options){
+    const text=options.messages.flatMap(message=>message.content).filter(block=>block.type==='text').map(block=>block.text).join('\n')
+    const id=[...text.matchAll(/requestId=([a-f0-9-]{36})/g)].at(-1)?.[1]
+    if(id&&!called.has(id)){called.add(id);yield {type:'block-start',index:0,blockType:'tool-call'};yield {type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('chart-intent-'+called.size),name:'research_workbench_execute',arguments:JSON.stringify({requestId:id})}};yield {type:'finish',reason:{kind:'tool-calls'}}}
+    else yield* original(options)
+  })
+  // Scientific results are scripted at the managed transport; CSV parsing, Store commits, chart schema/rendering and native FS are real.
+  const managed=await managedFixture(a,false,undefined,undefined,payload=>{
+    if(payload.action===undefined)return {python:'3.13.18',airalogy:'0.16.0'}
+    if(payload.action==='parse_protocol')return {success:true,data:{assigners:Object.fromEntries(targets.map(id=>[id,{mode:'auto'}]))}}
+    if(payload.action!=='recalculate')throw new Error('Unexpected scientific transport operation')
+    const params=payload.params as {values:Record<string,unknown>;tables:{measurements:Array<{channel:string;expected:number;valid:number}>}}
+    const rows=params.tables.measurements;observed.push(rows.length)
+    expect([2,500]).toContain(rows.length)
+    return {success:true,data:{values:{...params.values,expected_total:rows.length===500?50000:300,valid_total:rows.length===500?45000:270,missing_rate:10},
+      tables:{measurements:rows.map(row=>({...row,missing_rate:10}))},targets,pending:[],errors:[]}}
+  },4096)
+  async function reviewed<T>(op:string,args:Record<string,unknown>):Promise<T>{
+    const value=await a.api(op,args);await a.agent.whenIdle();return value as T
+  }
+  type Chart={id:string;interactionChartId?:string;title:string;sourceRecordId?:string;spec:{data:Array<{id:string;label:string;value:number}>;caption?:string};svg:string}
+  type View={id:string;record:{id:string;revision:number;run:{tables:{measurements:Array<{channel:string;expected:number;valid:number;missing_rate:number}>};values:{expected_total:number;valid_total:number;missing_rate:number}};calculation:{errors:unknown[];pending:unknown[]}};charts:Chart[]}
+  const task=await reviewed<{id:string}>('task_create',{objective:'Synthetic 500-row chart capacity',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0',requestId:'pages-task'})
+  const opened=await reviewed<View>('task_open',{id:task.id,reason:'Explicit synthetic source review',requestId:'pages-open'})
+  const custom=await reviewed<Chart>('chart_render',{spec:{schema:'deepscientist.report_chart.v1',kind:'bar',title:'User-owned chart',data:[{id:'user',label:'Keep this chart',value:42}]},requestId:'user-chart'})
+  async function upload(name:string){return reviewed<{reference:string}>('attachment_put',{name,contentBase64:readFileSync(new URL('./fixtures/'+name,import.meta.url)).toString('base64'),requestId:name})}
+  const file=await upload('power-quality-500.csv'),args={id:task.id,reference:file.reference,table:'measurements',expectedRecordRevision:opened.record.revision,requestId:'pages-500'}
+  const full=await reviewed<View>('task_import_csv',args)
+  expect(full.record.run.tables.measurements).toHaveLength(500)
+  expect(full.record.run.values).toMatchObject({expected_total:50000,valid_total:45000,missing_rate:10})
+  expect(full.record.calculation).toMatchObject({errors:[],pending:[]})
+  expect(full.charts.map(chart=>chart.spec.data.length)).toEqual([200,200,100])
+  expect(full.charts.flatMap(chart=>chart.spec.data)).toEqual(full.record.run.tables.measurements.map((row,i)=>({id:String(i),label:row.channel,value:row.missing_rate})))
+  expect(full.charts.map(chart=>chart.interactionChartId)).toEqual(['missing-rate','missing-rate:page:2','missing-rate:page:3'])
+  full.charts.forEach((chart,i)=>{expect(chart.title).toContain('第 '+(i+1)+'/3 页，共 500 项');expect(chart.spec.caption).toContain('未抽样或省略');expect(chart.svg).toContain('500')})
+  expect(Buffer.byteLength(JSON.stringify(full))).toBeLessThan(limits.maxReplyBytes)
+  expect((await reviewed<View>('task_import_csv',args)).charts.map(chart=>chart.id)).toEqual(full.charts.map(chart=>chart.id))
+  const refreshed=await reviewed<View>('task_import_csv',{...args,expectedRecordRevision:full.record.revision,requestId:'pages-500-refresh'})
+  expect(refreshed.charts.map(chart=>chart.id)).toEqual(full.charts.map(chart=>chart.id))
+  const smaller=await upload('power-quality-2.csv')
+  const restored=await reviewed<View>('task_import_csv',{...args,reference:smaller.reference,expectedRecordRevision:refreshed.record.revision,requestId:'pages-2'})
+  expect(restored.record.run.tables.measurements).toHaveLength(2)
+  expect(restored.record.run.values).toMatchObject({expected_total:300,valid_total:270,missing_rate:10})
+  expect(restored.charts).toHaveLength(1);expect(restored.charts[0]!.id).toBe(full.charts[0]!.id)
+  expect(restored.charts[0]!.title).toBe('各测点缺失率（%）')
+  const state=await a.api('state') as {artifacts:Chart[]}
+  expect(state.artifacts.filter(chart=>chart.sourceRecordId===restored.record.id)).toHaveLength(1)
+  expect(state.artifacts.find(chart=>chart.id===custom.id)).toEqual(custom)
+  expect(observed).toEqual([500,500,2]);expect(managed.charges).toEqual({resident:0,active:0})
+  console.info(JSON.stringify({evidence:'complete-chart-pagination-component',rows:500,pages:full.charts.map(chart=>chart.spec.data.length),replyBytes:Buffer.byteLength(JSON.stringify(full)),maxReplyBytes:limits.maxReplyBytes,commandTailBytes:4096,scientificTransport:'scripted'}))
 })
 
 it('runs an approved package through actual native confinement and managed subprocess ownership, copying file results before releasing each command',async()=>{

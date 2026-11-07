@@ -7,6 +7,34 @@ import {randomUUID} from 'node:crypto';
 import {openStore} from '../dist/server/service.mjs';
 import {openAiraArchive} from '../src/reused/aira/index.ts';
 
+test('real Airalogy CSV recalculation retains all 500 rows across three complete chart pages and restores two rows',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'airalogy-chart-pages-')),store=openStore(directory);
+ const call=(op,args={})=>store.execute(op,args,'human',undefined,'real-chart-pages');
+ const put=(op,args)=>call(op,{...args,requestId:randomUUID()});
+ try{
+  assert.equal((await call('engine_status')).ready,true,'A real Airalogy runtime is required');
+  let task=await put('task_create',{objective:'Synthetic 500-row complete chart verification',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0'});
+  task=await put('task_open',{id:task.id,reason:'Explicit synthetic method source review'});
+  const custom=await put('chart_render',{spec:{schema:'deepscientist.report_chart.v1',kind:'bar',title:'User chart',data:[{id:'user',label:'Retain',value:42}]}});
+  const upload=name=>put('attachment_put',{name,contentBase64:readFileSync(new URL('./fixtures/'+name,import.meta.url)).toString('base64')});
+  const large=await upload('power-quality-500.csv');
+  task=await put('task_import_csv',{id:task.id,reference:large.reference,table:'measurements',expectedRecordRevision:task.record.revision});
+  assert.equal(task.record.run.tables.measurements.length,500);
+  assert.deepEqual(task.record.calculation.errors,[]);assert.deepEqual(task.record.calculation.pending,[]);
+  assert.equal(task.record.run.values.expected_total,50000);assert.equal(task.record.run.values.valid_total,45000);assert.equal(task.record.run.values.missing_rate,10);
+  assert.deepEqual(task.charts.map(chart=>chart.spec.data.length),[200,200,100]);
+  assert.deepEqual(task.charts.flatMap(chart=>chart.spec.data),task.record.run.tables.measurements.map((row,i)=>({id:String(i),label:row.channel,value:row.missing_rate})));
+  assert.ok(Buffer.byteLength(JSON.stringify(task))<1048576,'Complete 500-row view fits the component 1 MiB reply budget');
+  const firstId=task.charts[0].id;
+  const small=await upload('power-quality-2.csv');
+  task=await put('task_import_csv',{id:task.id,reference:small.reference,table:'measurements',expectedRecordRevision:task.record.revision});
+  assert.equal(task.charts.length,1);assert.equal(task.charts[0].id,firstId);assert.equal(task.charts[0].spec.data.length,2);
+  assert.equal(task.record.run.values.expected_total,300);assert.equal(task.record.run.values.valid_total,270);assert.equal(task.record.run.values.missing_rate,10);
+  const state=await call('state');assert.equal(state.artifacts.filter(chart=>chart.sourceRecordId===task.record.id).length,1);
+  assert.deepEqual(state.artifacts.find(chart=>chart.id===custom.id),custom);
+ }finally{store.close();rmSync(directory,{recursive:true,force:true});}
+});
+
 test('real Airalogy table edits recalculate rows and totals, persist calculation hashes and charts, reject stale writes and protect review',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'airalogy-interactive-'));let store=openStore(directory);
  const call=(op,args={},actor='human',session='interactive-A')=>store.execute(op,args,actor,undefined,session);

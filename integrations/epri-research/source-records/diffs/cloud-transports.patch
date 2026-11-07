@@ -38,6 +38,47 @@ index c4e6a455e9..1fdd6ddab4 100644
    if(!result.success)throw new Error(result.message || 'Workflow assigner failed');
    return result.data?.outputs || {};
  }
+diff --git a/integrations/epri-research/src/reused/engine/protocol_executor.py b/integrations/epri-research/src/reused/engine/protocol_executor.py
+index d936b66a93..01d326261f 100644
+--- a/integrations/epri-research/src/reused/engine/protocol_executor.py
++++ b/integrations/epri-research/src/reused/engine/protocol_executor.py
+@@ -95,7 +95,8 @@ class ProtocolStdoutLogger:
+             self._buffer = ""
+ 
+ 
+-def import_module(module_name, force_reload=False):
++def import_module(module_name, force_reload=False, *, optional=False):
++    """Ignore an absent optional leaf; preserve resolution and initialization errors."""
+     importlib.invalidate_caches()
+ 
+     if not force_reload and module_name in sys.modules:
+@@ -104,6 +105,8 @@ def import_module(module_name, force_reload=False):
+     previous = sys.modules.pop(module_name, None)
+ 
+     spec = importlib.util.find_spec(module_name)
++    if optional and spec is None:
++        return None
+     if spec is None or spec.loader is None:
+         logger.warning(f"module {module_name} not found")
+         return None
+@@ -151,7 +154,7 @@ def _load_aimd_model(protocol_name: str):
+ 
+ 
+ def _merge_protocol_var_model(protocol_name: str, aimd_var_model):
+-    model = import_module(f"{protocol_name}.model")
++    model = import_module(f"{protocol_name}.model", optional=True)
+     if model is not None and hasattr(model, "VarModel"):
+         return merge_var_models(aimd_var_model, model.VarModel)
+     return aimd_var_model
+@@ -317,7 +320,7 @@ def assign_variable(protocol_name: str, params: dict) -> dict:
+     fields = aimd_model.VarModel.model_fields
+ 
+     # load model
+-    var_model = import_module(f"{protocol_name}.model")
++    var_model = import_module(f"{protocol_name}.model", optional=True)
+     if var_model is not None and hasattr(var_model, "VarModel"):
+         fields = deep_merge(fields, var_model.VarModel.model_fields)
+ 
 diff --git a/integrations/epri-research/src/reused/literature/literatureSearch.ts b/integrations/epri-research/src/reused/literature/literatureSearch.ts
 index 56a53a449c..4f449b5a95 100644
 --- a/integrations/epri-research/src/reused/literature/literatureSearch.ts
@@ -139,44 +180,80 @@ index 56a53a449c..4f449b5a95 100644
    return (payload.notes || [])
      .map((note, index): LiteraturePaper => {
        const content = (note.content || {}) as Record<string, unknown>;
-diff --git a/integrations/epri-research/src/reused/engine/protocol_executor.py b/integrations/epri-research/src/reused/engine/protocol_executor.py
-index d936b66a93..01d326261f 100644
---- a/integrations/epri-research/src/reused/engine/protocol_executor.py
-+++ b/integrations/epri-research/src/reused/engine/protocol_executor.py
-@@ -95,7 +95,8 @@ class ProtocolStdoutLogger:
-             self._buffer = ""
- 
- 
--def import_module(module_name, force_reload=False):
-+def import_module(module_name, force_reload=False, *, optional=False):
-+    """Ignore an absent optional leaf; preserve resolution and initialization errors."""
-     importlib.invalidate_caches()
- 
-     if not force_reload and module_name in sys.modules:
-@@ -104,6 +105,8 @@ def import_module(module_name, force_reload=False):
-     previous = sys.modules.pop(module_name, None)
- 
-     spec = importlib.util.find_spec(module_name)
-+    if optional and spec is None:
-+        return None
-     if spec is None or spec.loader is None:
-         logger.warning(f"module {module_name} not found")
-         return None
-@@ -151,7 +154,7 @@ def _load_aimd_model(protocol_name: str):
- 
- 
- def _merge_protocol_var_model(protocol_name: str, aimd_var_model):
--    model = import_module(f"{protocol_name}.model")
-+    model = import_module(f"{protocol_name}.model", optional=True)
-     if model is not None and hasattr(model, "VarModel"):
-         return merge_var_models(aimd_var_model, model.VarModel)
-     return aimd_var_model
-@@ -317,7 +320,7 @@ def assign_variable(protocol_name: str, params: dict) -> dict:
-     fields = aimd_model.VarModel.model_fields
- 
-     # load model
--    var_model = import_module(f"{protocol_name}.model")
-+    var_model = import_module(f"{protocol_name}.model", optional=True)
-     if var_model is not None and hasattr(var_model, "VarModel"):
-         fields = deep_merge(fields, var_model.VarModel.model_fields)
- 
+diff --git a/integrations/epri-research/src/server/service.mjs b/integrations/epri-research/src/server/service.mjs
+index 4c40240cd0..064953f597 100644
+--- a/integrations/epri-research/src/server/service.mjs
++++ b/integrations/epri-research/src/server/service.mjs
+@@ -96,9 +96,11 @@ function scalar(field, value, attachmentExists) {
+ export const operations = Object.keys(contracts);
+ export {parseAimdProtocol};
+ const humanOnly = new Set(["record_bind_engine", "record_submit", "record_reopen", "record_archive", "record_restore", "history_list", "history_associate", "workspace_import"]);
+-export function openStore(directory) {
++export function openStore(directory, options = {}) {
+   mkdirSync(directory, { recursive: true, mode: 0o700 });
+-  const db = new DatabaseSync(join(directory, "research.sqlite"));
++  const db = options.openDatabase
++    ? options.openDatabase(join(directory, "research.sqlite"))
++    : new DatabaseSync(join(directory, "research.sqlite"));
+   db.exec(
+     "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, hash TEXT NOT NULL, response TEXT NOT NULL);",
+   );
+@@ -114,10 +116,10 @@ export function openStore(directory) {
+   const read = () =>
+     JSON.parse(db.prepare("SELECT body FROM state WHERE id=1").get().body);
+   const access=accessStore(db);
+-  const documents=documentStore(db,directory);
++  const documents=documentStore(db,directory,options.documents);
+   const science = scienceStore(db, read);
+-  const projectGit = projectGitStore(db,directory);
+-  const engine = engineStore(db, directory);
++  const projectGit = projectGitStore(db,directory,options.git);
++  const engine = engineStore(db, directory,options.engine);
+   const tasks = researchTaskStore({db,read,mutate,execute,science,engine});
+   // Add pre-conversation attachments once; retain all historical bytes and references.
+   const initial = read();
+@@ -388,7 +390,7 @@ export function openStore(directory) {
+       const n = a.max_results ?? 5;
+       if (!Number.isInteger(n) || n < 1 || n > 20)
+         fail("INVALID", "max_results must be 1..20");
+-      const result = await searchLiterature({
++      const result = await (options.literatureSearch || searchLiterature)({
+         query: a.query,
+         maxResults: n,
+         sources: [a.source || "openalex"],
+@@ -635,11 +637,19 @@ export function openStore(directory) {
+           for(const chart of r.calculationBinding.charts){
+             const rows=r.run.tables[chart.table] || [];
+             const data=rows.filter(row=>Number.isFinite(row[chart.value])&&row[chart.label]).map((row,i)=>({id:String(i),label:String(row[chart.label]),value:row[chart.value]}));
+-            const existing=s.artifacts.find(x=>belongs(x)&&x.sourceRecordId===r.id&&x.interactionChartId===chart.id);
+-            if(!data.length || r.calculation.errors.length || r.calculation.pending.length){if(existing)s.artifacts=s.artifacts.filter(x=>x!==existing);continue;}
+-            const spec=reportChartSpecSchema.parse({schema:'deepscientist.report_chart.v1',kind:'bar',title:chart.title,data});
+-            const item={id:existing?.id || randomUUID(),sessionId,kind:'chart',sourceRecordId:r.id,interactionChartId:chart.id,title:chart.title,spec,svg:renderReportChartSvg(spec),createdAt:existing?.createdAt || now(),updatedAt:now(),calculation:calculated.execution};
+-            if(existing)Object.assign(existing,item);else s.artifacts.push(item);
++            const pagePrefix=chart.id+':page:';
++            const existing=s.artifacts.filter(x=>belongs(x)&&x.kind==='chart'&&x.sourceRecordId===r.id&&(x.interactionChartId===chart.id||x.interactionChartId?.startsWith(pagePrefix)));
++            s.artifacts=s.artifacts.filter(x=>!existing.includes(x));
++            if(!data.length || r.calculation.errors.length || r.calculation.pending.length)continue;
++            // The retained bar-chart schema permits at most 200 points per artifact.
++            const pageSize=200,pages=Math.ceil(data.length/pageSize);
++            for(let page=0;page<pages;page++){
++              const interactionChartId=page===0?chart.id:pagePrefix+(page+1),previous=existing.find(x=>x.interactionChartId===interactionChartId);
++              const title=pages===1?chart.title:chart.title+'（第 '+(page+1)+'/'+pages+' 页，共 '+data.length+' 项）';
++              const spec=reportChartSpecSchema.parse({schema:'deepscientist.report_chart.v1',kind:'bar',title,data:data.slice(page*pageSize,(page+1)*pageSize),
++                ...(pages===1?{}:{caption:'按原始顺序完整分页；本页展示第 '+(page*pageSize+1)+'–'+Math.min((page+1)*pageSize,data.length)+' 项，共 '+data.length+' 项，未抽样或省略。'})});
++              s.artifacts.push({id:previous?.id || randomUUID(),sessionId,kind:'chart',sourceRecordId:r.id,interactionChartId,title,spec,svg:renderReportChartSvg(spec),createdAt:previous?.createdAt || now(),updatedAt:now(),calculation:calculated.execution});
++            }
+           }
+         }
+         event(r, op, actor, calculated?'Airalogy run '+calculated.execution.runId+'; input '+calculated.execution.inputSha256+(agentChangedData?'; review checks reset':''):agentChangedData ? "draft saved; review checks reset after agent changes" : "draft saved");
+@@ -680,5 +690,9 @@ export function openStore(directory) {
+       fail("INVALID", "Unsupported operation");
+     }, sessionId);
+   }
+-  return { execute, access, close: () => {engine.close();db.close();} };
++  return { execute, access, waitForRun: (id,session) => engine.waitForRun(id,session), close: () => {
++    const stopped=engine.close();
++    if(stopped)return stopped.finally(()=>db.close());
++    db.close();
++  } };
+ }
