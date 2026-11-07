@@ -30,6 +30,8 @@ kind: "package-reference"
 
 需要执行经审核的云端开放规则，并保留原生 Session DTO 和业务操作时使用本包。认证、owner 选路、项目文件系统核验和账户就绪仍是前置条件。
 
+可信账户插件可通过 `CloudAccountApi.registerCapabilityInventory(namespace, inspect)` 注册自身的 Remote 清单。首次审核捕获注册 fiber 的有效服务，经原 Gateway 检查每个方法，并为 account-session 条目核验 Session 资源。注册和撤销都会使先前审核失效；分派时重新检查同一贡献。部署仍须批准每个精确端点、处理者和守卫。此注册不增加 Fetch 路由、传输或持久化拥有者。
+
 ### Minimal configuration
 
 [已执行的 Loader 夹具](tests/fixtures/root.cordis.yml) 展示根配置；空清单不会开放操作。产品组合选择本包的 `/root` 和 `/account` 入口；必需集成缺失时，账户入口拒绝挂载。

@@ -5,6 +5,7 @@ import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './work
 import type { WorkspaceTransferLimits } from './types.ts'
 import { createWorkspaceUploadConsumer, type WorkspaceUploadBorrow, type WorkspaceUploadSettlement } from './workspace-upload.ts'
 import { inventoryMethodMatches } from './inventory-method.ts'
+import { AccountCapabilityInventories } from './capability-inventory.ts'
 import { approvedSettingsMatch } from './approved-settings.ts'
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -102,6 +103,7 @@ export class CloudAccountApi extends Service {
   /** Native constructors fixed before their Loader activation, using this graph's existing save hooks. */
   readonly providers: Readonly<Pick<AccountApiInstall, 'configEditor' | 'credentials'> & { readonly pluginManager?: typeof PluginManager }>
   private readonly installation: AccountApiInstall
+  private readonly capabilityInventories: AccountCapabilityInventories
   private readonly saves: ConfigSaveBarrier
   private readonly mountCurrent: AccountApiPreparation['assertMountCurrent']
   private readonly businessCurrent: AccountApiPreparation['assertBusinessCurrent']
@@ -167,6 +169,8 @@ export class CloudAccountApi extends Service {
     this.reconfiguring = input.assertReconfiguring
     this.startupPhase = input.observeStartupPhase
     this.installation = installation
+    this.capabilityInventories = new AccountCapabilityInventories(input.binding.recipeVersion,
+      input.maxNativeInventoryEntries ?? 0, () => { installation.exposure.invalidate() })
     this.saves = input.saves
     const plugins = input.plugins === undefined ? undefined
       : new AccountPluginControl(ctx, input.saves, input.plugins, () => { this.assertInstalled() })
@@ -286,6 +290,7 @@ export class CloudAccountApi extends Service {
     const presets = this.presets.native?.inspect()
     const schedule = this.schedule.native?.inspect()
     const sessionFeedback = this.sessionFeedback.native?.inspect(), messageFeedback = this.messageFeedback.native?.inspect()
+    const capabilities = this.capabilityInventories.inspect(owner)
     const fetch = this.inspectFetchRoutes()
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
@@ -295,11 +300,11 @@ export class CloudAccountApi extends Service {
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
         ...pluginInventory?.rpcEndpoints ?? [], ...presets?.rpcEndpoints ?? [],
         ...questions?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
-        ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [],
+        ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [], ...capabilities.rpcEndpoints,
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [], ...questions?.streamEndpoints ?? [],
-        ...files?.streamEndpoints ?? [], ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
+        ...files?.streamEndpoints ?? [], ...capabilities.streamEndpoints, ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       exactFetchRoutes: [...fetch.native, ...fetch.root],
     }
@@ -340,6 +345,17 @@ export class CloudAccountApi extends Service {
   invalidate(): void { this.installation.exposure.invalidate() }
 
   /**
+   * Register an independent account capability for the original native inventory audit.
+   * @param namespace Exact original Cordis service key and wire namespace.
+   * @param inspect Current contribution; every declared method is verified through the actual Gateway.
+   * @returns Calling fiber's disposer; registering and withdrawing revoke prior exposure approval.
+   */
+  registerCapabilityInventory(namespace: string, inspect: () => ExposureInventory): () => void {
+    this.assertInstalled(this.ctx)
+    return this.capabilityInventories.register(this.ctx, namespace, inspect)
+  }
+
+  /**
    * Require a reviewed native unary endpoint after business admission.
    * @param endpoint Native unary URL endpoint.
    * @returns The audited declaration after business admission.
@@ -347,6 +363,7 @@ export class CloudAccountApi extends Service {
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireRpc(endpoint)
+    this.capabilityInventories.assertEndpoint(this.ctx, row, 'rpc')
     if (endpoint === '$events/result' && this.firstScreen.events?.inspect().resultEndpoint !== endpoint) this.nativeUnavailable()
     if (endpoint.startsWith('commands/')) {
       if (this.commands.native === undefined) this.nativeUnavailable()
@@ -445,6 +462,7 @@ export class CloudAccountApi extends Service {
   requireStream(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireStream(endpoint)
+    this.capabilityInventories.assertEndpoint(this.ctx, row, 'stream')
     if (endpoint === 'userQuestions/attachWait') {
       if (this.questions.native === undefined) this.nativeUnavailable()
       this.questions.native.inspect()
