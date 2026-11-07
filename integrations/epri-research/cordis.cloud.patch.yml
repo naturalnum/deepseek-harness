@@ -13,7 +13,7 @@
         maxConcurrentFileTransfers: 2
         maxOutputBytes: 32768
         graceMs: 1000
-        pythonPath: /opt/dsh/runtime/dependencies/python/bin/python3
+        pythonPath: /opt/dsh/research/python/bin/python3
         gitPath: /usr/bin/git
         maxConcurrentResourcePreparations: 1
         maxSkillProviders: 64

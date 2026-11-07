@@ -52,11 +52,13 @@ Root 必须通过 `commands.additionalTools` 精确批准以下工具，并按�
 
 ## 科研镜像
 
-[Dockerfile.cloud](Dockerfile.cloud) 从精确固定的 Office workload 镜像派生，扩展原运行时 venv，约束全部继承的 Python 发行版本，保留 Office 运行时清单指纹和只读布局，并另写包含实际包/模型指纹的 `research.json`。它不会修改 Root 的 workload 或 SDK-server 镜像白名单。
+[Dockerfile.cloud](Dockerfile.cloud) 从精确固定的 Office workload 镜像派生。原 Office 解释器仍为 `/opt/dsh/runtime/dependencies/python/bin/python3` 下的 Python 3.12.13；科研执行另用 `/opt/dsh/research/python/bin/python3`，默认 Office/Session PATH 及其包保持不变。新增构建输入、安装文件及最终 `research.json` 均位于 `/opt/dsh/research` 下，结束时仅将该目录设为只读。Root 的 workload 与 SDK-server 镜像白名单仍由各自流程负责。
 
-保留的执行器要求 Python 3.13 和 `airalogy==0.16.0`。该 Airalogy 版本明确要求 Python >=3.13，并固定解析/验证依赖。原生 PDF/OCR 使用 PyMuPDF 1.26.7、RapidOCR 3.10.0、ONNX Runtime 1.31.1 及继承的 NumPy/Pillow。固定 RapidOCR wheel 已包含所需三个离线 ONNX 模型，镜像检查会实际加载它们。[Airalogy 发行页](https://pypi.org/project/airalogy/0.16.0/)、[RapidOCR 发行页](https://pypi.org/project/rapidocr/3.10.0/)、[ONNX Runtime 发行页](https://pypi.org/project/onnxruntime/1.31.1/)、[PyMuPDF 发行页](https://pypi.org/project/pymupdf/1.26.7/)。
+[cloud-python.json](source-records/cloud-python.json) 固定官方 Astral CPython 3.13.18 Linux arm64 GNU install-only stripped 归档，发行版为 20261026：大小 29,492,455 字节，SHA-256 为 `578d9da1983463ffb0c8c98ab0da2f18177f44069328eb0af847860c1eb05c3e`。冻结构建上下文前，将校验后的归档放在 `runtime-input/cpython-3.13.18-aarch64.tar.gz`；该本地输入不纳入 Git。归档的 Python 许可保留在其标准库目录内。ELF 解释器使用 `$ORIGIN/../lib` 及兼容 GLIBC 2.17 的符号；科学包原生 wheel 可能要求更高版本 glibc 和 `libstdc++`。仅安装二进制 wheel，避免依赖构建期编译器/sysconfig 的重定位假设。仍须通过真实 Linux imports 和 `ldd` 检查。[官方发行版](https://github.com/astral-sh/python-build-standalone/releases/tag/20261026)、[运行要求](https://github.com/astral-sh/python-build-standalone/blob/main/docs/running.rst)、[构建期路径限制](https://github.com/astral-sh/python-build-standalone/blob/main/docs/quirks.rst)。
 
-仅在独立后端以本包为 Docker context 构建。新不可变 digest 必须经过原 RootDeployment 及精确 SDK-server/image-policy 资格验证后才能部署。实际检查受管 Python 版本/import、协议解析、变量赋值/验证、工作流转换、CSV 自动重算、生成文件及中英文扫描文档 OCR。普通命令不能向只读运行时安装依赖。缺少依赖时，相应状态保持不可用，真实操作明确失败。提供技能目录并不代表其全部第三方科学服务、可执行程序和凭据已安装。
+独立解释器安装 `airalogy==0.16.0`、PyMuPDF 1.26.7、RapidOCR 3.10.0、ONNX Runtime 1.31.1、NumPy 2.3.4、Pillow 12.0.0 和 pandas 2.3.3，不继承 Office 包。固定 RapidOCR wheel 包含三个离线 ONNX 模型，资格检查加载其实际字节。探测先记录原 Office 解释器、完整包表、运行时清单及受保护的 runtime/skills/fonts/stdlib/LibreOffice 文件树，在安装后与科研 imports 后分别比较。独立调用的科学探测要求精确解释器/来源记录及包版本，拒绝其他解释器导入路径，加载保留执行器 API 和模型，并记录实际指纹；其清单仅证明这些构建检查。[Airalogy 发行页](https://pypi.org/project/airalogy/0.16.0/)、[RapidOCR 发行页](https://pypi.org/project/rapidocr/3.10.0/)、[ONNX Runtime 发行页](https://pypi.org/project/onnxruntime/1.31.1/)、[PyMuPDF 发行页](https://pypi.org/project/pymupdf/1.26.7/)。
+
+Root 在独立 Linux 后端以本包和固定归档为 Docker context 构建。当前 classic builder 接受本地 `sha256:` 基础镜像选择；准备源码不会调用 Docker。Linux 按大小写敏感规则展开；在大小写不敏感的 macOS 文件系统中，内置 terminfo 名称可能冲突，因此该 Host 上的归档、指纹与 ELF 检查不能替代 Linux 执行验收。新不可变摘要仍须经过原 RootDeployment 及精确 SDK-server/image-policy 资格验证。须在原进程限制内检查实际受管 Python 版本/import、协议解析、变量赋值/验证、工作流转换、CSV 自动重算、生成文件及中英文扫描文档 OCR。缺少依赖时，相应状态保持不可用，实际操作明确失败；提供技能目录不代表其全部第三方服务、可执行程序和凭据已安装。
 
 ## 开发与持续升级
 

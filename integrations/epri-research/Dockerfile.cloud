@@ -1,16 +1,14 @@
-# Build in an independent backend. Root must qualify and pin the resulting exact image digest separately.
+# Classic builder accepts this exact local image ID. Root qualifies the resulting new workload/server pair separately.
 ARG BASE_IMAGE=sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461
 FROM ${BASE_IMAGE}
 USER root
-COPY cloud-requirements.txt /tmp/research-requirements.txt
-COPY scripts/cloud-runtime-probe.py /tmp/cloud-runtime-probe.py
-COPY src/server/document-native.py /tmp/research-document-native.py
-RUN /opt/dsh/runtime/dependencies/python/bin/python3 -c "import hashlib,importlib.metadata,json,pathlib; p={d.metadata['Name'].lower().replace('_','-'):d.version for d in importlib.metadata.distributions()}; pathlib.Path('/tmp/office-baseline.json').write_text(json.dumps({'packages':p,'officeRuntimeSha256':hashlib.sha256(pathlib.Path('/opt/dsh/runtime/runtime.json').read_bytes()).hexdigest()})); pathlib.Path('/tmp/office-constraints.txt').write_text(''.join(n+'=='+v+'\n' for n,v in sorted(p.items())))" \
-    && chmod -R u+w /opt/dsh/runtime/dependencies/python \
-    && /opt/dsh/runtime/dependencies/python/bin/python3 -m pip install --no-cache-dir --disable-pip-version-check \
-       --constraint /tmp/office-constraints.txt --requirement /tmp/research-requirements.txt \
-    && /opt/dsh/runtime/dependencies/python/bin/python3 /tmp/cloud-runtime-probe.py \
-       --baseline /tmp/office-baseline.json --runtime /opt/dsh/runtime/runtime.json \
-       --document-script /tmp/research-document-native.py --output /opt/dsh/runtime/research.json \
-    && chmod -R a-w /opt/dsh/runtime \
-    && rm /tmp/research-requirements.txt /tmp/cloud-runtime-probe.py /tmp/research-document-native.py /tmp/office-baseline.json /tmp/office-constraints.txt
+COPY cloud-requirements.txt scripts/cloud-runtime-probe.py scripts/install-cloud-python.py source-records/cloud-python.json src/server/document-native.py runtime-input/cpython-3.13.18-aarch64.tar.gz /opt/dsh/research/.build/
+RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.build/cloud-runtime-probe.py snapshot-office --output /opt/dsh/research/.build/office-before.json \
+    && /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.build/install-cloud-python.py --archive /opt/dsh/research/.build/cpython-3.13.18-aarch64.tar.gz --record /opt/dsh/research/.build/cloud-python.json --destination /opt/dsh/research \
+    && mkdir /opt/dsh/research/.build/tmp \
+    && TMPDIR=/opt/dsh/research/.build/tmp /opt/dsh/research/python/bin/python3 -I -B -m pip --isolated install --no-compile --no-cache-dir --disable-pip-version-check --only-binary=:all: --prefix /opt/dsh/research/python --requirement /opt/dsh/research/.build/cloud-requirements.txt \
+    && /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.build/cloud-runtime-probe.py verify-office --baseline /opt/dsh/research/.build/office-before.json --output /opt/dsh/research/.build/office-preserved.json \
+    && /opt/dsh/research/python/bin/python3 -I -B /opt/dsh/research/.build/cloud-runtime-probe.py verify-science --record /opt/dsh/research/.build/cloud-python.json --office /opt/dsh/research/.build/office-preserved.json --document-script /opt/dsh/research/.build/document-native.py --output /opt/dsh/research/research.json \
+    && /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.build/cloud-runtime-probe.py verify-office --baseline /opt/dsh/research/.build/office-before.json --output /opt/dsh/research/.build/office-preserved.json \
+    && rm -rf /opt/dsh/research/.build \
+    && chmod -R a-w /opt/dsh/research
