@@ -220,7 +220,7 @@ export async function produceCloudBootstrap(
   const releaseArchive = api.skillReleaseBinaryPolicy()
   const disabled = Object.freeze({ state: 'disabled', reason: 'not-approved' } as const)
   const value = decodeCloudBootstrap({ account, recipeVersion: binding.recipeVersion, connectionGeneration: token,
-    capabilities: { projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
+    capabilities: { ...account.role === undefined ? {} : { accountAdministration: account.role === 'admin' ? { state: 'available' } : disabled }, projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
       shell: accountExecutionMode(ctx) === 'session-collect' ? { state: 'available' } : disabled,
       developmentServices: services.developmentServices ? { state: 'available' } : disabled,
       servicePreview: services.servicePreview && previewRouteSelected ? { state: 'available' } : disabled, sandboxScope: 'session', backgroundJobs: false,

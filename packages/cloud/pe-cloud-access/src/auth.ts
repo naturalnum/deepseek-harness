@@ -12,6 +12,8 @@ import { AuthAccessError } from './auth-error.ts'
 import { assertAuthTransport } from './auth-trust.ts'
 import { trackBody, type TrackedBody } from './body-stream.ts'
 import { getSessionCookie } from 'better-auth/cookies'
+import { admin } from 'better-auth/plugins'
+import { AccountAdministrator, accountRole, parseAccountAdministration, type AccountAdministrationConfig } from './account-administration.ts'
 
 type NodeAuth = typeof import('better-auth/node')
 type AuthFactory = typeof import('better-auth')['betterAuth']
@@ -72,6 +74,7 @@ export interface AuthMigrationPlan {
 export class BetterAuthAccess {
   private readonly config: AccessConfig
   private readonly auth: Auth
+  private readonly administrator: AccountAdministrator | undefined
   private readonly options: BetterAuthOptions
   private readonly node: NodeAuth
   private readonly apiError: ApiErrorFactory
@@ -87,7 +90,8 @@ export class BetterAuthAccess {
   private readonly bridges = new Set<Promise<void>>()
 
   private constructor(
-    config: AccessConfig & { readonly disableSignUp?: boolean }, database: Pool, secret: string, invalidate: LoginInvalidator,
+    config: AccessConfig & { readonly disableSignUp?: boolean; readonly accountAdministration?: AccountAdministrationConfig },
+    database: Pool, secret: string, invalidate: LoginInvalidator,
     factory: AuthFactory, apiError: ApiErrorFactory, node: NodeAuth,
   ) {
     this.config = parseAccessConfig(config)
@@ -125,7 +129,11 @@ export class BetterAuthAccess {
         after: async (session): Promise<void> => { await this.invalidateLogin(session.id as Branded<'pe-auth-session-id'>) },
       } } },
     }
+    if (config.accountAdministration !== undefined) this.options = { ...this.options, plugins: [admin()] }
     this.auth = factory(this.options)
+    if (config.accountAdministration !== undefined) {
+      this.administrator = new AccountAdministrator(this.auth, database, config.accountAdministration)
+    }
   }
 
   /**
@@ -138,13 +146,17 @@ export class BetterAuthAccess {
    * @throws Error if dependencies are unavailable or the loaded Better Auth version differs from 1.7.10.
    */
   static async create(
-    config: AccessConfig & { readonly disableSignUp?: boolean }, database: Pool, secret: string, invalidate: LoginInvalidator,
+    config: AccessConfig & { readonly disableSignUp?: boolean; readonly accountAdministration?: AccountAdministrationConfig },
+    database: Pool, secret: string, invalidate: LoginInvalidator,
   ): Promise<BetterAuthAccess> {
     const [{ betterAuth, APIError }, node] = await Promise.all([import('better-auth'), import('better-auth/node')])
     const adapter = new BetterAuthAccess(config, database, secret, invalidate, betterAuth, APIError, node)
     if ((await adapter.auth.$context).version !== '1.7.10') throw new Error('cloud access requires Better Auth 1.7.10')
     return adapter
   }
+
+  /** Whether the explicit Root configuration selected the account-administration provider. */
+  get accountAdministrationEnabled(): boolean { return this.administrator !== undefined }
 
   /** Actual unfinished library work remains counted after a caller times out. */
   get pendingOperations(): number { return this.pending.size }
@@ -193,7 +205,9 @@ export class BetterAuthAccess {
       if (displayName.length > maxDisplayNameBytes || Buffer.byteLength(displayName, 'utf8') > maxDisplayNameBytes) {
         throw new AuthAccessError('cloud/capacity', requestId)
       }
-      return Object.freeze({ principal, account: Object.freeze({ id: principal.accountId, displayName }) })
+      return Object.freeze({ principal, account: Object.freeze({ id: principal.accountId, displayName,
+        ...this.administrator === undefined ? {} : { role: accountRole(login.user) },
+      }) })
     })
   }
 
@@ -290,6 +304,7 @@ export class BetterAuthAccess {
     if (url.origin !== this.config.publicOrigin || (url.pathname !== '/cloud/auth' && !url.pathname.startsWith('/cloud/auth/'))) {
       throw new AuthAccessError('cloud/forbidden', requestId)
     }
+    if (/^\/cloud\/auth\/admin(?:\/|$)/.test(decodeURIComponent(url.pathname))) throw new AuthAccessError('cloud/forbidden', requestId)
     if (!this.accepting || limits?.signal.aborted === true) throw new AuthAccessError('cloud/account-unavailable', requestId)
     const actual = this.transferNodeRequest(request, response, requestId, headers, url, limits)
     this.bridges.add(actual)
@@ -313,6 +328,29 @@ export class BetterAuthAccess {
   async close(): Promise<void> {
     this.accepting = false
     await Promise.allSettled([...this.bridges, ...this.pending.keys()])
+  }
+
+  /** Initialize explicitly configured administrator identities after the deployed schema is verified.
+   * @param current Original startup admission.
+   * @returns Initialization settlement; no ordinary request may invoke this method.
+   */
+  async initializeAdministrators(current: () => void): Promise<void> { await this.administrator?.initialize(current) }
+
+  /** Execute a bounded account-management request with the original trusted Cookie and authoritative role.
+   * @param request Original browser request.
+   * @param input Untrusted parsed management JSON.
+   * @param requestId Original ingress correlation.
+   * @param current Original operation admission and observer check.
+   * @returns Sanitized account metadata or the actual mutation outcome.
+   */
+  administer(request: IncomingMessage, input: unknown, requestId: Branded<'pe-request-id'>, current: () => void): Promise<object> {
+    const headers = this.trustedHeaders(request, requestId), administrator = this.administrator
+    if (administrator === undefined) throw new AuthAccessError('cloud/forbidden', requestId)
+    const parsed = parseAccountAdministration(input, administrator.config, requestId)
+    return this.withDeadline(() => administrator.execute(headers, parsed, requestId, () => {
+      current()
+      if (!this.accepting || this.invocation.getStore()?.timedOut) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    }), requestId)
   }
 
   private async transferNodeRequest(

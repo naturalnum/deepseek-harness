@@ -30,9 +30,12 @@ class Decoder {
 
   bootstrap(input: unknown): CloudBootstrap {
     const value = this.record(input, ['account', 'recipeVersion', 'connectionGeneration', 'capabilities'])
-    const account = this.record(value['account'], ['id', 'displayName'])
+    const raw = value['account']
+    const account = this.record(raw, ['id', 'displayName', ...object(raw) && Object.hasOwn(raw, 'role') ? ['role'] : []])
     return Object.freeze({
-      account: Object.freeze({ id: this.token(account['id']), displayName: this.text(account['displayName']) }),
+      account: Object.freeze({ id: this.token(account['id']), displayName: this.text(account['displayName']),
+        ...Object.hasOwn(account, 'role') ? { role: account['role'] === 'admin' ? this.literal(account['role'], 'admin') : this.literal(account['role'], 'user') } : {},
+      }),
       recipeVersion: this.token(value['recipeVersion']), connectionGeneration: this.token(value['connectionGeneration']),
       capabilities: this.capabilities(value['capabilities']),
     })
@@ -175,8 +178,10 @@ class Decoder {
     const value = this.record(input, [
       'projects', 'filePreview', 'shell', 'developmentServices', 'servicePreview', 'sandboxScope',
       'backgroundJobs', 'localDesktop', 'arbitraryBackendPlugins', 'subprocess', 'configuration',
+      ...object(input) && Object.hasOwn(input, 'accountAdministration') ? ['accountAdministration'] : [],
     ])
     return Object.freeze({
+      ...Object.hasOwn(value, 'accountAdministration') ? { accountAdministration: this.capability(value['accountAdministration']) } : {},
       projects: this.capability(value['projects']), filePreview: this.capability(value['filePreview']),
       shell: this.capability(value['shell']), developmentServices: this.capability(value['developmentServices']),
       servicePreview: this.capability(value['servicePreview']), sandboxScope: this.literal(value['sandboxScope'], 'session'),

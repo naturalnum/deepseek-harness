@@ -236,3 +236,11 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 定向测试使用真实 PostgreSQL、原生 Connection/Gateway 和内存 socket 对验证 HTTP/WS 共用 Peer、撤销、到期及清理保留。账户借用是测试夹具，并非产品工厂；尚未通过 Loader 启动账户图或验证运行中的 Agent 任务隔离。
 
 </details>
+
+## 账号管理
+
+Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdministratorIds }` 后启用固定版本 Better Auth Admin 插件及其数据库字段。启用前须执行库生成的迁移；Root 不自动迁移。连接池至少需要两个物理连接。没有角色的旧账号视为普通用户；仅在启动时不存在有效管理员的情况下，初始化配置明确指定的管理员账号。
+
+设置菜单通过 `account.role` 与 `capabilities.accountAdministration` 展示。每次 POST `/cloud/admin/accounts` 独立核对原 Cookie 登录及数据库中的当前管理员角色。支持有界列表和搜索、创建、修改显示名、角色、启停及重置密码。原 `/cloud/auth` 入口拒绝直接调用 Admin 插件接口。PostgreSQL 事务咨询锁串行管理修改并保护最后一个有效管理员；重置密码撤销目标账号的登录。管理员权限不授予其他账号的项目文件访问。
+
+当前创建会保留被停用的新身份并返回 `resourceState: not-provisioned`，不宣称云端资源已就绪。部署开放前仍需接通静态资源分配、实际账号准备和完整运行环境停止。

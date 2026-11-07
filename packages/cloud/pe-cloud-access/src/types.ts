@@ -124,6 +124,7 @@ export interface BootstrapConfiguration {
 
 /** C-11 metadata from the server's actual recipe and providers; decoding does not verify those facts. */
 export interface BootstrapCapabilities {
+  readonly accountAdministration?: BootstrapCapability
   readonly projects: BootstrapCapability
   readonly filePreview: BootstrapCapability
   readonly shell: BootstrapCapability
@@ -139,7 +140,7 @@ export interface BootstrapCapabilities {
 
 /** Browser wire metadata, distinct from the adapter-origin-tracked AuthenticatedPrincipal. */
 export interface CloudBootstrap {
-  readonly account: Readonly<{ id: string; displayName: string }>
+  readonly account: Readonly<{ id: string; displayName: string; role?: 'admin' | 'user' }>
   readonly recipeVersion: string
   readonly connectionGeneration: string
   readonly capabilities: BootstrapCapabilities

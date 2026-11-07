@@ -236,3 +236,11 @@ The bounded optional `configuration.mcp: { manage: true }` is emitted only from 
 Focused tests use real PostgreSQL, native Connection/Gateway and memory socket pairs to verify shared HTTP/WS Peer, revocation, expiry and retained cleanup. Account borrows are fixtures rather than the product factory; Loader account boot and running Agent task isolation remain unverified.
 
 </details>
+
+## Account administration
+
+An explicit Root `accountAdministration: { maxAccounts, maxPageSize, initialAdministratorIds }` enables the pinned Better Auth Admin plugin and its additional database fields. Apply the library-generated migration before enabling this configuration; the Root never runs migrations automatically. The pool requires at least two physical connections. Existing accounts without a role remain ordinary users. Explicit initial account IDs are promoted only during startup when no enabled administrator exists.
+
+The settings entry uses `account.role` and `capabilities.accountAdministration` as display metadata. Every POST to `/cloud/admin/accounts` independently reads the original Cookie-backed actor and current database role. Supported operations are bounded list/search, create, display-name change, role change, enable/disable and password reset. The shared `/cloud/auth` bridge rejects direct Admin plugin endpoints. A PostgreSQL transaction advisory lock serializes management mutations and protects the final enabled administrator. Password resets revoke the target's login sessions. Administrative rights do not grant access to another account's project files.
+
+Account creation currently preserves the new identity as banned and reports `resourceState: not-provisioned`; it does not claim Cloud resource readiness. Static resource assignment, actual account preparation and full runtime drain are required before this feature is enabled in a deployment.
