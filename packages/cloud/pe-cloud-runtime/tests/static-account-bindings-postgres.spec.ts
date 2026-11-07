@@ -47,6 +47,16 @@ describe.skipIf(path === undefined)('durable static account assignments', () => 
       if (original === undefined) throw new Error('Reloaded mapping absent')
       reloaded.assertCurrent(original)
       expect(() => reloaded?.assertCurrent({ ...original })).toThrow()
+      // Losing the durable slot-uniqueness constraint must fail closed without resetting existing bindings.
+      await pool.query('ALTER TABLE pe_account_static_bindings DROP CONSTRAINT pe_account_static_bindings_slot_id_key')
+      const drifted = new StaticAccountBindings(database, inventory, () => {})
+      try {
+        await expect(drifted.initialize()).rejects.toThrow('incompatible pe_account_static_bindings constraints')
+        expect((await pool.query<{ count: string }>('SELECT count(*) FROM pe_account_static_bindings')).rows[0]?.count).toBe('2')
+      } finally {
+        await drifted.close()
+        await pool.query('ALTER TABLE pe_account_static_bindings ADD CONSTRAINT pe_account_static_bindings_slot_id_key UNIQUE(slot_id)')
+      }
     } finally {
       await Promise.all([a.close(), b.close(), reloaded?.close()])
       await pool.end()

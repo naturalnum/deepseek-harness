@@ -1,6 +1,7 @@
 /** Durable assignment of authentic account IDs to immutable, preallocated storage slots. */
 import type { AccountId, RootMetadataDatabase, StaticAccountInventory, StaticAccountAssignment, AccountAdministrationBudgets } from './types.ts'
 import { AccountRuntimeError } from './errors.ts'
+import { staticAccountMigrationSql } from './migrations/static-accounts.ts'
 
 /** Compute the minimum retained transaction budget before any administrator route opens.
  * @param accountWaitTimeoutMs Original factory observation bound.
@@ -13,8 +14,12 @@ export function accountAdministrationTransactionBudget(accountWaitTimeoutMs: num
   queryBounds: Readonly<{ queueTimeoutMs: number; statementTimeoutMs: number }>, slotCount: number,
   budgets: AccountAdministrationBudgets): number {
   const maximumQueries = slotCount === 0 ? 0 : 2 * slotCount + 10
-  const required = accountWaitTimeoutMs + maximumQueries * (queryBounds.queueTimeoutMs + queryBounds.statementTimeoutMs)
-    + budgets.authOperationTimeoutMs + 2 * (budgets.authConnectionTimeoutMs + budgets.authStatementTimeoutMs)
+  const preparation = accountWaitTimeoutMs + maximumQueries * (queryBounds.queueTimeoutMs + queryBounds.statementTimeoutMs)
+  const tail = 2 * (budgets.authConnectionTimeoutMs + budgets.authStatementTimeoutMs)
+  if (!Number.isSafeInteger(preparation + tail) || budgets.authOperationTimeoutMs < preparation + tail) {
+    throw new AccountRuntimeError('cloud/invalid-config', 'Account administration operation timeout is shorter than resource preparation bounds')
+  }
+  const required = preparation + budgets.authOperationTimeoutMs + tail
   if (!Number.isSafeInteger(required) || budgets.idleTransactionTimeoutMs < required) {
     throw new AccountRuntimeError('cloud/invalid-config', 'Account administration transaction timeout is shorter than resource preparation bounds')
   }
@@ -52,16 +57,7 @@ export class StaticAccountBindings {
    */
   async initialize(): Promise<void> {
     this.check()
-    await this.query(`CREATE TABLE IF NOT EXISTS pe_account_static_bindings (
-      account_id text PRIMARY KEY,
-      inventory_sha256 text NOT NULL CHECK (inventory_sha256 ~ '^[a-f0-9]{64}$'),
-      slot_id text NOT NULL UNIQUE,
-      binding_revision bigint NOT NULL DEFAULT 1 CHECK (binding_revision > 0),
-      workflow_revision bigint NOT NULL DEFAULT 1 CHECK (workflow_revision > 0),
-      phase text NOT NULL CHECK (phase IN ('reserved','preparing','ready','disabled','failed','stop-unknown')),
-      operation_id text NOT NULL,
-      updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
-    )`, [])
+    await this.query(staticAccountMigrationSql, [])
     await this.refreshAll()
   }
 
@@ -71,7 +67,7 @@ export class StaticAccountBindings {
   async refreshAll(): Promise<void> {
     this.check()
     const result = await this.query(`SELECT account_id, inventory_sha256, slot_id, binding_revision::text,
-      workflow_revision::text, phase, operation_id FROM pe_account_static_bindings LIMIT $1::integer`,
+      workflow_revision::text, phase, operation_id FROM public.pe_account_static_bindings LIMIT $1::integer`,
     [String(this.inventory.maxAccounts + 1)])
     if (result.rows.length > this.inventory.maxAccounts) unavailable()
     const slots = new Set<string>(), accounts = new Set<AccountId>()
@@ -115,7 +111,7 @@ export class StaticAccountBindings {
   async refresh(accountId: AccountId): Promise<AccountResourceRecord | undefined> {
     this.check()
     const result = await this.query(`SELECT account_id, inventory_sha256, slot_id, binding_revision::text,
-      workflow_revision::text, phase, operation_id FROM pe_account_static_bindings WHERE account_id = $1`, [accountId])
+      workflow_revision::text, phase, operation_id FROM public.pe_account_static_bindings WHERE account_id = $1`, [accountId])
     if (result.rows.length > 1) unavailable()
     if (result.rows[0] === undefined) {
       if (this.records.has(accountId)) unavailable()
@@ -142,12 +138,12 @@ export class StaticAccountBindings {
       await this.query(`WITH held AS MATERIALIZED (SELECT pg_advisory_xact_lock(1346715981, 2)),
         candidate AS MATERIALIZED (
           SELECT value AS slot_id FROM held, jsonb_array_elements_text($2::jsonb)
-          WHERE NOT EXISTS (SELECT 1 FROM pe_account_static_bindings WHERE slot_id = value)
+          WHERE NOT EXISTS (SELECT 1 FROM public.pe_account_static_bindings WHERE slot_id = value)
           ORDER BY value LIMIT 1
         )
-        INSERT INTO pe_account_static_bindings(account_id, inventory_sha256, slot_id, phase, operation_id)
+        INSERT INTO public.pe_account_static_bindings(account_id, inventory_sha256, slot_id, phase, operation_id)
         SELECT $1, $3, slot_id, 'reserved', $4 FROM candidate
-        WHERE (SELECT count(*) FROM pe_account_static_bindings) < $5::integer
+        WHERE (SELECT count(*) FROM public.pe_account_static_bindings) < $5::integer
         ON CONFLICT DO NOTHING`, [accountId, slots, this.inventory.sha256, operationId, String(this.inventory.maxAccounts)])
       const record = await this.refresh(accountId)
       if (record !== undefined) return record
@@ -163,7 +159,7 @@ export class StaticAccountBindings {
   async seed(accountId: AccountId, slotId: string): Promise<AccountResourceRecord> {
     this.check()
     if (!this.inventory.slots.some(slot => slot.slotId === slotId)) unavailable()
-    await this.query(`INSERT INTO pe_account_static_bindings(account_id, inventory_sha256, slot_id, phase, operation_id)
+    await this.query(`INSERT INTO public.pe_account_static_bindings(account_id, inventory_sha256, slot_id, phase, operation_id)
       VALUES ($1, $2, $3, 'reserved', 'deployment-seed') ON CONFLICT(account_id) DO NOTHING`, [accountId, this.inventory.sha256, slotId])
     const record = await this.refresh(accountId)
     if (record === undefined || record.assignment.slotId !== slotId) unavailable()
@@ -178,7 +174,7 @@ export class StaticAccountBindings {
    */
   async transition(original: AccountResourceRecord, phase: AccountResourcePhase, operationId: string): Promise<AccountResourceRecord> {
     this.assertCurrent(original.assignment)
-    const result = await this.query(`UPDATE pe_account_static_bindings SET phase = $3,
+    const result = await this.query(`UPDATE public.pe_account_static_bindings SET phase = $3,
       workflow_revision = workflow_revision + 1, operation_id = $4, updated_at = clock_timestamp()
       WHERE account_id = $1 AND workflow_revision = $2::bigint
       RETURNING account_id, inventory_sha256, slot_id, binding_revision::text, workflow_revision::text, phase, operation_id`,
