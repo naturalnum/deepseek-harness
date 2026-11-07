@@ -220,6 +220,7 @@ export class ManagedCommandOperation {
         stdout: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return output.stdout.readFrom(offset) } }),
         stderr: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return output.stderr.readFrom(offset) } }),
       }),
+      ...output === undefined ? {} : { releaseCollected: () => { this.release() } },
       done: this.completion.promise,
       terminate: () => { this.assertPublic(); this.requestStop(new Error('Native command termination requested.')) },
       waitForExit: (signal?: AbortSignal) => { this.assertPublic(); return this.waitForExit(signal) },

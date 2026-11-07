@@ -22,6 +22,8 @@ The optional [Office guest payload](../../../docs/user/cloud-builtin-skills.md) 
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+Collected subprocess handles implement `releaseCollected()` through their original managed operation. A native tool can copy one command’s output and end its ownership before starting the next command in the same scope. Resident capacity returns only after actual range and I/O settlement; early release requests the existing stop procedure, while unknown work remains retained. Native tools that omit release preserve final-projection ownership.
+
 -----
 
 <a id="use-this-package"></a>
@@ -31,7 +33,7 @@ Mount `/root` and `/account` in a `dsh` profile composition. Explicit `mode: clo
 
 The `/types` entry exposes `ServicePreviewIdentity` with the original branded allocation/Session identifiers and `DevelopmentServiceId`, plus bounded application-read and registered-service definitions. Identity grants no authority; access requires the execution owner's current capability. Access adapters attach their audited HTTP exposure and browser response policy. The native development-service tool projects only its final bounded task handle, action and process-submitted observation into presentation metadata; infrastructure identifiers and preview URLs stay outside its model result and metadata.
 
-Root may explicitly select `commands.additionalTools`, a unique list of at most sixteen lowercase native tool names, and append the same names in order to `allowedTools`. Built-in tool names cannot be repeated or enabled through this field. Omission preserves the original list. Selection only allows the original native dispatch to retain a scope; actual Agent, Session, Workspace, account generation, confinement and managed execution checks still apply. It creates no HTTP execution route.
+Root may explicitly select `commands.additionalTools`, a unique list of at most thirty-two lowercase native tool names, and append the same names in order to `allowedTools`. Built-in tool names cannot be repeated or enabled through this field. Omission preserves the original list. Selection only allows the original native dispatch to retain a scope; actual Agent, Session, Workspace, account generation, confinement and managed execution checks still apply. It creates no HTTP execution route.
 
 ### Configuration and failure
 

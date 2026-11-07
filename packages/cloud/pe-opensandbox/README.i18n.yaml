@@ -12,10 +12,10 @@
   en: 7bc36df897ea1714
   zh: 48235ef3f4ef6ab7
 /deepseek-ai-dsh-pe-opensandbox/table-of-contents:
-  en: d152484eb41ac6b4
-  zh: 9318b998193393bf
+  en: 6ee65f7633b061fc
+  zh: 0ca6121bbc06a7c5
 /deepseek-ai-dsh-pe-opensandbox/use-this-package:
-  en: 477052388b68fbc0
+  en: 3de005a37b3b5179
   zh: 26c5f2881c5bafc2
 /deepseek-ai-dsh-pe-opensandbox/use-this-package/configuration-and-failure:
   en: 47703260ecb90df9
@@ -47,3 +47,6 @@
 /deepseek-ai-dsh-pe-opensandbox/known-limitations-and-deferred-work/dev-note:
   en: 537abd4ac53f34f9
   zh: 8d11e9ece6cb7de5
+/deepseek-ai-dsh-pe-opensandbox/preallocated-account-inventory:
+  en: ce6e49343e21fb68
+  zh: e7d71baaa72a46e1

@@ -20,6 +20,8 @@ English | [中文](README.zh.md)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+Providers may expose optional `handle.releaseCollected()` to end a consumer’s collected-output ownership after it copies the required bytes. Later handle/output access may reject. Release requests cleanup; it does not confirm process termination, empty ranges, I/O settlement or returned capacity. Omitting the method preserves the provider’s existing policy.
+
 -----
 
 <a id="use-this-package"></a>

@@ -22,7 +22,9 @@ kind: "package-reference"
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
-Root 可显式配置 `commands.additionalTools`，选择至多十六个互不重复的小写原生工具名，并以相同顺序追加到 `allowedTools`。该字段不能重复或启用内置工具名。省略时保留原列表。此配置仅允许原生工具分派保留作用域；实际 Agent、Session、Workspace、账号代次、进程约束及受管执行检查仍然适用，不会创建 HTTP 执行路由。
+Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不重复的小写原生工具名，并以相同顺序追加到 `allowedTools`。该字段不能重复或启用内置工具名。省略时保留原列表。此配置仅允许原生工具分派保留作用域；实际 Agent、Session、Workspace、账号代次、进程约束及受管执行检查仍然适用，不会创建 HTTP 执行路由。
+
+收集输出的子进程句柄通过原有受管操作实现 `releaseCollected()`。原生工具可在同一作用域启动下一条命令前复制上一条命令的输出并结束其持有责任。只有实际执行范围和 I/O 均结束后才归还保留容量；提前释放会请求原有停止流程，未知工作继续保留责任。不调用该方法的原生工具仍由最终结果投影结束输出持有责任。
 
 -----
 
@@ -131,6 +133,7 @@ Root 在生命周期状态查询与原 SDK 的 execd 健康检查之间共用现
 
 </details>
 
+
 -----
 
 <a id="further-exploration"></a>
@@ -185,3 +188,7 @@ Root 在生命周期状态查询与原 SDK 的 execd 健康检查之间共用现
 可移植的[显式启用作用域探针](tests/opensandbox-scope-probe.mjs) 要求明确传入 `--workspace-root`、`--sdk-root`、`--out` 和 `--execute-authorized-once` 参数。它使用固定的缓存镜像，最多创建一个有界 Sandbox 及两个内部作用域。其证据分别描述作用域停止、namespace 安全事实和二进制文件 Range 传输；它不启用执行，也不验证完整的 subprocess 语义。
 
 </details>
+
+## Preallocated account inventory
+
+Root 沙箱接受与 Files 相同的受保护 v1/v2 或 v3 部署计划。v3 使用原始 Root 持有的账号分配解析器及其当前性检查；浏览器不能选择槽位、根路径或配额。共享布局与导出存储域使用 Files 精确保留的账号分配。解析器被撤销或替换时，新的导出准入被拒绝。仍须进行真实 Linux 配额与进程隔离验收；模拟计划测试不提供此证据。

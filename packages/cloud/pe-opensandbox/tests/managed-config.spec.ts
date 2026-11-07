@@ -201,7 +201,7 @@ it('admits only explicitly configured extra native tools while retaining the ori
 })
 
 it.each([['bash'], ['dev_service'], ['run_code'], ['remote_exec'], ['airalogy_run', 'airalogy_run'], ['../run'],
-  [''], ['a'.repeat(65)], Array.from({ length: 17 }, (_, index) => `tool_${index}`), null, {}])(
+  [''], ['a'.repeat(65)], Array.from({ length: 33 }, (_, index) => `tool_${index}`), null, {}])(
   'rejects an invalid extra-tool selection: %j', (additionalTools) => {
     const raw = input()
     expect(() => parseManagedCoordinatorConfig({ ...raw, commands: { ...raw.commands, additionalTools } })).toThrow('additionalTools')

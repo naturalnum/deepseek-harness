@@ -20,6 +20,8 @@ kind: "package-reference"
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+提供方可选实现 `handle.releaseCollected()`，让消费者在复制所需字节后结束收集输出的持有责任。之后访问句柄或输出可能被拒绝。释放仅请求清理，不确认进程终止、执行范围已空、I/O 已结束或容量已归还。省略该方法时保留提供方原有策略。
+
 -----
 
 <a id="use-this-package"></a>
