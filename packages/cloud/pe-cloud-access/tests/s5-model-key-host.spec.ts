@@ -148,7 +148,7 @@ it('uses actual Peer identity, strict Remote input and serial versions across tw
   const call=<T>(row:typeof a,peer:PeerScope,method:string,request?:unknown)=>row.ctx.typertGateway.invoke({ namespace:'cloudModelKey',method,args:request===undefined?{}:{ request },peer }) as Promise<T>
   await expect(a.api.withPeerUse(pa.peer,async use=>use.binding.accountId)).resolves.toBe('a')
   await expect(a.api.withPeerUse(pb.peer,async()=>null)).rejects.toBeDefined()
-  await expect(a.api.withPeerUse({ ...pa.peer },async()=>null)).rejects.toBeDefined()
+  await expect(a.api.withPeerUse({ ...pa.peer,dispose:()=>pa.peer.dispose() },async()=>null)).rejects.toBeDefined()
   const metadata=await call<ModelKeyMetadata>(a,pa.peer,'metadata');expect(metadata.settings.writable).toBe(false)
   expect(metadata.settings.namespaces[0]?.value).toEqual(a.ctx.get('settings')?.describe({ redactSecrets:true }).find(row=>row.ns==='provider')?.value)
   expect(metadata.settings.namespaces[0]?.value).toMatchObject({ apiKeyEnv:REF,models:[{ id:MODEL }] })
