@@ -1,6 +1,4 @@
 /** Runtime-owned account identities and lifecycle inputs; none are browser credentials. */
-import type { AccountAdministrationBudgets, StaticAccountAssignmentResolver, StaticAccountInventory } from './static-account-bindings.ts'
-export type { AccountAdministrationBudgets, StaticAccountAssignmentResolver, StaticAccountInventory } from './static-account-bindings.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -327,6 +325,32 @@ export interface RootIngressCloseOwner {
    * @returns The same actual closure outcome; it must never wait for RuntimeRoot.close().
    */
   closeActual(): Promise<void>
+}
+
+/** Sanitized Root-owned inventory; paths and filesystem facts remain with Files. */
+export interface StaticAccountInventory {
+  readonly sha256: string
+  readonly maxAccounts: number
+  readonly slots: readonly Readonly<{ slotId: string; templateId: string }>[]
+}
+/** Immutable account-to-slot identity, independent of resource preparation state. */
+export interface StaticAccountAssignment {
+  readonly accountId: AccountId
+  readonly slotId: string
+  readonly revision: string
+}
+/** Root-only synchronous resolver installed into the original Files owner. */
+export interface StaticAccountAssignmentResolver {
+  lookup(accountId: AccountId): StaticAccountAssignment | undefined
+  list(): readonly StaticAccountAssignment[]
+  assertCurrent(assignment: StaticAccountAssignment): void
+}
+/** Access budgets retained by the same management transaction while actual resources prepare. */
+export interface AccountAdministrationBudgets {
+  readonly idleTransactionTimeoutMs: number
+  readonly authStatementTimeoutMs: number
+  readonly authConnectionTimeoutMs: number
+  readonly authOperationTimeoutMs: number
 }
 
 /** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
