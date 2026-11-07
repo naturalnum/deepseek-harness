@@ -44,3 +44,6 @@ export { CloudRemoteServerService } from './cloud-remote-servers.ts'
 export type { CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
 export type { RemoteServerRequest, RemoteServerReply, RemoteServerView, RemoteServerForm } from './remote-server-types.ts'
 export type { ApprovedRemoteServers } from './remote-server-policy.ts'
+
+export { AccountMcpConnections } from './mcp-connection-runtime.ts'
+export type { McpConnectionRuntimePolicy, McpConnectionTest } from './mcp-connection-runtime.ts'

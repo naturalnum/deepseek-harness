@@ -113,7 +113,9 @@
     "@deepseek-ai/dsh-user-approval": "workspace:*",
     "@deepseek-ai/dsh-remote-server-cloud": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
-    "@deepseek-ai/dsh-pe-opensandbox": "workspace:*"
+    "@deepseek-ai/dsh-pe-opensandbox": "workspace:*",
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-scope": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -205,6 +207,8 @@
     "@types/yazl": "3.3.0",
     "@deepseek-ai/dsh-skill-office": "workspace:*",
     "@deepseek-ai/dsh-remote-server-cloud": "workspace:*",
-    "@deepseek-ai/dsh-pe-opensandbox": "workspace:*"
+    "@deepseek-ai/dsh-pe-opensandbox": "workspace:*",
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-scope": "workspace:*"
   }
 }

@@ -197,6 +197,10 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 
 可选的[工作区上传 consumer](src/workspace-upload.ts) 要求 Access 持有精确的二进制响应路由，并将原账户／Peer／Use 借用保留到 HTTP finish／close。其选择器捕获原生 Session／项目策略，并提供同一 files owner 的 `stageWorkspaceUploads` 操作。请求提供 `sessionId`、`directory`、`name`、精确 `Content-Length` 及 `x-content-sha256`；声明不授予存储或账户权限。成功结果是 Cloud 工作区文件发布回执，包含实际重名处理路径、已核验 SHA-256 与字节数，不是原生对话附件收据。提前拒绝会保留套接字，直到完整响应 finish。已确认取消会等待源及 worker 清理，未知结算则保留原责任。账户适配器只接入显式选择的 POST `/api/workspace-files/upload`，handler 为 `cloud:workspaceUpload`，guard 为 `account-session`。既有 HEAD 传输预检仅在上传安装和 staging 检查通过后，投影 `workspace-upload-v1`、同一已选工作区根及分块上限。Access 复用原认证响应拥有者。对话上传限制及历史附件保持不变；HTTP 成功不能证明稍后失败的结果释放已完成。
 
+### 可选账户 HTTP MCP 装配
+
+`AccountMcpConnections` 仅在原账户上下文挂载官方 `dsh-mcp-client`，恢复启用的账户私有定义，等待客户端替换与销毁，并在 MCP 调用前后检查账户和 Agent 准入。连接测试使用独立的原生注册作用域，不向模型发布工具。支持 HTTP 与 HTTPS；不提供 stdio 和 OAuth。此装配 helper 不开放管理端点，也不代表完整 Cloud 或网页激活。
+
 ## Model Experience
 
 ### Model-call admission

@@ -30,7 +30,7 @@ export interface CredentialEditView {
 /** Actual native writer categories, including required publication work. */
 export type ConfigSaveKind =
   | 'default-model' | 'settings' | 'config-editor' | 'plugin-selection'
-  | 'credentials' | 'skill-publish' | 'skill-projection' | 'remote-server'
+  | 'credentials' | 'skill-publish' | 'skill-projection' | 'remote-server' | 'mcp-connection'
 
 /** Deployment limits; queued, running and unresolved entries all consume tracked capacity. */
 export interface ConfigSaveLimits {

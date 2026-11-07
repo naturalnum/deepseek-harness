@@ -163,6 +163,12 @@
     },
     {
       "path": "../pe-opensandbox"
+    },
+    {
+      "path": "../../mcp/mcp-client"
+    },
+    {
+      "path": "../../core/scope"
     }
   ]
 }
