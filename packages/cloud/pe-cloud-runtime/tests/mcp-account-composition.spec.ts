@@ -88,6 +88,7 @@ it('discovers and calls an HTTP MCP tool through an original guarded account Age
     expect(denied.isError).toBe(true)
     let modelCalls = 0
     vi.spyOn(a.adapter, 'stream').mockImplementation(async function* (options: GenerateOptions): AsyncIterable<StreamChunk> {
+      if (options.tools === undefined) throw new Error('The original native model tool list is absent')
       expect(options.tools.some(tool => tool.name === 'mcp__compute__ping')).toBe(true)
       if (modelCalls++ === 0) yield* toolCallResponse('native-mcp-model-call', 'mcp__compute__ping', {})
       else yield* textResponse('MCP replied pong.')
