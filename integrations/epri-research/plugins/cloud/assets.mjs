@@ -1,12 +1,15 @@
-/** Immutable research assets only; all account data uses the existing native Connection carrier. */
+/** Research browser declaration and immutable assets; account data uses the native Connection carrier. */
 import schema from '@deepseek-ai/schemastery';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 export const name='research-suite/cloud-assets';
-export const inject=['webServer'];
+export const inject=['webServer','clientModules'];
 export const Config=schema.object({requestTimeoutMs:schema.number().step(1).min(1000).max(300000).required()});
 export function apply(ctx,input) {
   const config=Config(input);
+  const baseUrl=ctx.fiber.entry?.parent.tree.ctx.baseUrl;
+  if(baseUrl===undefined)throw new Error('Research Cloud assets require the original Loader resolution base');
+  ctx.effect(()=>ctx.clientModules.registerClientPackages(['deepscientist-harness-suite'],baseUrl,{activate:true}),'research-suite: browser client');
   const publicConfig={cloudRequestTimeoutMs:config.requestTimeoutMs,cloud:true,platformIdentity:true,workbenchUrl:'/research/',harnessUrl:'/'};
   ctx.on('webserver/index-inject',rows=>rows.push({kind:'global',name:'__DS_RESEARCH_PUBLIC__',value:publicConfig}));
   const assets=new Map([
@@ -15,7 +18,7 @@ export function apply(ctx,input) {
     ['/research/app.css',['text/css; charset=utf-8',readFileSync(fileURLToPath(new URL('../../dist/ui/app.css',import.meta.url)))]],
     ['/research/public-config.js',['application/javascript; charset=utf-8',Buffer.from('window.__DS_RESEARCH_PUBLIC__='+JSON.stringify(publicConfig)+';')]],
   ]);
-  ctx.webServer.register({kind:'prefix',path:'/research',handler(req,res){
+  ctx.effect(()=>ctx.webServer.register({kind:'prefix',path:'/research',handler(req,res){
     const path=new URL(req.url,'http://internal').pathname;
     if(path==='/research'){res.writeHead(308,{Location:'/research/'});res.end();return;}
     const value=assets.get(path);
@@ -23,5 +26,5 @@ export function apply(ctx,input) {
     res.writeHead(200,{'Content-Type':value[0],'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff',
       'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; frame-ancestors 'self'"});
     res.end(req.method==='HEAD'?undefined:value[1]);
-  }});
+  }}),'research-suite: immutable assets');
 }

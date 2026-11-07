@@ -18,7 +18,7 @@ Host 必须具备仓库 Cloud 原生补丁中记录的能力库存、Session/项
 
 ## 配置组合
 
-在共享 Web root 安装 `deepscientist-harness-suite/cloud-assets`，显式配置 `requestTimeoutMs: 180000`。它仅提供不可变资源并注入公开地址；此模式没有 `/research/api` 或 `/research/auth`。账号数据始终经带有真实 Session resource 的原生 `cloudResearch/action` Remote 访问。
+在共享 Web root 安装 `deepscientist-harness-suite/cloud-assets`，显式配置 `requestTimeoutMs: 180000`。它使用所属 Loader 配置树的安装基址，经原有 `clientModules` 注册本包的浏览器客户端，并提供不可变资源及公开地址；此模式没有 `/research/api` 或 `/research/auth`。账号数据始终经带有真实 Session resource 的原生 `cloudResearch/action` Remote 访问。共享 Root 需要原有 `clientModules` 提供方；资源入口导出的依赖会请求该服务，无需新增设置。卸载该入口会撤回浏览器声明、公开配置及资源路由。原有注册表会拒绝重复的浏览器声明，因此不要另行声明同一 Root 浏览器包。该入口不激活科研 Host 服务。
 
 账号图使用 [cordis.cloud.patch.yml](cordis.cloud.patch.yml)。将完整 `research-suite` 声明加入 Root 批准的 Preset 清单并设为可选，保留 Standard 原声明。账号组合继续安装原工作台及科研/Airalogy 插件。本功能不依赖另行实现的 MCP 管理特性。
 

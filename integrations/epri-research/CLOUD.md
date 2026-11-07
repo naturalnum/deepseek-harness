@@ -18,7 +18,7 @@ The adapter requires the Host capability-inventory, Session/project, original-Pe
 
 ## Profile composition
 
-Mount `deepscientist-harness-suite/cloud-assets` in the shared Web root with explicit `requestTimeoutMs: 180000`. It serves immutable assets only and injects public addresses; `/research/api` and `/research/auth` do not exist in this mode. Account data always uses the authenticated native `cloudResearch/action` Remote with its actual Session resource.
+Mount `deepscientist-harness-suite/cloud-assets` in the shared Web root with explicit `requestTimeoutMs: 180000`. It declares the package's browser client through the original `clientModules` registry using its Loader tree's installation base, serves immutable assets and injects public addresses; `/research/api` and `/research/auth` do not exist in this mode. Account data always uses the authenticated native `cloudResearch/action` Remote with its actual Session resource. The shared Root needs the original `clientModules` provider; the assets entry's exported dependencies request it without additional settings. Unloading this entry withdraws its browser declaration, public configuration and asset route. Duplicate browser declarations are rejected by the original registry; do not separately declare the same Root browser package. This entry activates no research Host service.
 
 Use [cordis.cloud.patch.yml](cordis.cloud.patch.yml) for the account graph. Register its complete `research-suite` declaration in Root's approved Preset catalog and make it selectable. Preserve the existing Standard declaration. The Cloud recipe also retains the original workbench and research/Airalogy plugin entries. This feature has no dependency on the separate MCP-management feature.
 
