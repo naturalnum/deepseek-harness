@@ -54,6 +54,8 @@ The request cannot execute after expiry, logout, scope disposal or withdrawal. A
 
 Direct model-proposed approvals retain the original `userQuestions` flow and exact before/after version checks. Approval details show a generic version only when the reviewed operation has a revision or version; task opening shows its exact method version and source hash. A model cannot supply a human token or approve a different version. Published lab skills remain visible across conversations only within their own account. Git association is restricted to the original native Session project; managed research branches live under that project, never under a host-selected directory.
 
+Long document-search source references wrap within narrow research sidebars, preserving the complete attachment reference.
+
 Cold research conversations reuse the original native history opening snapshot for membership, header and Preset admission before and after the operation. The iterator closes at that snapshot, before native promotion; simply opening the workbench after restart does not create or resume an Agent. The original native prompt alone restores an Agent for execution.
 
 ## Scientific image

@@ -7,7 +7,7 @@
   "cloudBaseCommit": "edcd1ea91ca0ddde78dedde322c600f43021920e",
   "importedSuiteTree": "2fb896ab57a04abba370e3e2b1c851f685127239",
   "transportPatch": "diffs/cloud-transports.patch",
-  "transportPatchSha256": "70a9e8b26b4e2732552ea0d0b49a7da3fb9ab3e5a172e4cf2d63878e8a28f79b",
+  "transportPatchSha256": "be426838d0b90e86ad06ea3cb6527be1ea4f532fb68312f1b5f1c40fd8a16d4c",
   "files": [
     {
       "path": "src/reused/engine/index.ts",
@@ -44,6 +44,12 @@
       "importedSha256": "23772d8c4c3808587f820973bde4473fef9b7070e38d932ae416dab2cff6028b",
       "cloudSha256": "65d72aee06b4152b2508230de6de4bdc1fb1eb4eb5c04a7d720ed747468efb54",
       "change": "native-store-and-complete-chart-pagination"
+    },
+    {
+      "path": "src/ui/style.css",
+      "importedSha256": "3d097010ccb99031e41ed240325eddc97827bc482dc3ff9903a24b0f89f7ee07",
+      "cloudSha256": "031120e8410eb320a06373b1291b1047161ef71fff5ccf5acd43ee369548e9d3",
+      "change": "native-workbench-and-source-reference-wrapping"
     }
   ],
   "qualification": "Component tests only; separate native Linux image and authenticated Web acceptance required."

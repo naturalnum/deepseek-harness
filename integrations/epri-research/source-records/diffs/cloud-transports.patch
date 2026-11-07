@@ -257,3 +257,16 @@ index 4c40240cd0..064953f597 100644
 +    db.close();
 +  } };
  }
+diff --git a/integrations/epri-research/src/ui/style.css b/integrations/epri-research/src/ui/style.css
+index 8dc647cac2..f31f82fe5f 100644
+--- a/integrations/epri-research/src/ui/style.css
++++ b/integrations/epri-research/src/ui/style.css
+@@ -431,6 +431,8 @@ html[data-research-compact] .workbench-status { font-size:10px; padding:2px 0; }
+ .science-tabs small { margin-left:6px; }
+ .science-create { margin-bottom:16px; }
+ .science-card,.science-editor { border:1px solid var(--research-border); border-radius:16px; background:var(--research-surface); padding:24px; margin-bottom:16px; box-shadow:var(--research-shadow); }
++.science-card { min-width:0; }
++.science-card small { display:block; min-width:0; overflow-wrap:anywhere; }
+ .science-card h2 { font-size:19px; margin:0 0 7px; }
+ .science-card p { line-height:1.8; white-space:pre-wrap; }
+ .science-card footer { margin-top:20px; padding-top:12px; border-top:1px solid var(--research-border); }
