@@ -50,6 +50,8 @@ Worker 启动失败仅向 stderr 写入固定初始化阶段及白名单中的�
 
 计划 v3 保留预分配 ext4 域，将固定用户行替换为不可变的 `slots` 清单。每个 `StaticStorageSlot` 包含 `slotId`、`templateId`、存储键及原有实测 private、projects 和环境域。`maxAccounts` 等于物理槽位数量；驻留账户图仍由 Runtime 独立限制。槽位不接受账号身份或就绪声明。`parseStorageDeploymentPlan` 解析全部受支持版本；`parseStaticStoragePlan` 保留原 v1/v2 返回值并拒绝 v3。
 
+Root 在物理校验后、冷技能证明解析前初始化 Runtime 的持久账号分配。此回调只接收已验证清单和原始账号分配注册函数。上述工作与证明校验完成前，Files 准入保持关闭；失败或关闭过程不会开放准入。旧版计划跳过此回调。
+
 Runtime 通过 `RootStorageOwner.installAccountAssignments` 安装唯一的 `StaticAccountAssignments` 登记器。其稳定分配对象将已认证用户关联到槽位；工作流状态变化不替换该对象。`staticInventory()` 仅返回受保护计划摘要、容量及槽位/模板 ID。`resolveAccountStorage()` 返回实测地址，不授予访问权限。原准备及租约检查保留精确分配，拒绝登记器撤销、身份变化或另一账号的布局；实际排空继续保留持久域。显式选择冷启动技能证明时，证明仍匹配登记器中有界且当前有效的分配。
 
 可信部署初始化须为各槽在 `private/.pe-env-<bankId>-<slotId>.json` 放置普通单链接记录。初始字段为 `schema: 1`、精确的 `bankId`/`slotId`、正安全整数 `slotGeneration` 及 `state: "free"`。绑定记录增加 `sessionId`、`workspaceId`、`environmentVersion` 并改为 `state: "bound"`；不存沙盒或命令状态。省略 `environmentBank.mode` 时，各槽仍持久绑定一个 Session。运行时不会初始化缺失的槽记录，也不会从空环境目录推断槽空闲。

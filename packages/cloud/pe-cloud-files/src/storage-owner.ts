@@ -7,6 +7,7 @@ import type { PoolReadPort } from './worker-pool.ts'
 import type { FdRootIdentity, FdStorageView } from './worker-protocol.ts'
 import type { StaticStorageAccount, StaticStorageAccountV2, StaticStorageConfig, StaticStorageDomain, StaticStorageDeploymentPlan,
   StaticStoragePlanV3, StaticStorageSlot, StaticAccountAssignment, StaticAccountAssignments, StaticStorageInventory,
+  StaticAccountInventoryInitializer,
   StorageProbeFacts } from './storage-types.ts'
 import { accountEnvironmentBank, parseStorageDeploymentPlan } from './storage-probe.ts'
 import { FilesFailure } from './error.ts'
@@ -134,10 +135,12 @@ export class RootStorageOwner {
    * @param maxPathBytes Original pool path bound.
    * @param driver Original pool's operations; never installed in an account graph.
    * @param maxSkillProjects Original per-account projection bound; omission allows only one proof.
+   * @param initializeAccountInventory Original Runtime registration after physical verification and before cold-proof parsing.
    */
   constructor(
     private readonly config: StaticStorageConfig, private readonly maxPathBytes: number, private readonly driver: StaticStorageDriver,
     private readonly maxSkillProjects?: number,
+    private readonly initializeAccountInventory?: StaticAccountInventoryInitializer,
   ) {}
 
   /**
@@ -152,6 +155,11 @@ export class RootStorageOwner {
         this.plan = await this.readPlan()
         if (this.plan.version !== 3 && this.assignments !== undefined) failure()
         await this.verify(this.plan)
+        if (this.plan.version === 3 && this.initializeAccountInventory !== undefined) {
+          await this.initializeAccountInventory(this.inventory(this.plan), resolver => this.installAccountAssignments(resolver))
+          if (this.state !== 'checking') stale()
+          this.driver.assertPoolCurrent()
+        }
         if (this.config.skillRevalidation !== undefined) {
           if (this.driver.skillProof === undefined) failure()
           const protectedProof = await this.driver.skillProof()
@@ -201,6 +209,10 @@ export class RootStorageOwner {
     this.assertRootCurrent()
     const plan = this.plan
     if (plan === undefined || plan.version !== 3) return undefined
+    return this.inventory(plan)
+  }
+
+  private inventory(plan: StaticStoragePlanV3): StaticStorageInventory {
     return Object.freeze({ sha256: this.config.planSha256, maxAccounts: plan.maxAccounts,
       slots: Object.freeze(plan.slots.map(slot => Object.freeze({ slotId: slot.slotId, templateId: slot.templateId }))) })
   }

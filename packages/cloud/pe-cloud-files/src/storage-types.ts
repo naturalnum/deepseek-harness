@@ -146,6 +146,10 @@ export interface StaticStorageInventory {
   readonly slots: readonly Readonly<{ slotId: string; templateId: string }>[]
 }
 
+/** Trusted Root startup work between physical verification and cold-proof parsing; it grants no Files admission. */
+export type StaticAccountInventoryInitializer = (inventory: StaticStorageInventory,
+  installAssignments: (resolver: StaticAccountAssignments) => () => void) => Promise<void>
+
 /** Exact closed-FD probe ABI1 facts. Decimal strings keep kernel-sized quantities lossless. */
 export interface StorageProbeFacts {
   readonly flags: number

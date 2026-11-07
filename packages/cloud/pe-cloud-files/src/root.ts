@@ -10,7 +10,7 @@ export { parseStaticStoragePlan, parseStorageDeploymentPlan, accountEnvironmentB
 export type { StaticStorageConfig, StaticStoragePlan, StaticStorageAccount, StaticStorageDomain } from './storage-types.ts'
 export type { StaticStoragePlanV1, StaticStoragePlanV2, StaticEnvironmentBank, StaticEnvironmentSlot } from './storage-types.ts'
 export type { StaticStoragePlanV3, StaticStorageDeploymentPlan, StaticStorageSlot, StaticAccountAssignment,
-  StaticAccountAssignments, StaticStorageInventory } from './storage-types.ts'
+  StaticAccountAssignments, StaticStorageInventory, StaticAccountInventoryInitializer } from './storage-types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

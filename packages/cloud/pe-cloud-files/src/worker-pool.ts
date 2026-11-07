@@ -421,6 +421,7 @@ export class LinuxFilesPool implements DrainParticipant {
     private readonly config: FilesPoolConfig,
     private readonly createWorker: (input: FdWorkerInput) => Worker = input =>
       new Worker(new URL('./file-worker.js', import.meta.url), { workerData: input, execArgv: [] }),
+    initializeAccountInventory?: import('./storage-types.ts').StaticAccountInventoryInitializer,
   ) {
     validate(config)
     this.owner = new FilesWorkOwner(limits(config))
@@ -446,7 +447,7 @@ export class LinuxFilesPool implements DrainParticipant {
             assertCurrent: () => { this.requireStorageOwner().assertRootCurrent() } }, client, signal)
         }, true)
       },
-    }, config.skillProjection?.maxProjects)
+    }, config.skillProjection?.maxProjects, initializeAccountInventory)
   }
 
   /** Prebuild exactly the configured number of slots; any handshake failure stops the entire startup. */

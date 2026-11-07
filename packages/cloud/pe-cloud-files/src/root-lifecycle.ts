@@ -22,7 +22,9 @@ export async function mountRootPool(
   const runtime: AccountRuntimeService | undefined = ctx.get('peAccountRuntime')
   if (runtime === undefined) throw new FilesFailure('files/prerequisite-missing', 'files/root requires peAccountRuntime')
   if (ctx.get('peFilesPool') !== undefined) throw new FilesFailure('files/prerequisite-missing', 'files/root pool already exists')
-  const pool = new LinuxFilesPool(config, createWorker)
+  const initializeInventory = runtime.prepareStaticAccountInventory
+  const pool = new LinuxFilesPool(config, createWorker, initializeInventory === undefined ? undefined
+    : (inventory, installAssignments) => initializeInventory.call(runtime, inventory, installAssignments))
   const unprovide = ctx.provide('peFilesPool', pool)
   let unregister: (() => void | Promise<void>) | undefined
   try {
