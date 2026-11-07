@@ -12,6 +12,12 @@ export interface HttpMcpFixture {
   authorization: Array<string | undefined>
   setAvailable: (available: boolean) => void
   setToolDelay: (milliseconds: number) => void
+  setToolText: (text: string) => void
+  setInstructions: (text: string) => void
+  setToolDescription: (text: string) => void
+  setSsePadding: (bytes: number) => void
+  setListPageCount: (pages: number) => void
+  listRequests: string[]
   holdNextRequest: () => { entered: Promise<void>; release: () => void }
   close: () => Promise<void>
 }
@@ -19,22 +25,45 @@ export interface HttpMcpFixture {
 /** Start a local stateless MCP endpoint exposing one `ping` tool. */
 export async function startHttpMcpFixture(options?: { requiredAuthorization: string }): Promise<HttpMcpFixture> {
   const calls: string[] = []
+  const listRequests: string[] = []
   const authorization: Array<string | undefined> = []
   let available = true, toolDelayMs = 0
+  let toolText = 'pong', instructions = '', description = 'Replies pong.', ssePadding = 0
+  let listPages = 1
   let heldRequest: { entered: PromiseWithResolvers<void>; released: PromiseWithResolvers<void> } | undefined
   const handler = createMcpHandler(() => {
     const mcp = new McpServer(
       { name: 'http-fixture', version: '1.0.0' },
-      { capabilities: { tools: {} } },
+      { capabilities: { tools: {} }, instructions },
     )
-    mcp.registerTool('ping', { description: 'Replies pong.', inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
+    mcp.registerTool('ping', { description, inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
       calls.push('ping')
       if (toolDelayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, toolDelayMs))
-      return { content: [{ type: 'text', text: 'pong' }] }
+      return { content: [{ type: 'text', text: toolText }] }
+    })
+    if (listPages > 1) mcp.server.setRequestHandler('tools/list', (request) => {
+      const page = Number(request.params?.cursor ?? '0')
+      listRequests.push(String(page))
+      return { tools: [{ name: `ping_${page}`, description, inputSchema: { type: 'object' } }],
+        ...page + 1 < listPages ? { nextCursor: String(page + 1) } : {} }
     })
     return mcp
   })
-  const handle = toNodeHandler(handler)
+  const handle = toNodeHandler({ async fetch(request, context) {
+    let input: unknown
+    if (request.method === 'POST') {
+      try { input = await request.clone().json() } catch (_error) { /* SDK negotiation also sends empty probe requests. */ }
+    }
+    const response = await handler.fetch(request, context)
+    if (ssePadding === 0 || input === null || typeof input !== 'object' || Reflect.get(input, 'method') !== 'tools/call'
+      || !response.headers.get('content-type')?.includes('application/json')) return response
+    const data = await response.text(), headers = new Headers(response.headers), encoder = new TextEncoder()
+    headers.set('content-type', 'text/event-stream'); headers.delete('content-length')
+    return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+      for (let bytes = 0; bytes < ssePadding; bytes += 68) controller.enqueue(encoder.encode(': ' + 'x'.repeat(64) + '\n\n'))
+      controller.enqueue(encoder.encode('data: ' + data + '\n\n')); controller.close()
+    } }), { status: response.status, headers })
+  } })
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     authorization.push(request.headers.authorization)
     const held = heldRequest
@@ -62,8 +91,14 @@ export async function startHttpMcpFixture(options?: { requiredAuthorization: str
     url: `http://127.0.0.1:${address.port}/mcp`,
     authorization,
     calls,
+    listRequests,
     setAvailable(value) { available = value },
     setToolDelay(milliseconds) { toolDelayMs = milliseconds },
+    setToolText(text) { toolText = text },
+    setInstructions(text) { instructions = text },
+    setToolDescription(text) { description = text },
+    setSsePadding(bytes) { ssePadding = bytes },
+    setListPageCount(pages) { listPages = pages },
     holdNextRequest() {
       const entered: PromiseWithResolvers<void> = Promise.withResolvers()
       const released: PromiseWithResolvers<void> = Promise.withResolvers()

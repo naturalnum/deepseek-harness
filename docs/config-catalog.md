@@ -2244,7 +2244,7 @@ export interface LspLocalServerConfig {
 ## `@deepseek-ai/dsh-mcp-client`
 
 - `inject`: `tools`
-- `source`: [`packages/mcp/mcp-client/src/index.ts:104`](../packages/mcp/mcp-client/src/index.ts)
+- `source`: [`packages/mcp/mcp-client/src/index.ts:116`](../packages/mcp/mcp-client/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -2252,6 +2252,8 @@ export type Config = StdioConfig | StreamableHttpConfig
 
 /** Config for connecting to an MCP server via a spawned child process over stdio. */
 export interface StdioConfig {
+  /** Optional SDK list pagination cap; omission preserves its default, zero disables it. */
+  listMaxPages?: number
   /** Selects child-process stdio transport. */
   transport: 'stdio'
   /**
@@ -2280,6 +2282,10 @@ export interface StdioConfig {
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
 export interface StreamableHttpConfig {
+  /** Optional decoded-byte cap per HTTP response, including cumulative SSE stream bytes. */
+  maxIncomingResponseBytes?: number
+  /** Optional SDK list pagination cap; omission preserves its default, zero disables it. */
+  listMaxPages?: number
   /** Selects Streamable HTTP transport. */
   transport: 'streamable-http'
   /**

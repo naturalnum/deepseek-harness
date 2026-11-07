@@ -267,7 +267,7 @@ Account-native Agent and child admission also require the original account sandb
 
 ### Optional HTTP MCP entry
 
-Opt in with `approvedConfiguration.mcp`, explicit finite `limits` and `runtime.reconnect`, the exact authenticated-account RPC `cloudMcpConnections/action` (`handlerId: native:cloudMcpConnections`), and one profile entry named `cordis:pe-cloud-mcp-connections`. Root assembles the original files/API/authentication/save owners. The entry restores private account definitions on first admitted management read or native model step. Removing the entry removes MCP management and its native clients; arbitrary npm installation and Loader editing remain closed.
+Opt in with `approvedConfiguration.mcp`, explicit finite `limits`, `runtime.maxIncomingResponseBytes`, `runtime.listMaxPages` and `runtime.reconnect`, the exact authenticated-account RPC `cloudMcpConnections/action` (`handlerId: native:cloudMcpConnections`), and one profile entry named `cordis:pe-cloud-mcp-connections`. Root assembles the original files/API/authentication/save owners. The entry restores private account definitions on first admitted management read or native model step. Removing the entry removes MCP management and its native clients; arbitrary npm installation and Loader editing remain closed.
 
 <a id="known-limitations-and-deferred-work"></a>
 

@@ -24,6 +24,7 @@ import { createTransport } from './transport.ts'
 import { syncTools } from './tools.ts'
 import type { ToolBridgeOptions, ToolDisposers } from './tools.ts'
 import type { Config } from './index.ts'
+import type { HttpIncomingOwner } from './http-incoming.ts'
 
 /** Automatic reconnect policy for one MCP server connection. */
 export interface ReconnectConfig {
@@ -261,6 +262,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     const generation = new Client(
       { name: 'dsh-mcp-client', version: '0.0.1' },
       {
+        ...config.listMaxPages === undefined ? {} : { listMaxPages: config.listMaxPages },
         capabilities: {},
         versionNegotiation: { mode: 'auto' },
         listChanged: {
@@ -276,6 +278,8 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     let attemptSettled = false
     let closeObserved = false
     let transport: Transport | undefined
+    let incoming: HttpIncomingOwner | undefined
+    const closeIncoming = async (): Promise<boolean> => incoming === undefined || await incoming.close()
     const hasClosed = (): boolean => closeObserved
     client = generation
     closeClient = closeGeneration
@@ -283,8 +287,14 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       closeObserved = true
       closed.resolve()
       // A failed connect owns its close barrier in the catch path below. An
-      // established generation can transition down directly from this signal.
-      if (attemptSettled) generationDown(generation)
+      // established generation also joins any bounded HTTP readers before reconnecting.
+      if (attemptSettled) {
+        if (incoming === undefined) generationDown(generation)
+        else void closeIncoming().then((confirmed) => {
+          if (!confirmed) closureConfirmed = false
+          settleFailedGeneration(generation, confirmed)
+        })
+      }
     }
     /** Unattached probes close through their transport; attached clients must also report transport closure. */
     async function closeGeneration(): Promise<boolean> {
@@ -294,11 +304,14 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         await (attached ? generation.close() : transport?.close())
       } catch (_error) {
         if (!attached) {
+          const incomingClosed = await closeIncoming()
           confirmed = hasClosed()
+          if (!incomingClosed) confirmed = false
           if (!confirmed) closureConfirmed = false
           return confirmed
         }
       }
+      if (!await closeIncoming()) { closureConfirmed = false; return false }
       confirmed = !attached || hasClosed() || await waitForClose(closed.promise)
       if (!confirmed) closureConfirmed = false
       return confirmed
@@ -314,11 +327,12 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     }
     let instructions: string
     try {
-      transport = createTransport(config)
+      transport = createTransport(config, (owner) => { incoming = owner })
       await generation.connect(transport)
       if (hasClosed()) {
+        const confirmed = incoming === undefined || await closeGeneration()
         attemptSettled = true
-        generationDown(generation)
+        settleFailedGeneration(generation, confirmed)
         return
       }
       if (!isCurrent(generation)) {
@@ -343,7 +357,8 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     }
     attemptSettled = true
     if (hasClosed()) {
-      generationDown(generation)
+      const confirmed = incoming === undefined || await closeGeneration()
+      settleFailedGeneration(generation, confirmed)
       return
     }
     if (!isCurrent(generation)) return

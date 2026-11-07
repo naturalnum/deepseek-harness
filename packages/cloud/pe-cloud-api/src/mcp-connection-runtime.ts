@@ -6,9 +6,11 @@ import type { AccountMcpConnectionStore, McpConnectionInput, McpConnectionRecord
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
 
-/** Explicit native reconnect policy selected by deployment. */
+/** Explicit native HTTP admission and reconnect policy selected by deployment. */
 export interface McpConnectionRuntimePolicy {
   readonly maxInstructionBytes: number
+  readonly maxIncomingResponseBytes: number
+  readonly listMaxPages: number
   readonly reconnect: Readonly<{ enabled: boolean; initialDelayMs: number; maxDelayMs: number; maxAttempts: number }>
 }
 /** Probe reports only observations from this one authenticated HTTP handshake. */
@@ -173,6 +175,7 @@ export class AccountMcpConnections {
     return McpClient.Config({ transport: 'streamable-http', serverName: row.serverName, url: row.url, headers,
       toolCallTimeoutMs: row.toolCallTimeoutMs, failOnStartupError: strict,
       maxInstructionBytes: this.policy.maxInstructionBytes,
+      maxIncomingResponseBytes: this.policy.maxIncomingResponseBytes, listMaxPages: this.policy.listMaxPages,
       reconnect: strict ? { ...this.policy.reconnect, enabled: false } : this.policy.reconnect })
   }
 }
