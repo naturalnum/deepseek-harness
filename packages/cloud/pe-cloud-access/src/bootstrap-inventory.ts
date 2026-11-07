@@ -104,6 +104,7 @@ export async function inspectBootstrapConfiguration(
   assertCurrent()
   return {
     configuration: Object.freeze({ catalogVersion: catalog.catalogVersion,
+      ...catalog.mcp === undefined ? {} : { mcp: Object.freeze({ manage: true }) },
       ...catalog.remoteServers === undefined ? {} : { remoteServers: Object.freeze({ manage: true }) },
       plugins: Object.freeze([...catalog.plugins.map(plugin => Object.freeze({ id: plugin.id,
         installable: plugin.installable, toggleable: plugin.toggleable })),

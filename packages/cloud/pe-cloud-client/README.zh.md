@@ -184,6 +184,10 @@ fetch 正文已被捕获 signal 的同一个取消原因置为 errored 时，按
 
 ## 已知限制与后续工作
 
+### 账户 HTTP MCP 设置
+
+原 bootstrap 声明 `configuration.mcp.manage` 时，可选贡献在原生设置壳中加入 MCP 连接。普通用户只管理自己的服务：HTTP/HTTPS 地址、私有 Bearer Token 或自定义请求头，以及保存、编辑、启停、移除和隔离测试。凭据字段留空保留已存请求头；显式清除会删除。密钥仅存在于当前表单与提交请求中，不进入账号 bootstrap、返回的连接元数据或浏览器持久化。账号页面撤销时清空表单，Agent 调用与结果沿用原生聊天工具渲染及 Session 历史。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 以下限制仍超出本地 bootstrap 与原生入口接线的范围。

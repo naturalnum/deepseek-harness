@@ -669,6 +669,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const auth = hasRootFetch(selectedAuth) ? selectedAuth : undefined
     if (exposure === undefined || execution === undefined || files === undefined) throw new AccountMountPrerequisiteError()
     const remoteServers = exposure.approvedConfiguration?.remoteServers
+    const mcp = exposure.approvedConfiguration?.mcp
     const modelKey = exposure.approvedConfiguration?.modelKey
     const skills = exposure.approvedConfiguration?.skills
     if (skills?.mode === 'sample') {
@@ -679,7 +680,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const settingsWrites = settingsFields.length !== 0
     const pluginCatalog = exposure.approvedConfiguration
     const plugins = pluginCatalog?.pluginControl
-    if ((remoteServers !== undefined || modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined) && !hasModelKeyPeerConsumer(selectedAuth)) {
+    if ((mcp !== undefined || remoteServers !== undefined || modelKey !== undefined || skills?.mode === 'managed' || settingsWrites || plugins !== undefined) && !hasModelKeyPeerConsumer(selectedAuth)) {
       throw new AccountMountPrerequisiteError()
     }
     if (settingsWrites && config.native.firstScreen === undefined) throw new AccountMountPrerequisiteError()
@@ -758,6 +759,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           maxNativeInventoryEntries: config.native.maxEntries,
           ...pluginPreparation === undefined ? {} : { plugins: pluginPreparation },
           ...settingsWrites ? { settingsWrites: { withModelKeyPeerUse, fields: settingsFields } } : {},
+          ...mcp === undefined ? {} : { mcp: { policy: mcp, withModelKeyPeerUse } },
           ...remoteServers === undefined ? {} : { remoteServers: { ...remoteServers, withModelKeyPeerUse } },
           ...modelKey === undefined ? {} : { modelKey: {
             limits: modelKey, maxNativeInventoryEntries: config.native.maxEntries,

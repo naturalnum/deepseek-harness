@@ -1,3 +1,4 @@
+import { CloudMcpConnectionService, type CloudMcpConnectionPreparation } from './cloud-mcp-connections.ts'
 /** Graph-owned API preparation and native providers consumed by trusted runtime assembly. */
 import type { BundledSkillResponseBorrow, BundledSkillResponseSettlement } from './bundled-skill-response.ts'
 import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './cloud-remote-servers.ts'
@@ -371,10 +372,13 @@ export class CloudAccountApi extends Service {
    * Recognize only a selected operation belonging to a currently audited independent account capability.
    * @param endpoint Exact approved endpoint.
    * @param mode Actual invocation carrier.
-   * @returns True after native implementation inspection; false for original native capabilities. Unapproved operations reject.
+   * @returns True after native implementation inspection; false for original native or unselected operations.
    */
   isCapabilityEndpoint(endpoint: string, mode: 'rpc' | 'stream'): boolean {
     this.admit()
+    const selected = mode === 'rpc' ? this.installation.exposure.manifest.rpcEndpoints
+      : this.installation.exposure.manifest.streamEndpoints
+    if (!selected.some(row => row.endpoint === endpoint)) return false
     const row = mode === 'rpc' ? this.installation.exposure.requireRpc(endpoint) : this.installation.exposure.requireStream(endpoint)
     return this.capabilityInventories.assertEndpoint(this.ctx, row, mode)
   }
@@ -657,6 +661,16 @@ export class CloudAccountApi extends Service {
     const native = await CloudRemoteServerService.prepare(owner, this, input, this.saves)
     this.remoteServers.native = native
     return native
+  }
+
+  /** Prepare the optional original account HTTP MCP capability.
+   * @param owner Original native entry.
+   * @param input Trusted files, authentication and deployment policy.
+   * @returns Installed independent capability; its Remote inventory is self-registered.
+   */
+  prepareCloudMcpConnections(owner: Context, input: CloudMcpConnectionPreparation): Promise<CloudMcpConnectionService> {
+    this.assertInstalled(owner)
+    return CloudMcpConnectionService.prepare(owner, this, input, this.saves)
   }
 
   /** Prepare the fixed plugin Remote after its original guarded manager and editor activate.

@@ -54,8 +54,11 @@
   en: 69e9749cddb257e8
   zh: 063906c5ff47a213
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work:
-  en: aa1a63148b4fa87d
-  zh: 3d9f2097b06fd869
+  en: 255a42f7124eba76
+  zh: c47d688a83276ef8
+/deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work/optional-mcp-bootstrap-capability:
+  en: f0dce2ccdd068b95
+  zh: c957afef4bb515e4
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work/dev-note:
   en: 1fdae11f988aceda
   zh: bd330aeef71da0d6

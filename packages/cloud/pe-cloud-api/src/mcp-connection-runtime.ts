@@ -4,6 +4,7 @@ import * as McpClient from '@deepseek-ai/dsh-mcp-client'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { AccountMcpConnectionStore, McpConnectionInput, McpConnectionRecord, McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
 
 /** Explicit native reconnect policy selected by deployment. */
 export interface McpConnectionRuntimePolicy {
@@ -14,11 +15,19 @@ export interface McpConnectionRuntimePolicy {
 export type McpConnectionTest = Readonly<{ reachable: true; tools: readonly string[] }>
   | Readonly<{ reachable: false; failure: 'connection-failed' }>
 
+/** Native supervisor could not confirm release; the original host must retain this operation. */
+export class McpConnectionCleanupError extends ConfigSaveOutcomeUnknown {
+  constructor() { super({ cause: new Error('cloud/mcp-close-unconfirmed') }) }
+}
+
 /** Account-owned optional native-client assembly; it never edits Loader entries or installs packages. */
 export class AccountMcpConnections {
   private readonly mounted = new Map<McpConnectionId, Fiber>()
   private readonly namespaces = new Map<McpConnectionId, string>()
+  private readonly clients = new Map<McpConnectionId, McpClient.McpClientLifecycle>()
+  private readonly probes = new Set<McpClient.McpClientLifecycle>()
   private stopping: Promise<void> | undefined
+  private restoration: Promise<void> | undefined
 
   /**
    * @param ctx Original account plugin scope with the existing native tool registry.
@@ -29,8 +38,8 @@ export class AccountMcpConnections {
    */
   constructor(private readonly ctx: Context, private readonly store: AccountMcpConnectionStore,
     private readonly policy: McpConnectionRuntimePolicy, private readonly current: () => void,
-    toolCurrent: (exec: ToolRunContext) => void) {
-    ctx.on('tools/pre-execute', async (exec, next) => {
+    toolCurrent: (exec: Pick<ToolRunContext, 'agent' | 'signal'>) => void) {
+    ctx.on('tools/execute', async (exec, next) => {
       if (![...this.namespaces.values()].some(name => exec.name.startsWith(`mcp__${name}__`))) return next()
       this.check(); toolCurrent(exec)
       const result = await next()
@@ -43,8 +52,11 @@ export class AccountMcpConnections {
   /** Restore enabled definitions after the account's private providers are installed.
    * @returns Actual initial client connection/discovery settlement; unavailable external servers retain native reconnect behavior.
    */
-  async restore(): Promise<void> {
-    for (const row of this.store.list()) await this.apply(row)
+  restore(): Promise<void> {
+    this.check()
+    return this.restoration ??= (async () => {
+      for (const row of this.store.list()) await this.apply(row)
+    })()
   }
 
   /** Replace only the selected account connection after its durable definition has committed.
@@ -60,7 +72,9 @@ export class AccountMcpConnections {
       this.check()
       const config = this.config(row, headers, false)
       const fiber = this.ctx.plugin({ name: `cloud-mcp-${row.id}`, inject: ['tools'],
-        apply: async (scope: Context): Promise<void> => { await McpClient.apply(scope, config) } })
+        apply: async (scope: Context): Promise<void> => {
+          await McpClient.apply(scope, config, lifecycle => this.clients.set(row.id, lifecycle))
+        } })
       this.mounted.set(row.id, fiber); this.namespaces.set(row.id, row.serverName)
       await fiber
       this.check()
@@ -75,9 +89,12 @@ export class AccountMcpConnections {
     this.check()
     const fiber = this.mounted.get(id)
     if (fiber === undefined) return
+    const confirmed = await this.clients.get(id)?.close()
     await fiber.dispose()
     while (fiber.inertia !== undefined) await fiber.inertia
+    if (confirmed !== true) throw new McpConnectionCleanupError()
     this.mounted.delete(id); this.namespaces.delete(id)
+    this.clients.delete(id)
   }
 
   /** Probe without publishing tools to the account or any model.
@@ -88,11 +105,30 @@ export class AccountMcpConnections {
   async test(input: McpConnectionInput, signal: AbortSignal): Promise<McpConnectionTest> {
     this.check(); signal.throwIfAborted()
     const probe = createScope(this.ctx, {})
-    const cancel = (): void => { void probe.dispose() }
+    let lifecycle: McpClient.McpClientLifecycle | undefined
+    let disposal: Promise<void> | undefined
+    const dispose = (): Promise<void> => disposal ??= probe.dispose()
+    const close = (): Promise<boolean> => lifecycle?.close() ?? Promise.resolve(true)
+    // Observe the cancellation-triggered promise immediately, then await its real outcome in finally.
+    const cancel = (): void => {
+      // Ask the original supervisor to stop before waiting on the parent scope's child startup.
+      void close().then(() => {}, () => {})
+      void dispose().then(() => {}, () => {})
+    }
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      await probe.ctx.plugin(McpClient, this.config(input, { ...input.headers }, true))
+      const observation = { connected: false }
+      await probe.ctx.plugin({ name: 'cloud-mcp-probe', inject: ['tools'], apply: async (owner: Context) => {
+        // A refused transient handshake is an observation, not a failed required Loader entry.
+        try {
+          await McpClient.apply(owner, this.config(input, { ...input.headers }, true), (observed) => {
+            lifecycle = observed; this.probes.add(observed)
+          })
+          observation.connected = true
+        } catch (_error) { /* Return a sanitized observation after the same native lifecycle is joined. */ }
+      } })
       this.check(); signal.throwIfAborted()
+      if (!observation.connected) return { reachable: false, failure: 'connection-failed' }
       const tools = probe.ctx.get('tools')
       if (tools === undefined) throw new Error('cloud/mcp-probe-tools-unavailable')
       return { reachable: true, tools: tools.schemas(scopeOf(probe.ctx)).map(tool => tool.name)
@@ -102,7 +138,12 @@ export class AccountMcpConnections {
       return { reachable: false, failure: 'connection-failed' }
     } finally {
       signal.removeEventListener('abort', cancel)
-      await probe.dispose()
+      const confirmed = await close()
+      await dispose()
+      if (lifecycle !== undefined) {
+        if (!confirmed) throw new McpConnectionCleanupError()
+        this.probes.delete(lifecycle)
+      }
     }
   }
 
@@ -111,12 +152,16 @@ export class AccountMcpConnections {
    */
   close(): Promise<void> {
     return this.stopping ??= (async () => {
-      const results = await Promise.allSettled([...this.mounted.values()].map(async (fiber) => {
+      const results = await Promise.allSettled([...this.mounted.entries()].map(async ([id, fiber]) => {
+        const confirmed = await this.clients.get(id)?.close()
         await fiber.dispose()
         while (fiber.inertia !== undefined) await fiber.inertia
+        if (confirmed !== true) throw new McpConnectionCleanupError()
       }))
-      if (results.some(result => result.status === 'rejected')) throw new Error('cloud/mcp-close-unconfirmed')
-      this.mounted.clear(); this.namespaces.clear()
+      const probes = await Promise.allSettled([...this.probes].map(lifecycle => lifecycle.close()))
+      if (results.some(result => result.status === 'rejected')
+        || probes.some(result => result.status === 'rejected' || !result.value)) throw new McpConnectionCleanupError()
+      this.mounted.clear(); this.namespaces.clear(); this.clients.clear(); this.probes.clear()
     })()
   }
 

@@ -147,9 +147,10 @@ class Decoder {
   }
 
   private configuration(input: unknown): BootstrapConfiguration {
+    const hasMcp = input !== null && typeof input === 'object' && Object.hasOwn(input, 'mcp')
     const hasRemote = input !== null && typeof input === 'object' && Object.hasOwn(input, 'remoteServers')
     const value = this.record(input, ['catalogVersion', 'plugins', 'skills', 'credentials', 'fields',
-      ...hasRemote ? ['remoteServers'] : []])
+      ...hasRemote ? ['remoteServers'] : [], ...hasMcp ? ['mcp'] : []])
     const rawSkills = value['skills']
     const hasArchive = object(rawSkills) && Object.hasOwn(rawSkills, 'releaseArchive')
     const skills = this.record(rawSkills, ['manage', ...hasArchive ? ['releaseArchive'] : []])
@@ -158,6 +159,7 @@ class Decoder {
     if (archive !== undefined && !manage) invalid()
     const credentials = this.record(value['credentials'], ['write'])
     return Object.freeze({
+      ...hasMcp ? { mcp: Object.freeze({ manage: this.boolean(this.record(value['mcp'], ['manage'])['manage']) }) } : {},
       ...hasRemote ? { remoteServers: Object.freeze({ manage: this.boolean(this.record(value['remoteServers'],
         ['manage'])['manage']) }) } : {},
       catalogVersion: this.token(value['catalogVersion']), plugins: this.list(value['plugins'], item => this.plugin(item)),

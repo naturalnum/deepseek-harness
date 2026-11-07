@@ -88,7 +88,10 @@
     "src/client/workspace-file-upload.ts",
     "src/client/remote-servers/install.ts",
     "src/client/remote-servers/ServersSection.tsx",
-    "src/client/remote-servers/locales.ts"
+    "src/client/remote-servers/locales.ts",
+    "src/client/mcp/index.ts",
+    "src/client/mcp/McpConnectionsSection.tsx",
+    "src/client/mcp/locales.ts"
   ],
   "references": [
     {

@@ -47,3 +47,9 @@ export type { ApprovedRemoteServers } from './remote-server-policy.ts'
 
 export { AccountMcpConnections } from './mcp-connection-runtime.ts'
 export type { McpConnectionRuntimePolicy, McpConnectionTest } from './mcp-connection-runtime.ts'
+
+export { CloudMcpConnectionService } from './cloud-mcp-connections.ts'
+export type { CloudMcpConnectionPreparation } from './cloud-mcp-connections.ts'
+export type { ApprovedMcpConnections } from './mcp-policy.ts'
+export { mcpConnectionsPolicy } from './mcp-policy.ts'
+export type * from './mcp-types.ts'

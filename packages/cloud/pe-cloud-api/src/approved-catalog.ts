@@ -1,3 +1,4 @@
+import { mcpConnectionsPolicy } from './mcp-policy.ts'
 import { remoteServerPolicy } from './remote-server-policy.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { managedSkillApiLimits } from './managed-skill-json.ts'
@@ -38,9 +39,10 @@ export function parseApprovedConfigurationCatalog(
   const optionalBundles = input !== null && typeof input === 'object' && Object.hasOwn(input, 'bundles')
   const optionalKey = input !== null && typeof input === 'object' && Object.hasOwn(input, 'modelKey')
   const optionalRemote = input !== null && typeof input === 'object' && Object.hasOwn(input, 'remoteServers')
+  const optionalMcp = input !== null && typeof input === 'object' && Object.hasOwn(input, 'mcp')
   const optionalPlugin = input !== null && typeof input === 'object' && Object.hasOwn(input, 'pluginControl')
   const row = record(input, ['recipeVersion', 'catalogVersion', 'maxEntries', 'maxStringBytes', 'maxCatalogBytes',
-    'plugins', 'skills', 'credentials', 'fields', ...optionalRemote ? ['remoteServers'] : [],
+    'plugins', 'skills', 'credentials', 'fields', ...optionalRemote ? ['remoteServers'] : [], ...optionalMcp ? ['mcp'] : [],
     ...optionalKey ? ['modelKey'] : [], ...optionalPlugin ? ['pluginControl'] : [], ...optionalBundles ? ['bundles'] : []])
   const maxEntries = positive(row.maxEntries), maxStringBytes = positive(row.maxStringBytes)
   const maxCatalogBytes = positive(row.maxCatalogBytes)
@@ -228,7 +230,13 @@ export function parseApprovedConfigurationCatalog(
     encodedBytes += Buffer.byteLength(JSON.stringify({ remoteServers })) - 1
     if (encodedBytes > maxCatalogBytes) invalid()
   }
-  return Object.freeze({ ...remoteServers === undefined ? {} : { remoteServers }, recipeVersion: version,
+  const mcp = optionalMcp ? mcpConnectionsPolicy(row.mcp) : undefined
+  if (mcp !== undefined) {
+    encodedBytes += Buffer.byteLength(JSON.stringify({ mcp })) - 1
+    if (encodedBytes > maxCatalogBytes) invalid()
+  }
+  return Object.freeze({ ...mcp === undefined ? {} : { mcp }, ...remoteServers === undefined ? {} : { remoteServers },
+    recipeVersion: version,
     catalogVersion, maxEntries, maxStringBytes, maxCatalogBytes,
     ...modelKey === undefined ? {} : { modelKey }, ...pluginControl === undefined ? {} : { pluginControl },
     plugins: Object.freeze(plugins), ...optionalBundles ? { bundles: Object.freeze(bundles) } : {}, skills,

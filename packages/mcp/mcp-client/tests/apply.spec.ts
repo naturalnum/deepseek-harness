@@ -428,6 +428,25 @@ describe('apply (plugin lifecycle)', () => {
     expect(mockClose).toHaveBeenCalled()
   })
 
+  it.each([true, false])('reports actual native close confirmation to the optional host observer: %s', async (confirmed) => {
+    vi.useFakeTimers()
+    try {
+      mockClose.mockImplementation(function (this: { onclose?: () => void }) {
+        if (confirmed) this.onclose?.()
+        return Promise.resolve()
+      })
+      let lifecycle: import('../src/index.ts').McpClientLifecycle | undefined
+      await apply(ctx, stdioConfig, (observed) => { lifecycle = observed })
+      expect(lifecycle).toBeDefined()
+      const stopped = lifecycle?.close()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(await stopped).toBe(confirmed)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+      await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
+      expect(await lifecycle?.close()).toBe(confirmed)
+    } finally { vi.useRealTimers() }
+  })
+
   it('uses streamable-http config path', async () => {
     const httpConfig: Config = {
       transport: 'streamable-http',

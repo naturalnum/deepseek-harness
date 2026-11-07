@@ -5,6 +5,7 @@ export type * from './skill-types.ts'
 export type * from './managed-skill-types.ts'
 export type * from './plugin-types.ts'
 export type * from './remote-server-types.ts'
+export type * from './mcp-types.ts'
 import type { PluginControlLimits } from './plugin-types.ts'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LlmProviderInfo, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm/types'
@@ -132,6 +133,7 @@ export interface ApprovedConfigurationCatalog {
     | Readonly<{ mode: 'managed'; limits: Readonly<SkillPublicationLimits>; management: Readonly<ManagedSkillApiLimits> }>
   readonly credentials: Readonly<{ mode: 'read-only' }>
   readonly remoteServers?: import('./remote-server-policy.ts').ApprovedRemoteServers
+  readonly mcp?: import('./mcp-policy.ts').ApprovedMcpConnections
   readonly modelKey?: ApprovedModelKeyConfiguration
   readonly pluginControl?: Readonly<PluginControlLimits>
   readonly fields: readonly ApprovedConfigurationField[]

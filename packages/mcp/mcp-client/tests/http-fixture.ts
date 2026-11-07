@@ -10,6 +10,9 @@ export interface HttpMcpFixture {
   url: string
   calls: string[]
   authorization: Array<string | undefined>
+  setAvailable: (available: boolean) => void
+  setToolDelay: (milliseconds: number) => void
+  holdNextRequest: () => { entered: Promise<void>; release: () => void }
   close: () => Promise<void>
 }
 
@@ -17,6 +20,8 @@ export interface HttpMcpFixture {
 export async function startHttpMcpFixture(options?: { requiredAuthorization: string }): Promise<HttpMcpFixture> {
   const calls: string[] = []
   const authorization: Array<string | undefined> = []
+  let available = true, toolDelayMs = 0
+  let heldRequest: { entered: PromiseWithResolvers<void>; released: PromiseWithResolvers<void> } | undefined
   const handler = createMcpHandler(() => {
     const mcp = new McpServer(
       { name: 'http-fixture', version: '1.0.0' },
@@ -24,6 +29,7 @@ export async function startHttpMcpFixture(options?: { requiredAuthorization: str
     )
     mcp.registerTool('ping', { description: 'Replies pong.', inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
       calls.push('ping')
+      if (toolDelayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, toolDelayMs))
       return { content: [{ type: 'text', text: 'pong' }] }
     })
     return mcp
@@ -31,10 +37,14 @@ export async function startHttpMcpFixture(options?: { requiredAuthorization: str
   const handle = toNodeHandler(handler)
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     authorization.push(request.headers.authorization)
+    const held = heldRequest
+    heldRequest = undefined
+    if (held !== undefined) { held.entered.resolve(); await held.released.promise }
     if (options !== undefined && request.headers.authorization !== options.requiredAuthorization) {
       response.writeHead(401).end('Authentication required')
       return
     }
+    if (!available) { response.writeHead(503).end('Temporary synthetic outage'); return }
     // The adapter excludes explicit undefined on Node's optional HTTP fields.
     await handle(request as NodeIncomingMessageLike, response)
   }
@@ -52,6 +62,14 @@ export async function startHttpMcpFixture(options?: { requiredAuthorization: str
     url: `http://127.0.0.1:${address.port}/mcp`,
     authorization,
     calls,
+    setAvailable(value) { available = value },
+    setToolDelay(milliseconds) { toolDelayMs = milliseconds },
+    holdNextRequest() {
+      const entered: PromiseWithResolvers<void> = Promise.withResolvers()
+      const released: PromiseWithResolvers<void> = Promise.withResolvers()
+      heldRequest = { entered, released }
+      return { entered: entered.promise, release: () => { released.resolve() } }
+    },
     close: async () => {
       await handler.close()
       await new Promise<void>((resolve, reject) => {
