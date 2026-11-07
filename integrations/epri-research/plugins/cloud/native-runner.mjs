@@ -4,19 +4,32 @@ import {randomUUID,createHash} from 'node:crypto';
 import {readFileSync,readdirSync} from 'node:fs';
 import {join,dirname,posix} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {readNativeFile} from './read-file.mjs';
 
 const sourceRoot=dirname(fileURLToPath(import.meta.url));
 const engineRoot=join(sourceRoot,'../../src/reused/engine');
 const resourceScript=join(sourceRoot,'../../plugins/cloud/resource-materializer.py');
 const documentScript=join(sourceRoot,'../../src/server/document-native.py');
 const unavailable=message=>{throw Object.assign(new Error(message),{code:'UNAVAILABLE'});};
-const bootstrap=`import sys,os,runpy,shutil,io,contextlib,json,hashlib
-p,r,w,o,m=sys.argv[1:]
+const bootstrap=`import sys,os,runpy,shutil,io,contextlib,json,hashlib,base64
+p,r,w,o,m,n,b,h,s=sys.argv[1:]
 os.environ['EPRI_EXECUTION_ROOT']=w
-sys.stdin=open(p,encoding='utf8')
-sys.argv=[r]
-capture=io.StringIO()
+parts=[p+'.'+str(i) for i in range(int(n))]
 try:
+ data=bytearray()
+ for name in parts:
+  fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW)
+  with os.fdopen(fd,'rb') as f:
+   raw=f.read(int(s)+1)
+  if len(raw)>int(s): raise ValueError('Scientific input part exceeds configured capacity')
+  part=base64.b64decode(raw,validate=True)
+  if len(data)+len(part)>int(b): raise ValueError('Scientific input exceeds its manifest')
+  data.extend(part)
+ if len(data)!=int(b) or hashlib.sha256(data).hexdigest()!=h: raise ValueError('Scientific input manifest does not match')
+ sys.stdin=io.StringIO(data.decode('utf8'))
+ del data,part,raw
+ sys.argv=[r]
+ capture=io.StringIO()
  with contextlib.redirect_stdout(capture):
   try: runpy.run_path(r,run_name='__main__')
   except SystemExit as result:
@@ -26,15 +39,19 @@ try:
  with open(o,'xb') as f: f.write(data)
  print(json.dumps({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}))
 finally:
- sys.stdin.close()
- for f in (p,r):
-  if os.path.isfile(f): os.unlink(f)
+ for f in [r]+parts:
+  if os.path.lexists(f): os.unlink(f)
  if os.path.isdir(w): shutil.rmtree(w)
 `;
 
 /** Keep one actual native tool execution available through asynchronous scientific calculations. */
 export function createNativeResearchRuntime(config,assertToolCurrent,projectPath) {
   const executions=new AsyncLocalStorage(),closing=new AbortController();
+  let transfers=0;
+  async function withTransfer(work){
+    if(transfers>=config.maxConcurrentFileTransfers)unavailable('科研文件传输达到配置并发容量，请稍后重试。');
+    transfers++;try{return await work();}finally{transfers--;}
+  }
   let engineObservation={ready:false,execution:'managed-native',message:'尚未通过当前科研对话检查计算环境。'};
   let documentObservation={available:false,execution:'managed-native',message:'尚未通过当前科研对话检查识别环境。'};
   const current=()=>{
@@ -42,28 +59,34 @@ export function createNativeResearchRuntime(config,assertToolCurrent,projectPath
     if(!exec?.agent)unavailable('请在当前原生对话中执行科研工具。');
     assertToolCurrent(exec);exec.signal.throwIfAborted();return exec;
   };
-  async function python(script,payload,signal) {
+  function python(script,payload,signal){return withTransfer(()=>pythonActual(script,payload,signal));}
+  async function pythonActual(script,payload,signal) {
     const exec=current(),agent=exec.agent,ctx=agent.ctx;
     const control=AbortSignal.any([exec.signal,closing.signal,signal ?? exec.signal,AbortSignal.timeout(config.executionTimeoutMs)]);
     const cwd=await ctx.get('workingDirectory').ensure(agent,control);
     current();
     const id='.research-'+randomUUID(),root=posix.join(cwd,id+'-work');
     const policy=ctx.get('sandboxPolicy').resolve({session:agent.session});
-    const targets=[];
-    for(const [suffix,content] of [['.json',JSON.stringify(payload)],['.py',script]]) {
-      const target=await ctx.get('fs').resolve(id+suffix,{cwd,signal:control});
-      current();
-      await ctx.get('fs').writeText(target,content,{kind:'createIfAbsent'},control,policy);
-      current();targets.push(ctx.get('fs').processPath(target));
+    let input=Buffer.from(JSON.stringify(payload));
+    if(input.length>config.maxPayloadBytes||Buffer.byteLength(script)>config.fileChunkBytes)unavailable('科研输入或执行脚本超过配置容量。');
+    const inputBytes=input.length,inputSha256=createHash('sha256').update(input).digest('hex');
+    const partBytes=Math.floor(config.fileChunkBytes/4)*3,parts=Math.ceil(input.length/partBytes);
+    const prefix=await ctx.get('fs').resolve(id+'.json',{cwd,signal:control});
+    const inputPath=ctx.get('fs').processPath(prefix);
+    for(let index=0;index<parts;index++){
+      const part=await ctx.get('fs').resolve(id+'.json.'+index,{cwd,signal:control});current();
+      await ctx.get('fs').writeText(part,input.subarray(index*partBytes,(index+1)*partBytes).toString('base64'),{kind:'createIfAbsent'},control,policy);current();
     }
+    input=undefined;
+    const scriptTarget=await ctx.get('fs').resolve(id+'.py',{cwd,signal:control});current();
+    await ctx.get('fs').writeText(scriptTarget,script,{kind:'createIfAbsent'},control,policy);current();
+    const scriptPath=ctx.get('fs').processPath(scriptTarget);
     const resultTarget=await ctx.get('fs').resolve(id+'.result.json',{cwd,signal:control});
     const resultPath=ctx.get('fs').processPath(resultTarget);
-    const output=await command([config.pythonPath,'-I','-X','utf8','-c',bootstrap,...targets,root,resultPath,String(config.maxPayloadBytes)],cwd,control);
+    const output=await command([config.pythonPath,'-I','-X','utf8','-c',bootstrap,inputPath,scriptPath,root,resultPath,String(config.maxPayloadBytes),String(parts),String(inputBytes),inputSha256,String(config.fileChunkBytes)],cwd,control);
     const manifest=JSON.parse(output);
     if(!Number.isSafeInteger(manifest.bytes)||manifest.bytes<0||manifest.bytes>config.maxPayloadBytes||typeof manifest.sha256!=='string')unavailable('计算结果回执无效。');
-    const bytes=Buffer.from(await ctx.get('fs').readBytes(resultTarget,control,config.maxPayloadBytes));
-    current();
-    if(bytes.length!==manifest.bytes||createHash('sha256').update(bytes).digest('hex')!==manifest.sha256)unavailable('科研结果读取不完整；未确认成功。');
+    const bytes=await readNativeFile(ctx.get('fs'),resultTarget,{maxBytes:config.maxPayloadBytes,chunkBytes:config.fileChunkBytes,signal:control,check:current,expectedBytes:manifest.bytes,expectedSha256:manifest.sha256});
     await command([config.pythonPath,'-I','-c',"import os,sys; os.unlink(sys.argv[1])",resultPath],cwd,control);
     return JSON.parse(bytes.toString('utf8'));
   }
@@ -99,16 +122,20 @@ export function createNativeResearchRuntime(config,assertToolCurrent,projectPath
     if(relative==='..'||relative.startsWith('../')||path.includes('\\'))unavailable('Git 目录必须属于当前原生会话项目。');
     const value=await exec.agent.ctx.get('fs').resolve(normalized,{cwd:root,signal:exec.signal});current();return value;
   }
+  function readProjectFile(path,maxBytes){return withTransfer(async()=>{
+    const exec=current(),value=await target(path);
+    return readNativeFile(exec.agent.ctx.get('fs'),value,{maxBytes:Math.min(maxBytes,config.maxPayloadBytes),chunkBytes:config.fileChunkBytes,signal:exec.signal,check:current});
+  });}
   const git={
     async run(path,args,signal,allowMissing=false){await target(path);return command([config.gitPath,'--no-pager','-c','core.quotepath=false','-c','core.fsmonitor=false','-C',path,...args],projectPath(current()),signal,allowMissing);},
     async realpath(path){const exec=current(),value=await target(path);const info=await exec.agent.ctx.get('fs').stat(value,exec.signal);if(info?.type!=='directory')unavailable('项目目录不存在。');return exec.agent.ctx.get('fs').processPath(value);},
-    async readFile(path){const exec=current(),value=await target(path);return Buffer.from(await exec.agent.ctx.get('fs').readBytes(value,exec.signal,config.maxPayloadBytes));},
+    readFile(path){return readProjectFile(path,config.maxPayloadBytes);},
     async stat(path){const exec=current(),value=await target(path);const info=await exec.agent.ctx.get('fs').stat(value,exec.signal);if(!info)throw Object.assign(new Error('File missing'),{code:'ENOENT'});return info;},
     async mkdir(path){await target(path);await python("import os,json,sys; os.makedirs(json.load(sys.stdin)['path'],exist_ok=True); print('null')",{path});},
     worktreeParent(){return posix.join(projectPath(current()),'.research-worktrees');},
   };
   const runtime={
-    git,
+    git,readProjectFile,
     execution(){return executions.getStore();},
     resources(payload){return python(readFileSync(resourceScript,'utf8'),payload);},
     close(){closing.abort(new Error('科研账号作用域已关闭。'));},

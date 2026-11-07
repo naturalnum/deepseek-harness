@@ -30,6 +30,8 @@ export interface Config {
   readonly maxPendingRequests: number
   readonly executionTimeoutMs: number
   readonly maxPayloadBytes: number
+  readonly fileChunkBytes: number
+  readonly maxConcurrentFileTransfers: number
   readonly maxOutputBytes: number
   readonly graceMs: number
   readonly maxConcurrentResourcePreparations: number
@@ -50,6 +52,8 @@ export const Config: schema<Config> = schema.object({
   maxPendingRequests: schema.number().step(1).min(1).max(16).required(),
   executionTimeoutMs: schema.number().step(1).min(1000).max(300000).required(),
   maxPayloadBytes: schema.number().step(1).min(1024).max(Number.MAX_SAFE_INTEGER).required(), maxOutputBytes: schema.number().step(1).min(1024).max(Number.MAX_SAFE_INTEGER).required(),
+  fileChunkBytes:schema.number().step(1).min(4096).max(2147483646).required(),
+  maxConcurrentFileTransfers:schema.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxConcurrentResourcePreparations:schema.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxSkillProviders:schema.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxSkillFiles:schema.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).required(),
@@ -200,6 +204,12 @@ export class CloudResearch extends TypertRemoteService {
    * @param op Exact reviewed operation. @param args Version-pinned input. @param exec Original invocation.
    * @returns Original domain result after the existing exact human decision. */
   reviewedCall(op:string,args:Record<string,unknown>,exec:ToolRunContext):Promise<unknown> { return this.perform(op,args,exec,'human') }
+  /** Read the original present tool's current-project bytes within the suite's bounded transfer slots.
+   * @param path Original accepted delivery path. @param exec Actual native present invocation.
+   * @returns A complete version-checked snapshot, at most the original 2 MiB attachment allowance. */
+  readPresentedFile(path:string,exec:ToolExecution):Promise<Uint8Array> {
+    return this.track(this.runtime.withExecution(exec,()=>this.runtime.readProjectFile(path,2*1024*1024)))
+  }
   /** Retain the existing registry invalidation.
    * @param owner Actual provider fiber. @param invalidate Original registry callback.
    * @returns Effect disposer withdrawing only this provider notification. */

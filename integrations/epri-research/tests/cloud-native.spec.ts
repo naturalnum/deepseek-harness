@@ -9,18 +9,19 @@ import * as ResearchSkills from '../plugins/deepscientist/index.mjs'
 import {policyFixture} from '../../../packages/cloud/pe-cloud-runtime/tests/account-policy-fixture.ts'
 import * as Cloud from '../plugins/cloud/index.ts'
 import * as Airalogy from '../plugins/airalogy/index.mjs'
+import * as Workbench from '../plugins/workbench/index.mjs'
 
 const limits={maxDatabaseBytes:1048576,maxRequestBytes:1048576,maxReplyBytes:1048576,maxPendingRequests:2,
-  maxConcurrentResourcePreparations:1,maxSkillProviders:64,maxSkillFiles:1024,maxSkillBytes:33554432,maxSkillFileBytes:4194304,maxSkillPathBytes:256,executionTimeoutMs:10000,expectedPythonVersion:'3.13',expectedAiralogyVersion:'0.16.0',maxPayloadBytes:1048576,maxOutputBytes:32768,graceMs:1000,gitPath:'/usr/bin/git',pythonPath:'/usr/bin/python3'}
+  maxConcurrentResourcePreparations:1,maxSkillProviders:64,maxSkillFiles:1024,maxSkillBytes:33554432,maxSkillFileBytes:4194304,maxSkillPathBytes:256,executionTimeoutMs:10000,expectedPythonVersion:'3.13',expectedAiralogyVersion:'0.16.0',maxPayloadBytes:8388608,fileChunkBytes:65536,maxConcurrentFileTransfers:2,maxOutputBytes:32768,graceMs:1000,gitPath:'/usr/bin/git',pythonPath:'/usr/bin/python3'}
 const endpoint={endpoint:'cloudResearch/action',handlerId:'native:cloudResearch',guard:'account-session' as const}
-async function fixture(accountId:string) {
+async function fixture(accountId:string,overrides:Partial<Cloud.Config>={}) {
   const options={defaultId:'research-suite',declarations:[{entryId:'research-preset',selectable:true,config:{id:'research-suite',plugins:[
     {id:'persona',name:'cordis:m8z-persona',config:{prefix:'Research fixture.',complete:true,includeRuntimeContext:false}},
     {id:'research-tools',name:'deepscientist-harness-suite/airalogy'},
     {id:'research-skills',name:'deepscientist-harness-suite/research'},
     {id:'tool-skill',name:'@deepseek-ai/dsh-tool-skill'},
-  ]}}],sourceModules:{'@deepseek-ai/dsh-skill':SkillRegistry,'@deepseek-ai/dsh-tool-skill':ToolSkill,'deepscientist-harness-suite/research':ResearchSkills,'deepscientist-harness-suite/cloud':Cloud,'deepscientist-harness-suite/airalogy':Airalogy},
-  extraEntries:[{id:'skills',name:'@deepseek-ai/dsh-skill'},{id:'cloud-research',name:'deepscientist-harness-suite/cloud',config:limits}],
+  ]}}],sourceModules:{'@deepseek-ai/dsh-skill':SkillRegistry,'@deepseek-ai/dsh-tool-skill':ToolSkill,'deepscientist-harness-suite/research':ResearchSkills,'deepscientist-harness-suite/cloud':Cloud,'deepscientist-harness-suite/airalogy':Airalogy,'deepscientist-harness-suite':Workbench},
+  extraEntries:[{id:'skills',name:'@deepseek-ai/dsh-skill'},{id:'cloud-research',name:'deepscientist-harness-suite/cloud',config:{...limits,...overrides}},{id:'research-workbench',name:'deepscientist-harness-suite'}],
   researchStorage(binding:Cloud.CloudResearch['binding'],privateRoot:string){
     return {binding,directory:join(privateRoot,'research-suite'),assertCurrent(){binding.lifetime.throwIfAborted()}}
   }}
@@ -113,7 +114,8 @@ async function managedFixture(a:Awaited<ReturnType<typeof fixture>>,physical=fal
       }
       const output=argv[9]
       if(output!==undefined){
-        const payload:Record<string,unknown>=JSON.parse(await readFile(argv[6]!,'utf8'));payloads.push(payload)
+        const parts=[];for(let index=0;index<Number(argv[11]);index++)parts.push(Buffer.from(await readFile(argv[6]+'.'+index,'utf8'),'base64'));
+        const payload:Record<string,unknown>=JSON.parse(Buffer.concat(parts).toString('utf8'));payloads.push(payload)
         const result=payload.action==='workflow_assign'?{success:true,data:{outputs:{y:42}}}:domainResult
         const bytes=Buffer.from(JSON.stringify(result));await writeFile(output,bytes,{flag:'wx'});stdout=JSON.stringify({bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})
       }
@@ -142,6 +144,73 @@ it('retains a complete managed probe result after the source-style successful Py
   const b=await fixture('research-probe-failed'),failed=await managedFixture(b,true,'import sys,json\nprint(json.dumps({"available":True}))\nsys.exit(7)\n')
   expect(await b.tool('research_document_status')).toMatchObject({isError:false,value:{available:false,execution:'managed-native'}})
   expect(failed.observations).toEqual(['research_document_status']);expect(failed.charges).toEqual({resident:0,active:0})
+})
+
+it('stages a large input and collects a multibyte managed result through original 64 KiB FS calls without whole-file reads',async()=>{
+  const a=await fixture('research-chunked',{maxDatabaseBytes:16777216})
+  const fs=a.agent.ctx.get('fs')!,write=fs.writeText.bind(fs),range=fs.readByteRange.bind(fs),writes:number[]=[],reads:number[]=[]
+  let corrupt=false
+  vi.spyOn(fs,'writeText').mockImplementation((target,text,...args)=>{
+    writes.push(Buffer.byteLength(text));if(Buffer.byteLength(text)>65536)throw new Error('Native single write limit')
+    if(corrupt&&target.displayPath.endsWith('.json.0')){corrupt=false;text='AAAA'+text.slice(4)}
+    return write(target,text,...args)
+  })
+  vi.spyOn(fs,'readByteRange').mockImplementation((target,window,signal)=>{
+    reads.push(window.length);if(window.length>65536)throw new Error('Native single reply limit');return range(target,window,signal)
+  })
+  const whole=vi.spyOn(fs,'readBytes').mockImplementation(()=>{throw new Error('Whole file read is not admitted')})
+  const text='汉🙂'.repeat(300000)
+  const managed=await managedFixture(a,true,"import json,sys,base64\np=json.load(sys.stdin)\nassert len(base64.b64decode(p['files']['notes.txt']))==700000\nprint(json.dumps({'success':True,'data':{'text':'汉🙂'*300000}},ensure_ascii=False))\n")
+  const prepare=a.graph.ctx.tools.register({name:'fixture_prepare_large',description:'Synthetic large managed transport fixture',parameters:{type:'object',additionalProperties:false},
+    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},async execute(_args,exec){
+      const stored=await a.graph.ctx.cloudResearch.reviewedCall('engine_package_put',{id:'large-input',version:'1',title:'Large input',kind:'protocol',
+        files:{'protocol.aimd':'# Test\n{{var|x: int}}','protocol.toml':'[airalogy_protocol]\nid="fixture"\nversion="1"','notes.txt':'汉🙂'.repeat(100000)},requestId:'large-upload'},exec) as {sha256:string}
+      return a.graph.ctx.cloudResearch.reviewedCall('engine_package_review',{id:'large-input',version:'1',sha256:stored.sha256,approved:true,reason:'Synthetic transfer fixture'},exec)
+    }})
+  try{expect((await a.tool('fixture_prepare_large')).isError).toBe(false)}finally{prepare()}
+  const request={packageId:'large-input',version:'1',action:'parse_protocol',params:{},requestId:'large-execute'}
+  const result=await a.tool('research_engine_run',request)
+  expect(result.isError).toBe(false);expect(result.value).toMatchObject({status:'succeeded'})
+  expect(JSON.stringify(result.value).includes(text)).toBe(true)
+  expect(writes.length).toBeGreaterThan(14);expect(Math.max(...writes)).toBeLessThanOrEqual(65536)
+  expect(reads.length).toBeGreaterThan(32);expect(Math.max(...reads)).toBeLessThanOrEqual(65536);expect(whole).not.toHaveBeenCalled()
+  expect(managed.charges).toEqual({resident:0,active:0})
+  corrupt=true
+  expect((await a.tool('research_engine_run',{...request,requestId:'corrupted-execute'})).value).toMatchObject({status:'failed'})
+  expect(managed.charges).toEqual({resident:0,active:0})
+})
+
+it('captures accepted native present bytes through bounded windows and preserves the original binary snapshot',async()=>{
+  const a=await fixture('research-present'),{writeFile}=await import('node:fs/promises'),{createHash}=await import('node:crypto')
+  const bytes=Buffer.from(Array.from({length:300000},(_,index)=>index%251)),path=join(a.f.project,'presented.bin')
+  await writeFile(path,bytes)
+  const fs=a.agent.ctx.get('fs')!,read=fs.readByteRange.bind(fs)
+  const whole=vi.spyOn(fs,'readBytes').mockImplementation(()=>{throw new Error('Whole file read is not admitted')})
+  vi.spyOn(fs,'readByteRange').mockImplementation((target,range,signal)=>{
+    if(range.length>65536)throw new Error('Native single reply limit');return read(target,range,signal)
+  })
+  const unregister=a.graph.ctx.tools.register({name:'present',description:'Accepted native presentation fixture',parameters:{type:'object',additionalProperties:false},
+    output:{schema:{type:'object',additionalProperties:true},render:()=>[]},execute:()=>({files:[{path}]})})
+  try{expect((await a.tool('present')).isError).toBe(false)}finally{unregister()}
+  const reference='attachment:'+createHash('sha256').update(bytes).digest('hex')
+  expect(await a.api('attachment_get',{reference})).toMatchObject({contentBase64:bytes.toString('base64')})
+  expect(whole).not.toHaveBeenCalled()
+})
+
+it('bounds scientific transfer slots independently and releases the slot after actual staging and collection settle',async()=>{
+  const a=await fixture('research-transfer-slots',{maxConcurrentFileTransfers:1})
+  await managedFixture(a,true,'import json\nprint(json.dumps({"available":True}))\n')
+  const fs=a.agent.ctx.get('fs')!,write=fs.writeText.bind(fs),entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>()
+  let held=true
+  vi.spyOn(fs,'writeText').mockImplementation(async(...args)=>{
+    if(held){held=false;entered.resolve();await release.promise}return write(...args)
+  })
+  const first=a.tool('research_document_status')
+  await entered.promise
+  try{expect(await a.tool('research_document_status')).toMatchObject({isError:false,value:{available:false,message:expect.stringContaining('并发容量')}})}
+  finally{release.resolve()}
+  expect(await first).toMatchObject({isError:false,value:{available:true}})
+  expect(await a.tool('research_document_status')).toMatchObject({isError:false,value:{available:true}})
 })
 
 it('keeps workflow transitions in the preserved engine while its assigner uses the same real native tool scope',async()=>{

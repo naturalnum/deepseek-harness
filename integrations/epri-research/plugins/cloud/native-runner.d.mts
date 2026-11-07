@@ -6,6 +6,7 @@ export interface NativeResearchRuntime {
   close():void;
   execution():ToolExecution|undefined;
   resources(payload:object):Promise<unknown>;
+  readProjectFile(path:string,maxBytes:number):Promise<Uint8Array>;
   readonly engine:object;
   readonly documents:object;
   readonly git:object;
