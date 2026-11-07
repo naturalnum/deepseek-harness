@@ -66,3 +66,6 @@ for(const name of ['protocol_executor.py','workflow_executor.py','runner.py','LI
 await copyFile('src/server/document-native.py','dist/server/document-native.py');
 await mkdir('source-records', {recursive:true});
 await writeFile('source-records/build-inputs.json', JSON.stringify({backend:backend.metafile, frontend:frontend.metafile}, null, 2));
+
+await build({entryPoints:['plugins/cloud/index.ts'],outfile:'dist/cloud/index.mjs',bundle:true,platform:'node',format:'esm',
+  target:'es2023',external:['@deepseek-ai/*','zod','yaml'],loader:{'.aimd':'text','.toml':'text','.py':'text'},alias,sourcemap:true});

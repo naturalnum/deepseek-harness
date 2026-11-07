@@ -99,6 +99,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     readonly sourceModules?: Readonly<Record<string, unknown>>
     readonly extraEntries?: readonly { readonly id: string; readonly name: string; readonly config?: object }[]
     readonly prepare?: (ctx: Context, binding: AccountBinding, guards: ReturnType<typeof createAccountPolicy>) => void
+    readonly researchStorage?: (binding: AccountBinding, privateRoot: string) => import('@deepseek-ai/dsh-pe-cloud-files').AccountResearchStorage
     readonly filesAttachments?: (binding: AccountBinding, projects: string) => NonNullable<AccountFilesPreparation['attachments']>
     readonly afterReady?: (ctx: Context, api: CloudAccountApi, files: CloudAccountFiles,
       guards: ReturnType<typeof createAccountPolicy>) => void | Promise<void>
@@ -323,6 +324,12 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
 
         api = new CloudAccountApi(owner, { binding, saves: barrier, selected: manifest, rootExposure: exposure,
           assertMountCurrent: actualGraph, assertBusinessCurrent: businessGraph,
+          sessionProject: session => requireGuards().projectForSession(session),
+          withPeerUse: (actual, consume) => {
+            if (actual !== localePeer) throw new Error('Foreign fixture plugin Peer')
+            const check = (): void => { businessGraph(binding); peerLifetime.signal.throwIfAborted() }
+            return consume({ binding, context: owner, assertCurrent: check, release() {} }, check)
+          },
           ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
           ...bootstrapInventory,
           ...presetOptions?.withPeerUse === undefined ? {} : { withPeerUse: presetOptions.withPeerUse },
@@ -349,6 +356,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         }
         const info = statSync(projects, { bigint: true })
         const input: AccountFilesPreparation = { binding, port: { createWorkspaceRegistry: () => NodeRegistry },
+          ...presetOptions?.researchStorage === undefined ? {} : {
+            researchStorage: () => presetOptions.researchStorage!(binding, privateRoot),
+          },
           ...presetOptions?.filesAttachments === undefined ? {} : { attachments: presetOptions.filesAttachments(binding, projects) },
           projectFor: nativeProjectDeriver(binding, () => { actualGraph(binding) }, (cwd) => { directoryCalls.push(cwd) }),
           defaultGrant: { binding, backend: 'root-owned-isolated-linux-tmpfs', leaf: 'default-workspace',
@@ -478,7 +488,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     return { ctx: outcome.context, binding: outcome.binding, files, guards, api, adapter, close, invoke, lifetime,
       closeBusiness: () => { businessOpen = false },
       observeNativeDisposal: () => handle.dispose(),
-      directoryCalls, maxEntries, events, nativeFirstScreen, invokeSettings, saveBarrier: barrier, profileHome: privateRoot,
+      directoryCalls, maxEntries, events, nativeFirstScreen, invokeSettings, localePeer, saveBarrier: barrier, profileHome: privateRoot,
       expectUnknownSave: () => { expectedUnknown = true },
       expectEventDisposalFailure: (error: unknown) => { expectedEventFailure = { error } },
       withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }

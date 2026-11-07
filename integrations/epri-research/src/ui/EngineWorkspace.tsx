@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api, sessionId } from './adapters/api';
+import { api,nativeApi, sessionId } from './adapters/api';
 import { downloadTextContent } from './adapters/download';
 import { interactiveExample } from './interactive-example';
 import { parseAimdProtocol } from '../reused/protocol/aimdProtocolModel';
@@ -101,7 +101,7 @@ export default function EngineWorkspace({ onDirty, onOpenRecord, onResumeRecord 
     });
   const openTable = (p: any) =>
     task(async () => {
-      const environment = await api('engine_status');
+      const environment = await nativeApi('engine_status');
       setStatus(environment);
       if (!environment.ready)
         throw new Error(
@@ -144,7 +144,7 @@ export default function EngineWorkspace({ onDirty, onOpenRecord, onResumeRecord 
           onClick={() =>
             void task(async () => {
               await refresh();
-              setStatus(await api('engine_status'));
+              setStatus(await nativeApi('engine_status'));
             })
           }
         >

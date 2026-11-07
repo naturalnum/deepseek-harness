@@ -167,8 +167,7 @@ export async function startServer({
     close: () =>
       new Promise((ok, no) =>
         server.close((e) => {
-          store.close();
-          e ? no(e) : ok();
+          Promise.resolve(store.close()).then(()=>{e ? no(e) : ok();},no);
         }),
       ),
   };

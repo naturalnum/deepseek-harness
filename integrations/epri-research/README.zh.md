@@ -7,6 +7,10 @@
 - **DeepScientist** 提供**科学研究 · DeepScientist** 预设。可以在当前对话中检索文献、管理科研任务、查看成果并生成报告。在线检索和模型调用需要相应服务。
 - **Airalogy** 提供 AIMD 协议、实验记录和工作流执行器。工作台支持读入 CSV 数据、计算结果、生成图表，以及导入和导出 `.aira` 归档。上传、审批和变更都以当前科研对话为界。
 
+## 使用 Cloud 账号集成
+
+独立 Cloud 适配和部署要求见 [Cloud 集成](CLOUD.zh.md)。Cloud 模式保留本包及其科研、Airalogy、工作台三个内部插件，复用既有账号登录、原生 Session、侧栏、文件和受管执行，不启动本地科研 HTTP 服务，也不接受其全局令牌。
+
 ## 本地试用
 
 安装 Node.js 24.14 或更高版本，并将 npm 和 pnpm 加入 PATH。若使用专用 Harness 主目录和科研数据目录，请在安装前设置 `DS_SUITE_HOME` 与 `DS_RESEARCH_DATA_DIR`，启动时使用相同设置。从仓库根目录运行以下命令。

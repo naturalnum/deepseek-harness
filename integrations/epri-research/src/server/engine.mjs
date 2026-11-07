@@ -8,11 +8,11 @@ import {runWorkflow,runWorkflowTransition} from '../reused/engine/index.ts';
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const now=()=>new Date().toISOString();
-export function engineStore(db,directory) {
+export function engineStore(db,directory,runtime={status:engineStatus,run:runDockerExecutor}) {
   db.exec(`CREATE TABLE IF NOT EXISTS engine_packages(session TEXT NOT NULL,id TEXT NOT NULL,version TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(session,id,version));
     CREATE TABLE IF NOT EXISTS engine_runs(session TEXT NOT NULL,id TEXT NOT NULL,request TEXT NOT NULL,hash TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(session,id),UNIQUE(session,request));`);
   const active=new Map();let closed=false;
-  const saveRun=run=>db.prepare('UPDATE engine_runs SET body=? WHERE session=? AND id=?').run(JSON.stringify(run),run.sessionId,run.id);
+  const saveRun=run=>{const write=()=>db.prepare('UPDATE engine_runs SET body=? WHERE session=? AND id=?').run(JSON.stringify(run),run.sessionId,run.id);return runtime.finalize?runtime.finalize(write,run):write();};
   for(const row of db.prepare('SELECT body FROM engine_runs').all()){const run=JSON.parse(row.body);if(run.status==='running'){run.status='interrupted';run.finishedAt=now();run.error='服务曾停止，未自动重跑。';saveRun(run);}}
   const getPackage=(session,id,version)=>{const row=db.prepare('SELECT body FROM engine_packages WHERE session=? AND id=? AND version=?').get(session,id,version);return row?JSON.parse(row.body):fail('NOT_FOUND','协议包不属于本对话。');};
   const getRun=(session,id)=>{const row=db.prepare('SELECT body FROM engine_runs WHERE session=? AND id=?').get(session,id);return row?JSON.parse(row.body):fail('NOT_FOUND','运行记录不存在。');};
@@ -28,7 +28,7 @@ export function engineStore(db,directory) {
     try {
       const parent=join(directory,'engine-tmp');mkdirSync(parent,{recursive:true});dir=mkdtempSync(join(parent,'run-'));
       for(const [name,content] of Object.entries(p.files)){const target=join(dir,name);mkdirSync(join(target,'..'),{recursive:true});writeFileSync(target,typeof content==='string'?content:Buffer.from(content.contentBase64,'base64'));}
-      const options={signal:controller.signal,timeout:120,attachments};
+      const options={signal:controller.signal,timeout:120,attachments,executor:runtime.run};
       const params=run.params;
       let result;
       if(run.action.startsWith('workflow')) {
@@ -36,16 +36,16 @@ export function engineStore(db,directory) {
         const {records,transitionId,...rest}=opts;
         if(run.action==='workflow_transition' && !transitionId)fail('INVALID','单步执行需要 transitionId。');
         result=run.action==='workflow'?await runWorkflow(dir,records,{...options,...rest}):await runWorkflowTransition(dir,transitionId,records,{...options,...rest});
-      }else result=await runDockerExecutor(run.action,dir,params,options);
+      }else result=await runtime.run(run.action,dir,params,options);
       controller.signal.throwIfAborted();
       run.result=result;run.status=!result.success || result.data?.success===false?'failed':result.data?.status==='needs_review'?'needs_review':result.data?.errors && Object.keys(result.data.errors).length?'validation_failed':'succeeded';
-    }catch(error){run.status=controller.signal.aborted?(controller.signal.reason?.code==='TIMEOUT'?'timed_out':'cancelled'):error.code==='TIMEOUT'?'timed_out':'failed';run.error=String(error.message).slice(0,4000);}
+    }catch(error){run.status=error.executionUnconfirmed?'interrupted':controller.signal.aborted?(controller.signal.reason?.code==='TIMEOUT'?'timed_out':'cancelled'):error.code==='TIMEOUT'?'timed_out':'failed';run.error=String(error.message).slice(0,4000);}
     finally {run.finishedAt=now();if(!closed)saveRun(run);active.delete(run.id);clearTimeout(controller.runTimer);if(dir)rmSync(dir,{recursive:true,force:true});}
   }
   async function execute(op,args,actor,session){
     if(!session)fail('INVALID','请从科研对话进入协议执行页面。');
     const a=z.object(engineContracts[op].shape).strict().parse(args);
-    if(op==='engine_status')return engineStatus();
+    if(op==='engine_status')return runtime.status();
     if(op==='engine_packages')return db.prepare('SELECT body FROM engine_packages WHERE session=? ORDER BY rowid DESC').all(session).map(r=>brief(JSON.parse(r.body)));
     if(op==='engine_package_get')return getPackage(session,a.id,a.version);
     if(op==='engine_package_put'){
@@ -70,8 +70,8 @@ export function engineStore(db,directory) {
       const attachments={};let size=0;
       for(const [id,reference] of Object.entries(a.attachments)){const row=db.prepare('SELECT a.name,a.body FROM attachments a JOIN attachment_scopes s ON a.reference=s.reference WHERE s.session=? AND a.reference=?').get(session,reference);if(!row)fail('NOT_FOUND','输入附件不属于本对话。');size+=row.body.length;if(size>2*1024*1024)fail('LIMIT','运行附件合计最多 2 MiB。');attachments[id]={name:row.name,contentBase64:Buffer.from(row.body).toString('base64')};}
       const run={id:randomUUID(),sessionId:session,packageId:p.id,version:p.version,packageSha256:p.sha256,actor,action:a.action,params:a.params,attachments:a.attachments,status:'running',startedAt:now()};
-      db.prepare('INSERT INTO engine_runs VALUES(?,?,?,?,?)').run(session,run.id,request,requestHash,JSON.stringify(run));const controller=new AbortController();controller.runTimer=setTimeout(()=>controller.abort(Object.assign(new Error('运行超过 120 秒'),{code:'TIMEOUT'})),120000);active.set(run.id,controller);void runInBackground(run,p,controller,attachments);return getRun(session,run.id);
+      db.prepare('INSERT INTO engine_runs VALUES(?,?,?,?,?)').run(session,run.id,request,requestHash,JSON.stringify(run));const controller=new AbortController();controller.runTimer=setTimeout(()=>controller.abort(Object.assign(new Error('运行超过 120 秒'),{code:'TIMEOUT'})),120000);active.set(run.id,controller);controller.actual=runInBackground(run,p,controller,attachments);void controller.actual.catch((_error)=>{ /* Joined by waitForRun or store close; lease revocation may reject the final save. */ });return getRun(session,run.id);
     }
   }
-  return {execute,close(){for(const [id,controller] of active){controller.abort();const row=db.prepare('SELECT body FROM engine_runs WHERE id=?').get(id);if(row){const run=JSON.parse(row.body);run.status='interrupted';run.finishedAt=now();saveRun(run);}}closed=true;}};
+  return {execute,async waitForRun(id,session){await active.get(id)?.actual;return getRun(session,id);},close(){closed=true;const pending=[...active.values()];for(const controller of pending)controller.abort();if(pending.length)return Promise.allSettled(pending.map(controller=>controller.actual));}};
 }

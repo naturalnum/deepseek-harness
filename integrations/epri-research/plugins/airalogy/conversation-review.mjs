@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {call,connection} from '../../src/server/client.mjs';
 import {parseAimdProtocol} from '../../dist/server/service.mjs';
+import {cloudResearch} from '../cloud/client-for.mjs';
 
 export const conversationReviewOps = new Set(['task_open','evidence_review','roadmap_select','lab_skill_publish','engine_package_review','record_submit','record_reopen','record_archive','record_restore']);
 
@@ -49,11 +50,12 @@ function reviewDetail(op, args, before, checks, name) {
 
 // Only this trusted Host continuation can use the human credential, after its own exact question settles.
 export async function reviewInConversation(ctx,op,args,exec,sessionId) {
-  if (!exec.agent || exec.agent.ctx.get('peAccount',false)) throw new Error('科研审批需要平台账号权限适配；不能用本地管理员凭据处理云端账号。');
+  if (!exec.agent) throw new Error('科研审批需要当前原生会话。');
+  const cloud=cloudResearch(exec.agent.ctx);
   const questions=exec.agent.ctx.get('userQuestions',false) || ctx.get('userQuestions',false);
   if (!questions) throw new Error('当前对话的人工问答服务未启用，审批尚未执行。');
-  const read=(name,input)=>call(name,input,exec.signal,sessionId);
-  const selectedConnection=connection();
+  const read=(name,input)=>cloud?cloud.agentCall(name,input,exec):call(name,input,exec.signal,sessionId);
+  const selectedConnection=cloud?cloud.binding:connection();
   let before,protocol;
   if(op==='task_open') {
     const task=await read('task_get',{id:args.id});
@@ -84,10 +86,11 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
   const answer=result.answers?.find(x=>x.id==='research-review-'+fingerprint);
   if(answer?.selected?.length!==1||answer.selected[0]!==approval||answer.custom)return {executed:false,status:'declined',message:'用户未明确确认，本次审批未执行。'};
   // Ask() verifies the exact live root and an authenticated UI answer; do not accept a model-supplied answer field.
-  const c=connection();
-  if(JSON.stringify(c)!==JSON.stringify(selectedConnection))throw new Error('科研服务连接已变化，请重新请求审批。');
+  const c=cloud?cloud.binding:connection();
+  if(cloud?c!==selectedConnection:JSON.stringify(c)!==JSON.stringify(selectedConnection))throw new Error('科研服务连接已变化，请重新请求审批。');
   const human=async(name,input)=>{
     exec.signal?.throwIfAborted();
+    if(cloud)return cloud.reviewedCall(name,input,exec);
     const response=await fetch(c.url+'/api',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.humanToken},body:JSON.stringify({op:name,args:input,sessionId}),signal:exec.signal?AbortSignal.any([exec.signal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000)});
     const data=await response.json();if(!response.ok)throw new Error((data.code||response.status)+': '+data.error);return data.result;
   };

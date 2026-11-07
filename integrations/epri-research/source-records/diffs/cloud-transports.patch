@@ -1,0 +1,141 @@
+diff --git a/integrations/epri-research/src/reused/engine/index.ts b/integrations/epri-research/src/reused/engine/index.ts
+index c4e6a455e9..1fdd6ddab4 100644
+--- a/integrations/epri-research/src/reused/engine/index.ts
++++ b/integrations/epri-research/src/reused/engine/index.ts
+@@ -1,5 +1,5 @@
+ // Reused Airalogy engine 0.0.5; upstream license retained in LICENSE.airalogy.
+-// Workflow parser and transition logic are copied; runtime transport uses restricted Docker.
++// Workflow parser and transition logic are copied; the Host can inject execution transport.
+ import {parseDocument} from 'yaml';
+ import {existsSync,readFileSync,statSync} from 'node:fs';
+ import path from 'node:path';
+@@ -34,6 +34,8 @@ export interface SandboxFileBridgeOptions {
+ }
+ 
+ export interface SandboxOptions {
++  /** Host-selected execution transport; workflow parsing and transition logic remain unchanged. */
++  executor?: typeof runDockerExecutor;
+   signal?: AbortSignal;
+   image?: string;
+   rootfsPath?: string;
+@@ -155,6 +157,7 @@ function isSandboxOptions(value: EnvVars | SandboxOptions | WorkflowRunOptions |
+   }
+ 
+   return [
++    "executor",
+     "signal",
+     "image",
+     "rootfsPath",
+@@ -884,9 +887,9 @@ function resolveWorkflowInputs(
+   return inputs;
+ }
+ 
+-async function executeInSandbox(action:string, protocolPath:string, params:Record<string,unknown>, envVars?:EnvVars, options:SandboxOptions={}) { return runDockerExecutor(action,protocolPath,params,options); }
++async function executeInSandbox(action:string, protocolPath:string, params:Record<string,unknown>, envVars?:EnvVars, options:SandboxOptions={}) { return (options.executor ?? runDockerExecutor)(action,protocolPath,params,options); }
+ async function runWorkflowAssignerInSandbox(root:string,entrypoint:string,inputs:Record<string,unknown>,envVars?:EnvVars,options:SandboxOptions={}) {
+-  const result=await runDockerExecutor('workflow_assign',root,{entrypoint,inputs},options);
++  const result=await (options.executor ?? runDockerExecutor)('workflow_assign',root,{entrypoint,inputs},options);
+   if(!result.success)throw new Error(result.message || 'Workflow assigner failed');
+   return result.data?.outputs || {};
+ }
+diff --git a/integrations/epri-research/src/reused/literature/literatureSearch.ts b/integrations/epri-research/src/reused/literature/literatureSearch.ts
+index 56a53a449c..4f449b5a95 100644
+--- a/integrations/epri-research/src/reused/literature/literatureSearch.ts
++++ b/integrations/epri-research/src/reused/literature/literatureSearch.ts
+@@ -26,6 +26,8 @@ export interface LiteratureSearchCredentials {
+ }
+ 
+ export interface LiteratureSearchOptions extends LiteratureSearchCredentials {
++  /** Host-selected safe fetch transport; provider parsing and ranking remain unchanged. */
++  transport?: typeof fetch;
+   query: string;
+   maxResults: number;
+   sources?: string[];
+@@ -232,8 +234,8 @@ export const dedupeLiteraturePapers = (papers: LiteraturePaper[]): LiteraturePap
+   });
+ };
+ 
+-const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<Response> => {
+-    return await fetch(url, {
++const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal, transport: typeof fetch = fetch): Promise<Response> => {
++    return await transport(url, {
+       headers: {
+         'User-Agent': PUBLIC_USER_AGENT,
+         ...headers,
+@@ -242,8 +244,8 @@ const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string,
+     });
+ };
+ 
+-const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<T> => {
+-  const response = await withTimeout(url, timeoutMs, headers, signal);
++const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal, transport?: typeof fetch): Promise<T> => {
++  const response = await withTimeout(url, timeoutMs, headers, signal, transport);
+   if (!response.ok) {
+     if (response.status === 429) throw new Error('在线文献源请求限流（HTTP 429），请稍后重试或切换其他来源。');
+     const body = await response.text().catch(() => '');
+@@ -253,8 +255,8 @@ const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string
+   return (await response.json()) as T;
+ };
+ 
+-const fetchText = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<string> => {
+-  const response = await withTimeout(url, timeoutMs, headers, signal);
++const fetchText = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal, transport?: typeof fetch): Promise<string> => {
++  const response = await withTimeout(url, timeoutMs, headers, signal, transport);
+   if (!response.ok) {
+     const body = await response.text().catch(() => '');
+     throw new Error(`${response.status} ${response.statusText}${body ? `: ${body.slice(0, 240)}` : ''}`);
+@@ -284,7 +286,7 @@ const searchSemanticScholar = async (options: LiteratureSearchOptions): Promise<
+     url.searchParams.set('year', start === end ? String(start) : `${start}-${end}`);
+   }
+   const headers = options.semanticScholarApiKey ? { 'x-api-key': options.semanticScholarApiKey } : undefined;
+-  const payload = await fetchJson<{ data?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, headers, options.signal);
++  const payload = await fetchJson<{ data?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, headers, options.signal, options.transport);
+   return (payload.data || []).map((item, index) => {
+     const external = (item.externalIds || {}) as Record<string, unknown>;
+     const authors = Array.isArray(item.authors)
+@@ -318,7 +320,7 @@ const searchOpenAlex = async (options: LiteratureSearchOptions): Promise<Literat
+   if (filters.length) url.searchParams.set('filter', filters.join(','));
+   if (options.openAlexEmail) url.searchParams.set('mailto', options.openAlexEmail);
+   if (options.openAlexApiKey) url.searchParams.set('api_key', options.openAlexApiKey);
+-  const payload = await fetchJson<{ results?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal);
++  const payload = await fetchJson<{ results?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
+   return (payload.results || []).map((item, index) => {
+     const ids = (item.ids || {}) as Record<string, unknown>;
+     const primaryLocation = (item.primary_location || {}) as Record<string, unknown>;
+@@ -372,7 +374,7 @@ const searchArxiv = async (options: LiteratureSearchOptions): Promise<Literature
+   url.searchParams.set('max_results', String(options.maxResults));
+   url.searchParams.set('sortBy', 'relevance');
+   url.searchParams.set('sortOrder', 'descending');
+-  const xml = await fetchText(url, options.timeoutMs || 30000, undefined, options.signal);
++  const xml = await fetchText(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
+   const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gu)].map((match) => match[1]);
+   return entries
+     .map((entry, index): LiteraturePaper => {
+@@ -418,7 +420,8 @@ const searchCrossref = async (options: LiteratureSearchOptions): Promise<Literat
+     url,
+     options.timeoutMs || 30000,
+     headers,
+-    options.signal
++    options.signal,
++    options.transport
+   );
+   return (payload.message?.items || []).map((item, index) => {
+     const dateParts = ((item.published || item['published-print'] || item['published-online'] || {}) as Record<string, unknown>)[
+@@ -451,7 +454,7 @@ const searchDblp = async (options: LiteratureSearchOptions): Promise<LiteratureP
+   url.searchParams.set('q', options.query);
+   url.searchParams.set('h', String(options.maxResults));
+   url.searchParams.set('format', 'json');
+-  const payload = await fetchJson<{ result?: { hits?: { hit?: unknown } } }>(url, options.timeoutMs || 30000, undefined, options.signal);
++  const payload = await fetchJson<{ result?: { hits?: { hit?: unknown } } }>(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
+   return ensureArray(payload.result?.hits?.hit)
+     .map((hit, index): LiteraturePaper => {
+       const info = ((hit as Record<string, unknown>).info || {}) as Record<string, unknown>;
+@@ -476,7 +479,7 @@ const searchOpenReview = async (options: LiteratureSearchOptions): Promise<Liter
+   const url = new URL('https://api2.openreview.net/notes/search');
+   url.searchParams.set('term', options.query);
+   url.searchParams.set('limit', String(options.maxResults));
+-  const payload = await fetchJson<{ notes?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal);
++  const payload = await fetchJson<{ notes?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
+   return (payload.notes || [])
+     .map((note, index): LiteraturePaper => {
+       const content = (note.content || {}) as Record<string, unknown>;

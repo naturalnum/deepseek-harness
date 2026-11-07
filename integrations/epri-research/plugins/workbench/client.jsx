@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { workbenchThemeTokens } from '../../src/ui/workbench-theme.mjs';
 import { publicAddresses } from '../../src/public-addresses.mjs';
-export const inject = ['slots', 'uiWorkspace', 'sessions', 'sidebarRightTabs', 'sidebarRight'];
+export const inject = ['slots', 'uiWorkspace', 'sessions', 'sidebarRightTabs', 'sidebarRight', 'connection'];
 const workbench = publicAddresses(window, 'harness').workbench;
 const base = workbench.href;
 const guideId = 'deepscientist-harness-suite/workbench';
@@ -76,8 +76,9 @@ export function restoreResearchConversation(ctx, browser = window) {
   schedule();
   return () => { restored = true; unsubscribe(); };
 }
-function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,requestConversation}) {
-  const frame=useRef(null);
+function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,requestConversation,requestResearch}) {
+  const frame=useRef(null),callbacks=useRef({openTarget,requestConversation,requestResearch});
+  callbacks.current={openTarget,requestConversation,requestResearch};
   const params=new URLSearchParams({session:researchSessionId,embed:'1',...(compact?{view:'compact'}:{}),...target});
   const syncTheme=()=>{
     const style=getComputedStyle(document.body);
@@ -85,20 +86,26 @@ function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,
     frame.current?.contentWindow?.postMessage({type:'research-theme',tokens,dark:document.body.hasAttribute('data-ds-dark-theme')},workbench.origin);
   };
   useEffect(()=>{
+    const operations=new Set();
     const observer=new MutationObserver(syncTheme);
     observer.observe(document.body,{attributes:true,attributeFilter:['data-ds-dark-theme','style','class']});
     const receive=event=>{
       if(event.origin!==workbench.origin||event.source!==frame.current?.contentWindow||event.data?.sessionId!==researchSessionId)return;
+      if(event.data.type==='research-api' && callbacks.current.requestResearch && event.ports?.length===1){
+        const port=event.ports[0],controller=new AbortController();operations.add(controller);
+        port.onmessage=value=>{if(value.data?.type==='cancel')controller.abort(new Error('科研页面请求已取消。'));};
+        void callbacks.current.requestResearch(event.data.op,event.data.args,event.data.execute===true,controller.signal).then(value=>port.postMessage({ok:true,value}),error=>port.postMessage({ok:false,error:error.message})).finally(()=>{operations.delete(controller);port.close();});
+      }
       if(event.data.type==='research-theme-ready')syncTheme();
-      if(event.data.type==='research-open')openTarget?.(event.data.target);
+      if(event.data.type==='research-open')callbacks.current.openTarget?.(event.data.target);
       if(event.data.type==='research-task-request'){
-        try{requestConversation?.(event.data.taskId,event.data.action);event.source.postMessage({type:'research-task-request-result',requestId:event.data.requestId,ok:Boolean(requestConversation)},event.origin);}
+        try{callbacks.current.requestConversation?.(event.data.taskId,event.data.action);event.source.postMessage({type:'research-task-request-result',requestId:event.data.requestId,ok:Boolean(callbacks.current.requestConversation)},event.origin);}
         catch(error){event.source.postMessage({type:'research-task-request-result',requestId:event.data.requestId,ok:false,error:error.message},event.origin);}
       }
     };
     window.addEventListener('message',receive);
-    return()=>{observer.disconnect();window.removeEventListener('message',receive);};
-  },[researchSessionId,openTarget,requestConversation]);
+    return()=>{observer.disconnect();window.removeEventListener('message',receive);for(const controller of operations)controller.abort(new Error('科研页面已关闭。'));};
+  },[researchSessionId]);
   return <iframe ref={frame} title={compact?'当前对话科研成果':target.view==='detail'?'科研成果详情':'DeepScientist 科研工作台'} src={base+'?'+params} onLoad={syncTheme} className="research-dock-frame" style={compact?{height:184}:undefined}/>;
 }
 export function openResearchTarget(actions,target={}) {
@@ -112,18 +119,18 @@ export function openResearchTarget(actions,target={}) {
     actions.openTab('research-workbench',{params});
   }
 }
-function ResearchPanel({researchSessionId,useSessions,useTabInfo,requestConversation}) {
+function ResearchPanel({researchSessionId,useSessions,useTabInfo,requestConversation,requestResearch}) {
   const preset=useSessions(state=>state.byId[researchSessionId]?.projectionValues?.agentPreset);
   const info=useTabInfo();
   if(preset!=='research-suite')return <p>科研工作台仅在科学研究模式中使用。</p>;
   const target=info.tab.navigation.params || {tab:'deliverables'};
-  return <section className="research-panel"><header className="research-panel-header"><div className="research-panel-brand"><strong>DeepScientist</strong><span>{target.view==='detail'?'成果详情':'科研工作台'}</span></div><button className="research-panel-close" onClick={()=>info.tab.actions.close()}>关闭此页 · 继续对话</button></header><ResearchFrame key={info.tab.navigation.revision} researchSessionId={researchSessionId} target={target} requestConversation={requestConversation} openTarget={value=>openResearchTarget(info.tab.actions,value)}/></section>;
+  return <section className="research-panel"><header className="research-panel-header"><div className="research-panel-brand"><strong>DeepScientist</strong><span>{target.view==='detail'?'成果详情':'科研工作台'}</span></div><button className="research-panel-close" onClick={()=>info.tab.actions.close()}>关闭此页 · 继续对话</button></header><ResearchFrame key={info.tab.navigation.revision} researchSessionId={researchSessionId} target={target} requestConversation={requestConversation} requestResearch={requestResearch} openTarget={value=>openResearchTarget(info.tab.actions,value)}/></section>;
 }
 function ResearchTitle({useTabInfo}) {
   const info=useTabInfo();
   return <span>{info.tab.navigation.params?.title || '成果详情'}</span>;
 }
-function ResearchDock({ researchSessionId, openTarget }) {
+function ResearchDock({ researchSessionId, openTarget,requestResearch }) {
   const [expanded, setExpanded] = useState(true);
   return <section aria-label="当前对话科研工作台" className="research-dock">
     <div className="research-dock-header">
@@ -135,12 +142,12 @@ function ResearchDock({ researchSessionId, openTarget }) {
       <button type="button" className="research-panel-close" onClick={()=>openTarget({tab:'deliverables'})}>在右侧展开 →</button>
       <span className="research-dock-scope" title="仅显示本对话成果；文件位置沿用对话工作目录，可通过 Harness 的目录选择器修改。">当前对话</span>
     </div>
-    <div hidden={!expanded}><ResearchFrame researchSessionId={researchSessionId} compact openTarget={openTarget}/></div>
+    <div hidden={!expanded}><ResearchFrame researchSessionId={researchSessionId} compact openTarget={openTarget} requestResearch={requestResearch}/></div>
   </section>;
 }
-function ResearchModeDock({ researchSessionId, useSessions, openTarget }) {
+function ResearchModeDock({ researchSessionId, useSessions, openTarget,requestResearch }) {
   const preset = useSessions(state => state.byId[researchSessionId]?.projectionValues?.agentPreset);
-  return preset === 'research-suite' ? <ResearchDock key={researchSessionId} researchSessionId={researchSessionId} openTarget={openTarget}/> : null;
+  return preset === 'research-suite' ? <ResearchDock key={researchSessionId} researchSessionId={researchSessionId} openTarget={openTarget} requestResearch={requestResearch}/> : null;
 }
 export function apply(ctx) {
   ctx.effect(() => restoreResearchConversation(ctx));
@@ -155,7 +162,7 @@ export function apply(ctx) {
     guide:[{id:'workbench',order:30,title:() => 'DeepScientist 科研工作台',description:() => '研究总览、路线与证据 · 当前对话成果'}],
   }));
   ctx.effect(()=>ctx.sidebarRightTabs.register({id:guideId+'/detail',kind:'research-detail',multiple:true,keepMounted:true,title:()=> '成果详情'}));
-  for(const key of [guideId,guideId+'/detail'])ctx.slots.inject('sidebar.right.pane.tab',()=>ctx.slots.register({name:'sidebar.right.pane.tab',key,inject:researchSessionId=>({researchSessionId,requestConversation:(taskId,action)=>draftTaskRequest(ctx,researchSessionId,taskId,action)})},ResearchPanel));
+  for(const key of [guideId,guideId+'/detail'])ctx.slots.inject('sidebar.right.pane.tab',()=>ctx.slots.register({name:'sidebar.right.pane.tab',key,inject:researchSessionId=>({researchSessionId,requestResearch:researchApi(ctx,researchSessionId),requestConversation:(taskId,action)=>draftTaskRequest(ctx,researchSessionId,taskId,action)})},ResearchPanel));
   ctx.slots.inject('sidebar.right.pane.tab.title',()=>ctx.slots.register({name:'sidebar.right.pane.tab.title',key:guideId+'/detail'},ResearchTitle));
   ctx.slots.inject('sidebar.right.tab.guide.entry', () => ctx.slots.register({
     name:'sidebar.right.tab.guide.entry',key:guideId,
@@ -163,7 +170,7 @@ export function apply(ctx) {
   }, ResearchGuideEntry));
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name:'conversation.input.dock',id:'research-workbench',order:10,
-    inject: sessionId => ({researchSessionId:sessionId,openTarget:target=>{
+    inject: sessionId => ({researchSessionId:sessionId,requestResearch:researchApi(ctx,sessionId),openTarget:target=>{
       // A delayed frame from a previous conversation cannot open content in a new one.
       if(ctx.sidebarRight.mounted.getSnapshot()===sessionId)openResearchTarget(ctx.sidebarRight,target);
     }}),
@@ -178,4 +185,14 @@ export function draftTaskRequest(ctx,sessionId,taskId,action){
   if(!input)throw new Error('对话输入服务尚未就绪。');
   const state=input.state.getSnapshot();if(state.phase!=='plain'||state.draft.trim()||state.attachmentIds.length)throw new Error('输入框已有草稿、附件或待处理操作，请先处理，再发起任务请求。');
   input.setDraft('请先调用 research_task_get 读取研究任务 '+taskId+'。'+prompts[action]);input.focus();
+}
+
+function researchApi(ctx,sessionId){
+  return async(op,args,execute,signal)=>{
+    if(ctx.sidebarRight.mounted.getSnapshot()!==sessionId)throw new Error('当前对话已切换，请重新打开科研工作台。');
+    const result=await ctx.connection.rpc.call('/api','cloudResearch/action',{args:{request:{sessionId,op,args,execute}}},signal);
+    if(!result.ok)throw new Error(result.error.message);
+    if(ctx.sidebarRight.mounted.getSnapshot()!==sessionId)throw new Error('当前对话已切换；请回原对话查看执行结果。');
+    return result.value;
+  };
 }

@@ -1,0 +1,16 @@
+# Build in an independent backend. Root must qualify and pin the resulting exact image digest separately.
+ARG BASE_IMAGE=sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461
+FROM ${BASE_IMAGE}
+USER root
+COPY cloud-requirements.txt /tmp/research-requirements.txt
+COPY scripts/cloud-runtime-probe.py /tmp/cloud-runtime-probe.py
+COPY src/server/document-native.py /tmp/research-document-native.py
+RUN /opt/dsh/runtime/dependencies/python/bin/python3 -c "import hashlib,importlib.metadata,json,pathlib; p={d.metadata['Name'].lower().replace('_','-'):d.version for d in importlib.metadata.distributions()}; pathlib.Path('/tmp/office-baseline.json').write_text(json.dumps({'packages':p,'officeRuntimeSha256':hashlib.sha256(pathlib.Path('/opt/dsh/runtime/runtime.json').read_bytes()).hexdigest()})); pathlib.Path('/tmp/office-constraints.txt').write_text(''.join(n+'=='+v+'\n' for n,v in sorted(p.items())))" \
+    && chmod -R u+w /opt/dsh/runtime/dependencies/python \
+    && /opt/dsh/runtime/dependencies/python/bin/python3 -m pip install --no-cache-dir --disable-pip-version-check \
+       --constraint /tmp/office-constraints.txt --requirement /tmp/research-requirements.txt \
+    && /opt/dsh/runtime/dependencies/python/bin/python3 /tmp/cloud-runtime-probe.py \
+       --baseline /tmp/office-baseline.json --runtime /opt/dsh/runtime/runtime.json \
+       --document-script /tmp/research-document-native.py --output /opt/dsh/runtime/research.json \
+    && chmod -R a-w /opt/dsh/runtime \
+    && rm /tmp/research-requirements.txt /tmp/cloud-runtime-probe.py /tmp/research-document-native.py /tmp/office-baseline.json /tmp/office-constraints.txt

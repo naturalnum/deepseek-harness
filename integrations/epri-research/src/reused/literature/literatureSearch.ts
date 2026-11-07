@@ -26,6 +26,8 @@ export interface LiteratureSearchCredentials {
 }
 
 export interface LiteratureSearchOptions extends LiteratureSearchCredentials {
+  /** Host-selected safe fetch transport; provider parsing and ranking remain unchanged. */
+  transport?: typeof fetch;
   query: string;
   maxResults: number;
   sources?: string[];
@@ -232,8 +234,8 @@ export const dedupeLiteraturePapers = (papers: LiteraturePaper[]): LiteraturePap
   });
 };
 
-const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<Response> => {
-    return await fetch(url, {
+const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal, transport: typeof fetch = fetch): Promise<Response> => {
+    return await transport(url, {
       headers: {
         'User-Agent': PUBLIC_USER_AGENT,
         ...headers,
@@ -242,8 +244,8 @@ const withTimeout = async (url: URL, timeoutMs: number, headers?: Record<string,
     });
 };
 
-const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<T> => {
-  const response = await withTimeout(url, timeoutMs, headers, signal);
+const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal, transport?: typeof fetch): Promise<T> => {
+  const response = await withTimeout(url, timeoutMs, headers, signal, transport);
   if (!response.ok) {
     if (response.status === 429) throw new Error('在线文献源请求限流（HTTP 429），请稍后重试或切换其他来源。');
     const body = await response.text().catch(() => '');
@@ -253,8 +255,8 @@ const fetchJson = async <T>(url: URL, timeoutMs: number, headers?: Record<string
   return (await response.json()) as T;
 };
 
-const fetchText = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal): Promise<string> => {
-  const response = await withTimeout(url, timeoutMs, headers, signal);
+const fetchText = async (url: URL, timeoutMs: number, headers?: Record<string, string>, signal?: AbortSignal, transport?: typeof fetch): Promise<string> => {
+  const response = await withTimeout(url, timeoutMs, headers, signal, transport);
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(`${response.status} ${response.statusText}${body ? `: ${body.slice(0, 240)}` : ''}`);
@@ -284,7 +286,7 @@ const searchSemanticScholar = async (options: LiteratureSearchOptions): Promise<
     url.searchParams.set('year', start === end ? String(start) : `${start}-${end}`);
   }
   const headers = options.semanticScholarApiKey ? { 'x-api-key': options.semanticScholarApiKey } : undefined;
-  const payload = await fetchJson<{ data?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, headers, options.signal);
+  const payload = await fetchJson<{ data?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, headers, options.signal, options.transport);
   return (payload.data || []).map((item, index) => {
     const external = (item.externalIds || {}) as Record<string, unknown>;
     const authors = Array.isArray(item.authors)
@@ -318,7 +320,7 @@ const searchOpenAlex = async (options: LiteratureSearchOptions): Promise<Literat
   if (filters.length) url.searchParams.set('filter', filters.join(','));
   if (options.openAlexEmail) url.searchParams.set('mailto', options.openAlexEmail);
   if (options.openAlexApiKey) url.searchParams.set('api_key', options.openAlexApiKey);
-  const payload = await fetchJson<{ results?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal);
+  const payload = await fetchJson<{ results?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
   return (payload.results || []).map((item, index) => {
     const ids = (item.ids || {}) as Record<string, unknown>;
     const primaryLocation = (item.primary_location || {}) as Record<string, unknown>;
@@ -372,7 +374,7 @@ const searchArxiv = async (options: LiteratureSearchOptions): Promise<Literature
   url.searchParams.set('max_results', String(options.maxResults));
   url.searchParams.set('sortBy', 'relevance');
   url.searchParams.set('sortOrder', 'descending');
-  const xml = await fetchText(url, options.timeoutMs || 30000, undefined, options.signal);
+  const xml = await fetchText(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
   const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gu)].map((match) => match[1]);
   return entries
     .map((entry, index): LiteraturePaper => {
@@ -418,7 +420,8 @@ const searchCrossref = async (options: LiteratureSearchOptions): Promise<Literat
     url,
     options.timeoutMs || 30000,
     headers,
-    options.signal
+    options.signal,
+    options.transport
   );
   return (payload.message?.items || []).map((item, index) => {
     const dateParts = ((item.published || item['published-print'] || item['published-online'] || {}) as Record<string, unknown>)[
@@ -451,7 +454,7 @@ const searchDblp = async (options: LiteratureSearchOptions): Promise<LiteratureP
   url.searchParams.set('q', options.query);
   url.searchParams.set('h', String(options.maxResults));
   url.searchParams.set('format', 'json');
-  const payload = await fetchJson<{ result?: { hits?: { hit?: unknown } } }>(url, options.timeoutMs || 30000, undefined, options.signal);
+  const payload = await fetchJson<{ result?: { hits?: { hit?: unknown } } }>(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
   return ensureArray(payload.result?.hits?.hit)
     .map((hit, index): LiteraturePaper => {
       const info = ((hit as Record<string, unknown>).info || {}) as Record<string, unknown>;
@@ -476,7 +479,7 @@ const searchOpenReview = async (options: LiteratureSearchOptions): Promise<Liter
   const url = new URL('https://api2.openreview.net/notes/search');
   url.searchParams.set('term', options.query);
   url.searchParams.set('limit', String(options.maxResults));
-  const payload = await fetchJson<{ notes?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal);
+  const payload = await fetchJson<{ notes?: Array<Record<string, unknown>> }>(url, options.timeoutMs || 30000, undefined, options.signal, options.transport);
   return (payload.notes || [])
     .map((note, index): LiteraturePaper => {
       const content = (note.content || {}) as Record<string, unknown>;
