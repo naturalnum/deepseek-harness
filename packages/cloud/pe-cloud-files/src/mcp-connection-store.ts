@@ -136,9 +136,12 @@ export async function openMcpConnectionStore(ctx: Context, binding: AccountBindi
           || id === undefined && rows.length >= limits.maxConnections) unavailable()
         const selected = id ?? brandString<McpConnectionId>(randomUUID())
         if (value.headers !== undefined) {
-          submitted()
-          await provider.modifyRecord(key(selected), () => { active(); return Promise.resolve({ kind: 'grant' as const,
-            payload: { version: 1, headers: { ...value.headers } } }) })
+          if (Object.keys(value.headers).length === 0) {
+            submitted(); await provider.deleteRecord(key(selected))
+          } else {
+            await provider.modifyRecord(key(selected), () => { active(); submitted(); return Promise.resolve({ kind: 'grant' as const,
+              payload: { version: 1, headers: { ...value.headers } } }) })
+          }
           active()
         }
         const { headers: _headers, ...definition } = value

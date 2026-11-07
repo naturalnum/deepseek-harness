@@ -360,10 +360,13 @@ export class CloudAccountApi extends Service {
    * Recognize only a selected operation belonging to a currently audited independent account capability.
    * @param endpoint Exact approved endpoint.
    * @param mode Actual invocation carrier.
-   * @returns True after native implementation inspection; false for original native capabilities. Unapproved operations reject.
+   * @returns True after native implementation inspection; false for original native or unselected operations.
    */
   isCapabilityEndpoint(endpoint: string, mode: 'rpc' | 'stream'): boolean {
     this.admit()
+    const selected = mode === 'rpc' ? this.installation.exposure.manifest.rpcEndpoints
+      : this.installation.exposure.manifest.streamEndpoints
+    if (!selected.some(row => row.endpoint === endpoint)) return false
     const row = mode === 'rpc' ? this.installation.exposure.requireRpc(endpoint) : this.installation.exposure.requireStream(endpoint)
     return this.capabilityInventories.assertEndpoint(this.ctx, row, mode)
   }

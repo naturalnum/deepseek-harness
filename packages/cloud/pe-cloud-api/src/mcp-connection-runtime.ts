@@ -4,6 +4,7 @@ import * as McpClient from '@deepseek-ai/dsh-mcp-client'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { AccountMcpConnectionStore, McpConnectionInput, McpConnectionRecord, McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
 
 /** Explicit native reconnect policy selected by deployment. */
 export interface McpConnectionRuntimePolicy {
@@ -15,8 +16,8 @@ export type McpConnectionTest = Readonly<{ reachable: true; tools: readonly stri
   | Readonly<{ reachable: false; failure: 'connection-failed' }>
 
 /** Native supervisor could not confirm release; the original host must retain this operation. */
-export class McpConnectionCleanupError extends Error {
-  constructor() { super('cloud/mcp-close-unconfirmed') }
+export class McpConnectionCleanupError extends ConfigSaveOutcomeUnknown {
+  constructor() { super({ cause: new Error('cloud/mcp-close-unconfirmed') }) }
 }
 
 /** Account-owned optional native-client assembly; it never edits Loader entries or installs packages. */
@@ -107,16 +108,27 @@ export class AccountMcpConnections {
     let lifecycle: McpClient.McpClientLifecycle | undefined
     let disposal: Promise<void> | undefined
     const dispose = (): Promise<void> => disposal ??= probe.dispose()
+    const close = (): Promise<boolean> => lifecycle?.close() ?? Promise.resolve(true)
     // Observe the cancellation-triggered promise immediately, then await its real outcome in finally.
-    const cancel = (): void => { void dispose().then(() => {}, () => {}) }
+    const cancel = (): void => {
+      // Ask the original supervisor to stop before waiting on the parent scope's child startup.
+      void close().then(() => {}, () => {})
+      void dispose().then(() => {}, () => {})
+    }
     signal.addEventListener('abort', cancel, { once: true })
     try {
+      const observation = { connected: false }
       await probe.ctx.plugin({ name: 'cloud-mcp-probe', inject: ['tools'], apply: async (owner: Context) => {
-        await McpClient.apply(owner, this.config(input, { ...input.headers }, true), (observed) => {
-          lifecycle = observed; this.probes.add(observed)
-        })
+        // A refused transient handshake is an observation, not a failed required Loader entry.
+        try {
+          await McpClient.apply(owner, this.config(input, { ...input.headers }, true), (observed) => {
+            lifecycle = observed; this.probes.add(observed)
+          })
+          observation.connected = true
+        } catch (_error) { /* Return a sanitized observation after the same native lifecycle is joined. */ }
       } })
       this.check(); signal.throwIfAborted()
+      if (!observation.connected) return { reachable: false, failure: 'connection-failed' }
       const tools = probe.ctx.get('tools')
       if (tools === undefined) throw new Error('cloud/mcp-probe-tools-unavailable')
       return { reachable: true, tools: tools.schemas(scopeOf(probe.ctx)).map(tool => tool.name)
@@ -126,10 +138,10 @@ export class AccountMcpConnections {
       return { reachable: false, failure: 'connection-failed' }
     } finally {
       signal.removeEventListener('abort', cancel)
-      const confirmed = await lifecycle?.close()
+      const confirmed = await close()
       await dispose()
       if (lifecycle !== undefined) {
-        if (confirmed !== true) throw new McpConnectionCleanupError()
+        if (!confirmed) throw new McpConnectionCleanupError()
         this.probes.delete(lifecycle)
       }
     }

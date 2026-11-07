@@ -68,6 +68,8 @@ it('keeps credentials, tool scopes and restored HTTP connections within the orig
     const disabled = await a.store.save(row.id, { ...input, enabled: false, headers: undefined })
     await a.runtime.apply(disabled)
     expect(a.ctx.tools.schemas()).toEqual([]); expect(await a.store.configured(row.id)).toBe(true)
+    await a.store.save(row.id, { ...input, enabled: false, headers: {} })
+    expect(await a.store.configured(row.id)).toBe(false)
     await a.store.remove(row.id)
     expect(a.store.list()).toEqual([]); expect(await a.ctx.credentials.listRecords()).toEqual([])
     const replacement = await a.store.save(undefined, input); await a.runtime.apply(replacement)

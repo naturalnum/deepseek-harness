@@ -74,9 +74,10 @@ export class CloudMcpConnectionService extends TypertRemoteService {
     if (invocation?.service !== namespace || invocation.request.namespace !== namespace || invocation.request.method !== 'action'
       || Object.keys(invocation.request.args).length !== 1 || !Object.hasOwn(invocation.request.args, 'request')) unavailable()
     const value = this.parse(invocation.request.args.request)
+    const operationSignal = AbortSignal.any([signal, invocation.peer.signal, this.api.binding.lifetime])
     return this.input.withModelKeyPeerUse(invocation.peer, async (use, principal) => {
       const check = (): void => {
-        signal.throwIfAborted(); principal(); use.assertCurrent(); this.current()
+        operationSignal.throwIfAborted(); principal(); use.assertCurrent(); this.current()
         if (use.binding !== this.api.binding || use.context.root !== this.ctx.root) unavailable()
         this.api.requireRpc(namespace + '/action')
       }
@@ -86,7 +87,7 @@ export class CloudMcpConnectionService extends TypertRemoteService {
         const probe = await this.saves.admit('mcp-connection', async () => {
           try {
             check()
-            const run = async (headers: Record<string, string>) => this.runtime.test({ ...value.connection, headers }, signal)
+            const run = async (headers: Record<string, string>) => this.runtime.test({ ...value.connection, headers }, operationSignal)
             const observed = value.connection.headers === undefined && value.id !== undefined
               ? await this.data.withHeaders(value.id, run) : await run({ ...value.connection.headers })
             return { ok: true as const, observed }
