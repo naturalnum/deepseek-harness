@@ -26,6 +26,9 @@
 /deepseek-ai-dsh-pe-opensandbox/further-exploration:
   en: 1056c23626848355
   zh: da9916417b80de33
+/deepseek-ai-dsh-pe-opensandbox/preallocated-account-inventory:
+  en: ce6e49343e21fb68
+  zh: e7d71baaa72a46e1
 /deepseek-ai-dsh-pe-opensandbox/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
@@ -47,6 +50,3 @@
 /deepseek-ai-dsh-pe-opensandbox/known-limitations-and-deferred-work/dev-note:
   en: 537abd4ac53f34f9
   zh: 8d11e9ece6cb7de5
-/deepseek-ai-dsh-pe-opensandbox/preallocated-account-inventory:
-  en: ce6e49343e21fb68
-  zh: e7d71baaa72a46e1

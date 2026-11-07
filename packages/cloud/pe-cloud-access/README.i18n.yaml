@@ -38,6 +38,9 @@
 /deepseek-ai-dsh-pe-cloud-access/further-exploration:
   en: 4cd687a6806208b0
   zh: 4a5d543ea4ad8513
+/deepseek-ai-dsh-pe-cloud-access/account-administration:
+  en: da894711ea17ebaf
+  zh: 2de2d757b7f66137
 /deepseek-ai-dsh-pe-cloud-access/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
@@ -54,14 +57,11 @@
   en: 69e9749cddb257e8
   zh: 063906c5ff47a213
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work:
-  en: 255a42f7124eba76
-  zh: c47d688a83276ef8
+  en: bb9e79ea7842387f
+  zh: 2c00a2ebedadec1c
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work/optional-mcp-bootstrap-capability:
   en: f0dce2ccdd068b95
   zh: c957afef4bb515e4
 /deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work/dev-note:
   en: 1fdae11f988aceda
   zh: bd330aeef71da0d6
-/deepseek-ai-dsh-pe-cloud-access/account-administration:
-  en: da894711ea17ebaf
-  zh: 2de2d757b7f66137

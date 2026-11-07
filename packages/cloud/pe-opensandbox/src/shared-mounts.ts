@@ -390,6 +390,7 @@ function captureShared(batch: Batch, selected: SharedSelection, grant: Execution
  * Each share separately requires its original files/native current callback.
  * @param limits Explicit capacities including bounded plan/proc parsing and eight retained directory FDs per share.
  * @param serverImageDigest Protected Native selection; Session directories require the reviewed directory-aware guard.
+ * @param resolveAccount Original verified static-slot assignment resolver; absent for legacy account plans.
  * @returns In-process shares retaining exact files grants until the allocation confirms physical stop and releases them.
  * @throws On plan, source, grant or quota mismatch; uncertain descriptor closure permanently retains Root responsibility.
  */

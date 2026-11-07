@@ -692,6 +692,14 @@ registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
 
 /**
+ * Inspect the same strict or source definition used by a real invocation, without resolving resources or calling it.
+ * @param namespace Exact wire namespace.
+ * @param method Exact exported method.
+ * @returns Current native invocation definition; inspection grants no call or resource authorization.
+ */
+inspectInvocation(namespace: string, method: string): InvocationDescriptor
+
+/**
  * Open one live stream Remote method without assuming a physical carrier.
  * @param request - decoded endpoint, named wire arguments, and the Client uplink when the carrier has one.
  * @returns a cancellation-aware iterable over the business results.

@@ -118,6 +118,28 @@ Files owns `RemoteStoreLimits` and `AccountRemoteServerStore`, binding one nativ
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxcloudmcpconnections--cloudmcpconnectionservice"></a>
+
+### `ctx.cloudMcpConnections` — `CloudMcpConnectionService`
+
+One optional management capability; protocol implementation remains entirely in dsh-mcp-client.
+
+```ts cordis-catalog
+/** Dispatch bounded account-local operations under the actual authenticated Peer.
+ * @param request Complete closed request; headers are transient credential input and never returned.
+ * @param signal Original request observer.
+ * @returns Actual list, generation revision and optional probe observation after complete application settlement.
+ */
+@Remote('action') action(request: CloudMcpConnectionRequest, signal: AbortSignal): Promise<CloudMcpConnectionReply>
+
+/** Audit the exact native service/method declaration; registration alone does not open an endpoint.
+ * @returns Current capability inventory with authenticated-account admission.
+ */
+inspect(): ExposureInventory
+```
+
+Source: [`packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts`](../../packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts)
+
 <a id="ctxcloudmodelkey--cloudmodelkeyservice"></a>
 
 ### `ctx.cloudModelKey` — `CloudModelKeyService`
@@ -473,6 +495,46 @@ Source: [`packages/cloud/pe-account-instructions/src/session.ts`](../../packages
 Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission.
 
 ```ts cordis-catalog
+/** Initialize Root-owned mappings after physical inventory verification and before Files cold-proof parsing.
+ * @param inventory Original verified address-free inventory.
+ * @param installAssignments Sole original Files resolver registration.
+ * @returns Original metadata readiness and resolver installation, never file lease authority.
+ */
+prepareStaticAccountInventory?(inventory: StaticAccountInventory, installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<void>
+
+/** Verify trusted mappings and transaction budgets before exposing administration.
+ * @param accountIds Explicit initial administrators.
+ * @param budgets Actual Access database/operation limits.
+ * @returns Startup validation settlement; no account is mounted.
+ */
+initializeAccountAdministration?(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void>
+
+/** Read declared physical templates without exposing private paths.
+ * @returns Currently unassigned slot counts by template.
+ */
+accountResourceTemplates?(): Promise<readonly Readonly<{ id: string; available: number }>[]>
+
+/** Read resource progress from original metadata.
+ * @param accountIds Bounded identity list.
+ * @returns Current assigned resource phases.
+ */
+accountResourceStates?(accountIds: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>
+
+/** Prepare original native account resources before authentication enablement.
+ * @param accountId Authentic target.
+ * @param templateId Real template.
+ * @param operationId Original operation.
+ * @returns Actual native Files/execution readiness.
+ */
+prepareManagedAccount?(accountId: AccountId, templateId: string, operationId: string): Promise<void>
+
+/** Join original account drain after login revocation.
+ * @param accountId Authentic target.
+ * @param operationId Original management operation.
+ * @returns Confirmed disablement or explicit retained uncertainty.
+ */
+disableManagedAccount?(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'>
+
 /**
  * Register the single original Access ingress shutdown owner in the actual caller effect.
  * @param owner Original close owner, registered before it admits authentication or forwarding work.
@@ -706,6 +768,37 @@ audit(inventory: ExposureInventory): void
 invalidate(): void
 
 /**
+ * Register an independent account capability for the original native inventory audit.
+ * @param namespace Exact original Cordis service key and wire namespace.
+ * @param inspect Current contribution; every declared method is verified through the actual Gateway.
+ * @returns Calling fiber's disposer; registering and withdrawing revoke prior exposure approval.
+ */
+registerCapabilityInventory(namespace: string, inspect: () => ExposureInventory): () => void
+
+/**
+ * Recognize only a selected operation belonging to a currently audited independent account capability.
+ * @param endpoint Exact approved endpoint.
+ * @param mode Actual invocation carrier.
+ * @returns True after native implementation inspection; false for original native or unselected operations.
+ */
+isCapabilityEndpoint(endpoint: string, mode: 'rpc' | 'stream'): boolean
+
+/**
+ * Join plugin work to the original login Peer's retained AccountUse without borrowing another graph.
+ * @param peer Actual Gateway invocation Peer; copies and client identifiers grant no access.
+ * @param consume Actual plugin work with the original current check, retained until settlement.
+ * @returns Original login operation settlement, rechecked against this exact graph before returning.
+ */
+async withPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>
+
+/**
+ * Reuse Runtime's original native Session/project admission for an account plugin operation.
+ * @param session Actual native Session, never a path-derived or browser-constructed object.
+ * @returns The original registered Workspace; this creates no project, Agent or execution scope.
+ */
+sessionProject(session: Session): Workspace
+
+/**
  * Require a reviewed native unary endpoint after business admission.
  * @param endpoint Native unary URL endpoint.
  * @returns The audited declaration after business admission.
@@ -787,6 +880,13 @@ prepareCloudSkills(owner: Context, input: CloudSkillPreparation): CloudSkillServ
  * @param input Trusted Root capabilities and limits.
  * @returns Actual installed Remote before full native auditing. */
 async prepareCloudRemoteServers(owner: Context, input: CloudRemoteServerPreparation): Promise<CloudRemoteServerService>
+
+/** Prepare the optional original account HTTP MCP capability.
+ * @param owner Original native entry.
+ * @param input Trusted files, authentication and deployment policy.
+ * @returns Installed independent capability; its Remote inventory is self-registered.
+ */
+prepareCloudMcpConnections(owner: Context, input: CloudMcpConnectionPreparation): Promise<CloudMcpConnectionService>
 
 /** Prepare the fixed plugin Remote after its original guarded manager and editor activate.
  * @param owner Actual original account Loader entry.
@@ -1037,7 +1137,7 @@ async withdraw(): Promise<void>
 modelKeyAccess(use: AccountUse, limits: ApprovedModelKeyConfiguration, assertRequestCurrent?: () => void): ModelKeyAccess
 ```
 
-Types: [AgentLoop](core.md) · [BundledSkillResponseBorrow](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [BundledSkillResponseSettlement](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudRemoteServerPreparation](cloud.md#remote-server-management) · [CloudRemoteServerService](cloud.md#remote-server-management) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresetGuards](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [WorkspaceFiles](workspace.md) · [WorkspaceUploadBorrow](../../packages/cloud/pe-cloud-api/README.md#workspace-http-transfers) · [WorkspaceUploadSettlement](../../packages/cloud/pe-cloud-api/README.md#workspace-http-transfers) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
+Types: [AgentLoop](core.md) · [BundledSkillResponseBorrow](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [BundledSkillResponseSettlement](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudModelKeyPreparation](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudModelKeyService](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [CloudPluginService](cloud.md#approved-plugin-controls) · [CloudRemoteServerPreparation](cloud.md#remote-server-management) · [CloudRemoteServerService](cloud.md#remote-server-management) · [CloudSkillPreparation](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [CloudSkillService](../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication) · [ConfigSaveBarrier](cloud.md#actual-work-and-capacity) · [FileUploads](attachment.md) · [ModelKeyAccess](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeCommands](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePluginInventory](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresetGuards](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [NativeUserQuestions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [PluginRebuildIntent](cloud.md#approved-plugin-controls) · [PluginRebuildPersistence](cloud.md#approved-plugin-controls) · [PluginRebuildVerification](cloud.md#approved-plugin-controls) · [Session](session.md) · [SessionController](session.md) · [SubagentCapacityReservation](cloud.md#actual-work-and-capacity) · [Workspace](workspace.md) · [WorkspaceFiles](workspace.md) · [WorkspaceUploadBorrow](../../packages/cloud/pe-cloud-api/README.md#workspace-http-transfers) · [WorkspaceUploadSettlement](../../packages/cloud/pe-cloud-api/README.md#workspace-http-transfers) · [createNativeGoals](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeMessageFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePermissions](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativePresets](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSchedule](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionExport](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation) · [createNativeSessionFeedback](../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation)
 
 Source: [`packages/cloud/pe-cloud-api/src/account-service.ts`](../../packages/cloud/pe-cloud-api/src/account-service.ts)
 
@@ -1054,6 +1154,13 @@ One graph's real Registry/FS installation; shared pool drain and directory respo
  */
 skillVersions(): SkillVersionPort
 
+/**
+ * Borrow only the fixed research child of this graph's original verified private domain.
+ * @param owner Actual plugin caller in the same account graph.
+ * @returns Host-only storage grant; callers retain their native store handles through actual graph disposal.
+ */
+researchStorage(owner: Context): AccountResearchStorage
+
 /** Prepare only this files owner's installed private native storage and credential providers.
  * @param owner Original account entry.
  * @param limits Root bounds.
@@ -1061,6 +1168,15 @@ skillVersions(): SkillVersionPort
  * @param submit Original save barrier.
  * @returns Private account metadata/credential capability. */
 remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>
+
+/** Open only the installed account's native private MCP definition and credential providers.
+ * @param owner Original account entry.
+ * @param limits Explicit store budgets.
+ * @param current Original business admission.
+ * @param submit Original serialized account save barrier.
+ * @returns Private HTTP MCP store; no network connection is opened.
+ */
+mcpConnections(owner: Context, limits: McpStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountMcpConnectionStore>
 
 /**
  * Prepare a complete immutable tree through the original lane and reviewed helper.

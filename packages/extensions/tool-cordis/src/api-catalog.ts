@@ -655,6 +655,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'cloudMcpConnections',
+    summary: 'One optional management capability; protocol implementation remains entirely in dsh-mcp-client.',
+    description: 'One optional management capability; protocol implementation remains entirely in dsh-mcp-client.',
+    methods: [
+      {
+        signature: '@Remote(\'action\') action(request: CloudMcpConnectionRequest, signal: AbortSignal): Promise<CloudMcpConnectionReply>',
+        description: 'Dispatch bounded account-local operations under the actual authenticated Peer.',
+        parameters: [{ name: 'request', description: 'Complete closed request; headers are transient credential input and never returned.' }, { name: 'signal', description: 'Original request observer.' }],
+        returns: 'Actual list, generation revision and optional probe observation after complete application settlement.',
+      },
+      {
+        signature: 'inspect(): ExposureInventory',
+        description: 'Audit the exact native service/method declaration; registration alone does not open an endpoint.',
+        parameters: [],
+        returns: 'Current capability inventory with authenticated-account admission.',
+      },
+    ],
+  },
+  {
     key: 'cloudModelKey',
     summary: 'One independent capability; original native persistence, ordering and failure retention stay with AccountSaves.',
     description: 'One independent capability; original native persistence, ordering and failure retention stay with AccountSaves.',
@@ -1991,6 +2010,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission.',
     methods: [
       {
+        signature: 'prepareStaticAccountInventory?(inventory: StaticAccountInventory, installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<void>',
+        description: 'Initialize Root-owned mappings after physical inventory verification and before Files cold-proof parsing.',
+        parameters: [{ name: 'inventory', description: 'Original verified address-free inventory.' }, { name: 'installAssignments', description: 'Sole original Files resolver registration.' }],
+        returns: 'Original metadata readiness and resolver installation, never file lease authority.',
+      },
+      {
+        signature: 'initializeAccountAdministration?(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void>',
+        description: 'Verify trusted mappings and transaction budgets before exposing administration.',
+        parameters: [{ name: 'accountIds', description: 'Explicit initial administrators.' }, { name: 'budgets', description: 'Actual Access database/operation limits.' }],
+        returns: 'Startup validation settlement; no account is mounted.',
+      },
+      {
+        signature: 'accountResourceTemplates?(): Promise<readonly Readonly<{ id: string; available: number }>[]>',
+        description: 'Read declared physical templates without exposing private paths.',
+        parameters: [],
+        returns: 'Currently unassigned slot counts by template.',
+      },
+      {
+        signature: 'accountResourceStates?(accountIds: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>',
+        description: 'Read resource progress from original metadata.',
+        parameters: [{ name: 'accountIds', description: 'Bounded identity list.' }],
+        returns: 'Current assigned resource phases.',
+      },
+      {
+        signature: 'prepareManagedAccount?(accountId: AccountId, templateId: string, operationId: string): Promise<void>',
+        description: 'Prepare original native account resources before authentication enablement.',
+        parameters: [{ name: 'accountId', description: 'Authentic target.' }, { name: 'templateId', description: 'Real template.' }, { name: 'operationId', description: 'Original operation.' }],
+        returns: 'Actual native Files/execution readiness.',
+      },
+      {
+        signature: 'disableManagedAccount?(accountId: AccountId, operationId: string): Promise<\'disabled\' | \'stop-unknown\'>',
+        description: 'Join original account drain after login revocation.',
+        parameters: [{ name: 'accountId', description: 'Authentic target.' }, { name: 'operationId', description: 'Original management operation.' }],
+        returns: 'Confirmed disablement or explicit retained uncertainty.',
+      },
+      {
         signature: 'readonly recovery?: AccountRecoveryRuntime | undefined',
         description: 'Explicit maintenance Roots expose recovery while rejecting all ordinary account admission; omission keeps recovery closed.',
         parameters: [],
@@ -2215,6 +2270,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'registerCapabilityInventory(namespace: string, inspect: () => ExposureInventory): () => void',
+        description: 'Register an independent account capability for the original native inventory audit.',
+        parameters: [{ name: 'namespace', description: 'Exact original Cordis service key and wire namespace.' }, { name: 'inspect', description: 'Current contribution; every declared method is verified through the actual Gateway.' }],
+        returns: 'Calling fiber\'s disposer; registering and withdrawing revoke prior exposure approval.',
+      },
+      {
+        signature: 'isCapabilityEndpoint(endpoint: string, mode: \'rpc\' | \'stream\'): boolean',
+        description: 'Recognize only a selected operation belonging to a currently audited independent account capability.',
+        parameters: [{ name: 'endpoint', description: 'Exact approved endpoint.' }, { name: 'mode', description: 'Actual invocation carrier.' }],
+        returns: 'True after native implementation inspection; false for original native or unselected operations.',
+      },
+      {
+        signature: 'async withPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>',
+        description: 'Join plugin work to the original login Peer\'s retained AccountUse without borrowing another graph.',
+        parameters: [{ name: 'peer', description: 'Actual Gateway invocation Peer; copies and client identifiers grant no access.' }, { name: 'consume', description: 'Actual plugin work with the original current check, retained until settlement.' }],
+        returns: 'Original login operation settlement, rechecked against this exact graph before returning.',
+      },
+      {
+        signature: 'sessionProject(session: Session): Workspace',
+        description: 'Reuse Runtime\'s original native Session/project admission for an account plugin operation.',
+        parameters: [{ name: 'session', description: 'Actual native Session, never a path-derived or browser-constructed object.' }],
+        returns: 'The original registered Workspace; this creates no project, Agent or execution scope.',
+      },
+      {
         signature: 'requireRpc(endpoint: string): EndpointExposure',
         description: 'Require a reviewed native unary endpoint after business admission.',
         parameters: [{ name: 'endpoint', description: 'Native unary URL endpoint.' }],
@@ -2284,6 +2363,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Prepare account-private remote-server management and its original native tool consumers.',
         parameters: [{ name: 'owner', description: 'Original selected account entry.' }, { name: 'input', description: 'Trusted Root capabilities and limits.' }],
         returns: 'Actual installed Remote before full native auditing.',
+      },
+      {
+        signature: 'prepareCloudMcpConnections(owner: Context, input: CloudMcpConnectionPreparation): Promise<CloudMcpConnectionService>',
+        description: 'Prepare the optional original account HTTP MCP capability.',
+        parameters: [{ name: 'owner', description: 'Original native entry.' }, { name: 'input', description: 'Trusted files, authentication and deployment policy.' }],
+        returns: 'Installed independent capability; its Remote inventory is self-registered.',
       },
       {
         signature: 'prepareCloudPlugins(owner: Context): CloudPluginService',
@@ -2502,10 +2587,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The original bound port, rejecting when static storage or the native capability is absent.',
       },
       {
+        signature: 'researchStorage(owner: Context): AccountResearchStorage',
+        description: 'Borrow only the fixed research child of this graph\'s original verified private domain.',
+        parameters: [{ name: 'owner', description: 'Actual plugin caller in the same account graph.' }],
+        returns: 'Host-only storage grant; callers retain their native store handles through actual graph disposal.',
+      },
+      {
         signature: 'remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>',
         description: 'Prepare only this files owner\'s installed private native storage and credential providers.',
         parameters: [{ name: 'owner', description: 'Original account entry.' }, { name: 'limits', description: 'Root bounds.' }, { name: 'current', description: 'Original business admission.' }, { name: 'submit', description: 'Original save barrier.' }],
         returns: 'Private account metadata/credential capability.',
+      },
+      {
+        signature: 'mcpConnections(owner: Context, limits: McpStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountMcpConnectionStore>',
+        description: 'Open only the installed account\'s native private MCP definition and credential providers.',
+        parameters: [{ name: 'owner', description: 'Original account entry.' }, { name: 'limits', description: 'Explicit store budgets.' }, { name: 'current', description: 'Original business admission.' }, { name: 'submit', description: 'Original serialized account save barrier.' }],
+        returns: 'Private HTTP MCP store; no network connection is opened.',
       },
       {
         signature: 'prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>',
@@ -4767,6 +4864,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.'],
       },
       {
+        signature: 'inspectInvocation(namespace: string, method: string): InvocationDescriptor',
+        description: 'Inspect the same strict or source definition used by a real invocation, without resolving resources or calling it.',
+        parameters: [{ name: 'namespace', description: 'Exact wire namespace.' }, { name: 'method', description: 'Exact exported method.' }],
+        returns: 'Current native invocation definition; inspection grants no call or resource authorization.',
+      },
+      {
         signature: 'async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>',
         description: 'Open one live stream Remote method without assuming a physical carrier.',
         parameters: [{ name: 'request', description: 'decoded endpoint, named wire arguments, and the Client uplink when the carrier has one.' }],
@@ -5859,7 +5962,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountApiPreparation',
-    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly readTerminalLimits?: () => import(\'./plugin-types.ts\').PluginManagerSnapshot[\'terminal\'];\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly timeFileInventory?: (work: () => void) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n    readonly retainOfficeLifecycle?: (lifecycle: AccountOfficeLifecycle) => void;\n}',
+    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly plugins?: CloudPluginPreparation;\n    readonly readTerminalLimits?: () => import(\'./plugin-types.ts\').PluginManagerSnapshot[\'terminal\'];\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly timeFileInventory?: (work: () => void) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly withPeerUse?: ModelKeyPeerConsumer[\'withModelKeyPeerUse\'];\n    readonly sessionProject?: (session: Session) => Workspace;\n    readonly inspectRootFetch?: () => readonly ExactFetchExposure[];\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n    readonly assertReconfiguring?: () => void;\n    readonly observeStartupPhase?: (phase: \'audit-provider\' | \'bootstrap-policy\' | \'nativeinventory\') => void;\n    readonly retainOfficeLifecycle?: (lifecycle: AccountOfficeLifecycle) => void;\n}',
   },
   {
     name: 'AccountAttachmentBackend',
@@ -5895,7 +5998,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountFilesPreparation',
-    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'stageWorkspaceUploads\' | \'runNativeMutation\' | \'workspaceContent\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Workspace>;\n    readonly assertContentAvailable?: () => void;\n   /* …truncated — full shape in source */',
+    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly researchStorage?: () => AccountResearchStorage;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'stageWorkspaceUploads\' | \'runNativeMutation\' | \'workspaceContent\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Wor /* …truncated — full shape in source */',
   },
   {
     name: 'AccountFilesProject',
@@ -5904,6 +6007,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountLinks',
     declaration: 'export interface AccountLinks {\n    readonly usageUrl: string;\n    readonly topUpUrl: string;\n}',
+  },
+  {
+    name: 'AccountMcpConnectionStore',
+    declaration: 'export interface AccountMcpConnectionStore {\n    list(): readonly McpConnectionRecord[];\n    version(): string;\n    save(id: McpConnectionId | undefined, input: McpConnectionInput, assertCurrent?: () => void): Promise<McpConnectionRecord>;\n    remove(id: McpConnectionId, assertCurrent?: () => void): Promise<void>;\n    configured(id: McpConnectionId): Promise<boolean>;\n    withHeaders<T>(id: McpConnectionId, consume: (headers: Record<string, string>) => Promise<T>): Promise<T>;\n}',
   },
   {
     name: 'AccountOfficeLifecycle',
@@ -5928,6 +6035,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountRemoteServerStore',
     declaration: 'export interface AccountRemoteServerStore {\n    readonly collection: AccountRemoteServers;\n    readonly mutate: <T>(work: () => Promise<T>) => Promise<T>;\n    readonly configured: (id: string) => Promise<boolean>;\n    readonly setCredential: (id: string, value: RemoteCredential) => Promise<void>;\n    readonly withCredential: <T>(id: ServerId, consume: (value: RemoteCredential) => Promise<T>) => Promise<T>;\n}',
+  },
+  {
+    name: 'AccountResearchStorage',
+    declaration: 'export interface AccountResearchStorage {\n    readonly binding: AccountBinding;\n    readonly directory: string;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'AccountUserId',
@@ -6083,7 +6194,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApprovedConfigurationCatalog',
-    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly bundles?: readonly ApprovedConfigurationBundle[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }> | Readonly<{\n        mode: \'sample\';\n        limits: Readonly<SkillPublicationLimits>;\n    }> | Readonly<{\n        mode: \'managed\';\n        limits: Readonly<SkillPublicationLimits>;\n        management: Readonly<ManagedSkillApiLimits>;\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly remoteServers?: import(\'./remote-server-policy.ts\').ApprovedRemoteServers;\n    readonly modelKey?: ApprovedModelKeyConfiguration;\n    readonly pluginControl?: Readonly<PluginControlLimits>;\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
+    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly bundles?: readonly ApprovedConfigurationBundle[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }> | Readonly<{\n        mode: \'sample\';\n        limits: Readonly<SkillPublicationLimits>;\n    }> | Readonly<{\n        mode: \'managed\';\n        limits: Readonly<SkillPublicationLimits>;\n        management: Readonly<ManagedSkillApiLimits>;\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly remoteServers?: import(\'./remote-server-policy.ts\').ApprovedRemoteServers;\n    readonly mcp?: import(\'./mcp-policy.ts\').ApprovedMcpConnections;\n    readonly modelKey?: ApprovedModelKeyConfiguration;\n    readonly pluginControl?: Readonly<PluginControlLimits>;\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
   },
   {
     name: 'ApprovedConfigurationField',
@@ -6092,6 +6203,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovedConfigurationPlugin',
     declaration: 'export interface ApprovedConfigurationPlugin {\n    readonly id: string;\n    readonly entryId: string;\n    readonly moduleName: string;\n    readonly packageName: string;\n    readonly packageVersion: string;\n    readonly installable: false;\n    readonly toggleable: boolean;\n    readonly control?: ApprovedPluginControl;\n}',
+  },
+  {
+    name: 'ApprovedMcpConnections',
+    declaration: 'export interface ApprovedMcpConnections {\n    readonly limits: McpStoreLimits & {\n        readonly maxRequestBytes: number;\n        readonly maxReplyBytes: number;\n    };\n    readonly runtime: McpConnectionRuntimePolicy;\n}',
   },
   {
     name: 'ApprovedModelKeyBinding',
@@ -6323,11 +6438,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountApi',
-    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    skillReleaseBinaryPolicy(): Readonly<{\n        maxArchiveBytes: number;\n        timeoutMs: number;\n    }> | undefined;\n    consumeSkillReleaseResponse(borrow: BundledSkillResponseBorrow, maxRequestBytes: number): Promise<BundledSkillResponseSettlement>;\n    consumeWorkspaceUploadResponse(borrow: WorkspaceUploadBorrow): Promise<WorkspaceUploadSettlement>;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeIn /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'> & {\n        readonly pluginManager?: typeof PluginManager;\n    }>;\n    readonly readTerminalLimits: AccountApiPreparation[\'readTerminalLimits\'];\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    auditReconfigured(owner: Context): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    registerCapabilityInventory(namespace: string, inspect: () => ExposureInventory): () => void;\n    isCapabilityEndpoint(endpoint: string, mode: \'rpc\' | \'stream\'): boolean;\n    async withPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>;\n    sessionProject(session: Session): Workspace;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireAdmittedFileRead(endpoint: \'workspaceFiles/read\' | \'workspaceFiles/stat\' | \'workspaceFiles/readBytes\'): EndpointExposure;\n    auditFileRead(): void;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    skillReleaseBinaryPolicy(): Readonly<{\n        maxArchiveBytes: number;\n        /* …truncated — full shape in source */',
   },
   {
     name: 'CloudAccountFiles',
-    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    materializeSkillVersion(project: SkillProjectGrant, version: SkillVersion, signal: AbortSignal): Promise<ResidentResult<SkillWorkingCopyGrant>>;\n    borrowBundleWorkingCopies(project: SkillProjectGrant, copies: readonly (SkillWorking /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    researchStorage(owner: Context): AccountResearchStorage;\n    remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>;\n    mcpConnections(owner: Context, limits: McpStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountMcpConnectionStore>;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    mate /* …truncated — full shape in source */',
   },
   {
     name: 'CloudApiError',
@@ -6336,6 +6451,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CloudApiErrorCode',
     declaration: 'export type CloudApiErrorCode = \'cloud/forbidden\' | \'cloud/invalid-config\' | \'cloud/account-unavailable\' | \'cloud/stale-generation\' | \'cloud/model-not-allowed\' | \'cloud/config-busy\' | \'cloud/config-conflict\' | \'cloud/capacity\' | \'cloud/invalid-project-title\' | \'cloud/invalid-skill-bundle\';',
+  },
+  {
+    name: 'CloudMcpConnectionPreparation',
+    declaration: 'export interface CloudMcpConnectionPreparation {\n    readonly files: CloudAccountFiles;\n    readonly policy: ApprovedMcpConnections;\n    readonly assertBusinessCurrent: () => void;\n    readonly assertToolCurrent: (exec: Pick<ToolRunContext, \'agent\' | \'signal\'>) => void;\n}',
+  },
+  {
+    name: 'CloudMcpConnectionReply',
+    declaration: 'export interface CloudMcpConnectionReply {\n    readonly connections: readonly CloudMcpConnectionView[];\n    readonly version: string;\n    readonly limits: Readonly<{\n        maxConnections: number;\n        maxToolCallTimeoutMs: number;\n    }>;\n    readonly test?: Readonly<{\n        reachable: boolean;\n        toolCount: number;\n        failure?: \'connection-failed\';\n    }>;\n}',
+  },
+  {
+    name: 'CloudMcpConnectionRequest',
+    declaration: 'export type CloudMcpConnectionRequest = {\n    readonly action: \'list\';\n} | {\n    readonly action: \'save\';\n    readonly id?: McpConnectionId | undefined;\n    readonly version: string;\n    readonly connection: McpConnectionInput;\n} | {\n    readonly action: \'enabled\';\n    readonly id: McpConnectionId;\n    readonly version: string;\n    readonly enabled: boolean;\n} | {\n    readonly action: \'remove\';\n    readonly id: McpConnectionId;\n    readonly version: string;\n} | {\n    readonly action: \'test\';\n    readonly id?: McpConnectionId | undefined;\n    readonly connection: McpConnectionInput;\n};',
+  },
+  {
+    name: 'CloudMcpConnectionService',
+    declaration: 'export class CloudMcpConnectionService extends TypertRemoteService {\n    static async prepare(ctx: Context, api: CloudAccountApi, input: CloudMcpConnectionPreparation, saves: ConfigSaveBarrier): Promise<CloudMcpConnectionService>;\n    @Remote(\'action\')\n    action(request: CloudMcpConnectionRequest, signal: AbortSignal): Promise<CloudMcpConnectionReply>;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'CloudMcpConnectionView',
+    declaration: 'export interface CloudMcpConnectionView extends McpConnectionRecord {\n    readonly configured: boolean;\n    readonly toolCount: number;\n}',
   },
   {
     name: 'CloudModelKeyPreparation',
@@ -6491,7 +6626,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConfigSaveKind',
-    declaration: 'export type ConfigSaveKind = \'default-model\' | \'settings\' | \'config-editor\' | \'plugin-selection\' | \'credentials\' | \'skill-publish\' | \'skill-projection\' | \'remote-server\';',
+    declaration: 'export type ConfigSaveKind = \'default-model\' | \'settings\' | \'config-editor\' | \'plugin-selection\' | \'credentials\' | \'skill-publish\' | \'skill-projection\' | \'remote-server\' | \'mcp-connection\';',
   },
   {
     name: 'ConfigSaveOperation',
@@ -7810,12 +7945,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type MatcherValue = string | number | boolean | null | RegExp | readonly (string | number | boolean | null)[];',
   },
   {
+    name: 'McpConnectionId',
+    declaration: 'export type McpConnectionId = Branded<\'McpConnectionId\'>;',
+  },
+  {
+    name: 'McpConnectionInput',
+    declaration: 'export interface McpConnectionInput {\n    readonly serverName: string;\n    readonly url: string;\n    readonly enabled: boolean;\n    readonly toolCallTimeoutMs: number;\n    readonly headers?: Readonly<Record<string, string>> | undefined;\n}',
+  },
+  {
+    name: 'McpConnectionRecord',
+    declaration: 'export interface McpConnectionRecord {\n    readonly id: McpConnectionId;\n    readonly serverName: string;\n    readonly url: string;\n    readonly enabled: boolean;\n    readonly toolCallTimeoutMs: number;\n}',
+  },
+  {
+    name: 'McpConnectionRuntimePolicy',
+    declaration: 'export interface McpConnectionRuntimePolicy {\n    readonly maxInstructionBytes: number;\n    readonly maxIncomingResponseBytes: number;\n    readonly listMaxPages: number;\n    readonly reconnect: Readonly<{\n        enabled: boolean;\n        initialDelayMs: number;\n        maxDelayMs: number;\n        maxAttempts: number;\n    }>;\n}',
+  },
+  {
     name: 'McpResourceProvider',
     declaration: 'export interface McpResourceProvider {\n    request(request: McpResourceRequest, exec: ToolExecution): Promise<JsonValue>;\n}',
   },
   {
     name: 'McpResourceRequest',
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
+  },
+  {
+    name: 'McpStoreLimits',
+    declaration: 'export interface McpStoreLimits {\n    readonly maxConnections: number;\n    readonly maxUrlBytes: number;\n    readonly maxHeaderBytes: number;\n    readonly maxHeaderCount: number;\n    readonly maxToolCallTimeoutMs: number;\n}',
   },
   {
     name: 'Message',
@@ -10167,7 +10322,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessHandle',
-    declaration: 'export interface SubprocessHandle {\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly control: Duplex | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
+    declaration: 'export interface SubprocessHandle {\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly control: Duplex | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    releaseCollected?(): void;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
   },
   {
     name: 'SubprocessOutcome',

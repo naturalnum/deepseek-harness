@@ -198,6 +198,20 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 -----
 
 <a id="model-experience"></a>
+## 账号管理
+
+Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdministratorIds }` 后启用固定版本 Better Auth Admin 插件及其数据库字段。启用前须执行库生成的迁移；Root 不自动迁移。连接池至少需要两个物理连接。没有角色的旧账号视为普通用户；仅在启动时不存在有效管理员的情况下，初始化配置明确指定的管理员账号。
+
+设置菜单通过 `account.role` 与 `capabilities.accountAdministration` 展示。每次 POST `/cloud/admin/accounts` 独立核对原 Cookie 登录及数据库中的当前管理员角色。支持有界列表和搜索、创建、修改显示名、角色、启停及重置密码。原 `/cloud/auth` 入口拒绝直接调用 Admin 插件接口。PostgreSQL 事务咨询锁串行管理修改并保护最后一个有效管理员；重置密码撤销目标账号的登录。管理员权限不授予其他账号的项目文件访问。
+
+启用此部署需要 `disableSignUp: true` 及原运行时资源协调器。Better Auth 迁移另外维护私有用户字段 `cloudCreationId`、`cloudCreationHash`。创建先登记禁止登录的身份，再占用一个真实预分配的 v3 模板槽位，等待原 Files/Native 工厂实际就绪，最后才解除禁止登录。同一创建标识及请求内容重复提交会返回原账号；失败保留身份与槽位，供明确的资源准备重试使用。重放已完成的创建不能重新启用后来被停用的账号。设置页只列出实际可用模板，不接受文件系统路径或任意配额。
+
+停用先禁止该身份登录并撤销其登录 Peer，再等待原工厂完成停止。仅确认实际停止后报告 `disabled`；其他 owner、保留中的隔离状态或未知工作均保留为 `stop-unknown`。修改密码会撤销登录会话。普通用户继续使用其个人 MCP 和科研能力。独立管理请求绑定实际操作者，不会借用目标账号充当认证身份。
+
+本地管理队列仅在队首占用 PostgreSQL 咨询锁连接，因此并发管理请求仍可使用最少两个连接的池。启动时将认证数据库的空闲事务超时与实际运行时账号等待、有限槽位分配查询及认证尾部调用预算比较；配置不足会在开放管理路由前拒绝启动。定向 PostgreSQL 测试使用固定版本真实认证库和两个连接的池；资源生命周期回复夹具不证明真实 Linux 账号准备或浏览器验收。运行时绑定测试另行验证持久化的唯一槽位分配及重启加载。
+
+目标账号的资源清理使用 `cloud/account-stop-unconfirmed`，共享入口保持可用。共享 HTTP 或 Peer 清理继续使用 `cloud/stop-unconfirmed`，并保留原有准入关闭行为。已安装路由数量包括每一项显式选中的账号管理和服务预览注册。
+
 ## 模型体验
 
 ### 请求上下文与条件
@@ -215,6 +229,8 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 请求认证及绑定检查不改变提示前缀或模型缓存输入。
 
 ## 已知限制与后续工作
+
+- MCP bootstrap 元数据不代表服务可达；每个连接仍须使用原账号服务及其实际认证客户端。
 
 ### 可选 MCP bootstrap 能力
 
@@ -236,17 +252,3 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 定向测试使用真实 PostgreSQL、原生 Connection/Gateway 和内存 socket 对验证 HTTP/WS 共用 Peer、撤销、到期及清理保留。账户借用是测试夹具，并非产品工厂；尚未通过 Loader 启动账户图或验证运行中的 Agent 任务隔离。
 
 </details>
-
-## 账号管理
-
-Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdministratorIds }` 后启用固定版本 Better Auth Admin 插件及其数据库字段。启用前须执行库生成的迁移；Root 不自动迁移。连接池至少需要两个物理连接。没有角色的旧账号视为普通用户；仅在启动时不存在有效管理员的情况下，初始化配置明确指定的管理员账号。
-
-设置菜单通过 `account.role` 与 `capabilities.accountAdministration` 展示。每次 POST `/cloud/admin/accounts` 独立核对原 Cookie 登录及数据库中的当前管理员角色。支持有界列表和搜索、创建、修改显示名、角色、启停及重置密码。原 `/cloud/auth` 入口拒绝直接调用 Admin 插件接口。PostgreSQL 事务咨询锁串行管理修改并保护最后一个有效管理员；重置密码撤销目标账号的登录。管理员权限不授予其他账号的项目文件访问。
-
-启用此部署需要 `disableSignUp: true` 及原运行时资源协调器。Better Auth 迁移另外维护私有用户字段 `cloudCreationId`、`cloudCreationHash`。创建先登记禁止登录的身份，再占用一个真实预分配的 v3 模板槽位，等待原 Files/Native 工厂实际就绪，最后才解除禁止登录。同一创建标识及请求内容重复提交会返回原账号；失败保留身份与槽位，供明确的资源准备重试使用。重放已完成的创建不能重新启用后来被停用的账号。设置页只列出实际可用模板，不接受文件系统路径或任意配额。
-
-停用先禁止该身份登录并撤销其登录 Peer，再等待原工厂完成停止。仅确认实际停止后报告 `disabled`；其他 owner、保留中的隔离状态或未知工作均保留为 `stop-unknown`。修改密码会撤销登录会话。普通用户继续使用其个人 MCP 和科研能力。独立管理请求绑定实际操作者，不会借用目标账号充当认证身份。
-
-本地管理队列仅在队首占用 PostgreSQL 咨询锁连接，因此并发管理请求仍可使用最少两个连接的池。启动时将认证数据库的空闲事务超时与实际运行时账号等待、有限槽位分配查询及认证尾部调用预算比较；配置不足会在开放管理路由前拒绝启动。定向 PostgreSQL 测试使用固定版本真实认证库和两个连接的池；资源生命周期回复夹具不证明真实 Linux 账号准备或浏览器验收。运行时绑定测试另行验证持久化的唯一槽位分配及重启加载。
-
-目标账号的资源清理使用 `cloud/account-stop-unconfirmed`，共享入口保持可用。共享 HTTP 或 Peer 清理继续使用 `cloud/stop-unconfirmed`，并保留原有准入关闭行为。已安装路由数量包括每一项显式选中的账号管理和服务预览注册。

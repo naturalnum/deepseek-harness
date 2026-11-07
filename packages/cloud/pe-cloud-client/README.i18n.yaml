@@ -38,6 +38,9 @@
 /deepseek-ai-dsh-pe-cloud-client/further-exploration:
   en: d7c95e090311d849
   zh: c9f288ccc8f9fa39
+/deepseek-ai-dsh-pe-cloud-client/account-administration:
+  en: 0cf271e17303690a
+  zh: 22270568df92f8fc
 /deepseek-ai-dsh-pe-cloud-client/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
@@ -54,14 +57,11 @@
   en: b2a8101acd22e2cd
   zh: a5813e864630d1a7
 /deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work:
-  en: 255a42f7124eba76
-  zh: c47d688a83276ef8
+  en: 31fad5b70aa2eb39
+  zh: 0fef3c07d18555e0
 /deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work/account-http-mcp-settings:
   en: 7bec2669b81487bb
   zh: 531caeecffd12dc7
 /deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work/dev-note:
   en: 832fba8e470a086d
   zh: ec863987f873378a
-/deepseek-ai-dsh-pe-cloud-client/account-administration:
-  en: 0cf271e17303690a
-  zh: 22270568df92f8fc

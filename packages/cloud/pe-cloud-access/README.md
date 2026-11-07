@@ -198,6 +198,20 @@ Approved native bundle ids share the existing bounded bootstrap plugin metadata 
 -----
 
 <a id="model-experience"></a>
+## Account administration
+
+An explicit Root `accountAdministration: { maxAccounts, maxPageSize, initialAdministratorIds }` enables the pinned Better Auth Admin plugin and its additional database fields. Apply the library-generated migration before enabling this configuration; the Root never runs migrations automatically. The pool requires at least two physical connections. Existing accounts without a role remain ordinary users. Explicit initial account IDs are promoted only during startup when no enabled administrator exists.
+
+The settings entry uses `account.role` and `capabilities.accountAdministration` as display metadata. Every POST to `/cloud/admin/accounts` independently reads the original Cookie-backed actor and current database role. Supported operations are bounded list/search, create, display-name change, role change, enable/disable and password reset. The shared `/cloud/auth` bridge rejects direct Admin plugin endpoints. A PostgreSQL transaction advisory lock serializes management mutations and protects the final enabled administrator. Password resets revoke the target's login sessions. Administrative rights do not grant access to another account's project files.
+
+The enabled deployment requires `disableSignUp: true` and the original runtime resource coordinator. Better Auth migrations additionally own the private `cloudCreationId` and `cloudCreationHash` user fields. Creation first records a banned identity, then reserves one real preallocated v3 template slot, waits for the original Files/Native factory ready result, and only then unbans it. Repeating the same creation identifier and payload returns the original account; failure retains the identity and slot for the explicit preparation retry. Replaying completed creation cannot re-enable an intentionally disabled account. The settings page lists only actual available templates; it accepts no filesystem path or arbitrary quota.
+
+Disabling first bans the identity and revokes its login Peers, then joins the original factory drain. Only a confirmed stop reports `disabled`; another owner, retained quarantine or unknown work remains `stop-unknown`. Password changes revoke login sessions. Individual users retain their own MCP and research capabilities. The separate management request binds the acting account and never borrows the target account as its authenticated actor.
+
+The local management queue takes the PostgreSQL advisory-lock connection only at its head, so the minimum two-connection pool remains usable under concurrent management requests. Startup verifies the auth idle-transaction timeout against the actual runtime account wait, every finite slot-reservation metadata attempt and the provider tail; an insufficient configuration refuses before management routes open. Focused PostgreSQL tests use the real pinned provider and a two-connection pool; lifecycle reply fixtures do not establish real Linux account preparation or browser acceptance. Runtime binding tests independently verify persistent unique-slot assignment and restart loading.
+
+Target account cleanup uses `cloud/account-stop-unconfirmed` and leaves shared ingress available. Shared HTTP or Peer cleanup retains `cloud/stop-unconfirmed` and its original admission closure. The installed route count includes each explicitly selected account-management and service-preview registration.
+
 ## Model Experience
 
 ### Request context and condition
@@ -215,6 +229,8 @@ This package adds zero model input or output tokens.
 Request authentication and binding checks change no prompt prefix or model cache input.
 
 ## Known Limitations and Deferred Work
+
+- MCP bootstrap metadata does not establish server reachability; each connection still requires the original account service and its actual authenticated client.
 
 ### Optional MCP bootstrap capability
 
@@ -236,17 +252,3 @@ The bounded optional `configuration.mcp: { manage: true }` is emitted only from 
 Focused tests use real PostgreSQL, native Connection/Gateway and memory socket pairs to verify shared HTTP/WS Peer, revocation, expiry and retained cleanup. Account borrows are fixtures rather than the product factory; Loader account boot and running Agent task isolation remain unverified.
 
 </details>
-
-## Account administration
-
-An explicit Root `accountAdministration: { maxAccounts, maxPageSize, initialAdministratorIds }` enables the pinned Better Auth Admin plugin and its additional database fields. Apply the library-generated migration before enabling this configuration; the Root never runs migrations automatically. The pool requires at least two physical connections. Existing accounts without a role remain ordinary users. Explicit initial account IDs are promoted only during startup when no enabled administrator exists.
-
-The settings entry uses `account.role` and `capabilities.accountAdministration` as display metadata. Every POST to `/cloud/admin/accounts` independently reads the original Cookie-backed actor and current database role. Supported operations are bounded list/search, create, display-name change, role change, enable/disable and password reset. The shared `/cloud/auth` bridge rejects direct Admin plugin endpoints. A PostgreSQL transaction advisory lock serializes management mutations and protects the final enabled administrator. Password resets revoke the target's login sessions. Administrative rights do not grant access to another account's project files.
-
-The enabled deployment requires `disableSignUp: true` and the original runtime resource coordinator. Better Auth migrations additionally own the private `cloudCreationId` and `cloudCreationHash` user fields. Creation first records a banned identity, then reserves one real preallocated v3 template slot, waits for the original Files/Native factory ready result, and only then unbans it. Repeating the same creation identifier and payload returns the original account; failure retains the identity and slot for the explicit preparation retry. Replaying completed creation cannot re-enable an intentionally disabled account. The settings page lists only actual available templates; it accepts no filesystem path or arbitrary quota.
-
-Disabling first bans the identity and revokes its login Peers, then joins the original factory drain. Only a confirmed stop reports `disabled`; another owner, retained quarantine or unknown work remains `stop-unknown`. Password changes revoke login sessions. Individual users retain their own MCP and research capabilities. The separate management request binds the acting account and never borrows the target account as its authenticated actor.
-
-The local management queue takes the PostgreSQL advisory-lock connection only at its head, so the minimum two-connection pool remains usable under concurrent management requests. Startup verifies the auth idle-transaction timeout against the actual runtime account wait, every finite slot-reservation metadata attempt and the provider tail; an insufficient configuration refuses before management routes open. Focused PostgreSQL tests use the real pinned provider and a two-connection pool; lifecycle reply fixtures do not establish real Linux account preparation or browser acceptance. Runtime binding tests independently verify persistent unique-slot assignment and restart loading.
-
-Target account cleanup uses `cloud/account-stop-unconfirmed` and leaves shared ingress available. Shared HTTP or Peer cleanup retains `cloud/stop-unconfirmed` and its original admission closure. The installed route count includes each explicitly selected account-management and service-preview registration.

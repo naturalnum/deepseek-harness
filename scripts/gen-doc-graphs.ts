@@ -129,6 +129,11 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Uses the original authenticated Peer, private files/credentials and save owner; execution remains with native Session tools.',
   },
   {
+    key: 'cloudMcpConnections', pkg: 'pe-cloud-api', title: 'Account HTTP MCP management', mode: 'service',
+    consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Uses the original account Peer, private credentials and official native MCP client with explicit HTTP and discovery limits.',
+  },
+  {
     key: 'cloudSkills', pkg: 'pe-cloud-api', title: 'Account skill installation management', mode: 'service',
     consumers: ['pe-cloud-api', 'pe-cloud-client', 'pe-cloud-runtime'],
     note: 'Manages account skill installations and complete packages through original Peer admission, account saves '

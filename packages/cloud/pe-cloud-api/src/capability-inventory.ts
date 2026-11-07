@@ -70,7 +70,9 @@ export class AccountCapabilityInventories {
   }
 
   /** Recheck a selected contribution immediately before ordinary dispatch.
-   * @param account Original account graph. @param row Already approved exact exposure. @param mode Actual carrier mode.
+   * @param account Original account graph.
+   * @param row Already approved exact exposure.
+   * @param mode Actual carrier mode.
    * @returns Whether this exact operation belongs to an installed contribution; an invalid installed contribution rejects.
    */
   assertEndpoint(account: Context, row: EndpointExposure, mode: 'rpc' | 'stream'): boolean {

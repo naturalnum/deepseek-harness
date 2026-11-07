@@ -38,6 +38,7 @@ function keeperInput(value: unknown, digest: string, assertManifestCurrent: () =
  * Prepare protected storage and SDK owners without creating a sandbox; only legacy v1 adopts an FD4 keeper.
  * @param reference Explicit protected Root path/SHA; Root apply rejects account graphs and closed mode before this call.
  * @param limits Existing parsed coordinator limits, checked against the protected deployment capacities.
+ * @param resolveSharedAccount Original verified static-slot assignment resolver for shared-path deployments.
  * @returns Original deployment plus one actual close operation; Root must retain the pending construction through disposal.
  * @throws On protected input, storage/legacy keeper or construction failure; private cause retains startup cleanup ownership.
  */

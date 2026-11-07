@@ -246,6 +246,24 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 
 账户附件接收在原生上传所有者报告完成前，将每个新文件发布到确切 Agent 所属工作区。原私有附件对象继续服务于对话历史，旧附件记录保持不变。先释放原接收驻留预留，再由同一变更通道准入工作区副本，避免嵌套等待。私有存储完成后的失败报告为结果未确认，不宣称可安全回滚。文件树专用上传结算后不保留对话回执。`native.workspaceTransfers` 开启可选 HTTP 下载及目录操作；有限参数不替代内核配额、账户归属或原文件 worker 容量。
 
+## 托管预分配账号
+
+账号管理要求已验证的 v3 库存。未启用该功能时，v1/v2 部署保留原有认领与布局行为。将固定两账号计划升级时，把每个既有账号行的原路径、存储键和实测 backing 域原样保留为具名槽位，并通过 `staticAccounts.initialAssignments` 绑定原真实账号 ID。新增槽位须独立预分配。保留原卷、账号 ID 和 Session 日志，不复制或清空它们。确认维护停机后，在最终应用挂载命名空间重新量测并固定新计划摘要，再启动服务。此变更升级分配登记方式，不改变预分配存储策略。
+
+停用首先关闭本地工厂准入，并持久化表示尚未确认停止的 `stop-unknown`。每次 v3 owner 认领在原 PostgreSQL CAS 完成前，以 `FOR SHARE` 锁住同一符合准入条件的绑定行。停止操作等待先到认领提交；后到认领重新检查已关闭状态，不能启动账号图。只有原工厂实际关闭、owner 元数据为空或 unowned 时才能登记 `disabled`。远端或未知 owner 保持未确认；显式资源准备不能重新开放 `stop-unknown`，也不能将其覆盖为 `failed`。
+
+v3 Files 库存包含有限、不可变且已完成物理供应的存储槽位。运行时使用现有有界元数据库，在 `pe_account_static_bindings` 中仅存储真实账号 ID、库存摘要、槽位 ID、稳定绑定修订及准备流程状态。原子迁移对比原始模式的列、默认值和已验证约束；发现差异会拒绝启动，不会重置现有分配。槽位在账号之间唯一。准备失败保留绑定；请求不能释放、复用、扩容或虚构物理槽位。扩展库存属于经审核的维护部署，不是实时账号接口。原 v1/v2 部署行为和由账号 ID 派生的布局保持兼容。
+
+持久化库存摘要使用 Files 的稳定物理槽位摘要，与其包含命名空间身份的完整部署计划摘要分开。同一物理清单的新验证计划恢复原账号与槽位映射及绑定修订。backing 身份、配额或槽位清单变化会拒绝启动，不会改写既有行。每个最终命名空间都须重新量测并固定完整计划；关联摘要既不授予存储权限，也不豁免 Files 或 OpenSandbox 校验。
+
+可信配置 `staticAccounts.initialAssignments: [{ accountId, slotId }]` 对明确的既有身份幂等初始化，并拒绝冲突映射。`auth.accountAdministration.initialAdministratorIds` 必须明确指定具备这些绑定、有效且已存在的身份；不会自动提升首次登录者。Files 仅在测量原库存后、解析冷启动技能证明前调用 `prepareStaticAccountInventory`；运行时在 Files 开放准入前初始化种子并安装解析器。绑定解析器保留原映射对象，准备流程修订变化不会替换它。Files 从自身验证过的库存解析地址，原生工厂与 OpenSandbox 使用同一获准布局。解析器自身不授予存储租约。
+
+`prepareManagedAccount` 占用真实模板槽位，持久化 `preparing`，调用原账号工厂，仅在实际 `AccountUse` 仍有效后登记 `ready`。Access 收到该结果后才可解除禁止登录。创建失败持久化 `failed`，重试不会重复创建身份或改绑槽位。冷启动获取账号会重新核验持久化准入状态和实际工厂。较早的准备不能覆盖并发停用。`disableManagedAccount` 等待 `AccountFactory.stopNative`，保留持久数据，并将未知 owner 或停止结果报告为 `stop-unknown`。
+
+真实 PostgreSQL 绑定测试覆盖并发唯一分配、保留原映射身份、容量、流程 CAS、明确初始化冲突及重启加载。实际 Linux 挂载和配额、完整认证 Native/Web 创建及停止链路仍需独立集成验收。
+
+v3 管理启动要求 `idleTransactionTimeoutMs >= accountWaitTimeoutMs + (2 * slotCount + 10) * (runtime.pg.queueTimeoutMs + runtime.pg.statementTimeoutMs) + auth.authCheckTimeoutMs + 2 * (auth.pool.connectionTimeoutMs + auth.pool.statementTimeoutMs)`。此外，`auth.authCheckTimeoutMs` 必须覆盖同一资源准备项及认证尾部调用，使原管理观察者能够等到完整准备结果。这覆盖有限分配重试、实际挂载观察及同一 PostgreSQL 事务锁持有期间的最后认证调用；配置较短时拒绝管理启动。
+
 ## Model Experience
 
 ### Runtime admission
@@ -263,6 +281,8 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 本地容量记录不更改模型请求前缀或保留的 Session 历史。
 
 ## Known Limitations and Deferred Work
+
+- MCP 准入要求显式配置 HTTP 字节及发现页数上限；组件检查不代表真实服务或账号已经就绪。
 
 账户原生 Agent 与子 Agent 的准入还要求使用原账户的 sandbox、PTC runtime 和终端登记器身份；预设不能遮蔽这些 provider。
 
@@ -295,21 +315,3 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 无。
 
 </details>
-
-## 托管预分配账号
-
-账号管理要求已验证的 v3 库存。未启用该功能时，v1/v2 部署保留原有认领与布局行为。将固定两账号计划升级时，把每个既有账号行的原路径、存储键和实测 backing 域原样保留为具名槽位，并通过 `staticAccounts.initialAssignments` 绑定原真实账号 ID。新增槽位须独立预分配。保留原卷、账号 ID 和 Session 日志，不复制或清空它们。确认维护停机后，在最终应用挂载命名空间重新量测并固定新计划摘要，再启动服务。此变更升级分配登记方式，不改变预分配存储策略。
-
-停用首先关闭本地工厂准入，并持久化表示尚未确认停止的 `stop-unknown`。每次 v3 owner 认领在原 PostgreSQL CAS 完成前，以 `FOR SHARE` 锁住同一符合准入条件的绑定行。停止操作等待先到认领提交；后到认领重新检查已关闭状态，不能启动账号图。只有原工厂实际关闭、owner 元数据为空或 unowned 时才能登记 `disabled`。远端或未知 owner 保持未确认；显式资源准备不能重新开放 `stop-unknown`，也不能将其覆盖为 `failed`。
-
-v3 Files 库存包含有限、不可变且已完成物理供应的存储槽位。运行时使用现有有界元数据库，在 `pe_account_static_bindings` 中仅存储真实账号 ID、库存摘要、槽位 ID、稳定绑定修订及准备流程状态。原子迁移对比原始模式的列、默认值和已验证约束；发现差异会拒绝启动，不会重置现有分配。槽位在账号之间唯一。准备失败保留绑定；请求不能释放、复用、扩容或虚构物理槽位。扩展库存属于经审核的维护部署，不是实时账号接口。原 v1/v2 部署行为和由账号 ID 派生的布局保持兼容。
-
-持久化库存摘要使用 Files 的稳定物理槽位摘要，与其包含命名空间身份的完整部署计划摘要分开。同一物理清单的新验证计划恢复原账号与槽位映射及绑定修订。backing 身份、配额或槽位清单变化会拒绝启动，不会改写既有行。每个最终命名空间都须重新量测并固定完整计划；关联摘要既不授予存储权限，也不豁免 Files 或 OpenSandbox 校验。
-
-可信配置 `staticAccounts.initialAssignments: [{ accountId, slotId }]` 对明确的既有身份幂等初始化，并拒绝冲突映射。`auth.accountAdministration.initialAdministratorIds` 必须明确指定具备这些绑定、有效且已存在的身份；不会自动提升首次登录者。Files 仅在测量原库存后、解析冷启动技能证明前调用 `prepareStaticAccountInventory`；运行时在 Files 开放准入前初始化种子并安装解析器。绑定解析器保留原映射对象，准备流程修订变化不会替换它。Files 从自身验证过的库存解析地址，原生工厂与 OpenSandbox 使用同一获准布局。解析器自身不授予存储租约。
-
-`prepareManagedAccount` 占用真实模板槽位，持久化 `preparing`，调用原账号工厂，仅在实际 `AccountUse` 仍有效后登记 `ready`。Access 收到该结果后才可解除禁止登录。创建失败持久化 `failed`，重试不会重复创建身份或改绑槽位。冷启动获取账号会重新核验持久化准入状态和实际工厂。较早的准备不能覆盖并发停用。`disableManagedAccount` 等待 `AccountFactory.stopNative`，保留持久数据，并将未知 owner 或停止结果报告为 `stop-unknown`。
-
-真实 PostgreSQL 绑定测试覆盖并发唯一分配、保留原映射身份、容量、流程 CAS、明确初始化冲突及重启加载。实际 Linux 挂载和配额、完整认证 Native/Web 创建及停止链路仍需独立集成验收。
-
-v3 管理启动要求 `idleTransactionTimeoutMs >= accountWaitTimeoutMs + (2 * slotCount + 10) * (runtime.pg.queueTimeoutMs + runtime.pg.statementTimeoutMs) + auth.authCheckTimeoutMs + 2 * (auth.pool.connectionTimeoutMs + auth.pool.statementTimeoutMs)`。此外，`auth.authCheckTimeoutMs` 必须覆盖同一资源准备项及认证尾部调用，使原管理观察者能够等到完整准备结果。这覆盖有限分配重试、实际挂载观察及同一 PostgreSQL 事务锁持有期间的最后认证调用；配置较短时拒绝管理启动。

@@ -61,6 +61,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   peAccountRuntime: 'cloud.md',
   peAuth: 'cloud.md',
   peCloudApi: 'cloud.md',
+  cloudMcpConnections: 'cloud.md',
   peCloudFiles: 'cloud.md',
   peExposure: 'cloud.md',
   peSandboxCoordinator: 'cloud.md',
@@ -315,6 +316,17 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * ambiguous short name to that service's signatures.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  InvocationDescriptor: 'typert.md',
+  CloudMcpConnectionRequest: 'cloud.md',
+  CloudMcpConnectionReply: 'cloud.md',
+  CloudMcpConnectionPreparation: 'cloud.md',
+  CloudMcpConnectionService: 'cloud.md',
+  AccountMcpConnectionStore: 'cloud.md',
+  McpStoreLimits: 'cloud.md',
+  AccountResearchStorage: 'cloud.md',
+  StaticAccountAssignmentResolver: 'cloud.md',
+  StaticAccountInventory: 'cloud.md',
+  AccountAdministrationBudgets: 'cloud.md',
   RemoteServerReply: 'cloud.md#remote-server-management',
   RemoteServerRequest: 'cloud.md#remote-server-management',
   CloudRemoteServerPreparation: 'cloud.md#remote-server-management',
