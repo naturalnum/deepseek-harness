@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto'
 import { constants, openSync, closeSync, readSync, fstatSync, lstatSync, statfsSync } from 'node:fs'
 import { posix } from 'node:path'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
-import { parseStaticStoragePlan, accountEnvironmentBank } from '@deepseek-ai/dsh-pe-cloud-files/root'
-import type { StaticStoragePlanV2, StaticStorageDomain } from '@deepseek-ai/dsh-pe-cloud-files/root'
+import { parseStorageDeploymentPlan, accountEnvironmentBank } from '@deepseek-ai/dsh-pe-cloud-files/root'
+import type { StaticStoragePlanV2, StaticStoragePlanV3, StaticStorageDomain } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { SkillProjectGrant } from './skill-files-types.ts'
 import type { ExecutionExportShare, ManagedExecutionDeployment } from './managed-coordinator.ts'
 import type { RetainedExecutionExports } from './export-share.ts'
@@ -56,6 +56,7 @@ export interface ExecutionMountRow {
   readonly filesystem: string
   readonly optional: readonly string[]
 }
+type StaticStorageAccountV2 = StaticStoragePlanV2['accounts'][number]
 type Facts = ExecutionSourceFacts
 type Batch = ExecutionMountBatch
 type Captured = CapturedExecutionMounts
@@ -261,6 +262,7 @@ export interface SharedPathExecutionLimits {
 }
 
 interface SharedSelection {
+  readonly assertAccountCurrent?: () => void
   readonly project: StaticStorageDomain
   readonly environment: StaticStorageDomain
   readonly environmentLeaf: string | undefined
@@ -269,9 +271,16 @@ interface SharedSelection {
   readonly gid: number
 }
 
-function selectShared(plan: StaticStoragePlanV2, grant: ExecutionMountGrant, maximum: number, skills?: SkillProjectGrant): SharedSelection {
-  const account = plan.accounts.find(account => account.accountId === grant.binding.accountId)
-  if (account === undefined || grant.binding.recipeVersion !== plan.recipeVersion
+/** Trusted Root mapping selection; the digest binds it to the exact independently retained storage plan. */
+export type SharedStorageAccountResolver = (accountId: ExecutionMountGrant['binding']['accountId'], planSha256: string) => StaticStorageAccountV2
+
+function selectShared(plan: StaticStoragePlanV2 | StaticStoragePlanV3, grant: ExecutionMountGrant, maximum: number,
+  skills?: SkillProjectGrant, resolveAccount?: SharedStorageAccountResolver, digest?: string): SharedSelection {
+  const account = plan.version === 2 ? plan.accounts.find(account => account.accountId === grant.binding.accountId)
+    : resolveAccount !== undefined && digest !== undefined ? resolveAccount(grant.binding.accountId, digest) : undefined
+  if (account === undefined || account.accountId !== grant.binding.accountId
+    || plan.version === 3 && !plan.slots.some(slot => slot.storageKey === account.storageKey && slot.accountRoot === account.accountRoot)
+    || grant.binding.recipeVersion !== plan.recipeVersion
     || posix.basename(account.accountRoot) !== account.storageKey
     || account.projects.rootPath !== `${account.accountRoot}/projects`) invalid('selection')
   const bank = accountEnvironmentBank(account)
@@ -318,7 +327,11 @@ function selectShared(plan: StaticStoragePlanV2, grant: ExecutionMountGrant, max
     if (expected.device !== environment.rootDevice || expected.mountId !== environment.rootMountId
       || expected.uid !== uid || expected.gid !== gid || expected.mode !== 0o40700) invalid('selection')
   }
-  return { project, environment, environmentLeaf, leaf, uid, gid }
+  return { project, environment, environmentLeaf, leaf, uid, gid,
+    ...plan.version === 3 && resolveAccount !== undefined && digest !== undefined ? { assertAccountCurrent: () => {
+      if (resolveAccount(grant.binding.accountId, digest) !== account) invalid('selection')
+    } } : {},
+  }
 }
 
 function sharedRoot(batch: Batch, domain: StaticStorageDomain, quota: ExecutionMountGrant['project']['quota'],
@@ -343,6 +356,7 @@ function sharedRoot(batch: Batch, domain: StaticStorageDomain, quota: ExecutionM
 
 function captureShared(batch: Batch, selected: SharedSelection, grant: ExecutionMountGrant,
   maximum: number, skills?: SkillProjectGrant): Captured {
+  selected.assertAccountCurrent?.()
   const inventory = mounts(batch, maximum), { uid, gid } = selected
   const project = sharedRoot(batch, selected.project, grant.project.quota, inventory, false, uid, gid)
   const workspace = open(batch, `/proc/self/fd/${project.fd}/${selected.leaf}`, true)
@@ -380,7 +394,7 @@ function captureShared(batch: Batch, selected: SharedSelection, grant: Execution
  * @throws On plan, source, grant or quota mismatch; uncertain descriptor closure permanently retains Root responsibility.
  */
 export function createSharedPathExecutionExports(bytes: Uint8Array, digest: string, assertPlanCurrent: () => void,
-  limits: SharedPathExecutionLimits, serverImageDigest?: string): RetainedExecutionExports {
+  limits: SharedPathExecutionLimits, serverImageDigest?: string, resolveAccount?: SharedStorageAccountResolver): RetainedExecutionExports {
   limits = Object.freeze({ ...limits })
   for (const value of [limits.maxPlanBytes, limits.maxMountInfoBytes, limits.maxPathBytes, limits.maxShares, limits.maxResidentBytes]) {
     if (!Number.isSafeInteger(value) || value < 1) {
@@ -396,16 +410,17 @@ export function createSharedPathExecutionExports(bytes: Uint8Array, digest: stri
   assertPlanCurrent()
   if (bytes.byteLength === 0 || bytes.byteLength > limits.maxPlanBytes || !/^[a-f0-9]{64}$/.test(digest)
     || createHash('sha256').update(bytes).digest('hex') !== digest) invalid('manifest')
-  let plan: ReturnType<typeof parseStaticStoragePlan>
-  try { plan = parseStaticStoragePlan(bytes, limits.maxPathBytes) }
+  let plan: ReturnType<typeof parseStorageDeploymentPlan>
+  try { plan = parseStorageDeploymentPlan(bytes, limits.maxPathBytes) }
   catch (cause) { throw new ExecutionExportFailure('manifest', cause) }
-  if (plan.version !== 2) invalid('manifest')
-  if (plan.accounts.some(account => account.environmentBank.mode === 'session-directories')
+  if (plan.version === 1 || plan.version === 3 && resolveAccount === undefined) invalid('manifest')
+  const slots = plan.version === 2 ? plan.accounts : plan.slots
+  if (slots.some(account => account.environmentBank.mode === 'session-directories')
     && !isSessionDirectoryServerImageDigest(serverImageDigest)) invalid('selection')
   assertPlanCurrent()
   return createExecutionMountShares(limits.maxShares, {
     assertCurrent: assertPlanCurrent,
-    select: (grant, skills) => selectShared(plan, grant, limits.maxPathBytes, skills),
+    select: (grant, skills) => selectShared(plan, grant, limits.maxPathBytes, skills, resolveAccount, digest),
     capture: (batch, selected, grant, skills) => captureShared(batch, selected, grant, limits.maxMountInfoBytes, skills),
     paths: (selected, skills) => Object.freeze({ project: `${selected.project.rootPath}/${selected.leaf}`,
       protectedProject: `${selected.project.rootPath}/${selected.leaf}/.pe`,

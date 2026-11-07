@@ -1,5 +1,5 @@
-import type { AccountAdministrationConfig } from './account-administration.ts'
 /** Host-only authentication database and secret budgets; browser configuration stays separate. */
+import type { AccountAdministrationConfig } from './account-administration.ts'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { AccessConfigSchema } from './config-schema.ts'
@@ -163,7 +163,7 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
       .some(name => name.toLowerCase() === OWNER_HOP_HEADER)) throw new TypeError()
     credentialRef(config.authSecretRef)
     credentialRef(config.database.passwordRef)
-    if (config.accountAdministration !== undefined && (config.pool.maxConnections < 2
+    if (config.accountAdministration !== undefined && (config.disableSignUp !== true || config.pool.maxConnections < 2
       || config.accountAdministration.maxPageSize > config.accountAdministration.maxAccounts
       || config.accountAdministration.initialAdministratorIds.length > config.accountAdministration.maxAccounts
       || new Set(config.accountAdministration.initialAdministratorIds).size

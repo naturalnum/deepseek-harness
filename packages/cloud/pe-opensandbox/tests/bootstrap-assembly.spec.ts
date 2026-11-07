@@ -172,7 +172,7 @@ it('selects actual shared storage before SDK construction without adopting or wa
   const selected = sharedPathDeploymentFixture(); state.input = selected
   const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
   expect(state.sharedCreated).toHaveBeenCalledExactlyOnceWith(Buffer.from('{}'), '5'.repeat(64), expect.any(Function),
-    selected.storage.limits, selected.selection.serverImageDigest)
+    selected.storage.limits, selected.selection.serverImageDigest, undefined)
   expect(state.keeperAdopted).not.toHaveBeenCalled()
   expect(state.events).toContain('plan-current')
   expect(state.events).toContain('shared-current')

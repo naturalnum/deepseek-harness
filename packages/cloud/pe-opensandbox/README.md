@@ -185,3 +185,7 @@ Closed mode is a restricted deployment configuration, not verified remote execut
 The portable [opt-in scope probe](tests/opensandbox-scope-probe.mjs) requires explicit `--workspace-root`, `--sdk-root`, `--out` and `--execute-authorized-once` arguments. It uses fixed cached images and at most one bounded Sandbox with two inner scopes. Its evidence separates scoped stopping, namespace security facts and binary-file Range transport; it does not enable execution or validate complete subprocess semantics.
 
 </details>
+
+## Preallocated account inventory
+
+The Root sandbox accepts the same protected v1/v2 or v3 deployment plan as Files. In v3 it receives the original Root-owned account resolver and its currentness assertion; no browser selects a slot, root path or quota. The shared layout and exported storage domains use Files' exact retained assignment. A revoked or replaced resolver rejects new export admission. Physical Linux quota and process-isolation acceptance remains necessary; synthetic plan tests do not establish it.

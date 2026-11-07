@@ -1,4 +1,6 @@
 /** Root control composition retains original PG/storage/native work through ready and drain settlement. */
+import { StaticAccountBindings, accountAdministrationTransactionBudget, type AccountAdministrationBudgets, type StaticAccountInventory,
+  type StaticAccountAssignmentResolver } from './static-account-bindings.ts'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { posix } from 'node:path'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
@@ -68,6 +70,9 @@ interface RootControl {
   readonly saves: ConfigSaveCoordinator
   readonly releaseSkillBinary?: ReleaseSkillBinaryBudget
   readonly requests: Map<AccountId, AccountFactoryRequest>
+  staticBindings?: StaticAccountBindings
+  staticBindingsStarting?: Promise<StaticAccountBindings | undefined>
+  revokeStaticBindings?: () => void
   readonly secrets: Set<Promise<string>>
   ownerResolver?: RootOwnerResolver
   ingress?: RootIngressRegistration
@@ -356,6 +361,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    */
   acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
     const control = this.activeControl()
+    const storage = this.ctx.root.get('peFilesPool')?.requireStorageOwner()
+    if (storage?.staticInventory() !== undefined) return this.acquireStaticAccount(control, accountId, signal)
+    return this.acquireNativeAccount(control, accountId, signal)
+  }
+
+  private acquireNativeAccount(control: RootControl, accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
     this.assertBusinessMode(control)
     this.assertRecipeSealed(control.config.recipeVersion)
     this.assertRequiredParticipants()
@@ -383,6 +394,169 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       }
     }
     return borrowed
+  }
+
+  private staticBindings(control: RootControl): Promise<StaticAccountBindings | undefined> {
+    if (control.staticBindingsStarting !== undefined) return control.staticBindingsStarting
+    const storage = this.ctx.root.get('peFilesPool')?.requireStorageOwner(), inventory = storage?.staticInventory()
+    if (storage === undefined || inventory === undefined) return Promise.resolve(undefined)
+    return this.initializeStaticBindings(control, inventory, resolver => storage.installAccountAssignments(resolver))
+  }
+
+  /** Prepare the original verified inventory before Files parses bound-account cold proofs.
+   * @param inventory Address-free physical inventory from the original Files owner.
+   * @param installAssignments Original owner's sole registration function, never supplied by client configuration.
+   * @returns Actual PG registry and resolver installation, without opening Files admission.
+   */
+  async prepareStaticAccountInventory(inventory: StaticAccountInventory,
+    installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<void> {
+    await this.initializeStaticBindings(this.activeControl(), inventory, installAssignments)
+  }
+
+  private initializeStaticBindings(control: RootControl, inventory: StaticAccountInventory,
+    installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<StaticAccountBindings> {
+    if (control.staticBindingsStarting !== undefined) {
+      const retained = control.staticBindings
+      if (retained === undefined || retained.inventory.sha256 !== inventory.sha256) {
+        throw new AccountRuntimeError('cloud/invalid-config', 'Root received a different static inventory during startup')
+      }
+      return control.staticBindingsStarting.then((bindings) => {
+        if (bindings === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Root static assignment initialization disappeared')
+        return bindings
+      })
+    }
+    const bindings = new StaticAccountBindings(control.database, inventory, () => {
+      if (this.control !== control || control.phase === 'closed' || control.phase === 'failed') {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'The original static account registry is unavailable')
+      }
+    })
+    control.staticBindings = bindings
+    const starting = (async () => {
+      await bindings.initialize()
+      const initials = control.config.staticAccounts?.initialAssignments ?? []
+      if (initials.length > inventory.maxAccounts || new Set(initials.map(row => row.accountId)).size !== initials.length
+        || new Set(initials.map(row => row.slotId)).size !== initials.length) {
+        throw new AccountRuntimeError('cloud/invalid-config', 'Initial account assignments exceed or repeat the immutable inventory')
+      }
+      for (const initial of control.config.staticAccounts?.initialAssignments ?? []) await bindings.seed(initial.accountId, initial.slotId)
+      control.revokeStaticBindings = installAssignments({
+        lookup: id => bindings.lookup(id), list: () => bindings.list(), assertCurrent: row => bindings.assertCurrent(row),
+      })
+      return bindings
+    })()
+    control.staticBindingsStarting = starting
+    return starting
+  }
+
+  private async acquireStaticAccount(control: RootControl, accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
+    const bindings = await this.staticBindings(control), record = await bindings?.refresh(accountId)
+    if (bindings === undefined || record === undefined || record.phase === 'disabled' || record.phase === 'failed' || record.phase === 'stop-unknown') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'The account has no admitted prepared storage assignment')
+    }
+    const use = await this.acquireNativeAccount(control, accountId, signal)
+    try {
+      const latest = await bindings.refresh(accountId)
+      if (latest === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'The original account assignment disappeared')
+      if (latest.phase !== 'ready') {
+        // A normal bootstrap cannot reopen a concurrent disable or another preparation operation.
+        if (latest.phase !== 'reserved' && latest.phase !== 'preparing' || latest.operationId !== record.operationId) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'Account resource admission changed during native preparation')
+        }
+        try { await bindings.transition(latest, 'ready', latest.operationId) }
+        catch (error) {
+          const actual = await bindings.refresh(accountId)
+          if (actual?.phase !== 'ready') throw error
+        }
+      }
+      use.assertCurrent()
+      return use
+    } catch (error) { use.release(); throw error }
+  }
+
+  /** Initialize only trusted deployment mappings and verify explicitly configured administrator resource assignments.
+   * @param accountIds Existing authentic initial administrator identities, never selected from a first login.
+   * @param budgets Actual Access transaction/operation bounds, checked against the retained runtime preparation bound.
+   * @returns Mapping readiness only; actual native account readiness is verified on preparation or first use.
+   */
+  async initializeAccountAdministration(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void> {
+    const control = this.activeControl(), bindings = await this.staticBindings(control)
+    accountAdministrationTransactionBudget(control.config.accountWaitTimeoutMs, control.config.pg,
+      bindings?.inventory.slots.length ?? 0, budgets)
+    if (bindings !== undefined) for (const id of accountIds) {
+      if (await bindings.refresh(id) === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'An initial administrator has no static assignment')
+    }
+  }
+
+  /** Read real account resource templates, with availability derived from persistent assignments.
+   * @returns Immutable template IDs and currently unassigned physical slots, without filesystem paths.
+   */
+  async accountResourceTemplates(): Promise<readonly Readonly<{ id: string; available: number }>[]> {
+    const control = this.activeControl(), bindings = await this.staticBindings(control)
+    if (bindings === undefined) return []
+    await bindings.refreshAll()
+    const occupied = new Set(bindings.list().map(row => row.slotId)), counts = new Map<string, number>()
+    for (const slot of bindings.inventory.slots) counts.set(slot.templateId,
+      (counts.get(slot.templateId) ?? 0) + (occupied.has(slot.slotId) ? 0 : 1))
+    return [...counts].map(([id, available]) => Object.freeze({ id, available }))
+  }
+
+  /** Read bounded resource states for authentic account metadata, without borrowing project data.
+   * @param accountIds IDs from the administrator's bounded identity listing.
+   * @returns Resource phases for already assigned accounts.
+   */
+  async accountResourceStates(accountIds: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]> {
+    const control = this.activeControl(), bindings = await this.staticBindings(control)
+    if (bindings === undefined) return []
+    await bindings.refreshAll()
+    return accountIds.flatMap((accountId) => {
+      const record = bindings.status(accountId)
+      return record === undefined ? [] : [{ accountId, phase: record.phase }]
+    })
+  }
+
+  /** Reserve and prepare a real static assignment before Access may enable the authentic user.
+   * @param accountId Authentic target ID created by the authentication provider.
+   * @param templateId Existing physical template, never a path or arbitrary quota.
+   * @param operationId Original management operation identifier.
+   * @returns Durable ready status only after original Files and Native factory readiness.
+   */
+  async prepareManagedAccount(accountId: AccountId, templateId: string, operationId: string): Promise<void> {
+    const control = this.activeControl(), bindings = await this.staticBindings(control)
+    if (bindings === undefined) {
+      const use = await this.acquireNativeAccount(control, accountId)
+      try { use.assertCurrent() } finally { use.release() }
+      return
+    }
+    let record = await bindings.reserve(accountId, templateId, operationId)
+    if (record.phase !== 'preparing') record = await bindings.transition(record, 'preparing', operationId)
+    try {
+      const use = await this.acquireStaticAccount(control, accountId)
+      try { use.assertCurrent() } finally { use.release() }
+      const ready = await bindings.refresh(accountId)
+      if (ready?.phase !== 'ready') throw new AccountRuntimeError('cloud/account-unavailable', 'Actual account preparation did not commit ready')
+      return
+    } catch (error) {
+      const actual = await bindings.refresh(accountId)
+      if (actual !== undefined) await bindings.transition(actual, 'failed', operationId)
+      throw error
+    }
+  }
+
+  /** Join original native account shutdown after Access has revoked the target's login sessions.
+   * @param accountId Original authentic target, separate from the acting administrator.
+   * @param operationId Original management operation identifier.
+   * @returns Disabled only after original factory/Files/execution release; unknown stays explicitly unresolved.
+   */
+  async disableManagedAccount(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'> {
+    const control = this.activeControl(), bindings = await this.staticBindings(control)
+    const retained = control.factory.retainsAccount(accountId)
+    const observed = retained ? await control.factory.stopNative(accountId) : undefined
+    const owner = retained ? undefined : await control.owners.locate(accountId)
+    const phase = observed?.status === 'unknown' || owner !== undefined && owner.phase !== 'unowned' ? 'stop-unknown' : 'disabled'
+    const record = await bindings?.refresh(accountId)
+    if (record !== undefined) await bindings?.transition(record, phase, operationId)
+    if (phase === 'disabled') control.requests.delete(accountId)
+    return phase
   }
 
   /**
@@ -648,6 +822,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     try { control.saves.close() } catch (cause) { faults.push(cause) }
     try { await control.instance.close() } catch (cause) { faults.push(cause) }
     await Promise.allSettled([...control.secrets])
+    try { await control.staticBindings?.close(); control.revokeStaticBindings?.() } catch (cause) { faults.push(cause) }
     try { await control.executor.close() } catch (cause) { faults.push(cause) }
     this.capacity.close()
     control.requests.clear()
@@ -730,11 +905,14 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const storage = files.requireStorageOwner()
     storage.assertRootCurrent()
     const instanceId = control.instance.identity.instanceId
-    const layout = deriveAccountLayout(accountId, instanceId, config.paths)
+    const selected = storage.staticInventory() === undefined ? undefined : storage.resolveAccountStorage(accountId)
+    const deployment = selected === undefined ? config.paths : { ...config.paths,
+      assignment: { storageKey: selected.storageKey, accountRoot: selected.accountRoot } }
+    const layout = deriveAccountLayout(accountId, instanceId, deployment)
     const office = selectOfficeProfile(config, accountId)
     const environment = createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }])
     return Object.freeze({
-      accountId, instanceId, recipeVersion: config.recipeVersion, deployment: config.paths,
+      accountId, instanceId, recipeVersion: config.recipeVersion, deployment,
       environment: modelKey === undefined ? environment : new AccountModelKeyEnvironment(
         environment, modelKey.bindings.map(binding => binding.ref),
       ),

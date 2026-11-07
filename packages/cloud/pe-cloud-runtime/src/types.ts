@@ -1,4 +1,6 @@
 /** Runtime-owned account identities and lifecycle inputs; none are browser credentials. */
+import type { AccountAdministrationBudgets, StaticAccountAssignmentResolver, StaticAccountInventory } from './static-account-bindings.ts'
+export type { AccountAdministrationBudgets, StaticAccountAssignmentResolver, StaticAccountInventory } from './static-account-bindings.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -329,6 +331,31 @@ export interface RootIngressCloseOwner {
 
 /** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
 export interface AccountRuntimeService {
+  /** Initialize Root-owned mappings after physical inventory verification and before Files cold-proof parsing.
+   * @param inventory Original verified address-free inventory. @param installAssignments Sole original Files resolver registration.
+   * @returns Original metadata readiness and resolver installation, never file lease authority.
+   */
+  prepareStaticAccountInventory?(inventory: StaticAccountInventory,
+    installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<void>
+  /** Verify trusted mappings and transaction budgets before exposing administration.
+   * @param accountIds Explicit initial administrators. @param budgets Actual Access database/operation limits.
+   * @returns Startup validation settlement; no account is mounted.
+   */
+  initializeAccountAdministration?(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void>
+  /** Read declared physical templates without exposing private paths. @returns Currently unassigned slot counts by template. */
+  accountResourceTemplates?(): Promise<readonly Readonly<{ id: string; available: number }>[]>
+  /** Read resource progress from original metadata. @param accountIds Bounded identity list. @returns Current assigned resource phases. */
+  accountResourceStates?(accountIds: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>
+  /** Prepare original native account resources before authentication enablement.
+   * @param accountId Authentic target. @param templateId Real template. @param operationId Original operation.
+   * @returns Actual native Files/execution readiness.
+   */
+  prepareManagedAccount?(accountId: AccountId, templateId: string, operationId: string): Promise<void>
+  /** Join original account drain after login revocation.
+   * @param accountId Authentic target. @param operationId Original management operation.
+   * @returns Confirmed disablement or explicit retained uncertainty.
+   */
+  disableManagedAccount?(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'>
   /** Explicit maintenance Roots expose recovery while rejecting all ordinary account admission; omission keeps recovery closed. */
   readonly recovery?: AccountRecoveryRuntime | undefined
   /** Original local startup identity for active ordinary Roots; absent for component, maintenance and stopped Roots. */

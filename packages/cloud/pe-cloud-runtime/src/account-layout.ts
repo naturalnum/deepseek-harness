@@ -10,6 +10,8 @@ export interface LayoutDeployment {
   readonly sharedAccountsRoot: string
   readonly localCacheRoot: string
   readonly maxPathBytes: number
+  /** Optional trusted preallocated slot selected by the Root storage owner; it grants no file access. */
+  readonly assignment?: Readonly<{ storageKey: AccountStorageKey; accountRoot: string }>
 }
 
 interface ProjectLayout {
@@ -67,9 +69,10 @@ export function deriveAccountLayout(accountId: AccountId, instanceId: InstanceId
   segment(instanceId, 'instance identity', maxPathBytes)
   const digest = createHash('sha256').update('dsh-pe/account-storage/v1\0', 'utf8')
     .update(`${Buffer.byteLength(accountId, 'utf8')}:`, 'ascii').update(accountId, 'utf8').digest('hex')
-  const storageKey = brandString<AccountStorageKey>(`v1-${digest}`)
+  const storageKey = deployment.assignment?.storageKey ?? brandString<AccountStorageKey>(`v1-${digest}`)
   bounded(storageKey, 'storage key', maxPathBytes)
   const accountRoot = path(sharedAccountsRoot, maxPathBytes, storageKey)
+  if (deployment.assignment !== undefined && deployment.assignment.accountRoot !== accountRoot) invalid('assigned account root')
   const privateRoot = path(accountRoot, maxPathBytes, 'private')
   const profileRoot = path(privateRoot, maxPathBytes, 'profile')
   return Object.freeze({

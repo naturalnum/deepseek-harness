@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import { parseStorageDeploymentPlan } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { SkillProjectGrant } from '../src/skill-files-types.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRetainedExecutionExports, createSharedPathExecutionExports, ExecutionExportFailure } from '../src/export-share.ts'
@@ -400,4 +401,30 @@ it.each(['inode', 'mount'] as const)('rejects a Session child whose %s changed u
   await expect(f.exports.share(f.grant, f.current)).rejects.toMatchObject({ phase: 'verification' })
   expect(f.opened.size).toBe(0)
   expect(f.exports.retainedShares).toBe(0)
+})
+
+
+it('requires the same trusted v3 assignment when borrowing and rechecking execution mounts', async () => {
+  const f = fixture('shared-path')
+  const { accounts, ...shared } = f.plan
+  const slots = accounts.map(({ accountId: _id, ...account }, index) => ({ ...account, slotId: 'physical-' + index, templateId: 'standard' }))
+  const bytes = Buffer.from(JSON.stringify({ ...shared, version: 3, maxAccounts: slots.length, slots }))
+  const digest = createHash('sha256').update(bytes).digest('hex'), parsed = parseStorageDeploymentPlan(bytes, f.limits.maxPathBytes)
+  if (parsed.version !== 3 || parsed.slots[1] === undefined) throw new Error('Synthetic v3 inventory unavailable')
+  const slot = parsed.slots[1]
+  const account = Object.freeze({ accountId: f.grant.binding.accountId, storageKey: slot.storageKey, accountRoot: slot.accountRoot,
+    private: slot.private, projects: slot.projects, environmentBank: slot.environmentBank })
+  let current = true
+  const resolve = vi.fn((id: ExecutionMountGrant['binding']['accountId'], sha: string) => {
+    if (!current || id !== account.accountId || sha !== digest) throw new ExecutionExportFailure('selection')
+    return account
+  })
+  expect(() => createSharedPathExecutionExports(bytes, digest, f.planCurrent, f.limits)).toThrow(ExecutionExportFailure)
+  const exports = createSharedPathExecutionExports(bytes, digest, f.planCurrent, f.limits, undefined, resolve)
+  const share = await exports.share(f.grant, f.current)
+  expect(share.value.exports.project).toBe(f.grant.project.rootPath)
+  current = false
+  expect(() => share.value.assertCurrent()).toThrow(ExecutionExportFailure)
+  share.release()
+  expect(f.opened.size).toBe(0)
 })

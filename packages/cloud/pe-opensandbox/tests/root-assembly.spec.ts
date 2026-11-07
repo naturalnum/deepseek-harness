@@ -104,7 +104,7 @@ it('mounts through the ordinary two-argument Cordis plugin and closes the coordi
   })
   await f.ctx.plugin(root, selection())
   expect(seam.assemble).toHaveBeenCalledOnce()
-  expect(seam.assemble).toHaveBeenCalledWith(reference, managed)
+  expect(seam.assemble).toHaveBeenCalledWith(reference, managed, expect.any(Function))
   expect(seam.construct.mock.calls[0]?.[3]).toBe(f.assembly.deployment)
   expect(seam.events).toEqual(['assembly-create', 'deployment-current', 'coordinator-construct', 'coordinator-start'])
   const disposing = f.ctx.fiber.dispose()

@@ -100,7 +100,17 @@ export async function apply(ctx: Context, config: Config, deployment?: ManagedEx
       }, 'pe-opensandbox: retain original protected deployment through actual coordinator cleanup')
       work.assembly = import('./bootstrap/assembly.ts').then((module) => {
         if (work.closed || ctx.fiber.uid === null) throw new ExecutionStateError('cloud/execution-unavailable', 'Root deployment construction was cancelled.')
-        return module.assembleRootExecutionDeployment(reference, limits)
+        return module.assembleRootExecutionDeployment(reference, limits, (accountId, digest) => {
+          const storage = ctx.root.get('peFilesPool')?.requireStorageOwner()
+          if (storage === undefined || storage.staticInventory()?.sha256 !== digest) {
+            throw new ExecutionStateError('cloud/execution-unavailable', 'The original static account inventory is unavailable.')
+          }
+          const account = storage.resolveAccountStorage(accountId)
+          if (account === undefined || !('environmentBank' in account)) {
+            throw new ExecutionStateError('cloud/execution-unavailable', 'The authentic account has no execution storage.')
+          }
+          return account
+        })
       })
       const assembly = await work.assembly
       if (work.closed || ctx.fiber.uid === null) throw new ExecutionStateError('cloud/execution-unavailable', 'Root deployment construction was cancelled.')

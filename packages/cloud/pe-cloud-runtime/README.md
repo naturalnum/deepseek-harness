@@ -296,3 +296,15 @@ Resource loading requires the exact published Agent, original WorkingDirectory a
 None.
 
 </details>
+
+## Managed preallocated accounts
+
+A v3 Files inventory contains a finite immutable set of already provisioned storage slots. Runtime stores only authentic account ID, inventory hash, slot ID, stable binding revision and preparation workflow in `pe_account_static_bindings`, using its existing bounded metadata database. The slot is unique across accounts. Failed preparation keeps the binding; no request releases, reuses, resizes or invents a physical slot. Expanding the inventory is a reviewed maintenance deployment, not a live account API. Existing v1/v2 deployment behavior and its account-ID-derived layout remain unchanged.
+
+Trusted `staticAccounts.initialAssignments: [{ accountId, slotId }]` seeds exact existing identities idempotently and rejects conflicting mappings. `auth.accountAdministration.initialAdministratorIds` must explicitly name existing enabled identities with such assignments; there is no first-login promotion. Files calls `prepareStaticAccountInventory` only after measuring the original inventory and before parsing cold skill proofs; Runtime seeds and installs its resolver before Files can open admission. The binding resolver retains the original mapping object independently of changing workflow revisions. Files resolves addresses from its own verified inventory, while the native factory and OpenSandbox derive the same approved layout. The resolver itself grants no storage lease.
+
+`prepareManagedAccount` reserves a real template slot, persists `preparing`, invokes the original account factory, and records `ready` only after its actual `AccountUse` is current. Access may unban the user after that result. Creation failure persists `failed` and can be retried without creating another identity or changing the binding. Cold runtime acquisition rechecks persistent admission and the actual factory. A concurrent disable cannot be overwritten by an older preparation. `disableManagedAccount` joins `AccountFactory.stopNative`, preserves persistent data and reports an unknown owner/drain as `stop-unknown`.
+
+Real PostgreSQL binding tests cover unique concurrent reservation, retained mapping identity, capacity, workflow CAS, explicit seed conflicts and restart loading. Actual Linux mount/quota checks and the complete authenticated Native/Web creation and drain chain remain separate integration acceptance.
+
+The administration startup timeout check requires `idleTransactionTimeoutMs >= accountWaitTimeoutMs + (2 * slotCount + 10) * (runtime.pg.queueTimeoutMs + runtime.pg.statementTimeoutMs) + auth.authCheckTimeoutMs + 2 * (auth.pool.connectionTimeoutMs + auth.pool.statementTimeoutMs)` for v3. Legacy plans omit the metadata-query term. This covers the finite reservation retry path, actual mount observation and the final provider calls while the same PostgreSQL transaction lock remains held; shorter configurations refuse management startup.

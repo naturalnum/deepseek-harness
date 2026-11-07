@@ -13,7 +13,7 @@ import { assertAuthTransport } from './auth-trust.ts'
 import { trackBody, type TrackedBody } from './body-stream.ts'
 import { getSessionCookie } from 'better-auth/cookies'
 import { admin } from 'better-auth/plugins'
-import { AccountAdministrator, accountRole, parseAccountAdministration, type AccountAdministrationConfig } from './account-administration.ts'
+import { AccountAdministrator, accountRole, parseAccountAdministration, type AccountAdministrationConfig, type AccountResourceLifecycle } from './account-administration.ts'
 
 type NodeAuth = typeof import('better-auth/node')
 type AuthFactory = typeof import('better-auth')['betterAuth']
@@ -129,7 +129,10 @@ export class BetterAuthAccess {
         after: async (session): Promise<void> => { await this.invalidateLogin(session.id as Branded<'pe-auth-session-id'>) },
       } } },
     }
-    if (config.accountAdministration !== undefined) this.options = { ...this.options, plugins: [admin()] }
+    if (config.accountAdministration !== undefined) this.options = { ...this.options, plugins: [admin()], user: { additionalFields: {
+      cloudCreationId: { type: 'string', required: false, input: false, returned: false, unique: true },
+      cloudCreationHash: { type: 'string', required: false, input: false, returned: false },
+    } } }
     this.auth = factory(this.options)
     if (config.accountAdministration !== undefined) {
       this.administrator = new AccountAdministrator(this.auth, database, config.accountAdministration)
@@ -304,7 +307,10 @@ export class BetterAuthAccess {
     if (url.origin !== this.config.publicOrigin || (url.pathname !== '/cloud/auth' && !url.pathname.startsWith('/cloud/auth/'))) {
       throw new AuthAccessError('cloud/forbidden', requestId)
     }
-    if (/^\/cloud\/auth\/admin(?:\/|$)/.test(decodeURIComponent(url.pathname))) throw new AuthAccessError('cloud/forbidden', requestId)
+    let canonicalPath: string
+    try { canonicalPath = decodeURIComponent(url.pathname).replace(/\/+/g, '/') }
+    catch (_invalidEncoding) { throw new AuthAccessError('cloud/forbidden', requestId) }
+    if (/^\/cloud\/auth\/admin(?:\/|$)/.test(canonicalPath)) throw new AuthAccessError('cloud/forbidden', requestId)
     if (!this.accepting || limits?.signal.aborted === true) throw new AuthAccessError('cloud/account-unavailable', requestId)
     const actual = this.transferNodeRequest(request, response, requestId, headers, url, limits)
     this.bridges.add(actual)
@@ -328,6 +334,14 @@ export class BetterAuthAccess {
   async close(): Promise<void> {
     this.accepting = false
     await Promise.allSettled([...this.bridges, ...this.pending.keys()])
+  }
+
+  /** Attach the existing Root's physical account resource owner before ingress activation.
+   * @param resources Trusted native runtime preparation and drain callbacks.
+   */
+  installAccountResources(resources: AccountResourceLifecycle): void {
+    if (this.administrator === undefined) throw new Error('Account administration is not selected')
+    this.administrator.installResources(resources)
   }
 
   /** Initialize explicitly configured administrator identities after the deployed schema is verified.

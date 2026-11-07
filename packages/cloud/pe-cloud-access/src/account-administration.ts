@@ -1,5 +1,7 @@
 /** Account administration over the pinned authentication provider and its existing PostgreSQL database. */
 import type { Auth } from 'better-auth'
+import { createHmac } from 'node:crypto'
+import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Pool } from 'pg'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { AuthAccessError } from './auth-error.ts'
@@ -29,7 +31,16 @@ type RequestId = Branded<'pe-request-id'>
 /** Accepted browser operations; actor identity always comes from the actual request Cookie. */
 export type AccountAdministrationRequest =
   | { readonly op: 'list'; readonly search: string; readonly offset: number; readonly limit: number }
-  | { readonly op: 'create'; readonly email: string; readonly displayName: string; readonly password: string; readonly role: AccountRole }
+  | {
+    readonly op: 'create'
+    readonly email: string
+    readonly displayName: string
+    readonly password: string
+    readonly role: AccountRole
+    readonly templateId: string
+    readonly requestId: string
+  }
+  | { readonly op: 'prepare'; readonly id: string; readonly templateId: string; readonly requestId: string }
   | { readonly op: 'rename'; readonly id: string; readonly displayName: string }
   | { readonly op: 'role'; readonly id: string; readonly role: AccountRole }
   | { readonly op: 'enabled'; readonly id: string; readonly enabled: boolean }
@@ -71,8 +82,11 @@ export function parseAccountAdministration(
         || typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > config.maxPageSize) return fail()
       return { op: 'list', search, offset, limit }
     }
-    case 'create': fields(['op', 'email', 'displayName', 'password', 'role']); return {
-      op: 'create', email: text('email', 254), displayName: text('displayName', 200), password: password(), role: role(),
+    case 'create': fields(['op', 'email', 'displayName', 'password', 'role', 'templateId', 'requestId']); return {
+      op: 'create', email: text('email', 254), displayName: text('displayName', 200), password: password(), role: role(), templateId: text('templateId', 64), requestId: text('requestId', 128),
+    }
+    case 'prepare': fields(['op', 'id', 'templateId', 'requestId']); return {
+      op: 'prepare', id: text('id', 200), templateId: text('templateId', 64), requestId: text('requestId', 128),
     }
     case 'rename': fields(['op', 'id', 'displayName']); return { op: 'rename', id: text('id', 200), displayName: text('displayName', 200) }
     case 'role': fields(['op', 'id', 'role']); return { op: 'role', id: text('id', 200), role: role() }
@@ -86,10 +100,27 @@ export function parseAccountAdministration(
   }
 }
 
+/** Trusted Root resource operations; authentication and physical runtime readiness remain separate owners. */
+export interface AccountResourceLifecycle {
+  templates(): Promise<readonly Readonly<{ id: string; available: number }>[]>
+  states(ids: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>
+  prepare(accountId: AccountId, templateId: string, operationId: string): Promise<void>
+  disable(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'>
+}
+
 /** Finite management operations sharing the original provider, Cookie and PostgreSQL lock. */
 export class AccountAdministrator {
   private tail: Promise<void> = Promise.resolve()
+  private resources: AccountResourceLifecycle | undefined
   constructor(private readonly auth: ManagedAuth, private readonly database: Pool, readonly config: AccountAdministrationConfig) {}
+
+  /** Bind the original Root's physical resource coordinator exactly once.
+   * @param resources Original trusted runtime callbacks, never Loader JSON or a browser object.
+   */
+  installResources(resources: AccountResourceLifecycle): void {
+    if (this.resources !== undefined) throw new Error('Account resource lifecycle is already installed')
+    this.resources = resources
+  }
 
   private async invoke(headers: Headers, endpoint: string, body: object, requestId: RequestId, method: 'GET' | 'POST' = 'POST'): Promise<Record<string, unknown>> {
     const base = this.auth.options.baseURL
@@ -167,18 +198,59 @@ export class AccountAdministrator {
           if (typeof id !== 'string' || typeof email !== 'string' || typeof name !== 'string') throw new AuthAccessError('cloud/account-unavailable', requestId)
           return { id, email, displayName: name, role: accountRole(user), enabled: Reflect.get(user, 'banned') !== true }
         })
-        return { accounts, total: result['total'] }
+        const resourceStates = await this.resources?.states(accounts.map(row => row.id as AccountId)) ?? []
+        const templates = await this.resources?.templates() ?? []
+        current()
+        return { accounts: accounts.map(row => ({ ...row, resourceState: resourceStates.find(state => state.accountId === row.id)?.phase
+          ?? (row.enabled && templates.length === 0 ? 'legacy' : 'not-provisioned') })), total: result['total'], offset: request.offset, limit: request.limit, templates }
       }
       if (request.op === 'create') {
-        const count = await client.query<{ count: string }>('SELECT count(*) FROM "user"')
-        if (Number(count.rows[0]?.count) >= this.config.maxAccounts) throw new AuthAccessError('cloud/capacity', requestId)
+        const secret = this.auth.options.secret
+        if (typeof secret !== 'string') throw new AuthAccessError('cloud/account-unavailable', requestId)
+        const hash = createHmac('sha256', secret).update(JSON.stringify(request)).digest('hex')
+        const prior = await client.query<{ id: string; cloudCreationHash: string; banned: boolean; banReason: string | null }>(
+          'SELECT id, "cloudCreationHash", banned, "banReason" FROM "user" WHERE "cloudCreationId" = $1', [request.requestId])
+        let id = prior.rows[0]?.id
+        if (id !== undefined && prior.rows[0]?.cloudCreationHash !== hash) throw new AuthAccessError('cloud/forbidden', requestId)
+        if (id !== undefined && (prior.rows[0]?.banned !== true || prior.rows[0].banReason !== 'resources-not-provisioned')) {
+          return { id, resourceState: prior.rows[0]?.banned ? 'disabled' : 'ready' }
+        }
+        if (id === undefined) {
+          const count = await client.query<{ count: string }>('SELECT count(*) FROM "user"')
+          if (Number(count.rows[0]?.count) >= this.config.maxAccounts) throw new AuthAccessError('cloud/capacity', requestId)
+          current()
+          const result = await this.invoke(headers, 'create-user', { email: request.email, name: request.displayName,
+            password: request.password, role: request.role, data: { banned: true, banReason: 'resources-not-provisioned',
+              cloudCreationId: request.requestId, cloudCreationHash: hash } }, requestId)
+          current()
+          const user = result['user']
+          if (user === null || typeof user !== 'object') throw new AuthAccessError('cloud/account-unavailable', requestId)
+          const createdId: unknown = Reflect.get(user, 'id')
+          if (typeof createdId !== 'string') throw new AuthAccessError('cloud/account-unavailable', requestId)
+          id = createdId
+        }
+        if (this.resources === undefined) return { id, resourceState: 'not-provisioned' }
+        try {
+          await this.resources.prepare(id as AccountId, request.templateId, request.requestId)
+          current()
+          await this.invoke(headers, 'unban-user', { userId: id }, requestId)
+          current()
+          return { id, resourceState: 'ready' }
+        } catch (_resourceFailure) {
+          current()
+          return { id, resourceState: 'failed' }
+        }
+      }
+      if (request.op === 'prepare') {
+        if (this.resources === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+        const target = await this.invoke(headers, 'get-user', { id: request.id }, requestId, 'GET')
         current()
-        const result = await this.invoke(headers, 'create-user', { email: request.email, name: request.displayName,
-          password: request.password, role: request.role, data: { banned: true, banReason: 'resources-not-provisioned' } }, requestId)
+        if (target['id'] !== request.id) throw new AuthAccessError('cloud/forbidden', requestId)
+        await this.resources.prepare(request.id as AccountId, request.templateId, request.requestId)
         current()
-        const user = result['user']
-        if (user === null || typeof user !== 'object' || typeof Reflect.get(user, 'id') !== 'string') throw new AuthAccessError('cloud/account-unavailable', requestId)
-        return { id: Reflect.get(user, 'id'), resourceState: 'not-provisioned' }
+        await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
+        current()
+        return { id: request.id, resourceState: 'ready' }
       }
       if (request.op === 'role' && request.role !== 'admin' || request.op === 'enabled' && !request.enabled) {
         const target = await client.query<{ role: string; banned: boolean }>('SELECT role, banned FROM "user" WHERE id = $1', [request.id])
@@ -191,10 +263,25 @@ export class AccountAdministrator {
       switch (request.op) {
         case 'rename': await this.invoke(headers, 'update-user', { userId: request.id, data: { name: request.displayName } }, requestId); break
         case 'role': await this.invoke(headers, 'set-role', { userId: request.id, role: request.role }, requestId); break
-        case 'enabled':
-          if (request.enabled) await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
-          else await this.invoke(headers, 'ban-user', { userId: request.id }, requestId)
+        case 'enabled': {
+          const resources = this.resources
+          if (resources === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+          const target = await this.invoke(headers, 'get-user', { id: request.id }, requestId, 'GET')
+          current()
+          if (target['id'] !== request.id) throw new AuthAccessError('cloud/forbidden', requestId)
+          if (request.enabled) {
+            await resources.prepare(request.id as AccountId, '', requestId)
+            current()
+            await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
+          } else {
+            await this.invoke(headers, 'ban-user', { userId: request.id }, requestId)
+            // Once the identity is banned, actual drain remains owned even if its login or browser retires.
+            const status = await resources.disable(request.id as AccountId, requestId)
+            current()
+            if (status !== 'disabled') throw new AuthAccessError('cloud/stop-unconfirmed', requestId)
+          }
           break
+        }
         case 'password':
           await this.invoke(headers, 'set-user-password', { userId: request.id, newPassword: request.password }, requestId)
           await this.invoke(headers, 'revoke-user-sessions', { userId: request.id }, requestId)

@@ -18,12 +18,15 @@ describe.skipIf(configPath === undefined)('real account administration with Post
     connection.database = 'dsh_account_management'
     const pool = new pg.Pool({ ...connection, max: 2, connectionTimeoutMillis: 2000, statement_timeout: 5000 })
     let adapter: BetterAuthAccess | undefined
+    let retireManagementOnInvalidation = false, managementRetired = false
     const server = createServer((request, response) => {
       void (async () => {
         if (adapter === undefined) throw new Error('Test authentication absent')
         if (request.url === '/cloud/admin/accounts') {
           let body = ''; for await (const chunk of request) body += String(chunk)
-          const result = await adapter.administer(request, JSON.parse(body), requestId, () => {})
+          const result = await adapter.administer(request, JSON.parse(body), requestId, () => {
+            if (managementRetired) throw new AuthAccessError('cloud/account-unavailable', requestId)
+          })
           response.setHeader('content-type', 'application/json'); response.end(JSON.stringify(result))
         } else await adapter.handleNodeRequest(request, response, requestId)
       })().catch((error: unknown) => {
@@ -63,16 +66,54 @@ describe.skipIf(configPath === undefined)('real account administration with Post
       const a = await signup('administrator-a'), b = await signup('administrator-b'), user = await signup('ordinary')
       await adapter.close()
       adapter = await BetterAuthAccess.create({ ...config, disableSignUp: true,
-        accountAdministration: { ...administration, initialAdministratorIds: [a.id, b.id] } }, pool, secret, async () => {})
+        accountAdministration: { ...administration, initialAdministratorIds: [a.id, b.id] } }, pool, secret, async () => {
+        if (retireManagementOnInvalidation) managementRetired = true
+      })
       await adapter.initializeAdministrators(() => {})
       expect((await post('/cloud/auth/sign-up/email', { email: 'closed@example.test', name: 'Closed', password: 'Long-test-password-123' })).status).toBe(400)
       expect((await post('/cloud/admin/accounts', { op: 'list', search: '', offset: 0 }, user.cookie)).status).toBe(403)
       expect((await post('/cloud/auth/admin/create-user', {}, a.cookie)).status).toBe(403)
-      const created = await post('/cloud/admin/accounts', { op: 'create', email: 'pending-'+randomUUID()+'@example.test', displayName: 'Pending', password: 'Long-test-password-123', role: 'user' }, a.cookie)
+      const creation = { op: 'create', email: 'pending-'+randomUUID()+'@example.test', displayName: 'Pending',
+        password: 'Long-test-password-123', role: 'user', templateId: 'standard', requestId: randomUUID() }
+      const created = await post('/cloud/admin/accounts', creation, a.cookie)
       expect(created.status).toBe(200)
       const createdBody = await created.json() as { id: string; resourceState: string }
       expect(createdBody.resourceState).toBe('not-provisioned')
+      const repeated = await post('/cloud/admin/accounts', creation, a.cookie)
+      expect((await repeated.json() as { id: string }).id).toBe(createdBody.id)
+      expect((await post('/cloud/admin/accounts', { ...creation, displayName: 'Changed payload' }, a.cookie)).status).toBe(403)
       expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
+      let prepared = 0, stopped = 0, unknownStop = true
+      adapter.installAccountResources({
+        templates: async () => [{ id: 'standard', available: 1 }], states: async () => [],
+        prepare: async (id) => {
+          expect(id).toBe(createdBody.id)
+          expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [id])).rows[0]?.banned).toBe(true)
+          prepared++
+        },
+        disable: async (id) => {
+          stopped++
+          expect((await pool.query<{ count: string }>('SELECT count(*) FROM "session" WHERE "userId"=$1', [id])).rows[0]?.count).toBe('0')
+          return unknownStop ? 'stop-unknown' : 'disabled'
+        },
+      })
+      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      expect(prepared).toBe(1)
+      expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(false)
+      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      expect(prepared).toBe(1)
+      expect((await post('/cloud/auth/sign-in/email', { email: creation.email, password: creation.password })).status).toBe(200)
+      // Retire the management observer while the provider removes the target login; actual drain must still finish.
+      retireManagementOnInvalidation = true
+      expect((await post('/cloud/admin/accounts', { op: 'enabled', id: createdBody.id, enabled: false }, a.cookie)).status).toBe(503)
+      expect(managementRetired).toBe(true)
+      expect(stopped).toBe(1)
+      retireManagementOnInvalidation = false; managementRetired = false
+      expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
+      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      expect(prepared).toBe(1)
+      unknownStop = false
+      expect((await post('/cloud/admin/accounts', { op: 'enabled', id: createdBody.id, enabled: false }, a.cookie)).status).toBe(200)
       const results = await Promise.all([
         post('/cloud/admin/accounts', { op: 'role', id: a.id, role: 'user' }, a.cookie),
         post('/cloud/admin/accounts', { op: 'role', id: b.id, role: 'user' }, b.cookie),

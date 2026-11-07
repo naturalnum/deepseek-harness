@@ -98,6 +98,7 @@ interface Operation {
   timedOut: boolean
   upgraded: boolean
   configurationUseReleased: boolean
+  accountManagement?: boolean
   use: AccountUse | undefined
   releaseFault: boolean
   cleanupUnknown: boolean
@@ -219,7 +220,8 @@ export class CloudIngress {
    */
   invalidateLogin(loginId: AuthenticatedPrincipal['authSessionId']): Promise<void> {
     for (const operation of this.operations) {
-      if (operation.forwarding && operation.principal?.authSessionId === loginId) this.cancelForward(operation)
+      if ((operation.forwarding || operation.accountManagement === true)
+        && operation.principal?.authSessionId === loginId) this.cancelForward(operation)
     }
     return this.peers.invalidateLogin(loginId)
   }
@@ -349,6 +351,13 @@ export class CloudIngress {
       }
       if (url.pathname === '/cloud/admin/accounts') {
         if (request.method !== 'POST') throw new AuthAccessError('cloud/forbidden', operation.id)
+        const principal = await this.auth.authenticate(request, operation.id)
+        this.assertOperation(operation)
+        const expected = readRequestExpectation(request, url, this.config.bindingFields, 'headers', operation.id)
+        assertExpectedAccount(expected, principal.accountId, operation.id)
+        this.bindAccount(operation, principal.accountId)
+        operation.principal = principal
+        operation.accountManagement = true
         const chunks: Buffer[] = []
         let bytes = 0
         for await (const chunk of request) {
