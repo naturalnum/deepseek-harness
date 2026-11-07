@@ -20,6 +20,8 @@ You can inspect bounded file-work admission, cancellation, and drain outcomes fo
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+`researchStorage(actualPluginContext)` issues a Host-only grant to the fixed `research-suite` child of the verified account private domain. It reuses the original preallocated storage and exact installed generation, exposes no model-selected directory and grants no additional account capacity. Independent research stores must call `assertCurrent()` at actual reads and commits and retain their handles until native graph disposal joins their work. Omitted preparation keeps research persistence unavailable.
+
 -----
 
 <a id="use-this-package"></a>
