@@ -122,6 +122,9 @@ it('discovers and calls an HTTP MCP tool through an original guarded account Age
       enabled: true, toolCallTimeoutMs: 2000, headers: { Authorization: 'Bearer synthetic-wrong-token' } } })
     expect(wrong.test).toEqual({ reachable: false, toolCount: 0, failure: 'connection-failed' })
     expect(a.saveBarrier.snapshot().failures).toEqual([])
+    const correct = await a.invokeMcp({ action: 'test', connection: { serverName: 'compute', url: external.url,
+      enabled: true, toolCallTimeoutMs: 2000, headers: { Authorization: 'Bearer synthetic-composition-token' } } })
+    expect(correct.test).toEqual({ reachable: true, toolCount: 1 })
     const saved = await a.invokeMcp({ action: 'save', version: initial.version, connection: { serverName: 'compute',
       url: external.url, enabled: true, toolCallTimeoutMs: 2000, headers: { Authorization: 'Bearer synthetic-composition-token' } } })
     expect(saved.connections).toHaveLength(1)
@@ -169,8 +172,16 @@ it('discovers and calls an HTTP MCP tool through an original guarded account Age
     const disabled = await a.invokeMcp({ action: 'enabled', id: row.id, version: saved.version, enabled: false })
     expect(disabled.connections[0]?.enabled).toBe(false)
     expect(a.ctx.tools.schemas().some(tool => tool.name === 'mcp__compute__ping')).toBe(false)
+    await a.invokeMcp({ action: 'enabled', id: row.id, version: disabled.version, enabled: true })
+    expect(a.ctx.tools.schemas().some(tool => tool.name === 'mcp__compute__ping')).toBe(true)
+    const tools = a.ctx.tools
     a.closeBusiness()
+    a.revokeLogin()
     await expect(a.invokeMcp({ action: 'list' })).rejects.toThrow()
+    await a.close()
+    expect(tools.schemas().some(tool => tool.name === 'mcp__compute__ping')).toBe(false)
+    expect(await a.observeNativeDisposal()).toEqual({ status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false })
+    expect((await b.invokeMcp({ action: 'list' })).connections).toEqual([])
   } finally { await external.close() }
 }, 20000)
 
@@ -269,6 +280,9 @@ it('retains a real native HTTP probe whose transport rejects closure and refuses
     expect(a.saveBarrier.snapshot().failures).toMatchObject([{ kind: 'mcp-connection', outcome: 'unknown' }])
     a.expectUnknownSave()
     await a.close()
+    const disposal = await a.observeNativeDisposal()
+    expect(disposal.status).toBe('unknown')
+    expect(disposal.errorEvents).toBeGreaterThan(0)
   } finally {
     transport.mockRestore()
     for (const close of originalClosers) await close()

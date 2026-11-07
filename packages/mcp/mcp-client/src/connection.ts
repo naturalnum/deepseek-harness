@@ -104,8 +104,9 @@ export interface ConnectionOutcome {
 export interface ConnectionHandle extends ServerContext {
   /**
    * Settles when the first connection attempt completes (success or failure).
-   * The supervisor enters its reconnect loop regardless; the caller decides
-   * whether a failed startup is fatal via `failOnStartupError`.
+   * A strict startup failure belongs to the caller after confirmed closure;
+   * other failures follow the reconnect policy. Unconfirmed closure remains
+   * a supervisor error and prevents retries.
    */
   ready: Promise<ConnectionOutcome>
   /**
@@ -189,12 +190,17 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   }
 
   /** Decide retry ownership after a failed connection's close barrier settles. */
-  function settleFailedGeneration(generation: Client, quiesced: boolean): void {
+  function settleFailedGeneration(generation: Client, quiesced: boolean, callerOwnsFailure: boolean): void {
     if (!isCurrent(generation)) return
     if (!quiesced) {
       client = undefined
       closeClient = undefined
       ctx.logger.error(`${label}: failed generation could not confirm transport closure — reconnect stopped to avoid overlapping server processes; reload the plugin or restart the Host to retry`)
+      return
+    }
+    if (callerOwnsFailure) {
+      client = undefined
+      closeClient = undefined
       return
     }
     generationDown(generation)
@@ -253,12 +259,14 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
    * Protocol to one transport for life), connect, then queue the initial tool
    * sync. The startup flag belongs to the attempt rather than the shared sync
    * queue, so an early notification cannot consume strict startup semantics.
-   * Every failure funnels through {@link generationDown}; success arms the
-   * onclose-driven disconnect path. Never rejects.
+   * Failed strict activation returns its failure after confirmed closure;
+   * other failures follow the reconnect policy. Success arms the onclose-driven
+   * disconnect path. Never rejects.
    *
    * @param startup - Whether this is the plugin's activation attempt.
    */
   async function connectGeneration(startup: boolean): Promise<void> {
+    const callerOwnsFailure = startup && config.failOnStartupError
     const generation = new Client(
       { name: 'dsh-mcp-client', version: '0.0.1' },
       {
@@ -292,7 +300,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         if (incoming === undefined) generationDown(generation)
         else void closeIncoming().then((confirmed) => {
           if (!confirmed) closureConfirmed = false
-          settleFailedGeneration(generation, confirmed)
+          settleFailedGeneration(generation, confirmed, false)
         })
       }
     }
@@ -332,7 +340,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       if (hasClosed()) {
         const confirmed = incoming === undefined || await closeGeneration()
         attemptSettled = true
-        settleFailedGeneration(generation, confirmed)
+        settleFailedGeneration(generation, confirmed, callerOwnsFailure)
         return
       }
       if (!isCurrent(generation)) {
@@ -347,18 +355,20 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       await enqueueSync(generation, startup ? startupOpts : opts)
     } catch (error) {
       if (firstAttemptError === undefined) firstAttemptError = error
-      // Disposal clears current ownership before it closes the generation, so
-      // only a live supervisor reports an attempt failure.
-      if (isCurrent(generation)) ctx.logger.warn(`${label}: connection attempt failed: ${String(error)}`)
+      // Strict startup reporting belongs to ready/apply's caller; an unconfirmed
+      // close remains a supervisor error. Disposal clears current ownership first.
+      if (isCurrent(generation) && !callerOwnsFailure) {
+        ctx.logger.warn(`${label}: connection attempt failed: ${String(error)}`)
+      }
       const quiesced = await closeGeneration()
       attemptSettled = true
-      settleFailedGeneration(generation, quiesced)
+      settleFailedGeneration(generation, quiesced, callerOwnsFailure)
       return
     }
     attemptSettled = true
     if (hasClosed()) {
       const confirmed = incoming === undefined || await closeGeneration()
-      settleFailedGeneration(generation, confirmed)
+      settleFailedGeneration(generation, confirmed, callerOwnsFailure)
       return
     }
     if (!isCurrent(generation)) return
@@ -370,13 +380,12 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   /** The in-flight (or last settled) connection attempt; dispose awaits it for quiescence. */
   let settling = connectGeneration(true)
 
-  // The ready promise settles when the first attempt finishes (regardless of
-  // success). If the first attempt fails and reconnect is enabled, the
-  // supervisor is already scheduling a retry — ready just reports the outcome.
+  // Strict startup failure belongs to the caller after confirmed closure;
+  // non-strict failure has already entered the configured reconnect policy.
   const ready: Promise<ConnectionOutcome> = settling.then(() => {
     // After settling: if client is set the initial connect+sync succeeded.
-    // If not, the supervisor either scheduled a retry (error logged) or gave
-    // up (error logged). Either way the outcome is reported with the real error.
+    // Otherwise return the actual initial failure, including when the caller
+    // owns strict startup reporting instead of the supervisor's retry policy.
     // Note: settling.then() is a microtask; stdio onclose is a macrotask — so
     // a server that crashes AFTER a successful initial sync cannot flip client
     // to undefined before this continuation runs.

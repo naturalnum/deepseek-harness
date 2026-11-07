@@ -23,7 +23,7 @@ const config: Config = {
 }
 const fixture = fileURLToPath(new URL('./fixtures/negotiation-lifecycle.mjs', import.meta.url))
 
-async function connection(factory: () => Transport, retry: boolean) {
+async function connection(factory: () => Transport, retry: boolean, strict = false) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt)
@@ -38,7 +38,7 @@ async function connection(factory: () => Transport, retry: boolean) {
     transports.push(transport)
     return transport
   })
-  const handle = startConnection(ctx, config, resolveReconnectPolicy({
+  const handle = startConnection(ctx, { ...config, failOnStartupError: strict }, resolveReconnectPolicy({
     enabled: retry, initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 3,
   }, 'fixture'))
   onTestFinished(async () => {
@@ -130,7 +130,22 @@ describe('SDK negotiation lifecycle', () => {
     expect(handle.warns.filter(line => line.includes('connection failed; retrying'))).toHaveLength(3)
   })
 
-  it('stops retries when a failed probe cannot confirm transport cleanup', async () => {
+  it.each([false, true])('returns a confirmed strict startup failure only to its caller with reconnect=%s', async (retry) => {
+    const failure = new Error('authentication refused')
+    const handle = await connection(() => ({
+      start: () => Promise.reject(failure),
+      send: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+    }), retry, true)
+    expect((await handle.ready).error).toBeDefined()
+    expect(handle.errors).toEqual([])
+    expect(handle.warns).toEqual([])
+    expect(handle.transports).toHaveLength(1)
+    await handle.dispose()
+    expect(handle.closureConfirmed()).toBe(true)
+  })
+
+  it.each([false, true])('stops retries when a failed probe cannot confirm transport cleanup with strict=%s', async (strict) => {
     const close = vi.fn()
       .mockRejectedValueOnce(new Error('SDK shutdown failed'))
       .mockRejectedValueOnce(new Error('supervisor shutdown failed'))
@@ -139,7 +154,7 @@ describe('SDK negotiation lifecycle', () => {
       start: () => Promise.reject(new Error('probe failed')),
       send: () => Promise.resolve(),
       close,
-    }), true)
+    }), true, strict)
     expect((await handle.ready).error).toBeDefined()
     expect(handle.errors).toEqual([
       'mcp-client(fixture): failed generation could not confirm transport closure — reconnect stopped to avoid overlapping server processes; reload the plugin or restart the Host to retry',

@@ -419,9 +419,9 @@ describe('reconnect supervisor', () => {
     expect(mockConnect).toHaveBeenCalledTimes(1)
   })
 
-  it('reconnect disabled keeps the registered tools and reports manual recovery', async () => {
+  it.each([false, true])('reconnect disabled keeps the registered tools and reports manual recovery with strict=%s', async (strict) => {
     const { errors } = captureLogs(ctx)
-    await apply(ctx, stdioConfig({ enabled: false }))
+    await apply(ctx, { ...stdioConfig({ enabled: false }), failOnStartupError: strict })
     await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
 
     instances[0]!.onclose?.()

@@ -26,7 +26,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
-  /** Whether a registry conflict is contained or rejects this synchronization. */
+  /** Containment logs a registry conflict; rejection leaves reporting to the caller. */
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
@@ -154,8 +154,8 @@ export async function syncTools(
     // registration occupies this server's namespace. Roll back so the model
     // sees either the full generation or none of it — never a partial set.
     for (const dispose of disposers.values()) dispose()
-    ctx.logger.error(`mcp-client(${opts.serverName}): tool registration failed, no tools registered: ${String(error)}`)
     if (opts.registrationFailure === 'throw') throw error
+    ctx.logger.error(`mcp-client(${opts.serverName}): tool registration failed, no tools registered: ${String(error)}`)
     return new Map()
   }
   return disposers

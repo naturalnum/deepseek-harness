@@ -314,6 +314,7 @@ describe('apply (plugin lifecycle)', () => {
   })
 
   it('rejects strict startup when the initial tool generation cannot be registered', async () => {
+    const reported = vi.spyOn(ctx.logger, 'error')
     ctx.tools.register({
       name: 'mcp__srv__remote',
       description: 'Foreign squatter',
@@ -333,6 +334,7 @@ describe('apply (plugin lifecycle)', () => {
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     await ctx.fiber.dispose()
     expect(mockClose).toHaveBeenCalled()
+    expect(reported).not.toHaveBeenCalled()
   })
 
   it('preserves strict startup registration when list_changed arrives before connect resolves', async () => {
