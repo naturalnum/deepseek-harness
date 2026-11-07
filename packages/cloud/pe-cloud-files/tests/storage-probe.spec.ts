@@ -7,6 +7,7 @@ import { RootStorageOwner, validateStorageView, type StaticAccountStorageLease, 
 import { storageRequest, createStorageWorker } from '../src/storage-worker.ts'
 import { skillRestartProof, skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
 import { createSkillProjectWork, type SkillProjectWork } from '../src/skill-project-work.ts'
+import { createStaticStorageInventory } from '../src/static-inventory.ts'
 import type { FdWorkerClient } from '../src/worker-client.ts'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { StaticStorageAccount, StaticStorageConfig, StaticAccountAssignment, StorageProbeFacts } from '../src/storage-types.ts'
@@ -288,8 +289,9 @@ describe('two retained static preparations with serial verification', () => {
     const resolver = { lookup: (id: StaticStorageAccount['accountId']) => assignments.get(id), list: () => [...assignments.values()],
       assertCurrent: (assignment: StaticAccountAssignment) => { if (assignments.get(assignment.accountId) !== assignment) throw new Error('Assignment revoked') } }
     const initialize = vi.fn<NonNullable<ConstructorParameters<typeof RootStorageOwner>[4]>>(async (inventory, install) => {
-      expect(inventory).toEqual({ sha256: planSha256, maxAccounts: 3,
-        slots: deployment.version === 3 ? deployment.slots.map(({ slotId, templateId }) => ({ slotId, templateId })) : [] })
+      if (deployment.version !== 3) throw new Error('Legacy inventory initialization is not expected')
+      expect(inventory).toEqual(createStaticStorageInventory(deployment))
+      expect(inventory.sha256).not.toBe(planSha256)
       expect(driver.probe).toHaveBeenCalled()
       expect(driver.skillProof).not.toHaveBeenCalled()
       await initializeInventory?.(owner, () => { withdrawAssignments = install(resolver) })
@@ -354,8 +356,9 @@ describe('two retained static preparations with serial verification', () => {
 
   it('prepares three v3 accounts only through original bindings and retains data after lease close', async () => {
     const f = await fixture(rawV3())
-    expect(f.owner.staticInventory()).toEqual({ sha256: createHash('sha256').update(f.encoded).digest('hex'), maxAccounts: 3,
+    expect(f.owner.staticInventory()).toMatchObject({ maxAccounts: 3,
       slots: [1, 2, 3].map(index => ({ slotId: `account-slot-${index}`, templateId: 'standard' })) })
+    expect(f.owner.staticInventory()?.sha256).not.toBe(createHash('sha256').update(f.encoded).digest('hex'))
     expect(JSON.stringify(f.owner.staticInventory())).not.toContain('/accounts/')
     const leases = await Promise.all(f.inputs.map(input => f.prepare(input)))
     expect(leases).toHaveLength(3)
@@ -364,6 +367,25 @@ describe('two retained static preparations with serial verification', () => {
     for (const lease of leases) await lease.closeAfterActualDrain()
     expect(f.driver.joinEpoch).not.toHaveBeenCalled()
     expect(f.facts.has(f.plan.accounts[0].private.rootPath)).toBe(true)
+  })
+
+  it('reverifies distinct namespace plans while keeping only the physical association digest stable', async () => {
+    const first = await fixture(rawV3()), remounted = rawV3()
+    for (const domain of [remounted.arena, remounted.control, ...remounted.slots.flatMap(slot => [slot.private, slot.projects,
+      ...slot.environmentBank.slots.map(entry => entry.domain)])]) {
+      domain.rootMountId = String(BigInt(domain.rootMountId) + 3000n)
+      domain.rootDevice = String(BigInt(domain.rootDevice) + 2000n)
+    }
+    const second = await fixture(remounted)
+    expect(first.encoded).not.toEqual(second.encoded)
+    expect(first.owner.staticInventory()).toEqual(second.owner.staticInventory())
+    expect(second.probePaths).toContain(remounted.slots[2]!.environmentBank.slots[0]!.domain.backing.path)
+    const lease = await second.prepare(second.inputs[2]!)
+    lease.assertCurrent(); await lease.closeAfterActualDrain()
+    // Matching association metadata never authorizes substituting another namespace's complete plan.
+    first.driver.record.mockResolvedValue(second.encoded)
+    await expect(first.prepare(first.inputs[0]!)).rejects.toThrow()
+    expect(() => first.owner.assertRootCurrent()).toThrow()
   })
 
   it('revokes v3 admission on binding replacement or registry withdrawal without inventing cleanup', async () => {

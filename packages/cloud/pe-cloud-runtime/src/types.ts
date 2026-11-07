@@ -329,6 +329,7 @@ export interface RootIngressCloseOwner {
 
 /** Sanitized Root-owned inventory; paths and filesystem facts remain with Files. */
 export interface StaticAccountInventory {
+  /** Files' stable physical-slot digest, independent of namespace mount IDs and the full deployment plan pin. */
   readonly sha256: string
   readonly maxAccounts: number
   readonly slots: readonly Readonly<{ slotId: string; templateId: string }>[]
