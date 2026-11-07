@@ -33,14 +33,15 @@ it('filters preparation by original scope, delegates to later listeners and reti
     child = createScope(owner, {}); sibling = createScope(owner, {})
   } })
   if (child === undefined || sibling === undefined) throw new Error('Original scopes absent')
-  const key = scopeOf(child.ctx), calls: string[] = []
+  const key = scopeOf(child.ctx), siblingKey = scopeOf(sibling.ctx), calls: string[] = []
+  if (key === undefined || siblingKey === undefined) throw new Error('Original scope identities absent')
   child.ctx.on('system-prompt/prepare', async (_context, next) => { calls.push('child'); return next() })
   ctx.on('system-prompt/prepare', async (_context, next) => { calls.push('global'); return next() })
   await ctx.systemPrompt.assemble(); expect(calls).toEqual(['global'])
   calls.length = 0
   await ctx.systemPrompt.assemble({ scope: key }); expect(calls).toEqual(['child', 'global'])
   calls.length = 0
-  await ctx.systemPrompt.assemble({ scope: scopeOf(sibling.ctx) }); expect(calls).toEqual(['global'])
+  await ctx.systemPrompt.assemble({ scope: siblingKey }); expect(calls).toEqual(['global'])
   await child.dispose(); calls.length = 0
   await ctx.systemPrompt.assemble({ scope: key }); expect(calls).toEqual(['global'])
 })
