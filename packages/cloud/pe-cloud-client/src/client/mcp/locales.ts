@@ -10,6 +10,7 @@ const en = {
   unreachable: 'Connection test failed. Check the endpoint and credentials.', toolCount: '{count} discovered tools',
   pending: 'Applying MCP operation…', failed: 'The MCP operation failed or its outcome could not be confirmed. Refresh before retrying.',
   invalidHeaders: 'Headers must be a JSON object with string values.', loading: 'Loading MCP connections…',
+  changed: 'The connections changed while you were editing. Reopen the connection to review the current values before saving.',
   removeConfirm: 'Confirm removal', removeHint: 'Remove this connection and its private headers?',
   httpHint: 'URLs are reached from the cloud server. HTTP and HTTPS are supported; local-process and OAuth connections are not available.',
 }
@@ -24,6 +25,7 @@ const zh: Record<keyof typeof en, string> = {
   unreachable: '连接测试失败，请检查服务地址和凭据。', toolCount: '已发现 {count} 个工具',
   pending: '正在应用 MCP 操作…', failed: 'MCP 操作失败或结果尚未确认，请刷新后再试。',
   invalidHeaders: '请求头必须是值为字符串的 JSON 对象。', loading: '正在读取 MCP 连接…',
+  changed: '编辑期间连接配置已变化，请重新打开该连接，核对最新值后再保存。',
   removeConfirm: '确认移除', removeHint: '移除此连接及其私有请求头？',
   httpHint: '服务地址由云端服务器访问。支持 HTTP 和 HTTPS，暂不支持本地进程和 OAuth 连接。',
 }

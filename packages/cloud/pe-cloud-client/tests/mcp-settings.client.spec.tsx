@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
-import type { CloudMcpConnectionReply, CloudMcpConnectionRequest } from '@deepseek-ai/dsh-pe-cloud-api/types'
+import type { CloudMcpConnectionReply, CloudMcpConnectionRequest, CloudMcpConnectionView } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import { McpConnectionsSection } from '../src/client/mcp/McpConnectionsSection.tsx'
 import { mcpSettingsDictionaries } from '../src/client/mcp/locales.ts'
 
@@ -85,4 +85,46 @@ it('withdraws typed secrets and ignores an old account response when the native 
   await waitFor(() => { expect(screen.getByLabelText<HTMLInputElement>(en.token).value).toBe('') })
   expect(screen.queryByText(new RegExp(en.reachable))).toBeNull()
   expect(screen.getByLabelText<HTMLInputElement>(en.serverName).value).toBe('')
+})
+
+it('keeps the original edit version through probe and refresh, so an old form cannot overwrite another client change', async () => {
+  let version = 'v1'
+  let current: CloudMcpConnectionView = { id: brandString<McpConnectionId>('00000000-0000-4000-8000-000000000001'),
+    serverName: 'compute', url: 'http://192.0.2.1:17273/v1', enabled: true, toolCallTimeoutMs: 2000, configured: false, toolCount: 1 }
+  const call = vi.fn(async (request: CloudMcpConnectionRequest): Promise<CloudMcpConnectionReply> => {
+    if (request.action === 'save') {
+      if (request.version !== version) throw new Error('cloud/config-conflict')
+      const { headers: _headers, ...definition } = request.connection
+      current = { ...current, ...definition }; version = 'v3'
+    }
+    return { connections: [current], version, limits,
+      ...request.action === 'test' ? { test: { reachable: true, toolCount: 1 } } : {} }
+  })
+  render(<McpConnectionsSection {...props} call={call}/>)
+  await screen.findByText(current.url)
+  fireEvent.click(screen.getByRole('button', { name: en.edit }))
+  fireEvent.change(screen.getByLabelText(en.url), { target: { value: 'http://192.0.2.1:17273/A-unsaved' } })
+  // A distinct client updates the real server snapshot after this form captured v1.
+  current = { ...current, url: 'http://192.0.2.1:17273/B-v2' }; version = 'v2'
+  fireEvent.click(screen.getByRole('button', { name: en.test }))
+  await screen.findByText(new RegExp(en.reachable))
+  expect(screen.getByLabelText<HTMLInputElement>(en.url).value).toBe('http://192.0.2.1:17273/A-unsaved')
+  expect(screen.getByText(en.changed)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: en.save }))
+  await screen.findByText(en.failed)
+  expect(call.mock.calls.filter(([request]) => request.action === 'save')[0]?.[0]).toMatchObject({ version: 'v1' })
+  expect(current.url).toBe('http://192.0.2.1:17273/B-v2')
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  await waitFor(() => { expect(call.mock.calls.filter(([request]) => request.action === 'list')).toHaveLength(2) })
+  await waitFor(() => { expect(screen.getByRole('button', { name: en.save }).hasAttribute('disabled')).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: en.save }))
+  await screen.findByText(en.failed)
+  expect(call.mock.calls.filter(([request]) => request.action === 'save')[1]?.[0]).toMatchObject({ version: 'v1' })
+  expect(current.url).toBe('http://192.0.2.1:17273/B-v2')
+  fireEvent.click(screen.getByRole('button', { name: en.edit }))
+  expect(screen.getByLabelText<HTMLInputElement>(en.url).value).toBe('http://192.0.2.1:17273/B-v2')
+  fireEvent.change(screen.getByLabelText(en.url), { target: { value: 'http://192.0.2.1:17273/A-reviewed' } })
+  fireEvent.click(screen.getByRole('button', { name: en.save }))
+  await screen.findByText('http://192.0.2.1:17273/A-reviewed')
+  expect(call.mock.calls.filter(([request]) => request.action === 'save')[2]?.[0]).toMatchObject({ version: 'v2' })
 })
