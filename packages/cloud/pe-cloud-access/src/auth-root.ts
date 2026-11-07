@@ -207,7 +207,12 @@ export class PeAuthService extends Service {
         if (initialize === undefined || templates === undefined || states === undefined || prepare === undefined || disable === undefined) {
           throw new AuthAccessError('cloud/account-unavailable', this.requestId)
         }
-        await initialize(this.config.accountAdministration.initialAdministratorIds.map(id => id as AccountId))
+        await initialize(this.config.accountAdministration.initialAdministratorIds.map(id => id as AccountId), {
+          idleTransactionTimeoutMs: this.config.pool.idleTransactionTimeoutMs,
+          authStatementTimeoutMs: this.config.pool.statementTimeoutMs,
+          authConnectionTimeoutMs: this.config.pool.connectionTimeoutMs,
+          authOperationTimeoutMs: this.config.authCheckTimeoutMs,
+        })
         this.auth.installAccountResources({ templates, states, prepare, disable })
       }
       this.ingress = new CloudIngress(this.ctx, this.config, this.config.ingress, this.auth, {

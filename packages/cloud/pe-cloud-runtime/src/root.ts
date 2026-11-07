@@ -1,5 +1,6 @@
 /** Root control composition retains original PG/storage/native work through ready and drain settlement. */
-import { StaticAccountBindings } from './static-account-bindings.ts'
+import { StaticAccountBindings, accountAdministrationTransactionBudget, type AccountAdministrationBudgets, type StaticAccountInventory,
+  type StaticAccountAssignmentResolver } from './static-account-bindings.ts'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { posix } from 'node:path'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
@@ -399,13 +400,38 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     if (control.staticBindingsStarting !== undefined) return control.staticBindingsStarting
     const storage = this.ctx.root.get('peFilesPool')?.requireStorageOwner(), inventory = storage?.staticInventory()
     if (storage === undefined || inventory === undefined) return Promise.resolve(undefined)
+    return this.initializeStaticBindings(control, inventory, resolver => storage.installAccountAssignments(resolver))
+  }
+
+  /** Prepare the original verified inventory before Files parses bound-account cold proofs.
+   * @param inventory Address-free physical inventory from the original Files owner.
+   * @param installAssignments Original owner's sole registration function, never supplied by client configuration.
+   * @returns Actual PG registry and resolver installation, without opening Files admission.
+   */
+  async prepareStaticAccountInventory(inventory: StaticAccountInventory,
+    installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<void> {
+    await this.initializeStaticBindings(this.activeControl(), inventory, installAssignments)
+  }
+
+  private initializeStaticBindings(control: RootControl, inventory: StaticAccountInventory,
+    installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<StaticAccountBindings> {
+    if (control.staticBindingsStarting !== undefined) {
+      const retained = control.staticBindings
+      if (retained === undefined || retained.inventory.sha256 !== inventory.sha256) {
+        throw new AccountRuntimeError('cloud/invalid-config', 'Root received a different static inventory during startup')
+      }
+      return control.staticBindingsStarting.then((bindings) => {
+        if (bindings === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Root static assignment initialization disappeared')
+        return bindings
+      })
+    }
     const bindings = new StaticAccountBindings(control.database, inventory, () => {
       if (this.control !== control || control.phase === 'closed' || control.phase === 'failed') {
         throw new AccountRuntimeError('cloud/account-unavailable', 'The original static account registry is unavailable')
       }
     })
     control.staticBindings = bindings
-    control.staticBindingsStarting = (async () => {
+    const starting = (async () => {
       await bindings.initialize()
       const initials = control.config.staticAccounts?.initialAssignments ?? []
       if (initials.length > inventory.maxAccounts || new Set(initials.map(row => row.accountId)).size !== initials.length
@@ -413,12 +439,13 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         throw new AccountRuntimeError('cloud/invalid-config', 'Initial account assignments exceed or repeat the immutable inventory')
       }
       for (const initial of control.config.staticAccounts?.initialAssignments ?? []) await bindings.seed(initial.accountId, initial.slotId)
-      control.revokeStaticBindings = storage.installAccountAssignments({
+      control.revokeStaticBindings = installAssignments({
         lookup: id => bindings.lookup(id), list: () => bindings.list(), assertCurrent: row => bindings.assertCurrent(row),
       })
       return bindings
     })()
-    return control.staticBindingsStarting
+    control.staticBindingsStarting = starting
+    return starting
   }
 
   private async acquireStaticAccount(control: RootControl, accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
@@ -448,10 +475,13 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
 
   /** Initialize only trusted deployment mappings and verify explicitly configured administrator resource assignments.
    * @param accountIds Existing authentic initial administrator identities, never selected from a first login.
+   * @param budgets Actual Access transaction/operation bounds, checked against the retained runtime preparation bound.
    * @returns Mapping readiness only; actual native account readiness is verified on preparation or first use.
    */
-  async initializeAccountAdministration(accountIds: readonly AccountId[]): Promise<void> {
+  async initializeAccountAdministration(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void> {
     const control = this.activeControl(), bindings = await this.staticBindings(control)
+    accountAdministrationTransactionBudget(control.config.accountWaitTimeoutMs, control.config.pg,
+      bindings?.inventory.slots.length ?? 0, budgets)
     if (bindings !== undefined) for (const id of accountIds) {
       if (await bindings.refresh(id) === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'An initial administrator has no static assignment')
     }

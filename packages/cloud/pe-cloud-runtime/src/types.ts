@@ -1,4 +1,6 @@
 /** Runtime-owned account identities and lifecycle inputs; none are browser credentials. */
+import type { AccountAdministrationBudgets, StaticAccountAssignmentResolver, StaticAccountInventory } from './static-account-bindings.ts'
+export type { AccountAdministrationBudgets, StaticAccountAssignmentResolver, StaticAccountInventory } from './static-account-bindings.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -329,8 +331,17 @@ export interface RootIngressCloseOwner {
 
 /** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
 export interface AccountRuntimeService {
-  /** Verify trusted initial static mappings before exposing administration. @param accountIds Explicit initial administrators. */
-  initializeAccountAdministration?(accountIds: readonly AccountId[]): Promise<void>
+  /** Initialize Root-owned mappings after physical inventory verification and before Files cold-proof parsing.
+   * @param inventory Original verified address-free inventory. @param installAssignments Sole original Files resolver registration.
+   * @returns Original metadata readiness and resolver installation, never file lease authority.
+   */
+  prepareStaticAccountInventory?(inventory: StaticAccountInventory,
+    installAssignments: (resolver: StaticAccountAssignmentResolver) => () => void): Promise<void>
+  /** Verify trusted mappings and transaction budgets before exposing administration.
+   * @param accountIds Explicit initial administrators. @param budgets Actual Access database/operation limits.
+   * @returns Startup validation settlement; no account is mounted.
+   */
+  initializeAccountAdministration?(accountIds: readonly AccountId[], budgets: AccountAdministrationBudgets): Promise<void>
   /** Read declared physical templates without exposing private paths. @returns Currently unassigned slot counts by template. */
   accountResourceTemplates?(): Promise<readonly Readonly<{ id: string; available: number }>[]>
   /** Read resource progress from original metadata. @param accountIds Bounded identity list. @returns Current assigned resource phases. */

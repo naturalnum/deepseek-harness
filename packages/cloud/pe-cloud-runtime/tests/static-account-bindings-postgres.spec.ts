@@ -15,7 +15,8 @@ describe.skipIf(path === undefined)('durable static account assignments', () => 
     const pool = new pg.Pool({ ...config, database: 'dsh_account_management', max: 4, connectionTimeoutMillis: 1000, statement_timeout: 5000 })
     const database: RootMetadataDatabase = { wasNotSubmitted: () => false,
       query: async (sql, values) => { const result = await pool.query(sql, [...values]); return { rows: result.rows } } }
-    const a = new StaticAccountBindings(database, inventory, () => {}), b = new StaticAccountBindings(database, inventory, () => {})
+    let a = new StaticAccountBindings(database, inventory, () => {})
+    const b = new StaticAccountBindings(database, inventory, () => {})
     let reloaded: StaticAccountBindings | undefined
     try {
       await a.initialize()

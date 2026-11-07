@@ -275,7 +275,7 @@ export class AccountAdministrator {
             await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
           } else {
             await this.invoke(headers, 'ban-user', { userId: request.id }, requestId)
-            current()
+            // Once the identity is banned, actual drain remains owned even if its login or browser retires.
             const status = await resources.disable(request.id as AccountId, requestId)
             current()
             if (status !== 'disabled') throw new AuthAccessError('cloud/stop-unconfirmed', requestId)

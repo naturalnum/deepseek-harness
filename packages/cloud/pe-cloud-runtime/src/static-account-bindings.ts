@@ -14,6 +14,39 @@ export interface StaticAccountAssignment {
   readonly slotId: string
   readonly revision: string
 }
+/** Root-only synchronous resolver installed into the original Files owner. */
+export interface StaticAccountAssignmentResolver {
+  lookup(accountId: AccountId): StaticAccountAssignment | undefined
+  list(): readonly StaticAccountAssignment[]
+  assertCurrent(assignment: StaticAccountAssignment): void
+}
+/** Access budgets retained by the same management transaction while actual resources prepare. */
+export interface AccountAdministrationBudgets {
+  readonly idleTransactionTimeoutMs: number
+  readonly authStatementTimeoutMs: number
+  readonly authConnectionTimeoutMs: number
+  readonly authOperationTimeoutMs: number
+}
+
+/** Compute the minimum retained transaction budget before any administrator route opens.
+ * @param accountWaitTimeoutMs Original factory observation bound.
+ * @param queryBounds Original metadata executor queue and statement bounds.
+ * @param slotCount Finite physical inventory size; zero denotes the legacy path.
+ * @param budgets Actual authentication pool/operation budgets.
+ * @returns Milliseconds covering all bounded slot attempts, actual mount and final provider calls.
+ */
+export function accountAdministrationTransactionBudget(accountWaitTimeoutMs: number,
+  queryBounds: Readonly<{ queueTimeoutMs: number; statementTimeoutMs: number }>, slotCount: number,
+  budgets: AccountAdministrationBudgets): number {
+  const maximumQueries = slotCount === 0 ? 0 : 2 * slotCount + 10
+  const required = accountWaitTimeoutMs + maximumQueries * (queryBounds.queueTimeoutMs + queryBounds.statementTimeoutMs)
+    + budgets.authOperationTimeoutMs + 2 * (budgets.authConnectionTimeoutMs + budgets.authStatementTimeoutMs)
+  if (!Number.isSafeInteger(required) || budgets.idleTransactionTimeoutMs < required) {
+    throw new AccountRuntimeError('cloud/invalid-config', 'Account administration transaction timeout is shorter than resource preparation bounds')
+  }
+  return required
+}
+
 /** Resource progress never substitutes for the native factory's actual ready/drain checks. */
 export type AccountResourcePhase = 'reserved' | 'preparing' | 'ready' | 'disabled' | 'failed' | 'stop-unknown'
 /** Durable resource status; workflow revision changes do not revoke the unchanged storage identity. */
