@@ -356,6 +356,18 @@ export class CloudAccountApi extends Service {
   }
 
   /**
+   * Recognize only a selected operation belonging to a currently audited independent account capability.
+   * @param endpoint Exact approved endpoint.
+   * @param mode Actual invocation carrier.
+   * @returns True after native implementation inspection; false for original native capabilities. Unapproved operations reject.
+   */
+  isCapabilityEndpoint(endpoint: string, mode: 'rpc' | 'stream'): boolean {
+    this.admit()
+    const row = mode === 'rpc' ? this.installation.exposure.requireRpc(endpoint) : this.installation.exposure.requireStream(endpoint)
+    return this.capabilityInventories.assertEndpoint(this.ctx, row, mode)
+  }
+
+  /**
    * Require a reviewed native unary endpoint after business admission.
    * @param endpoint Native unary URL endpoint.
    * @returns The audited declaration after business admission.

@@ -55,7 +55,9 @@ it('audits a real Loader service, rechecks changed rows and withdraws the contri
   expect(f.ctx.get('cloudProbe')).toMatchObject({ calls: 0 })
   const row = value.rpcEndpoints[0]
   if (row === undefined) throw new Error('Missing test endpoint')
-  f.contributions.assertEndpoint(f.ctx, row, 'rpc')
+  expect(f.contributions.assertEndpoint(f.ctx, row, 'rpc')).toBe(true)
+  expect(f.contributions.assertEndpoint(f.ctx, { endpoint: 'session/list', handlerId: 'native:sessionController',
+    guard: 'authenticated-account' }, 'rpc')).toBe(false)
   f.set({ ...value, rpcEndpoints: [] })
   expect(() => { f.contributions.assertEndpoint(f.ctx, row, 'rpc') }).toThrow()
   f.remove()
