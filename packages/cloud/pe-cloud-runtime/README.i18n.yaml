@@ -60,8 +60,11 @@
   en: c182b5207d0e08db
   zh: 37b342fdfead1f72
 /deepseek-ai-dsh-pe-cloud-runtime/known-limitations-and-deferred-work:
-  en: 204edf8966efb868
-  zh: fa53cca11635eb4d
+  en: 67bc254d20575f29
+  zh: 02d991941bcb2f6e
+/deepseek-ai-dsh-pe-cloud-runtime/known-limitations-and-deferred-work/optional-http-mcp-entry:
+  en: c4424857e93e6e19
+  zh: 42f8838fbd161ddc
 /deepseek-ai-dsh-pe-cloud-runtime/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

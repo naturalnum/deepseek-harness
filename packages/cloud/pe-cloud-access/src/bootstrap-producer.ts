@@ -170,6 +170,7 @@ export async function produceCloudBootstrap(
     if (manifest.rpcEndpoints.length + manifest.streamEndpoints.length > budget) unavailable()
     if (skillRpcEndpoints.some(endpoint => !manifest.rpcEndpoints.some(row => row.endpoint === endpoint))) unavailable()
     if (pluginRpcEndpoints.some(endpoint => !manifest.rpcEndpoints.some(row => row.endpoint === endpoint))) unavailable()
+    if (catalog.mcp !== undefined && !manifest.rpcEndpoints.some(row => row.endpoint === 'cloudMcpConnections/action')) unavailable()
     if (catalog.remoteServers !== undefined && !manifest.rpcEndpoints.some(row => row.endpoint === 'cloudRemoteServers/action')) unavailable()
     for (const row of manifest.rpcEndpoints) {
       const settingsMutation = settingsWrites && row === settingsWriter
@@ -183,12 +184,13 @@ export async function produceCloudBootstrap(
         skillRpcEndpoints.includes(row.endpoint)
           && row.handlerId === 'native:cloudSkills' && row.guard === 'authenticated-account'
         || row.endpoint === 'skills/list' && row.handlerId === 'native:sessionSkillCatalog' && row.guard === 'account-session')
-      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !remoteServers && !settingsMutation) unavailable()
+      if (!selectedNative(row, nativeRpc) && !modelKey && !skills && !plugins && !remoteServers && !settingsMutation
+        && !api.isCapabilityEndpoint(row.endpoint, 'rpc')) unavailable()
       const actual = api.requireRpc(row.endpoint)
       if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }
     for (const row of manifest.streamEndpoints) {
-      if (!selectedNative(row, nativeStreams)) unavailable()
+      if (!selectedNative(row, nativeStreams) && !api.isCapabilityEndpoint(row.endpoint, 'stream')) unavailable()
       const actual = api.requireStream(row.endpoint)
       if (actual.handlerId !== row.handlerId || actual.guard !== row.guard) unavailable()
     }

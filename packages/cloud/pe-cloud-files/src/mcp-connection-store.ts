@@ -31,13 +31,14 @@ export interface McpConnectionInput {
   readonly url: string
   readonly enabled: boolean
   readonly toolCallTimeoutMs: number
-  readonly headers?: Readonly<Record<string, string>>
+  readonly headers?: Readonly<Record<string, string>> | undefined
 }
 /** Private storage operations; no raw credential read method is exposed remotely. */
 export interface AccountMcpConnectionStore {
   list(): readonly McpConnectionRecord[]
-  save(id: McpConnectionId | undefined, input: McpConnectionInput): Promise<McpConnectionRecord>
-  remove(id: McpConnectionId): Promise<void>
+  version(): string
+  save(id: McpConnectionId | undefined, input: McpConnectionInput, assertCurrent?: () => void): Promise<McpConnectionRecord>
+  remove(id: McpConnectionId, assertCurrent?: () => void): Promise<void>
   configured(id: McpConnectionId): Promise<boolean>
   withHeaders<T>(id: McpConnectionId, consume: (headers: Record<string, string>) => Promise<T>): Promise<T>
 }
@@ -89,8 +90,9 @@ export async function openMcpConnectionStore(ctx: Context, binding: AccountBindi
   if (facility === undefined || provider === undefined || ctx.get('peAccount') !== binding) unavailable()
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1) unavailable()
   const spec = defineDomain({ name: 'cloud_mcp_connections', version: 1,
-    global: { schema: z.strictObject({ accountId: z.string(), connections: z.array(recordSchema).max(limits.maxConnections) }),
-      initial: { accountId: String(binding.accountId), connections: [] } }, tables: {} })
+    global: { schema: z.strictObject({ accountId: z.string(), revision: z.number().int().nonnegative(),
+      connections: z.array(recordSchema).max(limits.maxConnections) }),
+    initial: { accountId: String(binding.accountId), revision: 0, connections: [] } }, tables: {} })
   const domain = await facility.open(spec)
   ctx.effect(() => () => domain.close(), 'pe-cloud-files: close account MCP definitions')
   mounted()
@@ -122,10 +124,12 @@ export async function openMcpConnectionStore(ctx: Context, binding: AccountBindi
   }
   return {
     list,
-    async save(id, input) {
+    version() { check(); return String(binding.epoch) + ':' + String(domain.global.get().revision) },
+    async save(id, input, assertCurrent) {
+      const active = (): void => { check(); assertCurrent?.() }
       const value = mcpConnectionInput(input, limits)
       return mutate(async (submitted) => {
-        check()
+        active()
         const rows = list()
         if (id !== undefined) requireEntry(id)
         if (rows.some(row => row.id !== id && row.serverName === value.serverName)
@@ -133,24 +137,27 @@ export async function openMcpConnectionStore(ctx: Context, binding: AccountBindi
         const selected = id ?? brandString<McpConnectionId>(randomUUID())
         if (value.headers !== undefined) {
           submitted()
-          await provider.modifyRecord(key(selected), () => { check(); return Promise.resolve({ kind: 'grant' as const,
+          await provider.modifyRecord(key(selected), () => { active(); return Promise.resolve({ kind: 'grant' as const,
             payload: { version: 1, headers: { ...value.headers } } }) })
-          check()
+          active()
         }
         const { headers: _headers, ...definition } = value
         const row: McpConnectionRecord = { id: selected, ...definition }
         const next = id === undefined ? [...rows, row] : rows.map(old => old.id === id ? row : old)
         submitted()
-        await domain.global.set({ accountId: String(binding.accountId), connections: next }); check()
+        await domain.global.set({ accountId: String(binding.accountId),
+          revision: domain.global.get().revision + 1, connections: next }); active()
         return row
       })
     },
-    async remove(id) {
+    async remove(id, assertCurrent) {
+      const active = (): void => { check(); assertCurrent?.() }
       return mutate(async (submitted) => {
-        requireEntry(id)
+        active(); requireEntry(id)
         submitted()
-        await domain.global.set({ accountId: String(binding.accountId), connections: list().filter(row => row.id !== id) }); check()
-        await provider.deleteRecord(key(id)); check()
+        await domain.global.set({ accountId: String(binding.accountId), revision: domain.global.get().revision + 1,
+          connections: list().filter(row => row.id !== id) }); active()
+        await provider.deleteRecord(key(id)); active()
       })
     },
     async configured(id) {

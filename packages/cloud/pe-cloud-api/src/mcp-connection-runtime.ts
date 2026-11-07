@@ -14,11 +14,19 @@ export interface McpConnectionRuntimePolicy {
 export type McpConnectionTest = Readonly<{ reachable: true; tools: readonly string[] }>
   | Readonly<{ reachable: false; failure: 'connection-failed' }>
 
+/** Native supervisor could not confirm release; the original host must retain this operation. */
+export class McpConnectionCleanupError extends Error {
+  constructor() { super('cloud/mcp-close-unconfirmed') }
+}
+
 /** Account-owned optional native-client assembly; it never edits Loader entries or installs packages. */
 export class AccountMcpConnections {
   private readonly mounted = new Map<McpConnectionId, Fiber>()
   private readonly namespaces = new Map<McpConnectionId, string>()
+  private readonly clients = new Map<McpConnectionId, McpClient.McpClientLifecycle>()
+  private readonly probes = new Set<McpClient.McpClientLifecycle>()
   private stopping: Promise<void> | undefined
+  private restoration: Promise<void> | undefined
 
   /**
    * @param ctx Original account plugin scope with the existing native tool registry.
@@ -29,8 +37,8 @@ export class AccountMcpConnections {
    */
   constructor(private readonly ctx: Context, private readonly store: AccountMcpConnectionStore,
     private readonly policy: McpConnectionRuntimePolicy, private readonly current: () => void,
-    toolCurrent: (exec: ToolRunContext) => void) {
-    ctx.on('tools/pre-execute', async (exec, next) => {
+    toolCurrent: (exec: Pick<ToolRunContext, 'agent' | 'signal'>) => void) {
+    ctx.on('tools/execute', async (exec, next) => {
       if (![...this.namespaces.values()].some(name => exec.name.startsWith(`mcp__${name}__`))) return next()
       this.check(); toolCurrent(exec)
       const result = await next()
@@ -43,8 +51,11 @@ export class AccountMcpConnections {
   /** Restore enabled definitions after the account's private providers are installed.
    * @returns Actual initial client connection/discovery settlement; unavailable external servers retain native reconnect behavior.
    */
-  async restore(): Promise<void> {
-    for (const row of this.store.list()) await this.apply(row)
+  restore(): Promise<void> {
+    this.check()
+    return this.restoration ??= (async () => {
+      for (const row of this.store.list()) await this.apply(row)
+    })()
   }
 
   /** Replace only the selected account connection after its durable definition has committed.
@@ -60,7 +71,9 @@ export class AccountMcpConnections {
       this.check()
       const config = this.config(row, headers, false)
       const fiber = this.ctx.plugin({ name: `cloud-mcp-${row.id}`, inject: ['tools'],
-        apply: async (scope: Context): Promise<void> => { await McpClient.apply(scope, config) } })
+        apply: async (scope: Context): Promise<void> => {
+          await McpClient.apply(scope, config, lifecycle => this.clients.set(row.id, lifecycle))
+        } })
       this.mounted.set(row.id, fiber); this.namespaces.set(row.id, row.serverName)
       await fiber
       this.check()
@@ -75,9 +88,12 @@ export class AccountMcpConnections {
     this.check()
     const fiber = this.mounted.get(id)
     if (fiber === undefined) return
+    const confirmed = await this.clients.get(id)?.close()
     await fiber.dispose()
     while (fiber.inertia !== undefined) await fiber.inertia
+    if (confirmed !== true) throw new McpConnectionCleanupError()
     this.mounted.delete(id); this.namespaces.delete(id)
+    this.clients.delete(id)
   }
 
   /** Probe without publishing tools to the account or any model.
@@ -88,10 +104,18 @@ export class AccountMcpConnections {
   async test(input: McpConnectionInput, signal: AbortSignal): Promise<McpConnectionTest> {
     this.check(); signal.throwIfAborted()
     const probe = createScope(this.ctx, {})
-    const cancel = (): void => { void probe.dispose() }
+    let lifecycle: McpClient.McpClientLifecycle | undefined
+    let disposal: Promise<void> | undefined
+    const dispose = (): Promise<void> => disposal ??= probe.dispose()
+    // Observe the cancellation-triggered promise immediately, then await its real outcome in finally.
+    const cancel = (): void => { void dispose().then(() => {}, () => {}) }
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      await probe.ctx.plugin(McpClient, this.config(input, { ...input.headers }, true))
+      await probe.ctx.plugin({ name: 'cloud-mcp-probe', inject: ['tools'], apply: async (owner: Context) => {
+        await McpClient.apply(owner, this.config(input, { ...input.headers }, true), (observed) => {
+          lifecycle = observed; this.probes.add(observed)
+        })
+      } })
       this.check(); signal.throwIfAborted()
       const tools = probe.ctx.get('tools')
       if (tools === undefined) throw new Error('cloud/mcp-probe-tools-unavailable')
@@ -102,7 +126,12 @@ export class AccountMcpConnections {
       return { reachable: false, failure: 'connection-failed' }
     } finally {
       signal.removeEventListener('abort', cancel)
-      await probe.dispose()
+      const confirmed = await lifecycle?.close()
+      await dispose()
+      if (lifecycle !== undefined) {
+        if (confirmed !== true) throw new McpConnectionCleanupError()
+        this.probes.delete(lifecycle)
+      }
     }
   }
 
@@ -111,12 +140,16 @@ export class AccountMcpConnections {
    */
   close(): Promise<void> {
     return this.stopping ??= (async () => {
-      const results = await Promise.allSettled([...this.mounted.values()].map(async (fiber) => {
+      const results = await Promise.allSettled([...this.mounted.entries()].map(async ([id, fiber]) => {
+        const confirmed = await this.clients.get(id)?.close()
         await fiber.dispose()
         while (fiber.inertia !== undefined) await fiber.inertia
+        if (confirmed !== true) throw new McpConnectionCleanupError()
       }))
-      if (results.some(result => result.status === 'rejected')) throw new Error('cloud/mcp-close-unconfirmed')
-      this.mounted.clear(); this.namespaces.clear()
+      const probes = await Promise.allSettled([...this.probes].map(lifecycle => lifecycle.close()))
+      if (results.some(result => result.status === 'rejected')
+        || probes.some(result => result.status === 'rejected' || !result.value)) throw new McpConnectionCleanupError()
+      this.mounted.clear(); this.namespaces.clear(); this.clients.clear(); this.probes.clear()
     })()
   }
 

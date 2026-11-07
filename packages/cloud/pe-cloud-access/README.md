@@ -216,6 +216,10 @@ Request authentication and binding checks change no prompt prefix or model cache
 
 ## Known Limitations and Deferred Work
 
+### Optional MCP bootstrap capability
+
+The bounded optional `configuration.mcp: { manage: true }` is emitted only from the approved MCP catalog. The exact selected `cloudMcpConnections/action` endpoint must pass the original API capability inventory and actual Gateway descriptor audit. Namespace prefixes alone grant nothing. Request authentication and original account binding continue to govern the management Remote; no headers or stored token values enter bootstrap.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 - Production admission requires actual storage authority, recipe audit and account publication; these remain separate from metadata projection. `CloudAccountApi` and native dispatch/stream hooks are wired without substituting root policy. Unsealed ingress refuses business work. Library initialization and refusal tests do not establish S1/S2 or full F01 browser/WS success.

@@ -112,6 +112,7 @@ export interface BootstrapConfigurationField {
 export interface BootstrapConfiguration {
   readonly catalogVersion: string
   readonly remoteServers?: Readonly<{ manage: boolean }>
+  readonly mcp?: Readonly<{ manage: boolean }>
   readonly plugins: readonly BootstrapPlugin[]
   readonly skills: Readonly<{ manage: boolean
     /** Actual installed readonly binary routes; absence preserves the original JSON download limits. */

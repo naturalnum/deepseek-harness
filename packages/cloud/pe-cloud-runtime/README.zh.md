@@ -264,6 +264,10 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 
 账户原生 Agent 与子 Agent 的准入还要求使用原账户的 sandbox、PTC runtime 和终端登记器身份；预设不能遮蔽这些 provider。
 
+### 可选 HTTP MCP 入口
+
+通过 `approvedConfiguration.mcp`、显式有限的 `limits` 与 `runtime.reconnect`、精确的 authenticated-account RPC `cloudMcpConnections/action`（`handlerId: native:cloudMcpConnections`）及名为 `cordis:pe-cloud-mcp-connections` 的单个 profile 项选择启用。Root 组合原有 files/API/认证/保存 owner；首次经准入的管理读取或原生模型步骤恢复账号私有定义。移除此插件项会撤销 MCP 管理及其原生客户端；任意 npm 安装和 Loader 编辑继续关闭。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 生产准入要求完整的实际 Root/存储/原生组合；组件夹具不能确立生产 ready。

@@ -216,6 +216,10 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 
 ## 已知限制与后续工作
 
+### 可选 MCP bootstrap 能力
+
+有限的可选 `configuration.mcp: { manage: true }` 仅来自已批准的 MCP 目录。精确选择的 `cloudMcpConnections/action` 必须通过原 API 能力清单和实际 Gateway 描述符审核，命名空间前缀不授予能力。管理 Remote 继续受请求认证及原账号绑定约束，请求头及已存 Token 均不进入 bootstrap。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 - 生产准入要求真实存储权、配方审核及账户发布；这些前提独立于元数据投影。`CloudAccountApi` 及原生分派/流 hook 已接线，不以根策略替代。未 sealed 的 ingress 拒绝业务工作。库初始化及拒绝测试不代表 S1/S2 或完整 F01 浏览器/WS 成功。

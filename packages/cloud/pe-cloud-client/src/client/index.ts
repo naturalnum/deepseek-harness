@@ -1,3 +1,4 @@
+import { installCloudMcpConnections } from './mcp/index.ts'
 import { installCloudRemoteServers } from './remote-servers/install.ts'
 /** Browser Loader entry consuming the exact pre-Cordis prepared page owner. */
 import { installCloudApprovedSettings } from './approved-settings.ts'
@@ -34,6 +35,7 @@ export function apply(ctx: Context, config: Config): void {
   owner.activate(ctx)
   installCloudSubagentSettings(ctx, owner)
   installCloudRemoteServers(ctx, owner)
+  installCloudMcpConnections(ctx, owner)
   installCloudProjects(ctx)
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)

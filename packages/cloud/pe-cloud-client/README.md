@@ -184,6 +184,10 @@ The package appends or replaces no model-request tokens and issues no independen
 
 ## Known Limitations and Deferred Work
 
+### Account HTTP MCP settings
+
+When the original bootstrap declares `configuration.mcp.manage`, an optional contribution adds MCP connections to the native Settings shell. Ordinary users manage only their own services: HTTP/HTTPS URL, private Bearer token or custom headers, save/edit/enable/disable/remove and isolated test. Blank credential fields retain stored headers; explicit clearing removes them. Secrets exist only in the active form and submitted request, never account bootstrap, returned connection metadata or browser persistence. Account-page withdrawal clears the form. Agent calls and results use the original chat tool renderer and Session history.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 These limits remain outside local bootstrap and native-entry wiring.

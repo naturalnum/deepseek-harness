@@ -199,7 +199,7 @@ The optional [workspace upload consumer](src/workspace-upload.ts) requires an ex
 
 ### Optional account HTTP MCP assembly
 
-`AccountMcpConnections` mounts only the official `dsh-mcp-client` in the original account context. It restores enabled account-private definitions, joins client replacement and disposal, and checks account/Agent admission around MCP calls. Connection tests use a separate native registration scope and do not publish tools to models. HTTP and HTTPS endpoints are accepted; stdio and OAuth are not provided. This assembly helper does not expose a management endpoint or establish complete Cloud or Web activation.
+`AccountMcpConnections` mounts only the official `dsh-mcp-client` in the original account context. It restores enabled account-private definitions, joins client replacement and disposal, and checks account/Agent admission around MCP calls. Connection tests use a separate native registration scope and do not publish tools to models. HTTP and HTTPS endpoints are accepted; stdio and OAuth are not provided. `prepareCloudMcpConnections` optionally adds the authenticated `cloudMcpConnections/action` Remote: list, save, enable/disable, remove and isolated connection test. Headers are credential input only; returned metadata includes an epoch revision and discovery count. One original account save turn owns each mutation through native client application. Version or duplicate-name refusals publish nothing. The original native lifecycle observer keeps unconfirmed transport closure retained and prevents replacement. Actual Cloud deployment and browser acceptance require their separate integration evidence.
 
 <a id="model-experience"></a>
 ## Model Experience

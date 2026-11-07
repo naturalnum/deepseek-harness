@@ -1,3 +1,4 @@
+import { openMcpConnectionStore, type AccountMcpConnectionStore, type McpStoreLimits } from './mcp-connection-store.ts'
 import { openRemoteServerStore, type RemoteStoreLimits, type AccountRemoteServerStore } from './remote-server-store.ts'
 /** Graph-owned preparation installs the native Registry and its selected restricted filesystem in one account fiber. */
 import type { SkillProjectPort } from './skill-project-work.ts'
@@ -207,6 +208,19 @@ export class CloudAccountFiles extends Service {
     submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore> {
     this.assertInstalled(owner)
     return openRemoteServerStore(owner, this.binding, limits, () => { this.assertInstalled(owner) }, current, submit)
+  }
+
+  /** Open only the installed account's native private MCP definition and credential providers.
+   * @param owner Original account entry.
+   * @param limits Explicit store budgets.
+   * @param current Original business admission.
+   * @param submit Original serialized account save barrier.
+   * @returns Private HTTP MCP store; no network connection is opened.
+   */
+  mcpConnections(owner: Context, limits: McpStoreLimits, current: () => void,
+    submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountMcpConnectionStore> {
+    this.assertInstalled(owner)
+    return openMcpConnectionStore(owner, this.binding, limits, () => { this.assertInstalled(owner) }, current, submit)
   }
 
   private skillBundlePort(): SkillBundlePort {

@@ -103,6 +103,8 @@ export interface AccountNativePreparation {
   readonly reserveSubagent?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation
   readonly remoteServers?: Omit<import('@deepseek-ai/dsh-pe-cloud-api').CloudRemoteServerPreparation,
     'files' | 'assertBusinessCurrent' | 'assertToolCurrent'>
+  readonly mcp?: Omit<import('@deepseek-ai/dsh-pe-cloud-api').CloudMcpConnectionPreparation,
+    'files' | 'assertBusinessCurrent' | 'assertToolCurrent'>
   readonly modelKey?: CloudModelKeyPreparation
   readonly skills?: Omit<CloudSkillPreparation, 'files' | 'resources' | 'managed'> & {
     readonly managed: Omit<ManagedSkillPreparation, 'assertWorkspace' | 'resources'>
@@ -148,7 +150,7 @@ export interface AccountNativePreparation {
 export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account',
   execution: 'pe-cloud-execution-account',
-  remoteServers: 'pe-cloud-remote-servers', instructions: 'pe-account-instructions-session',
+  remoteServers: 'pe-cloud-remote-servers', mcp: 'pe-cloud-mcp-connections', instructions: 'pe-account-instructions-session',
   modelKey: 'pe-cloud-model-key', skills: 'pe-cloud-skills', plugins: 'pe-cloud-plugins', manager: 'pe-cloud-plugin-manager',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', presets: 'pe-cloud-agent-presets', llm: 'pe-cloud-llm',
@@ -219,7 +221,8 @@ export class AccountNativeIntegration {
     mountCurrent(binding)
     const modelKey = this.input.modelKey
     const mutable = modelKey !== undefined || this.input.skills !== undefined
-      || this.input.settingsWrites !== undefined || this.input.plugins !== undefined || this.input.remoteServers !== undefined
+      || this.input.settingsWrites !== undefined || this.input.plugins !== undefined
+      || this.input.remoteServers !== undefined || this.input.mcp !== undefined
     if (mutable && containSaveFailure === undefined) {
       throw new AccountRuntimeError('cloud/account-unavailable', 'Mutable account preparation requires original factory containment')
     }
@@ -621,6 +624,19 @@ export class AccountNativeIntegration {
               if (exec.agent === undefined) throw new AccountRuntimeError('cloud/stale-generation', 'Remote execution requires the original Agent')
               exec.signal.throwIfAborted(); requireGuards(owner).projectForAgent(exec.agent)
               assertStandardRemoteAgent(owner, exec.agent)
+            },
+          })
+        },
+      } },
+      ...input.mcp === undefined ? {} : { [ACCOUNT_NATIVE_ENTRIES.mcp]: {
+        inject: ['peCloudApi', 'peCloudFiles', 'storageDomain', 'credentials', 'tools', 'typert'],
+        apply: async (owner: Context) => {
+          if (filesOwner === undefined || input.mcp === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'MCP storage is unavailable')
+          await api.prepareCloudMcpConnections(owner, { ...input.mcp, files: filesOwner,
+            assertBusinessCurrent: () => { this.input.assertRootCurrent(); rootBusinessCurrent(binding) },
+            assertToolCurrent: (exec) => {
+              if (exec.agent === undefined) throw new AccountRuntimeError('cloud/stale-generation', 'MCP calls require the original Agent')
+              exec.signal.throwIfAborted(); requireGuards(owner).projectForAgent(exec.agent)
             },
           })
         },
