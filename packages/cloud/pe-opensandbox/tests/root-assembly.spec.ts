@@ -225,7 +225,7 @@ it.each([2, 3] as const)('resolves the original Files owner through the Root ass
     list: () => assignments, assertCurrent: () => {} }) : () => {}
   await actual.initializeStatic()
   f.releases.push(() => { actual.closeAdmission() })
-  const config = load(readFileSync(new URL('../../pe-cloud-files/tests/fixtures/root-pool.cordis.yml', import.meta.url), 'utf8')) as Array<{ id: string; config: unknown }>
+  const config = load(readFileSync(new URL('../../pe-cloud-files/tests/fixtures/root-pool.cordis.yml', import.meta.url), 'utf8')) as Array<{ id: string; config: FilesRoot.Config }>
   const poolConfig = config.find(entry => entry.id === 'files')?.config
   const pool = new LinuxFilesPool(FilesRoot.Config(poolConfig))
   // Only pool discovery is a composition seam; the returned Files owner and its complete verification are real.
