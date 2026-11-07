@@ -163,7 +163,7 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   const additionalTools: string[] = []
   if (hasAdditional) {
     const additions = row['additionalTools']
-    if (!Array.isArray(additions) || Object.getPrototypeOf(additions) !== Array.prototype || additions.length > 16
+    if (!Array.isArray(additions) || Object.getPrototypeOf(additions) !== Array.prototype || additions.length > 32
       || Reflect.ownKeys(additions).length !== additions.length + 1) refuse('commands.additionalTools')
     for (let index = 0; index < additions.length; index++) {
       const descriptor = Object.getOwnPropertyDescriptor(additions, String(index))

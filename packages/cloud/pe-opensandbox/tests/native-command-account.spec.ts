@@ -446,3 +446,43 @@ it('keeps the original terminal through Native final projection and joins its sa
   expect(f.reservations[0]?.releaseActive).toHaveBeenCalledTimes(1)
   expect(f.reservations[0]?.releaseResident).toHaveBeenCalledTimes(1)
 })
+
+
+it('reuses one native tool scope for sequential commands after their actual collected output has been copied and released', async () => {
+  const f = fixture({ allowedTools: ['research_workbench_execute'] }), call = { ...f.exec(), name: 'research_workbench_execute' }
+  f.setFactory(() => {
+    const entry = f.makeChannel()
+    entry.channel.commit.mockImplementation(async () => complete())
+    return entry
+  })
+  await f.owner.calls.run(call, async () => {
+    for (let index = 0; index < 8; index++) {
+      const op = f.create(); op.publish(); op.begin()
+      await op.handle.done; await op.handle.waitForExit()
+      expect(op.handle.collected.stdout?.readFrom(0).text).toBe('canonical output')
+      expect(f.reservations[index]?.releaseResident).not.toHaveBeenCalled()
+      op.handle.releaseCollected?.()
+      await vi.waitFor(() => { expect(f.reservations[index]?.releaseResident).toHaveBeenCalledTimes(1) })
+      expect(() => op.handle.collected.stdout?.readFrom(0)).toThrow()
+      expect(f.owner.calls.inspect()).toBe(1)
+    }
+    return result
+  })
+  f.owner.calls.release(call.token)
+  expect(f.root.reserve).toHaveBeenCalledTimes(8)
+  expect(f.reservations.every(row => row.releaseResident.mock.calls.length === 1)).toBe(true)
+})
+
+it('keeps actual range responsibility after an early collected-output release', async () => {
+  const f = fixture(), call = f.exec()
+  await f.owner.calls.run(call, async () => {
+    const op = f.create(); op.publish(); op.begin(); await op.handle.done
+    op.handle.releaseCollected?.()
+    expect(f.reservations[0]?.releaseResident).not.toHaveBeenCalled()
+    f.channels[0]?.poll.resolve(complete())
+    await op.whenEmpty
+    await vi.waitFor(() => { expect(f.reservations[0]?.releaseResident).toHaveBeenCalledTimes(1) })
+    return result
+  })
+  f.owner.calls.release(call.token)
+})

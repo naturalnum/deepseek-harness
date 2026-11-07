@@ -22,7 +22,9 @@ kind: "package-reference"
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
-Root 可显式配置 `commands.additionalTools`，选择至多十六个互不重复的小写原生工具名，并以相同顺序追加到 `allowedTools`。该字段不能重复或启用内置工具名。省略时保留原列表。此配置仅允许原生工具分派保留作用域；实际 Agent、Session、Workspace、账号代次、进程约束及受管执行检查仍然适用，不会创建 HTTP 执行路由。
+Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不重复的小写原生工具名，并以相同顺序追加到 `allowedTools`。该字段不能重复或启用内置工具名。省略时保留原列表。此配置仅允许原生工具分派保留作用域；实际 Agent、Session、Workspace、账号代次、进程约束及受管执行检查仍然适用，不会创建 HTTP 执行路由。
+
+收集输出的子进程句柄通过原有受管操作实现 `releaseCollected()`。原生工具可在同一作用域启动下一条命令前复制上一条命令的输出并结束其持有责任。只有实际执行范围和 I/O 均结束后才归还保留容量；提前释放会请求原有停止流程，未知工作继续保留责任。不调用该方法的原生工具仍由最终结果投影结束输出持有责任。
 
 -----
 

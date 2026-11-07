@@ -60,3 +60,5 @@ The optional Native `ProfileContext.entryAliases` keeps trusted launch-time entr
 The native attachment staging provider exposes a phase-scoped storage-capacity error for its own prepublication I/O only after its descriptor and temporary name are released. Cloud preserves that exact failure across its original mutation settlement and the original Native receipt mapping; it does not infer capacity from a source error, a queue reservation or a filesystem precheck.
 
 Independent account plugins reuse `CloudAccountApi.sessionProject(actualSession)` through Runtime's original `projectForSession` callback; missing callback or current business admission rejects access. This Host-only method creates no Session, Agent or execution authority.
+
+The native SubprocessHandle has optional `releaseCollected()`; Cloud collected handles delegate it to their original ManagedCommandOperation.release(). The consumer copies output first. Original range/I/O settlement retains reservations and unknown cleanup, so a single native research tool can run sequential workflow/Git commands without retaining every completed output until final projection.

@@ -59,3 +59,5 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 原生附件暂存提供方仅在释放自有描述符和临时名称后，对发布前自有 I/O 暴露带阶段的存储容量错误。Cloud 通过原修改结算和原生收据映射保留这一精确失败，不从源错误、队列预留或文件系统预检推定容量。
 
 独立账号插件通过 Runtime 原有的 `projectForSession` 回调复用 `CloudAccountApi.sessionProject(actualSession)`；缺少回调或当前业务准入时拒绝访问。该 Host 方法不创建 Session、Agent 或执行权限。
+
+原生 SubprocessHandle 增加可选 `releaseCollected()`；Cloud 收集输出句柄将其转交给原有 ManagedCommandOperation.release()。消费者先复制输出。原有执行范围和 I/O 结算继续持有容量及未知清理责任，使同一原生科研工具可顺序执行工作流或 Git 命令，而无需将全部已结束输出保留到最终投影。
