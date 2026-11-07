@@ -17,6 +17,8 @@ The runtime package owns [account identity and lifecycle types](../../packages/c
 
 `AccountStorageKey` is a stable, server-derived directory key. `AccountLayout` contains immutable absolute addresses for shared account data and a process-local rebuildable index; addresses establish neither existence, filesystem authority nor quota. `AccountMountInput` combines that layout with the exact graph binding, current process identity and native `LaunchEnvironmentSnapshot`. Runtime derives account and project candidates before files verifies or prepares them; default-project eligibility and registration remain native Workspace responsibilities.
 
+`StaticStorageDeploymentPlan` describes either the original fixed-account plans or an identity-free v3 `StaticStorageSlot` inventory. `StaticAccountAssignments` supplies Runtime’s stable user-to-slot bindings separately from physical facts; resolving an address does not issue a files lease. The [files reference](../../packages/cloud/pe-cloud-files/README.md) owns version decoding, measurement, capacity and withdrawal requirements.
+
 The private native boot adapter installs an independent `ProfileContext`, launch environment and account binding before mounting one native root Include. Port preparation receives the exact installed binding. After preparation, the adapter rechecks that lifetime before returning control to native boot; boot and disposal retain their actual Promises after a caller stops waiting. A mounted native tree still requires the factory's provider, save and exposure audits before it can serve an account.
 
 <a id="actual-work-and-capacity"></a>

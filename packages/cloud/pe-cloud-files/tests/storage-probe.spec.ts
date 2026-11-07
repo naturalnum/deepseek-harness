@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { accountEnvironmentBank, parseStaticStoragePlan, parseStorageProbeFrame, staticStorageReservation } from '../src/storage-probe.ts'
+import { accountEnvironmentBank, parseStaticStoragePlan, parseStorageDeploymentPlan, parseStorageProbeFrame,
+  staticStorageReservation } from '../src/storage-probe.ts'
 import { RootStorageOwner, validateStorageView, type StaticAccountStorageLease, type StaticStorageDriver } from '../src/storage-owner.ts'
 import { storageRequest, createStorageWorker } from '../src/storage-worker.ts'
 import { skillRestartProof, skillRevalidationProof } from './fixtures/skill-revalidation-proof.ts'
 import { createSkillProjectWork, type SkillProjectWork } from '../src/skill-project-work.ts'
 import type { FdWorkerClient } from '../src/worker-client.ts'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
-import type { StaticStorageConfig, StorageProbeFacts } from '../src/storage-types.ts'
+import type { StaticStorageAccount, StaticStorageConfig, StaticAccountAssignment, StorageProbeFacts } from '../src/storage-types.ts'
 import type { PoolReadPort } from '../src/worker-pool.ts'
 
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
@@ -33,6 +34,17 @@ function rawV2() {
       return { slotId, domain: actual }
     }) } })) }
 }
+function rawV3() {
+  const { accounts: _accounts, ...base } = raw()
+  return { ...base, version: 3, maxAccounts: 3, slots: [1, 2, 3].map((index) => {
+    const storageKey = `v1-${String(index).repeat(64)}`, accountRoot = `/accounts/${storageKey}`
+    return { slotId: `account-slot-${index}`, templateId: 'standard', storageKey, accountRoot,
+      private: { ...domain(2 * index + 1), rootPath: `${accountRoot}/private` },
+      projects: { ...domain(2 * index + 2), rootPath: `${accountRoot}/projects` },
+      environmentBank: { bankId: `bank-${index}`, mode: 'session-directories',
+        slots: [{ slotId: 'slot-0', domain: { ...domain(100 + index), rootPath: `${accountRoot}/environments/slot-0` } }] } }
+  }) }
+}
 const config: StaticStorageConfig = { planPath: '/deployment/plan.json', planSha256: '1'.repeat(64),
   probeHelperPath: '/deployment/storage.node', probeHelperSha256: '2'.repeat(64), maxProbeAssetBytes: 1024,
   maxPlanBytes: 16384, maxMountInfoBytes: 16384, rootProbeReservationBytes: 2_000_000, probeTimeoutMs: 1000 }
@@ -52,6 +64,32 @@ function frame(): Uint8Array<ArrayBuffer> {
 }
 
 describe('static protected record parsing without storage authority', () => {
+  it('decodes an immutable identity-free v3 inventory without changing the legacy parser', () => {
+    const original = rawV3(), parsed = parseStorageDeploymentPlan(encode(original), 1024)
+    if (parsed.version !== 3) throw new Error('Expected the v3 physical inventory')
+    expect(parsed.slots).toHaveLength(3)
+    expect(parsed.slots.map(slot => slot.templateId)).toEqual(['standard', 'standard', 'standard'])
+    expect(Object.hasOwn(parsed, 'accounts')).toBe(false)
+    expect(Object.isFrozen(parsed.slots[0]?.private.backing)).toBe(true)
+    original.slots[0]!.templateId = 'changed'
+    expect(parsed.slots[0]?.templateId).toBe('standard')
+    expect(() => parseStaticStoragePlan(encode(rawV3()), 1024)).toThrow()
+  })
+  it('rejects v3 identity claims, duplicate slots, wrong capacity and paths outside the selected slot', () => {
+    const changes: Array<(record: ReturnType<typeof rawV3>) => void> = [
+      (value) => { value.maxAccounts = 2 }, (value) => { value.maxAccounts = 4 }, (value) => { value.slots = [] },
+      (value) => { value.slots[1] = value.slots[0]! },
+      (value) => { value.slots[1]!.storageKey = value.slots[0]!.storageKey },
+      (value) => { value.slots[0]!.projects.rootPath = '/another-account/projects' },
+      (value) => { value.slots[0]!.environmentBank.slots[0]!.domain.rootPath = '/another-account/environments/slot-0' },
+      (value) => { Object.assign(value.slots[0]!, { accountId: 'browser-chosen-user' }) },
+      (value) => { Object.assign(value, { accounts: [] }) },
+    ]
+    for (const change of changes) {
+      const value = rawV3(); change(value)
+      expect(() => parseStorageDeploymentPlan(encode(value), 1024)).toThrow()
+    }
+  })
   it('detaches and freezes exactly two assignments while preserving u64 facts', () => {
     const record = raw()
     record.arena.backing.device = '18446744073709551615'
@@ -180,19 +218,28 @@ describe('two retained static preparations with serial verification', () => {
     vi.unstubAllGlobals()
   })
 
-  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> = raw(), withSkillProof = false,
+  async function fixture(record: ReturnType<typeof raw> | ReturnType<typeof rawV2> | ReturnType<typeof rawV3> = raw(),
+    withSkillProof = false,
     collection = false, normalRestart = false, recordSha256?: string) {
-    record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = record.version === 2 ? '131072' : '65536'
-    for (const row of record.accounts) {
+    record.arena.minimumBytes = record.arena.maximumBytes = record.arena.backing.bytes = record.version === 3 ? '262144'
+      : record.version === 2 ? '131072' : '65536'
+    const declared = 'slots' in record ? record.slots : record.accounts
+    for (const row of declared) {
       row.private.rootPath = `${row.accountRoot}/private`
       row.projects.rootPath = `${row.accountRoot}/projects`
       if (withSkillProof) for (const d of [row.private, row.projects]) { d.minimumBytes = d.maximumBytes = '8192'; d.minimumInodes = d.maximumInodes = '100' }
     }
-    const extras = record.accounts.flatMap(row => 'environmentBank' in row ? row.environmentBank.slots.map(slot => slot.domain) : [])
-    for (const domain of [record.control, ...record.accounts.flatMap(row => [row.private, row.projects]), ...extras]) {
+    const extras = declared.flatMap(row => 'environmentBank' in row ? row.environmentBank.slots.map(slot => slot.domain) : [])
+    for (const domain of [record.control, ...declared.flatMap(row => [row.private, row.projects]), ...extras]) {
       domain.backing.device = record.arena.rootDevice
     }
-    const encoded = encode(record), plan = parseStaticStoragePlan(encoded, 1024)
+    const encoded = encode(record), deployment = parseStorageDeploymentPlan(encoded, 1024)
+    const selected = deployment.version === 3 ? deployment.slots.map((slot, index): StaticStorageAccount => ({
+      ...slot, accountId: `account-${index + 1}` as StaticStorageAccount['accountId'],
+    })) : deployment.accounts
+    const [firstAccount, secondAccount, ...remaining] = selected
+    if (firstAccount === undefined || secondAccount === undefined) throw new Error('Fixture requires at least two accounts')
+    const plan = { ...deployment, accounts: [firstAccount, secondAccount, ...remaining] as const }
     const domains = [plan.arena, plan.control, ...plan.accounts.flatMap(row => [row.private, row.projects,
       ...accountEnvironmentBank(row)?.slots.map(slot => slot.domain) ?? []])]
     const facts = new Map<string, StorageProbeFacts>()
@@ -232,6 +279,15 @@ describe('two retained static preparations with serial verification', () => {
     } satisfies StaticStorageDriver
     const owner = new RootStorageOwner({ ...config, planSha256, ...withSkillProof ? { skillRevalidation: { proofPath: '/deployment/cold-skill.json',
       proofSha256: createHash('sha256').update(proofBytes).digest('hex') } } : {} }, 1024, driver, collection ? 2 : 1)
+    const assignments = new Map<StaticStorageAccount['accountId'], StaticAccountAssignment>()
+    let withdrawAssignments = () => {}
+    if (deployment.version === 3) {
+      for (const [index, account] of plan.accounts.entries()) assignments.set(account.accountId, Object.freeze({
+        accountId: account.accountId, slotId: deployment.slots[index]!.slotId, revision: '1',
+      }))
+      withdrawAssignments = owner.installAccountAssignments({ lookup: id => assignments.get(id), list: () => [...assignments.values()],
+        assertCurrent: (assignment) => { if (assignments.get(assignment.accountId) !== assignment) throw new Error('Assignment revoked') } })
+    }
     owners.push(owner)
     await owner.initializeStatic()
     const probePaths = driver.probe.mock.calls.map(call => call[0])
@@ -254,8 +310,49 @@ describe('two retained static preparations with serial verification', () => {
       pending.push(result)
       return result
     }
-    return { owner, driver, facts, plan, encoded, proofBytes, controllers, inputs, prepare, probePaths }
+    return { owner, driver, facts, plan, encoded, proofBytes, controllers, inputs, prepare, probePaths, assignments, withdrawAssignments }
   }
+
+  it('prepares three v3 accounts only through original bindings and retains data after lease close', async () => {
+    const f = await fixture(rawV3())
+    expect(f.owner.staticInventory()).toEqual({ sha256: createHash('sha256').update(f.encoded).digest('hex'), maxAccounts: 3,
+      slots: [1, 2, 3].map(index => ({ slotId: `account-slot-${index}`, templateId: 'standard' })) })
+    expect(JSON.stringify(f.owner.staticInventory())).not.toContain('/accounts/')
+    const leases = await Promise.all(f.inputs.map(input => f.prepare(input)))
+    expect(leases).toHaveLength(3)
+    for (const lease of leases) lease.assertCurrent()
+    expect(() => f.prepare({ ...f.inputs[0]!, layout: f.inputs[1]!.layout })).toThrow()
+    for (const lease of leases) await lease.closeAfterActualDrain()
+    expect(f.driver.joinEpoch).not.toHaveBeenCalled()
+    expect(f.facts.has(f.plan.accounts[0].private.rootPath)).toBe(true)
+  })
+
+  it('revokes v3 admission on binding replacement or registry withdrawal without inventing cleanup', async () => {
+    const f = await fixture(rawV3()), input = f.inputs[0]!
+    const lease = await f.prepare(input), original = f.assignments.get(input.binding.accountId)
+    if (original === undefined) throw new Error('Expected fixture binding')
+    f.assignments.set(original.accountId, Object.freeze({ ...original, revision: '2' }))
+    expect(() => lease.assertCurrent()).toThrow()
+    expect(() => f.owner.resolveAccountStorage(original.accountId)).toThrow()
+    f.assignments.set(original.accountId, original)
+    lease.assertCurrent()
+    f.withdrawAssignments(); f.withdrawAssignments()
+    expect(() => lease.assertCurrent()).toThrow()
+    await lease.closeAfterActualDrain()
+    expect(() => f.owner.installAccountAssignments({ lookup: () => undefined, list: () => [], assertCurrent: () => {} })).toThrow()
+  })
+
+  it('checks unassigned v3 physical slots and rejects nonpreallocated backing before issuing another lease', async () => {
+    const f = await fixture(rawV3()), unassigned = f.plan.accounts[2]
+    if (unassigned === undefined) throw new Error('Expected third physical slot')
+    f.assignments.delete(unassigned.accountId)
+    expect(() => f.owner.resolveAccountStorage(unassigned.accountId)).toThrow()
+    const backing = f.facts.get(unassigned.private.backing.path)
+    if (backing === undefined) throw new Error('Expected backing measurement')
+    f.facts.set(unassigned.private.backing.path, { ...backing, allocatedBytes: '1' })
+    await expect(f.prepare(f.inputs[0]!)).rejects.toThrow()
+    expect(() => f.owner.assertRootCurrent()).toThrow()
+  })
 
   it('accepts the original next owner when Root proof was fixed before the recipient identity existed', async () => {
     // Free39 reproduced the startup cycle here; the proof contains only prior terminal/record/volume facts.
