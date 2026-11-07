@@ -52,7 +52,7 @@ Worker 启动失败仅向 stderr 写入固定初始化阶段及白名单中的�
 
 Root 在物理校验后、冷技能证明解析前初始化 Runtime 的持久账号分配。此回调只接收已验证清单和原始账号分配注册函数。上述工作与证明校验完成前，Files 准入保持关闭；失败或关闭过程不会开放准入。旧版计划跳过此回调。
 
-Runtime 通过 `RootStorageOwner.installAccountAssignments` 安装唯一的 `StaticAccountAssignments` 登记器。其稳定分配对象将已认证用户关联到槽位；工作流状态变化不替换该对象。`staticInventory()` 仅返回稳定物理清单摘要、容量及槽位/模板 ID。`resolveAccountStorage()` 返回实测地址，不授予访问权限。原准备及租约检查保留精确分配，拒绝登记器撤销、身份变化或另一账号的布局；实际排空继续保留持久域。显式选择冷启动技能证明时，证明仍匹配登记器中有界且当前有效的分配。
+Runtime 通过 `RootStorageOwner.installAccountAssignments` 安装唯一的 `StaticAccountAssignments` 登记器。其稳定分配对象将已认证用户关联到槽位；工作流状态变化不替换该对象。`staticInventory()` 仅返回稳定物理清单摘要、容量及槽位/模板 ID。`resolveAccountStorage(accountId, expectedPlanSha256?)` 返回实测地址，不授予访问权限。跨所有者的执行调用方必须提供当前命名空间完整部署记录的精确 SHA；同一次当前所有者读取在解析分配前拒绝不匹配的 pin。受信任的纯地址读取可省略该参数。此部署 pin 与持久物理清单摘要相互独立。原准备及租约检查保留精确分配，拒绝登记器撤销、身份变化或另一账号的布局；实际排空继续保留持久域。显式选择冷启动技能证明时，证明仍匹配登记器中有界且当前有效的分配。
 
 v3 关联摘要按账号及环境槽位 ID 规范排序，包含存储键、模板、路径、根 inode、字节/inode 限制、bank ID/模式、应用 UID/GID、arena 预留及物理 backing 身份。子域 backing 设备以已验证 arena backing 身份表示；实测仍要求其等于当前 arena 设备。摘要排除命名空间 mount ID、临时 loop 根设备及代码部署字段。同一物理清单重新量测后，即使完整计划摘要不同，也可恢复既有分配；替换 backing、配额或槽位会拒绝既有绑定。此摘要不授予 Files 访问。Files 仍固定并验证完整当前计划及每个物理域；OpenSandbox 保留完整计划摘要固定。
 

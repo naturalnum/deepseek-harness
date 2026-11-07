@@ -217,10 +217,13 @@ export class RootStorageOwner {
   /**
    * Resolve Runtime's current account assignment against already measured physical domains.
    * @param accountId Server-authenticated user identity supplied by trusted Runtime.
+   * @param expectedPlanSha256 Exact namespace deployment-record pin for cross-owner execution consumers.
+   * Omission reads trusted addresses without a pin.
    * @returns Immutable addresses only; callers still need the original preparation and installed binding.
    */
-  resolveAccountStorage(accountId: AccountId): StaticStorageAccount {
+  resolveAccountStorage(accountId: AccountId, expectedPlanSha256?: string): StaticStorageAccount {
     this.assertRootCurrent()
+    if (expectedPlanSha256 !== undefined && expectedPlanSha256 !== this.config.planSha256) failure()
     const plan = this.plan
     if (plan === undefined) failure()
     if (plan.version !== 3) return plan.accounts.find(row => row.accountId === accountId) ?? failure()

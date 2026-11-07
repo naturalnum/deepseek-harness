@@ -102,10 +102,10 @@ export async function apply(ctx: Context, config: Config, deployment?: ManagedEx
         if (work.closed || ctx.fiber.uid === null) throw new ExecutionStateError('cloud/execution-unavailable', 'Root deployment construction was cancelled.')
         return module.assembleRootExecutionDeployment(reference, limits, (accountId, digest) => {
           const storage = ctx.root.get('peFilesPool')?.requireStorageOwner()
-          if (storage === undefined || storage.staticInventory()?.sha256 !== digest) {
+          if (storage === undefined) {
             throw new ExecutionStateError('cloud/execution-unavailable', 'The original static account inventory is unavailable.')
           }
-          const account = storage.resolveAccountStorage(accountId)
+          const account = storage.resolveAccountStorage(accountId, digest)
           if (account === undefined || !('environmentBank' in account)) {
             throw new ExecutionStateError('cloud/execution-unavailable', 'The authentic account has no execution storage.')
           }

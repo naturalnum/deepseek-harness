@@ -1,4 +1,12 @@
 /** Real Cordis/Root entry with assembly/coordinator seams: component evidence only, not actual CLI, PG, FD4 or SDK. */
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { load } from 'js-yaml'
+import { LinuxFilesPool } from '../../pe-cloud-files/src/worker-pool.ts'
+import * as FilesRoot from '../../pe-cloud-files/src/root.ts'
+import { staticStorageProtocol } from '../../pe-cloud-files/tests/fixtures/static-storage-lifetime.ts'
+import type { StaticAccountAssignment } from '../../pe-cloud-files/src/storage-types.ts'
+import type { SharedStorageAccountResolver } from '../src/shared-mounts.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
@@ -167,4 +175,76 @@ it('still closes the assembly after coordinator cleanup fails and lets Cordis re
   expect(seam.events.slice(-2)).toEqual(['coordinator-close', 'assembly-close'])
   expect(f.assembly.closeActual).toHaveBeenCalledOnce()
   expect(logged).toHaveBeenCalledWith(failure)
+})
+
+
+it.each([2, 3] as const)('resolves the original Files owner through the Root assembly callback with the complete v%s plan pin', async (version) => {
+  vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }))
+  onTestFinished(() => { vi.unstubAllGlobals() })
+  const f = fixture(), base = staticStorageProtocol(), encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+  const accounts = base.record.accounts.map((account, index) => ({ ...account,
+    environmentBank: { bankId: `bank-${index}`, slots: [0, 1].map((slot) => {
+      const id = 7 + index * 2 + slot
+      return { slotId: `slot-${slot}`, domain: { ...account.projects,
+        rootPath: `${account.accountRoot}/environments/slot-${slot}`, rootDevice: String(id), rootMountId: String(id + 10),
+        backing: { ...account.projects.backing, path: `/backing-${id}`, inode: String(id + 20) } } }
+    }) },
+  }))
+  const { accounts: _accounts, ...fields } = base.record
+  const common = { ...fields, arena: { ...fields.arena, minimumBytes: '131072', maximumBytes: '131072',
+    backing: { ...fields.arena.backing, bytes: '131072' } } }
+  const record = version === 2 ? { ...common, version, accounts } : { ...common, version, maxAccounts: 2,
+    slots: accounts.map(({ accountId: _accountId, ...account }, index) => ({ ...account, slotId: `account-${index}`, templateId: 'standard' })) }
+  const encoded = encode(record), digest = createHash('sha256').update(encoded).digest('hex')
+  const plan = FilesRoot.parseStorageDeploymentPlan(encoded, 4096)
+  const domains = [common.arena, common.control, ...accounts.flatMap(account => [account.private, account.projects,
+    ...account.environmentBank.slots.map(slot => slot.domain)])]
+  const facts = { ...base.facts }
+  for (const [index, domain] of domains.entries()) {
+    const sample = base.facts[index < 2 ? base.record.arena.rootPath : base.record.accounts[0]!.projects.rootPath]!
+    facts[domain.rootPath] = { ...sample, device: domain.rootDevice, inode: domain.rootInode, mountId: domain.rootMountId,
+      blocks: String(BigInt(domain.maximumBytes) / 4096n), availableBlocks: index === 0 ? '32' : '1' }
+    facts[domain.backing.path] = { ...base.facts[base.record.arena.backing.path]!, device: domain.backing.device,
+      inode: domain.backing.inode, size: domain.backing.bytes, allocatedBytes: domain.backing.bytes }
+  }
+  const mounts = ['1 0 8:0 / / ro - ext4 /dev/test-root ro', ...domains.map((domain, index) =>
+    `${domain.rootMountId} 1 8:${index + 1} / ${domain.rootPath} rw - ext4 /dev/test-${index} rw`)].join('\n')
+  const raw = (text: string) => new TextEncoder().encode(text)
+  // The existing protected record/probe driver is external; no Files initialization or resolver is mocked.
+  const view = { mountInfo: raw(mounts), status: raw(base.status) }
+  // Install only the original driver's proc observations through its declared constructor input.
+  const driver = { record: async () => encoded, probe: async (path: string) => {
+    const fact = facts[path]; if (fact === undefined) throw new Error('Unexpected probe'); return fact
+  }, view: async () => view, assertPoolCurrent: () => {},
+  bind: () => { throw new Error('No account lane in Root resolver component') }, joinEpoch: async () => {} }
+  const actual = new FilesRoot.RootStorageOwner({ ...base.config, planSha256: digest }, 4096, driver)
+  const assignments = accounts.map((account, index): StaticAccountAssignment => ({
+    accountId: brandString<AccountBinding['accountId']>(account.accountId), slotId: `account-${index}`, revision: '1',
+  }))
+  const withdraw = version === 3 ? actual.installAccountAssignments({ lookup: id => assignments.find(row => row.accountId === id),
+    list: () => assignments, assertCurrent: () => {} }) : () => {}
+  await actual.initializeStatic()
+  f.releases.push(() => { actual.closeAdmission() })
+  const config = load(readFileSync(new URL('../../pe-cloud-files/tests/fixtures/root-pool.cordis.yml', import.meta.url), 'utf8')) as Array<{ id: string; config: unknown }>
+  const poolConfig = config.find(entry => entry.id === 'files')?.config
+  const pool = new LinuxFilesPool(FilesRoot.Config(poolConfig))
+  // Only pool discovery is a composition seam; the returned Files owner and its complete verification are real.
+  vi.spyOn(pool, 'requireStorageOwner').mockImplementation(() => { actual.assertRootCurrent(); return actual })
+  f.releases.push(f.ctx.provide('peFilesPool', pool))
+  await root.apply(f.ctx, selection())
+  const resolve = seam.assemble.mock.calls[0]?.[2] as SharedStorageAccountResolver | undefined
+  if (resolve === undefined) throw new Error('Original Root resolver not installed')
+  const id = assignments[0]!.accountId, selected = actual.resolveAccountStorage(id)
+  expect(resolve(id, digest)).toBe(selected)
+  expect(() => resolve(id, 'f'.repeat(64))).toThrow()
+  expect(actual.resolveAccountStorage(id)).toBe(selected)
+  if (plan.version === 3) {
+    const physical = actual.staticInventory()?.sha256
+    expect(physical).not.toBe(digest)
+    expect(() => resolve(id, physical!)).toThrow()
+    withdraw()
+    expect(() => resolve(id, digest)).toThrow()
+  } else expect(actual.staticInventory()).toBeUndefined()
+  actual.closeAdmission()
+  expect(() => resolve(id, digest)).toThrow()
 })

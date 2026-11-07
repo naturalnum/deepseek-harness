@@ -354,6 +354,23 @@ describe('two retained static preparations with serial verification', () => {
     legacy.owner.assertRootCurrent()
   })
 
+  it.each([rawV2, rawV3])('keeps namespace plan pins separate from physical inventory and unpinned trusted address reads', async (record) => {
+    const f = await fixture(record()), id = f.inputs[0]!.binding.accountId
+    const digest = createHash('sha256').update(f.encoded).digest('hex')
+    const account = f.owner.resolveAccountStorage(id)
+    expect(f.owner.resolveAccountStorage(id, digest)).toBe(account)
+    expect(() => f.owner.resolveAccountStorage(id, 'f'.repeat(64))).toThrow()
+    expect(f.owner.resolveAccountStorage(id)).toBe(account)
+    if (f.plan.version === 3) {
+      expect(f.owner.staticInventory()?.sha256).not.toBe(digest)
+      f.withdrawAssignments()
+      expect(() => f.owner.resolveAccountStorage(id, digest)).toThrow()
+    } else expect(f.owner.staticInventory()).toBeUndefined()
+    f.owner.closeAdmission()
+    expect(() => f.owner.resolveAccountStorage(id, digest)).toThrow()
+    expect(() => f.owner.resolveAccountStorage(id)).toThrow()
+  })
+
   it('prepares three v3 accounts only through original bindings and retains data after lease close', async () => {
     const f = await fixture(rawV3())
     expect(f.owner.staticInventory()).toMatchObject({ maxAccounts: 3,
@@ -379,6 +396,12 @@ describe('two retained static preparations with serial verification', () => {
     const second = await fixture(remounted)
     expect(first.encoded).not.toEqual(second.encoded)
     expect(first.owner.staticInventory()).toEqual(second.owner.staticInventory())
+    const firstPin = createHash('sha256').update(first.encoded).digest('hex')
+    const secondPin = createHash('sha256').update(second.encoded).digest('hex')
+    const id = first.inputs[0]!.binding.accountId
+    expect(first.owner.resolveAccountStorage(id, firstPin)).toBe(first.owner.resolveAccountStorage(id))
+    expect(() => first.owner.resolveAccountStorage(id, secondPin)).toThrow()
+    expect(second.owner.resolveAccountStorage(id, secondPin)).toBe(second.owner.resolveAccountStorage(id))
     expect(second.probePaths).toContain(remounted.slots[2]!.environmentBank.slots[0]!.domain.backing.path)
     const lease = await second.prepare(second.inputs[2]!)
     lease.assertCurrent(); await lease.closeAfterActualDrain()
