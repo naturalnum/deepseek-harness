@@ -19,6 +19,8 @@ Choose exactly which native RPCs, logical streams, Fetch routes, and settings fi
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+`withPeerUse(peer, consume)` forwards plugin work to the original login registry and its retained AccountUse. It checks exact account binding, current Peer, business admission and graph around actual settlement; copied Peers, revoked logins, foreign accounts and missing preparation reject. It creates no new borrow or release owner.
+
 -----
 
 <a id="use-this-package"></a>

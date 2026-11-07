@@ -105,6 +105,7 @@ export interface AccountNativePreparation {
     'files' | 'assertBusinessCurrent' | 'assertToolCurrent'>
   readonly mcp?: Omit<import('@deepseek-ai/dsh-pe-cloud-api').CloudMcpConnectionPreparation,
     'files' | 'assertBusinessCurrent' | 'assertToolCurrent'>
+  readonly withPeerUse?: import('@deepseek-ai/dsh-pe-cloud-api').ModelKeyPeerConsumer['withModelKeyPeerUse']
   readonly modelKey?: CloudModelKeyPreparation
   readonly skills?: Omit<CloudSkillPreparation, 'files' | 'resources' | 'managed'> & {
     readonly managed: Omit<ManagedSkillPreparation, 'assertWorkspace' | 'resources'>
@@ -241,6 +242,8 @@ export class AccountNativeIntegration {
       },
       assertBusinessCurrent: (current) => { rootBusinessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
+      sessionProject: session => requireGuards(ctx).projectForSession(session),
+      ...this.input.withPeerUse === undefined ? {} : { withPeerUse: this.input.withPeerUse },
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
       retainOfficeLifecycle: (office) => {
         if (this.office !== undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Office lifecycle is already retained')

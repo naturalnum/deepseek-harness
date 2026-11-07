@@ -19,6 +19,8 @@ kind: "package-reference"
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+`withPeerUse(peer, consume)` 将插件工作转交给原有登录注册表及其持有的 AccountUse。在实际工作前后复查精确账号绑定、当前 Peer、业务准入和账号图；复制的 Peer、已撤销登录、其他账号及缺失准备回调均被拒绝。它不创建新的借用或释放责任。
+
 -----
 
 <a id="use-this-package"></a>

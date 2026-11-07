@@ -119,6 +119,7 @@ it('uses actual Peer identity, strict Remote input and serial versions across tw
       owner.provide(DSH_LAUNCH_ENVIRONMENT_KEY,new AccountModelKeyEnvironment(createLaunchEnvironmentSnapshot([{ source:'process',values:{ [REF]:'ambient-must-not-run' } }]), [REF]))
       barrier=saves.createAccount(binding,{ references:[REF],maxReferences:1,maxReferenceBytes:64 })
       api=new CloudAccountApi(owner,{ binding,saves:barrier,rootExposure:exposure,selected:exposure.manifest,
+        withPeerUse:(peer,consume)=>peers.withOriginalUse(peer,()=>{},consume),
         assertMountCurrent(){lifetime.signal.throwIfAborted()},assertBusinessCurrent(){lifetime.signal.throwIfAborted()} })
       const actual=api
       Object.assign(owner.loader.builtins,{ editor:actual.providers.configEditor,credentials:actual.providers.credentials,
@@ -145,6 +146,9 @@ it('uses actual Peer identity, strict Remote input and serial versions across tw
   }
   const a=rows[0]!,b=rows[1]!,pa=handles[0]!,pb=handles[1]!
   const call=<T>(row:typeof a,peer:PeerScope,method:string,request?:unknown)=>row.ctx.typertGateway.invoke({ namespace:'cloudModelKey',method,args:request===undefined?{}:{ request },peer }) as Promise<T>
+  await expect(a.api.withPeerUse(pa.peer,async use=>use.binding.accountId)).resolves.toBe('a')
+  await expect(a.api.withPeerUse(pb.peer,async()=>null)).rejects.toBeDefined()
+  await expect(a.api.withPeerUse({ ...pa.peer },async()=>null)).rejects.toBeDefined()
   const metadata=await call<ModelKeyMetadata>(a,pa.peer,'metadata');expect(metadata.settings.writable).toBe(false)
   expect(metadata.settings.namespaces[0]?.value).toEqual(a.ctx.get('settings')?.describe({ redactSecrets:true }).find(row=>row.ns==='provider')?.value)
   expect(metadata.settings.namespaces[0]?.value).toMatchObject({ apiKeyEnv:REF,models:[{ id:MODEL }] })
@@ -197,6 +201,7 @@ it('uses actual Peer identity, strict Remote input and serial versions across tw
     expect(releases.get('a')??0).toBe(0)
   }finally{release.resolve(undefined)}
   await blocking;await refused;await closing
+  await expect(a.api.withPeerUse(pa.peer,async()=>null)).rejects.toBeDefined()
   expect(await a.ctx.credentials.describe(REF)).toMatchObject({ configured:false })
   expect(a.barrier.snapshot().failures).toEqual([])
   await expect(call(a,pa.peer,'describe',{ ref:REF })).rejects.toBeDefined()

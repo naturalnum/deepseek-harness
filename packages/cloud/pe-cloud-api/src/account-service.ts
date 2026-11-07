@@ -15,6 +15,10 @@ import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
+import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { prepareAccountApiInstall, type AccountApiInstall } from './account-install.ts'
 import { CloudApiError } from './errors.ts'
 import { bindModelKeyAccess, type ModelKeyAccess } from './model-key.ts'
@@ -65,6 +69,10 @@ export interface AccountApiPreparation {
   readonly timeFileInventory?: (work: () => void) => void
   /** Read the original shared project/Preset/default-model policy; absence keeps bootstrap assertions closed. */
   readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>
+  /** Original Runtime policy over the actual attached native Session; omission keeps plugin Session access closed. */
+  /** Original login registry callback; no new AccountUse or release owner is created. */
+  readonly withPeerUse?: ModelKeyPeerConsumer['withModelKeyPeerUse']
+  readonly sessionProject?: (session: Session) => Workspace
   /**
    * Recheck original Root registration; trusted assembly only, never Loader/client input.
    * @returns Actual exact Fetch routes within maxNativeInventoryEntries after original registration checks.
@@ -111,6 +119,8 @@ export class CloudAccountApi extends Service {
   private readonly timeFileInventory: AccountApiPreparation['timeFileInventory']
   private readonly rootFetch: AccountApiPreparation['inspectRootFetch']
   private readonly bootstrapCurrent: AccountApiPreparation['assertBootstrapCurrent']
+  private readonly consumePeer: AccountApiPreparation['withPeerUse']
+  private readonly resolveSessionProject: AccountApiPreparation['sessionProject']
   private readonly maxNativeInventoryEntries: AccountApiPreparation['maxNativeInventoryEntries']
   private readonly unpublished: AccountApiPreparation['assertUnpublished']
   private readonly reconfiguring: AccountApiPreparation['assertReconfiguring']
@@ -165,6 +175,8 @@ export class CloudAccountApi extends Service {
     this.timeFileInventory = input.timeFileInventory
     this.rootFetch = input.inspectRootFetch
     this.bootstrapCurrent = input.assertBootstrapCurrent
+    this.resolveSessionProject = input.sessionProject
+    this.consumePeer = input.withPeerUse
     this.maxNativeInventoryEntries = input.maxNativeInventoryEntries
     this.unpublished = input.assertUnpublished
     this.reconfiguring = input.assertReconfiguring
@@ -369,6 +381,43 @@ export class CloudAccountApi extends Service {
     if (!selected.some(row => row.endpoint === endpoint)) return false
     const row = mode === 'rpc' ? this.installation.exposure.requireRpc(endpoint) : this.installation.exposure.requireStream(endpoint)
     return this.capabilityInventories.assertEndpoint(this.ctx, row, mode)
+  }
+
+  /**
+   * Join plugin work to the original login Peer's retained AccountUse without borrowing another graph.
+   * @param peer Actual Gateway invocation Peer; copies and client identifiers grant no access.
+   * @param consume Actual plugin work with the original current check, retained until settlement.
+   * @returns Original login operation settlement, rechecked against this exact graph before returning.
+   */
+  async withPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
+    this.admit()
+    const delegate = this.consumePeer
+    if (delegate === undefined) this.nativeUnavailable()
+    return await delegate(peer, async (use, originalCurrent) => {
+      const check = (): void => {
+        originalCurrent(); use.assertCurrent(); this.admit()
+        if (use.binding !== this.binding || use.context.root !== this.ctx.root) this.nativeUnavailable()
+        this.assertInstalled(use.context)
+      }
+      check()
+      const value = await consume(use, check)
+      check()
+      return value
+    })
+  }
+
+  /**
+   * Reuse Runtime's original native Session/project admission for an account plugin operation.
+   * @param session Actual native Session, never a path-derived or browser-constructed object.
+   * @returns The original registered Workspace; this creates no project, Agent or execution scope.
+   */
+  sessionProject(session: Session): Workspace {
+    this.admit()
+    const resolve = this.resolveSessionProject
+    if (resolve === undefined) this.nativeUnavailable()
+    const workspace = resolve(session)
+    this.admit()
+    return workspace
   }
 
   /**
