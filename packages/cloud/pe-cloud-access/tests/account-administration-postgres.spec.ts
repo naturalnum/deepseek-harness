@@ -16,7 +16,7 @@ describe.skipIf(configPath === undefined)('real account administration with Post
     if (configPath === undefined) throw new Error('Isolated database configuration required')
     const connection: pg.PoolConfig = JSON.parse(readFileSync(configPath, 'utf8'))
     connection.database = 'dsh_account_management'
-    const pool = new pg.Pool({ ...connection, max: 6, connectionTimeoutMillis: 2000, statement_timeout: 5000 })
+    const pool = new pg.Pool({ ...connection, max: 2, connectionTimeoutMillis: 2000, statement_timeout: 5000 })
     let adapter: BetterAuthAccess | undefined
     const server = createServer((request, response) => {
       void (async () => {

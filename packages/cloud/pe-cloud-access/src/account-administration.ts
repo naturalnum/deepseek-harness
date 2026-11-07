@@ -88,6 +88,7 @@ export function parseAccountAdministration(
 
 /** Finite management operations sharing the original provider, Cookie and PostgreSQL lock. */
 export class AccountAdministrator {
+  private tail: Promise<void> = Promise.resolve()
   constructor(private readonly auth: ManagedAuth, private readonly database: Pool, readonly config: AccountAdministrationConfig) {}
 
   private async invoke(headers: Headers, endpoint: string, body: object, requestId: RequestId, method: 'GET' | 'POST' = 'POST'): Promise<Record<string, unknown>> {
@@ -134,7 +135,17 @@ export class AccountAdministrator {
    * @param current Original operation admission, checked before each mutation and after awaits.
    * @returns Sanitized outcome; account creation does not claim storage readiness.
    */
-  async execute(headers: Headers, request: AccountAdministrationRequest, requestId: RequestId, current: () => void): Promise<object> {
+  execute(headers: Headers, request: AccountAdministrationRequest, requestId: RequestId, current: () => void): Promise<object> {
+    // The outer authentication owner bounds all queued operations. Only one local operation may hold a lock connection.
+    const actual = this.tail.then(() => this.executeSerial(headers, request, requestId, current))
+    this.tail = actual.then(() => {}, () => {})
+    return actual
+  }
+
+  private async executeSerial(
+    headers: Headers, request: AccountAdministrationRequest, requestId: RequestId, current: () => void,
+  ): Promise<object> {
+    current()
     const client = await this.database.connect()
     try {
       await client.query('BEGIN')
