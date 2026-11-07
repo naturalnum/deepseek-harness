@@ -21,4 +21,6 @@ export interface ManagedServiceConfig {
 export interface ManagedNativeCommandConfig extends Omit<NativeCommandAccountLimits, 'services'> {
   readonly services?: ManagedServiceConfig
   readonly remoteServers?: true
+  /** Root-selected extra native tool names; original execution-token, Agent and Session checks still apply. */
+  readonly additionalTools?: readonly string[]
 }

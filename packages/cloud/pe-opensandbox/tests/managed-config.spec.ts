@@ -187,3 +187,29 @@ it('enables exactly the two remote consumers without changing original command o
     expect(() => parseManagedCoordinatorConfig(raw)).toThrow()
   }
 })
+
+
+it('admits only explicitly configured extra native tools while retaining the original carrier limits', () => {
+  const raw = input(), baseline = parseManagedCoordinatorConfig(raw)
+  const commands = { ...raw.commands, additionalTools: ['airalogy_engine_run'], allowedTools: ['bash', 'airalogy_engine_run'] }
+  const parsed = parseManagedCoordinatorConfig({ ...raw, commands })
+  expect(parsed.commands.additionalTools).toEqual(['airalogy_engine_run'])
+  expect(Object.isFrozen(parsed.commands.additionalTools)).toBe(true)
+  expect(parsed.commands.commandLimits).toEqual(baseline.commands.commandLimits)
+  expect(baseline.commands).not.toHaveProperty('additionalTools')
+  expect(() => parseManagedCoordinatorConfig({ ...raw, commands: { ...commands, allowedTools: ['bash'] } })).toThrow('allowedTools')
+})
+
+it.each([['bash'], ['dev_service'], ['run_code'], ['remote_exec'], ['airalogy_run', 'airalogy_run'], ['../run'],
+  [''], ['a'.repeat(65)], Array.from({ length: 17 }, (_, index) => `tool_${index}`), null, {}])(
+  'rejects an invalid extra-tool selection: %j', (additionalTools) => {
+    const raw = input()
+    expect(() => parseManagedCoordinatorConfig({ ...raw, commands: { ...raw.commands, additionalTools } })).toThrow('additionalTools')
+  })
+
+it('rejects extra-tool accessors without evaluating them', () => {
+  const raw = input(), read = (): never => { throw new Error('Accessor must not run') }
+  const additionalTools: string[] = []
+  Object.defineProperty(additionalTools, '0', { enumerable: true, get: read })
+  expect(() => parseManagedCoordinatorConfig({ ...raw, commands: { ...raw.commands, additionalTools } })).toThrow('additionalTools')
+})

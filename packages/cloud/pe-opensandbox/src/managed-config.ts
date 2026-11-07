@@ -155,11 +155,27 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   const hasServices = value !== null && typeof value === 'object' && Object.hasOwn(value, 'services')
   const hasRemote = value !== null && typeof value === 'object' && Object.hasOwn(value, 'remoteServers')
   const hasPipes = value !== null && typeof value === 'object' && Object.hasOwn(value, 'pipes')
-  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : []), ...(hasRemote ? ['remoteServers'] : [])], 'commands')
+  const hasAdditional = value !== null && typeof value === 'object' && Object.hasOwn(value, 'additionalTools')
+  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasAdditional ? ['additionalTools'] : []), ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : []), ...(hasRemote ? ['remoteServers'] : [])], 'commands')
   const tools = row['allowedTools']
   if (hasRemote && row['remoteServers'] !== true) refuse('commands.remoteServers')
+  const builtInTools = ['bash', 'dev_service', 'run_code', 'terminal_open', 'remote_exec', 'remote_server_info']
+  const additionalTools: string[] = []
+  if (hasAdditional) {
+    const additions = row['additionalTools']
+    if (!Array.isArray(additions) || Object.getPrototypeOf(additions) !== Array.prototype || additions.length > 16
+      || Reflect.ownKeys(additions).length !== additions.length + 1) refuse('commands.additionalTools')
+    for (let index = 0; index < additions.length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(additions, String(index))
+      if (descriptor === undefined || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) refuse('commands.additionalTools')
+      const tool: unknown = descriptor.value
+      if (typeof tool !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/u.test(tool)
+        || builtInTools.includes(tool) || additionalTools.includes(tool)) refuse('commands.additionalTools')
+      additionalTools.push(tool)
+    }
+  }
   const expectedTools = ['bash', ...hasServices ? ['dev_service'] : [], ...hasPipes ? ['run_code', 'terminal_open'] : [],
-    ...hasRemote ? ['remote_exec', 'remote_server_info'] : []]
+    ...hasRemote ? ['remote_exec', 'remote_server_info'] : [], ...additionalTools]
   if (!Array.isArray(tools) || Object.getPrototypeOf(tools) !== Array.prototype
     || tools.length !== expectedTools.length || Reflect.ownKeys(tools).length !== expectedTools.length + 1) refuse('commands.allowedTools')
   for (const [index, tool] of expectedTools.entries()) {
@@ -188,7 +204,7 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   const rawPipes = hasPipes ? object(row['pipes'], ['controlInputBytes', 'controlOutputBytes'], 'commands.pipes') : undefined
   const pipes = rawPipes === undefined ? undefined : Object.freeze({ controlInputBytes: integer(rawPipes, 'controlInputBytes', 'commands.pipes', 8388608),
     controlOutputBytes: integer(rawPipes, 'controlOutputBytes', 'commands.pipes', 8388608) })
-  return Object.freeze({ ...hasRemote ? { remoteServers: true as const } : {}, ...pipes === undefined ? {} : { pipes }, allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
+  return Object.freeze({ ...hasAdditional ? { additionalTools: Object.freeze(additionalTools) } : {}, ...hasRemote ? { remoteServers: true as const } : {}, ...pipes === undefined ? {} : { pipes }, allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
     commandLimits: limits, ...(services === undefined ? {} : { services }) })
 }
 
