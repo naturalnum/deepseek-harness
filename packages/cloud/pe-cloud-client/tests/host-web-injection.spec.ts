@@ -377,9 +377,11 @@ it.each([
   { nativeSessionControls: [], selected: [] },
   { nativeSessionControls: ['commands', 'models'], selected: ['@deepseek-ai/dsh-client-ui-commands',
     '@deepseek-ai/dsh-client-ui-model-selection', '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017'] },
+  { nativeSessionControls: ['commands', 'permissions'], selected: ['@deepseek-ai/dsh-client-ui-commands',
+    '@deepseek-ai/dsh-client-ui-permission-presets', '@deepseek-ai/dsh-client-ui-approval'] },
   { nativeSessionControls: ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'], selected: [
     '@deepseek-ai/dsh-client-ui-commands', '@deepseek-ai/dsh-client-ui-model-selection', '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017',
-    '@deepseek-ai/dsh-client-ui-permission-presets', '@deepseek-ai/dsh-client-ui-goal', '@deepseek-ai/dsh-client-ui-plan',
+    '@deepseek-ai/dsh-client-ui-permission-presets', '@deepseek-ai/dsh-client-ui-approval', '@deepseek-ai/dsh-client-ui-goal', '@deepseek-ai/dsh-client-ui-plan',
     '@deepseek-ai/dsh-client-ui-user-questions', '@deepseek-ai/dsh-client-ui-message-feedback', '@deepseek-ai/dsh-session-log-export',
     '@deepseek-ai/dsh-client-ui-attachment', '@deepseek-ai/dsh-client-ui-trajectory', '@deepseek-ai/dsh-client-ui-tool',
   ] },
