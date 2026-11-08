@@ -173,23 +173,24 @@ it.each((['canary', 'ordinary'] as const).flatMap(mode =>
   }, mode)
   return expect(f.owner.start().then(graph => graph.guards.sessions.resolveCreate({}))).rejects.toThrow()
 })
-it.each(['skill-office', 'bundled-report-skills'])('withdraws original API/model/tool authority after Native entry update of %s', async (id) => {
-  const f = fixture(), graph = await f.owner.start(), agent = await session(graph)
-  await model(graph); const calls = graph.adapter.calls
-  expect(graph.ctx.settingsController.describe()).toBeDefined()
-  const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === id)
-  if (entry === undefined) throw new Error('Original provider missing')
-  await entry.update({ config: { ...entry.options.config as Record<string, unknown>, ...id === 'skill-office'
-    ? { invocation: { modelInvocable: false, userInvocable: false } }
-    : { bundledInvocation: { modelInvocable: false, userInvocable: false } } } })
-  await graph.ctx.loader.await()
-  await expect(graph.invoke('create', { requestId: 'stale-office' })).rejects.toThrow()
-  expect(() => graph.ctx.settingsController.describe()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
-  await expect(model(graph)).rejects.toThrow()
-  const result = await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal,
-    callId: ToolCallId('withdrawn-office'), name: 'skill', arguments: { name: 'office-docx' } })
-  expect(result.isError).toBe(true); expect(graph.adapter.calls).toBe(calls)
-})
+it.each([false, true].flatMap(scopedSkillTool => ['skill-office', 'bundled-report-skills'].map(id => [id, scopedSkillTool] as const)))(
+  'withdraws original API/model/tool authority after Native entry update of %s with scoped skill tool %s', async (id, scopedSkillTool) => {
+    const f = fixture('office-canary', undefined, 'canary', scopedSkillTool), graph = await f.owner.start(), agent = await session(graph)
+    await model(graph); const calls = graph.adapter.calls
+    expect(graph.ctx.settingsController.describe()).toBeDefined()
+    const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === id)
+    if (entry === undefined) throw new Error('Original provider missing')
+    await entry.update({ config: { ...entry.options.config as Record<string, unknown>, ...id === 'skill-office'
+      ? { invocation: { modelInvocable: false, userInvocable: false } }
+      : { bundledInvocation: { modelInvocable: false, userInvocable: false } } } })
+    await graph.ctx.loader.await()
+    await expect(graph.invoke('create', { requestId: 'stale-office' })).rejects.toThrow()
+    expect(() => graph.ctx.settingsController.describe()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+    await expect(model(graph)).rejects.toThrow()
+    const result = await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal,
+      callId: ToolCallId('withdrawn-office'), name: 'skill', arguments: { name: 'office-docx' } })
+    expect(result.isError).toBe(true); expect(graph.adapter.calls).toBe(calls)
+  })
 it('preserves launch overlays through an unrelated actual ConfigEditor save and a cold new epoch, and rejects old scope', async () => {
   const f = fixture(), first = await f.owner.start(), old = await session(first)
   const profile = first.ctx.profileContext, entry = [...first.ctx.loader.entries()].find(row => row.options.id === 'office-probe')
@@ -254,8 +255,8 @@ it('keeps Root omission unchanged, preserves the canary schema and rejects simul
   }
 })
 
-it('selects the same original13 resources for two independent ordinary account graphs without a canary identity', async () => {
-  const a = fixture('ordinary-A', undefined, 'ordinary'), b = fixture('ordinary-B', undefined, 'ordinary')
+it.each([false, true])('selects the same original13 resources for independent ordinary accounts with scoped skill tool %s', async (scopedSkillTool) => {
+  const a = fixture('ordinary-A', undefined, 'ordinary', scopedSkillTool), b = fixture('ordinary-B', undefined, 'ordinary', scopedSkillTool)
   const first = await a.owner.start(), second = await b.owner.start(), agent = await session(first), other = await session(second)
   expect(first.binding.accountId).not.toBe(second.binding.accountId)
   for (const graph of [first, second]) {
@@ -287,8 +288,8 @@ it('overlays historical saved false provider rows through the original compositi
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
 })
 
-it('retains the original ordinary provider plan and withdrawal checks for model, settings, tools and Session admission', async () => {
-  const f = fixture('ordinary-revoked', undefined, 'ordinary'), graph = await f.owner.start(), agent = await session(graph)
+it.each([false, true])('retains ordinary provider withdrawal for model, settings, tools and Session admission with scoped skill tool %s', async (scopedSkillTool) => {
+  const f = fixture('ordinary-revoked', undefined, 'ordinary', scopedSkillTool), graph = await f.owner.start(), agent = await session(graph)
   await model(graph); const calls = graph.adapter.calls
   const entry = [...graph.ctx.loader.entries()].find(row => row.options.id === 'skill-office')
   if (entry === undefined) throw Error('Original ordinary provider absent')
