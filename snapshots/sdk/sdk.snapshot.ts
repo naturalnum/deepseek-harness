@@ -438,6 +438,31 @@ function records(log: string): JsonObject[] {
     .map(line => JSON.parse(line) as JsonObject)
 }
 
+/** Collect provider titles after checking their request and next-message boundaries. */
+function titleStabilityEvents(events: JsonObject[]): JsonObject[] {
+  const requests = new Map<string, number>(), seen = new Set<number>(), titles: JsonObject[] = []
+  for (const [index, event] of events.entries()) {
+    const data = event.data as JsonObject | undefined
+    if (event.type === 'session/title-llm-request') {
+      if (!Array.isArray(data?.messageSeqs)) throw new Error('title request lacks message sequences')
+      const key = JSON.stringify(data.messageSeqs)
+      if (requests.has(key)) throw new Error('duplicate title request')
+      requests.set(key, index)
+    } else if (event.type === 'session/title' && (data?.source as JsonObject | undefined)?.kind === 'provider') {
+      if (!Array.isArray(data.messageSeqs)) throw new Error('provider title lacks message sequences')
+      const request = requests.get(JSON.stringify(data.messageSeqs))
+      if (request === undefined || seen.has(request)) throw new Error('provider title lacks its unique prior request')
+      if (events.slice(request + 1, index).some(row => row.type === 'user/message')) {
+        throw new Error('provider title crossed the next user message')
+      }
+      seen.add(request)
+      titles.push(event)
+    }
+  }
+  if (titles.length !== requests.size) throw new Error('title request did not publish a provider title')
+  return titles
+}
+
 function notificationComparisonRecords(log: string, sourceLogs: readonly string[]): JsonObject[] {
   const versions = sourceLogs.map((source, index) => sessionHeaderVersion(source, `notification Session ${index}`))
   expect(new Set(versions).size, 'wire golden Session roles share one native writer generation').toBe(1)
@@ -903,6 +928,20 @@ async function verifyHeaders(
 }
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
+  it('compares provider titles independently of assistant timing without accepting crossed or missing titles', () => {
+    const request = { type: 'session/title-llm-request', data: { messageSeqs: [1] } }
+    const title = { type: 'session/title', data: { messageSeqs: [1], title: 'actual', source: { kind: 'provider' } } }
+    const assistant = { type: 'assistant/message' }, user = { type: 'user/message' }
+    expect(titleStabilityEvents([request, assistant, title])).toEqual([title])
+    expect(titleStabilityEvents([request, assistant, title])).not.toEqual([{ ...title, data: { ...title.data, title: 'wrong' } }])
+    expect(() => titleStabilityEvents([title, request])).toThrow('unique prior request')
+    expect(() => titleStabilityEvents([request, { ...title, data: { ...title.data, messageSeqs: [2] } }]))
+      .toThrow('unique prior request')
+    expect(() => titleStabilityEvents([request, user, title])).toThrow('crossed the next user message')
+    expect(() => titleStabilityEvents([request])).toThrow('did not publish')
+    expect(() => titleStabilityEvents([request, title, title])).toThrow('unique prior request')
+  })
+
   it('restores the retained V3 max-tokens recording after an interrupted next-turn restart', async () => {
     const path = join(corpusRoot, 'sdk/max-tokens-continue/session.v3.jsonl')
     const fixture = await readFile(path, 'utf8')
@@ -1151,7 +1190,18 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const expectedContext = contextOfContents(expectedContents)
       const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext, { nativeWriterOutput: true })
       const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext, { nativeWriterOutput: true })
-      expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
+      if (scenario.name === 'session-title-stability') {
+        expect(actualSnapshots).toHaveLength(1)
+        expect(expectedSnapshots).toHaveLength(1)
+        const actual = records(actualSnapshots[0] as string), expected = records(expectedSnapshots[0] as string)
+        const isProviderTitle = (event: JsonObject) => event.type === 'session/title'
+          && ((event.data as JsonObject | undefined)?.source as JsonObject | undefined)?.kind === 'provider'
+        expect(titleStabilityEvents(actual), 'provider title events in original order').toEqual(titleStabilityEvents(expected))
+        expect(actual.filter(event => !isProviderTitle(event)), 'other events in original order')
+          .toEqual(expected.filter(event => !isProviderTitle(event)))
+      } else {
+        expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
+      }
       await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig)
 
       // Genuine SDK protocol cases retain their secondary wire projections.

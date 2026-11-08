@@ -1,5 +1,6 @@
 # SDK-profile patch for a deterministic parent model that selects a route for
 # a separate SDK child runtime. Both runtimes persist their request headers.
+# The optional provider is not a dependency of the base SDK profile; replay uses its built workspace entry.
 
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek-api-key'
@@ -25,7 +26,7 @@
       disabled: !!js process.env.DSH_SNAPSHOT !== 'record'
 
     - id: subagent-dsh-sdk
-      name: '@deepseek-ai/dsh-subagent-dsh-sdk'
+      name: '../../../packages/subagent/subagent-dsh-sdk/lib/index.js'
       config:
         profile: sdk
         patches: !!js JSON.parse(process.env.DSH_TEST_CHILD_PATCHES ?? '[]')
