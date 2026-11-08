@@ -23,6 +23,11 @@ export const OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST = 'sha256:44e26197f73faec
 /** COPY-only server paired exclusively with the Git dependency superset. */
 export const OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST = 'sha256:c0e629914f5b62c74f63e6a0632fd75de47ef6c4abc2321f277525350848894f'
 
+/** Official Git getrandom build in the same independent dependency prefix. */
+export const OFFICE_RESEARCH_GIT_GETRANDOM_WORKLOAD_IMAGE_DIGEST = 'sha256:4a7ce478412f06d3369ff338aaa971acaa7bc6e6778995c1558eb9c997cb263a'
+/** COPY-only server paired exclusively with the getrandom Git workload. */
+export const OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST = 'sha256:87bbc26029f68dab351a3abd958fda82877cb29b3d15a77fe5887c858ab1de57'
+
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
   readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
@@ -48,6 +53,8 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
     serverImageDigest: OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST,
     serverImageDigest: OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_WORKLOAD_IMAGE_DIGEST,
+    serverImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**
