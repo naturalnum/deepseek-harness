@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import { validateTypertManifest } from '@deepseek-ai/dsh-typert-loader'
 import { ExposureService, type ApprovedConfigurationCatalog, type EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { afterAll, beforeAll, expect, it, onTestFinished, vi } from 'vitest'
 import { policyFixture } from '../../pe-cloud-runtime/tests/account-policy-fixture.ts'
 import { descriptors } from './fixtures/remote-servers/account.ts'
 import { produceCloudBootstrap } from '../src/bootstrap-producer.ts'
@@ -34,13 +34,19 @@ const catalog: ApprovedConfigurationCatalog = {
 }
 const bounds = { maxHomeBytes: 4096, maxCollectionItems: 512, maxFrameBytes: 262144, maxQueuedEvents: 128, maxQueuedBytes: 4194304 }
 
-async function fixture() {
-  const home = mkdtempSync(join(tmpdir(), 'bootstrap-mcp-codecs-'))
-  onTestFinished(() => { vi.restoreAllMocks(); rmSync(home, { recursive: true, force: true }) })
-  const installed = descriptors(home)
+let descriptorHome: string | undefined
+let contribution: ReturnType<typeof validateTypertManifest>
+beforeAll(async () => {
+  descriptorHome = mkdtempSync(join(tmpdir(), 'bootstrap-mcp-codecs-'))
+  const installed = descriptors(descriptorHome)
   const artifact: unknown = await import(pathToFileURL(join(installed, 'lib/typert.host.js')).href)
   if (typeof artifact !== 'object' || artifact === null) throw new Error('Original generated module absent')
-  const contribution = validateTypertManifest('@deepseek-ai/dsh-pe-cloud-api', Reflect.get(artifact, 'TYPERT'))
+  contribution = validateTypertManifest('@deepseek-ai/dsh-pe-cloud-api', Reflect.get(artifact, 'TYPERT'))
+})
+afterAll(() => { if (descriptorHome !== undefined) rmSync(descriptorHome, { recursive: true, force: true }) })
+
+async function fixture() {
+  onTestFinished(() => vi.restoreAllMocks())
   const native = policyFixture([endpoint], bounds, 'bootstrap-mcp', undefined, catalog, undefined, undefined, undefined, [], false, undefined, {
     defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', selectable: true, config: { id: 'cloud-chat', plugins: [
       { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
