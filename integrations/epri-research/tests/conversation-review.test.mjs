@@ -53,8 +53,13 @@ test('conversation review waits for the exact human choice, rejects stale/cancel
     assert.equal((await reviewInConversation(ctx,'record_submit',{id:record.id,expectedRevision:record.revision,requestId:randomUUID()},exec,sessionId)).executed,false);
     assert.equal((await api('record_get',{id:record.id})).result.revision,record.revision);
     answer=async request=>{assert.equal(request.questions[0].options[1].label,'确认检查项并提交记录');assert.match(request.questions[0].detail,/请逐项核对/);assert.match(request.questions[0].detail,/已核对合成输入/);assert.match(request.questions[0].detail,/reviewed/);return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
-    const final=await reviewInConversation(ctx,'record_submit',{id:record.id,expectedRevision:record.revision,requestId:randomUUID()},exec,sessionId);
+    const submitArgs={id:record.id,expectedRevision:record.revision,requestId:randomUUID()};
+    assert.equal((await api('record_submit',{...submitArgs,confirmChecks:true},app.credentials.agentToken)).status,403);
+    const final=await reviewInConversation(ctx,'record_submit',submitArgs,exec,sessionId);
     assert.equal(final.status,'submitted');assert.equal(final.run.checks.reviewed,true);
     assert.equal(final.audit.at(-1).actor,'human');
+    const retry=await api('record_submit',{...submitArgs,confirmChecks:true});
+    assert.equal(retry.status,200);assert.deepEqual(retry.result,final);
+    assert.equal((await api('record_submit',{...submitArgs,confirmChecks:false})).status,409);
   }finally{await app.close();if(prior===undefined)delete process.env.DS_RESEARCH_DATA_DIR;else process.env.DS_RESEARCH_DATA_DIR=prior;rmSync(directory,{recursive:true,force:true});}
 });
