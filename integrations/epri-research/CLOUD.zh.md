@@ -86,7 +86,21 @@ PDF 渲染与 OCR 共用原受管任务，但分离各自重库：PDF 父进程�
 
 先在本包自己的真实 `node_modules` 中完成依赖安装。当前单仓库中先运行 `npm ci --omit=peer`，再运行 `node scripts/link-cloud-peers.mjs`；这些链接存在期间禁止运行安装命令。构建 Host artifacts，用 `node scripts/build.mjs` 构建本包，检查 `tsconfig.cloud.json`；从仓库根目录运行 `node node_modules/vitest/vitest.mjs run --config integrations/epri-research/vitest.cloud.config.ts`。原有包测试继续验证本地模式兼容。
 
-[cloud-integration.json](source-records/cloud-integration.json) 记录导入分支/基线及精确科研文件。对应补丁记录复用源码中的 executor/fetch 传输选择、可选模型缺失诊断，Store 的服务注入、JSON 结果与完整图表分页，按绑定仓库重建的 Git 操作状态，以及保留代码块和表格滚动的 Markdown 正文换行，保留原 upstream 树及许可。可选协议 `model.py` 不存在时不记录警告；实际模型内部的依赖/导入错误及父模块解析失败仍然可见。必需模块缺失和已有 namespace 没有 loader 的情况保留原诊断。升级时获取来源新分支，在独立 feature 分支审阅并仅应用 `git diff --binary OLD NEW -- integrations/epri-research`，协调这些适配、更新来源记录，再运行独立包及 Cloud 组合测试。Python 依赖变化时重新验证新不可变镜像；不要覆盖 Cloud 的根目录检查脚本，也不要以删除 Cloud 准入解决冲突。
+[cloud-integration.json](source-records/cloud-integration.json) 记录导入分支、基线提交及部分科研文件的哈希。`node integrations/epri-research/scripts/check-cloud-source.mjs` 检查这些选定文件及已资格确认的 Git 供应资产，并非完整套件改动清单。历史 [cloud-transports.patch](source-records/diffs/cloud-transports.patch) 仅覆盖其中记录的改动，不包含后续全部集成修改。原 upstream 树及许可仍被保留。可选协议 `model.py` 不存在时不记录警告；实际模型内部的依赖/导入错误及父模块解析失败仍然可见。必需模块缺失和已有 namespace 没有 loader 的情况保留原诊断。
+
+升级前须先将记录中的精确来源提交保存在持久 Git 引用或归档 bundle 中。该提交不一定是 Cloud 集成分支的祖先，可变远程分支或提交号本身不能保证对象持续存在；应在全新克隆中验证来源对象可获取。审计时在干净、已提交的集成版本记录 `git rev-parse HEAD` 为 `INTEGRATION`，以记录中的 `sourceCommit` 为 `SOURCE`，从仓库根目录执行：
+
+```sh
+git cat-file -e "$SOURCE^{commit}"
+git cat-file -e "$INTEGRATION^{commit}"
+git diff --name-status "$SOURCE" "$INTEGRATION" -- integrations/epri-research
+PATCH=$(mktemp "${TMPDIR:-/tmp}/research-integration.XXXXXX")
+git diff --binary "$SOURCE" "$INTEGRATION" -- integrations/epri-research > "$PATCH"
+git apply --check --reverse "$PATCH"
+rm "$PATCH"
+```
+
+反向检查要求工作树干净且正处于 `INTEGRATION`；补丁只覆盖套件目录，不覆盖七个 Cloud 插件、Native 宿主、部署配置或未跟踪文件，须另行审阅其接口。在独立 feature 分支获取新来源，审阅上下游版本的完整差异，并以已记录的来源和集成版本为合并输入，逐项协调本地适配。只有实际审阅变更后才能更新选定文件的哈希；运行源码检查、独立包与 Cloud 组合测试以及认证 Web 验收。Python 依赖变化时重新验证新不可变镜像；不要覆盖 Cloud 的根目录检查脚本，也不要以删除 Cloud 准入解决冲突。
 
 [500 行 CSV](tests/fixtures/power-quality-500.csv) 与[精确重算请求](tests/fixtures/power-quality-500-recalculate.json)覆盖原内置质量方法：应有合计 50,000、有效合计 45,000、缺失率 10%，计算错误和待计算字段均应为空。生成的柱状图按原始顺序保留全部有效计算点，沿用原图表协议，每页最多 200 点。标题说明页码与总数；500 点分别呈现为 200/200/100。首页标识保持稳定，重算仅删除该记录/图表不再需要的生成页，保留用户图表。[两行 CSV](tests/fixtures/power-quality-2.csv)用于恢复 300/270/10% 示例与单幅生成图。实际原生/Web 资格必须在原 stderr 预算内运行这些输入；使用脚本化科研结果的组件测试及 stdlib 导入器回归不能证明 Airalogy 计算通过。
 

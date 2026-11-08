@@ -21,4 +21,4 @@ for(const image of [gitImage,getrandomImage])for(const file of image.sourceAsset
 const verifier=JSON.parse(readFileSync(join(root,'source-records/cloud-git-verifier.json'),'utf8'));
 const policy={immutableBaseKeyring:verifier.immutableBaseKeyring,signedIndex:verifier.signedIndex,requiredPrimarySigningKeys:verifier.requiredPrimarySigningKeys,packages:verifier.packages};
 if(hash(Buffer.from(JSON.stringify(policy)))!==gitImage.verifierPolicySha256)throw new Error('Qualified Git build-verifier policy changed');
-console.log('Cloud source record: retained executors and documented adaptations match.');
+console.log('Cloud source record: selected files and qualified Git supplier assets match; this is not a complete suite-diff check.');

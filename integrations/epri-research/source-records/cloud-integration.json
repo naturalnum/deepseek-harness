@@ -42,8 +42,8 @@
     {
       "path": "src/server/service.mjs",
       "importedSha256": "23772d8c4c3808587f820973bde4473fef9b7070e38d932ae416dab2cff6028b",
-      "cloudSha256": "65d72aee06b4152b2508230de6de4bdc1fb1eb4eb5c04a7d720ed747468efb54",
-      "change": "native-store-and-complete-chart-pagination"
+      "cloudSha256": "57b7c91d78a6d26c810eb51fa440638aaccd0c77d85058b7d2d076d1de41d088",
+      "change": "native-store-complete-chart-pagination-and-atomic-reviewed-submission"
     },
     {
       "path": "src/ui/style.css",
@@ -72,14 +72,14 @@
     {
       "path": "src/ui/ResearchTasks.tsx",
       "importedSha256": "205bdebfbd13ce31fd207af7f6f9adf70c868073eb7972b44e72d87d3a78f83d",
-      "cloudSha256": "92335a34d24804d5589a401e1440ecfc11f9bc575d96b1d18d6f006e07c12af6",
-      "change": "saved-review-event-guard"
+      "cloudSha256": "3a82c12096e6e1cb549a0b9a8efe9e49229516045a4ad101827263f0a9e7f6e1",
+      "change": "saved-review-event-and-mismatched-record-guards"
     },
     {
       "path": "plugins/airalogy/conversation-review.mjs",
       "importedSha256": "6c232db198a745f0272c298d7dae87d904fd3415464fc43e23462f8269e7dbb9",
-      "cloudSha256": "e3b3aab05674c822e084cb1a9763ae3a45320aa565c6ef35c76201032611f885",
-      "change": "account-native-review-and-choice-copy"
+      "cloudSha256": "ada1310f629fffcbf46b3cee6b1193725b3ddd96e01e24861bf3b8b13a70e01a",
+      "change": "account-native-review-with-bound-revisions-and-atomic-checks"
     }
   ],
   "qualification": "Component tests only; separate native Linux image and authenticated Web acceptance required."
