@@ -125,9 +125,15 @@ class ScientificRuntimeTests(unittest.TestCase):
 
     def test_build_reuses_the_original_base_and_installs_packages_only_in_the_new_interpreter(self):
         lines = (ROOT / 'Dockerfile.cloud').read_text().replace('\\\n', '').splitlines()
-        self.assertEqual({line.split()[1] for line in lines if line.startswith('FROM ')}, {'${BASE_IMAGE}'})
+        self.assertEqual([line for line in lines if line.startswith('FROM ')], [
+            'FROM ${BASE_IMAGE} AS git-supplier',
+            'FROM ${GIT_BUILDER_IMAGE} AS git-core-builder',
+            'FROM ${BASE_IMAGE} AS research-runtime',
+        ])
         self.assertEqual([line for line in lines if line.startswith('COPY --from=')],
-                         ['COPY --from=git-supplier /opt/dsh/research/git /opt/dsh/research/git'])
+                         ['COPY --from=git-supplier /usr/share/keyrings/debian-archive-keyring.pgp /opt/dsh/research/.git-source/keyring.gpg',
+                          'COPY --from=git-supplier /opt/dsh/research/git /opt/dsh/research/git',
+                          'COPY --from=git-core-builder /opt/dsh/research/.git-source/artifact /opt/dsh/research/.git-build/artifact'])
         self.assertFalse(any(line.startswith('ENV ') for line in lines))
         self.assertIn('COPY ', '\n'.join(lines))
         self.assertTrue(next(line for line in lines if line.startswith('COPY cloud-requirements.txt ')).endswith('/opt/dsh/research/.build/'))
