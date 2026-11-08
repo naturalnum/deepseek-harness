@@ -8,6 +8,7 @@ const en = {
   create: 'Create account', save: 'Save', resetPassword: 'Reset password', enable: 'Enable', disable: 'Disable',
   failed: 'The operation was refused or its result is unconfirmed. Refresh before trying again.',
   pending: 'Processing…', created: 'Account created and ready to use.',
+  capacityFull: 'Account capacity is full. Add capacity before creating another account.',
 }
 const zh: typeof en = {
   title: '账号管理', introduction: '管理平台账号，各账号的项目数据保持独立。',
@@ -18,6 +19,7 @@ const zh: typeof en = {
   create: '创建账号', save: '保存', resetPassword: '重置密码', enable: '启用', disable: '停用',
   failed: '操作被拒绝或结果尚未确认，请先刷新核对状态再尝试。',
   pending: '正在处理…', created: '账号已创建，可以使用。',
+  capacityFull: '账号资源容量已用完，扩容后可继续创建账号。',
 }
 /** Native locale namespace for the account settings menu. */
 export const ACCOUNT_MANAGEMENT_NS = 'cloud-account-management'

@@ -44,6 +44,7 @@ type Props = PropsRuntime<'settings.section'> & PropsLocale<'cloud-account-manag
 function text(data: FormData, key: string): string { const value = data.get(key); return typeof value === 'string' ? value : '' }
 function AccountManagement(props: Props) {
   const state = props.useAccountManagement(value => value), { t } = props
+  const canCreate = state.templates.some(row => row.available > 0)
   const roles = <><option value="user">{t('user')}</option><option value="admin">{t('admin')}</option></>
   return <section className={css.section} aria-label={t('title')}>
     <header className={css.header}><h1>{t('title')}</h1><p>{t('introduction')}</p></header>
@@ -61,9 +62,10 @@ function AccountManagement(props: Props) {
         <label className={css.field}>{t('displayName')}<Input className={clsx(css.control)} required name="displayName" maxLength={200}/></label>
         <label className={css.field}>{t('password')}<Input className={clsx(css.control)} required name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password"/></label>
         <label className={css.field}>{t('role')}<select className={css.select} name="role">{roles}</select></label>
-        <label className={css.field}>{t('template')}<select className={css.select} name="templateId" required>{state.templates.filter(row => row.available > 0).map(row => <option key={row.id} value={row.id}>{row.id}</option>)}</select></label>
+        <label className={css.field}>{t('template')}<select className={css.select} name="templateId" required disabled={!canCreate}>{state.templates.filter(row => row.available > 0).map(row => <option key={row.id} value={row.id}>{row.id}</option>)}</select></label>
       </div>
-      <div className={css.actions}><Button type="submit" variant="primary" disabled={state.pending || !state.templates.some(row => row.available > 0)}>{t('create')}</Button></div>
+      <div className={css.actions}><Button type="submit" variant="primary" disabled={state.pending || !canCreate}>{t('create')}</Button></div>
+      {state.listingRevision > 0 && !state.pending && !state.failed && !canCreate && <p role="status">{t('capacityFull')}</p>}
     </form>
     <div className={css.list}>{state.rows.map(row => <article className={css.card} key={`${state.listingRevision}:${row.id}`}>
       <header className={css.accountHeader}>
