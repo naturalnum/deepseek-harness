@@ -14,6 +14,10 @@ export const inject = ['agentPresets']
 export function apply(ctx: Context): void {
   ctx.on('agent/created', async ({ agent }) => {
     if (agent.session.header.parentSession !== undefined) return
-    await ctx.agentPresets.select(agent, 'parent')
+    // Agent publication already owns its maintenance phase. Select's separate
+    // maintenance boundary is for an idle, published agent, so initialize the
+    // fixture's known preset within the existing publication boundary instead.
+    const preset = await ctx.agentPresets.recompose(agent.ctx, 'parent')
+    agent.session.append('agent-preset/selected', { agentPreset: preset.id })
   }, { prepend: true })
 }
