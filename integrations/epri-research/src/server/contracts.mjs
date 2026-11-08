@@ -64,8 +64,8 @@ export const contracts = {
   },
   record_submit: {
     description:
-      "Human-only API: submit a running draft after review and structural completeness checks. The native Harness tool requests authenticated human confirmation in the conversation, including every check; direct agent API requests remain forbidden. This does not run Python validators or prove scientific correctness.",
-    shape: record,
+      "Human-only API: submit a running draft after review and structural completeness checks. The native Harness tool requests authenticated human confirmation in the conversation, including every check; direct agent API requests remain forbidden. An explicit human confirmChecks applies all protocol review checks in the same transaction as submission. This does not run Python validators or prove scientific correctness.",
+    shape: { ...record, confirmChecks: z.boolean().optional() },
   },
   record_reopen: {
     description:

@@ -658,6 +658,10 @@ export function openStore(directory, options = {}) {
       if (op === "record_submit") {
         if (r.status !== "draft" || r.run.status !== "running")
           fail("CONFLICT", "Only a running draft can be submitted");
+        if (a.confirmChecks === true) {
+          const checks = parseAimdProtocol(p.content).checks;
+          r.run.checks = Object.fromEntries(checks.map(({id}) => [id, true]));
+        }
         validateRun(p, r.run, actor, r.run, sessionId);
         if(r.calculationBinding && (!r.calculation || r.calculation.pending.length || r.calculation.errors.length || r.calculation.inputSha256!==calculationHash((({values,tables})=>({values,tables}))(stripCalculated(r.run,r.calculationBinding.targets)))))fail('INCOMPLETE','自动计算尚未完成或校验未通过，请先修正输入并保存。');
         const absent = missing(p, r.run);

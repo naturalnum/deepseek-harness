@@ -99,9 +99,6 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
   const latest=op==='task_open'?{task:await read('task_get',{id:args.id}),method:await read('method_get',{id:before.method.id,version:before.method.version})}:op.startsWith('record_')?await read('record_get',{id:args.id}):op==='engine_package_review'?await read('engine_package_get',{id:args.id,version:args.version}):(await read('science_state',{}))[{evidence_review:'evidence',roadmap_select:'roadmap',lab_skill_publish:'labskill'}[op]]?.find(x=>x.id===args.id);
   if(JSON.stringify(latest)!==JSON.stringify(before))throw new Error('审批期间内容已变化，本次回答没有应用，请重新核对最新版本。');
   let input=op==='task_open'?{...args,expectedTaskRevision:before.task.revision,expectedMethodId:before.method.id,expectedMethodVersion:before.method.version,expectedMethodSha256:before.method.sha256}:args;
-  if(op==='record_submit' && checks.some(x=>before.run.checks[x.id]!==true)) {
-    const updated=await human('record_update',{id:before.id,expectedRevision:before.revision,requestId:args.requestId+':human-checks',run:{...before.run,checks:Object.fromEntries(checks.map(x=>[x.id,true]))}});
-    input={...args,expectedRevision:updated.revision};
-  }
+  if(op==='record_submit' && checks.length) input={...args,confirmChecks:true};
   return human(op,input);
 }
