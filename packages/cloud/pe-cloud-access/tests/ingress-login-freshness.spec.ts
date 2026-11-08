@@ -61,6 +61,13 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
     if (!armed) return
     crossed.value = true; clock.now += 6000
     if (reject === 'aborted') graph.lifetime.abort()
+    if (reject === 'none') {
+      const result = authenticated.mock.results[0]
+      if (result === undefined) throw new Error('Original ingress authentication missing')
+      const original = await result.value
+      expect(() => auth.assertLoginCurrent(original, 'fixture-request' as Parameters<BetterAuthAccess['assertLoginCurrent']>[1]))
+        .toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+    }
     // The live Peer can have its own successful DB recheck while this distinct operation principal is stale.
     if (canonical !== undefined && reject === 'none') {
       await auth.recheckLogin(canonical, 'canonical-recheck' as Parameters<BetterAuthAccess['recheckLogin']>[1])
@@ -213,6 +220,10 @@ for (const transport of ['http', 'upgrade'] as const) {
       .toBe('better-auth.session_token=captured-original-cookie')
     f.clock.now += 5000
     expect(() => { f.auth.assertLoginCurrent(original, 'fixture-request' as Parameters<BetterAuthAccess['assertLoginCurrent']>[1]) })
+      .toThrow(expect.objectContaining({ code: 'cloud/unauthenticated' }))
+    const canonical = f.canonical()
+    if (canonical === undefined) throw new Error('Original Peer principal missing')
+    expect(() => f.auth.assertLoginCurrent(canonical, 'fixture-request' as Parameters<BetterAuthAccess['assertLoginCurrent']>[1]))
       .toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
     expect(f.ingress.observe().pendingOperations).toBe(0)
   })
