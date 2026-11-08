@@ -123,10 +123,29 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
       let protocol;try{protocol=await call('protocol_get',{id:source.id,version:source.version});}catch(error){if(error.code!=='NOT_FOUND')throw error;}
       if(!protocol)protocol=await call('protocol_put',{id:source.id,version:source.version,content:source.files['protocol.aimd'],requestId:preparationKey('protocol')});
       if(protocol.content!==source.files['protocol.aimd'])fail('CONFLICT','已有协议源码不同，请更换方法版本。');
-      let record=task.recordId?await call('record_get',{id:task.recordId}):await call('record_create',{protocolId:source.id,protocolVersion:source.version,requestId:preparationKey('record')});
+      // A legacy unbound record is reusable only when its exact request and unchanged contents prove ownership.
+      const legacyRecord=()=>{
+        if(pin.some(value=>value===undefined))return undefined;
+        const scope=JSON.stringify([session,actor])+':',requestId=task.id+':record';
+        const created=db.prepare('SELECT hash,response FROM requests WHERE id=?').get(scope+requestId);
+        const args={protocolId:source.id,protocolVersion:source.version,requestId};
+        if(!created||created.hash!==hash({op:'record_create',a:args,actor}))return undefined;
+        let saved;try{saved=JSON.parse(created.response);}catch{return undefined;}
+        if(!saved||typeof saved!=='object'||typeof saved.id!=='string'||!Number.isSafeInteger(saved.revision)||saved.sessionId!==session||saved.protocolId!==source.id||saved.protocolVersion!==source.version)return undefined;
+        const state=read(),current=state.records.find(r=>belongs(r,session)&&r.id===saved.id);
+        if(!current||current.protocolId!==source.id||current.protocolVersion!==source.version||current.status!=='draft'||current.archived||
+          (state.tasks||[]).some(t=>belongs(t,session)&&t.id!==task.id&&t.recordId===current.id))return undefined;
+        if(hash(current)===hash(saved)&&!current.calculationBinding)return current;
+        const bindingId=task.id+':binding',bindingArgs={id:saved.id,expectedRevision:saved.revision,packageId:source.id,version:source.version,requestId:bindingId};
+        const bound=db.prepare('SELECT hash,response FROM requests WHERE id=?').get(scope+bindingId);
+        if(!bound||bound.hash!==hash({op:'record_bind_engine',a:bindingArgs,actor}))return undefined;
+        let boundResult;try{boundResult=JSON.parse(bound.response);}catch{return undefined;}
+        return hash(current)===hash(boundResult)&&current.calculationBinding?.sha256===source.sha256?current:undefined;
+      };
+      let record=task.recordId?await call('record_get',{id:task.recordId}):legacyRecord()||await call('record_create',{protocolId:source.id,protocolVersion:source.version,requestId:preparationKey('record')});
       record=await call('record_get',{id:record.id});
       if(!record.calculationBinding)record=await call('record_bind_engine',{id:record.id,expectedRevision:record.revision,packageId:source.id,version:source.version,requestId:preparationKey('binding')});
-      mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id);if(!t||t.revision!==task.revision||t.methodId!==task.methodId||t.methodVersion!==task.methodVersion)fail('CONFLICT','任务方法在准备期间已变化，未绑定实验记录。');t.recordId=record.id;return t;},session);
+      mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id),r=s.records.find(x=>belongs(x,session)&&x.id===record.id);if(!t||t.revision!==task.revision||t.methodId!==task.methodId||t.methodVersion!==task.methodVersion||(t.recordId&&t.recordId!==record.id)||!r||hash(r)!==hash(record)||(s.tasks||[]).some(x=>belongs(x,session)&&x.id!==task.id&&x.recordId===record.id))fail('CONFLICT','任务方法或记录在准备期间已变化，未绑定实验记录。');t.recordId=record.id;return t;},session);
       return view(find(task.id,session),session);
     }
     const current=await view(task,session),record=current.record;
