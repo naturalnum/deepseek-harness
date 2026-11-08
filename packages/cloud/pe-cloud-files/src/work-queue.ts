@@ -376,8 +376,9 @@ export class FilesWorkQueue {
     if (record.owned !== undefined) {
       const { responsibility, operation } = record.owned
       const notify = operation === 'prepare' ? responsibility.prepared(result, record.invoked) : responsibility.cleaned(result)
+      const deliver = record.deliver
       this.release(record)
-      record.deliver(undefined, () => {})
+      deliver(undefined, () => {})
       this.pump()
       notify()
       return

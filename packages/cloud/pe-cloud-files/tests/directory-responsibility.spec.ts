@@ -23,6 +23,37 @@ function binding(account = 'A', epoch = '1'): AccountBinding {
 afterEach(() => { vi.useRealTimers() })
 
 describe('bounded independent directory responsibility', () => {
+  it('settles original owned preparation and cleanup promises after I/O release and before observer notification', async () => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), events: string[] = []
+    // Observe the original internal Promise resolver: the public observation alone uses a separate notification path.
+    const completion = (operation: 'prepare' | 'cleanup'): Promise<undefined> => {
+      const record = [...queue['lanes']].flatMap(state => [...state.records]).find(row => row.owned?.operation === operation)
+      if (record === undefined) throw new Error('Missing original directory I/O record')
+      const delivered = Promise.withResolvers<undefined>()
+      // Generated declarations intentionally hide private records; observe only the original resolver signature.
+      const deliver: (value: unknown, release: () => void) => void = record.deliver
+      record.deliver = (value: unknown, release: () => void) => {
+        expect(queue.inspect().running).toBe(0)
+        events.push(`${operation}-internal`)
+        deliver(value, release); delivered.resolve(undefined)
+      }
+      return delivered.promise
+    }
+    const prepared = lane.prepareDirectory(intent, bounds, async () => created)
+    const preparation = completion('prepare')
+    const observed = prepared.observation.waitPrepared().then((value) => {
+      expect(value).toBe('created'); events.push('prepare-observed')
+      expect(queue.inspect()).toMatchObject({ running: 0, residentBytes: budget.responsibilityBytes })
+    })
+    await Promise.all([preparation, observed])
+    const cleaned = prepared.control.cleanup(async () => 'cleaned')
+    const cleanup = completion('cleanup')
+    await Promise.all([cleanup, cleaned.then((value) => { expect(value).toBe('cleaned'); events.push('cleanup-observed') })])
+    expect(events).toEqual(['prepare-internal', 'prepare-observed', 'cleanup-internal', 'cleanup-observed'])
+    queue.close(); await queue.whenClosed()
+    expect(queue.inspect()).toMatchObject({ residentBytes: 0, pending: 0, lanes: 0 })
+  })
+
   it('accounts exact fixed records, identity copies and independent complete cleanup scratch', () => {
     expect(budget).toEqual({ ioBytes: 6140, responsibilityBytes: 10284, totalBytes: 16424 })
     expect(Object.isFrozen(budget)).toBe(true)
