@@ -1,5 +1,5 @@
 /** Explicitly opted-in PostgreSQL17 fixture; never connects to the application database or discovers credentials. */
-import { constants, openSync, readSync, closeSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Client } from 'pg'
 import { expect, it, vi } from 'vitest'
@@ -11,40 +11,17 @@ import { recoverReleasedSql, closeRecoveredInstanceSql } from '../src/owner-sql.
 import type { OwnerRecoveryAuthority, OwnerRecoveryExpectation, OwnerRecoveryProof, RecoveryAuditRef } from '../src/owner-types.ts'
 import { allocationMigrationSql } from '../../pe-opensandbox/src/migrations/allocations.ts'
 import { runOwnerRecoveryPostgresCases } from './owner-recovery-postgres-cases.ts'
+import { readRecoveryFixture, type RecoveryFixture } from './owner-recovery-pg-fixture.ts'
 import { account, epoch, instance, limits } from './owner-fixture.ts'
 
 const fixturePath = process.env.DSH_CLOUD_RECOVERY_PG_FIXTURE
-interface Fixture { readonly port: number; readonly database: string; readonly role: string }
-function readFixture(path: string): Fixture {
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-  let value: unknown
-  try {
-    const bytes = Buffer.alloc(16385)
-    let size = 0
-    while (size < bytes.length) {
-      const count = readSync(fd, bytes, size, bytes.length - size, size)
-      if (count === 0) break
-      size += count
-    }
-    if (size > 16384) throw new Error('Recovery fixture manifest exceeded its byte bound')
-    value = JSON.parse(new TextDecoder('utf8', { fatal: true }).decode(bytes.subarray(0, size)))
-  } finally { closeSync(fd) }
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Explicit recovery fixture required')
-  const row = value as Record<string, unknown>
-  if (typeof row.port !== 'number' || !Number.isInteger(row.port) || row.port < 1 || row.port > 65535
-    || typeof row.database !== 'string' || !/^s4_recovery_worker1_[a-f0-9]{32}$/.test(row.database)
-    || typeof row.role !== 'string' || row.role !== row.database.replace('s4_recovery_worker1_', 's4_recovery_worker1_role_')) {
-    throw new Error('Only the exact owned loopback recovery fixture may run these cases')
-  }
-  return { port: row.port, database: row.database, role: row.role }
-}
 
-function connection(fixture: Fixture, user: string) {
-  return { host: '127.0.0.1', port: fixture.port, database: fixture.database, user, password: '', ssl: false as const,
+function connection(fixture: RecoveryFixture, user: string) {
+  return { host: '127.0.0.1', port: fixture.port, database: fixture.database, user, password: fixture.password, ssl: false as const,
     connectionTimeoutMillis: 2000, statement_timeout: 5000, lock_timeout: 1000, query_timeout: 0 }
 }
 
-async function snapshotCases(executor: PgOwnerExecutor, fixture: Fixture): Promise<readonly string[]> {
+async function snapshotCases(executor: PgOwnerExecutor, fixture: RecoveryFixture): Promise<readonly string[]> {
   const replacement = brandString<typeof instance>('snapshot-fixture-replacement')
   const expected: OwnerRecoveryExpectation = { accountId: account, oldInstanceId: instance, epoch,
     auditRef: brandString<RecoveryAuditRef>('snapshot-fixture-audit') }
@@ -133,8 +110,8 @@ async function snapshotCases(executor: PgOwnerExecutor, fixture: Fixture): Promi
 
 it.skipIf(fixturePath === undefined)('executes guarded recovery and post-lock snapshot cases in the owned PG17 fixture', async () => {
   if (fixturePath === undefined) throw new Error('Explicit recovery fixture required')
-  const fixture = readFixture(fixturePath)
-  const executor = new PgOwnerExecutor({ host: '127.0.0.1', port: fixture.port, user: fixture.role, password: '',
+  const fixture = readRecoveryFixture(fixturePath)
+  const executor = new PgOwnerExecutor({ host: '127.0.0.1', port: fixture.port, user: fixture.role, password: fixture.password,
     database: fixture.database, ssl: false }, { maxConnections: 4, maxQueued: 8, queueTimeoutMs: 5000,
     connectionTimeoutMs: 2000, statementTimeoutMs: 5000, lockTimeoutMs: 1000, maxObservedOperations: 8, maxObservers: 8 })
   const cases: string[] = []
