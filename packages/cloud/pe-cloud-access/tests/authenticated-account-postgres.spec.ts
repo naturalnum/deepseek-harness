@@ -224,4 +224,20 @@ describe.skipIf(configPath === undefined)('real authenticated account projection
     await vi.waitFor(() => { expect(fixture.auth.pendingOperations).toBe(0) })
     expect(held.spy).toHaveBeenCalledOnce()
   })
+
+  it('does not retain a login returned after its authentication deadline', async () => {
+    const fixture = await setup({ authCheckTimeoutMs: 100, maxTrackedLogins: 1, maxTrackedLoginsPerAccount: 1 })
+    const lateCookie = await fixture.signup('Late authentication')
+    const nextCookie = await fixture.signup('Next authentication')
+    const held = fixture.holdNextRead()
+    const late = fixture.auth.authenticateForBootstrap(fixture.request(lateCookie), requestId, 64)
+    await held.captured
+    await expect(late).rejects.toMatchObject({ code: 'cloud/account-unavailable', status: 503 })
+    expect(fixture.auth.pendingOperations).toBe(1)
+    held.release()
+    await vi.waitFor(() => { expect(fixture.auth.pendingOperations).toBe(0) })
+    const next = await fixture.auth.authenticateForBootstrap(fixture.request(nextCookie), requestId, 64)
+    expect(next.account.displayName).toBe('Next authentication')
+    fixture.auth.assertLoginCurrent(next.principal, requestId)
+  })
 })

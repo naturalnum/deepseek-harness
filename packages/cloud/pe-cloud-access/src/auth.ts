@@ -222,6 +222,9 @@ export class BetterAuthAccess {
     const headers = this.trustedHeaders(request, requestId, transport)
     return this.withDeadline(async (ordinal) => {
       const login = await this.readLogin(headers, ordinal, requestId)
+      // A timed-out library read still owns its actual query slot, but its
+      // result has no caller and must not consume a tracked-login slot.
+      if (this.invocation.getStore()?.timedOut === true) throw new AuthAccessError('cloud/account-unavailable', requestId)
       const principal: AuthenticatedPrincipal = Object.freeze({
         accountId: login.user.id as AccountId,
         authSessionId: login.session.id as Branded<'pe-auth-session-id'>,
