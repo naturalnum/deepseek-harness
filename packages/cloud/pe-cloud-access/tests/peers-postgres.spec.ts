@@ -330,6 +330,75 @@ afterEach(async () => {
 })
 
 describe.skipIf(configPath === undefined)('internal login Peer with real PG/native services', () => {
+  it.each([false, true])('retains the original login until a recheck query settles after Peer close (timeout=%s)', async (timeout) => {
+    const fixture = await setup({ authCheckTimeoutMs: timeout ? 100 : 10000 })
+    const handle = await acquire(fixture)
+    fixture.auth.releasePrincipal(fixture.a)
+    const held = holdLoginResult(fixture)
+    const recheck = fixture.auth.recheckLogin(handle.principal, requestId)
+    void recheck.catch(() => {})
+    try {
+      await held.entered
+      await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+      if (timeout) {
+        await expect(recheck).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+        expect(fixture.auth.pendingOperations).toBe(1)
+      } else fixture.auth.assertLoginCurrent(handle.principal, requestId)
+      held.release()
+      if (!timeout) await expect(recheck).resolves.toBeUndefined()
+      await vi.waitFor(() => { expect(fixture.auth.pendingOperations).toBe(0) })
+      expect(() => fixture.auth.assertLoginCurrent(handle.principal, requestId)).toThrow()
+      const next = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+      fixture.auth.releasePrincipal(next)
+    } finally {
+      held.release()
+      await recheck.catch(() => {})
+    }
+  })
+
+  it('does not restore a revoked login when a closed Peer has a late recheck', async () => {
+    const fixture = await setup()
+    const handle = await acquire(fixture)
+    fixture.auth.releasePrincipal(fixture.a)
+    const held = holdLoginResult(fixture)
+    const recheck = fixture.auth.recheckLogin(handle.principal, requestId)
+    void recheck.catch(() => {})
+    try {
+      await held.entered
+      await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+      await fixture.auth.revokeLogin(handle.principal.authSessionId, requestId)
+      held.release()
+      await expect(recheck).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+      await expect(fixture.auth.authenticate(authRequest(fixture.cookieA), requestId))
+        .rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+      expect(() => fixture.auth.assertLoginCurrent(handle.principal, requestId)).toThrow()
+    } finally {
+      held.release()
+      await recheck.catch(() => {})
+    }
+  })
+
+  it('retains a timed-out preparing Peer recheck until the underlying query settles', async () => {
+    const fixture = await setup({ authCheckTimeoutMs: 100, peerCloseTimeoutMs: 2000 })
+    const held = holdLoginResult(fixture)
+    const opening = acquire(fixture)
+    void opening.catch(() => {})
+    try {
+      await held.entered
+      fixture.auth.releasePrincipal(fixture.a)
+      await expect(opening).rejects.toThrow()
+      await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+      expect(fixture.auth.pendingOperations).toBe(1)
+      held.release()
+      await vi.waitFor(() => { expect(fixture.auth.pendingOperations).toBe(0) })
+      const next = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+      fixture.auth.releasePrincipal(next)
+    } finally {
+      held.release()
+      await opening.catch(() => {})
+    }
+  })
+
   it('keeps a Peer login borrowed after the request releases it and frees the slot after actual close', async () => {
     const fixture = await setup({ maxTrackedLogins: 2, maxTrackedLoginsPerAccount: 1 })
     const handle = await acquire(fixture)

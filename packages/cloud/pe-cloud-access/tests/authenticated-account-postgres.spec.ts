@@ -257,6 +257,7 @@ describe.skipIf(configPath === undefined)('real authenticated account projection
     fixture.auth.assertLoginCurrent(second, requestId)
     fixture.auth.releasePrincipal(second)
     expect(() => fixture.auth.assertLoginCurrent(second, requestId)).toThrow()
+    expect(() => fixture.auth.releasePrincipal(second)).toThrow('no remaining borrow')
   })
 
   it('reuses the only tracking slot after each settled authentication', async () => {

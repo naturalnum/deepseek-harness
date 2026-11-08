@@ -356,7 +356,7 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
     if (waitForReady) await ready.promise
     return { frames, client, closed: closed.promise, didClose: () => didClose }
   }
-  return { ctx: native, registry: peers, binding, acquire, run, http, websocket, query, cleanupFailures,
+  return { ctx: native, auth: originalAuth, registry: peers, binding, acquire, run, http, websocket, query, cleanupFailures,
     writeNativeValue, patch: () => readFileSync(profile.patchPath, 'utf8'), saves,
     issueUse: () => issueUse(binding), observe: () => ({ borrowed, released, inUse, calls }),
     setRead: (next: typeof read) => { read = next }, setDispatch: (next: typeof dispatchCheck) => { dispatchCheck = next },
@@ -1171,7 +1171,8 @@ it('rejects a second actual carrier before releasing Uses or calling the configu
   const f = await fixture(), peer = await f.acquire('login=a')
   const hold = carrier('/held', 'POST', ['Cookie', 'login=a']), completed = Promise.withResolvers<undefined>()
   const pending = f.registry.runCarrier(peer, hold.request, requestId, {
-    authenticate: async () => peer.principal, actual: completed.promise, destroy() {}, consume: async () => {},
+    authenticate: async () => { f.auth.retainPrincipal(peer.principal, requestId); return peer.principal },
+    actual: completed.promise, destroy() {}, consume: async () => {},
   })
   await pending
   try {
@@ -1244,7 +1245,8 @@ it('reports only bounded current-account Peer busy counts while a real other car
   const held = carrier('/retained-private-request', 'POST', ['Cookie', 'private-counter-cookie'])
   const completed = Promise.withResolvers<undefined>()
   const pending = f.registry.runCarrier(peer, held.request, requestId, {
-    authenticate: async () => peer.principal, actual: completed.promise, destroy() {}, consume: async () => {},
+    authenticate: async () => { f.auth.retainPrincipal(peer.principal, requestId); return peer.principal },
+    actual: completed.promise, destroy() {}, consume: async () => {},
   })
   await pending
   try {
@@ -1286,7 +1288,8 @@ it('does not consume the HTTP release capability when another real carrier trigg
   const f = await fixture(), peer = await f.acquire('login=http-busy'), ingressUse = f.issueUse()
   const held = carrier('/held-http-work', 'POST', ['Cookie', 'login=http-busy']), completed = Promise.withResolvers<undefined>()
   await f.registry.runCarrier(peer, held.request, requestId, {
-    authenticate: async () => peer.principal, actual: completed.promise, destroy() {}, consume: async () => {},
+    authenticate: async () => { f.auth.retainPrincipal(peer.principal, requestId); return peer.principal },
+    actual: completed.promise, destroy() {}, consume: async () => {},
   })
   let handoffs = 0
   const request = await f.http(peer, () => { ingressUse.release(); handoffs++ })

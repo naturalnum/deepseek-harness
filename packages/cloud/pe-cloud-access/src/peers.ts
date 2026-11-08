@@ -520,6 +520,7 @@ export class LoginPeerRegistry {
    * @param request Original fixed-route request, used only to detect a disconnected carrier.
    * @param requestId Original ingress correlation id.
    * @param input Trusted Root callbacks: real route-specific authentication, existing cancellation and body work.
+   * The authentication callback returns an independently borrowed principal, released after carrier authentication.
    * Its actual promise is the original ingress operation, including response transfer and Use release; rejection
    * means cleanup is unconfirmed. It is observed here, never awaited by the body that it contains.
    * @returns Authentication/body settlement; carrier capacity remains held until the separate actual operation settles.

@@ -252,17 +252,27 @@ export class BetterAuthAccess {
     retainActual?: (actual: Promise<void>) => void): Promise<void> {
     if (!this.accepting) throw new AuthAccessError('cloud/account-unavailable', requestId)
     const record = this.record(principal, requestId)
-    await this.withDeadline(async (ordinal) => {
-      const login = await this.readLogin(record.headers, ordinal, requestId)
-      if (login.user.id !== principal.accountId || login.session.id !== principal.authSessionId || record.state.invalidated) {
-        throw new AuthAccessError('cloud/unauthenticated', requestId)
-      }
-      record.state = this.loginState(login, requestId)
-      record.verifiedAtMs = performance.now()
-    }, requestId, async () => {
-      record.state.invalidated = true
-      await this.invalidateLogin(principal.authSessionId, record.state)
-    }, retainActual)
+    this.retainPrincipal(principal, requestId)
+    let completionOwned = false
+    try {
+      await this.withDeadline(async (ordinal) => {
+        const login = await this.readLogin(record.headers, ordinal, requestId)
+        if (login.user.id !== principal.accountId || login.session.id !== principal.authSessionId || record.state.invalidated) {
+          throw new AuthAccessError('cloud/unauthenticated', requestId)
+        }
+        record.state = this.loginState(login, requestId)
+        record.verifiedAtMs = performance.now()
+      }, requestId, async () => {
+        record.state.invalidated = true
+        await this.invalidateLogin(principal.authSessionId, record.state)
+      }, (actual) => {
+        completionOwned = true
+        void actual.then(() => this.releasePrincipal(principal))
+        retainActual?.(actual)
+      })
+    } finally {
+      if (!completionOwned) this.releasePrincipal(principal)
+    }
   }
 
   /**
