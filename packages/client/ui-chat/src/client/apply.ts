@@ -282,15 +282,16 @@ export function apply(ctx: Context): void {
             },
             read: () => chatScrollPositions.get(sessionId) ?? null,
           },
-          forkAt: (seq) => {
+          forkAt: (seq, onFailure) => {
             const turn = [...chat.getSnapshot().timeline.turns.values()].find(turn => turn.end?.seq === seq)
             const messageId = turn?.data.get('turn-tail')?.closing?.finalNode.messageId
             ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true, onCreated: (childId) => {
               ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, ...messageId === undefined ? {} : { parent_message_id: messageId }, click_position: 'footer' })
             } })
               .then((childId) => { ctx.uiWorkspace.openSession(childId) })
-              .catch(() => {
-                // Fork or child-title failure leaves the source view unchanged.
+              .catch((_error: unknown) => {
+                // Creation may precede a title failure; the view reports uncertainty without repeating the fork.
+                onFailure?.()
               })
           },
         }

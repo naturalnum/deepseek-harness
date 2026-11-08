@@ -19,7 +19,9 @@ import { CloudApiError, type ExposureService } from '@deepseek-ai/dsh-pe-cloud-a
 import { CloudAccountFiles, type AccountFileSelection } from '@deepseek-ai/dsh-pe-cloud-files'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import { scopeChainOf, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
-import { SessionId, type Session, type SessionHeader } from '@deepseek-ai/dsh-session'
+import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
+import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionId, SessionSeq, type Session, type SessionHeader } from '@deepseek-ai/dsh-session'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-working-directory'
@@ -57,7 +59,7 @@ type Entry = NonNullable<Fiber['entry']>
 type EntryFact = { readonly id: string; readonly entry: Entry; readonly fiber: Fiber; readonly plan: ReturnType<Entry['prepareConfigUpdate']>; readonly module: unknown }
 type Agent = Parameters<AccountNativeGuards['agents']['assertPrepared']>[0]
 type Selection = { readonly provider?: string; readonly model?: string }
-type Header = Pick<SessionHeader, 'cwd' | 'origin' | 'parentSession' | 'delegationDepth'> & { readonly isSeeded?: boolean }
+type Header = Pick<SessionHeader, 'cwd' | 'origin' | 'parentSession' | 'delegationDepth'> & { readonly id?: SessionId; readonly isSeeded?: boolean }
 type ChildPreparation = {
   readonly child: Agent
   readonly session: Session
@@ -739,12 +741,16 @@ class AccountPolicy {
   }
 
   header(header: Header, path: string): void {
-    if (header.cwd !== path || header.origin !== undefined || header.parentSession !== undefined
-      || (header.delegationDepth ?? 0) !== 0 || header.isSeeded) refuse()
+    if (header.cwd !== path || header.origin !== undefined || (header.delegationDepth ?? 0) !== 0) refuse()
+    if (header.parentSession === undefined) {
+      if (header.isSeeded) refuse()
+    } else if (header.isSeeded !== true || header.parentSession === header.id
+      || this.memberCurrent(header.parentSession) !== this.workspaceAtCurrent(path)) refuse()
   }
 
   async history(
     id: SessionId, signal?: AbortSignal, mode: 'member' | 'create-probe' = 'member', expected?: Workspace,
+    validate?: (observation: SessionObservation) => void,
   ): Promise<Workspace> {
     const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
     const member = this.member(id)
@@ -764,6 +770,7 @@ class AccountPolicy {
     control.throwIfAborted()
     this.assertWorkspace(workspace)
     if (!workspace.sessionIds.includes(id)) refuse()
+    validate?.(observed)
     return workspace
   }
 
@@ -788,7 +795,8 @@ class AccountPolicy {
           ? summary.origin !== session.header.origin || summary.parentSessionId !== session.header.parentSession
           : summary.origin === 'subagent'
             ? summary.parentSessionId === undefined || summary.parentSessionId === id
-            : summary.parentSessionId !== undefined)) refuse()
+            : summary.parentSessionId !== undefined && (summary.parentSessionId === id
+              || this.memberCurrent(summary.parentSessionId) !== workspace))) refuse()
       const values = summary.projections?.values
       if (values?.workingDirectory !== undefined && values.workingDirectory !== workspace.path) refuse()
       if (values?.agentPreset !== undefined) this.approvedPreset(values.agentPreset)
@@ -1318,11 +1326,22 @@ export function createAccountPolicy(
         if (options.parentAgent !== undefined) return policy.childCreate(options, signal)
         const workspace = policy.workspaceAt(options.meta?.cwd)
         await policy.directory(workspace, signal)
-        policy.header(options.meta ?? {}, workspace.path)
+        if (options.meta?.isSeeded) {
+          const sourceId = options.meta.parentSession
+          if (sourceId === undefined || sourceId === options.sessionId
+            || await policy.history(sourceId, signal, 'member', workspace, (observed) => {
+              const inherited = options.inheritedEventCount ?? 0
+              if (!Number.isSafeInteger(inherited) || inherited < 1
+                || observed.events[inherited - 1]?.seq !== inherited - 1
+                || !isDeepStrictEqual(options.seed, buildForkSeed(observed.events, SessionSeq(inherited - 1)))) refuse()
+            }) !== workspace) refuse()
+        }
+        policy.header({ ...options.meta, id: options.sessionId }, workspace.path)
         if (options.meta?.agentPreset === undefined) refuse()
         await policy.preset(options.meta.agentPreset, signal, true)
         await policy.model(options.agentOptions, signal)
         policy.current()
+        policy.header({ ...options.meta, id: options.sessionId }, workspace.path)
         policy.assertWorkspace(workspace)
       },
       assertResume: async (options, signal) => {

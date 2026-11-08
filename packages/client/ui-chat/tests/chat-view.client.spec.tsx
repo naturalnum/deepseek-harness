@@ -412,7 +412,7 @@ function makeHarness(
     save: (position) => { savedScroll = position },
     read: () => savedScroll,
   }
-  const forkAt = vi.fn()
+  const forkAt = vi.fn<ChatViewSlotProps['forkAt']>()
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
@@ -1893,7 +1893,7 @@ describe('ChatView', () => {
     fireEvent.click(branchButtons[0]!)
     // The branch action sends the real turn/end seq (the exact inclusive
     // Host boundary), not the assistant node seq.
-    expect(h.forkAt).toHaveBeenCalledWith(3)
+    expect(h.forkAt).toHaveBeenCalledWith(3, expect.any(Function))
   }))
 
   it('keeps pending file mentions non-interactive until admission enables the reference injector', () => {
@@ -3379,7 +3379,26 @@ describe('ChatView', () => {
     expect(buttons).toHaveLength(1)
     expect(buttons[0]!.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(buttons[0]!)
-    expect(h.forkAt.mock.calls).toEqual([[3]])
+    expect(h.forkAt.mock.calls).toEqual([[3, expect.any(Function)]])
+  })
+
+  it('reports a rejected branch without changing the source or automatically repeating creation', () => {
+    const h = makeHarness({ nodes: [user(1, 'question'), assistant(2, 'answer')], turnEnds: new Map([[1, 3]]) })
+    h.forkAt.mockImplementationOnce((_seq, onFailure) => { onFailure?.() })
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(view.getByRole('button', { name: '在新对话中分支' }))
+    expect(view.getByRole('dialog')).toBeTruthy()
+    expect(view.getByText('未能打开分支会话')).toBeTruthy()
+    expect(view.getByText('分支会话未能打开，可能已经创建。请先检查会话列表，再决定是否重试；当前会话未改变。')).toBeTruthy()
+    expect(view.getByText('question')).toBeTruthy()
+    expect(view.getByText('answer')).toBeTruthy()
+    expect(h.forkAt).toHaveBeenCalledOnce()
+    expect(view.queryByRole('button', { name: '重试' })).toBeNull()
+    const close = view.getAllByRole('button', { name: '关闭' }).at(-1)
+    if (close === undefined) throw new Error('Branch failure close button absent')
+    fireEvent.click(close)
+    expect(view.queryByRole('dialog')).toBeNull()
+    expect(h.forkAt).toHaveBeenCalledOnce()
   })
 
   it('disables fork when the indexed Turn has a later steering Node', () => {

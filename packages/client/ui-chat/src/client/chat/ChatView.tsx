@@ -6,6 +6,7 @@ import type {
   NodeKey, RenderEntry,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   Button, IconChevronDownOutlineRegular, MarkdownDelegateProvider, Modal,
@@ -59,9 +60,13 @@ const MOTION_TAIL_MS = 800
  */
 export function ChatView({
   useSession, useChat, useConversation, useSessions, renderSlot,
-  sessionId, openFile, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions,
+  sessionId, openFile, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt: requestFork, fileMentions,
   usePresentation, useProjection, t,
 }: ChatViewSlotProps) {
+  const [forkFailure, setForkFailure] = useState<SessionId | null>(null)
+  const forkAt = useCallback((seq: number) => {
+    requestFork(seq, () => { setForkFailure(sessionId) })
+  }, [requestFork, sessionId])
   const order = useChat(s => s.order)
   const groupedEntries = useConversation(snapshot => snapshot.views.grouped('chat')?.entries)
   const entries = useMemo<readonly RenderEntry[]>(() => groupedEntries
@@ -248,6 +253,16 @@ export function ChatView({
             <IconChevronDownOutlineRegular />
           </button>
         </div>
+      )}
+      {forkFailure === sessionId && (
+        <Modal
+          open
+          onClose={() => { setForkFailure(null) }}
+          closeLabel={t('close')}
+          title={t('forkFailure.title')}
+          description={t('forkFailure.description')}
+          footer={<Button variant="primary" onClick={() => { setForkFailure(null) }}>{t('close')}</Button>}
+        />
       )}
       {fileOpenError !== null && (
         <FileOpenErrorDialog

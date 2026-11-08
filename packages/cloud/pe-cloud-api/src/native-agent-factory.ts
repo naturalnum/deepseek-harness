@@ -87,9 +87,10 @@ class FactoryAdmission {
     return AbortSignal.any(caller === undefined ? [this.binding.lifetime] : [caller, this.binding.lifetime])
   }
 
-  root(meta: NonNullable<CreateOptions['meta']>): void {
-    if (meta.origin !== undefined || meta.parentSession !== undefined || (meta.delegationDepth ?? 0) !== 0 || meta.isSeeded === true) {
-      throw new CloudApiError('cloud/forbidden', 'Parent, subagent and seeded Session activation is not admitted by this factory.')
+  root(meta: NonNullable<CreateOptions['meta']>, id: CreateOptions['sessionId']): void {
+    if (meta.origin !== undefined || (meta.delegationDepth ?? 0) !== 0
+      || (meta.parentSession === undefined ? meta.isSeeded === true : meta.isSeeded !== true || meta.parentSession === id)) {
+      throw new CloudApiError('cloud/forbidden', 'Ordinary Session or authorized fork metadata is required by this factory.')
     }
     if (meta.cwd === undefined || meta.cwd.length === 0) {
       throw new CloudApiError('cloud/account-unavailable', 'A verified ordinary Session project is required before activation.')
@@ -153,10 +154,13 @@ class FactoryAdmission {
       if (depth !== options.meta.delegationDepth) throw new CloudApiError('cloud/forbidden', 'Actual child depth was not verified.')
       return depth
     }
-    if (options.seed !== undefined || (options.inheritedEventCount ?? 0) !== 0) {
-      throw new CloudApiError('cloud/forbidden', 'Seeded Agent creation is not admitted by this factory.')
+    const inherited = options.inheritedEventCount ?? 0
+    if (options.meta?.isSeeded === true
+      ? options.seed === undefined || !Number.isSafeInteger(inherited) || inherited < 1 || inherited > options.seed.length
+      : options.seed !== undefined || inherited !== 0) {
+      throw new CloudApiError('cloud/forbidden', 'Native fork history and its exact inherited prefix are required.')
     }
-    this.root(options.meta ?? {})
+    this.root(options.meta ?? {}, options.sessionId)
     await this.guards.assertCreate(options, signal)
   }
 
@@ -225,7 +229,7 @@ class FactoryAdmission {
       || agent.ctx.root.get('peAccount') !== this.binding) {
       throw new CloudApiError('cloud/stale-generation', 'The prepared Agent does not belong to this native factory graph.')
     }
-    if (parent === undefined) this.root(agent.session.header)
+    if (parent === undefined) this.root(agent.session.header, agent.id)
     else {
       this.parent(owner, parent)
       const header = agent.session.header
