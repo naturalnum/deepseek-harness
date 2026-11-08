@@ -194,7 +194,8 @@ footer { font-size: 11px; color: var(--research-muted); padding: 18px 36px; bord
 .shell > main > footer { background: var(--research-surface); }
 .shell > main > footer { margin-top: auto; }
 .shell > main > .conversation-workbench { padding: 24px 32px; min-height: 0; }
-.markdown { line-height: 1.8; }
+.markdown { line-height: 1.8; min-width:0; }
+.markdown > :not(pre):not(table) { overflow-wrap:anywhere; }
 .markdown img { max-width: 100%; }
 .markdown pre { overflow: auto; }
 .markdown table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; margin:16px 0; font-size:13px; }

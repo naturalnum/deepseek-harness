@@ -258,10 +258,20 @@ index 4c40240cd0..064953f597 100644
 +  } };
  }
 diff --git a/integrations/epri-research/src/ui/style.css b/integrations/epri-research/src/ui/style.css
-index 8dc647cac2..f31f82fe5f 100644
+index 8dc647cac2..d3a080560c 100644
 --- a/integrations/epri-research/src/ui/style.css
 +++ b/integrations/epri-research/src/ui/style.css
-@@ -431,6 +431,8 @@ html[data-research-compact] .workbench-status { font-size:10px; padding:2px 0; }
+@@ -194,7 +194,8 @@ footer { font-size: 11px; color: var(--research-muted); padding: 18px 36px; bord
+ .shell > main > footer { background: var(--research-surface); }
+ .shell > main > footer { margin-top: auto; }
+ .shell > main > .conversation-workbench { padding: 24px 32px; min-height: 0; }
+-.markdown { line-height: 1.8; }
++.markdown { line-height: 1.8; min-width:0; }
++.markdown > :not(pre):not(table) { overflow-wrap:anywhere; }
+ .markdown img { max-width: 100%; }
+ .markdown pre { overflow: auto; }
+ .markdown table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; margin:16px 0; font-size:13px; }
+@@ -431,6 +432,8 @@ html[data-research-compact] .workbench-status { font-size:10px; padding:2px 0; }
  .science-tabs small { margin-left:6px; }
  .science-create { margin-bottom:16px; }
  .science-card,.science-editor { border:1px solid var(--research-border); border-radius:16px; background:var(--research-surface); padding:24px; margin-bottom:16px; box-shadow:var(--research-shadow); }
