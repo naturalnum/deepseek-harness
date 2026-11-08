@@ -116,14 +116,16 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
       if(a.expectedMethodSha256!==undefined&&source.sha256!==a.expectedMethodSha256)fail('CONFLICT','已批准的方法源码已变化，请重新核对。');
       const latest=find(task.id,session);
       if(latest.revision!==task.revision||latest.methodId!==task.methodId||latest.methodVersion!==task.methodVersion)fail('CONFLICT','任务方法在准备期间已变化，未执行方法准备。');
-      if(source.builtin&&!source.installed)await engine.execute('engine_package_put',{id:source.id,version:source.version,title:source.title,kind:'protocol',files:source.files,requestId:task.id+'.package'},actor,session);
+      // Each reviewed task revision and exact source owns its preparation retries.
+      const preparationKey=kind=>'prepare-'+hash([task.id,task.revision,source.sha256,kind]);
+      if(source.builtin&&!source.installed)await engine.execute('engine_package_put',{id:source.id,version:source.version,title:source.title,kind:'protocol',files:source.files,requestId:preparationKey('package')},actor,session);
       if(!source.approved)await engine.execute('engine_package_review',{id:source.id,version:source.version,sha256:source.sha256,approved:true,reason:a.reason},actor,session);
       let protocol;try{protocol=await call('protocol_get',{id:source.id,version:source.version});}catch(error){if(error.code!=='NOT_FOUND')throw error;}
-      if(!protocol)protocol=await call('protocol_put',{id:source.id,version:source.version,content:source.files['protocol.aimd'],requestId:task.id+':protocol'});
+      if(!protocol)protocol=await call('protocol_put',{id:source.id,version:source.version,content:source.files['protocol.aimd'],requestId:preparationKey('protocol')});
       if(protocol.content!==source.files['protocol.aimd'])fail('CONFLICT','已有协议源码不同，请更换方法版本。');
-      let record=task.recordId?await call('record_get',{id:task.recordId}):await call('record_create',{protocolId:source.id,protocolVersion:source.version,requestId:task.id+':record'});
+      let record=task.recordId?await call('record_get',{id:task.recordId}):await call('record_create',{protocolId:source.id,protocolVersion:source.version,requestId:preparationKey('record')});
       record=await call('record_get',{id:record.id});
-      if(!record.calculationBinding)record=await call('record_bind_engine',{id:record.id,expectedRevision:record.revision,packageId:source.id,version:source.version,requestId:task.id+':binding'});
+      if(!record.calculationBinding)record=await call('record_bind_engine',{id:record.id,expectedRevision:record.revision,packageId:source.id,version:source.version,requestId:preparationKey('binding')});
       mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id);if(!t||t.revision!==task.revision||t.methodId!==task.methodId||t.methodVersion!==task.methodVersion)fail('CONFLICT','任务方法在准备期间已变化，未绑定实验记录。');t.recordId=record.id;return t;},session);
       return view(find(task.id,session),session);
     }
