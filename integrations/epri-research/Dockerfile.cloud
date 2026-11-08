@@ -1,5 +1,6 @@
 # Classic builder accepts this exact local image ID. Root qualifies the resulting new workload/server pair separately.
 ARG BASE_IMAGE=sha256:ff336ad49a52795fa82960da50a46cc7cbb654326ad5160313f94355d1cce461
+ARG GIT_BUILDER_IMAGE
 FROM ${BASE_IMAGE} AS git-supplier
 USER root
 COPY scripts/install-cloud-git.py scripts/prepare-cloud-git-verifier.py source-records/cloud-git.json source-records/cloud-git-verifier.json /opt/dsh/research/.git-build/
@@ -9,6 +10,14 @@ RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.gi
     && cp /opt/dsh/research/.git-build/verifier-files.json /opt/dsh/research/git/build-verifier.json \
     && chmod -R a-w /opt/dsh/research/git \
     && rm -rf /opt/dsh/research/.git-build
+
+# Supply an immutable, reviewed Office-derived build-tool image; its compiler and development libraries never enter the runtime.
+FROM ${GIT_BUILDER_IMAGE} AS git-core-builder
+USER root
+COPY --from=git-supplier /usr/share/keyrings/debian-archive-keyring.pgp /opt/dsh/research/.git-source/keyring.gpg
+COPY scripts/build-cloud-git.py source-records/cloud-git-build.json /opt/dsh/research/.git-source/
+COPY runtime-input/git-source/ /opt/dsh/research/.git-source/inputs/
+RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.git-source/build-cloud-git.py build --record /opt/dsh/research/.git-source/cloud-git-build.json --input-dir /opt/dsh/research/.git-source/inputs --keyring /opt/dsh/research/.git-source/keyring.gpg --work-dir /opt/dsh/research/.git-source/work --output-dir /opt/dsh/research/.git-source/artifact
 
 FROM ${BASE_IMAGE} AS research-runtime
 USER root
@@ -23,7 +32,11 @@ RUN /opt/dsh/runtime/dependencies/python/bin/python3 -I -B /opt/dsh/research/.bu
     && rm -rf /opt/dsh/research/.build \
     && chmod -R a-w /opt/dsh/research
 COPY --from=git-supplier /opt/dsh/research/git /opt/dsh/research/git
+COPY --from=git-core-builder /opt/dsh/research/.git-source/artifact /opt/dsh/research/.git-build/artifact
+COPY scripts/build-cloud-git.py source-records/cloud-git-build.json /opt/dsh/research/.git-build/
 COPY scripts/cloud-git-probe.py /tmp/research-git-probe.py
-RUN /opt/dsh/research/python/bin/python3 -I -S -B /tmp/research-git-probe.py --output /opt/dsh/research/git/qualification.json \
+RUN /opt/dsh/research/python/bin/python3 -I -S -B /opt/dsh/research/.git-build/build-cloud-git.py replace --record /opt/dsh/research/.git-build/cloud-git-build.json --artifact-dir /opt/dsh/research/.git-build/artifact \
+    && /opt/dsh/research/python/bin/python3 -I -S -B /tmp/research-git-probe.py --output /opt/dsh/research/git/qualification.json \
     && chmod -R a-w /opt/dsh/research/git \
-    && rm /tmp/research-git-probe.py
+    && rm /tmp/research-git-probe.py \
+    && rm -rf /opt/dsh/research/.git-build

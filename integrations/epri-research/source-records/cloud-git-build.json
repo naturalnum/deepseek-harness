@@ -1,0 +1,71 @@
+{
+  "schema": "research-cloud-git-source-build-v1",
+  "prefix": "/opt/dsh/research/git",
+  "version": "1:2.47.3-0+deb13u1",
+  "gitVersion": "2.47.3",
+  "release": "debian-trixie.InRelease",
+  "index": "debian-trixie.Sources.xz",
+  "indexReleasePath": "main/source/Sources.xz",
+  "indexUncompressedBytes": 57389881,
+  "directory": "pool/main/g/git",
+  "sourceFiles": [
+    "git_2.47.3-0+deb13u1.dsc",
+    "git_2.47.3.orig.tar.xz",
+    "git_2.47.3-0+deb13u1.debian.tar.xz"
+  ],
+  "requiredPrimarySigningKeys": [
+    "04B54C3CDCA79751B16BC6B5225629DF75B188BD",
+    "41587F7DB8C774BCCF131416762F67A0B2C39DE4"
+  ],
+  "immutableBaseKeyring": {
+    "path": "/usr/share/keyrings/debian-archive-keyring.gpg",
+    "bytes": 55918,
+    "sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017"
+  },
+  "inputs": [
+    {
+      "name": "debian-trixie.InRelease",
+      "bytes": 140421,
+      "sha256": "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675",
+      "url": "https://deb.debian.org/debian/dists/trixie/InRelease"
+    },
+    {
+      "name": "debian-trixie.Sources.xz",
+      "bytes": 10540436,
+      "sha256": "6002f81f463a2d976d84b34170367cc16da2d60bd0ba9ab9d868d6e1c1a935d9",
+      "url": "https://deb.debian.org/debian/dists/trixie/main/source/by-hash/SHA256/6002f81f463a2d976d84b34170367cc16da2d60bd0ba9ab9d868d6e1c1a935d9"
+    },
+    {
+      "name": "git_2.47.3-0+deb13u1.dsc",
+      "bytes": 2702,
+      "sha256": "41ee783af84774dfab31ff6af54a07f70513dd09914e2d622626f4dfecae0a86",
+      "url": "https://deb.debian.org/debian/pool/main/g/git/git_2.47.3-0+deb13u1.dsc"
+    },
+    {
+      "name": "git_2.47.3.orig.tar.xz",
+      "bytes": 7657416,
+      "sha256": "9c2eb1250781b3e5bfef098572d07fdf132d67e6c065e4307332ade9819a1501",
+      "url": "https://deb.debian.org/debian/pool/main/g/git/git_2.47.3.orig.tar.xz"
+    },
+    {
+      "name": "git_2.47.3-0+deb13u1.debian.tar.xz",
+      "bytes": 793112,
+      "sha256": "db44b90ab928d41959f5945a49fcaa101385a4bd085b118b5fd40162a0a84066",
+      "url": "https://deb.debian.org/debian/pool/main/g/git/git_2.47.3-0+deb13u1.debian.tar.xz"
+    }
+  ],
+  "archive": {
+    "name": "git_2.47.3.orig.tar.xz",
+    "root": "git-2.47.3",
+    "members": 4763,
+    "regularBytes": 44580960
+  },
+  "replaceCorePaths": [
+    "usr/bin/git",
+    "usr/lib/git-core/git"
+  ],
+  "originalCoreSha256": "a0e562e4bd3c4c79379e91d8c07a10104b2cefe8fac966dc6bd4874a57a807f3",
+  "buildOption": "CSPRNG_METHOD=getrandom",
+  "debianPatches": [],
+  "scope": "Only rebuild the unchanged official Git 2.47.3 core with its official getrandom option; preserve original helpers, templates, Office and scientific Python."
+}
