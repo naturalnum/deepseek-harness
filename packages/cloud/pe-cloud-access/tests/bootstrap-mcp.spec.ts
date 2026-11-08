@@ -46,7 +46,7 @@ beforeAll(async () => {
 afterAll(() => { if (descriptorHome !== undefined) rmSync(descriptorHome, { recursive: true, force: true }) })
 
 async function fixture() {
-  onTestFinished(() => vi.restoreAllMocks())
+  onTestFinished(() => { vi.restoreAllMocks() })
   const native = policyFixture([endpoint], bounds, 'bootstrap-mcp', undefined, catalog, undefined, undefined, undefined, [], false, undefined, {
     defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', selectable: true, config: { id: 'cloud-chat', plugins: [
       { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
