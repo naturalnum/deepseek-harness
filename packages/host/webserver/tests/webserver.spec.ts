@@ -884,7 +884,7 @@ describe('finite transport limits through the original Loader', () => {
       expect(capture?.watermarks).toEqual(Array<number>(4).fill(selected.highWaterMark))
     })
 
-    it(`${protocol} captures one excess header pair so the route rejects every oversized count`, async () => {
+    it(`${protocol} captures the excess sentinel and rejects larger header counts`, async () => {
       const { context, ca } = await compose(secure, selected)
       let captured = 0
       context.webServer.register({ kind: 'exact', path: '/wire', handler: (req, res) => {
@@ -893,10 +893,19 @@ describe('finite transport limits through the original Loader', () => {
         res.writeHead(captured > limits.maxHeaderPairs ? 431 : 200)
         res.end()
       } })
-      const input = 'GET /wire HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\n'
-        + Array.from({ length: 1700 }, () => 'X-Pad: x\r\n').join('') + '\r\n'
+      const head = 'GET /wire HTTP/1.1\r\nHost: public.example\r\nConnection: close\r\n'
+      // Two headers precede the padding: deliver exactly one pair beyond the
+      // route limit, without exceeding the native parser's own sentinel bound.
+      const input = head + Array.from({ length: limits.maxHeaderPairs - 1 }, () => 'X-Pad: x\r\n').join('') + '\r\n'
       expect((await exchange(context, input, ca)).toString()).toContain('431 Request Header Fields Too Large')
       expect(captured).toBe(limits.maxHeaderPairs + 1)
+
+      // Some Node versions reject still-larger counts in the parser; others
+      // pass the bounded sentinel to the route. Both must reject the request.
+      captured = 0
+      const excessive = head + Array.from({ length: 1700 }, () => 'X-Pad: x\r\n').join('') + '\r\n'
+      expect((await exchange(context, excessive, ca)).toString()).toContain('431 Request Header Fields Too Large')
+      expect([0, limits.maxHeaderPairs + 1]).toContain(captured)
     })
 
     it(`${protocol} rejects oversized header bytes in the original parser before route dispatch`, async () => {
