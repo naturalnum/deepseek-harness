@@ -336,6 +336,9 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         return issued
       } catch (error) {
         if (preparation !== undefined) preparation.phase = 'failed'
+        if (error instanceof DirectoryMetadataFailure && error.phase === 'target' && error.reason === 'missing') {
+          throw new FsError('File path was not found.', 'FS_NOT_FOUND', { cause: error })
+        }
         throw nativeReadFailure(error)
       }
     }

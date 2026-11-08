@@ -1002,3 +1002,19 @@ describe('FileSystemSkillProvider', () => {
     }
   })
 })
+
+it('can omit default user roots without suppressing project or explicit roots', async () => {
+  const home = await tempDir('configured-roots')
+  const workspace = join(home, 'workspace'), custom = join(home, 'custom')
+  await writeSkill(join(workspace, '.agents/skills'), 'project-skill', 'Project skill')
+  await writeSkill(join(home, 'user/skills'), 'user-skill', 'User skill')
+  await writeSkill(custom, 'custom-skill', 'Custom skill')
+  const ctx = new Context()
+  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(SkillFileSystem, { dshHome: join(home, 'user'), agentsHome: join(home, 'user'),
+    includeDefaultUserRoots: false, customSkillDirs: [custom], watch: false })
+  const result = await ctx.skills.snapshot({ cwd: workspace })
+  expect(result.complete).toBe(true)
+  expect(result.skills.map(skill => skill.name)).toEqual(['custom-skill', 'project-skill'])
+  await ctx.fiber.dispose()
+})

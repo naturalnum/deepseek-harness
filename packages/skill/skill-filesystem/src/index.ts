@@ -53,6 +53,8 @@ export interface Config {
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
+  /** Whether default user roots are included when default roots are enabled. */
+  includeDefaultUserRoots?: boolean
   /** DeepSeek Harness config root. Defaults to `$DSH_HOME` or `~/.dsh`. */
   dshHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
@@ -86,6 +88,7 @@ export interface Config {
 export const Config: Schema<Config> = z.object({
   providerName: z.string().min(1).default('filesystem'),
   includeDefaultRoots: z.boolean().default(true),
+  includeDefaultUserRoots: z.boolean().default(true),
   dshHome: z.string(),
   agentsHome: z.string(),
   customSkillDirs: z.array(z.string()).default([]),
@@ -200,6 +203,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 export class FileSystemSkillProvider implements SkillProvider {
   readonly name: string
   private readonly includeDefaultRoots: boolean
+  private readonly includeDefaultUserRoots: boolean
   private readonly dshHome: string
   private readonly agentsHome: string
   private readonly customSkillDirs: string[]
@@ -238,6 +242,7 @@ export class FileSystemSkillProvider implements SkillProvider {
     }
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
+    this.includeDefaultUserRoots = config.includeDefaultUserRoots ?? true
     this.dshHome = resolveDshHome(config.dshHome)
     this.agentsHome = resolveAgentsHome(config.agentsHome)
     this.customSkillDirs = (config.customSkillDirs ?? []).map(root => resolve(root))
@@ -365,7 +370,7 @@ export class FileSystemSkillProvider implements SkillProvider {
       )
     }
     roots.push(...this.customSkillDirs.map(path => ({ path, source: 'custom' as const, rank: CUSTOM_RANK })))
-    if (this.includeDefaultRoots) {
+    if (this.includeDefaultRoots && this.includeDefaultUserRoots) {
       roots.push(
         { path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
         { path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK },

@@ -18,6 +18,9 @@ import { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { createTextProjectFileSystem } from '../src/text-project.ts'
+import SkillRegistry from '../../../skill/skill/src/index.ts'
+import * as SkillFileSystem from '../../../skill/skill-filesystem/src/index.ts'
+import * as Office from '../../../skill/skill-office/src/index.ts'
 import { LinuxFilesPool } from '../src/worker-pool.ts'
 import type { AccountFileSelection } from '../src/text-project.ts'
 import type { FdContentLimits, FdWorkerInput } from '../src/worker-protocol.ts'
@@ -748,4 +751,28 @@ it.each(['resolve', 'stat'])('retains the completed preparation %s signal throug
   expect(() => test.fs.processPath(target)).toThrow()
   await expect(test.selected(scope, () => test.fs.stat(target))).rejects.toBeDefined()
   expect(count()).toBe(0)
+})
+
+it('reports a missing ancestor as native not-found without weakening project isolation', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits)
+  await expect(test.fs.resolve(join(test.project, '.dsh/skills'))).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+  await expect(test.fs.resolve('/outside-project/skills')).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+})
+
+it('publishes the Office catalog with scoped default roots and notices new workspace skills', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits)
+  await test.graph.plugin(SkillRegistry)
+  await test.graph.plugin(SkillFileSystem, { dshHome: '/outside-test-scope/dsh', agentsHome: '/outside-test-scope/agents', includeDefaultUserRoots: false })
+  await test.graph.plugin(Office)
+  const first = await test.graph.skills.snapshot({ cwd: test.project })
+  expect(first.complete).toBe(true)
+  expect(first.skills.some(skill => skill.name === 'office-xlsx')).toBe(true)
+  const root = join(test.project, '.agents/skills')
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'new-skill.md'), '---\nname: new-skill\ndescription: Test\n---\nHello')
+  const deadline = Date.now() + 5000
+  while (!(await test.graph.skills.snapshot({ cwd: test.project })).skills.some(skill => skill.name === 'new-skill')) {
+    if (Date.now() >= deadline) throw new Error('New workspace skill was not discovered')
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
 })
