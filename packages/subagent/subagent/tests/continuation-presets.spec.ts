@@ -28,6 +28,12 @@ const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/activat
 const contexts: Context[] = []
 const roots: string[] = []
 
+/** Agent creation already owns maintenance; initialize this fixture without re-entering it. */
+async function selectDuringCreation(ctx: Context, agent: Agent, presetId: string): Promise<void> {
+  const preset = await ctx.agentPresets.recompose(agent.ctx, presetId)
+  agent.session.append('agent-preset/selected', { agentPreset: preset.id })
+}
+
 afterEach(async () => {
   try {
     for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
@@ -200,7 +206,7 @@ describe('continuable child presets', () => {
     parkParent(ctx, parent)
     const stopSelecting = ctx.on('agent/created', async ({ agent, source }) => {
       if (source === 'startup' && agent.session.header.parentSession === parent.id) {
-        await ctx.agentPresets.select(agent, 'reviewing')
+        await selectDuringCreation(ctx, agent, 'reviewing')
       }
     })
     const started = await ctx.subagents.startActivation(startSpec(parent, 'coding'))
@@ -255,7 +261,7 @@ describe('continuable child presets', () => {
     parkParent(ctx, parent)
     const stopSelecting = ctx.on('agent/created', async ({ agent, source }) => {
       if (source === 'startup' && agent.session.header.parentSession === parent.id) {
-        await ctx.agentPresets.select(agent, 'reviewing')
+        await selectDuringCreation(ctx, agent, 'reviewing')
       }
     })
     const started = await ctx.subagents.startActivation(startSpec(parent, undefined, 'fork'))
