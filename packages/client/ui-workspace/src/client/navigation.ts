@@ -292,17 +292,35 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     reuse: Pick<StartSessionOptions, 'agentPreset'> | undefined,
   ): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    let parked: SessionReference | undefined
+    let restore: SessionTarget | undefined
+    const restorePrevious = (): void => {
+      if (!navigation.aborted && parked !== undefined && this.mainReference === parked && restore !== undefined) {
+        this.replaceMain(restore, navigation, 'preserve')
+      }
+    }
     let sessionId: SessionId
     try {
+      const previous = this.mainReference
+      if (previous !== undefined) {
+        restore = this.sessions.subagentAddress(previous.sessionId) ?? previous.sessionId
+        // Withdraw the old main-view binding before the first await. Keep its
+        // exact scope and draft alive without leaving its composer sendable.
+        parked = this.sessions.retain(restore, { source: 'controllerOperation' })
+        this.mainReference = parked
+        previous.release()
+      }
       sessionId = await this.connectBlank(workspaceId, reuse)
     } catch (error: unknown) {
       // Reported here, not in connectWorkspace: startup restoration calls that
       // directly and stays console-only.
+      restorePrevious()
       if (!navigation.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
       throw error
     }
     if (navigation.aborted) return
-    this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
+    try { this.replaceMain(sessionId, navigation, 'reveal', beforeOpen) }
+    catch (error: unknown) { restorePrevious(); throw error }
   }
 
   async forkSession(

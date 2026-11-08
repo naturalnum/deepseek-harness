@@ -175,6 +175,19 @@ class FakeSessions implements ISessions {
   }
 }
 
+/** Latest reference for an identity; navigation may park the original scope before replacing the main view. */
+function retainedSession(sessions: FakeSessions, id: SessionId): RetainedSession {
+  const retained = sessions.retained.findLast(item => item.reference.sessionId === id)
+  if (retained === undefined) throw new Error(`Missing retained Session ${id}`)
+  return retained
+}
+
+/** Assert one surviving main reference and settlement of every temporary reference. */
+function expectOnlyRetainedSession(sessions: FakeSessions, id: SessionId): void {
+  expect(sessions.retained.filter(item => item.release.mock.calls.length === 0).map(item => item.reference.sessionId)).toEqual([id])
+  for (const item of sessions.retained) if (item.release.mock.calls.length !== 0) expect(item.release).toHaveBeenCalledOnce()
+}
+
 class FakeWorkspaces implements IWorkspaces {
   readonly initializeDefault = vi.fn<IWorkspaces['initializeDefault']>(async () => undefined)
   readonly list: MutableSource<WorkspaceSnapshot>
@@ -447,9 +460,8 @@ describe('UiWorkspaceService', () => {
 
     await expect(b.uiWorkspace.openWorkspace(wid('a'), () => { throw failure })).rejects.toBe(failure)
 
-    expect(b.sessions.retained.map(item => item.reference.sessionId)).toEqual([sid('current'), sid('created-a')])
-    expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
-    expect(b.sessions.retained[1]!.release).toHaveBeenCalledOnce()
+    expect(retainedSession(b.sessions, sid('created-a')).release).toHaveBeenCalledOnce()
+    expectOnlyRetainedSession(b.sessions, sid('current'))
   })
 
   it('opens only the latest Workspace when creation finishes out of order', async () => {
@@ -715,7 +727,10 @@ describe('UiWorkspaceService', () => {
       })
     })
     expect(warning).toHaveBeenCalledExactlyOnceWith('new session failed:', refused)
-    expect(b.sessions.retain).not.toHaveBeenCalled()
+    expect(b.sessions.retain.mock.calls).toEqual([
+      [sid('created-a'), { source: 'controllerOperation' }], [sid('created-a'), { source: 'mainView' }],
+    ])
+    expectOnlyRetainedSession(b.sessions, sid('created-a'))
 
     // The hero picker reaches the same creation through openWorkspace; a
     // failure that is not a Host refusal keeps its own message.
@@ -803,11 +818,12 @@ describe('UiWorkspaceService', () => {
       b.selectPanel.mockClear()
       b.sessions.create.mockResolvedValueOnce(sid('actual-target'))
       b.requestDraftInitialization.mockImplementation((binding) => {
-        const target = b.sessions.retained[1]!
+        const target = retainedSession(b.sessions, sid('actual-target'))
         expect(binding).toBe(target.reference.binding)
         expect(binding.sessionId).toBe(sid('actual-target'))
         expect(target.release).not.toHaveBeenCalled()
-        expect(previous.release).not.toHaveBeenCalled()
+        expect(previous.release).toHaveBeenCalledOnce()
+        expect(retainedSession(b.sessions, sid('previous')).release).not.toHaveBeenCalled()
         expect(JSON.parse(backing.get('dsh.sessions.current')!)).toEqual({ sessionId: sid('previous') })
         expect(b.selectPanel).not.toHaveBeenCalled()
         return 'applied'
@@ -816,10 +832,10 @@ describe('UiWorkspaceService', () => {
       b.uiWorkspace.startSession(wid('a'), options)
       await lastOpening(opening)
 
-      expect(b.requestDraftInitialization).toHaveBeenCalledExactlyOnceWith(b.sessions.retained[1]!.reference.binding, options)
+      expect(b.requestDraftInitialization).toHaveBeenCalledExactlyOnceWith(retainedSession(b.sessions, sid('actual-target')).reference.binding, options)
       expect(b.sessions.binding).toHaveBeenCalledExactlyOnceWith(sid('actual-target'))
       expect(previous.release).toHaveBeenCalledOnce()
-      expect(b.sessions.retained[1]!.release).not.toHaveBeenCalled()
+      expectOnlyRetainedSession(b.sessions, sid('actual-target'))
       expect(JSON.parse(backing.get('dsh.sessions.current')!)).toEqual({ sessionId: sid('actual-target') })
       expect(b.notify).not.toHaveBeenCalled()
     })
@@ -849,10 +865,10 @@ describe('UiWorkspaceService', () => {
       await lastOpening(opening)
 
       expect(b.requestDraftInitialization).toHaveBeenCalledExactlyOnceWith(
-        b.sessions.retained[1]!.reference.binding, { prompt: 'keep the existing draft' },
+        retainedSession(b.sessions, sid('created-a')).reference.binding, { prompt: 'keep the existing draft' },
       )
       expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
-      expect(b.sessions.retained[1]!.release).not.toHaveBeenCalled()
+      expectOnlyRetainedSession(b.sessions, sid('created-a'))
       expect(JSON.parse(backing.get('dsh.sessions.current')!)).toEqual({ sessionId: sid('created-a') })
       expect(b.notify).not.toHaveBeenCalled()
     })
@@ -932,8 +948,8 @@ describe('UiWorkspaceService', () => {
           kind: 'createFailed', message: 'Could not fill the draft. Please try again shortly.',
         })
         expect(warning).toHaveBeenCalledExactlyOnceWith('new session failed:', expect.any(Error))
-        expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
-        expect(b.sessions.retained[1]!.release).toHaveBeenCalledOnce()
+        expectOnlyRetainedSession(b.sessions, sid('previous'))
+        expect(retainedSession(b.sessions, sid('created-a')).release).toHaveBeenCalledOnce()
         expect(b.sessions.binding(sid('created-a'))).toBeUndefined()
         expect(JSON.parse(backing.get('dsh.sessions.current')!)).toEqual({ sessionId: sid('previous') })
         expect(b.selectPanel).not.toHaveBeenCalled()
@@ -973,8 +989,7 @@ describe('UiWorkspaceService', () => {
       })
       expect(warning).toHaveBeenCalledExactlyOnceWith('new session failed:', expect.any(Error))
       expect(b.requestDraftInitialization).not.toHaveBeenCalled()
-      expect(b.sessions.retained).toHaveLength(1)
-      expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
+      expectOnlyRetainedSession(b.sessions, sid('previous'))
       expect(JSON.parse(backing.get('dsh.sessions.current')!)).toEqual({ sessionId: sid('previous') })
       expect(b.selectPanel).not.toHaveBeenCalled()
     })
