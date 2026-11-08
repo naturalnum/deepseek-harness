@@ -21,14 +21,23 @@ it('reads a selected file only on request and uses the opened immutable content 
   expect(f.download).not.toHaveBeenCalled()
 })
 
-it('closes file reads when the original entry cannot be downloaded', async () => {
+it('reads an approved built-in file even when the archive exceeds the download budget', async () => {
   const f = remoteFixture(), api = managedSkillCallbacks(f.remote, f.input)
   const answer = await f.details({ skillId: f.entry.skillId }, signal())
   if (!answer.ok) throw new Error('Expected fixture detail')
   f.details.mockResolvedValueOnce({ ok: true, value: { ...answer.value,
-    entry: { ...f.entry, actions: { ...f.entry.actions, download: false } } } })
+    entry: { ...f.entry, source: 'bundled', mutable: false, actions: { update: false, uninstall: false, download: false } },
+    files: answer.value.files.map(file => file.relativePath === 'SKILL.md'
+      ? { ...file, sha256: '238fa28a94976c7da14563bc873c2729bd5cd325389085bb4c6dd0de28923590' } : file) } })
   await api.installed(signal())
-  expect((await api.details(f.entry.skillId, signal())).readFile).toBeUndefined()
+  const detail = await api.details(f.entry.skillId, signal())
+  expect(detail.download).toBeUndefined()
+  expect(await detail.readFile?.('SKILL.md', signal())).toEqual({ kind: 'text', text: 'instructions' })
+  expect(f.readFile).not.toHaveBeenCalled()
+  expect(await detail.readFile?.('references/data.bin', signal())).toEqual({ kind: 'binary' })
+  expect(f.readFile).toHaveBeenCalledExactlyOnceWith({ skillId: f.entry.skillId,
+    contentVersion: f.entry.contentVersion, relativePath: 'references/data.bin' }, expect.any(AbortSignal))
+  expect(f.download).not.toHaveBeenCalled()
 })
 
 it.each(['version', 'path', 'length', 'hash', 'budget'] as const)('refuses a mismatched %s without another request', async (field) => {

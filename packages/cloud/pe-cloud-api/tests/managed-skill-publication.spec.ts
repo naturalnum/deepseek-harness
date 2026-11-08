@@ -738,7 +738,16 @@ it('advertises built-in downloads only when their complete existing reply fits t
     const read = f.manager.download({ skillId: entry.skillId, contentVersion: entry.contentVersion }, f.check, f.signal)
     if (entry.actions.download) {
       expect(Buffer.byteLength(JSON.stringify(await read))).toBeLessThanOrEqual(apiLimits.maxReplyBytes)
-    } else await expect(read).rejects.toMatchObject({ code: 'cloud/capacity' })
+    } else {
+      await expect(read).rejects.toMatchObject({ code: 'cloud/capacity' })
+      const file = detail.files.find(item => item.bytes <= bundleLimits.maxFileBytes)
+      if (file === undefined) throw Error('Expected at least one bounded file in the built-in package')
+      const member = await f.manager.readFile({ skillId: entry.skillId, contentVersion: entry.contentVersion,
+        relativePath: file.relativePath }, f.check, f.signal)
+      expect(member).toMatchObject({ skillId: entry.skillId, contentVersion: entry.contentVersion,
+        relativePath: file.relativePath, bytes: file.bytes, sha256: file.sha256 })
+      expect(hash(Buffer.from(member.dataBase64, 'base64'))).toBe(file.sha256)
+    }
   }
   const lowerArchiveLimit = (await f.ctx.skills.inspect()).candidates.flatMap((row) => {
     const entry = bundledSkillEntry(row, { maxReplyBytes: apiLimits.maxReplyBytes, maxZipBytes: bundleLimits.maxArchiveBytes })

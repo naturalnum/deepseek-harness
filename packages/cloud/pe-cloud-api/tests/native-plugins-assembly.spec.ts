@@ -47,7 +47,7 @@ it('assembles original plugin controls and managed skills together with exact ge
     credentials: { mode: 'read-only' } }, binding.recipeVersion, true)!
   const saves = new ConfigSaveCoordinator({ maxAccounts: 1, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 2,
     maxTrackedOperations: 8, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 8, maxWaitersPerAccount: 2 })
-  const skillMethods = ['current','publish','installed','details','install','update','uninstall','download']
+  const skillMethods = ['current','publish','installed','details','install','update','uninstall','download','readFile']
   const barrier = saves.createAccount(binding), policy = new ExposurePolicy({ recipeVersion: binding.recipeVersion,
     rpcEndpoints: [...['cloudPlugins/current', 'cloudPlugins/change', 'cloudPlugins/list'].map(endpoint => ({ endpoint,
       handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const })), ...skillMethods.map(method => ({ endpoint: 'cloudSkills/'+method,

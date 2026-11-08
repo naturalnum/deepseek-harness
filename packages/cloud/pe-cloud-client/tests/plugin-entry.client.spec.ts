@@ -81,7 +81,7 @@ async function fixture(skills: boolean, connect: boolean, toggleable = true) {
   const connectRemote = (): void => { new TestRemote(ctx, {
     cloudPlugins: { current, change } satisfies CloudPluginRemote,
     cloudSkills: { current: skillUnused, publish: skillUnused, installed: skillCatalog.installed, details: skillUnused,
-      install: skillUnused, update: skillUnused, uninstall: skillUnused, download: skillUnused },
+      install: skillUnused, update: skillUnused, uninstall: skillUnused, download: skillUnused, readFile: skillUnused },
   }) }
   if (connect) connectRemote()
   const installManagement = async (): Promise<void> => {

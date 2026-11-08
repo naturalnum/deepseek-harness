@@ -26,8 +26,7 @@ async function fixture() {
 it('mounts every actual Cloud descriptor atomically before its native skill dependency activates', async () => {
   const { ctx, call, open } = await fixture()
   const skillMethods = contribution.descriptors.filter(row => row.namespace === 'cloudSkills').map(row => row.method)
-  expect(skillMethods).toHaveLength(8)
-  expect(skillMethods).toContain('install')
+  expect(skillMethods.sort()).toEqual(['current', 'details', 'download', 'install', 'installed', 'publish', 'readFile', 'uninstall', 'update'])
   const observed: string[][] = []
   const dependency = ctx.inject(['remote', 'remote.cloudSkills'], (owner) => {
     const namespace = owner.remote.cloudSkills

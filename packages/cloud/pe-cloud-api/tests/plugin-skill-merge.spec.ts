@@ -145,7 +145,7 @@ it('requires both complete native groups while preserving managed DTO configurat
     skills: { mode: 'managed', limits: { maxFileBytes: 4096, maxRequestBytes: 16384, maxReplyBytes: 8192, maxRetainedVersions: 8 },
       management: { maxRequestBytes: 65536, maxReplyBytes: 131072, maxMetadataBytes: 4096, maxRetainedProviders: 8 } },
     credentials: { mode: 'read-only' }, fields: [] }
-  const skillRows = ['current','publish','installed','details','install','update','uninstall','download'].map(method => ({
+  const skillRows = ['current','publish','installed','details','install','update','uninstall','download','readFile'].map(method => ({
     endpoint: 'cloudSkills/'+method, handlerId: 'native:cloudSkills', guard: 'authenticated-account' as const }))
   const pluginRows = ['list','current','change'].map(method => ({ endpoint: 'cloudPlugins/'+method,
     handlerId: 'native:cloudPlugins', guard: 'authenticated-account' as const }))
@@ -153,7 +153,8 @@ it('requires both complete native groups while preserving managed DTO configurat
     streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [], approvedConfiguration: input }
   const approved = parseApprovedConfigurationCatalog(input, input.recipeVersion, true)
   expect(approved?.skills).toEqual(input.skills); expect(approved?.pluginControl).toEqual(input.pluginControl)
-  for (const rpcEndpoints of [skillRows, pluginRows, [...skillRows.slice(1), ...pluginRows], [...skillRows, ...pluginRows.slice(1)],
+  for (const rpcEndpoints of [skillRows, pluginRows, [...skillRows.slice(1), ...pluginRows],
+    [...skillRows.slice(0, -1), ...pluginRows], [...skillRows, ...pluginRows.slice(1)],
     [...skillRows, ...pluginRows, { endpoint: 'pluginManager/setPluginEnabled', handlerId: 'native:pluginManager', guard: 'authenticated-account' as const }]]) {
     const ctx = new Context()
     try { expect(() => new ExposureService(ctx, ExposureService.Config({ ...manifest, rpcEndpoints }))).toThrow() }
