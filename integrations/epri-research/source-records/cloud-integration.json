@@ -7,7 +7,7 @@
   "cloudBaseCommit": "edcd1ea91ca0ddde78dedde322c600f43021920e",
   "importedSuiteTree": "2fb896ab57a04abba370e3e2b1c851f685127239",
   "transportPatch": "diffs/cloud-transports.patch",
-  "transportPatchSha256": "4fbf3b7cc8f652f7ab90274e68d4b0284eabb55b3f578e72a3fbaeb69cd35bbe",
+  "transportPatchSha256": "a554ae0926ed30921852ecb1af97edcaa5c18aae174f4586a83aec66881e058f",
   "files": [
     {
       "path": "src/reused/engine/index.ts",
@@ -56,6 +56,30 @@
       "importedSha256": "2d43813ccf50b8938a2e191d77f468355e210badf2beff663140f48f1877e7af",
       "cloudSha256": "797036607631de09f8c3e32eb3930371018fb6ea43d0f83469f63b8f06f960dd",
       "change": "bound-repository-git-action-state"
+    },
+    {
+      "path": "src/reused/protocol/AimdProtocolWorkspace.tsx",
+      "importedSha256": "4455939d37ef8cc3fde72a3916b22d282606ea9bbd25eaa850b5ce492b00511a",
+      "cloudSha256": "117961d7a1a82c677608c50bc9145474c03ff6375672177131b875932e711d74",
+      "change": "explicit-review-edit-save"
+    },
+    {
+      "path": "src/ui/main.tsx",
+      "importedSha256": "88a83012527e98dd96d0979ade44a86a2166aa281ec324df8013772a3d2d6974",
+      "cloudSha256": "d7a1c57fffa07bd8aeddfc383b16b7af2afa308fa3bf47c770100219636920b6",
+      "change": "saved-review-event-guard"
+    },
+    {
+      "path": "src/ui/ResearchTasks.tsx",
+      "importedSha256": "205bdebfbd13ce31fd207af7f6f9adf70c868073eb7972b44e72d87d3a78f83d",
+      "cloudSha256": "92335a34d24804d5589a401e1440ecfc11f9bc575d96b1d18d6f006e07c12af6",
+      "change": "saved-review-event-guard"
+    },
+    {
+      "path": "plugins/airalogy/conversation-review.mjs",
+      "importedSha256": "6c232db198a745f0272c298d7dae87d904fd3415464fc43e23462f8269e7dbb9",
+      "cloudSha256": "e3b3aab05674c822e084cb1a9763ae3a45320aa565c6ef35c76201032611f885",
+      "change": "account-native-review-and-choice-copy"
     }
   ],
   "qualification": "Component tests only; separate native Linux image and authenticated Web acceptance required."

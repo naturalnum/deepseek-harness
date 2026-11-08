@@ -117,3 +117,21 @@ exports[`retains saved record revisions and requested package versions in native
   "version": "**版本**：1",
 }
 `;
+
+exports[`retains saved record revisions and requested package versions in native review headers > record_submit saved version 1`] = `
+{
+  "header": "科研审批",
+  "options": [
+    {
+      "description": "保留现有内容，继续讨论或修改。",
+      "label": "暂不执行",
+    },
+    {
+      "description": "已核对当前版本，仅执行此项操作。",
+      "label": "确认检查项并提交记录",
+    },
+  ],
+  "question": "是否确认检查项并提交记录？",
+  "version": "**版本**：1",
+}
+`;

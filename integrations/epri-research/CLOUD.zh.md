@@ -80,6 +80,8 @@ OCR 在自身进程内固定一个 OpenCV 工作线程，并保留原 ONNX 线�
 
 PDF 渲染与 OCR 共用原受管任务，但分离各自重库：PDF 父进程仅导入 PyMuPDF，每个扫描页依次调用一个同脚本图片子入口，复用原图片提取器且不加载 PyMuPDF。子进程继承原文件、网络、进程组及六项资源限额；输入和 stdout 各限 8 MiB，stderr 限 32 KiB，单页墙钟限 60 秒。每页清理先杀停仍存活的子进程，等待退出并 join 三个管道工作线程，再处理下一页；不新增脱离的 Session、Cloud 执行器或重放所有者。CPU 75 秒按进程计，整体墙钟、取消和物理结算仍归原 Native range。[资源记录](source-records/cloud-ocr-resource.json) 区分此前七过一失败矩阵、失败的同进程生存期调整，以及精确当前源码在继承限额下成功处理两页 PDF 的证据；八份未改变的资源/质量输入现已全部通过，包括中英文小字、两页扫描 PDF、旋转、极端长宽比及 PDF 原文提取；真实 Native Session/Web 组合仍须另行验收。
 
+自动计算实验表为未保存的步骤/检查项编辑提供**保存草稿**入口。修改未保存或正在保存时，会立即阻止对话人审请求，包括 React 尚未更新按钮前的第二次点击。保存失败会保留本地勾选和已有计算结果，显示错误并继续阻止人审；显式保存成功后才允许基于最新已保存修订发起人审，不会自动提交或批准。输入自动重算保持原触发范围和防抖。原生确认选项仍精确匹配当前选项文字，不再重复添加确认前缀。
+
 ## 开发与持续升级
 
 先在本包自己的真实 `node_modules` 中完成依赖安装。当前单仓库中先运行 `npm ci --omit=peer`，再运行 `node scripts/link-cloud-peers.mjs`；这些链接存在期间禁止运行安装命令。构建 Host artifacts，用 `node scripts/build.mjs` 构建本包，检查 `tsconfig.cloud.json`；从仓库根目录运行 `node node_modules/vitest/vitest.mjs run --config integrations/epri-research/vitest.cloud.config.ts`。原有包测试继续验证本地模式兼容。

@@ -99,6 +99,9 @@ type Labels = {
   newRun: string;
   export: string;
   finish: string;
+  saveDraft: string;
+  unsavedDraft: string;
+  saveFailed: string;
   progress: string;
   steps: string;
   fields: string;
@@ -184,6 +187,9 @@ const LABELS: Record<'zh' | 'en', Labels> = {
     newRun: '再次运行',
     export: '导出结果',
     finish: '完成运行',
+    saveDraft: '保存草稿',
+    unsavedDraft: '有未保存的修改，请先保存草稿后再请求人工确认。',
+    saveFailed: '保存未完成：',
     progress: '完成度',
     steps: '步骤',
     fields: '记录项',
@@ -267,6 +273,9 @@ const LABELS: Record<'zh' | 'en', Labels> = {
     newRun: 'Run again',
     export: 'Export results',
     finish: 'Complete run',
+    saveDraft: 'Save draft',
+    unsavedDraft: 'Unsaved changes: save the draft before requesting human review.',
+    saveFailed: 'Save did not complete:',
     progress: 'Progress',
     steps: 'Steps',
     fields: 'Fields',
@@ -1078,6 +1087,7 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
   const mounted=useRef(true);
   const [autoWorking,setAutoWorking]=useState(false),[autoTick,setAutoTick]=useState(0),[autoMessage,setAutoMessage]=useState(()=>run.calculation?.errors.length?'已保存的输入需要修正，请核对计算详情':run.calculation?.pending.length?'等待补齐相关数据':run.calculation?'已计算并保存':'修改输入后自动计算并保存');
   const needsAuto=Boolean(automatic && run.status==='running' && autoInputKey!==autoSaved.current && autoInputKey!==autoAttempt.current);
+  const reviewDirty=Boolean(automatic && dirty && autoInputKey===autoSaved.current);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{
     if(!needsAuto || saving)return;
@@ -1222,7 +1232,7 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
     if (!adapter || saving) return;
     setSaving(true);
     try { const saved = await adapter.save(run); savedSignature.current = signature(saved); setRun({ ...run, ...saved }); setSaveStatus("已保存至共享数据库"); }
-    catch (error) { setSaveStatus(String(error)); Message.error(String(error)); }
+    catch (error) { setSaveStatus(labels.saveFailed+' '+String(error)); Message.error(String(error)); }
     finally { setSaving(false); }
   };
   const completeRun = () => {
@@ -1282,8 +1292,13 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
       'application/json;charset=utf-8'
     ).then(() => Message.success(labels.exported));
   };
+  const markEdited = () => {
+    // Close the parent's review event guard before a second click can use its previous rendered state.
+    onDirtyChange?.(true);
+    if (adapter) setSaveStatus(labels.unsavedDraft);
+  };
   const setValue = (id: string, value: unknown) => {
-    if (adapter) setSaveStatus("有未保存的修改，请保存草稿");
+    markEdited();
     setRun((previous) => {const current=automatic?stripCalculated(previous,automatic.targets):previous;return ({
       ...current, calculation:undefined,checks:automatic?{}:current.checks,
       values: { ...current.values, [id]: value },
@@ -1293,29 +1308,37 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
     if (recentUpdateTimer.current) window.clearTimeout(recentUpdateTimer.current);
     recentUpdateTimer.current = window.setTimeout(() => setRecentlyUpdatedField(undefined), 760);
   };
-  const setTable = (id: string, rows: Array<Record<string, unknown>>) =>
+  const setTable = (id: string, rows: Array<Record<string, unknown>>) => {
+    markEdited();
     setRun((current) => {const next={...current,tables:{...current.tables,[id]:rows}};return ({
       ...(automatic?stripCalculated(next,automatic.targets):next),calculation:undefined,checks:automatic?{}:current.checks,
       events: appendAuditEvent(current.events, makeAuditEvent('human', 'table_updated', id), true),
     });});
-  const setStep = (id: string, value: boolean) =>
+  };
+  const setStep = (id: string, value: boolean) => {
+    markEdited();
     setRun((current) => ({
       ...current,
       steps: { ...current.steps, [id]: value },
       events: appendAuditEvent(current.events, makeAuditEvent('human', 'step_updated', id, String(value))),
     }));
-  const setCheck = (id: string, value: boolean) =>
+  };
+  const setCheck = (id: string, value: boolean) => {
+    markEdited();
     setRun((current) => ({
       ...current,
       checks: { ...current.checks, [id]: value },
       events: appendAuditEvent(current.events, makeAuditEvent('human', 'check_updated', id, String(value))),
     }));
-  const setQuiz = (id: string, value: unknown) =>
+  };
+  const setQuiz = (id: string, value: unknown) => {
+    markEdited();
     setRun((current) => ({
       ...current,
       quizzes: { ...current.quizzes, [id]: value },
       events: appendAuditEvent(current.events, makeAuditEvent('human', 'decision_updated', id), true),
     }));
+  };
 
   const renderBlock = (block: AimdProtocolBlock, index: number): React.ReactNode => {
     if (block.kind === 'heading') {
@@ -1631,8 +1654,8 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
                   {labels.finish}
                 </Button>
               )}
-              {adapter && run.status !== "completed" && (!automatic || autoMessage.startsWith('计算未完成')) && <Button loading={saving || autoWorking} disabled={autoWorking || needsAuto} onClick={() => void saveDraft()}>保存草稿</Button>}
-              {adapter && <span role="status" style={{ maxWidth: 360, fontSize: 12 }}>{automatic?(needsAuto?'输入已修改，准备计算…':autoMessage):saveStatus}</span>}
+              {adapter && run.status !== "completed" && (!automatic || dirty || autoMessage.startsWith('计算未完成')) && <Button loading={saving || autoWorking} disabled={autoWorking || needsAuto} onClick={() => void saveDraft()}>{labels.saveDraft}</Button>}
+              {adapter && <span role="status" style={{ maxWidth: 360, fontSize: 12 }}>{automatic?(needsAuto?'输入已修改，准备计算…':reviewDirty?saveStatus:autoMessage):saveStatus}</span>}
               <Button icon={<Download />} onClick={exportRecord}>
                 {labels.export}
               </Button>

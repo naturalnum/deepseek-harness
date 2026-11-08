@@ -92,6 +92,7 @@ it('retains saved record revisions and requested package versions in native revi
   const source=packageResult.value as {sha256:string}
   const cases=[
     {op:'record_archive',args:{id:record.id,expectedRevision:record.revision,reason:'Review only',requestId:'archive-copy'},version:record.revision},
+    {op:'record_submit',args:{id:record.id,expectedRevision:record.revision,requestId:'submit-copy'},version:record.revision},
     {op:'engine_package_review',args:{id:'review-package',version:'2.3.4',sha256:source.sha256,approved:true,reason:'Review only'},version:'2.3.4'},
   ]
   for(const item of cases){

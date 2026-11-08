@@ -77,7 +77,7 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
   }
   const fingerprint=createHash('sha256').update(JSON.stringify({op,args,before})).digest('hex');
   const name={task_open:'启用研究方法并准备实验',evidence_review:'复核研究证据',roadmap_select:'选择研究路线',lab_skill_publish:'发布或撤回研究方法',engine_package_review:'批准或撤销协议执行',record_submit:'确认检查项并提交记录',record_reopen:'重新打开记录',record_archive:'归档记录',record_restore:'恢复记录'}[op];
-  const approval='确认'+name;
+  const approval=name.startsWith('确认')?name:'确认'+name;
   const checks=protocol?parseAimdProtocol(protocol.content).checks.map(x=>({id:x.id,message:x.checked_message || x.id})):[];
   const detail=reviewDetail(op,args,before,checks,name);
   if(detail.length>60000)throw new Error('待审内容较大，请先在右侧栏审阅并缩小本次操作；未执行审批。');

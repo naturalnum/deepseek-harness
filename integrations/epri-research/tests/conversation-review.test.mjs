@@ -44,7 +44,10 @@ test('conversation review waits for the exact human choice, rejects stale/cancel
     await put('protocol_put',{id:'checks',version:'1',content:'# 合成记录\n\n{{var|result: str, owner="agent"}}\n\n{{check|reviewed, checked_message="已核对合成输入"}}\n'});
     let record=(await put('record_create',{protocolId:'checks',protocolVersion:'1'})).result;
     record=(await api('record_update',{id:record.id,expectedRevision:record.revision,requestId:randomUUID(),run:{...record.run,status:'running',values:{result:'synthetic'}}},app.credentials.agentToken)).result;
-    answer=async request=>{assert.match(request.questions[0].detail,/请逐项核对/);assert.match(request.questions[0].detail,/已核对合成输入/);assert.match(request.questions[0].detail,/reviewed/);return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
+    answer=async request=>{assert.equal(request.questions[0].options[1].label,'确认检查项并提交记录');return {answers:[{id:request.questions[0].id,selected:['确认确认检查项并提交记录']}]};};
+    assert.equal((await reviewInConversation(ctx,'record_submit',{id:record.id,expectedRevision:record.revision,requestId:randomUUID()},exec,sessionId)).executed,false);
+    assert.equal((await api('record_get',{id:record.id})).result.revision,record.revision);
+    answer=async request=>{assert.equal(request.questions[0].options[1].label,'确认检查项并提交记录');assert.match(request.questions[0].detail,/请逐项核对/);assert.match(request.questions[0].detail,/已核对合成输入/);assert.match(request.questions[0].detail,/reviewed/);return {answers:[{id:request.questions[0].id,selected:[request.questions[0].options[1].label]}]};};
     const final=await reviewInConversation(ctx,'record_submit',{id:record.id,expectedRevision:record.revision,requestId:randomUUID()},exec,sessionId);
     assert.equal(final.status,'submitted');assert.equal(final.run.checks.reviewed,true);
     assert.equal(final.audit.at(-1).actor,'human');

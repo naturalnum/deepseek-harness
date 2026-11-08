@@ -1,3 +1,65 @@
+diff --git a/integrations/epri-research/plugins/airalogy/conversation-review.mjs b/integrations/epri-research/plugins/airalogy/conversation-review.mjs
+index a32f98f61e..593fb1e20f 100644
+--- a/integrations/epri-research/plugins/airalogy/conversation-review.mjs
++++ b/integrations/epri-research/plugins/airalogy/conversation-review.mjs
+@@ -1,6 +1,7 @@
+ import {createHash} from 'node:crypto';
+ import {call,connection} from '../../src/server/client.mjs';
+ import {parseAimdProtocol} from '../../dist/server/service.mjs';
++import {cloudResearch} from '../cloud/client-for.mjs';
+ 
+ export const conversationReviewOps = new Set(['task_open','evidence_review','roadmap_select','lab_skill_publish','engine_package_review','record_submit','record_reopen','record_archive','record_restore']);
+ 
+@@ -13,8 +14,9 @@ function reviewDetail(op, args, before, checks, name) {
+   const lines = [
+     line('本次操作',name),
+     line('对象',data.title || before?.title || args.id),
+-    line('版本',before.revision ?? args.version),
+   ];
++  const version = before.revision ?? args.version;
++  if (version !== undefined) lines.push(line('版本',version));
+   if (op === 'task_open') {
+     lines.push(line('研究任务',before.task.objective),line('数据性质',before.task.basis),line('方法',before.method.title+' / '+before.method.version),line('方法源码 SHA-256',before.method.sha256),line('适用范围',before.method.metadata.limitations),'本次确认会批准这份精确源码并准备实验记录；不会代替结果复核。','待启用源码：\n'+snapshot(before.method.files));
+   } else if (op === 'evidence_review') {
+@@ -49,11 +51,12 @@ function reviewDetail(op, args, before, checks, name) {
+ 
+ // Only this trusted Host continuation can use the human credential, after its own exact question settles.
+ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
+-  if (!exec.agent || exec.agent.ctx.get('peAccount',false)) throw new Error('科研审批需要平台账号权限适配；不能用本地管理员凭据处理云端账号。');
++  if (!exec.agent) throw new Error('科研审批需要当前原生会话。');
++  const cloud=cloudResearch(exec.agent.ctx);
+   const questions=exec.agent.ctx.get('userQuestions',false) || ctx.get('userQuestions',false);
+   if (!questions) throw new Error('当前对话的人工问答服务未启用，审批尚未执行。');
+-  const read=(name,input)=>call(name,input,exec.signal,sessionId);
+-  const selectedConnection=connection();
++  const read=(name,input)=>cloud?cloud.agentCall(name,input,exec):call(name,input,exec.signal,sessionId);
++  const selectedConnection=cloud?cloud.binding:connection();
+   let before,protocol;
+   if(op==='task_open') {
+     const task=await read('task_get',{id:args.id});
+@@ -74,7 +77,7 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
+   }
+   const fingerprint=createHash('sha256').update(JSON.stringify({op,args,before})).digest('hex');
+   const name={task_open:'启用研究方法并准备实验',evidence_review:'复核研究证据',roadmap_select:'选择研究路线',lab_skill_publish:'发布或撤回研究方法',engine_package_review:'批准或撤销协议执行',record_submit:'确认检查项并提交记录',record_reopen:'重新打开记录',record_archive:'归档记录',record_restore:'恢复记录'}[op];
+-  const approval='确认'+name;
++  const approval=name.startsWith('确认')?name:'确认'+name;
+   const checks=protocol?parseAimdProtocol(protocol.content).checks.map(x=>({id:x.id,message:x.checked_message || x.id})):[];
+   const detail=reviewDetail(op,args,before,checks,name);
+   if(detail.length>60000)throw new Error('待审内容较大，请先在右侧栏审阅并缩小本次操作；未执行审批。');
+@@ -84,10 +87,11 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
+   const answer=result.answers?.find(x=>x.id==='research-review-'+fingerprint);
+   if(answer?.selected?.length!==1||answer.selected[0]!==approval||answer.custom)return {executed:false,status:'declined',message:'用户未明确确认，本次审批未执行。'};
+   // Ask() verifies the exact live root and an authenticated UI answer; do not accept a model-supplied answer field.
+-  const c=connection();
+-  if(JSON.stringify(c)!==JSON.stringify(selectedConnection))throw new Error('科研服务连接已变化，请重新请求审批。');
++  const c=cloud?cloud.binding:connection();
++  if(cloud?c!==selectedConnection:JSON.stringify(c)!==JSON.stringify(selectedConnection))throw new Error('科研服务连接已变化，请重新请求审批。');
+   const human=async(name,input)=>{
+     exec.signal?.throwIfAborted();
++    if(cloud)return cloud.reviewedCall(name,input,exec);
+     const response=await fetch(c.url+'/api',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.humanToken},body:JSON.stringify({op:name,args:input,sessionId}),signal:exec.signal?AbortSignal.any([exec.signal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000)});
+     const data=await response.json();if(!response.ok)throw new Error((data.code||response.status)+': '+data.error);return data.result;
+   };
 diff --git a/integrations/epri-research/src/reused/engine/index.ts b/integrations/epri-research/src/reused/engine/index.ts
 index c4e6a455e9..1fdd6ddab4 100644
 --- a/integrations/epri-research/src/reused/engine/index.ts
@@ -180,6 +242,125 @@ index 56a53a449c..4f449b5a95 100644
    return (payload.notes || [])
      .map((note, index): LiteraturePaper => {
        const content = (note.content || {}) as Record<string, unknown>;
+diff --git a/integrations/epri-research/src/reused/protocol/AimdProtocolWorkspace.tsx b/integrations/epri-research/src/reused/protocol/AimdProtocolWorkspace.tsx
+index d0b2977d62..9156febf17 100644
+--- a/integrations/epri-research/src/reused/protocol/AimdProtocolWorkspace.tsx
++++ b/integrations/epri-research/src/reused/protocol/AimdProtocolWorkspace.tsx
+@@ -99,6 +99,9 @@ type Labels = {
+   newRun: string;
+   export: string;
+   finish: string;
++  saveDraft: string;
++  unsavedDraft: string;
++  saveFailed: string;
+   progress: string;
+   steps: string;
+   fields: string;
+@@ -184,6 +187,9 @@ const LABELS: Record<'zh' | 'en', Labels> = {
+     newRun: '再次运行',
+     export: '导出结果',
+     finish: '完成运行',
++    saveDraft: '保存草稿',
++    unsavedDraft: '有未保存的修改，请先保存草稿后再请求人工确认。',
++    saveFailed: '保存未完成：',
+     progress: '完成度',
+     steps: '步骤',
+     fields: '记录项',
+@@ -267,6 +273,9 @@ const LABELS: Record<'zh' | 'en', Labels> = {
+     newRun: 'Run again',
+     export: 'Export results',
+     finish: 'Complete run',
++    saveDraft: 'Save draft',
++    unsavedDraft: 'Unsaved changes: save the draft before requesting human review.',
++    saveFailed: 'Save did not complete:',
+     progress: 'Progress',
+     steps: 'Steps',
+     fields: 'Fields',
+@@ -1078,6 +1087,7 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
+   const mounted=useRef(true);
+   const [autoWorking,setAutoWorking]=useState(false),[autoTick,setAutoTick]=useState(0),[autoMessage,setAutoMessage]=useState(()=>run.calculation?.errors.length?'已保存的输入需要修正，请核对计算详情':run.calculation?.pending.length?'等待补齐相关数据':run.calculation?'已计算并保存':'修改输入后自动计算并保存');
+   const needsAuto=Boolean(automatic && run.status==='running' && autoInputKey!==autoSaved.current && autoInputKey!==autoAttempt.current);
++  const reviewDirty=Boolean(automatic && dirty && autoInputKey===autoSaved.current);
+   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+   useEffect(()=>{
+     if(!needsAuto || saving)return;
+@@ -1222,7 +1232,7 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
+     if (!adapter || saving) return;
+     setSaving(true);
+     try { const saved = await adapter.save(run); savedSignature.current = signature(saved); setRun({ ...run, ...saved }); setSaveStatus("已保存至共享数据库"); }
+-    catch (error) { setSaveStatus(String(error)); Message.error(String(error)); }
++    catch (error) { setSaveStatus(labels.saveFailed+' '+String(error)); Message.error(String(error)); }
+     finally { setSaving(false); }
+   };
+   const completeRun = () => {
+@@ -1282,8 +1292,13 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
+       'application/json;charset=utf-8'
+     ).then(() => Message.success(labels.exported));
+   };
++  const markEdited = () => {
++    // Close the parent's review event guard before a second click can use its previous rendered state.
++    onDirtyChange?.(true);
++    if (adapter) setSaveStatus(labels.unsavedDraft);
++  };
+   const setValue = (id: string, value: unknown) => {
+-    if (adapter) setSaveStatus("有未保存的修改，请保存草稿");
++    markEdited();
+     setRun((previous) => {const current=automatic?stripCalculated(previous,automatic.targets):previous;return ({
+       ...current, calculation:undefined,checks:automatic?{}:current.checks,
+       values: { ...current.values, [id]: value },
+@@ -1293,29 +1308,37 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
+     if (recentUpdateTimer.current) window.clearTimeout(recentUpdateTimer.current);
+     recentUpdateTimer.current = window.setTimeout(() => setRecentlyUpdatedField(undefined), 760);
+   };
+-  const setTable = (id: string, rows: Array<Record<string, unknown>>) =>
++  const setTable = (id: string, rows: Array<Record<string, unknown>>) => {
++    markEdited();
+     setRun((current) => {const next={...current,tables:{...current.tables,[id]:rows}};return ({
+       ...(automatic?stripCalculated(next,automatic.targets):next),calculation:undefined,checks:automatic?{}:current.checks,
+       events: appendAuditEvent(current.events, makeAuditEvent('human', 'table_updated', id), true),
+     });});
+-  const setStep = (id: string, value: boolean) =>
++  };
++  const setStep = (id: string, value: boolean) => {
++    markEdited();
+     setRun((current) => ({
+       ...current,
+       steps: { ...current.steps, [id]: value },
+       events: appendAuditEvent(current.events, makeAuditEvent('human', 'step_updated', id, String(value))),
+     }));
+-  const setCheck = (id: string, value: boolean) =>
++  };
++  const setCheck = (id: string, value: boolean) => {
++    markEdited();
+     setRun((current) => ({
+       ...current,
+       checks: { ...current.checks, [id]: value },
+       events: appendAuditEvent(current.events, makeAuditEvent('human', 'check_updated', id, String(value))),
+     }));
+-  const setQuiz = (id: string, value: unknown) =>
++  };
++  const setQuiz = (id: string, value: unknown) => {
++    markEdited();
+     setRun((current) => ({
+       ...current,
+       quizzes: { ...current.quizzes, [id]: value },
+       events: appendAuditEvent(current.events, makeAuditEvent('human', 'decision_updated', id), true),
+     }));
++  };
+ 
+   const renderBlock = (block: AimdProtocolBlock, index: number): React.ReactNode => {
+     if (block.kind === 'heading') {
+@@ -1631,8 +1654,8 @@ const AimdProtocolWorkspace: React.FC<AimdProtocolWorkspaceProps> = ({
+                   {labels.finish}
+                 </Button>
+               )}
+-              {adapter && run.status !== "completed" && (!automatic || autoMessage.startsWith('计算未完成')) && <Button loading={saving || autoWorking} disabled={autoWorking || needsAuto} onClick={() => void saveDraft()}>保存草稿</Button>}
+-              {adapter && <span role="status" style={{ maxWidth: 360, fontSize: 12 }}>{automatic?(needsAuto?'输入已修改，准备计算…':autoMessage):saveStatus}</span>}
++              {adapter && run.status !== "completed" && (!automatic || dirty || autoMessage.startsWith('计算未完成')) && <Button loading={saving || autoWorking} disabled={autoWorking || needsAuto} onClick={() => void saveDraft()}>{labels.saveDraft}</Button>}
++              {adapter && <span role="status" style={{ maxWidth: 360, fontSize: 12 }}>{automatic?(needsAuto?'输入已修改，准备计算…':reviewDirty?saveStatus:autoMessage):saveStatus}</span>}
+               <Button icon={<Download />} onClick={exportRecord}>
+                 {labels.export}
+               </Button>
 diff --git a/integrations/epri-research/src/server/service.mjs b/integrations/epri-research/src/server/service.mjs
 index 4c40240cd0..064953f597 100644
 --- a/integrations/epri-research/src/server/service.mjs
@@ -257,6 +438,66 @@ index 4c40240cd0..064953f597 100644
 +    db.close();
 +  } };
  }
+diff --git a/integrations/epri-research/src/ui/ResearchProgress.tsx b/integrations/epri-research/src/ui/ResearchProgress.tsx
+index fd958a198b..b844d744af 100644
+--- a/integrations/epri-research/src/ui/ResearchProgress.tsx
++++ b/integrations/epri-research/src/ui/ResearchProgress.tsx
+@@ -64,7 +64,7 @@ export function GitProgress({canManage=true}:any={}) {
+   return <div className="git-progress"><div className="science-heading"><div><h2>Git 研究进展</h2><p className="science-muted">读取已有项目的分支、提交及 DeepScientist 检查点，查看每一步的依据与文件变化。</p></div>{state?.bound && <button disabled={busy} onClick={()=>void task(refresh)}>刷新 Git 历史</button>}</div>
+     <details className="graph-reference" open={!state?.bound}><summary>{state?.bound?'已关联：'+state.path:'关联项目仓库'}</summary><form className="git-binding" onSubmit={e=>{e.preventDefault();void task(async()=>{await api('project_git_bind',{path});setSelected('');setDetail(null);await refresh();});}}><label>本机 Git 仓库根目录<input required value={path} placeholder="例如 D:\\Projects\\power-analysis" onChange={e=>setPath(e.target.value)}/></label><p>这里展示该仓库全部分支最近 200 次提交，可能包含其他对话的工作。关联操作仅保存查看位置。</p><button disabled={busy||!canManage} type="submit">确认关联并读取</button></form></details>
+     {error && <p role="alert" className="compact-error">{error}</p>}{busy && <p role="status">正在读取项目历史…</p>}
+-    {state?.bound && <>{canManage&&<GitActions onChanged={refresh}/>}<div className="progress-options"><span>当前分支：{state.branch || '分离 HEAD'}{state.dirty?' · 有未提交修改':''}</span><button aria-pressed={all} onClick={()=>setAll(!all)}>{all?'收起普通提交':'展开全部提交'}</button></div>{state.truncated && <p className="graph-notice">当前显示最近 200 次提交，更早历史仍保存在 Git 仓库。</p>}<ResearchGraph nodes={nodes} selectedId={node?.id} onSelect={n=>setSelected(n.id)} graphKey={'git:'+state.path+':'+all}/>
++    {state?.bound && <>{canManage&&<GitActions key={state.path} onChanged={refresh}/>}<div className="progress-options"><span>当前分支：{state.branch || '分离 HEAD'}{state.dirty?' · 有未提交修改':''}</span><button aria-pressed={all} onClick={()=>setAll(!all)}>{all?'收起普通提交':'展开全部提交'}</button></div>{state.truncated && <p className="graph-notice">当前显示最近 200 次提交，更早历史仍保存在 Git 仓库。</p>}<ResearchGraph nodes={nodes} selectedId={node?.id} onSelect={n=>setSelected(n.id)} graphKey={'git:'+state.path+':'+all}/>
+       {node && <section className="graph-detail" aria-label="Git 节点详情"><header><div><small>{node.raw.boundary.shortSha} · {node.raw.boundary.authorName} · {new Date(node.raw.boundary.authoredAt).toLocaleString()}</small><h3>{node.title}</h3></div><button disabled={busy} onClick={()=>inspect(node.id)}>查看文件变化</button></header><p>{node.summary}</p>
+         {node.raw.boundary.checkpoint?.directionDecision && <><h4>方向判断：{labels[node.raw.boundary.checkpoint.directionDecision.choice]}</h4><ul>{node.raw.boundary.checkpoint.directionDecision.basisRefs.map((b:any,i:number)=><li key={i}>{b.label || b.ref} · {b.kind}</li>)}</ul><p>{node.raw.boundary.checkpoint.directionDecision.nextTest}</p></>}
+         {node.raw.boundary.checkpoint?.verification?.length>0 && <><h4>提交中记录的验证信息</h4><ul>{node.raw.boundary.checkpoint.verification.map((v:string,i:number)=><li key={i}>{v}</li>)}</ul></>}
+diff --git a/integrations/epri-research/src/ui/ResearchTasks.tsx b/integrations/epri-research/src/ui/ResearchTasks.tsx
+index a8a6e32785..59c86fac52 100644
+--- a/integrations/epri-research/src/ui/ResearchTasks.tsx
++++ b/integrations/epri-research/src/ui/ResearchTasks.tsx
+@@ -63,9 +63,9 @@ function TaskCsv({task,busy,execute,refresh}:any){
+   return <div className="power-form-actions"><select aria-label="CSV 目标表格" value={table.id} onChange={e=>setSelected(e.target.value)}>{tables.map(t=><option key={t.id} value={t.id}>{t.id}</option>)}</select><button disabled={busy} onClick={()=>void downloadTextContent(columns.map(c=>c.id).join(',')+'\r\n',task.methodId+'.csv','text/csv')}>下载 CSV 表头</button><label className="upload-button">导入 CSV<input type="file" accept=".csv,text/csv" aria-label="导入任务 CSV" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;void execute(async()=>{if(file.size>2*1024*1024)throw new Error('CSV 文件不能超过 2 MiB。');const bytes=new Uint8Array(await file.arrayBuffer());let text='';for(const b of bytes)text+=String.fromCharCode(b);const uploaded=await api('attachment_put',{name:file.name,contentBase64:btoa(text),requestId:uid()});await api('task_import_csv',{id:task.id,reference:uploaded.reference,table:table.id,expectedRecordRevision:task.record.revision,requestId:uid()});await refresh();});}}/></label></div>;
+ }
+ 
+-export function TaskRecordLink({record,onBack}:any){
++export function TaskRecordLink({record,onBack,disabled=false,isReviewBlocked=()=>false}:any){
+   const [task,setTask]=useState<any>(null),[message,setMessage]=useState('');
+   useEffect(()=>{let alive=true;void api('tasks').then(tasks=>{if(alive)setTask(tasks.find((t:any)=>t.recordId===record.id));}).catch(()=>{});return()=>{alive=false;};},[record.id,record.revision]);
+   if(!task)return null;
+-  return <div className="record-review-hint power-record-link"><strong>{task.objective}</strong><p>{task.next}</p><button onClick={onBack}>返回研究任务</button>{task.stage==='review'&&<button onClick={async()=>{try{await requestTaskConversation(task.id,'review');setMessage('请求已放入当前对话输入框，请发送后确认。');}catch(e:any){setMessage(e.message);}}}>在对话中确认结果</button>}{message&&<p role="status">{message}</p>}</div>;
++  return <div className="record-review-hint power-record-link"><strong>{task.objective}</strong><p>{task.next}</p><button onClick={onBack}>返回研究任务</button>{task.stage==='review'&&<button disabled={disabled} onClick={async()=>{if(isReviewBlocked())return;try{await requestTaskConversation(task.id,'review');setMessage('请求已放入当前对话输入框，请发送后确认。');}catch(e:any){setMessage(e.message);}}}>在对话中确认结果</button>}{message&&<p role="status">{message}</p>}</div>;
+ }
+diff --git a/integrations/epri-research/src/ui/main.tsx b/integrations/epri-research/src/ui/main.tsx
+index ec6c671622..b7c7c15a66 100644
+--- a/integrations/epri-research/src/ui/main.tsx
++++ b/integrations/epri-research/src/ui/main.tsx
+@@ -4,6 +4,7 @@ import ArchiveWorkspace from './ArchiveWorkspace';
+ import powerDataQuality from '../../examples/power-data-quality.aimd';
+ import EngineWorkspace from './EngineWorkspace';
+ import {TaskRecordLink} from './ResearchTasks';
++import {useRecordReviewState} from './record-review-state';
+ import RecordCalculationSetup from './RecordCalculationSetup';
+ import React, { useEffect, useRef, useState } from "react";
+ import { createRoot } from "react-dom/client";
+@@ -54,7 +55,8 @@ function App() {
+     [seed, setSeed] = useState<any>(null),
+     [generation, setGeneration] = useState(0),
+     [busy, setBusy] = useState(false);
+-  const [dirty, setDirty] = useState(false), [saving, setSaving] = useState(false), [protocolDirty, setProtocolDirty] = useState(false);
++  const {dirty,saving,setDirty,setSaving,isReviewBlocked}=useRecordReviewState();
++  const [protocolDirty, setProtocolDirty] = useState(false);
+   useEffect(()=>{
+     const receive=(event:MessageEvent)=>applyWorkbenchTheme(event);
+     window.addEventListener('message',receive);
+@@ -497,7 +499,7 @@ function App() {
+         )}
+         {tab === "record" && p && (
+           <>
+-            <TaskRecordLink record={selected} onBack={()=>navigate('engine')}/>
++            <TaskRecordLink record={selected} onBack={()=>navigate('engine')} disabled={dirty||saving} isReviewBlocked={isReviewBlocked}/>
+             <div className="record-toolbar">
+               {selected.calculationBinding && <button disabled={saving} onClick={()=>navigate('engine')}><ArrowLeft size={14} aria-hidden="true"/>返回实验与结果</button>}
+               <span>
 diff --git a/integrations/epri-research/src/ui/style.css b/integrations/epri-research/src/ui/style.css
 index 8dc647cac2..d3a080560c 100644
 --- a/integrations/epri-research/src/ui/style.css
@@ -280,16 +521,3 @@ index 8dc647cac2..d3a080560c 100644
  .science-card h2 { font-size:19px; margin:0 0 7px; }
  .science-card p { line-height:1.8; white-space:pre-wrap; }
  .science-card footer { margin-top:20px; padding-top:12px; border-top:1px solid var(--research-border); }
-diff --git a/integrations/epri-research/src/ui/ResearchProgress.tsx b/integrations/epri-research/src/ui/ResearchProgress.tsx
-index fd958a198b..b844d744af 100644
---- a/integrations/epri-research/src/ui/ResearchProgress.tsx
-+++ b/integrations/epri-research/src/ui/ResearchProgress.tsx
-@@ -64,7 +64,7 @@ export function GitProgress({canManage=true}:any={}) {
-   return <div className="git-progress"><div className="science-heading"><div><h2>Git 研究进展</h2><p className="science-muted">读取已有项目的分支、提交及 DeepScientist 检查点，查看每一步的依据与文件变化。</p></div>{state?.bound && <button disabled={busy} onClick={()=>void task(refresh)}>刷新 Git 历史</button>}</div>
-     <details className="graph-reference" open={!state?.bound}><summary>{state?.bound?'已关联：'+state.path:'关联项目仓库'}</summary><form className="git-binding" onSubmit={e=>{e.preventDefault();void task(async()=>{await api('project_git_bind',{path});setSelected('');setDetail(null);await refresh();});}}><label>本机 Git 仓库根目录<input required value={path} placeholder="例如 D:\\Projects\\power-analysis" onChange={e=>setPath(e.target.value)}/></label><p>这里展示该仓库全部分支最近 200 次提交，可能包含其他对话的工作。关联操作仅保存查看位置。</p><button disabled={busy||!canManage} type="submit">确认关联并读取</button></form></details>
-     {error && <p role="alert" className="compact-error">{error}</p>}{busy && <p role="status">正在读取项目历史…</p>}
--    {state?.bound && <>{canManage&&<GitActions onChanged={refresh}/>}<div className="progress-options"><span>当前分支：{state.branch || '分离 HEAD'}{state.dirty?' · 有未提交修改':''}</span><button aria-pressed={all} onClick={()=>setAll(!all)}>{all?'收起普通提交':'展开全部提交'}</button></div>{state.truncated && <p className="graph-notice">当前显示最近 200 次提交，更早历史仍保存在 Git 仓库。</p>}<ResearchGraph nodes={nodes} selectedId={node?.id} onSelect={n=>setSelected(n.id)} graphKey={'git:'+state.path+':'+all}/>
-+    {state?.bound && <>{canManage&&<GitActions key={state.path} onChanged={refresh}/>}<div className="progress-options"><span>当前分支：{state.branch || '分离 HEAD'}{state.dirty?' · 有未提交修改':''}</span><button aria-pressed={all} onClick={()=>setAll(!all)}>{all?'收起普通提交':'展开全部提交'}</button></div>{state.truncated && <p className="graph-notice">当前显示最近 200 次提交，更早历史仍保存在 Git 仓库。</p>}<ResearchGraph nodes={nodes} selectedId={node?.id} onSelect={n=>setSelected(n.id)} graphKey={'git:'+state.path+':'+all}/>
-       {node && <section className="graph-detail" aria-label="Git 节点详情"><header><div><small>{node.raw.boundary.shortSha} · {node.raw.boundary.authorName} · {new Date(node.raw.boundary.authoredAt).toLocaleString()}</small><h3>{node.title}</h3></div><button disabled={busy} onClick={()=>inspect(node.id)}>查看文件变化</button></header><p>{node.summary}</p>
-         {node.raw.boundary.checkpoint?.directionDecision && <><h4>方向判断：{labels[node.raw.boundary.checkpoint.directionDecision.choice]}</h4><ul>{node.raw.boundary.checkpoint.directionDecision.basisRefs.map((b:any,i:number)=><li key={i}>{b.label || b.ref} · {b.kind}</li>)}</ul><p>{node.raw.boundary.checkpoint.directionDecision.nextTest}</p></>}
-         {node.raw.boundary.checkpoint?.verification?.length>0 && <><h4>提交中记录的验证信息</h4><ul>{node.raw.boundary.checkpoint.verification.map((v:string,i:number)=><li key={i}>{v}</li>)}</ul></>}

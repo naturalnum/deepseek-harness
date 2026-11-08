@@ -4,6 +4,7 @@ import ArchiveWorkspace from './ArchiveWorkspace';
 import powerDataQuality from '../../examples/power-data-quality.aimd';
 import EngineWorkspace from './EngineWorkspace';
 import {TaskRecordLink} from './ResearchTasks';
+import {useRecordReviewState} from './record-review-state';
 import RecordCalculationSetup from './RecordCalculationSetup';
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -54,7 +55,8 @@ function App() {
     [seed, setSeed] = useState<any>(null),
     [generation, setGeneration] = useState(0),
     [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false), [saving, setSaving] = useState(false), [protocolDirty, setProtocolDirty] = useState(false);
+  const {dirty,saving,setDirty,setSaving,isReviewBlocked}=useRecordReviewState();
+  const [protocolDirty, setProtocolDirty] = useState(false);
   useEffect(()=>{
     const receive=(event:MessageEvent)=>applyWorkbenchTheme(event);
     window.addEventListener('message',receive);
@@ -497,7 +499,7 @@ function App() {
         )}
         {tab === "record" && p && (
           <>
-            <TaskRecordLink record={selected} onBack={()=>navigate('engine')}/>
+            <TaskRecordLink record={selected} onBack={()=>navigate('engine')} disabled={dirty||saving} isReviewBlocked={isReviewBlocked}/>
             <div className="record-toolbar">
               {selected.calculationBinding && <button disabled={saving} onClick={()=>navigate('engine')}><ArrowLeft size={14} aria-hidden="true"/>返回实验与结果</button>}
               <span>
