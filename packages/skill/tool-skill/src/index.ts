@@ -26,6 +26,8 @@ export const name = 'tool-skill'
 export const inject = ['agents', 'tools', 'skills', 'workingDirectory']
 
 const DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500
+// Immutable per-definition identity; registration lifetime remains owned by the tools registry.
+const catalogTool = Symbol('skill-tool catalog')
 /**
  * Durable provider and item records for one published session skill catalog. The catalog is a
  * `catalog`-form context, so it records the entries it published beside the
@@ -160,6 +162,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       return { card: 'generic', title: `Load skill ${args.name}`, kind: 'read', rawInput: args.name }
     },
   })
+  Object.defineProperty(skillTool, catalogTool, { value: true })
   ctx.tools.register(skillTool)
 
   // User-explicit skill invocation: a claimed user message whose first line
@@ -219,7 +222,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     signal.throwIfAborted()
-    const toolVisible = ctx.tools.get(skillTool.name, agent) === skillTool
+    const visibleTool = ctx.tools.get(skillTool.name, agent)
+    // A visible preset registration owns this catalog; a hidden ancestor must preserve its decision.
+    if (visibleTool !== undefined && visibleTool !== skillTool && Object.hasOwn(visibleTool, catalogTool)) return decision
+    const toolVisible = visibleTool === skillTool
     const snapshot = toolVisible
       ? await ctx.skills.snapshot({ cwd: await ctx.workingDirectory.ensure(agent, signal), signal, scope: agent })
       : { skills: [], complete: true }

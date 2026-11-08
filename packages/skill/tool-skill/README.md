@@ -58,7 +58,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Observable success and failures
 
-Loading a listed skill returns its full instructions; the model sees one canonical shape whether the load came from the tool or from a user's explicit invocation. An invalid name reports `Error: invalid skill name "<name>"`, an unknown name reports the skill is unknown or no longer available, and a skill disabled for model invocation reports it is not available for model invocation. The catalog is omitted entirely when no catalog was ever published and either no model-invocable skills exist or the `skill` tool is hidden or shadowed; after a catalog has been published, either visibility loss — the `skill` tool hidden or shadowed by a same-name scoped tool — or removal of every skill instead appends an empty catalog that retires older names.
+Loading a listed skill returns its full instructions; the model sees one canonical shape whether the load came from the tool or from a user's explicit invocation. An invalid name reports `Error: invalid skill name "<name>"`, an unknown name reports the skill is unknown or no longer available, and a skill disabled for model invocation reports it is not available for model invocation. The catalog is omitted entirely when no catalog was ever published and either no model-invocable skills exist or the `skill` tool is hidden or shadowed; after a catalog has been published, either visibility loss — the `skill` tool hidden or shadowed by an unrelated same-name scoped tool — or removal of every skill instead appends an empty catalog that retires older names.
 
 -----
 
@@ -82,7 +82,7 @@ The package is built on two ideas. First, the catalog is a durable projection, d
 
 ### Catalog lifecycle
 
-At each eligible `agent/pre-step`, the plugin snapshots the calling session's skill catalog, applies exact `skill` tool visibility, filters to model-invocable skills, and compares a digest of the entries against the newest visible `skill-catalog` message in the session log. When the digest changed, it hands the `enter` decision a durable user-role message containing the complete replacement catalog; an empty replacement explicitly retires earlier names. An incomplete provider snapshot emits nothing and preserves the last-good view for the next pre-step. The visibility check compares against the exact tool definition this plugin registered, so a scoped same-name shadow removes both the schema and its guidance; the plugin works mounted globally or inside one agent's composition.
+At each eligible `agent/pre-step`, the plugin snapshots the calling session's skill catalog, applies exact `skill` tool visibility, filters to model-invocable skills, and compares a digest of the entries against the newest visible `skill-catalog` message in the session log. When the digest changed, it hands the `enter` decision a durable user-role message containing the complete replacement catalog; an empty replacement explicitly retires earlier names. An incomplete provider snapshot emits nothing and preserves the last-good view for the next pre-step. The visible registration owns the catalog. When this plugin is mounted globally and in a preset, hidden ancestors preserve the visible preset's catalog. A restriction or an unrelated same-name tool still retires the previous catalog.
 
 ### Invocation boundary
 

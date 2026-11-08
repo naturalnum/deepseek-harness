@@ -8,6 +8,7 @@ import * as Office from '@deepseek-ai/dsh-skill-office'
 import * as Reports from '@deepseek-ai/dsh-skill-filesystem'
 import * as SkillTool from '@deepseek-ai/dsh-tool-skill'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { AccountId } from '../src/types.ts'
 import { accountPresetConfigDigest } from '../src/account-policy.ts'
 import { selectOfficeProfile } from '../src/office-profile.ts'
@@ -41,7 +42,7 @@ function ordinaryDeployment() {
   return { ...config, officeOrdinary }
 }
 function fixture(accountId = 'office-canary', mutate?: (rows: { id: string; name: string; config: object }[]) => void,
-  mode: 'canary' | 'ordinary' = 'canary') {
+  mode: 'canary' | 'ordinary' = 'canary', scopedSkillTool = false) {
   const config = mode === 'ordinary' ? ordinaryDeployment() : deployment()
   const selected = selectOfficeProfile(config, brandString<AccountId>(accountId))
   const base = [{ id: 'skill-office', name: '@deepseek-ai/dsh-skill-office', config: ordinaryOffice },
@@ -49,7 +50,8 @@ function fixture(accountId = 'office-canary', mutate?: (rows: { id: string; name
   mutate?.(base)
   const owner = policyFixture([], { maxHomeBytes: 4096, maxCollectionItems: 64, maxFrameBytes: 131072,
     maxQueuedEvents: 16, maxQueuedBytes: 262144 }, accountId, undefined, undefined, undefined, undefined, undefined, [], true, undefined, {
-    defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', config: { id: 'cloud-chat', plugins: [] }, selectable: true }],
+    defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', config: { id: 'cloud-chat', plugins: scopedSkillTool
+      ? [{ id: 'preset-skill-tool', name: '@deepseek-ai/dsh-tool-skill' }] : [] }, selectable: true }],
     ...selected === undefined ? {} : { office: selected }, baseEntries: base,
     sourceModules: { '@deepseek-ai/dsh-skill': SkillRegistry, '@deepseek-ai/dsh-skill-office': Office,
       '@deepseek-ai/dsh-skill-filesystem': Reports, '@deepseek-ai/dsh-tool-skill': SkillTool, 'office:probe': { default: NativeAccountProbe } },
@@ -101,6 +103,63 @@ it('uses the actual base file with two real providers, original skill tool and t
   expect(await call(ordinary, other)).toMatchObject({ isError: true })
   expect(await call(canary, other)).toMatchObject({ isError: true })
   await model(canary); expect(canary.adapter.calls).toBe(1)
+})
+it('publishes the original Office catalog through a Loader-mounted preset beside the account skill tool', async () => {
+  const f = fixture('ordinary-office-account', undefined, 'ordinary', true), graph = await f.owner.start()
+  try {
+    const agent = await session(graph)
+    const cwd = await graph.ctx.workingDirectory.ensure(agent, graph.lifetime.signal)
+    const snapshot = await graph.ctx.skills.snapshot({ scope: agent, cwd })
+    expect(snapshot.complete).toBe(true)
+    expect(snapshot.skills.filter(row => row.invocation.modelInvocable)).toHaveLength(13)
+    expect(graph.ctx.tools.get('skill', agent)).not.toBe(graph.ctx.tools.get('skill'))
+    agent.session.append('turn/start', { turn: 1 })
+    const decision = await agentEvents(graph.ctx, agent).waterfall('agent/pre-step', {
+      messages: [], turn: 1, step: 1, signal: graph.lifetime.signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+    expect(decision.kind).toBe('enter')
+    if (decision.kind !== 'enter') throw new Error('Original Native step rejected')
+    const catalog = decision.messages.filter(message => message.source.kind === 'skill-catalog')
+    expect(catalog).toHaveLength(1)
+    expect(JSON.stringify(catalog)).toContain('office-xlsx')
+    for (const message of catalog) agent.session.append('user/message', message, { surfaceOp: 'append' })
+    expect(agent.session.snapshotEvents().flatMap(event => event.type === 'user/message'
+      && event.data.source.kind === 'skill-catalog' ? [event.data.content] : [])).toMatchInlineSnapshot(`
+        [
+          [
+            {
+              "text": "<system-reminder>
+        A skill is a reusable set of task-specific instructions. The following skills are available in this session:
+
+        <available_skills>
+        - \`latex-report-writer\`: Generate, revise, and validate Chinese electric-power technical reports in XeLaTeX. Use when a report must follow a retained Word template or technical-report specification while being produced as .tex and PDF, including checks for fonts, page geometry, cover, approval page, abstracts, contents, headings, figures, tables, equations, appendices, references, and page numbering.
+        - \`office\`: Create, edit, inspect, or convert Office documents, spreadsheets, presentations, and PDFs. Load to choose the relevant workflow.
+        - \`office-docx\`: Create, read, edit, and validate Word documents (.docx).
+        - \`office-export-pdf\`: Convert an Office document to a requested PDF with LibreOffice Kit.
+        - \`office-pptx\`: Create, read, edit, and validate PowerPoint presentations (.pptx).
+        - \`office-recalculate\`: Refresh spreadsheet formula caches and verify calculated values with LibreOffice Kit.
+        - \`office-render\`: Render requested document images or inspect visual layout with LibreOffice Kit.
+        - \`office-xlsx\`: Read, create, edit, and validate Excel workbooks, data, and formulas (.xlsx).
+        - \`power-grid-technical-report-writer\`: 面向电网科技项目结题技术报告的渐进式写作 Skill。用于建立项目档案、确认论证架构与目录、制定章节计划、分章生成正文、维护摘要证据包并组装最终报告；支持基于已有内容和大模型自主生成两种模式，并与报告审核及 Word 排版子 Skill 协同工作。
+        - \`report-reviewer\`: 审核报告目录、单章和全文，检查任务完成度、内容完整性、逻辑结构、证据引用、章节协同、术语一致性和中文长文表达，输出结构化审核结论。本 Skill 不直接重写正文。
+        - \`report-workflow-orchestrator\`: 编排电网科技报告的项目档案、论证架构、目录、章节生成与审核、全文审核，以及最终 Word 排版、格式修复和逐页验收。所有子 Skill 名称和动作集中在配置区。
+        - \`tech-report-writer\`: 编写、重排或校验中国电力科学研究院科技项目、咨询项目技术报告，基于任务书、研究资料、用户说明或已有 .docx，生成符合院技术报告管理办法的 Word 文件；用于新建完整技术报告、调整已有报告格式，以及校验封面、审批页、中英文摘要、目录、正文、附录、参考文献、页眉页脚和分节页码
+        - \`technical-report-pre-review\`: 依据科技项目任务书、总技术报告及可选课题分报告开展前置审查，从可配置审稿人池中选取5种互补视角，生成兼顾任务书—报告总体判断与具体问题的可追溯Markdown审查稿，并套用既有Word汇总表模板；可在初审后吸收分报告证据形成盲审意见最终版。用于科技项目结题前、函审前或内部送审前的技术报告评阅；不用于代替项目组编造回复、伪造专家签名或无依据给出验收结论。
+        </available_skills>
+
+        If the user names a skill, or the task clearly matches a skill's description, call the \`skill\` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
+        A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the \`skill\` tool again for that skill.
+        </system-reminder>",
+              "type": "text",
+            },
+          ],
+        ]
+      `)
+    expect(await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal,
+      callId: ToolCallId('loader-preset-office'), name: 'skill', arguments: { name: 'office-xlsx' } })).toMatchObject({
+      isError: false, value: { name: 'office-xlsx', provider: 'dsh-office', resourceBase: { path: '/opt/dsh/skills/office/office-xlsx' } },
+    })
+  } finally { await graph.close() }
 })
 it.each((['canary', 'ordinary'] as const).flatMap(mode =>
   (['baseline-version', 'asset-change', 'module-change', 'duplicate', 'ordinary-enable'] as const).map(bad => [mode, bad] as const),

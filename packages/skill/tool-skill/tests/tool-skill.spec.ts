@@ -788,6 +788,38 @@ describe('dsh-tool-skill', () => {
     await scope.dispose()
   })
 
+  it.each(['restricted', 'shadowed'] as const)('retains a visible preset catalog and retires it when genuinely %s', async (withdrawal) => {
+    const home = await tempDir('tool-double-shipped-catalog')
+    const ctx = await setup(home)
+    ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
+    const { agent, scope } = await mintAgentScope(ctx, '/workspace')
+    try {
+      const nested = await scope.ctx.plugin({ name: 'scoped-original-skill-tool', inject: toolSkill.inject,
+        apply: (inner: Context) => { toolSkill.apply(inner) } })
+      expect(ctx.tools.get('skill', agent)).not.toBe(ctx.tools.get('skill'))
+      expect(await ctx.skills.snapshot({ cwd: '/workspace', scope: agent })).toMatchObject({ complete: true,
+        skills: [expect.objectContaining({ name: 'listed-skill', invocation: { modelInvocable: true, userInvocable: true } })] })
+      openMessageTurn(agent.session)
+      expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('listed-skill')
+      expect(catalogMessages(agent.session)).toHaveLength(1)
+      expect(await ctx.tools.execute({ agent, signal: testToolSignal, callId: ToolCallId('preset-original-skill'),
+        name: 'skill', arguments: { name: 'listed-skill' } })).toMatchObject({ isError: false })
+      await nested.dispose()
+      const restore = withdrawal === 'restricted' ? scope.ctx.tools.restrict({ deny: ['skill'] })
+        : scope.ctx.tools.register(defineContentToolFixture({ name: 'skill', description: 'Unrelated shadow',
+          parameters: {}, execute: () => Promise.resolve([{ type: 'text' as const, text: 'unrelated' }]) }))
+      await fireStep(ctx, agent, 1, 2)
+      expect(catalogMessages(agent.session).at(-1)?.data.source).toMatchObject({ entries: [] })
+      expect(catalogMessages(agent.session)).toHaveLength(2)
+      restore()
+      await fireStep(ctx, agent, 1, 3)
+      expect(catalogMessages(agent.session).at(-1)?.data.source).toMatchObject({ entries: [{ name: 'listed-skill', description: 'Listed' }] })
+    } finally {
+      await scope.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('validates the catalog description cap', async () => {
     const home = await tempDir('tool-invalid-catalog-cap')
     const ctx = new Context()
