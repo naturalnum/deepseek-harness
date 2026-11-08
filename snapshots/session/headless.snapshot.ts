@@ -79,6 +79,14 @@ function snapshotMode(value: string | undefined): SnapshotMode {
 const mode = snapshotMode(process.env.DSH_SNAPSHOT)
 const RUNTIME_WORKSPACE_ENTRIES = ['.agents', '.dsh', '.snapshot-patches'] as const
 
+/** Ignore only Node's known Stagehand dependency warning in this one scenario. */
+function comparableSnapshotStderr(scenario: string, stderr: string): string {
+  if (scenario !== 'browser-use-stagehand-native') return stderr
+  // Browserbase SDK -> node-fetch 2 -> whatwg-url 5 loads Node's deprecated
+  // punycode builtin. The warning is present only in some replay runs.
+  return stderr.replace(/^\(node:\d+\) \[DEP0040\] DeprecationWarning: The `punycode` module is deprecated\. Please use a userland alternative instead\.\r?\n\(Use `node --trace-deprecation \.\.\.` to show where the warning was created\)\r?\n/gm, '')
+}
+
 interface JsonObject {
   [key: string]: unknown
 }
@@ -1045,6 +1053,19 @@ describe('headless recorded-session snapshots', () => {
     expect(taskFromSession(JSON.stringify({ type: 'user/message', data: message('legacy task') }))).toBe('legacy task')
   })
 
+  it('accepts only the exact Stagehand dependency warning in its own scenario', () => {
+    const warning = '(node:123) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.\n'
+      + '(Use `node --trace-deprecation ...` to show where the warning was created)\n'
+    const scenario = 'browser-use-stagehand-native'
+    expect(comparableSnapshotStderr(scenario, warning + warning)).toBe('')
+    expect(comparableSnapshotStderr(scenario, `${warning}real failure\n`)).toBe('real failure\n')
+    expect(comparableSnapshotStderr('other-scenario', warning)).toBe(warning)
+    for (const changed of [warning.replace('DEP0040', 'DEP0041'), warning.replace('punycode', 'other'),
+      warning.replace('alternative instead', 'alternative now'), warning.split('\n')[0] + '\n']) {
+      expect(comparableSnapshotStderr(scenario, changed)).toBe(changed)
+    }
+  })
+
   it('reconstructs reasoning stderr across packed output boundaries', () => {
     const log = [
       { type: 'turn/start', data: { turn: 1 } },
@@ -1412,7 +1433,7 @@ describe('headless recorded-session snapshots', () => {
       if (mode !== 'replay') await writeHeaderSidecars(scenario, actualLogs, actualContext)
 
       expect(result.stdout).toBe(`${finalTextFromSession(fixtures[0] as string)}\n`)
-      expect(result.stderr).toBe(expectedStderr)
+      expect(comparableSnapshotStderr(scenario.name, result.stderr)).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const writerFiles = (await readdir(scenario.dir)).filter(name => /^writer(?:\.[1-9]\d*)?\.expected\.jsonl$/u.test(name)).sort()
       if (mode === 'replay') {
