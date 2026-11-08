@@ -1,0 +1,205 @@
+{
+  "schema": "research-cloud-git-getrandom-image-build-v1",
+  "workload": {
+    "imageDigest": "sha256:4a7ce478412f06d3369ff338aaa971acaa7bc6e6778995c1558eb9c997cb263a",
+    "baseImageDigest": "sha256:44e26197f73faece822111f939e23a14816cf4fd5eb53362e0088087c42a8c1e",
+    "originalLayerPrefix": 19,
+    "runtimeConfigUnchanged": true
+  },
+  "server": {
+    "imageDigest": "sha256:87bbc26029f68dab351a3abd958fda82877cb29b3d15a77fe5887c858ab1de57",
+    "baseImageDigest": "sha256:c0e629914f5b62c74f63e6a0632fd75de47ef6c4abc2321f277525350848894f",
+    "originalLayerPrefix": 20,
+    "runtimeConfigUnchanged": true,
+    "sourceChange": "selected_images assignment only",
+    "sourceBytes": 24402,
+    "sourceSha256": "7d747a4ab6db05a8cac9bfc95cad6e806b3e96625b37415c611718d0e8487d40"
+  },
+  "builder": {
+    "toolchainImageDigest": "sha256:8d75bc55275420249d286bc37ad8a4ec1e964b8898a49889cde5d4c6244d350d",
+    "coreBuildImageDigest": "sha256:672ef49751be192d0f75df4fa046dbd53c4441ab3e0acf107303af1fb213baae",
+    "sourceRecord": "source-records/cloud-git-build.json",
+    "sourceRecordSha256": "0fc8f510ca217f3eb2fbb35c9eadf30894d6330224739177a17dd4844da7c1b4",
+    "command": [
+      "/usr/bin/make",
+      "-j2",
+      "CSPRNG_METHOD=getrandom",
+      "NO_OPENSSL=1",
+      "USE_LIBPCRE2=1",
+      "prefix=/usr",
+      "gitexecdir=/usr/lib/git-core",
+      "CFLAGS=-O2 -g0 -fstack-protector-strong -Wformat -Werror=format-security -D_FORTIFY_SOURCE=2",
+      "LDFLAGS=-Wl,-z,relro -Wl,-z,now",
+      "git"
+    ],
+    "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+    "make": "GNU Make 4.4.1",
+    "network": "none"
+  },
+  "core": {
+    "paths": [
+      "usr/bin/git",
+      "usr/lib/git-core/git"
+    ],
+    "bytes": 4389360,
+    "sha256": "888ed635c8aefa1eb121cf66e30eacb53cda672b81b7d32656f3a31ddde8ffa7",
+    "originalSha256": "a0e562e4bd3c4c79379e91d8c07a10104b2cefe8fac966dc6bd4874a57a807f3",
+    "actualGetrandomImport": [
+      "232: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND getrandom@GLIBC_2.25 (11)"
+    ],
+    "deviceFallbackAbsent": true,
+    "noLibcurlDependency": true
+  },
+  "sourceAssets": [
+    {
+      "path": "scripts/build-cloud-git.py",
+      "bytes": 10915,
+      "sha256": "d5f5a621355313a8abafa6309ffb529bfcfc0954179d527fd4463ea53292fee0"
+    },
+    {
+      "path": "source-records/cloud-git-build.json",
+      "bytes": 2665,
+      "sha256": "0fc8f510ca217f3eb2fbb35c9eadf30894d6330224739177a17dd4844da7c1b4"
+    },
+    {
+      "path": "scripts/cloud-git-probe.py",
+      "bytes": 7455,
+      "sha256": "bf52cc71c874b94a438e6d05aca82bdbb04f3c8912c05fedec2d239b54fb2286"
+    }
+  ],
+  "observed": {
+    "officeAndScientificPythonTreesPreserved": true,
+    "unchangedGitMembers": 990,
+    "onlyCoreCopiesAndBuildReceiptChangeWithinGitPrefix": true,
+    "finalImageFacts": {
+      "compilerAndTemporaryPathsAbsent": true,
+      "twoCoresExactSha256": true,
+      "twoCoresRootOwnedReadonly": true,
+      "rootReadonly": true
+    },
+    "originalRuntimeLibrariesUsed": true,
+    "git": {
+      "version": "git version 2.47.3",
+      "executable": "/opt/dsh/research/git/bin/git",
+      "python": "/opt/dsh/research/python/bin/python3",
+      "pythonVersion": "3.13.18",
+      "uid": 2000,
+      "gid": 2000,
+      "groups": [],
+      "limits": {
+        "cpu": [
+          75,
+          75
+        ],
+        "address": [
+          536870912,
+          536870912
+        ],
+        "file": [
+          67108864,
+          67108864
+        ],
+        "descriptors": [
+          32,
+          32
+        ],
+        "processes": [
+          32,
+          32
+        ],
+        "core": [
+          0,
+          0
+        ]
+      },
+      "historyBytes": 7069,
+      "patchBytes": 9046,
+      "clean": true
+    },
+    "successfulCommands": 24,
+    "failedCommands": 0
+  },
+  "qualification": "Official signed-source Git core and immutable image supply under the original six child limits; actual original business-guard, authenticated Web Git and lifecycle acceptance require separate evidence.",
+  "notEstablishedByTheseReceipts": [
+    "original-managed-native-git-with-random-device-denied",
+    "authenticated-web-git-preview-and-writes",
+    "final-generation-drain-and-release"
+  ],
+  "evidence": [
+    {
+      "file": "research-git-getrandom-overlay.v1/QUALIFICATION.json",
+      "bytes": 3836,
+      "sha256": "5466cb4e9b65d994e3ad781df6b88f073210ea8f35293cdf279ac581d8bb3142"
+    },
+    {
+      "file": "research-git-getrandom-builder.v2/toolchain.json",
+      "bytes": 12605,
+      "sha256": "75e3e2ff205fb3411a2d98084da9f5dcca821f9cb4648900db8c816df2696a4c"
+    },
+    {
+      "file": "research-git-getrandom-builder.v2/installed-packages.tsv",
+      "bytes": 12151,
+      "sha256": "d41d4132d621ee1196ec5d3a7dd89866f9576b6fcb935319f04d06aa01e2dbff"
+    },
+    {
+      "file": "research-git-getrandom-builder.v4/context/curl-headers-source.json",
+      "bytes": 2782,
+      "sha256": "25f06bce37ce213acc1dbaf7892b4aabb29ca7c1d6c91cf85b1bf1fecc104376"
+    },
+    {
+      "file": "research-git-getrandom-core.v2/CONTEXT.json",
+      "bytes": 1653,
+      "sha256": "050d723035e3fdaea8c4527ff9b2412fca89e4c31bb8039f9957f409522204ee"
+    },
+    {
+      "file": "research-git-getrandom-core.v2/build.terminal.json",
+      "bytes": 291,
+      "sha256": "2d95745698d17c5b3a04ec290fb03f01fb14e767e18ccf54ffd35122ebe52f80"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/CONTEXT.json",
+      "bytes": 1359,
+      "sha256": "837d07865f47109751904ed697e0236347c9bf1943001a3ca796d9a49512452a"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/build.log",
+      "bytes": 4831,
+      "sha256": "56af4ad730be3e0272e79c0db6e2bb32db1646626efeb33e1395fdff8a6875f7"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/build.terminal.json",
+      "bytes": 288,
+      "sha256": "f444f132ef2b1d8ff75508aec6aa13fd7c5cb1900c4a835384cf391cd67101a4"
+    },
+    {
+      "file": "research-git-getrandom-server.v1/CONTEXT.json",
+      "bytes": 903,
+      "sha256": "2d13a4b8a6f29c6d8872a83dc84e7f1063c687d0313af6c66a7e36977a1cdbbd"
+    },
+    {
+      "file": "research-git-getrandom-server.v1/build.terminal.json",
+      "bytes": 379,
+      "sha256": "3334e5b4470451d6a2f35adb510196ee716dea0b1423aa4793dcac440721b0be"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/git-qualification.actual.json",
+      "bytes": 3454,
+      "sha256": "e138c2e63a7c58af8b58be207bc145713f755aafe82114ff1c0e9355fa30641f"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/preservation.actual.json",
+      "bytes": 218598,
+      "sha256": "4b1228b0d713053d8b495048dcbcb02e12e05940964d1bce427d0c043fa2d7aa"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/final-runtime.ldd.actual.txt",
+      "bytes": 303,
+      "sha256": "ae8dd815f3dc883ba048fa64c0c6019292bea1dc99f3b3f1f4a5a05c07410ec9"
+    },
+    {
+      "file": "research-git-getrandom-overlay.v1/core-build.actual.json",
+      "bytes": 1602,
+      "sha256": "977d48c17901cdd35fb656c1e9ce2cbb0766d77de55e1a79c25283c62fd23dd1"
+    }
+  ]
+}

@@ -12,7 +12,8 @@ for(const file of record.files){
 }
 if(hash(readFileSync(join(root,'source-records',record.transportPatch)))!==record.transportPatchSha256)throw new Error('Transport patch record changed');
 const gitImage=JSON.parse(readFileSync(join(root,'source-records/cloud-git-image.json'),'utf8'));
-for(const file of gitImage.sourceAssets){
+const getrandomImage=JSON.parse(readFileSync(join(root,'source-records/cloud-git-getrandom-image.json'),'utf8'));
+for(const image of [gitImage,getrandomImage])for(const file of image.sourceAssets){
   const path=resolve(root,file.path);if(!path.startsWith(root+'/'))throw new Error('Git source record escapes its package');
   const data=readFileSync(path);
   if(data.length!==file.bytes||hash(data)!==file.sha256)throw new Error('Qualified Git source changed without an updated image record: '+file.path);
