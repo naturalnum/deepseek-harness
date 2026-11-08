@@ -24855,7 +24855,7 @@
       "digest": "83079c8a3f733ac3fa603eefa0fbb4737ca4d8b69e7e2e7298b60f9ac4098693",
       "names": [],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:41"
+        "packages/skill/tool-skill/src/index.ts:43"
       ]
     },
     {
@@ -26643,7 +26643,7 @@
         "packages/skill/tool-skill/src/index.ts#SkillCatalogSource"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:35"
+        "packages/skill/tool-skill/src/index.ts:37"
       ]
     },
     {
