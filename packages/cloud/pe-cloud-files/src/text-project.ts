@@ -122,6 +122,9 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       super(ctx)
     }
 
+    /** ABI8 does not implement atomic text edits. */
+    override get supportsTextEdit(): boolean { return false }
+
     override get sandboxMode(): SandboxMode | undefined {
       if (account.enforceSessionFilePolicy !== true) return undefined
       const policy = this.ctx.get('sandboxPolicy')

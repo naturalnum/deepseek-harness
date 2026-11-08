@@ -38,6 +38,8 @@ The native file tree accepts a prepared `workspaceFileManagement` face; selectio
 
 Cloud account composition reuses the public Native Cordis inspection registry and first-party Host providers through its fixed private runtime builtin. It does not activate the dynamic plugin runner. Standard delegation consumes the original Native model-selection settings service with its disabled defaults; these dependencies do not change the four Native preset declarations.
 
+Native `FileSystem.supportsTextEdit` declares whether the provider implements text editing; Native ToolFS omits `edit` when the Cloud provider returns false, even for an existing preset that enables it. The default remains true for existing providers. This is capability disclosure only: Cloud does not implement atomic edit, and write authorization, version checks, and settlement are unchanged.
+
 Native `FileSystem.scopeRoot` provides optional caller-scoped discovery metadata. The Cloud filesystem returns its original guarded Workspace target; Native agent-instructions stops project-marker discovery at that boundary and preserves failures. Unbounded Native providers keep their existing search, and all filesystem authorization remains with the original provider.
 
 Native bundled skill providers accept optional deployment invocation ceilings: `skill-office.invocation` and `skill-filesystem.bundledInvocation`. Cloud can expose complete immutable packages for inspection and download while withholding model and user invocation until the execution environment is qualified. The filesystem ceiling cannot enable source-disabled invocation or affect other roots; omission preserves Native behavior. Original skill consumers enforce invocation policy, and package bytes remain unchanged.

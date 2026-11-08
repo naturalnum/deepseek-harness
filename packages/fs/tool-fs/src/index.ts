@@ -90,9 +90,11 @@ export function apply(ctx: Context, config: Config): void {
   // One escalation API shared by both mutating tools: advertisement gating,
   // per-call policy resolution, and denial-marker mapping, all keyed off whether
   // the mounted ctx.fs confines (ctx.fs.sandboxMode).
-  if (resolved.write || resolved.edit) {
+  // Respect the actual mounted provider; a configured but unsupported edit must not be advertised.
+  const editSupported = resolved.edit && ctx.fs.supportsTextEdit !== false
+  if (resolved.write || editSupported) {
     const sandbox = new FsSandboxController(ctx)
     if (resolved.write) applyWriteTool(ctx, sandbox)
-    if (resolved.edit) applyEditTool(ctx, sandbox)
+    if (editSupported) applyEditTool(ctx, sandbox)
   }
 }

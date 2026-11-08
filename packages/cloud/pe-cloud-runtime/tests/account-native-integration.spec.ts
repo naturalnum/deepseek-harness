@@ -136,6 +136,7 @@ async function fixture(options: {
   instructionSources?: InstructionSourceFixture
   factoryComponent?: boolean
   nativeFiles?: boolean
+  legacyEditEnabled?: boolean
   auditedFileCalls?: boolean
   auditedFileBytes?: boolean
   installFileApi?: boolean
@@ -209,7 +210,7 @@ async function fixture(options: {
   const declaration = { id: 'instruction-chat', plugins: [
     { id: 'file-instructions', name: 'cordis:' + names.instructions, config: instructionLimits },
     ...options.nativeFiles ? [{ id: 'native-tools', name: 'cordis:m8s-tool-fs',
-      config: { read: true, write: true, edit: false, readImage: false } }] : [],
+      config: { read: true, write: true, edit: options.legacyEditEnabled ?? false, readImage: false } }] : [],
   ] }
   const policy = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
     models: [{ provider: 'local-text', model: 'plain-text' }], defaultPresetId: declaration.id, presets: [{ id: declaration.id, entryId: 'instruction-preset',
@@ -732,6 +733,19 @@ it('mounts only the fixed optional first-screen constructors while native-only a
   expect(() => ctx.settingsController.describe()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
   expect(ctx.sessions.list()).toEqual([])
   await expect(f.factory.stopNative(outcome.binding.accountId)).resolves.toMatchObject({ status: 'observed', native: { status: 'confirmed' } })
+})
+
+it('does not advertise edit in an approved legacy preset when the real account filesystem cannot edit', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, realFiles: true,
+    legacyEditEnabled: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, created = await ctx.sessionController.create({})
+  const agent = ctx.agents.get(created.sessionId)
+  if (agent === undefined) throw new Error('The actual approved native Agent is absent')
+  expect(ctx.fs.supportsTextEdit).toBe(false)
+  expect(ctx.tools.get('write', agent)).toBeDefined()
+  expect(ctx.tools.get('edit', agent)).toBeUndefined()
 })
 
 it('uses the approved Preset private instruction builtin in a native turn and retains its account/Workspace snapshot in JSONL', async () => {

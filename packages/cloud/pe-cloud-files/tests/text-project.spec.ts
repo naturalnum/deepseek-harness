@@ -104,6 +104,12 @@ async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, co
   }
 }
 
+it('declares unsupported native text edit without removing write support', async () => {
+  const test = await fixture()
+  expect(test.fs.supportsTextEdit).toBe(false)
+  expect(typeof test.fs.writeText).toBe('function')
+})
+
 it('bounds Native discovery at the original Workspace root and rejects stale selection', async () => {
   const test = await fixture()
   const root = await test.fs.scopeRoot()

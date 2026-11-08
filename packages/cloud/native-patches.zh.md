@@ -37,6 +37,8 @@ Root 配方封印执行完整的原生计划校验。准入时，原计划以常
 
 Cloud 账户组合通过固定私有 runtime builtin 复用公开的 Native Cordis 检查注册表和第一方 Host provider，不激活动态插件 runner。Standard 委派消费原生模型选择设置服务并保留关闭的默认值；这些依赖不改变四个 Native 预设声明。
 
+Native `FileSystem.supportsTextEdit` 声明提供方是否实现文本编辑；Cloud 提供方返回 false 时，Native ToolFS 即使在已有预设开启编辑的情况下也会省略 `edit`。现有提供方的默认值仍为 true。这只是能力声明：Cloud 尚未实现原子编辑，写入授权、版本检查和结算均保持不变。
+
 Native `FileSystem.scopeRoot` 提供可选的调用者作用域发现元数据。Cloud 文件系统返回原受保护 Workspace target；原生 agent-instructions 在该边界停止项目标记发现，并保留失败语义。无界 Native provider 继续使用既有搜索，所有文件系统授权仍由原 provider 持有。
 
 Native 内置技能提供方接收可选部署调用上限：`skill-office.invocation` 与 `skill-filesystem.bundledInvocation`。Cloud 可展示完整不可变包供检查和下载，同时在执行环境合格前关闭模型和用户调用。文件系统上限不会启用来源已关闭的调用入口，也不影响其他根目录；省略配置时保留 Native 行为。原技能消费者执行调用策略，包字节保持原样。

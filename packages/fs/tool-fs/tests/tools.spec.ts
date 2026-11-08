@@ -148,6 +148,23 @@ describe('current directory resolution', () => {
 })
 
 describe('registration', () => {
+  it('omits an unsupported provider edit while retaining write and its accurate prompt', async () => {
+    class NoEditFs extends FakeFs { override get supportsTextEdit(): boolean { return false } }
+    const ctx = new Context()
+    provideWorkingDirectoryFixture(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NoEditFs)
+    await ctx.plugin(FsPolicy)
+    await ctx.plugin(ToolFs, {})
+    try {
+      expect(ctx.tools.get('edit')).toBeUndefined()
+      expect(ctx.tools.get('write')).toBeDefined()
+      const prompt = renderPrompt(await ctx.systemPrompt.assemble())
+      expect(prompt).not.toContain('prefer edit')
+      expect(prompt).toContain('Read an existing file before overwriting')
+    } finally { await ctx.fiber.dispose() }
+  })
   it.each([
     { config: { read: false }, tools: ['edit', 'write'], sections: ['tool:edit', 'tool:write'] },
     { config: { write: false }, tools: ['edit', 'read'], sections: ['tool:edit', 'tool:read'] },

@@ -89,6 +89,9 @@ export abstract class FileSystem extends Service {
     super(ctx, 'fs')
   }
 
+  /** Whether this provider implements text editing; false keeps unsupported tools out of model scope. */
+  get supportsTextEdit(): boolean { return true }
+
   /**
    * Return this caller's fixed read boundary for bounded filesystem discovery.
    * @param signal - cancels boundary selection and observation.

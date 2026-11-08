@@ -84,6 +84,7 @@ export function createS2ProjectPort(backend: S2ProjectBackend): S2ProjectPort {
     override fileUrl(..._args: Parameters<FileSystem['fileUrl']>): never { throw denied() }
     override contains(..._args: Parameters<FileSystem['contains']>): never { throw denied() }
     override lstat(..._args: Parameters<FileSystem['lstat']>): ReturnType<FileSystem['lstat']> { return refused() }
+    override get supportsTextEdit(): boolean { return false }
     override readText(..._args: Parameters<FileSystem['readText']>): ReturnType<FileSystem['readText']> { return refused() }
     override streamText(..._args: Parameters<FileSystem['streamText']>): ReturnType<FileSystem['streamText']> { return refused() }
     override readBytes(..._args: Parameters<FileSystem['readBytes']>): ReturnType<FileSystem['readBytes']> { return refused() }
