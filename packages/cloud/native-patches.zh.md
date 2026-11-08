@@ -41,6 +41,8 @@ Native `FileSystem.supportsTextEdit` 声明提供方是否实现文本编辑；C
 
 Native `FileSystem.scopeRoot` 提供可选的调用者作用域发现元数据。Cloud 文件系统返回原受保护 Workspace target；原生 agent-instructions 在该边界停止项目标记发现，并保留失败语义。无界 Native provider 继续使用既有搜索，所有文件系统授权仍由原 provider 持有。
 
+Native `skill-filesystem.includeDefaultUserRoots` 允许部署在启用默认根目录时排除默认用户技能根目录。默认值为 true，保持原生发现行为；显式设为 false 仍保留项目根目录和显式配置的根目录。当宿主用户根目录位于账号授权范围之外时，Cloud profile 需要显式设置该选项。
+
 Native 内置技能提供方接收可选部署调用上限：`skill-office.invocation` 与 `skill-filesystem.bundledInvocation`。Cloud 可展示完整不可变包供检查和下载，同时在执行环境合格前关闭模型和用户调用。文件系统上限不会启用来源已关闭的调用入口，也不影响其他根目录；省略配置时保留 Native 行为。原技能消费者执行调用策略，包字节保持原样。
 
 Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检查供账户能力审核使用。它要求调用方 fiber 有效，不执行查找、授权或业务调用；普通分派保留全部原检查。

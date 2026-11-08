@@ -42,6 +42,8 @@ Native `FileSystem.supportsTextEdit` declares whether the provider implements te
 
 Native `FileSystem.scopeRoot` provides optional caller-scoped discovery metadata. The Cloud filesystem returns its original guarded Workspace target; Native agent-instructions stops project-marker discovery at that boundary and preserves failures. Unbounded Native providers keep their existing search, and all filesystem authorization remains with the original provider.
 
+Native `skill-filesystem.includeDefaultUserRoots` allows a deployment to omit default user skill roots when default roots are enabled. Its default is true, preserving Native discovery; an explicit false leaves project and explicitly configured roots available. Cloud profiles must opt in when host user roots lie outside the authorized account scope.
+
 Native bundled skill providers accept optional deployment invocation ceilings: `skill-office.invocation` and `skill-filesystem.bundledInvocation`. Cloud can expose complete immutable packages for inspection and download while withholding model and user invocation until the execution environment is qualified. The filesystem ceiling cannot enable source-disabled invocation or affect other roots; omission preserves Native behavior. Original skill consumers enforce invocation policy, and package bytes remain unchanged.
 
 Gateway `inspectInvocation` exposes its existing strict/SRC resolver as a readonly Host inspection for account capability auditing. It requires an active calling fiber and performs no lookup, authorization or business invocation; normal dispatch retains every original check.
