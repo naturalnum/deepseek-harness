@@ -82,7 +82,7 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 按[运行时 debug 观测约定](../pe-cloud-runtime/README.zh.md#understand-the-implementation)，原生 `session/follow` 仅在原守卫通过后、yield 前记录实际 opening snapshot。该元数据不证明浏览器已收到或呈现；取消和清理仍由原迭代器负责。
 
-根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt、fork 和队列更新等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
+根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt、fork 和队列更新等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。原生 Workspace 附着完成后，fork 在返回身份前，通过同一 scope guard 同步复核实际附着的子 Agent。拒绝时子会话可能已提交；该检查既不回滚也不删除原生记录。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
 
 私有[账户暴露视图](src/account-exposure.ts) 从根的冻结 manifest 中选择同配方子集。RPC 与流类别、Fetch 方法/路径、handler、guard 和 settings 字段必须对应根的精确声明。每图拥有自己的 inventory 审核和销毁失效；A 的审核或失效不改变 B 或根。审核及操作准入核验实际安装的精确 AccountBinding 与可信 graph/mount-current 回调，允许在 ready 前受限挂载时审核，拒绝过期或关闭的图。现有 ExposurePolicy 消费者可直接接收该视图，不增加 Loader 服务或全局账户注册表。
 

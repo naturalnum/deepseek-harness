@@ -526,12 +526,13 @@ describe('RowActionToast', () => {
     const dismissToast = vi.fn()
     const showArchived = vi.fn()
     const filter = { label: 'Show archived', onClick: showArchived }
-    const renderFactorySlot = vi.fn<ArchiveToastEntryProps['renderFactorySlot']>(() => null)
+    const renderFactoryCalls = vi.fn<(factory: string, props: object) => null>(() => null)
+    const renderFactorySlot: ArchiveToastEntryProps['renderFactorySlot'] = (factory, props) => renderFactoryCalls(factory, props)
     render(<ArchiveToastEntry {...standard} kind="archived" sessionId={ROW.sessionId} seq={1}
       t={t} useStore={bindSnapshotSelector(instance.store)} actions={instance.actions}
       dismissToast={dismissToast} renderFactorySlot={renderFactorySlot}
       display={() => ({ text: 'Archived', tone: 'success' })} filterAction={() => filter} />)
-    expect(renderFactorySlot).toHaveBeenCalledWith('workspace.toast.content', {
+    expect(renderFactoryCalls).toHaveBeenCalledWith('workspace.toast.content', {
       text: 'Archived', tone: 'success', actions: [filter], seq: 1, onDone: dismissToast,
     })
   })
@@ -661,6 +662,8 @@ describe('RowActionToast', () => {
       const retry = screen.getByRole('alert')
       expect(retry).not.toBe(first)
       expect(retry.textContent).toBe(translate('shortcut.forkFailed'))
+      expect(retry.textContent).not.toMatch(/Try again|请重试/)
+      expect(retry.querySelector('button')).toBeNull()
       expect(retry.querySelector('svg')).toBeNull()
       act(() => { vi.advanceTimersByTime(3999) })
       expect(screen.getAllByRole('alert')).toEqual([retry])

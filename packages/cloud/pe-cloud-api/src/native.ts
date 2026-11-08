@@ -145,6 +145,15 @@ class NativeSessionAdmission {
     await this.guards.assertSessionProject(sessionId)
   }
 
+  /** Recheck the actual attached child after native Workspace publication, before returning its identity. */
+  assertForkResult(value: SessionForkValue): void {
+    this.admit('session/fork', 'account-session')
+    const child = this.ctx.get('agents')?.get(value.sessionId)
+    if (child === undefined) throw new CloudApiError('cloud/account-unavailable', 'The native fork child is unavailable.')
+    this.guards.assertActiveScope(child)
+    this.admit('session/fork', 'account-session')
+  }
+
   promptInput(request: SessionPromptRequest): void {
     this.admit('session/prompt', 'account-session')
     if (request.content.some(part => part.type === 'image')) {
@@ -432,7 +441,9 @@ class AccountSessionController extends SessionController {
   override async fork(request: SessionForkRequest): Promise<SessionForkValue> {
     await this.admission.session('session/fork', request.sessionId)
     this.admission.admit('session/fork', 'account-session')
-    return super.fork(request)
+    const value = await super.fork(request)
+    this.admission.assertForkResult(value)
+    return value
   }
 
   override async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {

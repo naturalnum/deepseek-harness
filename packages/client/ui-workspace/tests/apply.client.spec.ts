@@ -768,7 +768,7 @@ describe('ui-workspace apply', () => {
     expect(b.selectPanel).not.toHaveBeenCalled()
   })
 
-  it.each(['ordinary', 'other-remote', 'unwrapped-migration'] as const)('keeps a fork failure silent after rejection (%s)', async (kind) => {
+  it.each(['ordinary', 'other-remote', 'unwrapped-migration', 'child-title'] as const)('reports a fork failure without reopening or repeating creation (%s)', async (kind) => {
     const b = await bench()
     onTestFinished(() => b.ctx.fiber.dispose())
     declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
@@ -776,15 +776,19 @@ describe('ui-workspace apply', () => {
     using source = b.ctx.sessions.retain(sid('source'), { source: 'controllerOperation' })
     await source.ready
     b.retain.mockClear()
-    const error = kind === 'ordinary'
-      ? new Error('fork failed')
+    const error = kind === 'ordinary' || kind === 'child-title'
+      ? new Error(kind === 'child-title' ? 'fork child rename failed after creation' : 'fork failed')
       : kind === 'other-remote'
         ? new SessionForkError(
           new RemoteError('session/fork-unavailable', 'no completed turn', { sessionId: sid('source') }),
           sid('source'),
         )
         : new RemoteError('session/migration-required', 'migration required', { sessionId: sid('source') })
-    b.fork.mockRejectedValueOnce(error)
+    if (kind === 'child-title') b.fork.mockImplementationOnce(async (request) => {
+      request.onCreated?.(sid('created-child'))
+      throw error
+    })
+    else b.fork.mockRejectedValueOnce(error)
     const forkSession = vi.spyOn(b.ctx.uiWorkspace, 'forkSession')
     const fork = faceOf(entry(b.slots, MENU_ITEM, 'fork')) as ForkSessionInjected
     const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
@@ -793,7 +797,10 @@ describe('ui-workspace apply', () => {
     expect(forkSession).toHaveBeenCalledOnce()
     await expect(forkSession.mock.results[0]!.value).rejects.toBe(error)
 
-    expect(toast.hooks.toast.getSnapshot()).toBeNull()
+    await vi.waitFor(() => {
+      expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'shortcutForkFailed',
+        reason: kind === 'other-remote' ? 'unavailable' : 'failed', seq: 1 })
+    })
     expect(b.fork).toHaveBeenCalledOnce()
     expect(b.retain).not.toHaveBeenCalled()
     expect(b.selectPanel).not.toHaveBeenCalled()

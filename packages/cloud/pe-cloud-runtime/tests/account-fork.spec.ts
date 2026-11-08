@@ -142,3 +142,21 @@ it('refuses cold branch history after its source loses same-Workspace membership
     .rejects.toMatchObject({ code: 'cloud/forbidden' })
   expect(cold.ctx.agents.get(child.sessionId)).toBeUndefined()
 })
+
+it('withholds a committed child when the source is detached during original Workspace attachment', async () => {
+  const f = fixture(), graph = await f.start(), source = await graph.ctx.sessionController.create({})
+  await turn(graph, source.sessionId, 'attachment race source')
+  const workspace = graph.files.project().workspace, attach = workspace.attachSession.bind(workspace)
+  let childId: SessionId | undefined
+  vi.spyOn(workspace, 'attachSession').mockImplementationOnce(async (id) => {
+    await attach(id)
+    childId = id
+    await workspace.detachSession(source.sessionId)
+  })
+  await expect(graph.invoke('fork', { sessionId: source.sessionId })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  if (childId === undefined) throw new Error('Native fork never reached original attachment')
+  expect(graph.ctx.sessions.get(childId)?.header.parentSession).toBe(source.sessionId)
+  expect(workspace.sessionIds).toContain(childId)
+  expect(workspace.sessionIds).not.toContain(source.sessionId)
+  await expect(graph.guards.sessions.assertSessionProject(childId)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+})
