@@ -18,6 +18,7 @@ import { searchLiterature } from '../../src/reused/literature/literatureSearch.t
 import { materializeResearchSkill } from './resources.mjs'
 import { createNativeResearchRuntime } from './native-runner.mjs'
 import { researchJsonResult } from './result-json.ts'
+import { conversationReviewOps, reviewInConversation } from '../airalogy/conversation-review.mjs'
 
 /** Independent Cloud entry identity. */
 export const name = 'research-suite/cloud'
@@ -136,7 +137,9 @@ export class CloudResearch extends TypertRemoteService {
         const signal=AbortSignal.any([exec.signal,item.signal])
         const owned={...exec,signal}
         try {
-          const result=await this.perform(item.request.op,item.request.args,owned,'human',item.check)
+          const result=conversationReviewOps.has(item.request.op)
+            ? await this.operationGuard.run(item.check,()=>reviewInConversation(this.ctx,item.request.op,validateArgs(item.request.op,item.request.args),owned,item.request.sessionId))
+            : await this.perform(item.request.op,item.request.args,owned,'human',item.check)
           const output=researchJsonResult({requestId,operation:item.request.op,inputSha256:item.inputSha256,result},config.maxReplyBytes)
           item.check();item.resolve(output.result);return output
         } catch(error) { item.reject(error);throw error }
@@ -191,7 +194,8 @@ export class CloudResearch extends TypertRemoteService {
   }
   private perform(op:string,args:Record<string,unknown>,exec:ToolRunContext,actor:'human'|'agent',requestCurrent?:()=>void):Promise<unknown> {
     this.assertToolCurrent(exec)
-    return this.track(this.operationGuard.run(()=>{this.assertToolCurrent(exec);requestCurrent?.()},()=>this.runtime.withExecution(exec,async()=>{
+    const outerGuard=this.operationGuard.getStore()
+    return this.track(this.operationGuard.run(()=>{outerGuard?.();this.assertToolCurrent(exec);requestCurrent?.()},()=>this.runtime.withExecution(exec,async()=>{
       let result=await this.store.execute(op,validateArgs(op,args),actor,exec.signal,exec.agent?.session.id)
       if(op==='engine_run' && result!==null && typeof result==='object' && 'status' in result && result.status==='running') {
         const {id}=z.object({id:z.string()}).passthrough().parse(result)

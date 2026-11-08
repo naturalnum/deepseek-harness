@@ -3,6 +3,7 @@ import {join} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
 import {fileURLToPath} from 'node:url'
 import {readFileSync} from 'node:fs'
+import {DatabaseSync} from 'node:sqlite'
 import {loadOverlayPatches} from '@deepseek-ai/dsh-app-boot'
 import {expect,it,vi} from 'vitest'
 import {ToolCallId} from '@deepseek-ai/dsh-llm'
@@ -170,7 +171,7 @@ it('records a real native workbench intent, executes only its stored parameters 
 })
 
 it('returns committed task create/get/open views as bounded lossless JSON through original native tools',async()=>{
-  const a=await fixture('research-task-json-a'),b=await fixture('research-task-json-b')
+  const a=await fixture('research-task-json-a',{},undefined,true),b=await fixture('research-task-json-b')
   const called=new Set<string>(),outputs:unknown[]=[]
   const original=a.graph.adapter.stream.bind(a.graph.adapter)
   a.graph.ctx.on('tools/post-execute',async(exec,result,next)=>{
@@ -202,9 +203,29 @@ it('returns committed task create/get/open views as bounded lossless JSON throug
     }
     throw new Error('Unexpected scientific transport operation in JSON result fixture')
   })
-  const opened=await a.api('task_open',{id:task.id,reason:'明确核对合成软件测试方法源码',requestId:'task-json-open'})
-  await a.agent.whenIdle()
-  expect(outputs).toHaveLength(2)
+  const decisions:string[]=[]
+  let accept=false
+  const unregister=a.agent.ctx.on('user-questions/request',async request=>{
+    const question=request.questions[0]
+    if(question===undefined || question.options?.length!==2)throw new Error('Native review question absent')
+    expect(question.detail).toContain(task.id.replaceAll('-', '\\-'))
+    expect(question.detail).toContain('88a52b1c11219f47f2f1553ea2d4977249ab22c467102b7d9aee631872bd68c8')
+    const selected=question.options[accept?1:0]!.label
+    decisions.push(selected)
+    return {answers:[{id:question.id,selected:[selected]}]}
+  })
+  let opened:unknown
+  try {
+    const denied=await a.api('task_open',{id:task.id,reason:'暂不批准合成测试方法',requestId:'task-json-denied'})
+    await a.agent.whenIdle()
+    expect(denied).toMatchObject({executed:false,status:'declined'})
+    expect(await a.api('task_get',{id:task.id})).toEqual(task)
+    accept=true
+    opened=await a.api('task_open',{id:task.id,reason:'明确核对合成软件测试方法源码',requestId:'task-json-open'})
+    await a.agent.whenIdle()
+  } finally { unregister() }
+  expect(decisions).toHaveLength(2)
+  expect(outputs).toHaveLength(3)
   expect(opened).toMatchObject({id:task.id,record:{protocolId:'power-data-quality-interactive'}})
   expect(isJsonValue(opened)).toBe(true)
   expect(opened).not.toHaveProperty('report')
@@ -214,8 +235,51 @@ it('returns committed task create/get/open views as bounded lossless JSON throug
   expect((await a.graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name:'research_task_get',arguments:{id:task.id},agent:otherAgent,signal:new AbortController().signal})).isError).toBe(true)
 })
 
+it.each(['peer','request','account','unanswered','changed'] as const)('does not apply sidebar approval when %s fails during the question',async kind=>{
+  const a=await fixture('research-review-stopped-'+kind,{},undefined,true)
+  const controller=new AbortController()
+  const made=await a.tool('research_task_create',{objective:'Synthetic approval abort test',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0',requestId:'peer-closed-task'})
+  if(made.isError)throw new Error('Task fixture failed')
+  const task=made.value as {id:string}
+  const original=a.graph.adapter.stream.bind(a.graph.adapter),called=new Set<string>()
+  vi.spyOn(a.graph.adapter,'stream').mockImplementation(async function*(options){
+    const text=options.messages.flatMap(message=>message.content).filter(block=>block.type==='text').map(block=>block.text).join('\n')
+    const id=[...text.matchAll(/requestId=([a-f0-9-]{36})/g)].at(-1)?.[1]
+    if(id&&!called.has(id)){called.add(id);yield {type:'block-start',index:0,blockType:'tool-call'};yield {type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('peer-closed-review'),name:'research_workbench_execute',arguments:JSON.stringify({requestId:id})}};yield {type:'finish',reason:{kind:'tool-calls'}}}
+    else yield* original(options)
+  })
+  let asked=false
+  const unregister=a.agent.ctx.on('user-questions/request',async request=>{
+    const q=request.questions[0]
+    if(q===undefined||q.options?.length!==2)throw new Error('Native review question absent')
+    asked=true
+    if(kind==='peer')await a.graph.localePeer.dispose()
+    if(kind==='request')controller.abort()
+    if(kind==='account')a.graph.closeBusiness()
+    if(kind==='unanswered')return undefined
+    if(kind==='changed'){
+      const change=await a.tool('research_task_select_method',{id:task.id,expectedRevision:1,methodId:'power-linear-calibration',methodVersion:'1.0.0',requestId:'change-during-review'})
+      if(change.isError)throw new Error('Failed to change the synthetic method')
+    }
+    return {answers:[{id:q.id,selected:[q.options[1]!.label]}]}
+  })
+  try { await expect(a.graph.ctx.typertGateway.invoke({namespace:'cloudResearch',method:'action',
+    args:{request:{sessionId:a.agent.session.id,op:'task_open',args:{id:task.id,reason:'Synthetic stop during approval',requestId:'peer-closed-open'},execute:true}},
+    peer:a.graph.localePeer,signal:controller.signal})).rejects.toBeDefined() }
+  finally { unregister() }
+  expect(asked).toBe(true)
+  await a.agent.whenIdle()
+  const db=new DatabaseSync(join(a.graph.profileHome,'research-suite','research.sqlite'),{readOnly:true})
+  try {
+    const row=db.prepare('SELECT body FROM state WHERE id=1').get() as {body:string}
+    const state=JSON.parse(row.body) as {tasks:Array<{id:string;recordId?:string}>;records:Array<{sessionId:string}>}
+    expect(state.tasks.find(item=>item.id===task.id)?.recordId).toBeUndefined()
+    expect(state.records.filter(item=>item.sessionId===a.agent.session.id)).toHaveLength(0)
+  } finally { db.close() }
+})
+
 it('preserves all 500 imported rows in bounded chart pages and removes only obsolete generated pages on a two-row revision',async()=>{
-  const a=await fixture('research-chart-pages',{maxOutputBytes:4096}),targets=['measurements.missing_rate','expected_total','valid_total','missing_rate']
+  const a=await fixture('research-chart-pages',{maxOutputBytes:4096},undefined,true),targets=['measurements.missing_rate','expected_total','valid_total','missing_rate']
   const observed:number[]=[]
   const original=a.graph.adapter.stream.bind(a.graph.adapter),called=new Set<string>()
   vi.spyOn(a.graph.adapter,'stream').mockImplementation(async function*(options){
@@ -241,7 +305,14 @@ it('preserves all 500 imported rows in bounded chart pages and removes only obso
   type Chart={id:string;interactionChartId?:string;title:string;sourceRecordId?:string;spec:{data:Array<{id:string;label:string;value:number}>;caption?:string};svg:string}
   type View={id:string;record:{id:string;revision:number;run:{tables:{measurements:Array<{channel:string;expected:number;valid:number;missing_rate:number}>};values:{expected_total:number;valid_total:number;missing_rate:number}};calculation:{errors:unknown[];pending:unknown[]}};charts:Chart[]}
   const task=await reviewed<{id:string}>('task_create',{objective:'Synthetic 500-row chart capacity',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0',requestId:'pages-task'})
-  const opened=await reviewed<View>('task_open',{id:task.id,reason:'Explicit synthetic source review',requestId:'pages-open'})
+  const unregister=a.agent.ctx.on('user-questions/request',async request=>{
+    const question=request.questions[0]
+    if(question===undefined || question.options?.length!==2)throw new Error('Native source review question absent')
+    return {answers:[{id:question.id,selected:[question.options[1]!.label]}]}
+  })
+  let opened:View
+  try { opened=await reviewed<View>('task_open',{id:task.id,reason:'Explicit synthetic source review',requestId:'pages-open'}) }
+  finally { unregister() }
   const custom=await reviewed<Chart>('chart_render',{spec:{schema:'deepscientist.report_chart.v1',kind:'bar',title:'User-owned chart',data:[{id:'user',label:'Keep this chart',value:42}]},requestId:'user-chart'})
   async function upload(name:string){return reviewed<{reference:string}>('attachment_put',{name,contentBase64:readFileSync(new URL('./fixtures/'+name,import.meta.url)).toString('base64'),requestId:name})}
   const file=await upload('power-quality-500.csv'),args={id:task.id,reference:file.reference,table:'measurements',expectedRecordRevision:opened.record.revision,requestId:'pages-500'}

@@ -107,8 +107,15 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
     }
     if(op==='task_open'){
       if(!task.methodId)fail('INCOMPLETE','尚未选择方法，请使用明确的方法建立新任务，原任务保留。');
+      const pin=[a.expectedTaskRevision,a.expectedMethodId,a.expectedMethodVersion,a.expectedMethodSha256];
+      if(pin.some(value=>value!==undefined)) {
+        if(pin.some(value=>value===undefined)||task.revision!==a.expectedTaskRevision||task.methodId!==a.expectedMethodId||task.methodVersion!==a.expectedMethodVersion)fail('CONFLICT','已批准的任务版本或方法已变化，请重新核对。');
+      }
       const ready=await engine.execute('engine_status',{},actor,session);if(!ready.ready)fail('ENGINE_UNAVAILABLE',ready.message);
       const source=await method(task.methodId,task.methodVersion,session);
+      if(a.expectedMethodSha256!==undefined&&source.sha256!==a.expectedMethodSha256)fail('CONFLICT','已批准的方法源码已变化，请重新核对。');
+      const latest=find(task.id,session);
+      if(latest.revision!==task.revision||latest.methodId!==task.methodId||latest.methodVersion!==task.methodVersion)fail('CONFLICT','任务方法在准备期间已变化，未执行方法准备。');
       if(source.builtin&&!source.installed)await engine.execute('engine_package_put',{id:source.id,version:source.version,title:source.title,kind:'protocol',files:source.files,requestId:task.id+'.package'},actor,session);
       if(!source.approved)await engine.execute('engine_package_review',{id:source.id,version:source.version,sha256:source.sha256,approved:true,reason:a.reason},actor,session);
       let protocol;try{protocol=await call('protocol_get',{id:source.id,version:source.version});}catch(error){if(error.code!=='NOT_FOUND')throw error;}
@@ -117,7 +124,7 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
       let record=task.recordId?await call('record_get',{id:task.recordId}):await call('record_create',{protocolId:source.id,protocolVersion:source.version,requestId:task.id+':record'});
       record=await call('record_get',{id:record.id});
       if(!record.calculationBinding)record=await call('record_bind_engine',{id:record.id,expectedRevision:record.revision,packageId:source.id,version:source.version,requestId:task.id+':binding'});
-      mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id);t.recordId=record.id;return t;},session);
+      mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id);if(!t||t.revision!==task.revision||t.methodId!==task.methodId||t.methodVersion!==task.methodVersion)fail('CONFLICT','任务方法在准备期间已变化，未绑定实验记录。');t.recordId=record.id;return t;},session);
       return view(find(task.id,session),session);
     }
     const current=await view(task,session),record=current.record;
