@@ -1,6 +1,6 @@
 /** Config and parser checks mint no storage authority or successful native facts. */
 import { expect, it } from 'vitest'
-import { skillProjectionLimits, skillProjectionBudget, skillSourceContext } from '../src/skill-projection.ts'
+import { skillProjectionLimits, skillProjectionBudget, skillProjectionParentBytes, skillSourceContext } from '../src/skill-projection.ts'
 import { LinuxFilesPool, type FilesPoolConfig } from '../src/worker-pool.ts'
 
 const MiB = 1048576
@@ -28,13 +28,32 @@ it('charges fixed projection handles and full source/record/borrow overlap separ
   const budget = skillProjectionBudget(projection, source, { ...c, replyBytes: c.content?.maxReplyBytes ?? 0 })
   expect(budget.handles).toBeGreaterThan(source.maxVersions * 2048)
   expect(budget.operation).toBeLessThanOrEqual(projection.reservationBytes)
-  expect(budget.overlap).toBe(MiB + 7 * projection.reservationBytes)
+  expect(budget.overlap).toBe(MiB + 5 * projection.reservationBytes + 2 * skillProjectionParentBytes(c.maxPathBytes))
   let starts = 0
   const pool = new LinuxFilesPool(c, () => { starts++; throw new Error('No worker may start in a configuration-only check') })
   expect(starts).toBe(0)
   expect(() => pool.requireStorageOwner()).toThrow()
   expect((await pool.stop(Date.now() + 1000)).status).toBe('confirmed')
   await pool.whenClosed()
+})
+
+it('admits twenty retained Session parents plus two transient skill parents without reserving twenty-two I/O buffers', async () => {
+  const c = config(), p = { ...projection, maxParentBorrows: 22 }, source = c.skillVersions
+  if (source === undefined) throw new Error('Missing fixture source limits')
+  const budget = skillProjectionBudget(p, source, { ...c, replyBytes: c.content?.maxReplyBytes ?? 0 })
+  expect(budget.overlap).toBe(MiB + 5 * p.reservationBytes + 22 * skillProjectionParentBytes(c.maxPathBytes))
+  expect(budget.overlap).toBeLessThan(c.maxResidentBytesPerLane)
+  let starts = 0
+  const pool = new LinuxFilesPool({ ...c, skillProjection: p }, () => {
+    starts++; throw new Error('Budget acceptance cannot start a worker')
+  })
+  expect(starts).toBe(0)
+  expect((await pool.stop(Date.now() + 1000)).status).toBe('confirmed')
+  await pool.whenClosed()
+})
+
+it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER])('rejects an unbounded passive parent path limit %s', (maxPathBytes) => {
+  expect(() => skillProjectionParentBytes(maxPathBytes)).toThrow(RangeError)
 })
 
 it.each(['unknown-field', 'metadata-bytes', 'metadata-inodes', 'fraction', 'borrow-set'] as const)(

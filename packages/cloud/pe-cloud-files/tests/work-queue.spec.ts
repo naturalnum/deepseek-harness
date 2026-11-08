@@ -19,6 +19,77 @@ function deferred<T>() {
 afterEach(() => { vi.useRealTimers() })
 
 describe('files actual-work ownership', () => {
+  it('keeps two settled parent leases while a third operation uses complete capacity and shutdown still joins every lease', async () => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane()
+    const retention = { kind: 'lease' as const, retainedBytes: 2 }
+    const first = await lane.run(12, async () => 'session-one-parent', undefined, retention)
+    const second = await lane.run(12, async () => 'session-two-parent', undefined, retention)
+    expect(queue.inspect()).toMatchObject({ residentBytes: 4, pending: 2, running: 0 })
+    expect(lane.isIdle()).toBe(true)
+    const skill = await lane.run(16, async () => 'complete-skill-result')
+    expect(skill.value).toBe('complete-skill-result')
+    expect(queue.inspect()).toMatchObject({ residentBytes: 20, pending: 3 })
+    expect(lane.isIdle()).toBe(false)
+    await expect(lane.run(1, async () => 'over-budget')).rejects.toMatchObject({ code: 'cloud/capacity' })
+    skill.release()
+    queue.close()
+    let closed = false
+    const stopped = queue.whenClosed().then(() => { closed = true })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    expect(queue.inspect()).toMatchObject({ residentBytes: 4, pending: 2 })
+    first.release(); second.release(); second.release()
+    await stopped
+    expect(queue.inspect()).toMatchObject({ residentBytes: 0, pending: 0, lanes: 0 })
+  })
+
+  it.each(['cancel', 'close'] as const)('retains the complete parent preparation until actual settlement after %s', async (kind) => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), actual = deferred<string>()
+    const started = deferred<null>(), observer = new AbortController()
+    const wait = lane.run(12, async () => { started.resolve(null); return actual.promise }, observer.signal,
+      { kind: 'lease', retainedBytes: 2 })
+    const rejected = expect(wait).rejects.toBeInstanceOf(Error)
+    await started.promise
+    if (kind === 'cancel') observer.abort(new Error('observer stopped'))
+    else queue.close()
+    await rejected
+    expect(queue.inspect()).toMatchObject({ residentBytes: 12, running: 1, pending: 1 })
+    actual.resolve('late inert grant')
+    if (kind === 'cancel') queue.close()
+    await queue.whenClosed()
+    expect(queue.inspect()).toMatchObject({ residentBytes: 0, pending: 0 })
+  })
+
+  it('does not shrink unresolved work or change the complete reservation of legacy leases', async () => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), actual = deferred<string>()
+    const started = deferred<null>()
+    const wait = lane.run(12, async () => { started.resolve(null); return actual.promise }, undefined,
+      { kind: 'lease', retainedBytes: 2 })
+    const rejected = expect(wait).rejects.toThrow('actual failure')
+    await started.promise
+    expect(queue.inspect()).toMatchObject({ residentBytes: 12, running: 1 })
+    actual.reject(new Error('actual failure')); await rejected
+    const legacy = await lane.run(12, async () => 'legacy lease', undefined, 'lease')
+    expect(queue.inspect()).toMatchObject({ residentBytes: 12, pending: 1 })
+    legacy.release(); queue.close(); await queue.whenClosed()
+  })
+
+  it.each([0, -1, 1.5, 13, Number.MAX_SAFE_INTEGER + 1])('rejects invalid retained parent bytes %s before work', async (retainedBytes) => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), work = vi.fn(async () => 'not invoked')
+    await expect(lane.run(12, work, undefined, { kind: 'lease', retainedBytes })).rejects.toMatchObject({ code: 'cloud/capacity' })
+    expect(work).not.toHaveBeenCalled()
+    expect(queue.inspect()).toMatchObject({ residentBytes: 0, pending: 0 })
+    queue.close(); await queue.whenClosed()
+  })
+
+  it('rejects an unbounded observer callback on a compact inert lease before invocation', async () => {
+    const queue = new FilesWorkQueue(limits), lane = queue.openLane(), work = vi.fn(async () => 'not invoked')
+    await expect(lane.run(12, work, undefined, { kind: 'lease', retainedBytes: 2 }, undefined, () => {}))
+      .rejects.toMatchObject({ code: 'cloud/capacity' })
+    expect(work).not.toHaveBeenCalled()
+    queue.close(); await queue.whenClosed()
+  })
+
   it('bounds each lane while another lane proceeds and retains completed results', async () => {
     const queue = new FilesWorkQueue(limits)
     const a = queue.openLane()

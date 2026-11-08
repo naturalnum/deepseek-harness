@@ -8,6 +8,19 @@ import type { SkillVersion, SkillVersionId, SkillVersionLimits } from './skill-v
 export interface SkillSourceContext { readonly bootId: string; readonly mountNamespace: string }
 
 /**
+ * Bound one passive project grant, queue record, release closure and its path/identity strings after worker settlement.
+ * @param maxPathBytes Original files path bound; no source tree, record body or worker buffer remains in the grant.
+ * @returns Finite retained bytes; every later project/copy verification reenters the complete work reservation.
+ */
+export function skillProjectionParentBytes(maxPathBytes: number): number {
+  const bytes = 16 * maxPathBytes + 8192
+  if (!Number.isSafeInteger(maxPathBytes) || maxPathBytes < 1 || !Number.isSafeInteger(bytes)) {
+    throw new RangeError('Projection parent budget overflow')
+  }
+  return bytes
+}
+
+/**
  * Validate bounded kernel-scope observations returned by the original worker.
  * @param value Read-only fixed proc observations; never caller-provided authorization.
  * @returns Exact scope or undefined; matching numbers in another scope cannot substitute for it.
@@ -83,8 +96,8 @@ export function skillProjectionBudget(limits: SkillProjectionLimits, source: Ski
   const operation = 64 * (2 * source.maxFileBytes * limits.maxCopiesPerOperation + bounds.maxReadBytes + 1024)
     + 64 * bounds.maxPathBytes + 16 * limits.maxRecordBytes * limits.maxProjects + 8 * bounds.replyBytes
       + 16384 * limits.maxProjects + 131072
-  const overlap = source.reservationBytes + limits.reservationBytes * (limits.maxParentBorrows + limits.maxOperationBorrows
-    + bounds.maxRunningPerLane + bounds.maxQueuedPerLane)
+  const overlap = source.reservationBytes + limits.maxParentBorrows * skillProjectionParentBytes(bounds.maxPathBytes)
+    + limits.reservationBytes * (limits.maxOperationBorrows + bounds.maxRunningPerLane + bounds.maxQueuedPerLane)
   if (![handles, operation, overlap].every(n => Number.isSafeInteger(n) && n > 0)) throw new RangeError('Projection budget overflow')
   return Object.freeze({ handles, operation, overlap })
 }

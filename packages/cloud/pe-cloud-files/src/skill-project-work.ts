@@ -60,7 +60,7 @@ export interface SkillProjectWork {
     resource: Uint8Array<ArrayBuffer> }>
   /** Only a completed parent grant is passive; operation-copy borrows and publication results remain ordinary work. */
   mutate<T>(work: (client: FdWorkerClient, control: AbortSignal) => Promise<T>, signal: AbortSignal,
-    retention?: 'lease'): Promise<ResidentResult<T>>
+    retention?: 'parent'): Promise<ResidentResult<T>>
 }
 
 type LegacySource = Pick<SkillVersion, 'id' | 'skillSha256' | 'resourceSha256' | 'skillBytes' | 'resourceBytes'>
@@ -200,7 +200,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     issuedParent.current()
   }
   const io = <T>(work: (client: FdWorkerClient, signal: AbortSignal) => Promise<T>, signal: AbortSignal,
-    retention?: 'lease'): Promise<ResidentResult<T>> => {
+    retention?: 'parent'): Promise<ResidentResult<T>> => {
     current(); signal.throwIfAborted()
     return input.mutate(async (client, control) => {
       try { return await work(client, control) } catch (error) {
@@ -492,7 +492,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
           await write(client, scanned.root, completed, written.version, settlement)
           return await validateParent(client, completed, settlement)
         } catch (cause) { unknown(cause) }
-      }, signal, 'lease')
+      }, signal, 'parent')
       try {
         current(); signal.throwIfAborted(); assertRegistered()
         if (parentBorrows >= input.limits.maxParentBorrows) denied('FS_TOO_LARGE')

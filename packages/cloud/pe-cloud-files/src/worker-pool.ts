@@ -5,7 +5,7 @@ import type { SkillBundleVersion } from './skill-bundles.ts'
 import { createSkillProjectWork } from './skill-project-work.ts'
 import type { SkillProjectPort } from './skill-project-work.ts'
 import type { SkillRecordRevalidation } from './skill-revalidation.ts'
-import { skillProjectionLimits, skillProjectionBudget } from './skill-projection.ts'
+import { skillProjectionLimits, skillProjectionBudget, skillProjectionParentBytes } from './skill-projection.ts'
 import type { SkillVersion, SkillVersionId } from './skill-versions.ts'
 import { createSkillVersionWork, retireSkillVersionsAfterDrain } from './skill-version-work.ts'
 import { SKILL_VERSION_HANDLE_BYTES, skillVersionLimits } from './skill-versions.ts'
@@ -631,6 +631,7 @@ export class LinuxFilesPool implements DrainParticipant {
       failure: (outcome: 'not-published' | 'unknown', code: FsErrorCode, cause?: unknown) => FdMutationFailure,
       signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' | 'joined-result' | 'retained-lease' = 'native-handoff',
       trace?: FilesWorkTrace,
+      retainedLeaseBytes?: number,
     ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
@@ -675,7 +676,9 @@ export class LinuxFilesPool implements DrainParticipant {
           if (delivery !== 'joined-result') answer.reject(error)
           throw error
         } finally { turn.resolve() }
-      }, signal, delivery === 'retained-lease' ? 'lease' : undefined, delivery === 'joined-result' ? 'joined' : undefined, trace)
+      }, signal, delivery === 'retained-lease'
+        ? retainedLeaseBytes === undefined ? 'lease' : { kind: 'lease', retainedBytes: retainedLeaseBytes }
+        : undefined, delivery === 'joined-result' ? 'joined' : undefined, trace)
       void work.then((result) => {
         if (delivery !== 'native-handoff') answer.resolve(result)
         else result.release()
@@ -786,7 +789,8 @@ export class LinuxFilesPool implements DrainParticipant {
         mutate: (work, signal, retention) => runMutation(
           Math.max(config.reservationBytes, this.config.skillBundles?.reservationBytes ?? 0), current, work,
           (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal,
-          retention === 'lease' ? 'retained-lease' : 'retained-result'),
+          retention === 'parent' ? 'retained-lease' : 'retained-result', undefined,
+          retention === 'parent' ? skillProjectionParentBytes(this.config.maxPathBytes) : undefined),
       })
       return skillCell.projection
     }

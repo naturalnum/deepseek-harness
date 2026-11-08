@@ -9,9 +9,11 @@ import type { SkillBundleVersion } from '../src/skill-bundles.ts'
 import { describeBundle } from '../src/bundle-codec.ts'
 import { createSkillProjectWork } from '../src/skill-project-work.ts'
 import { FdWorkerClient } from '../src/worker-client.ts'
+import { FilesWorkQueue } from '../src/work-queue.ts'
+import { skillProjectionParentBytes } from '../src/skill-projection.ts'
 import { limits, projectionLimits } from './fixtures/bundle-limits.ts'
 
-async function fixture(authorizeActive = false, revalidate = true) {
+async function fixture(authorizeActive = false, revalidate = true, queuedParents = false) {
   const worker = new Worker(new URL('./fixtures/skill-exit-worker.mjs', import.meta.url)), client = new FdWorkerClient(worker)
   onTestFinished(async () => { await client.close(); await client.exited; await worker.terminate() }); await client.ready
   const lifetime = new AbortController(), binding: AccountBinding = { accountId: brandString<AccountBinding['accountId']>('A'),
@@ -56,10 +58,15 @@ async function fixture(authorizeActive = false, revalidate = true) {
   })
   const authorize = vi.fn(async () => { if (!authorizeActive) throw new Error('An uninstalled source cannot authorize a new load') })
   const confirm = vi.fn(), sourceRead = vi.fn(async () => tree)
+  const queue = new FilesWorkQueue({ maxLanes: 1, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 2, maxQueuedPerLane: 2,
+    maxResidentBytes: 4 * limits.reservationBytes, maxResidentBytesPerLane: 4 * limits.reservationBytes, waitTimeoutMs: 10000 })
+  const lane = queue.openLane(), results = new Set<() => void>()
+  onTestFinished(async () => { for (const release of results) release(); queue.close(); await queue.whenClosed() })
   const port = createSkillProjectWork({ binding, privateRoot: { rootPath: '/private', rootDevice: '1', rootInode: '2', rootMountId: '11' },
     uid: 2000, gid: 2000, quota: { ...root, rootPath: '/projects', rootInode: '2', minimumBytes: '1048576', maximumBytes: '1048576',
       minimumInodes: '128', maximumInodes: '128', backing: { path: '/backing', device: '3', inode: '4', bytes: '1048576' } },
-    limits: projectionLimits, sourceLimits: { maxVersions: 8, maxFileBytes: 4096, maxTotalBytes: 1048576, maxTotalInodes: 128,
+    limits: { ...projectionLimits, ...queuedParents ? { maxParentBorrows: 3 } : {} },
+    sourceLimits: { maxVersions: 8, maxFileBytes: 4096, maxTotalBytes: 1048576, maxTotalInodes: 128,
       reservationBytes: limits.reservationBytes }, bundleLimits: limits, maxReadBytes: 65536, maxPathBytes: 4096, maxReplyBytes: 65536,
     assertCurrent: () => { lifetime.signal.throwIfAborted() }, project: async () => root,
     resolveSource: () => undefined, source: async () => { throw new Error('Full trees cannot use the two-file reader') },
@@ -67,12 +74,42 @@ async function fixture(authorizeActive = false, revalidate = true) {
     bundleSource: sourceRead, bundleAuthorize: authorize,
     ...revalidate ? { revalidation: [{ workspaceId: workspace.id, recordSha256: hash, recordRevision: '1:2:3:4:5', pending: true,
       assertRecord: (supplied: string) => { expect(supplied).toBe('1:2:3:4:5') }, confirmRecord: confirm }] } : {},
-    mutate: async (work, signal) => ({ value: await work(client, signal), release() {} }),
+    mutate: async (work, signal, retention) => {
+      if (!queuedParents) return { value: await work(client, signal), release() {} }
+      const held = await lane.run(limits.reservationBytes, control => work(client, control), signal,
+        retention === 'parent' ? { kind: 'lease', retainedBytes: skillProjectionParentBytes(4096) } : undefined)
+      const release = (): void => { results.delete(release); held.release() }
+      results.add(release)
+      return { value: held.value, release }
+    },
   })
-  return { port, workspace, native, legacy, writes, authorize, confirm, sourceRead, tree, version,
+  return { port, workspace, native, legacy, writes, authorize, confirm, sourceRead, tree, version, queue,
     corrupt: () => { bytes = new TextEncoder().encode(JSON.stringify({ ...record, copies: [{ ...record.copies[0],
       source: { ...source, directories: [] } }] })) } }
 }
+
+it('materializes a complete skill with two live Session parents and preserves independent copy/output and parent limits', async () => {
+  const f = await fixture(true, true, true), signal = new AbortController().signal
+  const one = await f.port.prepareProject(f.workspace, () => {}, signal)
+  const two = await f.port.prepareProject(f.workspace, () => {}, signal)
+  expect(one.value).toBe(two.value)
+  expect(f.queue.inspect()).toMatchObject({ residentBytes: 2 * skillProjectionParentBytes(4096), pending: 2 })
+  const skill = await f.port.prepareProject(f.workspace, () => {}, signal)
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  const copy = await f.port.materializeBundle(skill.value, f.version, signal)
+  const operation = await f.port.borrowBundles(skill.value, [copy.value], signal)
+  f.port.assertBundleBorrow(operation.value)
+  expect(operation.value.copies[0]?.version).toBe(f.version)
+  expect(f.queue.inspect()).toMatchObject({ residentBytes: 3 * skillProjectionParentBytes(4096) + 2 * limits.reservationBytes,
+    pending: 5 })
+  operation.release(); copy.release(); skill.release()
+  expect(f.queue.inspect()).toMatchObject({ residentBytes: 2 * skillProjectionParentBytes(4096), pending: 2 })
+  // A further Session can prepare while the original two still retain their exact project grants.
+  const three = await f.port.prepareProject(f.workspace, () => {}, signal)
+  f.port.assertProject(one.value); f.port.assertProject(two.value); f.port.assertProject(three.value)
+  three.release(); one.release(); two.release()
+  expect(f.queue.inspect()).toMatchObject({ residentBytes: 0, pending: 0 })
+})
 
 it('revalidates every nested byte with the full-tree helper before original cold CAS and operation issuance', async () => {
   const f = await fixture(), parent = await f.port.prepareProject(f.workspace, () => {}, new AbortController().signal)
