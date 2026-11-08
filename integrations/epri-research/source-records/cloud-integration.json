@@ -7,7 +7,7 @@
   "cloudBaseCommit": "edcd1ea91ca0ddde78dedde322c600f43021920e",
   "importedSuiteTree": "2fb896ab57a04abba370e3e2b1c851f685127239",
   "transportPatch": "diffs/cloud-transports.patch",
-  "transportPatchSha256": "be426838d0b90e86ad06ea3cb6527be1ea4f532fb68312f1b5f1c40fd8a16d4c",
+  "transportPatchSha256": "8836f30c3d1c862bd1b2389a58c1c3a9c8402080f3c18379c73a6552b87aaef1",
   "files": [
     {
       "path": "src/reused/engine/index.ts",
@@ -50,6 +50,12 @@
       "importedSha256": "3d097010ccb99031e41ed240325eddc97827bc482dc3ff9903a24b0f89f7ee07",
       "cloudSha256": "031120e8410eb320a06373b1291b1047161ef71fff5ccf5acd43ee369548e9d3",
       "change": "native-workbench-and-source-reference-wrapping"
+    },
+    {
+      "path": "src/ui/ResearchProgress.tsx",
+      "importedSha256": "2d43813ccf50b8938a2e191d77f468355e210badf2beff663140f48f1877e7af",
+      "cloudSha256": "797036607631de09f8c3e32eb3930371018fb6ea43d0f83469f63b8f06f960dd",
+      "change": "bound-repository-git-action-state"
     }
   ],
   "qualification": "Component tests only; separate native Linux image and authenticated Web acceptance required."
