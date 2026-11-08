@@ -195,6 +195,7 @@ export class LoginPeerRegistry {
       if (this.entries.size >= this.config.maxPeers || this.count(this.peerCounts, binding.accountId) >= this.config.maxPeersPerAccount) {
         throw new AuthAccessError('cloud/capacity', requestId)
       }
+      this.auth.retainPrincipal(principal, requestId)
       const owned: Entry = {
         key, binding, principal, ready: Promise.withResolvers<LoginPeer>(), done: Promise.withResolvers<void>(),
         waiters: new Set(), tasks: new Set(), carriers: new Map(), reportedRefusalPhases: new Set(),
@@ -818,8 +819,10 @@ export class LoginPeerRegistry {
     if (entry.phase !== 'closing' || entry.preparing || entry.cleanup !== undefined || entry.use !== undefined
       || entry.handle !== undefined || entry.mux !== undefined || entry.tasks.size !== 0
       || entry.carrierCount !== 0 || entry.streamCount !== 0) return
+    if (this.entries.get(entry.key) !== entry) return
     this.entries.delete(entry.key)
     this.increment(this.peerCounts, entry.binding.accountId, -1)
+    this.auth.releasePrincipal(entry.principal)
     entry.done.resolve()
   }
 
@@ -840,26 +843,30 @@ export class LoginPeerRegistry {
     authenticate: () => Promise<AuthenticatedPrincipal> = () => this.auth.authenticate(request, requestId),
   ): Promise<void> {
     const principal = await authenticate()
-    if (principal.accountId !== entry.principal.accountId || principal.authSessionId !== entry.principal.authSessionId) {
-      throw new AuthAccessError('cloud/unauthenticated', requestId)
-    }
-    const handle = entry.handle
-    if (handle === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
-    this.currentEntry(handle, requestId)
-    let recheck = entry.recheck
-    if (recheck === undefined) {
-      try { this.auth.assertLoginCurrent(entry.principal, requestId) }
-      catch (error) {
-        if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') recheck = this.beginRecheck(entry)
-        else {
-          void this.startClose(entry, requestId)
-          throw this.safe(error, requestId)
+    try {
+      if (principal.accountId !== entry.principal.accountId || principal.authSessionId !== entry.principal.authSessionId) {
+        throw new AuthAccessError('cloud/unauthenticated', requestId)
+      }
+      const handle = entry.handle
+      if (handle === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+      this.currentEntry(handle, requestId)
+      let recheck = entry.recheck
+      if (recheck === undefined) {
+        try { this.auth.assertLoginCurrent(entry.principal, requestId) }
+        catch (error) {
+          if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') recheck = this.beginRecheck(entry)
+          else {
+            void this.startClose(entry, requestId)
+            throw this.safe(error, requestId)
+          }
         }
       }
+      await recheck
+      if (request.destroyed) throw new AuthAccessError('cloud/account-unavailable', requestId)
+      this.assertCurrent(handle, requestId)
+    } finally {
+      this.auth.releasePrincipal(principal)
     }
-    await recheck
-    if (request.destroyed) throw new AuthAccessError('cloud/account-unavailable', requestId)
-    this.assertCurrent(handle, requestId)
   }
 
   private currentEntry(handle: LoginPeer, requestId: RequestId): Entry {

@@ -122,7 +122,7 @@ HTTP 和 WS ingress 在账户定位／取得、Peer 准备及载体准入或完�
 
 `sign-in/email` 和 `sign-up/email` 先通过库查询原 Cookie，禁用身份缓存和刷新。有效登录或仍携带旧 session Cookie 的请求返回结构化 `cloud/login-active`/409、`retry: never`，要求真实 sign-out；查询失败不等于匿名。超时或取消后的迟到查询不能进入修改。最初匿名的请求没有共享的服务端转换标识，因此不宣称新 Cookie 签发在跨标签页/跨节点间有原子顺序。
 
-`revokeLogin` 先通过库删除，再由登录会话删除 hook 通知失效处理者。`planMigrations` 返回库生成的计划而不应用。 其 TypeScript 返回类型提供只读发现项分类，以及原始 `runMigrations(): Promise<void>`、`compileMigrations(): Promise<string>` 回调；直接返回库的实际计划对象，发现项记录保持不透明。认证操作只预留一个有限名额，覆盖真实查询及失效收尾；嵌套 hook 不再预留名额。等待超时后，该名额继续计入 `pendingOperations`，直到实际工作结算；晚到的认证结果不会创建登录跟踪状态。`close` 停止准入并等待，不关闭调用方持有的池。认证失败不会取消 Agent 任务。
+`revokeLogin` 先通过库删除，再由登录会话删除 hook 通知失效处理者。`planMigrations` 返回库生成的计划而不应用。 其 TypeScript 返回类型提供只读发现项分类，以及原始 `runMigrations(): Promise<void>`、`compileMigrations(): Promise<string>` 回调；直接返回库的实际计划对象，发现项记录保持不透明。认证操作只预留一个有限名额，覆盖真实查询及失效收尾；嵌套 hook 不再预留名额。等待超时后，该名额继续计入 `pendingOperations`，直到实际工作结算；晚到的认证结果不会创建登录跟踪状态。每个已认证 ingress 操作保留登录状态直至实际请求结算，登录 Peer 独立保留至完全关闭；失效栅栏持续到较早读取结算。借用和栅栏均结束后释放登录跟踪容量，不撤销认证库中的会话。`close` 停止准入并等待，不关闭调用方持有的池。认证失败不会取消 Agent 任务。
 
 只有显式预览配置才会为已校验的固定后缀启用 Better Auth 跨子域 Cookie；认证 base URL 和可信 origin 仍为管理域。单独的内部预览认证方法在同一无缓存登录读取前，检查原 Host 和精确 GET 路径；认证写入、bootstrap、原生 HTTP 和 WS 保留管理域传输检查。
 

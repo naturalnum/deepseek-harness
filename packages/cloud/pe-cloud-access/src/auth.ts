@@ -26,11 +26,13 @@ interface LoginState {
   expiresAtMs: number
   invalidated: boolean
   fenceOrdinal: bigint | undefined
+  borrows: number
 }
 interface LoginCheck {
   readonly headers: Headers
   verifiedAtMs: number
   state: LoginState
+  borrows: number
 }
 interface AuthInvocation {
   readonly requestId: Branded<'pe-request-id'>
@@ -168,7 +170,7 @@ export class BetterAuthAccess {
    * Query the database-backed login on every account request.
    * @param request - Original request; raw cookie/header values enter Better Auth, not client account fields.
    * @param requestId - Server-generated correlation id.
-   * @returns an immutable principal from the library's verified user/session rows.
+   * @returns an immutable principal from the library's verified user/session rows; its owner must release it after actual work settles.
    * @throws AuthAccessError for forbidden transport, missing/expired login, capacity, DB failure or timeout.
    */
   authenticate(request: IncomingMessage, requestId: Branded<'pe-request-id'>): Promise<AuthenticatedPrincipal> {
@@ -180,7 +182,7 @@ export class BetterAuthAccess {
    * This adapter method is internal to Root ingress and is not exposed by PeAuthService or a client RPC.
    * @param request - Original request; Host, method and canonical preview path are checked without rewriting.
    * @param requestId - Server-generated correlation id.
-   * @returns The original library-tracked principal, without authorizing any preview target or management API.
+   * @returns The library-tracked principal, which must be released after actual work settles; it grants no preview or management authority.
    * @throws AuthAccessError for forbidden transport, missing/expired login, capacity, DB failure or timeout.
    */
   authenticateServicePreview(request: IncomingMessage, requestId: Branded<'pe-request-id'>): Promise<AuthenticatedPrincipal> {
@@ -193,7 +195,7 @@ export class BetterAuthAccess {
    * @param request - Original request whose cookie is captured before the library query.
    * @param requestId - Server-generated correlation id; errors contain no user id or display name.
    * @param maxDisplayNameBytes - Explicit positive safe-integer UTF-8 limit, e.g. the bootstrap maxStringBytes.
-   * @returns Frozen wrapper containing the normal adapter-tracked principal and a frozen C-11 account projection.
+   * @returns Frozen account projection and tracked principal; its owner must release the principal after actual work settles.
    * @throws AuthAccessError with existing authentication failure semantics; an oversized name is capacity,
    * while an invalid deployment limit is account-unavailable. No route, generation or account readiness is published.
    */
@@ -231,7 +233,8 @@ export class BetterAuthAccess {
       })
       const result = project(login, principal)
       const state = this.loginState(login, requestId)
-      this.principals.set(principal, { headers, verifiedAtMs: performance.now(), state })
+      state.borrows++
+      this.principals.set(principal, { headers, verifiedAtMs: performance.now(), state, borrows: 1 })
       return result
     }, requestId)
   }
@@ -274,6 +277,32 @@ export class BetterAuthAccess {
     if (!this.accepting || performance.now() - record.verifiedAtMs >= this.config.sessionRecheckMs) {
       throw new AuthAccessError('cloud/account-unavailable', requestId)
     }
+  }
+
+  /**
+   * Retain an authenticated principal for an independently owned Peer lifetime.
+   * @param principal Original authenticated object, still owned by the caller.
+   * @param requestId Server-generated correlation id.
+   * @throws AuthAccessError when the original principal is invalid or released.
+   */
+  retainPrincipal(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): void {
+    const record = this.record(principal, requestId)
+    record.borrows++
+    record.state.borrows++
+  }
+
+  /**
+   * Release one owner after its actual work and any dependent cleanup settle.
+   * @param principal Original authenticated object.
+   * @throws Error when no corresponding borrow remains.
+   */
+  releasePrincipal(principal: AuthenticatedPrincipal): void {
+    const record = this.principals.get(principal)
+    if (record === undefined || record.borrows === 0) throw new Error('Authentication principal has no remaining borrow.')
+    record.borrows--
+    const state = record.state
+    state.borrows--
+    if (state.borrows === 0 && state.fenceOrdinal === undefined) this.removeLogin(state)
   }
 
   /**
@@ -475,7 +504,7 @@ export class BetterAuthAccess {
 
   private record(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): LoginCheck {
     const record = this.principals.get(principal)
-    if (record === undefined || record.state.invalidated) throw new AuthAccessError('cloud/unauthenticated', requestId)
+    if (record === undefined || record.borrows === 0 || record.state.invalidated) throw new AuthAccessError('cloud/unauthenticated', requestId)
     return record
   }
 
@@ -587,13 +616,18 @@ export class BetterAuthAccess {
   private loginState(login: LibraryLogin, requestId: Branded<'pe-request-id'>): LoginState {
     this.pruneInvalidations()
     for (const state of this.logins.values()) {
-      if (!state.invalidated && state.fenceOrdinal === undefined && state.expiresAtMs <= Date.now()) this.removeLogin(state)
+      if (!state.invalidated && state.borrows === 0 && state.fenceOrdinal === undefined && state.expiresAtMs <= Date.now()) {
+        this.removeLogin(state)
+      }
     }
     const id = login.session.id as Branded<'pe-auth-session-id'>
     const accountId = login.user.id as AccountId
     let existing = this.logins.get(id)
     const fenceOrdinal = existing?.fenceOrdinal
-    if (existing?.invalidated === true) { this.removeLogin(existing); existing = undefined }
+    if (existing?.invalidated === true) {
+      if (existing.borrows !== 0) throw new AuthAccessError('cloud/unauthenticated', requestId)
+      this.removeLogin(existing); existing = undefined
+    }
     if (existing !== undefined) {
       if (existing.accountId !== accountId) throw new AuthAccessError('cloud/unauthenticated', requestId)
       existing.expiresAtMs = login.session.expiresAt.getTime()
@@ -603,7 +637,8 @@ export class BetterAuthAccess {
     if (this.logins.size >= this.config.maxTrackedLogins || accountCount >= this.config.maxTrackedLoginsPerAccount) {
       throw new AuthAccessError('cloud/capacity', requestId)
     }
-    const state: LoginState = { id, accountId, expiresAtMs: login.session.expiresAt.getTime(), invalidated: false, fenceOrdinal }
+    const state: LoginState = { id, accountId, expiresAtMs: login.session.expiresAt.getTime(),
+      invalidated: false, fenceOrdinal, borrows: 0 }
     this.logins.set(id, state)
     this.accountLoginCounts.set(accountId, accountCount + 1)
     return state
@@ -625,8 +660,8 @@ export class BetterAuthAccess {
     }
     for (const state of this.logins.values()) {
       if (state.fenceOrdinal === undefined || (minimum !== undefined && minimum <= state.fenceOrdinal)) continue
-      if (state.invalidated) this.removeLogin(state)
-      else state.fenceOrdinal = undefined
+      state.fenceOrdinal = undefined
+      if (state.borrows === 0) this.removeLogin(state)
     }
   }
 

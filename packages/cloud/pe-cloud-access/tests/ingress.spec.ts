@@ -79,6 +79,7 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     f.authCurrent.mockImplementation(() => {})
     f.authenticate.mockResolvedValue({ accountId: 'actor' as Awaited<ReturnType<BetterAuthAccess['authenticate']>>['accountId'],
       authSessionId: 'synthetic-login' as Awaited<ReturnType<BetterAuthAccess['authenticate']>>['authSessionId'] })
+    vi.spyOn(f.auth, 'releasePrincipal').mockImplementation(() => {})
     const failure = source === 'access' ? new AuthAccessError(
       'cloud/account-stop-unconfirmed', 'synthetic-management' as AuthAccessError['requestId'])
       : new AccountRuntimeError('cloud/stop-unconfirmed', 'Original account resource cleanup is unconfirmed')

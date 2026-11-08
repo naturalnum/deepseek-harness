@@ -330,6 +330,19 @@ afterEach(async () => {
 })
 
 describe.skipIf(configPath === undefined)('internal login Peer with real PG/native services', () => {
+  it('keeps a Peer login borrowed after the request releases it and frees the slot after actual close', async () => {
+    const fixture = await setup({ maxTrackedLogins: 2, maxTrackedLoginsPerAccount: 1 })
+    const handle = await acquire(fixture)
+    fixture.auth.releasePrincipal(fixture.a)
+    fixture.registry.assertCurrent(handle, requestId)
+    expect(await memoryHttp(fixture, handle)).toMatchObject({ result: { ok: true } })
+    await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+    expect(() => fixture.auth.assertLoginCurrent(handle.principal, requestId)).toThrow()
+    const next = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    fixture.auth.assertLoginCurrent(next, requestId)
+    fixture.auth.releasePrincipal(next)
+  })
+
   it('merges creation and reuses one Peer across real native HTTP and WS, without tying it to a socket', async () => {
     const fixture = await setup()
     const initialRequestUse = await fixture.borrow(fixture.bindingA)

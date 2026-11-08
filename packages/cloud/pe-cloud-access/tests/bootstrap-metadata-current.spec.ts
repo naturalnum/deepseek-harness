@@ -31,7 +31,7 @@ const catalog: ApprovedConfigurationCatalog = {
 }
 type Graph = Awaited<ReturnType<ReturnType<typeof policyFixture>['start']>>
 
-async function fixture() {
+async function fixture(maxTrackedLogins?: number) {
   const native = policyFixture([], bounds, 'bootstrap-metadata-regression', undefined, catalog), graph = await native.start()
   const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'unused', database: 'unused', max: 1, connectionTimeoutMillis: 10 })
   const connect = vi.spyOn(pool, 'connect').mockImplementation(() => { throw new Error('Physical DB connect forbidden in this component fixture') })
@@ -41,8 +41,9 @@ async function fixture() {
   onTestFinished(async () => {
     await resources.auth?.close(); await pool.end(); request.destroy(); socket.destroy(); vi.restoreAllMocks()
   })
-  const auth = await BetterAuthAccess.create({ ...accessConfig(), sessionRecheckMs: 5000, authCheckTimeoutMs: 10000 },
-    pool, 'offline-metadata-regression-secret-01234567890123456789', async () => {})
+  const auth = await BetterAuthAccess.create({ ...accessConfig(), sessionRecheckMs: 5000, authCheckTimeoutMs: 10000,
+    ...maxTrackedLogins === undefined ? {} : { maxTrackedLogins, maxTrackedLoginsPerAccount: maxTrackedLogins } },
+  pool, 'offline-metadata-regression-secret-01234567890123456789', async () => {})
   resources.auth = auth
   const library = Reflect.get(auth, 'auth') as Auth, createdAt = new Date(), expiresAt = new Date(Date.now() + 60000)
   const session = vi.spyOn(library.api, 'getSession').mockResolvedValue({
@@ -146,6 +147,39 @@ it.each([false, true])('rechecks the captured login after slow production and pr
   } finally {
     await ingress.closeActual(); await root.fiber.dispose(); input.request.destroy(); input.socket.destroy()
   }
+})
+
+it('releases each completed bootstrap login before admitting a new login', async () => {
+  const f = await fixture(1), root = new Context()
+  const runtime = new PeAccountRuntime(root, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+  vi.spyOn(runtime, 'assertRecipeSealed').mockImplementation(() => {})
+  vi.spyOn(runtime, 'assertBusinessCurrent').mockImplementation(() => {})
+  vi.spyOn(runtime, 'locateAccount').mockResolvedValue(undefined)
+  vi.spyOn(runtime, 'acquireAccount').mockResolvedValue({ binding: f.graph.binding, context: f.graph.ctx,
+    assertCurrent() { f.graph.ctx.fiber.assertActive() }, release() {} })
+  root.provide('peExposure', f.native.exposureOwner)
+  root.provide('pluginPackages', f.native.bootstrapPackages)
+  const web = new WebServer(root, { host: '127.0.0.1', port: 0 }), registered = vi.spyOn(web, 'register')
+  const ingress = new CloudIngress(root, { ...accessConfig(), sessionRecheckMs: 5000, authCheckTimeoutMs: 10000 },
+    { ...ingressConfig(), maxBootstrapResponseBytes: 65536 }, f.auth,
+    { web, runtime, recipeVersion: f.graph.binding.recipeVersion, exposure: f.native.exposureOwner, assertAuthenticationCurrent() {} })
+  let login = 0
+  f.session.mockImplementation(async () => {
+    const now = new Date()
+    return { user: { id: f.graph.binding.accountId, name: 'Test', email: 'test@example.test', emailVerified: true, createdAt: now, updatedAt: now },
+      session: { id: `login-${login}`, userId: f.graph.binding.accountId, token: 'fixture', expiresAt: new Date(Date.now() + 60000),
+        createdAt: now, updatedAt: now, ipAddress: null, userAgent: null } }
+  })
+  try {
+    await ingress.install()
+    const route = registered.mock.calls.find(([row]) => row.path === '/cloud/bootstrap')?.[0]
+    if (route === undefined) throw new Error('Original bootstrap route was not registered')
+    for (login = 0; login < 3; login++) {
+      const input = carrier('/cloud/bootstrap', 'GET', ['Cookie', 'better-auth.session_token=fixture'])
+      try { await route.handler(input.request, input.response); expect(input.response.statusCode).toBe(200) }
+      finally { input.request.destroy(); input.socket.destroy() }
+    }
+  } finally { await ingress.closeActual(); await root.fiber.dispose() }
 })
 
 it('rejects native guard withdrawal after projection and before response transfer', async () => {

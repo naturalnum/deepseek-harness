@@ -240,4 +240,32 @@ describe.skipIf(configPath === undefined)('real authenticated account projection
     expect(next.account.displayName).toBe('Next authentication')
     fixture.auth.assertLoginCurrent(next.principal, requestId)
   })
+
+  it('reuses a released login slot but retains and revokes an active independent borrow', async () => {
+    const fixture = await setup({ maxTrackedLogins: 1, maxTrackedLoginsPerAccount: 1 })
+    const cookieA = await fixture.signup('First borrower')
+    const cookieB = await fixture.signup('Next borrower')
+    const first = await fixture.auth.authenticate(fixture.request(cookieA), requestId)
+    fixture.auth.retainPrincipal(first, requestId)
+    fixture.auth.releasePrincipal(first)
+    fixture.auth.assertLoginCurrent(first, requestId)
+    await expect(fixture.auth.authenticate(fixture.request(cookieB), requestId)).rejects.toMatchObject({ code: 'cloud/capacity' })
+    await fixture.auth.revokeLogin(first.authSessionId, requestId)
+    expect(() => fixture.auth.assertLoginCurrent(first, requestId)).toThrow()
+    fixture.auth.releasePrincipal(first)
+    const second = await fixture.auth.authenticate(fixture.request(cookieB), requestId)
+    fixture.auth.assertLoginCurrent(second, requestId)
+    fixture.auth.releasePrincipal(second)
+    expect(() => fixture.auth.assertLoginCurrent(second, requestId)).toThrow()
+  })
+
+  it('reuses the only tracking slot after each settled authentication', async () => {
+    const fixture = await setup({ maxTrackedLogins: 1, maxTrackedLoginsPerAccount: 1 })
+    const cookies = await Promise.all([fixture.signup('First'), fixture.signup('Second'), fixture.signup('Third')])
+    for (const cookie of cookies) {
+      const principal = await fixture.auth.authenticate(fixture.request(cookie), requestId)
+      fixture.auth.assertLoginCurrent(principal, requestId)
+      fixture.auth.releasePrincipal(principal)
+    }
+  })
 })

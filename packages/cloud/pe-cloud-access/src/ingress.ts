@@ -86,6 +86,7 @@ interface Operation {
   readonly deadlineAtMs: number
   readonly head: Buffer | undefined
   readonly authChecks: Set<Promise<void>>
+  readonly authPrincipals: Set<AuthenticatedPrincipal>
   principal: AuthenticatedPrincipal | undefined
   hop: OwnerHop | undefined
   forwarding: boolean
@@ -353,7 +354,7 @@ export class CloudIngress {
       }
       if (url.pathname === '/cloud/admin/accounts') {
         if (request.method !== 'POST') throw new AuthAccessError('cloud/forbidden', operation.id)
-        const principal = await this.auth.authenticate(request, operation.id)
+        const principal = this.trackPrincipal(operation, await this.auth.authenticate(request, operation.id))
         this.assertOperation(operation)
         const expected = readRequestExpectation(request, url, this.config.bindingFields, 'headers', operation.id)
         assertExpectedAccount(expected, principal.accountId, operation.id)
@@ -383,6 +384,7 @@ export class CloudIngress {
       if (url.pathname === '/cloud/bootstrap' && request.method === 'GET') {
         operation.stage = 'bootstrap.authenticate'
         const verified = await this.auth.authenticateForBootstrap(request, operation.id, this.limits.maxBootstrapResponseBytes)
+        this.trackPrincipal(operation, verified.principal)
         operation.stage = 'ingress.current'
         this.assertOperation(operation)
         operation.stage = 'account.bind'
@@ -422,7 +424,7 @@ export class CloudIngress {
       }
       if (url.pathname === API_PATH || url.pathname.startsWith(API_PATH + '/')) {
         operation.stage = 'auth.authenticate'
-        const principal = await this.auth.authenticate(request, operation.id)
+        const principal = this.trackPrincipal(operation, await this.auth.authenticate(request, operation.id))
         operation.stage = 'ingress.current'
         this.assertOperation(operation)
         operation.stage = 'request.binding'
@@ -523,7 +525,7 @@ export class CloudIngress {
     operation.stage = 'preview.selection'
     const selected = readServicePreviewSelection(operation.request, this.config, limits, operation.id)
     operation.stage = 'preview.authenticate'
-    const principal = await this.auth.authenticateServicePreview(operation.request, operation.id)
+    const principal = this.trackPrincipal(operation, await this.auth.authenticateServicePreview(operation.request, operation.id))
     this.assertOperation(operation)
     const expected = readRequestExpectation(operation.request, url, this.config.bindingFields, 'query', operation.id)
     assertExpectedAccount(expected, principal.accountId, operation.id)
@@ -615,7 +617,7 @@ export class CloudIngress {
       operation.stage = 'ingress.current'
       this.assertOperation(operation)
       operation.stage = 'auth.authenticate'
-      const principal = await this.auth.authenticate(request, operation.id)
+      const principal = this.trackPrincipal(operation, await this.auth.authenticate(request, operation.id))
       operation.stage = 'ingress.current'
       this.assertOperation(operation)
       operation.stage = 'request.binding'
@@ -742,7 +744,8 @@ export class CloudIngress {
       timedOut: false, upgraded: false, configurationUseReleased: false, use: undefined,
       releaseFault: false, cleanupUnknown: false, cleanupCause: undefined,
       stage: 'run.start',
-      head, authChecks: new Set(), principal: undefined, hop: undefined, forwarding: false, forwardTransfer: undefined,
+      head, authChecks: new Set(), authPrincipals: new Set(), principal: undefined, hop: undefined,
+      forwarding: false, forwardTransfer: undefined,
       recheckTimer: undefined, rechecking: undefined,
     }
     observeIngressTransfer(operation, transferred.resolve)
@@ -804,6 +807,8 @@ export class CloudIngress {
           throw new AuthAccessError('cloud/stop-unconfirmed', operation.id, { cause: operation.cleanupCause })
         }
         this.releaseUse(operation)
+        for (const principal of operation.authPrincipals) this.auth.releasePrincipal(principal)
+        operation.authPrincipals.clear()
         this.operations.delete(operation)
         this.requests.delete(request)
         if (operation.accountId !== undefined) {
@@ -814,6 +819,11 @@ export class CloudIngress {
       }
     })
     return Promise.race([operation.actual, timedOut.promise])
+  }
+
+  private trackPrincipal(operation: Operation, principal: AuthenticatedPrincipal): AuthenticatedPrincipal {
+    operation.authPrincipals.add(principal)
+    return principal
   }
 
   private async forwardOwner(
