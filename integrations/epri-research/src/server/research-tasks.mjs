@@ -43,6 +43,13 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
     return {...p,files,sha256,builtin:Boolean(builtin),installed:Boolean(installed),approved:installed?.approved===true,metadata:metadata.parse(files['method.json']?JSON.parse(files['method.json']):p.metadata||{})};
   }
   const brief=p=>{const {files,...rest}=p;return {...rest,fileNames:Object.keys(files)};};
+  const mismatch=(task,record,source,state=read())=>{
+    if(!task.recordId)return false;
+    if(!source||!record||record.protocolId!==task.methodId||record.protocolVersion!==task.methodVersion)return true;
+    const protocol=state.protocols.find(p=>p.id===record.protocolId&&p.version===record.protocolVersion&&(p.sessionId||null)===task.sessionId)||state.protocols.find(p=>p.id===record.protocolId&&p.version===record.protocolVersion&&!p.sessionId);
+    return !protocol||protocol.content!==source.files['protocol.aimd']||Boolean(record.calculationBinding&&(record.calculationBinding.packageId!==task.methodId||record.calculationBinding.version!==task.methodVersion||record.calculationBinding.sha256!==source.sha256));
+  };
+  const assertMatch=(task,record,source,state)=>{if(!source||mismatch(task,record,source,state))fail('CONFLICT','任务方法与关联记录不一致或无法核验；原记录已保留，请新建任务或联系管理员核对。');};
   const catalog=async(query,session)=>{
     const refs=[...powerMethods,...(await engine.execute('engine_packages',{},'agent',session)).filter(x=>x.kind==='protocol')];
     const unique=new Map(refs.map(x=>[x.id+'@'+x.version,x]));
@@ -54,10 +61,11 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
   async function view(task,session){
     const workspace=read(),record=workspace.records.find(x=>belongs(x,session)&&x.id===task.recordId),state=science.execute('science_state',{},'agent',session);
     const evidence=state.evidence.find(x=>x.id===task.evidenceId),report=state.report.find(x=>x.id===task.reportId);
-    let selectedMethod,methodError,model;if(task.methodId)try{const source=await method(task.methodId,task.methodVersion,session);selectedMethod=brief(source);model=parseAimdProtocol(source.files['protocol.aimd']);}catch(error){methodError=error.message;}
-    const evidenceCurrent=Boolean(record&&evidence?.data.source.id===record.id&&evidence.data.source.revision===record.revision&&evidence.data.source.sha256===hash(record));
+    let selectedMethod,selectedSource,methodError,model;if(task.methodId)try{const source=await method(task.methodId,task.methodVersion,session);selectedSource=source;selectedMethod=brief(source);model=parseAimdProtocol(source.files['protocol.aimd']);}catch(error){methodError=error.message;}
+    const bindingConflict=mismatch(task,record,selectedSource,workspace);
+    const evidenceCurrent=Boolean(!bindingConflict&&record&&evidence?.data.source.id===record.id&&evidence.data.source.revision===record.revision&&evidence.data.source.sha256===hash(record));
     const reportCurrent=Boolean(evidenceCurrent&&evidence?.data.review.status==='accepted'&&report?.data.evidence.some(x=>x.id===evidence.id&&x.sha256===evidence.sha256));
-    const qc=selectedMethod?.metadata.qcField,quality=qc&&record?.run.values[qc];
+    const qc=selectedMethod?.metadata.qcField;let quality=qc&&record?.run.values[qc];
     let stage='method',next='选择适用的方法，或补充需要开发的方法及外部工具。';
     if(selectedMethod){stage='open';next='在当前对话确认方法源码并准备实验表。';}
     if(record){stage='input';next='填写表格或导入 CSV，检查单位和数据来源。';
@@ -73,11 +81,12 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
       else if(!record.calculationBinding){stage='open';next='记录保留为草稿；请在对话中重新确认方法并连接计算，归档不会自动恢复执行批准。';}
     }
     if(methodError){stage='method';next='方法尚不可用：'+methodError+' 请导入对应方法源码；已保存的历史结果保留。';}
+    if(bindingConflict){stage='method';next=methodError?'任务方法无法核验：'+methodError+' 原记录已保留，请导入对应方法源码或联系管理员核对。':'任务方法与关联记录不一致或无法核验；原记录已保留，请新建任务或联系管理员核对。';model=undefined;quality=undefined;}
     const steps=['任务','方法','数据','计算与绘图','人工确认','研究证据','报告'];
     const active={method:1,open:1,input:2,calculation:3,review:4,evidence:5,evidence_review:5,report:6,complete:7,archived:2}[stage];
     const metrics=(model?.variables||[]).filter(f=>['number','boolean'].includes(typeof record?.run.values[f.id])).map(f=>({id:f.id,title:f.definition?.kwargs?.title||f.id,value:record.run.values[f.id]}));
     const charts=record?workspace.artifacts.filter(x=>belongs(x,session)&&x.kind==='chart'&&x.sourceRecordId===record.id):[];
-    return {...task,selectedMethod,record,metrics,charts,evidence:evidenceCurrent?evidence:null,previousEvidence:evidenceCurrent?null:evidence,report,reportCurrent,stage,next,quality:quality===true?'passed':quality===false?'failed':'not-defined',steps:steps.map((title,i)=>({title,status:i<active?'done':i===active?'current':'pending'})),target:{tab:'engine',task:task.id},recordTarget:record?{tab:'engine',task:task.id,record:record.id}:null};
+    return {...task,selectedMethod,record,...bindingConflict?{bindingConflict:true}:{},metrics,charts:bindingConflict?[]:charts,evidence:evidenceCurrent?evidence:null,previousEvidence:evidenceCurrent?null:evidence,report,reportCurrent,stage,next,quality:quality===true?'passed':quality===false?'failed':'not-defined',steps:steps.map((title,i)=>({title,status:i<active?'done':i===active?'current':'pending'})),target:{tab:'engine',task:task.id},recordTarget:record?{tab:'engine',task:task.id,record:record.id}:null};
   }
   async function run(op,args,actor,signal,session){
     if(!session)fail('INVALID','请从科研对话进入研究任务。');
@@ -115,7 +124,8 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
       const source=await method(task.methodId,task.methodVersion,session);
       if(a.expectedMethodSha256!==undefined&&source.sha256!==a.expectedMethodSha256)fail('CONFLICT','已批准的方法源码已变化，请重新核对。');
       const latest=find(task.id,session);
-      if(latest.revision!==task.revision||latest.methodId!==task.methodId||latest.methodVersion!==task.methodVersion)fail('CONFLICT','任务方法在准备期间已变化，未执行方法准备。');
+      if(latest.revision!==task.revision||latest.methodId!==task.methodId||latest.methodVersion!==task.methodVersion||latest.recordId!==task.recordId)fail('CONFLICT','任务方法在准备期间已变化，未执行方法准备。');
+      if(task.recordId){const observed=read().records.find(r=>belongs(r,session)&&r.id===task.recordId);assertMatch(task,observed,source);const existing=await call('record_get',{id:task.recordId});assertMatch(task,existing,source);const prior=await call('protocol_get',{id:existing.protocolId,version:existing.protocolVersion});if(prior.content!==source.files['protocol.aimd'])fail('CONFLICT','关联记录的协议源码不一致；原记录已保留，请新建任务或联系管理员核对。');}
       // Each reviewed task revision and exact source owns its preparation retries.
       const preparationKey=kind=>'prepare-'+hash([task.id,task.revision,source.sha256,kind]);
       if(source.builtin&&!source.installed)await engine.execute('engine_package_put',{id:source.id,version:source.version,title:source.title,kind:'protocol',files:source.files,requestId:preparationKey('package')},actor,session);
@@ -144,12 +154,15 @@ export function researchTaskStore({db,read,mutate,execute,science,engine}){
       };
       let record=task.recordId?await call('record_get',{id:task.recordId}):legacyRecord()||await call('record_create',{protocolId:source.id,protocolVersion:source.version,requestId:preparationKey('record')});
       record=await call('record_get',{id:record.id});
+      assertMatch({...task,recordId:record.id},record,source);
       if(!record.calculationBinding)record=await call('record_bind_engine',{id:record.id,expectedRevision:record.revision,packageId:source.id,version:source.version,requestId:preparationKey('binding')});
-      mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id),r=s.records.find(x=>belongs(x,session)&&x.id===record.id);if(!t||t.revision!==task.revision||t.methodId!==task.methodId||t.methodVersion!==task.methodVersion||(t.recordId&&t.recordId!==record.id)||!r||hash(r)!==hash(record)||(s.tasks||[]).some(x=>belongs(x,session)&&x.id!==task.id&&x.recordId===record.id))fail('CONFLICT','任务方法或记录在准备期间已变化，未绑定实验记录。');t.recordId=record.id;return t;},session);
+      mutate(op,a,actor,s=>{const t=s.tasks.find(x=>belongs(x,session)&&x.id===task.id),r=s.records.find(x=>belongs(x,session)&&x.id===record.id);if(!t||t.revision!==task.revision||t.methodId!==task.methodId||t.methodVersion!==task.methodVersion||(t.recordId&&t.recordId!==record.id)||!r||hash(r)!==hash(record)||(s.tasks||[]).some(x=>belongs(x,session)&&x.id!==task.id&&x.recordId===record.id))fail('CONFLICT','任务方法或记录在准备期间已变化，未绑定实验记录。');assertMatch({...t,recordId:r.id},r,source,s);t.recordId=record.id;return t;},session);
       return view(find(task.id,session),session);
     }
     const current=await view(task,session),record=current.record;
+    if(task.recordId&&!record)fail('CONFLICT','任务关联记录不存在；原数据已保留，请新建任务或联系管理员核对。');
     if(!record||record.archived)fail('INCOMPLETE','请先准备并打开本任务的实验记录。');
+    assertMatch(task,record,await method(task.methodId,task.methodVersion,session));
     if(op==='task_import_csv'){
       if(record.revision!==a.expectedRecordRevision)fail('CONFLICT','记录已更新，请重新载入后导入。');
       const p=await call('protocol_get',{id:record.protocolId,version:record.protocolVersion}),model=parseAimdProtocol(p.content),owners=buildAimdFieldOwnership(model);
