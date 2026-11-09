@@ -380,6 +380,52 @@ it('still calls the captured skill capability guard when its original service id
 })
 
 
+it('synchronously closes native event delivery before joining registration withdrawal', async () => {
+  const f = await fixture(), stream = await f.open()
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })
+  f.ctx.emit('skills/change')
+  await expect(stream.next()).resolves.toMatchObject({ value: { type: 'emit', event: 'skills/change' } })
+  const checked = f.capability.checks
+  f.events.close()
+  f.ctx.emit('skills/change')
+  expect(f.capability.checks).toBe(checked)
+  expect(() => { f.events.assertAdmitted() }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  await expect(f.events.dispose()).resolves.toBeUndefined()
+  await expect(stream.next()).resolves.toMatchObject({ done: true })
+})
+
+it('joins held native registration withdrawal before reporting its retained listener cleanup failure', async () => {
+  const release = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+  // oxlint-disable-next-line typescript/unbound-method -- Called below with the actual Gateway receiver.
+  const original = Gateway.prototype.registerRemoteEvents
+  const registration = vi.spyOn(Gateway.prototype, 'registerRemoteEvents').mockImplementation(function (this: Gateway, ...args) {
+    const withdraw = original.call(this, ...args)
+    return async () => {
+      const native = withdraw().then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }))
+      entered.resolve(undefined)
+      await release.promise
+      const result = await native
+      if (!result.ok) throw result.error
+    }
+  })
+  onTestFinished(() => { release.resolve(undefined); registration.mockRestore() })
+  const f = await fixture(), binding = f.ctx.get('peAccount')
+  if (binding === undefined) throw new Error('Original account binding missing')
+  const first = new Error('Synthetic original lifetime-listener cleanup failure')
+  f.controls.expectedFailure = first
+  const remove = vi.spyOn(binding.lifetime, 'removeEventListener').mockImplementationOnce(() => { throw first })
+  onTestFinished(() => { remove.mockRestore() })
+  let settled = false
+  const disposing = f.events.dispose()
+  void disposing.then(() => { settled = true }, () => { settled = true })
+  await entered.promise
+  await Promise.resolve()
+  expect(settled).toBe(false)
+  release.resolve(undefined)
+  await expect(disposing).rejects.toBe(first)
+  expect(f.events.dispose()).toBe(disposing)
+})
+
 it('forwards approved generic form revisions and omits unrelated namespaces on the original event source', async () => {
   const f = await fixture(), stream = await f.open()
   await expect(stream.next()).resolves.toMatchObject({ value: { type: 'ready' } })

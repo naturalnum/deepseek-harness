@@ -38,6 +38,7 @@ import { assertStandardRemoteAgent } from './account-remote-standard.ts'
 import { FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 import { prepareAccountSkillResources } from './account-skills.ts'
 import GoalService from '@deepseek-ai/dsh-goal'
+import * as GoalRoundDriver from '@deepseek-ai/dsh-goal-round-driver'
 import * as SessionLogExport from '@deepseek-ai/dsh-session-log-export'
 import PermissionPresetService from '@deepseek-ai/dsh-permission-presets'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
@@ -517,8 +518,9 @@ export class AccountNativeIntegration {
     }
     const goals = {
       inject: [...GoalService.inject, 'peCloudApi'], Config: GoalService.Config,
-      apply(owner: Context, config: ConstructorParameters<typeof GoalService>[1]) {
+      async apply(owner: Context, config: ConstructorParameters<typeof GoalService>[1]) {
         api.createGoals(owner, sessionGuards(owner), config)
+        await owner.plugin(GoalRoundDriver)
       },
     }
     const sessionExport = {

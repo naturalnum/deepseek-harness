@@ -2266,7 +2266,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'invalidate(): void',
-        description: 'Revoke only this graph\'s inventory during replacement or drain.',
+        description: 'Revoke this graph\'s inventory and synchronous event delivery during replacement or drain.',
         parameters: [],
       },
       {
@@ -7218,7 +7218,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FirstScreenEvents',
-    declaration: 'export interface FirstScreenEvents {\n    inspect(): {\n        readonly endpoint: \'$events\';\n        readonly resultEndpoint?: \'$events/result\';\n        readonly gateway: Gateway;\n        readonly fiber: Fiber;\n        readonly owner: Fiber;\n        readonly home: string;\n        readonly queuedEvents: number;\n        readonly queuedBytes: number;\n    };\n    assertAdmitted(): void;\n    dispose(): Promise<void>;\n}',
+    declaration: 'export interface FirstScreenEvents {\n    inspect(): {\n        readonly endpoint: \'$events\';\n        readonly resultEndpoint?: \'$events/result\';\n        readonly gateway: Gateway;\n        readonly fiber: Fiber;\n        readonly owner: Fiber;\n        readonly home: string;\n        readonly queuedEvents: number;\n        readonly queuedBytes: number;\n    };\n    assertAdmitted(): void;\n    close(): void;\n    dispose(): Promise<void>;\n}',
   },
   {
     name: 'FirstScreenNativeInput',

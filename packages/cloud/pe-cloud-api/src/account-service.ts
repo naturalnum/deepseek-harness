@@ -354,8 +354,11 @@ export class CloudAccountApi extends Service {
     this.installation.exposure.audit(inventory)
   }
 
-  /** Revoke only this graph's inventory during replacement or drain. */
-  invalidate(): void { this.installation.exposure.invalidate() }
+  /** Revoke this graph's inventory and synchronous event delivery during replacement or drain. */
+  invalidate(): void {
+    this.installation.exposure.invalidate()
+    this.firstScreen.events?.close()
+  }
 
   /**
    * Register an independent account capability for the original native inventory audit.

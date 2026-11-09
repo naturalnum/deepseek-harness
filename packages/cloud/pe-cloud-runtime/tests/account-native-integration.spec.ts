@@ -77,6 +77,7 @@ import { nativeProjectDeriver, nativeRoutedFileSystem } from './native-project-f
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
 import type { FileReadTiming } from '../src/file-read-timing.ts'
+import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 /** Real Node HTTP parser and bridge over an in-process socket pair; no listener or network. */
 class ReadFixtureSocket extends Socket {
@@ -124,6 +125,7 @@ afterEach(async () => {
 
 async function fixture(options: {
   modelKey?: boolean
+  goals?: boolean
   terminalProbe?: boolean
   missingGuards?: boolean
   firstScreen?: boolean
@@ -166,7 +168,9 @@ async function fixture(options: {
         handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []).concat(options.office && !options.officeUnselected ? [
         { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
         { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
-      ] : []),
+      ] : []).concat(options.goals ? ['get', 'create', 'edit', 'pause', 'resume', 'complete', 'clear'].map(method => ({
+        endpoint: 'goals/' + method, handlerId: 'native:goals', guard: 'account-session',
+      })) : []),
       streamEndpoints: options.auditedFileCalls ? [{ endpoint: 'workspaceFiles/changes',
         handlerId: 'native:workspaceFiles', guard: 'account-session' }] : [], exactFetchRoutes: [], allowedSettings: [] } },
     { id: 'execution', name: 'cordis:execution', config: { mode: 'closed', requiredCapabilities: [], maxBoundAccounts: 2 } },
@@ -284,6 +288,7 @@ async function fixture(options: {
       { id: 'agent-preset-registry', name: 'cordis:m8s-presets', config: { default: declaration.id } },
       { id: 'instruction-preset', name: 'cordis:m8s-preset', config: declaration },
     ],
+    ...options.goals ? [{ id: 'goals', name: 'cordis:' + names.goals, config: { defaultMaxGoalRounds: 2 } }] : [],
     { id: 'loop', name: 'cordis:' + names.agentLoop, config: { agents: [] } },
     { id: 'controller', name: 'cordis:' + names.controller, config: { nativeOpen: false } },
     { id: 'execution', name: 'cordis:' + names.execution, config: { mode: 'closed', requiredCapabilities: [] } },
@@ -304,7 +309,7 @@ async function fixture(options: {
     configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
     requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16, maxPathBytes: 4096,
     native: { saves, exposure: root.peExposure.policy, execution: root.peSandboxCoordinator, stopTimeoutMs: options.stopTimeoutMs ?? 5000,
-      maxNativeInventoryEntries: 128,
+      maxNativeInventoryEntries: options.goals ? 256 : 128,
       ...options.modelKey ? { modelKey: { limits: { bindings: [modelKeyBinding('provider')], maxKeyBytes: 128, maxVersionBytes: 128,
         maxReplyBytes: 4096, maxMetadataBytes: 65536 }, maxNativeInventoryEntries: 128,
       withModelKeyPeerUse: async () => { throw new Error('No component login or production ready borrow') },
@@ -472,9 +477,13 @@ async function fixture(options: {
       if (integration === undefined) throw new Error('The original native component integration is absent')
       return integration.finishBootstrap()
     },
-    stopComponent: (hook: Parameters<AccountNativeIntegration['stop']>[0]) => {
+    stopComponent: (hook?: Parameters<AccountNativeIntegration['stop']>[0]) => {
       if (integration === undefined) throw new Error('The original native component integration is absent')
       return integration.stop(hook)
+    },
+    disposeComponent: () => {
+      if (componentNative === undefined) throw new Error('The original native component boot is absent')
+      return componentNative.dispose()
     },
     fileProject: (caller: Context, signal?: AbortSignal) => {
       if (resolveFiles === undefined) throw new Error('Original native Files callback absent')
@@ -746,6 +755,95 @@ it('does not advertise edit in an approved legacy preset when the real account f
   expect(ctx.fs.supportsTextEdit).toBe(false)
   expect(ctx.tools.get('write', agent)).toBeDefined()
   expect(ctx.tools.get('edit', agent)).toBeUndefined()
+})
+
+it('continues an armed account goal after the user turn through the original Loader-installed driver', async () => {
+  const sources = instructionSourceFixture(), f = await fixture({ instructionSources: sources, firstScreen: true, goals: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, created = await ctx.sessionController.create({}), agent = ctx.agents.get(created.sessionId)
+  if (agent === undefined) throw new Error('Original account Agent missing')
+  let calls = 0
+  vi.spyOn(sources.adapter, 'stream').mockImplementation(async function* (request) {
+    if (++calls === 1) {
+      ctx.goals.create(agent, { objective: 'native account automatic round', maxGoalRounds: 2 })
+      yield* textResponse('user round finished without completing the goal')
+    } else {
+      expect(request.messages.some(message => message.source?.kind === 'goal')).toBe(true)
+      const goal = ctx.goals.get(agent)
+      if (goal === undefined) throw new Error('Original goal missing')
+      expect(goal.roundsStarted).toBe(1)
+      ctx.goals.complete(agent, goal)
+      yield* textResponse('ACCOUNT_NATIVE_AUTO_GOAL_COMPLETE')
+    }
+  })
+  await ctx.sessionController.prompt({ sessionId: agent.id, requestId: brandString<SessionRequestId>('goal-auto'), mode: 'queue',
+    content: [{ type: 'text', text: 'create this bounded goal and continue automatically' }] }, outcome.binding.lifetime)
+  await vi.waitFor(() => { expect(ctx.goals.get(agent)).toMatchObject({ phase: 'complete', roundsStarted: 1 }) })
+  await agent.whenIdle()
+  const events = agent.session.snapshotEvents()
+  expect(events.filter(event => event.type === 'turn/start')).toHaveLength(2)
+  expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'goal')).toHaveLength(1)
+  expect(events.filter(event => event.type === 'goal/change').at(-1)?.data).toMatchObject({ operation: 'complete', roundsStarted: 1 })
+  expect(calls).toBe(2)
+  await ctx.sessionPersistence.flush()
+  await f.stopComponent()
+  expect(ctx.agents.list()).toEqual([])
+  await expect(f.disposeComponent()).resolves.toMatchObject({ status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false })
+})
+
+it('keeps the Loader-installed goal driver and goal admission within each account', async () => {
+  const a = await fixture({ instructionSources: instructionSourceFixture(), firstScreen: true, goals: true })
+  const b = await fixture({ instructionSources: instructionSourceFixture(), firstScreen: true, goals: true })
+  const one = await a.start(), two = await b.start()
+  if (one.status === 'failed') throw one.cause
+  if (two.status === 'failed') throw two.cause
+  const created = await two.context.sessionController.create({}), foreign = two.context.agents.get(created.sessionId)
+  if (foreign === undefined) throw new Error('Original foreign account Agent missing')
+  expect(() => one.context.goals.get(foreign)).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  expect(() => one.context.goals.create(foreign, { objective: 'refused foreign goal', maxGoalRounds: 2 }))
+    .toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  expect(foreign.session.snapshotEvents().some(event => event.type === 'goal/change')).toBe(false)
+  await a.stopComponent()
+  await b.stopComponent()
+  for (const account of [a, b]) {
+    await expect(account.disposeComponent()).resolves.toMatchObject({ status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false })
+  }
+})
+
+it.each(['pause', 'clear', 'revoke', 'unload'] as const)('does not continue an account goal after %s during its user turn', async (operation) => {
+  const sources = instructionSourceFixture(), f = await fixture({ instructionSources: sources, firstScreen: true, goals: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, created = await ctx.sessionController.create({}), agent = ctx.agents.get(created.sessionId)
+  if (agent === undefined) throw new Error('Original account Agent missing')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  cleanups.push(async () => { release.resolve(undefined) })
+  let calls = 0
+  vi.spyOn(sources.adapter, 'stream').mockImplementation(async function* () {
+    calls++
+    ctx.goals.create(agent, { objective: 'stop this account goal', maxGoalRounds: 2 })
+    entered.resolve(undefined)
+    await release.promise
+    yield* textResponse('settled user round')
+  })
+  await ctx.sessionController.prompt({ sessionId: agent.id, requestId: brandString<SessionRequestId>('goal-stop'), mode: 'queue',
+    content: [{ type: 'text', text: 'create the bounded synthetic goal' }] }, outcome.binding.lifetime)
+  await entered.promise
+  const goal = ctx.goals.get(agent)
+  if (goal === undefined) throw new Error('Original goal missing')
+  expect(goal).toMatchObject({ phase: 'active', activation: 'armed', roundsStarted: 0 })
+  if (operation === 'pause') ctx.goals.pause(agent, goal)
+  else if (operation === 'clear') ctx.goals.clear(agent, goal)
+  else if (operation === 'revoke') f.lifetime.abort()
+  const stopping = operation === 'revoke' || operation === 'unload' ? f.stopComponent() : undefined
+  release.resolve(undefined)
+  await agent.whenIdle()
+  await (stopping ?? f.stopComponent())
+  expect(ctx.agents.list()).toEqual([])
+  expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind === 'goal')).toEqual([])
+  expect(calls).toBe(1)
+  await expect(f.disposeComponent()).resolves.toMatchObject({ status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false })
 })
 
 it('uses the approved Preset private instruction builtin in a native turn and retains its account/Workspace snapshot in JSONL', async () => {

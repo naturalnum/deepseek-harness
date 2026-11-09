@@ -764,7 +764,7 @@ auditReconfigured(owner: Context): Promise<void>
  */
 audit(inventory: ExposureInventory): void
 
-/** Revoke only this graph's inventory during replacement or drain. */
+/** Revoke this graph's inventory and synchronous event delivery during replacement or drain. */
 invalidate(): void
 
 /**

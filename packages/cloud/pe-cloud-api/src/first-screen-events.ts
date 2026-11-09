@@ -62,6 +62,8 @@ export interface FirstScreenEvents {
   }
   /** Recheck actual C04 business admission for the external opener; registration alone never grants it. */
   assertAdmitted(): void
+  /** Synchronously revoke listeners and queued delivery; dispose still joins withdrawal and retained failures. */
+  close(): void
   /** Join actual native registration/source withdrawal and report any retained source or cleanup failure. */
   dispose(): Promise<void>
 }
@@ -329,11 +331,20 @@ export function registerFirstScreenEvents(
     })()
   }, { home: input.home }, { maxQueuedEvents: input.maxQueuedEvents,
     maxQueuedBytes: input.maxQueuedBytes, maxFrameBytes: input.maxFrameBytes })
-  const dispose = (): Promise<void> => closing ??= (async () => {
-    try { await unregister() } catch (error) { failure ??= { error } }
-    stop()
-    if (failure !== undefined) throw failure.error
-  })()
+  const dispose = (): Promise<void> => {
+    if (closing !== undefined) return closing
+    const settled = Promise.withResolvers<void>()
+    closing = settled.promise
+    void (async () => {
+      let withdrawal: Promise<void> | undefined
+      try { withdrawal = unregister() } catch (error) { failure ??= { error } }
+      try { stop() } catch (error) { failure ??= { error } }
+      try { await withdrawal } catch (error) { failure ??= { error } }
+      if (failure !== undefined) settled.reject(failure.error)
+      else settled.resolve()
+    })()
+    return closing
+  }
   const abortGraph = (): void => { void dispose().catch((error: unknown) => { failure ??= { error } }) }
   input.native.binding.lifetime.addEventListener('abort', abortGraph, { once: true })
   removers.push(() => { input.native.binding.lifetime.removeEventListener('abort', abortGraph) })
@@ -351,6 +362,7 @@ export function registerFirstScreenEvents(
       if (closed || closing !== undefined || input.api.requireStream('$events').guard !== 'authenticated-account') unavailable()
       graph()
     },
+    close: abortGraph,
     dispose,
   })
 }

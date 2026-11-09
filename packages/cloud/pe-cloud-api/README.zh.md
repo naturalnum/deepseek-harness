@@ -110,6 +110,8 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 [只读事件源](src/first-screen-events.ts) 通过原 Gateway 公开注册接口，订阅真实 Session added/removed/activity/status/error 通知和获批表单文档更新（默认仅只读 locale）。已准备的模型密钥能力还为其 Root 批准的引用转发原生 `credentials/reference-updated`，让原共享模型目录在保存或移除提交后刷新，无需重新连接。不转发凭据值或未批准的引用。Gateway 生成 `$events` ready/client id 和传输帧，home 必须来自实际 `profileContext.home`，并与 runtime 预期精确一致。不准入 waterfall 或 `$events/result`。Home、事件数量、驻留字节及完整 emit 帧上界均须显式提供，没有部署默认值。源队列超限保留首个错误、撤销本账户审核、卸载监听并等待原注册 disposer；stop 与 withdrawal 等待同一缓存工作。同一显式队列/帧预算会传给原 Gateway 注册的每个 client 上界。下游 client 超限只使对应实际事件流失败；source、API 审核、健康 client 和后续 ready 代际继续可用。原生退队和关闭释放该队列的驻留字节；实际清理及资源结算仍归原迭代器/载体所有。
 
+生命周期清单撤销会同步启动原事件源注销。Native Gateway 先将源标记为已取消，现有源随后在让出执行前移除监听器并清空待发事件；停止与注销等待同一个缓存操作，并保留首个失败。普通设置重审期间的临时清单失效保持原行为。
+
 `assertBootstrapCurrent(owner, signal?)` 要求原始共享策略回调及正数有限 `maxNativeInventoryEntries`，没有默认值。该预算在遍历前计入所有选中开放清单条目，再于单次扫描中在检查每个实际 runtime 和 fiber 前计数；超限在读取策略元数据前拒绝。它在策略元数据读取前后核验挂载/业务准入、已审核开放清单、原 Controller/AgentLoop/LLM 对象、它们唯一的 ACTIVE 拥有 fiber 和实际 LLM listener。重复安装、替换或 listener 销毁均拒绝。省略回调或预算保留一般准备能力，但此断言保持关闭。取消跟随调用者与图 lifetime。完成后返回由 API 签发的同步复核函数，核验原绑定、业务准入、原生 guard 和已审核端点；调用方在发布响应前调用。它不创建业务资源或 ready 权限。
 
 Root 配置还可提供 `approvedConfiguration`：显式 recipe/catalog 版本，有限条目、字符串及完整字节上限，非空固定已安装 DSH 条目或 bundle 目录（禁止安装，未选择下述固定可选控制时禁止启停）、关闭技能、只读凭据及无可写字段。规范解析器先复制并冻结完整值，再由原 `ExposureService` 持有。省略时保留仅开放策略的组合，不产生 catalog。这只是批准元数据；bootstrap 投影公开 id 前，仍必须比对实际账户 Loader 条目、包版本、原模块及配置计划。基础目录不启用安装器、写入者或接口。

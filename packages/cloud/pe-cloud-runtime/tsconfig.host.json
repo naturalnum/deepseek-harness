@@ -124,6 +124,9 @@
     },
     {
       "path": "../../extensions/tool-cordis"
+    },
+    {
+      "path": "../../goal/goal-round-driver"
     }
   ],
   "exclude": [

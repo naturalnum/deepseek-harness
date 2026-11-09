@@ -76,6 +76,8 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 ### Account policy
 
+账号 goals 内建入口在受保护的原生目标服务所属 Loader 下安装一次原生 `goal-round-driver`。已激活的目标在用户轮静止后通过原 Agent 收件箱续轮；暂停、清除、轮数上限和驱动卸载保留 Native 行为。账号准入与代际检查仍由原目标和 Agent 操作执行。
+
 实际 Root request 向 Controller、AgentLoop 和 LLM 准入提供同一套项目/model/Preset 策略。必需的 `accountPolicy` 字段选择精确部署数据；这些字段本身不开放业务准入。
 
 | 字段 | 含义 |
