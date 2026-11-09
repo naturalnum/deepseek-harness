@@ -111,7 +111,7 @@ export class ManagedCommandOperation {
   private preparationSettled = false
   private direct: SubprocessOutcome | undefined
   private eof = { stdout: false, stderr: false }
-  private requestedStop: { readonly reason: unknown } | undefined
+  private requestedStop: { readonly reason: unknown; readonly scopeAborted: boolean } | undefined
   private failed: { readonly cause: unknown } | undefined
   private localSettled = false
   private remoteAttempted = false
@@ -266,7 +266,8 @@ export class ManagedCommandOperation {
    */
   requestStop(reason?: unknown): boolean {
     if (this.rangeConfirmed || this.requestedStop !== undefined) return false
-    this.requestedStop = Object.freeze({ reason })
+    this.requestedStop = Object.freeze({ reason,
+      scopeAborted: this.authority.lifetime.aborted && reason === this.authority.lifetime.reason })
     this.allocationWait.abort(reason)
     this.publication.resolve()
     return true
@@ -274,9 +275,10 @@ export class ManagedCommandOperation {
 
   /**
    * Read the retained stop request without requesting or confirming termination.
-   * @returns The first effective owned stop request; late cancellation after confirmed range completion adds none.
+   * @returns The first effective stop and whether its reason came from the aborted native scope.
+   * Late cancellation after confirmed range completion adds no stop request.
    */
-  stopReason(): { readonly reason: unknown } | undefined { return this.requestedStop }
+  stopReason(): { readonly reason: unknown; readonly scopeAborted: boolean } | undefined { return this.requestedStop }
 
   /**
    * Read the original acquisition status without admitting remote work.

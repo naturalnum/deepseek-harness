@@ -211,8 +211,11 @@ export class CloudShellExecutor extends ShellExecutor {
       const interruption = (): ShellInterruption | undefined => {
         if (killed) return 'killed'
         const stop = operation.stopReason()
-        if (stop === undefined || !timer.signal.aborted || stop.reason !== timer.signal.reason) return undefined
-        return timeoutOf(timer.signal, SHELL_TIMEOUT) === undefined ? 'aborted' : 'timed-out'
+        if (stop === undefined) return undefined
+        if (timer.signal.aborted && stop.reason === timer.signal.reason) {
+          return timeoutOf(timer.signal, SHELL_TIMEOUT) === undefined ? 'aborted' : 'timed-out'
+        }
+        return stop.scopeAborted ? 'aborted' : undefined
       }
       const shell = new ManagedShellExecution(spec, { process: operation.handle, whenEmpty: operation.whenEmpty,
         assertCurrent: () => { this.port.assertOperationCurrent(caller, operation) },
