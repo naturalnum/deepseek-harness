@@ -391,52 +391,30 @@
   white-space: nowrap;
 }
 
-/* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
-   corners); collapsed it renders as the rail's plain icon control. */
+/* New Session shares the global panel rows' left-aligned icon and label geometry. */
 .newSession {
-  container-type: inline-size;
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0;
-  height: 38px;
-  padding: 8px 12px;
-  margin: 0 2px 12px;
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: 7px 8px;
+  margin: 0 2px 4px;
   box-sizing: border-box;
-  border: 0.5px solid var(--dsw-alias-border-l3);
+  border: none;
   border-radius: var(--dsw-radius-md);
-  background: var(--dsw-alias-button-elevated-fill);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 14px;
-  font-weight: 500;
+  font: inherit;
   line-height: 22px;
+  text-align: left;
   cursor: pointer;
   overflow: hidden;
 }
 
 .newSession:hover {
-  background: var(--dsw-alias-button-floating-hover);
-}
-
-/* macOS: the themed elevated fill reads as a foreign slab on the vibrancy
-   sidebar; a white wash sits in the glass like native macOS sidebar
-   controls. Dark keeps the same white ink at lower alpha. */
-:global([data-platform='darwin']) .newSession {
-  background: rgb(255 255 255 / 0.55);
-}
-
-:global([data-platform='darwin']) .newSession:hover {
-  background: rgb(255 255 255 / 0.3);
-}
-
-:global([data-platform='darwin']) :global([data-ds-dark-theme]) .newSession {
-  background: rgb(255 255 255 / 0.15);
-}
-
-:global([data-platform='darwin']) :global([data-ds-dark-theme]) .newSession:hover {
-  background: rgb(255 255 255 / 0.2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .collapsed .newSession {
@@ -445,6 +423,7 @@
   height: 36px;
   padding: 0;
   margin: 0 0 12px;
+  justify-content: center;
   gap: 0;
   border-color: transparent;
   background: transparent;
@@ -466,7 +445,8 @@
 
 .newSessionLabelMask { flex: 1; min-width: 0; }
 .newSession:is(:hover, :focus-visible) .newSessionLabelMask:has(+ .newSessionShortcut) { overflow: hidden; mask-image: linear-gradient(to right, black calc(100% - 16px), transparent); }
-.newSessionContent { display: flex; width: 100cqw; align-items: center; justify-content: center; gap: 6px; }
+.newSessionContent { display: flex; min-width: 0; align-items: center; justify-content: flex-start; gap: 8px; }
+.collapsed .newSessionContent { justify-content: center; }
 .newSessionContent > svg { flex: none; }
 
 .newSessionShortcut {

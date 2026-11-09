@@ -1,3 +1,4 @@
+import { installCloudBrand } from './branding.tsx'
 import { installCloudMcpConnections } from './mcp/index.ts'
 import { installCloudAccountManagement } from './account-management.tsx'
 import { installCloudRemoteServers } from './remote-servers/install.ts'
@@ -34,6 +35,7 @@ export function apply(ctx: Context, config: Config): void {
   if (owner === undefined) throw new Error('pe-cloud-client/client requires its pre-Cordis prepared page owner')
   if (Object.keys(config).length !== 0) throw new Error('pe-cloud-client/client requires empty Loader configuration; limits belong to preparation')
   owner.activate(ctx)
+  installCloudBrand(ctx)
   installCloudSubagentSettings(ctx, owner)
   installCloudRemoteServers(ctx, owner)
   installCloudMcpConnections(ctx, owner)

@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Prepare one Cloud page from a bounded canonical bootstrap response before starting the native `AppWebEntry`. The `/client` Loader entry consumes that exact prepared owner and installs the existing native Connection with captured account/generation carriers. Missing or stale preparation fails closed. The [Web entry](../../../apps/web/src/cloud-web.ts) owns the PowerEvolve login presentation over the existing email/password Cookie authentication. This package does not implement a login form or prove backend account readiness.
 
+The Cloud browser fills the native sidebar brand positions with PowerEvolve and a black lightning mark; those registrations leave with the original plugin. The Web entry and unconfigured local browser title use PowerEvolve, while an explicit build title keeps its existing precedence.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

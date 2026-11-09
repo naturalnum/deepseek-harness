@@ -40,6 +40,7 @@ kind: "package-library"
 
 | 导出 | 是什么 |
 |---|---|
+| `LightningMark` | 为品牌和处理状态提供继承当前文字颜色的装饰性矢量闪电；接受调用方指定的尺寸和布局类。 |
 | `Button` | 可点击操作；`variant` 选择 `primary`、`ghost`、`outline` 或 `toolbar`。ref 指向原生按钮，供焦点控制与浮层锚定使用。 |
 | `Switch` | 36×20 的双态开关。关闭态滑块读取 `--dsw-alias-switch-thumb`，在两种主题下均保持亮色；开启态滑块与品牌色轨道形成对比。禁用控件使用半透明样式。`label` 必填，控件不可能在没有名称的情况下发布。 |
 | `SegmentedControl` | 两段或更多等宽分段加一个滑动指示块的 tablist，用于在几种模式间切换一张卡片或面板；选中项由调用方持有，`label` 为列表命名。`id` 派生每个 tab 的 id（`<id>-<value>`）及其控制的面板 id（`<id>-<value>-panel`），面板由调用方渲染并用 `aria-labelledby` 指回 tab；分段可 `disabled` 并带 `title`，控件级 `disabled` 在当前面板有进行中的操作时锁住全部分段。 |
