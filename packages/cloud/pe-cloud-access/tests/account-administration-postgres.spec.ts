@@ -231,6 +231,61 @@ describe.skipIf(configPath === undefined)('real account administration with Post
         expect(signedIn.status).toBe(200)
         targetCookie = cookieOf(signedIn)
       }
+      // A full shared fence budget must not turn a rejected password operation into a partial credential mutation.
+      {
+        const pending = holdRead(otherCookie)
+        await pending.captured
+        for (let index = 0; index < 16; index++) {
+          await adapter.revokeLogin(`password-held-exact-${index}` as Branded<'pe-auth-session-id'>, requestId)
+        }
+        expect(fenceCounts()).toEqual({ exact: 16, accounts: 0, total: 16 })
+        const hashBefore = (await pool.query<{ password: string }>(
+          'SELECT password FROM "account" WHERE "userId"=$1 AND "providerId"=$2', [createdBody.id, 'credential'])).rows[0]?.password
+        const calls: { endpoint: string; status: number; code: unknown }[] = []
+        const observePassword = vi.spyOn(library, 'handler').mockImplementation(async (request) => {
+          const response = await originalHandler(request)
+          const endpoint = new URL(request.url).pathname
+          if (endpoint === '/cloud/auth/admin/set-user-password' || endpoint === '/cloud/auth/admin/revoke-user-sessions') {
+            const body: unknown = await response.clone().json()
+            calls.push({ endpoint, status: response.status,
+              code: body !== null && typeof body === 'object' ? Reflect.get(body, 'code') : undefined })
+          }
+          return response
+        })
+        const attempted = 'Private-countercase-' + randomUUID()
+        const failedPassword = await post('/cloud/admin/accounts', { op: 'password', id: createdBody.id, password: attempted }, a.cookie)
+        const failedBody: unknown = await failedPassword.json()
+        observePassword.mockRestore()
+        const hashAfter = (await pool.query<{ password: string }>(
+          'SELECT password FROM "account" WHERE "userId"=$1 AND "providerId"=$2', [createdBody.id, 'credential'])).rows[0]?.password
+        const oldSessions = (await pool.query<{ count: string }>(
+          'SELECT count(*) FROM "session" WHERE "userId"=$1', [createdBody.id])).rows[0]?.count
+        let oldCookieAccepted = false
+        try {
+          const original = await adapter.authenticate(request(targetCookie), requestId)
+          oldCookieAccepted = true
+          adapter.releasePrincipal(original)
+        } catch (cause) {
+          if (!(cause instanceof AuthAccessError)) throw cause
+        }
+        const oldPassword = await post('/cloud/auth/sign-in/email', { email: creation.email, password: creation.password })
+        const newPassword = await post('/cloud/auth/sign-in/email', { email: creation.email, password: attempted })
+        const failedCode: unknown = failedBody !== null && typeof failedBody === 'object' ? Reflect.get(failedBody, 'code') : undefined
+        const outcome = { status: failedPassword.status, code: failedCode,
+          calls, oldSessionsBeforeCredentialProbes: oldSessions, oldCookieAccepted,
+          passwordHashUnchanged: hashBefore === hashAfter,
+          oldPasswordLoginStatus: oldPassword.status, newPasswordLoginStatus: newPassword.status,
+          fencesWhileReadPending: fenceCounts() }
+        console.info('PASSWORD_CAPACITY_COUNTERCASE ' + JSON.stringify(outcome))
+        pending.release()
+        expect(await pending.result).toMatchObject({ kind: 'accepted', accountId: user.id })
+        expect(fenceCounts()).toEqual({ exact: 0, accounts: 0, total: 0 })
+        expect(outcome).toMatchObject({ status: 429, code: 'cloud/capacity', calls: [], passwordHashUnchanged: true,
+          oldSessionsBeforeCredentialProbes: '25', oldCookieAccepted: true,
+          oldPasswordLoginStatus: 200, newPasswordLoginStatus: 401 })
+        expect((await post('/cloud/auth/sign-out', {}, cookieOf(oldPassword))).status).toBe(200)
+        expect((await pool.query<{ count: string }>('SELECT count(*) FROM "session" WHERE "userId"=$1', [createdBody.id])).rows[0]?.count).toBe('25')
+      }
       const password = 'Changed-only-in-isolated-PG-1234!'
       expect((await post('/cloud/admin/accounts', { op: 'password', id: createdBody.id, password }, a.cookie)).status).toBe(200)
       expect((await pool.query<{ count: string }>('SELECT count(*) FROM "session" WHERE "userId"=$1', [createdBody.id])).rows[0]?.count).toBe('0')

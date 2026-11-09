@@ -148,7 +148,7 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 
 按[运行时 debug 观测约定](../pe-cloud-runtime/README.zh.md#understand-the-implementation)，ingress 记录已检查的本机准入或固定 owner 选择及入站 socket 元数据。选路不证明送达；完成记录要求实际传输已完成结算。浏览器是否收到仍需单独观测。
 
-适配器持有认证一致性；runtime 保留 owner/epoch，API 保留端点/资源规则。已验证 principal 带有适配器本地来源跟踪；伪造 JSON principal 无法复查。普通退出与 `revokeLogin` 只撤销精确认证会话。显式管理员停用或改密可为目标账户的未缓存登录共用一个读取栅栏；两个索引共用 `maxAuthInvalidations`，保留至旧实际读取结算。晚到读取不能恢复已撤销登录，同用户其他有效登录不受普通精确撤销影响。即使删除失败遗留会话行，库返回的已禁止用户仍被拒绝。操作本地的 hook 失败及库错误级信号，阻止已被库捕获的删除失败变成退出成功响应；诊断正文不被记录。原生 Session、队列及事件实现均不归本包。
+适配器持有认证一致性；runtime 保留 owner/epoch，API 保留端点/资源规则。已验证 principal 带有适配器本地来源跟踪；伪造 JSON principal 无法复查。普通退出与 `revokeLogin` 只撤销精确认证会话。显式管理员停用或改密可为目标账户的未缓存登录共用一个读取栅栏；两个索引共用 `maxAuthInvalidations`，保留至旧实际读取结算。重置密码在修改凭据前先预留账户栅栏；容量耗尽时密码与现有登录保持不变。晚到读取不能恢复已撤销登录，同用户其他有效登录不受普通精确撤销影响。即使删除失败遗留会话行，库返回的已禁止用户仍被拒绝。操作本地的 hook 失败及库错误级信号，阻止已被库捕获的删除失败变成退出成功响应；诊断正文不被记录。原生 Session、队列及事件实现均不归本包。
 
 内部 `LoginPeerRegistry` 按已验证登录、账户及 epoch 合并创建，独立借用生命周期 `AccountUse`，固定首次 principal/cookie。准备中和清理未知的记录均占 Peer 名额；单个调用者超时或退出只结束自身等待。原生 HTTP bridge 和 WS mux 复用同一个真实 `Peer`；socket 断开保留 Peer 及借用。watcher 按配置复查，任意拒绝均关闭精确登录；派发及每个逻辑流前同步检查原登录、账户借用和传入的端点守卫。
 

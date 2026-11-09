@@ -142,6 +142,7 @@ export class BetterAuthAccess {
     this.auth = factory(this.options)
     if (config.accountAdministration !== undefined) {
       this.administrator = new AccountAdministrator(this.auth, database, config.accountAdministration, {
+        reserve: (id) => { this.reserveAccountRevocation(id) },
         revoke: (id, operation) => this.withAccountRevocation(id, operation),
         failure: () => this.invocation.getStore()?.failure,
       })
@@ -622,6 +623,11 @@ export class BetterAuthAccess {
     return error instanceof AuthAccessError ? error : new AuthAccessError('cloud/account-unavailable', requestId)
   }
 
+  private reserveAccountRevocation(accountId: AccountId): void {
+    if (this.invocation.getStore() === undefined) throw new Error('Account revocation requires its original authentication invocation.')
+    this.reserveInvalidationFence(this.accountInvalidationFences, accountId)
+  }
+
   private async withAccountRevocation<T>(accountId: AccountId, operation: () => Promise<T>): Promise<T> {
     const invocation = this.invocation.getStore()
     if (invocation === undefined) throw new Error('Account revocation requires its original authentication invocation.')
@@ -635,14 +641,17 @@ export class BetterAuthAccess {
     const known = this.logins.get(id)
     if (known !== undefined) { known.fenceOrdinal = this.ordinal; return }
     const wholeAccount = accountId !== undefined && this.invocation.getStore()?.targetAccountId === accountId
-    const exists = wholeAccount ? this.accountInvalidationFences.has(accountId) : this.invalidationFences.has(id)
-    if (!exists && this.invalidationFences.size + this.accountInvalidationFences.size >= this.config.maxAuthInvalidations) {
+    if (wholeAccount) this.reserveInvalidationFence(this.accountInvalidationFences, accountId)
+    else this.reserveInvalidationFence(this.invalidationFences, id)
+  }
+
+  private reserveInvalidationFence<Key>(index: Map<Key, bigint>, key: Key): void {
+    if (!index.has(key) && this.invalidationFences.size + this.accountInvalidationFences.size >= this.config.maxAuthInvalidations) {
       const invocation = this.invocation.getStore()
       if (invocation !== undefined) invocation.failure = 'cloud/capacity'
       throw this.apiError.from('TOO_MANY_REQUESTS', { code: 'cloud/capacity', message: 'Authentication invalidation capacity is full.' })
     }
-    if (wholeAccount) this.accountInvalidationFences.set(accountId, this.ordinal)
-    else this.invalidationFences.set(id, this.ordinal)
+    index.set(key, this.ordinal)
   }
 
   private loginState(login: LibraryLogin, requestId: Branded<'pe-request-id'>): LoginState {

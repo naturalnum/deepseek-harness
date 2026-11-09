@@ -30,6 +30,7 @@ type RequestId = Branded<'pe-request-id'>
 
 /** Same authentication invocation owns whole-account hook scope and its structured failures. */
 interface AccountAuthInvocation {
+  reserve(accountId: AccountId): void
   revoke<T>(accountId: AccountId, operation: () => Promise<T>): Promise<T>
   failure(): 'cloud/capacity' | 'cloud/account-unavailable' | undefined
 }
@@ -303,6 +304,7 @@ export class AccountAdministrator {
           break
         }
         case 'password':
+          this.authInvocation.reserve(request.id as AccountId)
           await this.authInvocation.revoke(request.id as AccountId, async () => {
             await this.invoke(headers, 'set-user-password', { userId: request.id, newPassword: request.password }, requestId)
             await this.invoke(headers, 'revoke-user-sessions', { userId: request.id }, requestId)
