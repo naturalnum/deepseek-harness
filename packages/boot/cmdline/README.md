@@ -29,11 +29,12 @@ Your app reads the invocation's inner arguments at startup, and any number of it
 
 ### The launcher values
 
-The launcher makes three things available to your app:
+The launcher provides argument, exit, and startup values; supporting launchers also provide required-close participation:
 
 - `ctx.cmdlineArgs` — the inner arguments of your invocation. Reading them returns an immutable snapshot and never consumes or changes them: `dsh --profile tui --resume abc` gives your app `['--resume', 'abc']`.
 - `ctx.appExit` — a way to ask the process to exit once the tree has shut down, wired to the launcher's shutdown controller.
 - `ctx.appReady` — the successful-startup signal, committed only after the Loader tree and launcher-owned setup succeed.
+- `ctx.appShutdown` — optional required-close participation through `register(close)`. Use its returned async disposer in the owning fiber. The launcher starts remaining callbacks before Fiber disposal; a successful scope close removes its participant, while a failed close remains observable and makes a requested zero exit nonzero. The original resource owner performs cleanup; diagnostic logs do not determine the result.
 
 An app launched with no arguments sees an empty list — that is the honest answer, not a missing value.
 

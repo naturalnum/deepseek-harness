@@ -41,6 +41,19 @@ export interface AppExit {
   (code: number): void
 }
 
+/** Required application close outcomes observed by the launcher's existing shutdown owner. */
+export interface AppShutdown {
+  /**
+   * Join this original close callback during scope disposal or process shutdown.
+   * Successful closure removes the participant; a rejected closure remains retained
+   * for process shutdown even when the plugin disposer contains the rejection.
+   * @param close - the original resource owner's idempotent close operation.
+   * @returns an idempotent async disposer that starts or joins the same close.
+   * @throws when application shutdown has already started.
+   */
+  register(close: () => Promise<void>): () => Promise<void>
+}
+
 /** Successful application-startup signal owned by the launcher. */
 export interface AppReady {
   /**
@@ -60,6 +73,8 @@ declare module '@deepseek-ai/cordis' {
     appExit?: AppExit
     /** Successful startup signal; provided by a launcher before the tree mounts. */
     appReady?: AppReady
+    /** Required close participants; provided by supporting launchers before the tree mounts. */
+    appShutdown?: AppShutdown
   }
 }
 
@@ -71,21 +86,24 @@ export interface CmdlineHost {
   exit: AppExit
   /** Successful startup signal for lifecycle work that must not mask boot failure. */
   ready?: AppReady
+  /** Original close outcomes that affect the supporting launcher's shutdown result. */
+  shutdown?: AppShutdown
 }
 
 /**
  * Provide launcher facts on a host context before any tree entry mounts: the
- * command line, bounded exit request, and optional successful-startup signal.
+ * command line, bounded exit request, and optional startup and required-close signals.
  * An embedding host with no command line provides an empty argument list; a
  * host that mounts a stdio application also provides readiness.
  * @param ctx - the host context the tree will mount under.
- * @param host - the invocation's arguments, exit request, and optional readiness signal.
+ * @param host - arguments, exit request, and optional startup and required-close signals.
  */
 export function provideCmdline(ctx: Context, host: CmdlineHost): void {
   const snapshot: readonly string[] = Object.freeze([...host.args])
   ctx.provide('cmdlineArgs', { get: () => snapshot })
   ctx.provide('appExit', host.exit)
   if (host.ready !== undefined) ctx.provide('appReady', host.ready)
+  if (host.shutdown !== undefined) ctx.provide('appShutdown', host.shutdown)
 }
 
 /** Process stdin operations used to bind a stdio application's lifetime. */

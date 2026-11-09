@@ -6,7 +6,7 @@ import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { ConfigSaveCoordinator, AccountModelKeyEnvironment, type ModelKeyPeerConsumer,
   type ConfigurationPeerConsumer, type CloudPluginPreparation, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
-import type {} from '@deepseek-ai/dsh-cmdline'
+import type { AppShutdown } from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-pe-cloud-files/root'
 import { ReleaseSkillBinaryBudget } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { RuntimeRootConfig } from './root-config.ts'
@@ -328,6 +328,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const credentials = ctx.get('credentials')
     if (credentials === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Runtime root requires the formal credentials service')
     const runtime = new PeAccountRuntime(ctx, resolved, resolved.fileReadTiming === true)
+    const shutdown: AppShutdown | undefined = ctx.root.get('appShutdown')
+    if (shutdown !== undefined) {
+      ctx.effect(() => shutdown.register(() => runtime.close()), 'pe-cloud-runtime: retain original Root close outcome')
+    }
     const actual = runtime.startControl(resolved, credentials)
     try {
       await observe(actual, resolved.startupTimeoutMs, 'Runtime root startup observation expired')

@@ -72,9 +72,12 @@ it('retains the original secret resolution during Loader closure, without starti
   const secret = Promise.withResolvers<ResolvedCredential | undefined>()
   const entered = Promise.withResolvers<undefined>()
   let context: Context | undefined
+  let applicationClose: (() => Promise<void>) | undefined
+  const register = vi.fn((close: () => Promise<void>) => { applicationClose = close; return close })
   const read = vi.fn(() => { entered.resolve(undefined); return secret.promise })
   const actual = boot('actual-runtime-root-no-network', configPath, [], (ctx) => {
     context = ctx; contexts.push(ctx)
+    ctx.provide('appShutdown', { register })
     Object.assign(ctx.loader.builtins, {
       'actual-runtime-root': Root,
       'root-credentials': { apply(scope: Context) { new RootCredentials(scope, read) } },
@@ -83,14 +86,19 @@ it('retains the original secret resolution during Loader closure, without starti
   try {
     await entered.promise
     if (context === undefined) throw new Error('Loader prepare did not run')
+    if (applicationClose === undefined) throw new Error('Actual Root did not register its close with the launcher')
+    const requiredClose = applicationClose()
+    expect(applicationClose()).toBe(requiredClose)
     let closed = false
     const closing = context.fiber.dispose().then(() => { closed = true })
     await Promise.resolve()
     expect(closed).toBe(false)
     secret.resolve(undefined)
     await closing
+    await requiredClose
     await actual
     expect(read).toHaveBeenCalledTimes(1)
+    expect(register).toHaveBeenCalledOnce()
     expect(closed).toBe(true)
   } finally { secret.resolve(undefined); await actual }
 })

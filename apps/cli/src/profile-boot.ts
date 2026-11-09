@@ -35,7 +35,7 @@ import {
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
+import { provideCmdline, type AppReady, type AppShutdown } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
@@ -60,6 +60,43 @@ function createAppReady(): { service: AppReady; commit(): void } {
       ready = true
       for (const listener of [...listeners]) listener()
       listeners.clear()
+    },
+  }
+}
+
+/** Observe original close results without acquiring or releasing their resources. */
+function createAppShutdown(): { service: AppShutdown; begin(): Promise<readonly unknown[]> } {
+  const participants = new Set<{ join(): Promise<void> }>()
+  let stopping = false
+  let settlement: Promise<readonly unknown[]> | undefined
+  return {
+    service: {
+      register(close) {
+        if (stopping) throw new Error('dsh: application shutdown has already started')
+        let pending: Promise<void> | undefined
+        const participant = { join(): Promise<void> {
+          if (pending !== undefined) return pending
+          const settled = Promise.withResolvers<void>()
+          pending = settled.promise
+          try { void close().then(settled.resolve, settled.reject) }
+          catch (error) { settled.reject(error) }
+          void pending.then(
+            () => { participants.delete(participant) },
+            (_error: unknown) => { /* Retain the original failed close for the launcher's shutdown result. */ },
+          )
+          return pending
+        } }
+        participants.add(participant)
+        return () => participant.join()
+      },
+    },
+    begin() {
+      stopping = true
+      return settlement ??= Promise.allSettled([...participants].map(participant => participant.join())).then((results) => {
+        const failures: unknown[] = []
+        for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
+        return failures
+      })
     },
   }
 }
@@ -287,12 +324,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   )
 
   const app: { current?: Context } = {}
+  const appShutdown = createAppShutdown()
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
     const failures: unknown[] = []
-    for (const release of [() => app.current?.fiber.dispose(), disposeProxy]) {
-      try { await release() } catch (error) { failures.push(error) }
-    }
+    // Start participants before Fiber disposal can remove their registrations.
+    const required = appShutdown.begin()
+    try { await app.current?.fiber.dispose() } catch (error) { failures.push(error) }
+    failures.push(...await required)
+    try { await disposeProxy() } catch (error) { failures.push(error) }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'dsh: profile cleanup failed')
   })()
@@ -314,9 +354,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     // SIGINT is a user interrupt and reports 130.
     process.on('SIGTERM', () => { interrupt(0) })
     process.on('SIGINT', () => { interrupt(130) })
-    installFailLoud(NAME, process, async () => {
-      await app.current?.fiber.dispose()
-    })
+    installFailLoud(NAME, process, dispose)
 
     const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
     const profileContext: ProfileContext = {
@@ -343,6 +381,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         args: options.args,
         exit: code => void shutdown.shutdown(code),
         ready: appReady.service,
+        shutdown: appShutdown.service,
       })
     })
     app.current = ctx
