@@ -59,12 +59,12 @@ describe('ThemeRuntime', () => {
     expect(host.set).toHaveBeenCalledExactlyOnceWith('preference', 'system')
   })
 
-  it('adopts the recovered Host section and reports refusal without retrying', async () => {
+  it('adopts the recovered Host section but keeps a false result unconfirmed without retrying', async () => {
     const { theme, host } = make()
     host.publish({ status: 'ready', value: section, revision: 1, writable: true })
     host.set.mockResolvedValue(false)
     theme.setTheme('system')
-    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('refused') })
+    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('unknown') })
     expect(theme.getTheme().preference).toBe('dark')
     expect(host.set).toHaveBeenCalledTimes(1)
   })

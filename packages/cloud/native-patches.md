@@ -54,7 +54,7 @@ Gateway `inspectInvocation` exposes its existing strict/SRC resolver as a readon
 
 Native [file discovery](../fs/tool-fs-search/src/glob.ts) groups the six VCS names into two exclusion patterns, preserving directory pruning and exclusion when a search starts at or inside VCS metadata. The complete invocation uses 9 argv entries, or 11 with an explicit path, within the original 16-entry Cloud command limit. Execution, output capture and sorting remain Native.
 
-Native [theme settings](../client/ui-theme/README.md) project the original Host write outcome separately from the palette preview. The Appearance row disables choices while loading or saving and after an unconfirmed write; only Host acceptance reports saved. Native settings ordering, persistence and cancellation remain unchanged; refreshing can still cancel an unacknowledged write.
+Native [theme settings](../client/ui-theme/README.md) project the original Host write outcome separately from the palette preview. The Appearance row disables choices while loading or saving and after an unconfirmed write; only Host acceptance reports saved. The current shared boolean write result cannot distinguish every refusal from structured transport failure, so both false and rejected promises remain unconfirmed without replay. Native settings ordering, persistence and cancellation remain unchanged; refreshing can still cancel an unacknowledged write.
 
 ## Upgrade procedure
 

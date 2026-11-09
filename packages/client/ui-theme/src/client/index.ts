@@ -319,8 +319,9 @@ export class ThemeRuntime {
   }
 
   private async settleWrite(operation: () => Promise<boolean>): Promise<void> {
-    let outcome: 'saved' | 'refused' | 'unknown'
-    try { outcome = await operation() ? 'saved' : 'refused' }
+    let outcome: 'saved' | 'unknown'
+    // The shared boolean face folds Host refusal and structured carrier failure into false.
+    try { outcome = await operation() ? 'saved' : 'unknown' }
     catch (_error) { outcome = 'unknown' }
     this.pendingWrites -= 1
     this.writeOutcome = outcome

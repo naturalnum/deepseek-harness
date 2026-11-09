@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
+import { RemoteError, TestRemote, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, SETTINGS_NS, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { AppearanceRowInjected, FontSettingsInjected, ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -48,7 +48,10 @@ async function bench(isLoopback = true) {
     ok: true as const,
     value: { writable: true, hasDocument: true, namespaces: [namespace()] },
   }))
-  const mutate = vi.fn((_ns: string, ops: { path: string[]; value: unknown }[]) => {
+  const mutate = vi.fn((_ns: string, ops: { path: string[]; value: unknown }[]): Promise<
+    | { ok: true; value: ReturnType<typeof namespace> }
+    | { ok: false; error: RemoteError }
+  > => {
     for (const op of ops) section[op.path[0]!] = op.value
     return Promise.resolve({ ok: true as const, value: namespace() })
   })
@@ -169,7 +172,7 @@ describe('ui-theme apply', () => {
     ])
   })
 
-  it('adopts all durable font sizes together after a refused batch settles', async () => {
+  it('adopts all durable font sizes together while keeping a false batch unconfirmed', async () => {
     const host = stubConfigForm<ThemeSettings>()
     const section: ThemeSettings = { preference: 'system', fontSize: 14, codeFontSize: 11, terminalFontSize: 13,
       textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }
@@ -182,6 +185,7 @@ describe('ui-theme apply', () => {
     expect(theme.getTheme().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
     write.resolve(false)
     await vi.waitFor(() => { expect(theme.getTheme().fontSizes).toEqual({ text: 14, code: 11, terminal: 13 }) })
+    expect(theme.getSaveState()).toBe('unknown')
   })
 
   it.each(['macos', 'windows', 'linux'] as const)('shares %s font shortcuts with the settings control and durable values', async (platform) => {
@@ -344,6 +348,35 @@ describe('ui-theme apply', () => {
     expect(theme.getTheme().preference).toBe('system')
     expect(instance.getSnapshot().preference).toBe('system')
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(2) })
+  })
+
+  it('keeps a real ConfigForm structured carrier failure unconfirmed and blocks another theme edit', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    declareItems(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const theme = b.ctx.get('theme') as ThemeRuntime
+    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('idle') })
+    const form = b.ctx.configForms.get<ThemeSettings>(THEME_SETTINGS_NAMESPACE)
+    const originalSet = vi.spyOn(form, 'set')
+    onTestFinished(() => { originalSet.mockRestore() })
+    const readsBefore = b.describe.mock.calls.length
+    b.mutate.mockResolvedValueOnce({
+      ok: false, error: new RemoteError('gateway/internal', 'synthetic failed browser request', {}),
+    })
+    const { instance, face } = faceOf(b.slots)
+    face.setTheme('dark')
+    expect(instance.getSnapshot().saveState).toBe('saving')
+    const write = originalSet.mock.results[0]
+    if (write?.type !== 'return') throw new Error('Expected the original ConfigForm write')
+    await expect(write.value).resolves.toBe(false)
+    await vi.waitFor(() => { expect(instance.getSnapshot().saveState).toBe('unknown') })
+    expect(theme.getTheme().preference).toBe('system')
+    expect(b.describe).toHaveBeenCalledTimes(readsBefore + 1)
+    expect(b.mutate).toHaveBeenCalledTimes(1)
+    face.setTheme('light')
+    expect(b.mutate).toHaveBeenCalledTimes(1)
+    expect(theme.getSaveState()).toBe('unknown')
   })
 
   it('projects font-size snapshots into its row store and routes face writes back', async () => {
