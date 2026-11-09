@@ -43,11 +43,15 @@ it('shows an unavailable method as unverified and refuses task writes',async()=>
   const opened=await call('task_open',{id:task.id,reason:'Reviewed',requestId:randomUUID(),expectedTaskRevision:task.revision,expectedMethodId:custom.id,expectedMethodVersion:custom.version,expectedMethodSha256:custom.sha256},'human')
   const db=new DatabaseSync(join(path,'research.sqlite'))
   try{db.prepare('DELETE FROM engine_packages WHERE session=? AND id=? AND version=?').run('missing-session',custom.id,custom.version)}finally{db.close()}
-  const before=await call('state',{}),view=await call('task_get',{id:task.id})
+  const csv=await call('attachment_put',{name:'QA_SYNTHETIC_missing_method.csv',contentBase64:Buffer.from('channel,expected,valid\nQA_SYNTHETIC,10,9\n').toString('base64'),requestId:randomUUID()},'human')
+  const before=await call('state',{}),packages=await call('engine_packages',{}),science=await call('science_state',{}),view=await call('task_get',{id:task.id})
   expect(view.bindingConflict).toBe(true);expect(view.next).toContain('无法核验');expect(view.record.id).toBe(opened.record.id);expect(view.reportCurrent).toBe(false)
   await expect(call('task_open',{id:task.id,reason:'Review',requestId:randomUUID()},'human')).rejects.toBeDefined()
+  await expect(call('task_import_csv',{id:task.id,reference:csv.reference,table:'measurements',expectedRecordRevision:opened.record.revision,requestId:randomUUID()},'human')).rejects.toMatchObject({code:'NOT_FOUND',message:'没有找到该方法版本，请导入方法包。'})
   await expect(call('task_evidence',{id:task.id,requestId:randomUUID()})).rejects.toBeDefined()
   await expect(call('task_report',{id:task.id,requestId:randomUUID()})).rejects.toBeDefined()
   expect(await call('state',{})).toEqual(before)
+  expect(await call('engine_packages',{})).toEqual(packages)
+  expect(await call('science_state',{})).toEqual(science)
  }finally{await store.close();rmSync(path,{recursive:true,force:true})}
 })
