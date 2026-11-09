@@ -29,6 +29,8 @@ export interface RootGrant {
  * responses cannot rebind it.
  */
 export interface ExpectedBinding {
+  /** Local Root selection; omission preserves the original ARM64 carrier. It is not remote attestation. */
+  readonly platform?: 'arm64' | 'amd64'
   readonly skillParent?: SkillParent
   readonly physicalSandboxId: string
   readonly runtimeIdentity: string

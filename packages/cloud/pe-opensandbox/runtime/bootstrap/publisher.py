@@ -11,10 +11,23 @@ PRIVATE = '/root-secret'
 TRUSTED = '/trusted'
 STAGE = '.bootstrap'
 CLAIM = b's4-bootstrap/1\n'
-BWRAP = ('0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d', 814328)
+def bwrap_profile(machine):
+    """Select only the original release bytes for the current kernel architecture."""
+    if machine in ('aarch64', 'arm64'):
+        return ('0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d', 814328, 183)
+    if machine in ('x86_64', 'amd64'):
+        return ('2eac825be98626a3a7e8daf17afdedcb65560951cb26ffaecea261f5686acb28', 734864, 62)
+    raise RuntimeError('unsupported isolation binary architecture')
+
+
+def fixed_elf(data, machine):
+    """Require the pinned Linux ELF64 little-endian machine header."""
+    return (len(data) >= 20 and data[:6] == b'\x7fELF\x02\x01'
+            and int.from_bytes(data[18:20], 'little') == machine)
+
 SOURCES = {
     'guardian.py': ('6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e', 6683),
-    'launcher.py': ('cbca58d8ebd05800c1226b5c5209e06880b13e5f8a1cf078f8689ca127a8de55', 22737),
+    'launcher.py': ('21ce9feb12e6e96780a5383adc87ceaf4ad5301bb1aee5c6ec66c3bee042a9e3', 23544),
     'manager.py': ('f73bb3effd9132ed23dcfe76d2aebe48ba1a9cc52d18b6c5c7a75c35274bfe46', 13544),
     'paths.py': ('6cd24d1c063b997dc3fee2568e07881361eb0e4db67ba1714f4590ad79765f1d', 10042),
     'server.py': ('70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32', 19002),
@@ -107,7 +120,9 @@ def main():
         try:
             installed = directory('opensandbox', opt, 0o755)
             try:
-                binary = read_file(installed, 'bwrap', BWRAP[1], 0o755, BWRAP)
+                bwrap = bwrap_profile(os.uname().machine)
+                binary = read_file(installed, 'bwrap', bwrap[1], 0o755, bwrap[:2])
+                require(fixed_elf(binary, bwrap[2]))
             finally:
                 os.close(installed)
         finally:

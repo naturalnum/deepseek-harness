@@ -1,4 +1,5 @@
 /** Closed reviewed SDK suppliers; these declarations neither select a deployment nor enable account features. */
+import { RUNTIME_PROFILES, type RuntimePlatform } from './runtime-profiles.ts'
 
 /** Original Native workload supplier. */
 export const NATIVE_WORKLOAD_IMAGE_DIGEST = 'sha256:62016189c3c5cec1c88d10af21b5dc0dfac0fc2247cd66709374dbdfc9d1135a'
@@ -28,11 +29,20 @@ export const OFFICE_RESEARCH_GIT_GETRANDOM_WORKLOAD_IMAGE_DIGEST = 'sha256:4a7ce
 /** COPY-only server paired exclusively with the getrandom Git workload. */
 export const OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST = 'sha256:87bbc26029f68dab351a3abd958fda82877cb29b3d15a77fe5887c858ab1de57'
 
+/** Actual Native AMD64 artifact; Office/Research layers and product use require separate qualification. */
+export const NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST = 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb'
+/** Actual six-file guarded SDK overlay paired exclusively with the Native AMD64 artifact. */
+export const NATIVE_AMD64_SERVER_IMAGE_DIGEST = 'sha256:7b9ef8e0c71d81c9d6909cae992015f8789e9e152d5a21aee03836fd08ac7224'
+
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
   readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
   readonly workloadImageDigest: string
   readonly serverImageDigest: string
+  /** Exact Linux architecture shared by the workload and original execd release. */
+  readonly platform: RuntimePlatform
+  /** The selected architecture's immutable original release image. */
+  readonly execdImageDigest: string
   /** The exact server includes the original direct-UUID-child Session environment guard. */
   readonly sessionDirectories: boolean
 }
@@ -40,30 +50,43 @@ export interface QualifiedSupplierTuple {
 /** Complete creation-admission inventory; readonly audit predecessors are not creation suppliers. */
 export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object.freeze([
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v1', workloadImageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: 'sha256:64383075f5bd4dae3f76b283c7cbed38d067446aad66373b840ffc16bdcefa17', sessionDirectories: false }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: 'sha256:fec2756169ff3e9baf123c0f2e9664baf3f2214898372c180847d991559ce0fd', sessionDirectories: false }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: SESSION_DIRECTORY_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: REMOTE_CLIENT_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: OFFICE_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest,
     serverImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST,
+    platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
+    serverImageDigest: NATIVE_AMD64_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**
  * Check the workload projection shared by protected selection and the original SDK bootstrap.
  * @param value Decoded workload selector.
+ * @param platform When supplied, require that exact reviewed architecture; omission checks the inventory projection only.
  * @returns Whether an exact reviewed tuple contains the workload.
  */
-export function isPinnedWorkloadImageDigest(value: unknown): value is string {
-  return qualifiedSupplierTuples.some(row => row.workloadImageDigest === value)
+export function isPinnedWorkloadImageDigest(value: unknown, platform?: RuntimePlatform): value is string {
+  return qualifiedSupplierTuples.some(row => row.workloadImageDigest === value
+    && (platform === undefined || row.platform === platform))
 }
 
 /**
@@ -81,11 +104,14 @@ export function isQualifiedServerImageDigest(schema: QualifiedSupplierTuple['sch
  * @param schema Original deployment storage schema.
  * @param workload Exact decoded workload selector.
  * @param server Exact decoded server selector.
- * @returns Whether one reviewed tuple matches all three inputs.
+ * @param platform Exact protected Linux architecture.
+ * @param execd Exact original release selector for that architecture.
+ * @returns Whether one reviewed tuple matches every input.
  */
-export function isQualifiedSupplierPair(schema: QualifiedSupplierTuple['schema'], workload: string, server: string): boolean {
+export function isQualifiedSupplierPair(schema: QualifiedSupplierTuple['schema'], workload: string, server: string,
+  platform: RuntimePlatform, execd: string): boolean {
   return qualifiedSupplierTuples.some(row => row.schema === schema && row.workloadImageDigest === workload
-    && row.serverImageDigest === server)
+    && row.serverImageDigest === server && row.platform === platform && row.execdImageDigest === execd)
 }
 
 /**

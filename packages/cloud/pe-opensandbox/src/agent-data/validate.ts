@@ -2,7 +2,8 @@
 import { skillParent, type SkillParent } from './skill-world.ts'
 import { isIP } from 'node:net'
 import { absolute, base64, digest, hex, need, record, text, u64 } from './canonical.ts'
-import { AGENT_SOURCE_SHA256, BWRAP_SHA256 } from './constants.ts'
+import { AGENT_SOURCE_SHA256 } from './constants.ts'
+import { isRuntimePlatform, RUNTIME_PROFILES } from '../bootstrap/runtime-profiles.ts'
 import { authorization, ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS, STREAM_LIMITS } from './role-protocol.ts'
 import type { ClientOptions, ExpectedBinding, FailureFact, Handshake, MountFact, OperationRef, OperationSnapshot, RawTail } from './types.ts'
 
@@ -49,7 +50,10 @@ export function checkOptions(options: ClientOptions): { origin: string; expected
   need(Number.isInteger(options.port) && options.port >= 1024 && options.port <= 65535, 'invalid_port')
   const e = options.expected
   record(e, ['physicalSandboxId', 'runtimeIdentity', 'projectRoot', 'roots', 'pins', 'declaredImageId',
+    ...e.platform === undefined ? [] : ['platform'],
     ...e.skillParent === undefined ? [] : ['skillParent']])
+  const platform = e.platform === undefined ? 'arm64' : e.platform
+  need(isRuntimePlatform(platform), 'unexpected_runtime_platform')
   const parent = e.skillParent === undefined ? undefined : skillParent(e.skillParent)
   text(e.physicalSandboxId); need(e.physicalSandboxId.length >= 1 && Buffer.byteLength(e.physicalSandboxId) <= 256
     && !/[\x00-\x1f\x7f]/.test(e.physicalSandboxId), 'invalid_sandbox_binding')
@@ -65,7 +69,7 @@ export function checkOptions(options: ClientOptions): { origin: string; expected
   need(e.roots.project.device !== e.roots.environment.device, 'independent_domains_required')
   record(e.pins, ['bwrapSha256', 'agentSourceSha256', 'userWorldArgvSha256'])
   Object.values(e.pins).forEach(hex)
-  need(e.pins.bwrapSha256 === BWRAP_SHA256 && e.pins.agentSourceSha256 === AGENT_SOURCE_SHA256
+  need(e.pins.bwrapSha256 === RUNTIME_PROFILES[platform].bwrapSha256 && e.pins.agentSourceSha256 === AGENT_SOURCE_SHA256
     && e.pins.userWorldArgvSha256 === expectedWorldHash(e.projectRoot, parent), 'unexpected_frozen_payload')
   need(typeof e.declaredImageId === 'string' && /^sha256:[0-9a-f]{64}$/.test(e.declaredImageId), 'invalid_declared_image')
   // Copy trusted inputs: later caller mutation cannot rebind this carrier.

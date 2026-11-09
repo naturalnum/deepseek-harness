@@ -15,7 +15,8 @@ import { PrivateSemanticAudit, type SemanticSpan } from '../semantic-audit.ts'
 import { SdkLifecycleFailure, type AgentReadinessBudget, type AgentSelection, type OwnedSdkTransport, type SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { AgentDataClient, ClientOptions, RootGrant } from '../agent-data/types.ts'
 import { DataClient } from '../agent-data/client-internal.ts'
-import { AGENT_SOURCE_SHA256, BWRAP_SHA256, digest, expectedWorldHash } from '../agent-data/index.ts'
+import { AGENT_SOURCE_SHA256, digest, expectedWorldHash } from '../agent-data/index.ts'
+import { RUNTIME_PROFILES } from './runtime-profiles.ts'
 import { checkOptions } from '../agent-data/validate.ts'
 import { isPinnedWorkloadImageDigest } from './workload-images.ts'
 
@@ -255,7 +256,7 @@ export class TrustedSdkBootstrap {
     const selected = config.lifecycle, url = new URL(selected.lifecycleBaseUrl)
     const sourceDigest = digest(Object.fromEntries(Object.entries(SOURCES).map(([name, pin]) => [name, pin[0]])))
     need(url.protocol === 'http:' && !url.username && !url.password && !url.search && !url.hash
-      && isPinnedWorkloadImageDigest(selected.imageDigest)
+      && isPinnedWorkloadImageDigest(selected.imageDigest, selected.platform)
       && [selected.payloadSha256, AGENT_SOURCE_SHA256, SOURCE_DIGEST].every(pin => pin === sourceDigest)
       && JSON.stringify(selected.entrypoint) === JSON.stringify(['/usr/bin/tail', '-f', '/dev/null']), 'binding')
     need(hash(Buffer.from(payload.prep)) === BOOTSTRAP_PINS['prep.py'].sha256
@@ -432,9 +433,10 @@ export class TrustedSdkBootstrap {
       const skillParent = selection.mount.skills === undefined ? undefined
         : parentFacts(selection.mount.skills.grant, selection.mount.skills.maxCopies)
       const expected: ClientOptions['expected'] = { physicalSandboxId: selection.sandboxId, runtimeIdentity,
+        platform: this.config.lifecycle.platform,
         ...skillParent === undefined ? {} : { skillParent },
         projectRoot: grant.project.rootPath, roots: { project: root(grant.project), environment: root(grant.environment) },
-        pins: { bwrapSha256: BWRAP_SHA256, agentSourceSha256: AGENT_SOURCE_SHA256,
+        pins: { bwrapSha256: RUNTIME_PROFILES[this.config.lifecycle.platform].bwrapSha256, agentSourceSha256: AGENT_SOURCE_SHA256,
           userWorldArgvSha256: expectedWorldHash(grant.project.rootPath, skillParent) }, declaredImageId: selection.imageDigest }
       // Validate full lossless grant/config input before the first Root command or upload.
       const origin = new URL(this.config.lifecycle.lifecycleBaseUrl)

@@ -2,11 +2,11 @@
 import { BOOTSTRAP_PINS } from './payload-pins.ts'
 
 /** Installation candidate aggregate; Root adoption and target qualification remain required. */
-export const SOURCE_DIGEST = '11d8c1209bcef072ff69af177ead38b626dcd2f4616e4ac4e71ca4c8771f33d8'
+export const SOURCE_DIGEST = '4d9f9ceb554d72662d61e70cc03faa936e3b495db235c69d01649cc4845093b5'
 /** Installation candidate source hashes and exact byte lengths, shared with the candidate publisher. */
 export const SOURCES = {
   'guardian.py': ['6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e', 6683],
-  'launcher.py': ['cbca58d8ebd05800c1226b5c5209e06880b13e5f8a1cf078f8689ca127a8de55', 22737],
+  'launcher.py': ['21ce9feb12e6e96780a5383adc87ceaf4ad5301bb1aee5c6ec66c3bee042a9e3', 23544],
   'manager.py': ['f73bb3effd9132ed23dcfe76d2aebe48ba1a9cc52d18b6c5c7a75c35274bfe46', 13544],
   'paths.py': ['6cd24d1c063b997dc3fee2568e07881361eb0e4db67ba1714f4590ad79765f1d', 10042],
   'server.py': ['70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32', 19002],

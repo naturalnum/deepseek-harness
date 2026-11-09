@@ -24,6 +24,13 @@ PROC = Path('/owner-observation/proc')
 CGROUP = Path('/owner-observation/cgroup')
 FIXED_IMAGE = 'sha256:3a1883e6bd3272095de9407f33bcb0119dcc664e6cff2952cd0931caa8e0bf9f'
 FIXED_CREATOR_SHA = '831b9f941abb7ef01603d8ed1ec25fb92480628033cf239279b97f12871d5a38'
+NATIVE_AMD64_IMAGE = 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb'
+
+
+def fixed_recipe(image, platform):
+    """Require one complete reviewed recipe; a dependency image is not a creation supplier."""
+    return ((image == FIXED_IMAGE and platform == 'arm64')
+            or (image == NATIVE_AMD64_IMAGE and platform == 'amd64'))
 
 
 def _read_proc(path, maximum):
@@ -63,7 +70,7 @@ class OriginalDockerView:
         require(self.policy['version'] == 2 and self.policy['storageMode'] == 'shared-path'
                 and type(self.policy['admitCreates']) is bool
                 and len(self.policy['historical']) <= 1, 'policy-bounds')
-        require(self.policy['image'] == FIXED_IMAGE and self.policy['platform'] == 'arm64'
+        require(fixed_recipe(self.policy['image'], self.policy['platform'])
                 and self.policy['entrypoint'] == ['/usr/bin/tail', '-f', '/dev/null'], 'fixed-recipe-policy')
         key = service.app_config.server.api_key
         require(isinstance(key, str) and bool(key.strip())

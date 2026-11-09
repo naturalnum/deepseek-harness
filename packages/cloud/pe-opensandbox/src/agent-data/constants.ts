@@ -1,12 +1,14 @@
 /** Runtime pins and limits for one authenticated agent data carrier. */
+import { RUNTIME_PROFILES } from '../bootstrap/runtime-profiles.ts'
+
 /** Fixed core installation/service slice selected by Root's pinned payload; older payloads cannot satisfy it. */
 export const PROTOCOL = 's6-stream/2-native-pipes-pty-v1' as const
 /** Fixed private authentication header; its value is the original 64-hex token without a scheme prefix. */
 export const AGENT_AUTH_HEADER = 'x-pe-execution-token' as const
 /** Required frozen Python runtime source digest; never learned from a handshake response. */
-export const AGENT_SOURCE_SHA256 = '11d8c1209bcef072ff69af177ead38b626dcd2f4616e4ac4e71ca4c8771f33d8'
-/** Required fixed bwrap binary digest verified by the Python owner. */
-export const BWRAP_SHA256 = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
+export const AGENT_SOURCE_SHA256 = '4d9f9ceb554d72662d61e70cc03faa936e3b495db235c69d01649cc4845093b5'
+/** Original ARM64 default; explicit platform carriers use their reviewed runtime profile. */
+export const BWRAP_SHA256 = RUNTIME_PROFILES.arm64.bwrapSha256
 /** Finite core slice: residence is absolute; four records/300s do not qualify full S4 or promise four complete runs. */
 export const SLICE_LIMITS = Object.freeze({ lifetimeOperations: 4, activeRanges: 2, tailBytesPerStream: 4096,
   observedStopThresholdPerStream: 65536, prepareMs: 3000, preparedLeaseMs: 3000, runMs: 150000,

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { readFile, readdir } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { RUNTIME_ASSET_MANIFEST, SOURCE_DIGEST, SOURCES } from '../src/bootstrap/asset-manifest.ts'
@@ -12,6 +13,19 @@ import { digest } from '../src/agent-data/canonical.ts'
 const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
 
 describe('fixed packaged bootstrap assets', () => {
+  it('refuses changed agent bytes before returning a bootstrap payload', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pe-runtime-source-guard-'))
+    try {
+      await cp(join(runtime, 'agent'), join(directory, 'agent'), { recursive: true })
+      await cp(join(runtime, 'bootstrap'), join(directory, 'bootstrap'), { recursive: true })
+      const launcher = join(directory, 'agent/launcher.py'), bytes = await readFile(launcher)
+      bytes[bytes.length - 1] = bytes[bytes.length - 1] === 10 ? 32 : 10
+      await writeFile(launcher, bytes)
+      await expect(loadBootstrapPayload(join(directory, 'bootstrap'), join(directory, 'agent')))
+        .rejects.toMatchObject({ code: 'binding' })
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
   it('retains exactly the approved eleven Python files and loads their original pinned bytes', async () => {
     const files = (await Promise.all(['agent', 'bootstrap'].map(async directory =>
       (await readdir(join(runtime, directory))).map(name => `${directory}/${name}`)))).flat().sort()

@@ -14,7 +14,21 @@ from paths import ENV, ENV_ROOT, project_path, open_skill_world, skill_world_arg
 from wire import LIMITS, skill_parent, skill_world, environment, stream_spec
 from stream import PipeChannels
 
-BWRAP_HASH = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
+def bwrap_profile(machine):
+    """Select only the original release bytes for the current kernel architecture."""
+    if machine in ('aarch64', 'arm64'):
+        return ('0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d', 814328, 183)
+    if machine in ('x86_64', 'amd64'):
+        return ('2eac825be98626a3a7e8daf17afdedcb65560951cb26ffaecea261f5686acb28', 734864, 62)
+    raise RuntimeError('unsupported isolation binary architecture')
+
+
+def fixed_elf(data, machine):
+    """Require the pinned Linux ELF64 little-endian machine header."""
+    return (len(data) >= 20 and data[:6] == b'\x7fELF\x02\x01'
+            and int.from_bytes(data[18:20], 'little') == machine)
+
+BWRAP_HASH, BWRAP_BYTES, BWRAP_MACHINE = bwrap_profile(os.uname().machine)
 
 
 def world_argv(project, mode='workspace-write'):
@@ -61,7 +75,9 @@ class Owner:
         assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL
         assert not os.statvfs('/').f_flag & os.ST_RDONLY  # User-world mount restrictions must do the work.
         with open('/trusted/bwrap', 'rb') as f:
-            assert os.fstat(f.fileno()).st_size == 814328 and hashlib.sha256(f.read(814329)).hexdigest() == BWRAP_HASH
+            binary = f.read(BWRAP_BYTES + 1)
+            assert os.fstat(f.fileno()).st_size == BWRAP_BYTES and len(binary) == BWRAP_BYTES
+            assert hashlib.sha256(binary).hexdigest() == BWRAP_HASH and fixed_elf(binary, BWRAP_MACHINE)
         self.project, self.roots, self.base = project_path(project), roots, world_argv(project)
         self.skill_parent = None if skill_policy is None else skill_parent(skill_policy)
         self.slots, self.closed = {}, False

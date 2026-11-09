@@ -7,6 +7,7 @@ import type { ExecutionExportLimits } from '../export-share.ts'
 import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
+import { isRuntimePlatform } from './runtime-profiles.ts'
 import { isPinnedWorkloadImageDigest, isQualifiedServerImageDigest, isQualifiedSupplierPair } from './qualified-suppliers.ts'
 export { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST, REMOTE_CLIENT_SERVER_IMAGE_DIGEST, OFFICE_SERVER_IMAGE_DIGEST,
   OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, isSessionDirectoryServerImageDigest } from './qualified-suppliers.ts'
@@ -61,7 +62,7 @@ function lifecycle(value: unknown): SdkLifecycleConfig {
   need(url.protocol === 'http:' && url.pathname === '/v1' && !url.username && !url.password && !url.search && !url.hash
     && url.href === endpoint, 'lifecycle.lifecycleBaseUrl')
   need(isPinnedWorkloadImageDigest(v.imageDigest)
-    && v.payloadSha256 === SOURCE_DIGEST && v.platform === 'arm64'
+    && v.payloadSha256 === SOURCE_DIGEST && isRuntimePlatform(v.platform)
     && Array.isArray(v.entrypoint) && JSON.stringify(v.entrypoint) === '["/usr/bin/tail","-f","/dev/null"]', 'lifecycle.fixedSelection')
   need(typeof v.cpuCores === 'number' && Number.isFinite(v.cpuCores) && v.cpuCores > 0 && v.cpuCores <= 2147483647, 'lifecycle.cpuCores')
   const limits = Object.fromEntries(lifecycleKeys.filter(key => !['lifecycleBaseUrl', 'apiKey', 'deploymentIdentity', 'environmentVersion',
@@ -140,9 +141,9 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
   const s = object(v.selection, ['serverImageDigest', 'execdImageDigest', 'apiKeyDeploymentIdentity'], 'selection')
   const serverImage = text(s.serverImageDigest, 'selection.serverImageDigest', 71)
   need(isQualifiedServerImageDigest(schema, serverImage)
-    && s.execdImageDigest === 'sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf'
+    && typeof s.execdImageDigest === 'string'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
-  need(isQualifiedSupplierPair(schema, life.imageDigest, serverImage), 'selection.workloadImagePair')
+  need(isQualifiedSupplierPair(schema, life.imageDigest, serverImage, life.platform, s.execdImageDigest), 'selection.workloadImagePair')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')
   let copies: RootDeploymentInput['skillCopies']
