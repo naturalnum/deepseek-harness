@@ -22,6 +22,64 @@ const make = (host = stubConfigForm<ThemeSettings>()): {
 }
 
 describe('ThemeRuntime', () => {
+  const section: ThemeSettings = {
+    preference: 'dark', fontSize: 14, codeFontSize: 11, terminalFontSize: 13,
+    textFontFamily: '', codeFontFamily: '', terminalFontFamily: '',
+  }
+
+  it('reports Host loading and read-only state even when the palette does not change', () => {
+    const { theme, host, events } = make()
+    expect(theme.getSaveState()).toBe('loading')
+    host.publish({ status: 'ready', value: { ...section, preference: 'system' }, revision: 1, writable: true })
+    expect(theme.getSaveState()).toBe('idle')
+    expect(events).toHaveLength(1)
+    host.publish({ writable: false })
+    expect(theme.getSaveState()).toBe('readonly')
+    host.publish({ status: 'unavailable', value: undefined })
+    expect(theme.getSaveState()).toBe('readonly')
+    const unavailable = make()
+    unavailable.host.publish({ status: 'unavailable' })
+    expect(unavailable.theme.getSaveState()).toBe('readonly')
+    expect(unavailable.events).toHaveLength(1)
+  })
+
+  it('does not report saved before the original Host promise accepts the write', async () => {
+    const { theme, host } = make()
+    host.publish({ status: 'ready', value: section, revision: 1, writable: true })
+    const write = Promise.withResolvers<boolean>()
+    host.set.mockReturnValue(write.promise)
+    theme.setTheme('system')
+    expect(theme.getTheme().preference).toBe('system')
+    expect(theme.getSaveState()).toBe('saving')
+    host.publish({ value: { ...section, preference: 'system' }, revision: 2 })
+    expect(theme.getSaveState()).toBe('saving')
+    write.resolve(true)
+    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('saved') })
+    expect(theme.getTheme().preference).toBe('system')
+    expect(host.set).toHaveBeenCalledExactlyOnceWith('preference', 'system')
+  })
+
+  it('adopts the recovered Host section and reports refusal without retrying', async () => {
+    const { theme, host } = make()
+    host.publish({ status: 'ready', value: section, revision: 1, writable: true })
+    host.set.mockResolvedValue(false)
+    theme.setTheme('system')
+    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('refused') })
+    expect(theme.getTheme().preference).toBe('dark')
+    expect(host.set).toHaveBeenCalledTimes(1)
+  })
+
+  it('handles transport rejection as an unknown save outcome without replay', async () => {
+    const { theme, host } = make()
+    host.publish({ status: 'ready', value: section, revision: 1, writable: true })
+    host.set.mockRejectedValue(new Error('private transport detail'))
+    theme.setTheme('system')
+    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('unknown') })
+    expect(host.set).toHaveBeenCalledTimes(1)
+    host.publish({ status: 'loading', value: undefined })
+    expect(theme.getSaveState()).toBe('unknown')
+  })
+
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()

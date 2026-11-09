@@ -17,6 +17,9 @@ export const FONT_SIZE_FIELD = 'fontSize'
 /** Theme preference persisted by the product Appearance row. */
 export type ThemePreference = typeof THEME_PREFERENCES[number]
 
+/** Host loading and the latest appearance-write outcome; never persisted. */
+export type ThemeSaveState = 'loading' | 'readonly' | 'idle' | 'saving' | 'saved' | 'refused' | 'unknown'
+
 /** Default preference when the user-settings document has no override. */
 export const DEFAULT_PREFERENCE: ThemePreference = 'system'
 

@@ -30,14 +30,14 @@ import {
   DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
   fontFamilyVariable, isFontSize, isThemePreference, normalizeFontFamily, sectionFontSizes,
   THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
-  type FontFamilies, type FontRole, type FontSizes, type ThemePreference, type ThemeSettings,
+  type FontFamilies, type FontRole, type FontSizes, type ThemePreference, type ThemeSaveState, type ThemeSettings,
 } from '../theme-settings.ts'
 
 export type { AppearanceRowComponentProps, AppearanceRowInjected } from './AppearanceRow.tsx'
 export type { FontSettingsGroupProps, FontSettingsInjected } from './FontSettingsGroup.tsx'
 export type { AppearanceRowState, FontRowState } from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
-export type { FontFamilies, FontRole, FontSizes, ThemePreference, ThemeSettings } from '../theme-settings.ts'
+export type { FontFamilies, FontRole, FontSizes, ThemePreference, ThemeSaveState, ThemeSettings } from '../theme-settings.ts'
 
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.theme'
@@ -82,7 +82,7 @@ export interface ThemeDefinition {
 
 /** Immutable theme state published on every change. */
 export interface ThemeSnapshot {
-  /** The persisted preference (may be `system`). */
+  /** Current preference or pending preview (may be `system`); getSaveState reports Host acceptance. */
   preference: ThemePreference
   /** Integer px font sizes by role, each within its `FONT_SIZE_SPECS` range (`text` is the conversation content size). */
   fontSizes: FontSizes
@@ -96,7 +96,7 @@ export interface ThemeSnapshot {
   active: ThemeDefinition
   /** Registered themes in registration order. */
   themes: readonly ThemeDefinition[]
-  /** Monotonic change counter (registry or active changes). */
+  /** Monotonic change counter (registry, active theme, or save feedback changes). */
   revision: number
 }
 
@@ -120,8 +120,8 @@ declare module '@deepseek-ai/cordis' {
   }
   interface Events {
     /**
-     * Theme state changed (preference switched, registry updated, or the OS
-     * color scheme changed while the preference is `system`).
+     * Theme presentation or appearance-write feedback changed (including OS
+     * color scheme changes while the preference is `system`).
      * @param snapshot - Current immutable theme snapshot.
      * @mode emit
      */
@@ -172,6 +172,8 @@ export class ThemeRuntime {
   private revision = 0
   /** Own settings writes not yet settled; adoption waits for zero so a Host echo of an earlier write cannot revert a later local change. */
   private pendingWrites = 0
+  private writeOutcome: 'idle' | 'saved' | 'refused' | 'unknown' = 'idle'
+  private saveState: ThemeSaveState = 'loading'
   private snapshot: ThemeSnapshot
   private readonly media: MediaQueryList | undefined
   /** Override layers by source; seq (monotonic) is the stacking order. */
@@ -187,6 +189,7 @@ export class ThemeRuntime {
     this.ctx = ctx
     this.host = host
     this.preference = DEFAULT_PREFERENCE
+    this.saveState = this.readSaveState()
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
     this.snapshot = this.buildSnapshot()
@@ -212,6 +215,13 @@ export class ThemeRuntime {
    */
   getTheme(): ThemeSnapshot {
     return this.snapshot
+  }
+
+  /** Read Host availability and write settlement, separately from the theme preview.
+   * @returns Saving until all own writes settle; only Host acceptance reports saved.
+   */
+  getSaveState(): ThemeSaveState {
+    return this.saveState
   }
 
   /**
@@ -301,23 +311,43 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Queue one settings write, then adopt the durable section once no own write remains. */
+  /** Observe one original Host write, then adopt its durable section when all own writes settle. */
   private write(operation: () => Promise<boolean>): void {
     this.pendingWrites += 1
-    void operation().finally(() => {
-      this.pendingWrites -= 1
-      this.adopt()
-    })
+    this.saveState = 'saving'
+    void this.settleWrite(operation)
+  }
+
+  private async settleWrite(operation: () => Promise<boolean>): Promise<void> {
+    let outcome: 'saved' | 'refused' | 'unknown'
+    try { outcome = await operation() ? 'saved' : 'refused' }
+    catch (_error) { outcome = 'unknown' }
+    this.pendingWrites -= 1
+    this.writeOutcome = outcome
+    this.adopt()
+  }
+
+  private readSaveState(): ThemeSaveState {
+    if (this.writeOutcome === 'unknown') return 'unknown'
+    const host = this.host.getSnapshot()
+    if (host.status === 'loading') return 'loading'
+    if (host.status !== 'ready' || !host.writable) return 'readonly'
+    return this.writeOutcome
   }
 
   /** Adopt the scope's accepted durable preference without writing it back. */
   private adopt(): void {
     if (this.pendingWrites > 0) return
+    const previousSaveState = this.saveState
+    this.saveState = this.readSaveState()
     const section = this.host.getSnapshot().value
-    if (section === undefined) return
+    if (section === undefined) {
+      if (previousSaveState !== this.saveState) this.publish()
+      return
+    }
     const fontFamilies = durableFontFamilies(section)
     const fontSizes = sectionFontSizes(section)
-    if (this.preference === section.preference
+    if (previousSaveState === this.saveState && this.preference === section.preference
       && FONT_ROLES.every(role => this.fontSizes[role] === fontSizes[role] && this.fontFamilies[role] === fontFamilies[role])) return
     this.preference = section.preference
     this.fontSizes = fontSizes
@@ -554,7 +584,7 @@ export function apply(ctx: ClientContext): void {
   const fontStore = createFontRowStore()
   let fontBound: BoundActions<typeof fontStore> | undefined
   const sync = (snapshot: ThemeSnapshot): void => {
-    bound?.sync(snapshot.preference, snapshot.revision)
+    bound?.sync(snapshot.preference, theme.getSaveState(), snapshot.revision)
     fontBound?.sync(snapshot.fontSizes, snapshot.fontFamilies, snapshot.revision)
   }
   ctx.on('theme/change', sync)
@@ -564,7 +594,10 @@ export function apply(ctx: ClientContext): void {
     // first render (the store's revision guard drops stale duplicates).
     sync(theme.getTheme())
     return {
-      setTheme: (id) => { theme.setTheme(id) },
+      setTheme: (id) => {
+        const state = theme.getSaveState()
+        if (state === 'idle' || state === 'saved' || state === 'refused') theme.setTheme(id)
+      },
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({

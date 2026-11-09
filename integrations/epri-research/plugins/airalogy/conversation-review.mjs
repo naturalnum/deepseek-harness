@@ -9,6 +9,7 @@ export const conversationReviewOps = new Set(['task_open','evidence_review','roa
 const literal = value => String(value).replace(/[\\`*_{}\[\]()#+.!<>|~-]/g,'\\$&').replace(/\r?\n/g,'  \n');
 const line = (label,value) => `**${label}**：${literal(value)}`;
 const snapshot = value => '```json\n'+JSON.stringify(value,null,2).replaceAll('`','\\u0060')+'\n```';
+const protocolChecks = protocol => parseAimdProtocol(protocol.content).checks.map(x=>({id:x.id,message:x.checked_message || x.id}));
 function reviewDetail(op, args, before, checks, name) {
   const data = before?.data || before || {};
   const lines = [
@@ -57,6 +58,12 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
   if (!questions) throw new Error('当前对话的人工问答服务未启用，审批尚未执行。');
   const read=(name,input)=>cloud?cloud.agentCall(name,input,exec):call(name,input,exec.signal,sessionId);
   const selectedConnection=cloud?cloud.binding:connection();
+  const checkConnection=()=>{
+    exec.signal?.throwIfAborted();
+    const current=cloud?cloud.binding:connection();
+    if(cloud?current!==selectedConnection:JSON.stringify(current)!==JSON.stringify(selectedConnection))throw new Error('科研服务连接已变化，请重新请求审批。');
+    return current;
+  };
   let before,protocol;
   if(op==='task_open') {
     const task=await read('task_get',{id:args.id});
@@ -64,8 +71,14 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
     before={task,method:await read('method_get',{id:task.methodId,version:task.methodVersion})};
   } else if(op.startsWith('record_')) {
     before=await read('record_get',{id:args.id});
+    if(op==='record_submit') {
+      protocol=await read('protocol_get',{id:before.protocolId,version:before.protocolVersion});
+      // Match the original human request, including the checks added by this continuation.
+      const submitted=protocolChecks(protocol).length&&args.confirmChecks===undefined?{...args,confirmChecks:true}:args;
+      const prior=await read('record_submit_result',submitted);
+      if(prior.found){checkConnection();return prior.result;}
+    }
     if(before.revision!==args.expectedRevision)throw new Error('记录已更新，请读取最新版本后再请求审批。');
-    if(op==='record_submit')protocol=await read('protocol_get',{id:before.protocolId,version:before.protocolVersion});
   } else if(op==='engine_package_review') {
     before=await read('engine_package_get',{id:args.id,version:args.version});
     if(before.sha256!==args.sha256)throw new Error('执行包指纹已变化，请重新审阅。');
@@ -78,7 +91,7 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
   const fingerprint=createHash('sha256').update(JSON.stringify({op,args,before})).digest('hex');
   const name={task_open:'启用研究方法并准备实验',evidence_review:'复核研究证据',roadmap_select:'选择研究路线',lab_skill_publish:'发布或撤回研究方法',engine_package_review:'批准或撤销协议执行',record_submit:'确认检查项并提交记录',record_reopen:'重新打开记录',record_archive:'归档记录',record_restore:'恢复记录'}[op];
   const approval=name.startsWith('确认')?name:'确认'+name;
-  const checks=protocol?parseAimdProtocol(protocol.content).checks.map(x=>({id:x.id,message:x.checked_message || x.id})):[];
+  const checks=protocol?protocolChecks(protocol):[];
   const detail=reviewDetail(op,args,before,checks,name);
   if(detail.length>60000)throw new Error('待审内容较大，请先在右侧栏审阅并缩小本次操作；未执行审批。');
   exec.signal?.throwIfAborted();
@@ -87,8 +100,7 @@ export async function reviewInConversation(ctx,op,args,exec,sessionId) {
   const answer=result.answers?.find(x=>x.id==='research-review-'+fingerprint);
   if(answer?.selected?.length!==1||answer.selected[0]!==approval||answer.custom)return {executed:false,status:'declined',message:'用户未明确确认，本次审批未执行。'};
   // Ask() verifies the exact live root and an authenticated UI answer; do not accept a model-supplied answer field.
-  const c=cloud?cloud.binding:connection();
-  if(cloud?c!==selectedConnection:JSON.stringify(c)!==JSON.stringify(selectedConnection))throw new Error('科研服务连接已变化，请重新请求审批。');
+  const c=checkConnection();
   const human=async(name,input)=>{
     exec.signal?.throwIfAborted();
     if(cloud)return cloud.reviewedCall(name,input,exec);

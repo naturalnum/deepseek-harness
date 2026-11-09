@@ -35,6 +35,8 @@ The `/types` entry exposes `ServicePreviewIdentity` with the original branded al
 
 Root may explicitly select `commands.additionalTools`, a unique list of at most thirty-two lowercase native tool names, and append the same names in order to `allowedTools`. Built-in tool names cannot be repeated or enabled through this field. Omission preserves the original list. Selection only allows the original native dispatch to retain a scope; actual Agent, Session, Workspace, account generation, confinement and managed execution checks still apply. It creates no HTTP execution route.
 
+Native `glob` and `grep` require that explicit selection, search capture limits within `commands.commandLimits.maxTailBytes`, and the platform-specific packaged ripgrep executable at its resolved absolute path inside the execution environment. Root may supply that immutable executable through a readonly SDK sandbox bind; the original subprocess provider still runs it within the Session's file policy. Host installation alone does not supply the remote executable.
+
 ### Configuration and failure
 
 The deployed closed recipe requires explicit closed mode and an empty capability declaration. The [schema](src/config.ts) owns the accepted values; declarations never verify execution capabilities.

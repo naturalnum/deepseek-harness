@@ -48,6 +48,61 @@ async function fixture(accountId:string,overrides:Partial<Cloud.Config>={},proje
   return {f,graph,agent,api,tool}
 }
 
+it('replays a human-confirmed submission from its original request owner without new approval or cross-scope access',async()=>{
+  const a=await fixture('research-submit-replay-a',{},undefined,true),b=await fixture('research-submit-replay-b',{},undefined,true)
+  expect(await a.tool('research_protocol_put',{id:'replay',version:'1',content:'# Synthetic replay\n{{var|value: int, owner="agent"}}\n{{check|verified, checked_message="Verify synthetic data"}}',requestId:'replay-protocol'})).toMatchObject({isError:false})
+  const made=await a.tool('research_record_create',{protocolId:'replay',protocolVersion:'1',requestId:'replay-record'})
+  if(made.isError)throw new Error('Record fixture failed')
+  const record=made.value as {id:string;revision:number;run:Record<string,unknown>}
+  const saved=await a.tool('research_record_update',{id:record.id,expectedRevision:record.revision,requestId:'replay-data',run:{...record.run,status:'running',values:{value:42}}})
+  if(saved.isError)throw new Error('Draft fixture failed')
+  const draft=saved.value as {id:string;revision:number}
+  const args={id:draft.id,expectedRevision:draft.revision,requestId:'exact-submission'}
+  let asked=0,approve=false
+  const release=a.agent.ctx.on('user-questions/request',async request=>{
+    asked++
+    const question=request.questions[0]
+    if(question?.options?.length!==2)throw new Error('Native question absent')
+    return {answers:[{id:question.id,selected:[question.options[approve?1:0]!.label]}]}
+  })
+  try {
+    expect(await a.tool('research_record_submit_result',{...args,confirmChecks:true})).toMatchObject({isError:false,value:{found:false}})
+    expect(await a.tool('research_record_submit',args)).toMatchObject({isError:false,value:{executed:false,status:'declined'}})
+    expect(asked).toBe(1)
+    expect(await a.tool('research_record_submit_result',{...args,confirmChecks:true})).toMatchObject({isError:false,value:{found:false}})
+    expect(await a.api('record_get',{id:record.id})).toEqual(saved.value)
+    approve=true
+    const submitted=await a.tool('research_record_submit',args)
+    expect(submitted).toMatchObject({isError:false,value:{status:'submitted',revision:draft.revision+1,run:{checks:{verified:true}}}})
+    if(submitted.isError)throw new Error('Submission fixture failed')
+    expect(asked).toBe(2)
+    expect(await a.tool('research_record_submit',args)).toMatchObject({isError:false,value:submitted.value})
+    expect(asked).toBe(2)
+    expect(await a.api('record_submit_result',{...args,confirmChecks:true})).toEqual({found:true,result:submitted.value})
+    for(const changed of [{...args,expectedRevision:draft.revision+1},{...args,confirmChecks:false}]) {
+      expect(await a.tool('research_record_submit',changed)).toMatchObject({isError:true})
+    }
+    await expect(a.api('record_submit_result',{...args,expectedRevision:draft.revision+1,confirmChecks:true})).rejects.toMatchObject({code:'research/conflict'})
+    expect(await a.tool('research_record_submit',{...args,requestId:'new-stale-submission'})).toMatchObject({isError:true})
+    expect(asked).toBe(2)
+    expect(await a.api('record_get',{id:record.id})).toEqual(submitted.value)
+    expect(await b.tool('research_record_submit',args)).toMatchObject({isError:true})
+    expect(await b.tool('research_record_submit_result',{...args,confirmChecks:true})).toMatchObject({isError:true})
+    await expect(b.graph.ctx.typertGateway.invoke({namespace:'cloudResearch',method:'action',args:{request:{sessionId:a.agent.session.id,op:'record_submit_result',args:{...args,confirmChecks:true}}},peer:b.graph.localePeer})).rejects.toBeDefined()
+    const other=await a.graph.ctx.sessionController.create({}),otherAgent=a.graph.ctx.agents.get(other.sessionId)
+    if(otherAgent===undefined)throw new Error('Second Session Agent absent')
+    for(const name of ['research_record_submit','research_record_submit_result'])expect(await a.graph.ctx.tools.execute({callId:ToolCallId(randomUUID()),name,arguments:args,agent:otherAgent,signal:new AbortController().signal})).toMatchObject({isError:true})
+    expect(asked).toBe(2)
+    const reopened=await a.tool('research_record_reopen',{id:record.id,expectedRevision:draft.revision+1,reason:'Synthetic later edit',requestId:'replay-reopen'})
+    expect(reopened).toMatchObject({isError:false,value:{status:'draft',revision:draft.revision+2}})
+    if(reopened.isError)throw new Error('Later edit fixture failed')
+    expect(asked).toBe(3)
+    expect(await a.tool('research_record_submit',args)).toMatchObject({isError:false,value:submitted.value})
+    expect(await a.api('record_get',{id:record.id})).toEqual(reopened.value)
+    expect(asked).toBe(3)
+  } finally { release() }
+})
+
 it('presents only saved versions in native research approval questions without changing their exact snapshot binding',async()=>{
   const a=await fixture('research-review-copy',{},undefined,true)
   const created=await a.tool('research_task_create',{objective:'Synthetic approval copy check',basis:'synthetic',methodId:'power-data-quality-interactive',methodVersion:'1.0.0',requestId:'create-review-copy'})

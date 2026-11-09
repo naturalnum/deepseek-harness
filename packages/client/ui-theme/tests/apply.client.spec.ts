@@ -337,6 +337,10 @@ describe('ui-theme apply', () => {
     expect(b.slots.entries(SLOT).find(e => e.component === AppearanceRow)!.locale).toBe(SETTINGS_NS)
 
     face.setTheme('system')
+    expect(theme.getTheme().preference).toBe('dark')
+    expect(instance.getSnapshot().saveState).toBe('saving')
+    await vi.waitFor(() => { expect(theme.getSaveState()).toBe('saved') })
+    face.setTheme('system')
     expect(theme.getTheme().preference).toBe('system')
     expect(instance.getSnapshot().preference).toBe('system')
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(2) })

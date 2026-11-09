@@ -76,7 +76,7 @@ interface Pending {
   readonly signal: AbortSignal
   running: boolean
 }
-const reads = new Set(['state','protocol_get','record_get','record_export','workspace_export','attachment_get','local_search',
+const reads = new Set(['state','protocol_get','record_get','record_submit_result','record_export','workspace_export','attachment_get','local_search',
   'engine_status','engine_packages','engine_package_get','engine_runs','engine_run_get','engine_cancel','document_status','document_text',
   'science_state','science_export','lab_skills','task_get','tasks','method_catalog','method_get','history_list'])
 function fail(message: string): never { throw new CloudApiError('cloud/account-unavailable',message) }

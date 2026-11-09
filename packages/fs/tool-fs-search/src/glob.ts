@@ -27,8 +27,8 @@ export const GLOB_MAX_RESULTS = 100
 /**
  * Directory names ripgrep must never descend into for a discovery listing: VCS
  * metadata stores. `--no-ignore --hidden` would otherwise surface them in every
- * broad search. Each name is excluded with TWO negated `--glob`s (see
- * {@link buildGlobCommand}): an any-depth directory glob that matches — and
+ * broad search. Two negated `--glob`s group these names with brace alternatives
+ * (see {@link buildGlobCommand}): an any-depth directory glob that matches — and
  * prunes — the directory during traversal, and a contents glob that still
  * excludes the internals when the search root itself is at or inside the
  * directory (an explicit `path` of `.git` or `sub/.git`), where the prune glob
@@ -87,20 +87,19 @@ export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInp
  * @returns the complete ripgrep argument vector (excluding the binary itself).
  */
 export function buildGlobCommand(input: GlobInput): string[] {
+  const vcsNames = `{${GLOB_VCS_EXCLUDES.join(',')}}`
   const parts = [
     '--files',
     `--glob=${input.pattern}`,
     '--sort=modified',
     '--no-ignore',
     '--hidden',
-    // Two negated globs per VCS name: the bare form prunes the directory
+    // The bare form prunes each VCS directory
     // during traversal; the /** form still excludes the contents when the
     // search root is AT or INSIDE the directory (where the bare form,
     // matched against root-prefixed paths, never fires).
-    ...GLOB_VCS_EXCLUDES.flatMap(name => [
-      `--glob=!**/${name}`,
-      `--glob=!**/${name}/**`,
-    ]),
+    `--glob=!**/${vcsNames}`,
+    `--glob=!**/${vcsNames}/**`,
   ]
   if (input.path !== undefined) parts.push('--', input.path)
   return parts

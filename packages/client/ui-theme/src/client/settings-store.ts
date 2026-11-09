@@ -4,19 +4,21 @@
  * row components read via props.useStore.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import { DEFAULT_FONT_SIZES, type FontFamilies, type FontSizes, type ThemePreference } from '../theme-settings.ts'
+import { DEFAULT_FONT_SIZES, type FontFamilies, type FontSizes, type ThemePreference, type ThemeSaveState } from '../theme-settings.ts'
 
 /** Store state mirrored from the theme snapshot. */
 export interface AppearanceRowState {
-  /** Persisted preference (selection state reads this, never the resolved active theme). */
+  /** Current preference or pending preview, never the resolved active theme. */
   preference: ThemePreference
+  /** Host availability and the original Runtime's write settlement. */
+  saveState: ThemeSaveState
   /** Service revision; -1 until first sync so revision 0 lands as a change. */
   revision: number
 }
 
 /** Declared action shape giving the exported factory a stable return type. */
 type AppearanceRowActions = {
-  sync: (draft: AppearanceRowState, preference: ThemePreference, revision: number) => void
+  sync: (draft: AppearanceRowState, preference: ThemePreference, saveState: ThemeSaveState, revision: number) => void
 }
 
 /**
@@ -25,11 +27,12 @@ type AppearanceRowActions = {
  */
 export function createAppearanceRowStore(): EngineStoreHandle<AppearanceRowState, AppearanceRowActions> {
   return defineStore({
-    init: (): AppearanceRowState => ({ preference: 'system', revision: -1 }),
+    init: (): AppearanceRowState => ({ preference: 'system', saveState: 'loading', revision: -1 }),
     actions: {
-      sync: (d, preference: ThemePreference, revision: number) => {
+      sync: (d, preference: ThemePreference, saveState: ThemeSaveState, revision: number) => {
         if (revision <= d.revision) return
         d.preference = preference
+        d.saveState = saveState
         d.revision = revision
       },
     },

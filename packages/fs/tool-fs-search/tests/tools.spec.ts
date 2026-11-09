@@ -335,31 +335,29 @@ describe('config validation', () => {
 })
 
 describe('command construction (plain argv)', () => {
-  it('glob: fixed rg --files argv with the pattern and paired VCS excludes', () => {
+  it('glob: fixed rg --files argv with the pattern and grouped VCS excludes', () => {
     expect(buildGlobCommand({ pattern: '**/*.ts' })).toEqual([
       '--files',
       '--glob=**/*.ts',
       '--sort=modified',
       '--no-ignore',
       '--hidden',
-      '--glob=!**/.git', '--glob=!**/.git/**',
-      '--glob=!**/.svn', '--glob=!**/.svn/**',
-      '--glob=!**/.hg', '--glob=!**/.hg/**',
-      '--glob=!**/.bzr', '--glob=!**/.bzr/**',
-      '--glob=!**/.jj', '--glob=!**/.jj/**',
-      '--glob=!**/.sl', '--glob=!**/.sl/**',
+      '--glob=!**/{.git,.svn,.hg,.bzr,.jj,.sl}',
+      '--glob=!**/{.git,.svn,.hg,.bzr,.jj,.sl}/**',
     ])
   })
 
   it('glob: the search root rides behind -- as a plain element', () => {
     expect(buildGlobCommand({ pattern: '*.md', path: 'docs dir' })).toEqual(['--files', '--glob=*.md', '--sort=modified', '--no-ignore', '--hidden',
-      '--glob=!**/.git', '--glob=!**/.git/**',
-      '--glob=!**/.svn', '--glob=!**/.svn/**',
-      '--glob=!**/.hg', '--glob=!**/.hg/**',
-      '--glob=!**/.bzr', '--glob=!**/.bzr/**',
-      '--glob=!**/.jj', '--glob=!**/.jj/**',
-      '--glob=!**/.sl', '--glob=!**/.sl/**',
+      '--glob=!**/{.git,.svn,.hg,.bzr,.jj,.sl}',
+      '--glob=!**/{.git,.svn,.hg,.bzr,.jj,.sl}/**',
       '--', 'docs dir'])
+  })
+
+  it('glob: a complete invocation with an explicit path fits a 16-entry argv provider', () => {
+    const argv = [rgPath, '--no-config', ...buildGlobCommand({ pattern: '**/*', path: '-项目/资料' })]
+    expect(argv).toHaveLength(11)
+    expect(argv.length).toBeLessThanOrEqual(16)
   })
 
   it('grep: fixed rg --json argv with the pattern in --regexp= form', () => {
@@ -758,12 +756,8 @@ describe('glob results', () => {
     const result = await call(ctx, 'glob', { pattern: '*.ts', path: 'sub' })
     expect(result.isError).toBe(false)
     expect(subprocess.spawns[0]?.argv).toEqual([rgPath, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--no-ignore', '--hidden',
-      '--glob=!**/.git', '--glob=!**/.git/**',
-      '--glob=!**/.svn', '--glob=!**/.svn/**',
-      '--glob=!**/.hg', '--glob=!**/.hg/**',
-      '--glob=!**/.bzr', '--glob=!**/.bzr/**',
-      '--glob=!**/.jj', '--glob=!**/.jj/**',
-      '--glob=!**/.sl', '--glob=!**/.sl/**',
+      '--glob=!**/{.git,.svn,.hg,.bzr,.jj,.sl}',
+      '--glob=!**/{.git,.svn,.hg,.bzr,.jj,.sl}/**',
       '--', 'sub'])
   })
 

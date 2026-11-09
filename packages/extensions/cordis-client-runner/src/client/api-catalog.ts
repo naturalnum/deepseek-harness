@@ -467,8 +467,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'theme/change',
     mode: 'emit',
     signature: '\'theme/change\'(snapshot: ThemeSnapshot): void',
-    summary: 'Theme state changed (preference switched, registry updated, or the OS color scheme changed while the preference is `system`).',
-    description: 'Theme state changed (preference switched, registry updated, or the OS color scheme changed while the preference is `system`).',
+    summary: 'Theme presentation or appearance-write feedback changed (including OS color scheme changes while the preference is `system`).',
+    description: 'Theme presentation or appearance-write feedback changed (including OS color scheme changes while the preference is `system`).',
     parameters: [{ name: 'snapshot', description: 'Current immutable theme snapshot.' }],
   },
 ]

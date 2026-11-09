@@ -41,6 +41,11 @@ export const contracts = {
       "Read a record, current revision and audit history before editing.",
     shape: { id },
   },
+  record_submit_result: {
+    description:
+      "Read the original persisted result of an exact human-confirmed submission in this conversation. Missing requests return found:false; changed arguments conflict. This read never submits or approves a record.",
+    shape: { ...record, confirmChecks: z.boolean().optional() },
+  },
   record_bind_engine: {
     description: 'Human-only: bind a draft record to an approved Airalogy protocol package with identical AIMD. Automatic calculations then run on record_update and record the input and calculation-package hashes.',
     shape: {...record,packageId:id,version:id},

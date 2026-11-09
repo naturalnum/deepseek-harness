@@ -146,24 +146,32 @@ export function openStore(directory, options = {}) {
         "Revision changed; reload and merge. Current revision " + r.revision,
       );
   }
-  function mutate(op, a, actor, fn, sessionId) {
+  function requestIdentity(op, a, actor, sessionId) {
     text(a.requestId, "requestId");
-    const key = (sessionId ? JSON.stringify([sessionId, actor]) : actor) + ":" + a.requestId,
-      hash = digest(JSON.stringify({ op, a, actor }));
+    return {key:(sessionId ? JSON.stringify([sessionId, actor]) : actor) + ":" + a.requestId,
+      hash:digest(JSON.stringify({ op, a, actor }))};
+  }
+  // The same persisted request row serves mutation retries and read-only receipt lookup.
+  function completedRequest({key, hash}) {
+    const prior = db.prepare("SELECT * FROM requests WHERE id=?").get(key);
+    if (!prior) return {found:false};
+    if (prior.hash !== hash) fail("CONFLICT", "Idempotency key reused with different request");
+    return {found:true, result:JSON.parse(prior.response)};
+  }
+  function mutate(op, a, actor, fn, sessionId) {
+    const identity = requestIdentity(op, a, actor, sessionId);
     db.exec("BEGIN IMMEDIATE");
     try {
-      const prior = db.prepare("SELECT * FROM requests WHERE id=?").get(key);
-      if (prior) {
-        if (prior.hash !== hash)
-          fail("CONFLICT", "Idempotency key reused with different request");
+      const prior = completedRequest(identity);
+      if (prior.found) {
         db.exec("COMMIT");
-        return JSON.parse(prior.response);
+        return prior.result;
       }
       const s = read(),
         result = fn(s);
       const response = JSON.stringify(result);
       db.prepare("UPDATE state SET body=? WHERE id=1").run(JSON.stringify(s));
-      db.prepare("INSERT INTO requests VALUES(?,?,?)").run(key, hash, response);
+      db.prepare("INSERT INTO requests VALUES(?,?,?)").run(identity.key, identity.hash, response);
       db.exec("COMMIT");
       return JSON.parse(response);
     } catch (e) {
@@ -325,6 +333,7 @@ export function openStore(directory, options = {}) {
     }
     if (op === "protocol_get") return protocol(read(), a.id, a.version, sessionId);
     if (op === "record_get") return record(read(), a.id);
+    if (op === "record_submit_result") return completedRequest(requestIdentity("record_submit", a, "human", sessionId));
     if (op === "attachment_get") {
       if (!hasAttachment(a.reference, sessionId)) fail("NOT_FOUND", "Attachment missing in this conversation");
       const item = db.prepare("SELECT * FROM attachments WHERE reference=?").get(a.reference);
@@ -405,9 +414,8 @@ export function openStore(directory, options = {}) {
     let prepared,calculationBinding,calculated;
     if(['record_bind_engine','record_update'].includes(op)){
       // Return retries before starting another container; the transaction checks again at commit.
-      const key=(sessionId?JSON.stringify([sessionId,actor]):actor)+':'+a.requestId;
-      const cached=db.prepare('SELECT * FROM requests WHERE id=?').get(key);
-      if(cached){if(cached.hash!==digest(JSON.stringify({op,a,actor})))fail('CONFLICT','Idempotency key reused with different request');return JSON.parse(cached.response);}
+      const cached=completedRequest(requestIdentity(op,a,actor,sessionId));
+      if(cached.found)return cached.result;
       const r=record(scoped(read()),a.id),p=protocol(read(),r.protocolId,r.protocolVersion,sessionId);
       checkRevision(r,a);
       if((op==='record_bind_engine' || r.calculationBinding) && (r.status!=='draft' || r.archived))fail('CONFLICT','Reopen：只有未归档的草稿可以修改。');

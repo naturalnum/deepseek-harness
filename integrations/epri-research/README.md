@@ -11,6 +11,8 @@ This plugin adds a research preset, tools, skills and a workbench to a Harness w
 
 The independent Cloud adapter and deployment requirements are documented in [Cloud integration](CLOUD.md). Cloud mode keeps this package and its three research, Airalogy and workbench plugins, and reuses the existing account login, native Sessions, sidebar, files and managed execution. It does not start the local research HTTP server or accept its global tokens.
 
+Retrying an already confirmed record submission with the same request ID and exact submitted parameters returns its original saved result in the same account and research conversation, without another submission or approval. A changed request conflicts; a new request for an old revision is rejected. If no completed result exists, including after a declined question, submission still requires the original native human confirmation. The default research tool catalog includes `research_record_submit_result` for this read-only lookup; it cannot approve or submit a record.
+
 ## Run locally
 
 Install Node.js 24.14 or newer and make npm and pnpm available on PATH. For a dedicated Harness home and research data directory, set `DS_SUITE_HOME` and `DS_RESEARCH_DATA_DIR` before installation and use the same settings at launch. From the repository root, run the following commands.

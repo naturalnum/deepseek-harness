@@ -45,8 +45,24 @@
   cursor: pointer;
 }
 
-.themeCube:hover:not(.selected) {
+.themeCube:hover:not(.selected):not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.themeCube:disabled {
+  cursor: not-allowed;
+}
+
+.feedback {
+  min-height: 40px;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.failure {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* Selected cube: #F5F6F7 fill + #ADB2B8 border (static token — the bluish-400

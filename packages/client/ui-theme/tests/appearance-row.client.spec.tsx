@@ -9,6 +9,8 @@ import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-te
 import { AppearanceRow } from '../src/client/AppearanceRow.tsx'
 import type { AppearanceRowComponentProps } from '../src/client/AppearanceRow.tsx'
 import { createAppearanceRowStore } from '../src/client/settings-store.ts'
+import { en } from '../src/client/locales.ts'
+import type { ThemeSaveState } from '../src/theme-settings.ts'
 import type { ThemePreference } from '../src/client/index.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
@@ -17,12 +19,7 @@ const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({
 
 afterEach(cleanup)
 
-const COPY: Record<string, string> = {
-  'appearance.title': 'Appearance',
-  'appearance.light': 'Light',
-  'appearance.dark': 'Dark',
-  'appearance.system': 'System',
-}
+const COPY: Record<string, string> = { ...en }
 
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
@@ -40,10 +37,10 @@ type AttentionSnapshot = Parameters<Parameters<AppearanceRowComponentProps['useS
 const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: AppearanceRowComponentProps['useSessionStatus'] = selector => selector(noAttention)
 
-function mount(preference: ThemePreference = 'system') {
+function mount(preference: ThemePreference = 'system', saveState: ThemeSaveState = 'idle') {
   // Real store instance — the sanctioned zero-machinery path for tests.
   const store = createAppearanceRowStore().create()
-  store.actions.sync(preference, 0)
+  store.actions.sync(preference, saveState, 0)
   const setTheme = vi.fn()
   const props: AppearanceRowComponentProps = {
     useSessions: emptySessions(),
@@ -78,8 +75,36 @@ describe('AppearanceRow', () => {
     expect(b.setTheme).toHaveBeenCalledWith('light')
     // No store write yet: selection is unchanged.
     expect(pressed(/Dark/)).toBe('true')
-    act(() => { b.store.actions.sync('light', 1) })
+    act(() => { b.store.actions.sync('light', 'idle', 1) })
     expect(pressed(/Light/)).toBe('true')
     expect(pressed(/Dark/)).toBe('false')
   })
+
+  it.each(['loading', 'readonly', 'saving'] as const)('disables theme choices while %s and explains the state', (state) => {
+    const b = mount('system', state)
+    const button = screen.getByRole('button', { name: 'Dark' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(button)
+    expect(b.setTheme).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').textContent).toBe(en[`save.${state}`])
+  })
+
+  it('keeps a pending preview distinct from Host-confirmed success', () => {
+    const b = mount('dark')
+    act(() => { b.store.actions.sync('system', 'saving', 1) })
+    expect(pressed(/System/)).toBe('true')
+    expect(screen.getByRole('status').textContent).toBe(en['save.saving'])
+    expect(screen.queryByText(en['save.saved'])).toBeNull()
+    act(() => { b.store.actions.sync('system', 'saved', 2) })
+    expect(screen.getByRole('status').textContent).toBe(en['save.saved'])
+    expect(screen.getByRole('button', { name: 'Dark' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it.each(['refused', 'unknown'] as const)('reports %s without claiming that the write was saved', (state) => {
+    mount('dark', state)
+    expect(screen.getByRole('alert').textContent).toBe(en[`save.${state}`])
+    expect(screen.queryByText(en['save.saved'])).toBeNull()
+    expect(screen.getByRole('button', { name: 'System' }).hasAttribute('disabled')).toBe(state === 'unknown')
+  })
+
 })

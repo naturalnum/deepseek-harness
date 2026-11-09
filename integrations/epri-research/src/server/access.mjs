@@ -3,7 +3,7 @@ import {promisify} from 'node:util';
 import {z} from 'zod';
 const scrypt=promisify(derive),hash=value=>createHash('sha256').update(value).digest('hex');
 const text=z.string().trim().min(1).max(200),password=z.string().min(12).max(200),roles=['viewer','editor','reviewer','owner'];
-const readOps=new Set(['state','protocol_get','record_get','attachment_get','record_export','workspace_export','science_state','science_revision','science_export','lab_skills','project_git_state','project_git_commit','project_git_working','engine_packages','engine_package_get','engine_runs','engine_run_get','engine_status','document_status','document_text','local_search','literature_search','archive_inspect','method_catalog','method_get','tasks','task_get']);
+const readOps=new Set(['state','protocol_get','record_get','record_submit_result','attachment_get','record_export','workspace_export','science_state','science_revision','science_export','lab_skills','project_git_state','project_git_commit','project_git_working','engine_packages','engine_package_get','engine_runs','engine_run_get','engine_status','document_status','document_text','local_search','literature_search','archive_inspect','method_catalog','method_get','tasks','task_get']);
 const reviewOps=new Set(['evidence_review','record_submit','record_reopen','record_archive','record_restore','lab_skill_publish','roadmap_select','engine_package_review','task_open']);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 export const localAdministrator={id:'local-administrator',username:'本机管理员',admin:true};

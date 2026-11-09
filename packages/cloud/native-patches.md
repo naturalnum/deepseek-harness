@@ -52,6 +52,10 @@ Native bundled skill providers accept optional deployment invocation ceilings: `
 
 Gateway `inspectInvocation` exposes its existing strict/SRC resolver as a readonly Host inspection for account capability auditing. It requires an active calling fiber and performs no lookup, authorization or business invocation; normal dispatch retains every original check.
 
+Native [file discovery](../fs/tool-fs-search/src/glob.ts) groups the six VCS names into two exclusion patterns, preserving directory pruning and exclusion when a search starts at or inside VCS metadata. The complete invocation uses 9 argv entries, or 11 with an explicit path, within the original 16-entry Cloud command limit. Execution, output capture and sorting remain Native.
+
+Native [theme settings](../client/ui-theme/README.md) project the original Host write outcome separately from the palette preview. The Appearance row disables choices while loading or saving and after an unconfirmed write; only Host acceptance reports saved. Native settings ordering, persistence and cancellation remain unchanged; refreshing can still cancel an unacknowledged write.
+
 ## Upgrade procedure
 
 1. Record the current clean source revision, deployment revision, chosen upstream revision and trusted configuration before changing anything. Source tests and an old running release are different evidence.

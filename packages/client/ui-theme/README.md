@@ -95,6 +95,8 @@ The `--dsw-alias-turn-trigger-*` tokens provide separate resting and hover backg
 
 The service provides itself immediately with the schema defaults, then loads the `ui-theme` namespace and writes each accepted theme, font-size, or font-family change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. While its own writes are pending, the service ignores refetched sections, so an echo of an earlier write cannot revert a later change; it adopts the durable section once the writes settle. The persistence boundary is owned by the [Host-backed preferences reference](../ui-settings/README.md).
 
+The Appearance row distinguishes the palette preview from Host acceptance through `ctx.theme.getSaveState()`. Theme buttons are disabled while loading or saving, for a read-only scope, and after an unconfirmed write. The row reports saved only after the original Host write returns true; refusal adopts the recovered section and shows a refusal notice, while transport failure shows an unconfirmed notice requiring a page reload before another theme change. Saving feedback asks users to wait before refreshing or leaving; navigation can still cancel a pending request. This feature adds no write queue, automatic retry, or persistence store and leaves Native revisionless writes unchanged.
+
 </details>
 
 -----

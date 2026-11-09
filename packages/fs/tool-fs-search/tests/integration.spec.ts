@@ -11,6 +11,7 @@
 
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,6 +22,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
+import { rgPath } from '@vscode/ripgrep'
+import { buildGlobCommand } from '../src/glob.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -100,6 +103,43 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       // rooted at .git; the paired contents glob keeps the exclusion airtight.
       expect(text(await call('glob', { pattern: '*', path: '.git' }, agent()))).toBe('No files found')
     })
+
+    it('grouped exclusions preserve legacy discoveries across VCS roots and ordinary hidden paths', async () => {
+      const vcsNames = ['.git', '.svn', '.hg', '.bzr', '.jj', '.sl']
+      const roots = [undefined, '.', 'nested', '资料', '-leading']
+      const visible = ['.github/workflows/keep.yml', '.git-backup/keep.txt', 'plain/.dotdir/keep.txt',
+        'ignored-dir/keep.txt', '资料/测试.txt', '-leading/文档.txt']
+      const hidden = vcsNames.flatMap(name => [`${name}/internal/secret.txt`, `nested/${name}/internal/secret.txt`])
+      for (const path of [...visible, ...hidden]) {
+        await mkdir(join(dir, path, '..'), { recursive: true })
+        await writeFile(join(dir, path), path + '\n')
+      }
+      await writeFile(join(dir, '.gitignore'), 'ignored-dir/\n')
+      for (const name of vcsNames) roots.push(name, `${name}/internal`, `nested/${name}`, `nested/${name}/internal`)
+      const run = (argv: string[]): string => {
+        const result = spawnSync(rgPath, ['--no-config', ...argv], { cwd: dir, encoding: 'utf8' })
+        expect(result.error).toBeUndefined()
+        expect([0, 1]).toContain(result.status)
+        expect(result.stderr).toBe('')
+        return result.stdout
+      }
+      for (const path of roots) {
+        for (const pattern of ['**/*', '*']) {
+          const legacy = ['--files', `--glob=${pattern}`, '--sort=modified', '--no-ignore', '--hidden',
+            ...vcsNames.flatMap(name => [`--glob=!**/${name}`, `--glob=!**/${name}/**`])]
+          if (path !== undefined) legacy.push('--', path)
+          const grouped = buildGlobCommand({ pattern, ...path === undefined ? {} : { path } })
+          expect([rgPath, '--no-config', ...grouped].length).toBeLessThanOrEqual(16)
+          expect(run(grouped), `pattern=${pattern}, path=${String(path)}`).toBe(run(legacy))
+        }
+      }
+      const discovered = run(buildGlobCommand({ pattern: '**/*' })).split('\n')
+      for (const path of visible) expect(discovered).toContain(join(...path.split('/')))
+      for (const path of hidden) expect(discovered).not.toContain(join(...path.split('/')))
+      const atVcsRoot = buildGlobCommand({ pattern: '**/*', path: '.git' })
+      expect(run(atVcsRoot)).toBe('')
+      expect(run(atVcsRoot.filter(flag => !flag.endsWith('}/**')))).toContain('secret.txt')
+    }, 15_000)
 
     it('classifies an invalid glob as SEARCH_INVALID_PATTERN', async () => {
       const result = await call('glob', { pattern: '[' }, agent())

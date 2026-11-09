@@ -107,6 +107,8 @@ Node 部署在受支持的 macOS、Linux 与 Windows 目标上获得 `@vscode/ri
 
 每次调用解析打包二进制（`@vscode/ripgrep`，或 pkg 单文件运行时中可执行程序的 `-rg` 伴随文件），前置 `--no-config`，使宿主的 `RIPGREP_CONFIG_PATH` 无法向不受约束的 spawn 注入 `--pre` 预处理器，并把每个模型控制的值作为普通 argv 元素传入——不存在 shell 层，因此不涉及 shell 引号处理。collect 模式预算限制完整 stdout 与 stderr 尾部；lossy stdout 读取以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败，而不是解析静默不完整的流。工具从不读取原始 spill 路径。
 
+glob 命令把 VCS 名称聚合到两条排除模式中：一条剪除目录，另一条在搜索从 VCS 目录本身或内部开始时排除其内容。完整 glob 调用使用 9 个 argv 元素，显式指定路径时使用 11 个，因此可用于上限为 16 个元素的提供方。
+
 ### 两类预算、两类产物
 
 原始 stdout 与 stderr 是内部传输细节；工具始终把完整结果收集到内存中，只有内联页面设有上限。当调用产生超过内联上限的逻辑结果时，尽力而为的 spill 会把完整格式化预览保存到 spill 存储，页面携带其 locator；完整值不会进入模型上下文的分派则跳过 spill。spill 缺失或失败时保留内联页面，并报告完整结果无法保存——绝不会成为错误。收集与 spill 交接位于 `src/search-core.ts` 与 `src/presentation.ts`。
