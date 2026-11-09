@@ -119,7 +119,7 @@ export interface WorkspaceManifest {
 
 /** Loader scopes admitted by the explicit cloud deployment composition. */
 const cloudLoaderEntries: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh-pe-cloud-access': ['root'],
+  '@deepseek-ai/dsh-pe-cloud-access': ['root', 'frontend'],
   '@deepseek-ai/dsh-pe-cloud-runtime': ['root', 'account'],
   '@deepseek-ai/dsh-pe-cloud-api': ['root', 'account'],
   '@deepseek-ai/dsh-pe-cloud-files': ['root', 'account'],

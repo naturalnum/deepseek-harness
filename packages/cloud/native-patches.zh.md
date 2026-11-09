@@ -29,7 +29,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | [工作区操作](../client/ui-workspace/src/client/index.ts) | 可选删除禁用原因沿用原生菜单和确认框。[准备好的 Cloud 页面](pe-cloud-client/src/client/prepared-page.ts) 提供该值，因为 Cloud 未开放工作区删除；未提供时保留原生行为。 |
 | [Agent 预设选择](../preset/agent-preset-registry/src/index.ts)、[原生客户端列表](../client/ui-agent-preset/src/client/settings-store.ts) | [Cloud 预设准入](pe-cloud-api/src/native-presets.ts) 继承原生注册表。默认无操作的选择回调允许在原生队列内及选择记录提交前执行精确账户检查；原生 UI、四种声明及 Settings 默认值选择均沿用原生。选择在原生 FIFO 内使用原有 Agent 维护操作，排队消息须等待重新组合及选择记录结算后才开始执行。 |
 | [Web bootstrap](../../apps/web/src/cloud-web.ts) | 该模块加载前入口归 pe-cloud-client 集成负责，但保留为明确的应用补丁。迁入动态 client 入口需要另一条静态、动态构建路径；在原生提供等价 pre-boot 集成前保留当前启动方式。 |
-| [Frontend](pe-cloud-access/src/frontend.ts)、[field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud 公开页路由和普通字段可编辑策略位于现有 Cloud 包。原生 frontend 与 ConfigField 实现已恢复。Models 使用原生 onboarding；受保护的 Cloud 密钥使用独立手动集成。 |
+| [Frontend](pe-cloud-access/src/frontend.ts)、[field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud 公开页路由和普通字段可编辑策略位于现有 Cloud 包。 工作区检查在该包 Root 入口之外允许精确的 `pe-cloud-access/frontend` 入口。原生 frontend 与 ConfigField 实现已恢复。Models 使用原生 onboarding；受保护的 Cloud 密钥使用独立手动集成。 |
 
 Root 配方封印执行完整的原生计划校验。准入时，原计划以常量时间检查 Entry 和 Fiber 的变更版本及原有身份，并保留 provider 与健康状态审查；直接更新原生 Fiber 时，更新 waterfall 继续之前会撤销封印。Fiber 版本还会检测在 waterfall 前被拒绝的更新尝试。版本检查本身不能证明配置或 ready 状态；它跟踪原生更新 API，不检测对可信 Host 内部对象的直接修改。
 

@@ -40,6 +40,27 @@ describe('cloud Loader publication', () => {
     } })).toEqual(['lib/*.js', 'lib/types/**/*.js', 'lib/types/**/*.d.ts'])
   })
 
+  it('requires the existing access frontend pair without admitting additional scopes', () => {
+    const access = JSON.parse(readFileSync(new URL('../packages/cloud/pe-cloud-access/package.json', import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(checkCloudLoaderEntries(access)).toEqual([])
+    const exports = { ...access.exports }
+    delete exports['./frontend']
+    for (const frontend of [
+      undefined,
+      { types: './lib/types/root.d.ts', default: './lib/frontend.js' },
+      { types: './lib/types/frontend.d.ts', default: './src/frontend.ts' },
+    ]) {
+      expect(checkCloudLoaderEntries({ ...access, exports: { ...exports, './frontend': frontend } })).toEqual([
+        expect.stringContaining('./frontend must export ./lib/types/frontend.d.ts and ./lib/frontend.js'),
+      ])
+    }
+    for (const scope of ['./session', './frontend/private']) {
+      expect(checkCloudLoaderEntries({ ...access, exports: { ...access.exports, [scope]: './lib/frontend.js' } })).toEqual([
+        expect.stringContaining(`unapproved cloud package export ${scope}`),
+      ])
+    }
+  })
+
   it('rejects missing scopes, private source targets and additional Loader scopes', () => {
     expect(checkCloudLoaderEntries({ ...manifest, exports: {} })).toHaveLength(2)
     expect(checkCloudLoaderEntries({ ...manifest, exports: {
