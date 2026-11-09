@@ -428,7 +428,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('button', { name: '选择工作区' })).toBeTruthy()
     expect(b.view.getByRole('textbox')).toBeTruthy()
     act(() => { b.wiring.setDraft('without welcome header') })
-    expect(b.store.store.getSnapshot().draft.text).toBe('without welcome header')
+    expect(b.store.store.getSnapshot().draft).toEqual({ text: 'without welcome header', references: [] })
   })
   it('keeps global header navigation without selecting a Session', () => {
     const b = mount(sessionSnapshotOf(), [], undefined, { sessionId: undefined })
