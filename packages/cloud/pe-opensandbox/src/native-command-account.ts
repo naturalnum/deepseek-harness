@@ -797,7 +797,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     const limits = this.config.pipes
     if (limits === undefined || spec.stdio.stdout !== 'pipe' || spec.stdio.stderr !== 'pipe') throw this.failure()
     // Native PTC tombstones host variables; only remote base keys need to be signed as removals.
-    const base = new Set(['PATH', 'HOME', 'TMPDIR', 'LANG', 'OPENBLAS_NUM_THREADS'])
+    const base = new Set(['PATH', 'HOME', 'TMPDIR', 'LANG', 'OPENBLAS_NUM_THREADS', 'MAX_CONCURRENCY'])
     const env: Record<string, string | null> = {}
     for (const [key, value] of Object.entries(spec.env ?? {})) {
       if (value !== undefined || base.has(key)) env[key] = value ?? null

@@ -107,6 +107,9 @@
         "--setenv",
         "OPENBLAS_NUM_THREADS",
         "1",
+        "--setenv",
+        "MAX_CONCURRENCY",
+        "1",
         "--ro-bind",
         "/",
         "/",
@@ -146,7 +149,7 @@
         "--chdir",
         "/srv/project"
       ],
-      "sha256": "6270459a8238b2a5f451a5d1e69a3786bd3797d343b79d46027cc968877171a0"
+      "sha256": "7b236c2d24b5e24c8596860c796f167f65c9d84aa03763f9687091e1ce9facd3"
     },
     {
       "project": "/srv/\u6848\u4f8b/project",
@@ -181,6 +184,9 @@
         "C.UTF-8",
         "--setenv",
         "OPENBLAS_NUM_THREADS",
+        "1",
+        "--setenv",
+        "MAX_CONCURRENCY",
         "1",
         "--ro-bind",
         "/",
@@ -221,7 +227,7 @@
         "--chdir",
         "/srv/\u6848\u4f8b/project"
       ],
-      "sha256": "d83e88ff055698a84877786a4ef5aee81b9777b4949873fceb160d05a089a148"
+      "sha256": "bf1cf8a0bc1c64d87cb27ff65c3d0018a99de6d7d6c81d28d9eabedd693de801"
     }
   ]
 }

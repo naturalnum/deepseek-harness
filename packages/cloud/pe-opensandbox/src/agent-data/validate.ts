@@ -18,7 +18,7 @@ export function worldArgv(project: string): readonly string[] {
     '--die-with-parent', '--new-session', '--cap-drop', 'ALL', '--clearenv',
     '--setenv', 'PATH', ENV + '/venv/bin:/usr/local/bin:/usr/bin:/bin', '--setenv', 'HOME', ENV + '/home',
     '--setenv', 'TMPDIR', ENV + '/tmp', '--setenv', 'LANG', 'C.UTF-8',
-    '--setenv', 'OPENBLAS_NUM_THREADS', '1',
+    '--setenv', 'OPENBLAS_NUM_THREADS', '1', '--setenv', 'MAX_CONCURRENCY', '1',
     '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev', '--remount-ro', '/dev',
     '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',
     '--bind', project, project, '--ro-bind', ENV, ENV, '--ro-bind', ENV + '/home', ENV + '/home',

@@ -4,7 +4,7 @@ export const PROTOCOL = 's6-stream/2-native-pipes-pty-v1' as const
 /** Fixed private authentication header; its value is the original 64-hex token without a scheme prefix. */
 export const AGENT_AUTH_HEADER = 'x-pe-execution-token' as const
 /** Required frozen Python runtime source digest; never learned from a handshake response. */
-export const AGENT_SOURCE_SHA256 = 'a00ec49e378ae84127e2fb333e299f77dffcfd4b768b498dce867dda8850adab'
+export const AGENT_SOURCE_SHA256 = '11d8c1209bcef072ff69af177ead38b626dcd2f4616e4ac4e71ca4c8771f33d8'
 /** Required fixed bwrap binary digest verified by the Python owner. */
 export const BWRAP_SHA256 = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 /** Finite core slice: residence is absolute; four records/300s do not qualify full S4 or promise four complete runs. */

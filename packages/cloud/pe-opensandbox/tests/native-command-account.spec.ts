@@ -105,6 +105,31 @@ it('rejects unsupported native input, outside cwd and the complete encoded frame
   f.owner.calls.release(call.token)
 })
 
+it('preserves base-variable removals and explicit overrides in Native pipe preparation', async () => {
+  const f = fixture({ allowedTools: ['run_code'], pipes: { controlInputBytes: 131072, controlOutputBytes: 131072 } })
+  const call = { ...f.exec(), name: 'run_code' }, base = f.makeChannel()
+  base.channel.prepare.mockImplementation(async (spec) => {
+    expect(spec).toMatchObject({ executionKind: 'pipes', env: { MAX_CONCURRENCY: null, OPENBLAS_NUM_THREADS: '2' } })
+    if ('env' in spec) expect(spec.env).not.toHaveProperty('UNRELATED_HOST_VARIABLE')
+    return cancelled()
+  })
+  const channel = Object.assign(base.channel, {
+    async attach() { throw new Error('A closed preparation cannot attach.') },
+    whenLocallySettled: () => Promise.resolve(),
+  })
+  f.setFactory(() => ({ ...base, channel }))
+  await f.owner.calls.run(call, async () => {
+    const op = f.create({ ...f.spec,
+      env: { MAX_CONCURRENCY: undefined, OPENBLAS_NUM_THREADS: '2', UNRELATED_HOST_VARIABLE: undefined },
+      stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
+    op.publish(); op.begin(); await op.whenEmpty
+    expect(base.channel.prepare).toHaveBeenCalledTimes(1)
+    expect(base.channel.commit).not.toHaveBeenCalled()
+    return result
+  })
+  f.owner.calls.release(call.token)
+})
+
 it.each([undefined, 2])('reserves the longest Session policy frame before Root allocation (skill copies %s)', async (copies) => {
   const f = fixture({ enforceSessionFilePolicy: true, ...(copies === undefined ? {} : { maxSkillCopiesPerOperation: copies }) })
   const call = f.exec(), base = { argv: ['/bin/bash', '-c', ''], cwd: '/project', stdin: { mode: 'ignore' as const } }
