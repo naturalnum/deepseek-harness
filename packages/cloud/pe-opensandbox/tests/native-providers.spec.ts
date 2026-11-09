@@ -10,6 +10,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 function fixture(holdAllocation = false) {
   const ctx = new Context(), lifetime = new AbortController(), scopeLifetime = new AbortController()
+  const invocation = new AbortController()
   const operations = new Set<ManagedCommandOperation>()
   const snapshot: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
     ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined,
@@ -31,7 +32,8 @@ function fixture(holdAllocation = false) {
   const port: NativeExecutionProviderPort = { assertCurrent() { lifetime.signal.throwIfAborted() },
     projectRoot: () => '/project',
     create: vi.fn<NativeExecutionProviderPort['create']>((_caller, spec) => {
-      const operation = new ManagedCommandOperation(spec, { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512,
+      const input = { ...spec, signal: AbortSignal.any([invocation.signal, ...(spec.signal === undefined ? [] : [spec.signal])]) }
+      const operation = new ManagedCommandOperation(input, { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512,
         maxStdinBytes: 4096, maxTailBytes: 32, maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2,
         maxLifetimeMs: 1000, stopWaitMs: 100 }, { lifetime: scopeLifetime.signal, acquire: allocations,
         assertCurrent() { lifetime.signal.throwIfAborted() }, unknown() { /* Actual remote cleanup belongs to Root in production. */ },
@@ -58,7 +60,7 @@ function fixture(holdAllocation = false) {
     for (const operation of owned) operation.acknowledgePhysicalStop()
     await Promise.all(owned.map(operation => operation.whenEmpty)); await ctx.fiber.dispose()
   })
-  return { ctx, port, shell, lifetime, scopeLifetime, operations, allocations, channel }
+  return { ctx, port, shell, lifetime, scopeLifetime, invocation, operations, allocations, channel }
 }
 
 it('runs native foreground Shell through the original prepared command controller and fixed literal Bash argv', async () => {
@@ -88,12 +90,12 @@ it('keeps completed Shell facts when the caller cancels before its first result 
   await expect(handle.result()).resolves.toMatchObject({ exitCode: 0, timedOut: false, aborted: false })
 })
 
-it.each(['caller', 'scope'] as const)('keeps a %s-cancelled unsubmitted command available for actual cleanup without reporting a provider failure', async (source) => {
+it.each(['caller', 'invocation', 'scope'] as const)('keeps a %s-cancelled unsubmitted command available for actual cleanup without reporting a provider failure', async (source) => {
   const f = fixture(), caller = new AbortController(), commit = Promise.withResolvers<CommandSnapshot>()
   f.channel.commit.mockImplementation(() => commit.promise)
   const handle = await f.shell.execute(f.shell.resolve({ command: 'cancel before submission', signal: caller.signal, onExpiry: 'none' }))
   await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledOnce() })
-  const cancellation = source === 'caller' ? caller : f.scopeLifetime
+  const cancellation = source === 'caller' ? caller : source === 'invocation' ? f.invocation : f.scopeLifetime
   cancellation.abort({ kind: 'user' })
   let settled = false
   void handle.done.then(() => { settled = true })
@@ -104,7 +106,7 @@ it.each(['caller', 'scope'] as const)('keeps a %s-cancelled unsubmitted command 
     stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true },
     stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } })
   await handle.done
-  if (source === 'caller') {
+  if (source !== 'scope') {
     await expect(handle.result()).resolves.toMatchObject({ aborted: true, timedOut: false, exitCode: null })
   } else {
     expect(f.operations.size).toBe(0)
