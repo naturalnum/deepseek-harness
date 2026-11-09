@@ -417,12 +417,12 @@ it('delivered prepare remains pinned after observer cancellation until its actua
 })
 
 
-it('rejects a ZIP without root SKILL.md in the original files lane without changing the installed catalog', async () => {
+it.each(['missing-root', 'truncated'] as const)('rejects a %s ZIP in the original files lane without changing the installed catalog', async (kind) => {
   const f = await fixture(2000), before = await f.install('existing')
   const previous = before.value.catalog.entries.map(entry => [entry.skillId, entry.version.id])
   before.release()
   const nativeCalls = f.native.mock.calls.filter(([request]) => request.kind === 'bundle-prepare').length
-  const archive = zipSync({ 'note.txt': text('not a skill') })
+  const archive = kind === 'truncated' ? Uint8Array.of(0x50, 0x4b, 3, 4, 0) : zipSync({ 'note.txt': text('not a skill') })
   const failure: unknown = await f.bundles.prepareBundle({ kind: 'zip', dataBase64: Buffer.from(archive).toString('base64') }, signal())
     .then(() => undefined, (error: unknown) => error)
   expect(failure).toBeInstanceOf(InvalidSkillBundleFailure)

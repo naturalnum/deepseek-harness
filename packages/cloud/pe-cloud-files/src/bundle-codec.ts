@@ -188,7 +188,7 @@ async function checkLocalHeader(zip: ZipFile, entry: Entry, limits: SkillBundleL
 async function expandZip(bytes: Uint8Array<ArrayBuffer>, limits: SkillBundleLimits, signal: AbortSignal): Promise<BundleTree> {
   const zip = await new Promise<ZipFile>((resolve, reject) =>{  fromBuffer(Buffer.from(bytes.buffer), {
     lazyEntries: true, autoClose: false, decodeStrings: true, strictFileNames: true, validateEntrySizes: true,
-  }, (error, file) => { if (error) reject(error); else resolve(file) }) })
+  }, (error, file) => { if (error) reject(new InvalidSkillBundleFailure()); else resolve(file) }) })
   const files: Array<{ relativePath: string; data: Uint8Array<ArrayBuffer> }> = [], directories: string[] = []
   const seen = new Set<string>()
   let total = 0, entries = 0
@@ -205,7 +205,7 @@ async function expandZip(bytes: Uint8Array<ArrayBuffer>, limits: SkillBundleLimi
       }
       const abort = (): void => { finish(signal.reason) }
       signal.addEventListener('abort', abort, { once: true })
-      zip.once('error', finish); zip.once('end', () => { finish() })
+      zip.once('error', () => { finish(new InvalidSkillBundleFailure()) }); zip.once('end', () => { finish() })
       zip.on('entry', (entry: Entry) => {
         void (async () => {
           signal.throwIfAborted()
@@ -217,12 +217,14 @@ async function expandZip(bytes: Uint8Array<ArrayBuffer>, limits: SkillBundleLimi
             || total + entry.uncompressedSize > limits.maxExpandedArchiveBytes) rejectBundle(true)
           await checkLocalHeader(zip, entry, limits)
           const stream = await new Promise<import('node:stream').Readable>((resolve, reject) => {
-            zip.openReadStream(entry, (error, stream) => { if (error) reject(error); else resolve(stream) })
+            zip.openReadStream(entry, (error, stream) => { if (error) reject(new InvalidSkillBundleFailure()); else resolve(stream) })
           })
           const stop = (): void => { stream.destroy(new Error('Package expansion aborted')) }
           signal.addEventListener('abort', stop, { once: true })
           const data = new Uint8Array(entry.uncompressedSize)
-          let offset = 0, checksum = 0
+          let offset = 0, checksum = 0, streamFailure: Error | undefined
+          const failed = (error: Error): void => { streamFailure = error }
+          stream.on('error', failed)
           try {
             for await (const chunk of stream) {
               signal.throwIfAborted()
@@ -232,7 +234,10 @@ async function expandZip(bytes: Uint8Array<ArrayBuffer>, limits: SkillBundleLimi
               data.set(chunk, offset); offset += chunk.byteLength; total += chunk.byteLength
               checksum = crc32(chunk, checksum)
             }
-          } finally { signal.removeEventListener('abort', stop); stream.destroy() }
+          } catch (error) {
+            if (!signal.aborted && error === streamFailure) throw new InvalidSkillBundleFailure()
+            throw error
+          } finally { signal.removeEventListener('abort', stop); stream.removeListener('error', failed); stream.destroy() }
           if (offset !== entry.uncompressedSize || checksum !== entry.crc32) rejectBundle()
           if (value.directory) directories.push(value.path)
           else files.push({ relativePath: value.path, data })
@@ -270,7 +275,7 @@ export async function decodeBundle(input: SkillBundleInput, limits: SkillBundleL
     return validateBundleTree({ files, directories: [] }, limits)
   } catch (error) {
     // Only explicit input-validation denials in this pure decode become this result.
-    // Abort, size and unexpected ZIP/cleanup errors retain their original outcomes.
+    // Parser corruption is classified at its callback; cancellation, size and cleanup failures retain their outcomes.
     if (!signal.aborted && error instanceof FdMutationFailure && error.outcome === 'not-published'
       && error.code === 'FS_PERMISSION_DENIED') throw new InvalidSkillBundleFailure()
     throw error

@@ -3,6 +3,7 @@ import { expect, it } from 'vitest'
 import { zipSync } from 'fflate'
 import { decodeBundle, describeBundle, encodeBundleZip, parseBundleManifest, validateBundleTree } from '../src/bundle-codec.ts'
 import type { SkillBundleLimits } from '../src/skill-bundles.ts'
+import { InvalidSkillBundleFailure } from '../src/worker-client.ts'
 
 const limits: SkillBundleLimits = { maxInstallations: 8, maxFiles: 16, maxDirectories: 16, maxDepth: 8, maxPathBytes: 128,
   maxFileBytes: 4096, maxContentBytes: 8192, maxArchiveBytes: 16384, maxArchiveEntries: 32, maxExpandedArchiveBytes: 8192,
@@ -48,6 +49,21 @@ it('checks CRC over actual expanded bytes rather than trusting archive declarati
   expect(payload).toBeGreaterThan(0)
   archive[payload] = 0
   await expect(decodeBundle({ kind: 'zip', dataBase64: Buffer.from(archive).toString('base64') }, limits, signal())).rejects.toThrow()
+})
+
+it.each(['truncated', 'central-directory', 'deflate'] as const)('classifies %s ZIP corruption as a definite invalid package', async (kind) => {
+  let archive = Buffer.from(zipSync({ 'SKILL.md': text('Archive content '.repeat(40)) }, { level: 6 }))
+  if (kind === 'truncated') archive = Buffer.from([0x50, 0x4b, 3, 4, 0])
+  else if (kind === 'central-directory') {
+    const offset = archive.indexOf(Buffer.from([0x50, 0x4b, 1, 2]))
+    expect(offset).toBeGreaterThan(0)
+    archive[offset] = 0
+  } else {
+    const offset = 30 + archive.readUInt16LE(26) + archive.readUInt16LE(28)
+    archive[offset] = 0xff
+  }
+  await expect(decodeBundle({ kind: 'zip', dataBase64: archive.toString('base64') }, limits, signal()))
+    .rejects.toBeInstanceOf(InvalidSkillBundleFailure)
 })
 
 it('refuses encrypted, link and special archive entries through the actual parser', async () => {
