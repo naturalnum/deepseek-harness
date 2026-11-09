@@ -4,7 +4,7 @@
  * Decode a file destination and its optional GitHub-style line fragment.
  * Literal `?` and `#` in filenames must be percent-encoded.
  * @param value - Parsed Markdown link destination.
- * @param allowLocalFileUri - Permit an authority-free POSIX file URI in a scoped closing reply.
+ * @param allowLocalFileUri - Permit authority-free POSIX file and sandbox URIs in a scoped closing reply.
  * @returns A local path and optional first line, or undefined for URLs,
  * fragment-only links, queries, malformed escapes, or invalid line ranges.
  */
@@ -13,10 +13,11 @@ export function parseFileLink(value: string, allowLocalFileUri = false): { path:
   const destination = hash < 0 ? value : value.slice(0, hash)
   if (destination.includes('?')) return undefined
   const localUri = /^file:\/\/\//i.test(destination)
-  if (localUri && (!allowLocalFileUri || /%(?:2f|5c)/i.test(destination))) return undefined
+  const sandboxUri = /^sandbox:/i.test(destination)
+  if ((localUri || sandboxUri) && (!allowLocalFileUri || /%(?:2f|5c)/i.test(destination))) return undefined
   let path: string
   try {
-    path = decodeURIComponent(localUri ? destination.slice(7) : destination)
+    path = decodeURIComponent(localUri ? destination.slice(7) : sandboxUri ? destination.slice(8) : destination)
   } catch (_error) {
     // Malformed percent escapes cannot identify a file unambiguously.
     return undefined
@@ -24,7 +25,7 @@ export function parseFileLink(value: string, allowLocalFileUri = false): { path:
   if (path.length === 0 || /[\u0000-\u001f\u007f]/.test(path)
     || /^[\\/]{2}/.test(path)
     || (/^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path))) return undefined
-  if (localUri && (!path.startsWith('/') || path.includes('\\')
+  if ((localUri || sandboxUri) && (!path.startsWith('/') || path.includes('\\')
     || path.split('/').some(segment => segment === '.' || segment === '..'))) return undefined
   if (hash < 0) return { path }
   const fragment = value.slice(hash + 1)

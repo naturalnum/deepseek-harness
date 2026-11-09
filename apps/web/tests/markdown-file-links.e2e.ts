@@ -74,7 +74,8 @@ describe('web e2e: Markdown file links', () => {
     await writeFile(join(scaffold.workspaceCwd, 'src/example.txt'),
       Array.from({ length: 60 }, (_, i) => `source line ${i + 1}\n`).join(''))
     await writeFile(join(scaffold.workspaceCwd, 'other/example.txt'), 'other file\n')
-    await seedSession(scaffold, await readFile(join(SNAPSHOT_DIR, 'session.v3.jsonl'), 'utf8'), 'markdown-file-links')
+    await writeFile(join(scaffold.workspaceCwd, '报告.txt'), 'closing reply file\n')
+    await seedSession(scaffold, await readFile(join(SNAPSHOT_DIR, 'session.v4.jsonl'), 'utf8'), 'markdown-file-links')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -105,6 +106,8 @@ describe('web e2e: Markdown file links', () => {
     await absolute.focus()
     await absolute.press('Enter')
     await expect.poll(() => column.locator('[data-textpreview-target="30"]').textContent()).toBe('source line 30\n')
+    await page.getByRole('button', { name: 'Sandbox source', exact: true }).click()
+    await expect.poll(() => column.locator('[data-textpreview-target="30"]').textContent()).toBe('source line 30\n')
     expect(await column.locator('[data-dockkit-tab-title]').allTextContents()).toEqual(['example.txt'])
     expect(page.url()).toBe(beforeUrl)
     expect(page.context().pages()).toHaveLength(1)
@@ -121,10 +124,12 @@ describe('web e2e: Markdown file links', () => {
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'preview.expected.md'), preview, MODE)
     await page.getByRole('button', { name: 'Missing file', exact: true }).click()
     await column.locator('[data-textpreview-failed="workspace-file/not-found"]').waitFor()
+    await page.getByRole('button', { name: '报告.txt', exact: true }).click()
+    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('closing reply file\n')
     expect(page.url()).toBe(beforeUrl)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl', 'links.expected.md', 'preview.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v4.jsonl', 'links.expected.md', 'preview.expected.md'])
   })
 
   it('opens parent-path prose and read-card links while retaining each address across reload', async () => {

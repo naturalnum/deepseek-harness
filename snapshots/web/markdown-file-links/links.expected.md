@@ -9,3 +9,8 @@
   - text: ·
   - link "Website":
     - /url: https://example.com/
+  - text: ·
+  - button "Sandbox source"
+  - text: ·
+  - code:
+    - button "报告.txt"

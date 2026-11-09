@@ -169,8 +169,9 @@ class StreamingRenderer {
  * `body` variant uses the full document typography.
  * The provider's `openFile` enables local Markdown links in settled messages,
  * including `#L24` and `#L24-L30` destinations (ranges open at their first line).
- * `standaloneFileLinks` additionally offers scoped opens for simple relative
- * filenames that occupy a whole list item; the file is checked by the opener.
+ * `standaloneFileLinks` also permits authority-free POSIX file/sandbox URIs,
+ * whole-list-item filenames, and simple inline filenames when no recorded-file
+ * resolver is supplied. The opener checks file existence and authorization.
  * @returns A GFM document with TeX math rendered through KaTeX; raw HTML and
  * unsafe protocols are disabled. Local links without an opener remain text;
  * absolute HTTP(S) images render directly.

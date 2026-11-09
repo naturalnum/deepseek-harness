@@ -330,6 +330,10 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
           </code>
         )
       }
+      if (context.inLink !== true && !context.streaming && context.standaloneFileLinks === true
+        && context.fileMentions === undefined && simpleRelativeFilename(value)) {
+        return <code key={key}><MarkdownFileLink file={{ path: value }} glyph>{[value]}</MarkdownFileLink></code>
+      }
       return <code key={key}>{value}</code>
     }
     case 'html':
@@ -492,10 +496,16 @@ function standaloneFileListItem(item: Md.ListItem, context: MarkdownRenderContex
   // the scoped opener even when the deliverables plugin is active.
   if (node.type === 'inlineCode' && context.fileMentions !== undefined) return undefined
   const value = node.value
-  if (value.length > 255 || !/^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\/)*[A-Za-z0-9_][A-Za-z0-9._-]*\.[A-Za-z][A-Za-z0-9]{0,15}$/.test(value)
-    || value.split('/').some(part => part === '.' || part === '..')
-    || /\.(?:com|org|net|edu|gov)$/i.test(value)) return undefined
+  if (!simpleRelativeFilename(value)) return undefined
   return { path: value, label: [node.type === 'inlineCode' ? <code key="file">{value}</code> : value] }
+}
+
+/** A complete filename token offers a scoped open without claiming that the file exists. */
+function simpleRelativeFilename(value: string): boolean {
+  return value.length <= 255
+    && /^(?:[\p{L}\p{N}_][\p{L}\p{M}\p{N}._-]*\/)*[\p{L}\p{N}_][\p{L}\p{M}\p{N}._-]*\.[A-Za-z][A-Za-z0-9]{0,15}$/u.test(value)
+    && !value.split('/').some(part => part === '.' || part === '..')
+    && !/\.(?:com|org|net|edu|gov)$/i.test(value)
 }
 
 function renderTable(node: Md.Table, key: Key, context: MarkdownRenderContext): ReactNode {
