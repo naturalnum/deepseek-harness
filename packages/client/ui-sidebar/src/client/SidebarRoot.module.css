@@ -418,6 +418,7 @@
 }
 
 .collapsed .newSession {
+  min-height: 0;
   align-self: flex-start;
   width: 36px;
   height: 36px;

@@ -65,55 +65,36 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
       const reasoning = page.locator('[data-variant="think"][data-state="running"]')
       await expandOwningTurnProcess(page, reasoning)
       await reasoning.waitFor()
-      const whale = page.locator('[data-chat-running] span[aria-hidden="true"]:has(> svg)')
-      const animatedWhale = whale.locator(':scope > span')
-      const restingWhale = whale.locator(':scope > svg')
-      await whale.waitFor()
-      expect(await whale.locator('animate').count()).toBe(0)
-      const expectStaticWhale = async () => {
-        await expect.poll(() => animatedWhale.isVisible()).toBe(false)
-        await expect.poll(() => restingWhale.isVisible()).toBe(true)
-        expect(await animatedWhale.evaluate(element => getComputedStyle(element).maskImage)).toBe('none')
-        const colors = await restingWhale.locator('path').evaluate((path) => {
+      const lightning = page.locator('[data-chat-running] svg[aria-hidden="true"]')
+      await lightning.waitFor()
+      expect(await lightning.locator('animate').count()).toBe(0)
+      const expectVisibleLightning = async () => {
+        await expect.poll(() => lightning.isVisible()).toBe(true)
+        const colors = await lightning.locator('path').evaluate((path) => {
           const probe = document.createElement('span')
           probe.style.cssText = 'color: Canvas; forced-color-adjust: none'
           document.body.append(probe)
           try {
             const style = getComputedStyle(path)
             return {
-              stroke: style.stroke.toLowerCase() === 'currentcolor' ? style.color : style.stroke,
+              fill: style.fill.toLowerCase() === 'currentcolor' ? style.color : style.fill,
               canvas: getComputedStyle(probe).color,
               length: (path as SVGPathElement).getTotalLength(),
             }
           } finally { probe.remove() }
         })
-        expect(colors.stroke).not.toBe('none')
-        expect(colors.stroke).not.toBe('transparent')
-        expect(colors.stroke).not.toBe(colors.canvas)
+        expect(colors.fill).not.toBe('none')
+        expect(colors.fill).not.toBe('transparent')
+        expect(colors.fill).not.toBe(colors.canvas)
         expect(colors.length).toBeGreaterThan(0)
       }
       try {
         await page.emulateMedia({ reducedMotion: 'no-preference', forcedColors: 'none' })
-        await expect.poll(() => animatedWhale.isVisible()).toBe(true)
-        expect(await animatedWhale.evaluate(element => getComputedStyle(element).maskMode)).toBe('alpha')
-        const imageSize = await animatedWhale.evaluate(async (element) => {
-          const source = getComputedStyle(element).maskImage.match(/^url\("?(data:image\/png;base64,[A-Za-z0-9+/=]+)"?\)$/)?.[1]
-          if (source === undefined) throw new Error('Running whale mask must use the bundled PNG data URL')
-          const image = new Image()
-          image.src = source
-          await image.decode()
-          return [image.naturalWidth, image.naturalHeight]
-        })
-        expect(imageSize).toEqual([28, 28])
-        expect(await restingWhale.isVisible()).toBe(false)
-        const firstWhaleFrame = await whale.screenshot({ animations: 'allow' })
-        await expect.poll(async () => !(await whale.screenshot({ animations: 'allow' })).equals(firstWhaleFrame), {
-          timeout: 5000,
-        }).toBe(true)
+        await expectVisibleLightning()
         await page.emulateMedia({ reducedMotion: 'reduce' })
-        await expectStaticWhale()
+        await expectVisibleLightning()
         await page.emulateMedia({ reducedMotion: 'no-preference', forcedColors: 'active' })
-        await expectStaticWhale()
+        await expectVisibleLightning()
       } finally {
         await page.emulateMedia({ reducedMotion: null, forcedColors: null })
       }
@@ -139,7 +120,7 @@ it('shows completed paragraph first lines across blank lines with a right-edge f
       third.proceed.resolve(undefined)
       await settled
       await page.getByText('Done', { exact: true }).waitFor()
-      await whale.waitFor({ state: 'detached' })
+      await lightning.waitFor({ state: 'detached' })
       expect(console.pageErrors).toEqual([])
       expect(console.warnings).toEqual([])
     } finally {
