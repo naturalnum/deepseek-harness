@@ -112,8 +112,9 @@
         "/",
         "--proc",
         "/proc",
-        "--ro-bind",
+        "--dev",
         "/dev",
+        "--remount-ro",
         "/dev",
         "--dev-bind",
         "/dev/null",
@@ -145,7 +146,7 @@
         "--chdir",
         "/srv/project"
       ],
-      "sha256": "9753a1823fe8553747b0fe660cba99f5ca6f2e711845b1e97f7efa852c988922"
+      "sha256": "6270459a8238b2a5f451a5d1e69a3786bd3797d343b79d46027cc968877171a0"
     },
     {
       "project": "/srv/\u6848\u4f8b/project",
@@ -186,8 +187,9 @@
         "/",
         "--proc",
         "/proc",
-        "--ro-bind",
+        "--dev",
         "/dev",
+        "--remount-ro",
         "/dev",
         "--dev-bind",
         "/dev/null",
@@ -219,7 +221,7 @@
         "--chdir",
         "/srv/\u6848\u4f8b/project"
       ],
-      "sha256": "d95618b349b48474f0a695f47bcc49c1e6ff75e24b7f30827b63f5d0b05461d4"
+      "sha256": "d83e88ff055698a84877786a4ef5aee81b9777b4949873fceb160d05a089a148"
     }
   ]
 }

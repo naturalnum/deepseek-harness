@@ -129,6 +129,8 @@ Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/work
 
 [固定副本执行世界](runtime/agent/paths.py) 保留项目 RW 与外层 `.pe` RO 挂载，只增加固定 `.pe/skills` 子目录的 RW export。内层准备捕获实际版本目录 FD，建立只读 scaffold，并仅将这些版本目录绑定为 RW。Guardian 在 PREPARED 前核验实际父目录、副本身份及挂载模式，然后执行原有八 FD 边界检查。公开命令仍严格只有 `argv`、`cwd`、`stdin`；规范化私有事实纳入原 spec hash 和 role HMAC，完整 4096 字节 Guardian frame 包含这些事实。原生 admission 在命令保留和 allocation 前，先为整个配置副本数量计算保守 scalar 字节上界，发送前再次检查实际完整 frame；命令超限时拒绝，即便当时较小的集合可能装得下。原 files 源挂载身份仍在已取得资格的 source context 中核验，容器 mount id 则独立观察。启用此策略前，仍须完成跨 namespace 冷恢复及实际 SDK 嵌套 volume 验收。原生 get 还要求 files 驻留容量同时覆盖保留的源快照、物化以及保留的父目录和操作；只有一次 reservation 容量的配置不能接纳这条调用链。
 
+所有命令模式均使用 bwrap 的私有标准 `/dev`，目录为只读，并保留现有 `/dev/null` 绑定。普通命令与终端可以读取标准随机设备，均不继承容器的完整设备目录。Root 独立固定同一命令世界声明；替换 payload 仍须经受保护的部署采纳和目标环境验收。
+
 受管 coordinator 通过原开放账户 port、命令记录及 allocation owner 观察本地修改的空闲条件。在途调用、subprocess 获取、未停后代或进程 I/O、开发服务、应用请求、创建/准备/停止/对账及未知结果均拒绝修改。已结清的 ready 沙盒、缓存 Session 选择及完成后保留的输出可以继续保留，身份、mount 和预算不释放。基础 coordinator 拒绝该观察；终态重建仍通过原 stop/dispose 路径等待全部 warm allocation 与保留结果。
 
 显式 `shell.enforceSessionFilePolicy: true` 为 Shell 与 Subprocess 同时启用原 Session 策略；省略时保留 legacy 路径，且不能宣告权限控件可用。策略服务是必需的 peer dependency：发布的执行入口使用账户原有的 `SandboxPolicyService` 构造器，不内联另一份副本。原命令 owner 捕获原生 read-only、workspace-write 或 danger-full-access 策略，并将其纳入既有 spec hash 与 Root role HMAC。原生工具先通过原审批服务取得提权决定，再传入同进程的类型化 override。该 override 可以在精确匹配的已注册 Session 和项目内扩大单次调用权限，但不持久改变模式。原始 HTTP 或模型参数不能直接提供此 provider override。两档可写模式仍使用同一账户项目及环境挂载；完整访问不会让可信镜像、宿主或其他账户变得可写，也不扩大配额。原生执行世界按该模式绑定项目、环境 home/venv/tmp、`/tmp` 别名及选中 skill 副本。Guardian 在 PREPARED 前检查这些路径的实际挂载标记，原完整 4096 字节 frame 预算也包含私有策略。权限切换要求保留命令、unknown 结果与服务正常结算。函数、argv 测试和 payload pins 本身不证明 Linux 内核或已部署浏览器验收通过。

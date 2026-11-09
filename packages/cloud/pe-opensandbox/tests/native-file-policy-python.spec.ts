@@ -49,6 +49,10 @@ assert rw.count('--bind')==3
 full=scope['world_argv']('/srv/project','danger-full-access')
 assert full.count('--bind')==5 and full != rw
 assert full[full.index('--ro-bind')+1:full.index('--ro-bind')+3]==['/','/']
+for world in [ro,rw,full]:
+ assert world[world.index('--dev'):world.index('--dev')+4]==['--dev','/dev','--remount-ro','/dev']
+ assert not any(world[i:i+3]==['--ro-bind','/dev','/dev'] for i in range(len(world)-2))
+ assert world[world.index('--dev-bind'):world.index('--dev-bind')+3]==['--dev-bind','/dev/null','/dev/null']
 for path in ['/srv/project','/opt/session-env/home','/opt/session-env/venv','/opt/session-env/tmp','/tmp']:
  matches=[i for i,x in enumerate(ro) if x==path and i>=2 and ro[i-2] in ['--bind','--ro-bind']]
  assert matches and all(ro[i-2]=='--ro-bind' for i in matches)

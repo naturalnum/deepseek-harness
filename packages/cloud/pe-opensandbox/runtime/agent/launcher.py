@@ -17,7 +17,7 @@ from stream import PipeChannels
 BWRAP_HASH = '0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d'
 
 
-def world_argv(project, mode='workspace-write', terminal=False):
+def world_argv(project, mode='workspace-write'):
     project_path(project)  # Root startup only, never an operation-selected mount.
     if mode not in ['read-only', 'workspace-write', 'danger-full-access']:
         raise ValueError('unsupported file policy')
@@ -30,7 +30,7 @@ def world_argv(project, mode='workspace-write', terminal=False):
         '--setenv', 'TMPDIR', ENV['TMPDIR'], '--setenv', 'LANG', ENV['LANG'],
         '--setenv', 'OPENBLAS_NUM_THREADS', ENV['OPENBLAS_NUM_THREADS'],
         '--ro-bind', '/', '/', '--proc', '/proc',
-        *(['--dev', '/dev', '--remount-ro', '/dev'] if terminal else ['--ro-bind', '/dev', '/dev']),
+        '--dev', '/dev', '--remount-ro', '/dev',
         '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',
         writable_bind, project, project, '--ro-bind', ENV_ROOT, ENV_ROOT,
         private_bind, ENV_ROOT + '/home', ENV_ROOT + '/home',
@@ -256,9 +256,8 @@ class Operation:
         opened = None if self.working_copies is None else open_skill_world(self.owner.project, self.owner.roots[self.owner.project], self.working_copies, self.fds)
         source_fds = [] if opened is None else [opened['metadataFd']] + [copy['fd'] for copy in opened['copies']]
         anchors = set(self.fds) - set(source_fds)
-        terminal = self.stream is not None and 'terminal' in self.stream.spec
-        world = self.owner.base if self.file_policy is None and not terminal else world_argv(
-            self.owner.project, 'workspace-write' if self.file_policy is None else self.file_policy['mode'], terminal)
+        world = self.owner.base if self.file_policy is None else world_argv(
+            self.owner.project, self.file_policy['mode'])
         mode = 'workspace-write' if self.file_policy is None else self.file_policy['mode']
         base = world if opened is None else skill_world_argv(world, self.owner.project, opened, mode)
         cfg_r, cfg_w = self.pipe(); status_r, status_w = self.pipe(); gate_r, self.gate = self.pipe()
