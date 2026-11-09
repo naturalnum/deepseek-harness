@@ -38,6 +38,7 @@ interface AuthInvocation {
   readonly requestId: Branded<'pe-request-id'>
   failure: 'cloud/capacity' | 'cloud/account-unavailable' | undefined
   timedOut: boolean
+  targetAccountId?: AccountId | undefined
 }
 interface AuthNodeLimits {
   readonly maxBodyBytes: number
@@ -86,6 +87,7 @@ export class BetterAuthAccess {
   private readonly logins: Map<Branded<'pe-auth-session-id'>, LoginState> = new Map()
   private readonly accountLoginCounts: Map<AccountId, number> = new Map()
   private readonly invalidationFences: Map<Branded<'pe-auth-session-id'>, bigint> = new Map()
+  private readonly accountInvalidationFences: Map<AccountId, bigint> = new Map()
   private readonly invocation: AsyncLocalStorage<AuthInvocation> = new AsyncLocalStorage()
   private ordinal: bigint = 0n
   private accepting: boolean = true
@@ -125,10 +127,12 @@ export class BetterAuthAccess {
       telemetry: { enabled: false },
       databaseHooks: { session: { delete: {
         before: (session): Promise<void> => {
-          this.reserveInvalidation(session.id as Branded<'pe-auth-session-id'>)
+          this.reserveInvalidation(session.id as Branded<'pe-auth-session-id'>, session.userId as AccountId)
           return Promise.resolve()
         },
-        after: async (session): Promise<void> => { await this.invalidateLogin(session.id as Branded<'pe-auth-session-id'>) },
+        after: async (session): Promise<void> => {
+          await this.invalidateLogin(session.id as Branded<'pe-auth-session-id'>, undefined, session.userId as AccountId)
+        },
       } } },
     }
     if (config.accountAdministration !== undefined) this.options = { ...this.options, plugins: [admin()], user: { additionalFields: {
@@ -137,7 +141,10 @@ export class BetterAuthAccess {
     } } }
     this.auth = factory(this.options)
     if (config.accountAdministration !== undefined) {
-      this.administrator = new AccountAdministrator(this.auth, database, config.accountAdministration)
+      this.administrator = new AccountAdministrator(this.auth, database, config.accountAdministration, {
+        revoke: (id, operation) => this.withAccountRevocation(id, operation),
+        failure: () => this.invocation.getStore()?.failure,
+      })
     }
   }
 
@@ -253,7 +260,7 @@ export class BetterAuthAccess {
     if (!this.accepting) throw new AuthAccessError('cloud/account-unavailable', requestId)
     const record = this.record(principal, requestId)
     this.retainPrincipal(principal, requestId)
-    let completionOwned = false
+    const completionOwner = { retained: false }
     try {
       await this.withDeadline(async (ordinal) => {
         const login = await this.readLogin(record.headers, ordinal, requestId)
@@ -266,12 +273,12 @@ export class BetterAuthAccess {
         record.state.invalidated = true
         await this.invalidateLogin(principal.authSessionId, record.state)
       }, (actual) => {
-        completionOwned = true
-        void actual.then(() => this.releasePrincipal(principal))
+        completionOwner.retained = true
+        void actual.then(() => { this.releasePrincipal(principal) })
         retainActual?.(actual)
       })
     } finally {
-      if (!completionOwned) this.releasePrincipal(principal)
+      if (!completionOwner.retained) this.releasePrincipal(principal)
     }
   }
 
@@ -536,25 +543,28 @@ export class BetterAuthAccess {
   private async readLogin(headers: Headers, ordinal: bigint, requestId: Branded<'pe-request-id'>): Promise<LibraryLogin> {
     const login = await this.auth.api.getSession({ headers, query: { disableCookieCache: true, disableRefresh: true } })
     if (login === null || login.session.userId !== login.user.id || login.user.id === '' || login.session.id === ''
+      || Reflect.get(login.user, 'banned') === true
       || !Number.isFinite(login.session.expiresAt.getTime()) || login.session.expiresAt.getTime() <= Date.now()) {
       throw new AuthAccessError('cloud/unauthenticated', requestId)
     }
     const id = login.session.id as Branded<'pe-auth-session-id'>
     const knownFence = this.logins.get(id)?.fenceOrdinal
     const unknownFence = this.invalidationFences.get(id)
-    if ((knownFence !== undefined && ordinal <= knownFence) || (unknownFence !== undefined && ordinal <= unknownFence)) {
+    const accountFence = this.accountInvalidationFences.get(login.user.id as AccountId)
+    if ((knownFence !== undefined && ordinal <= knownFence) || (unknownFence !== undefined && ordinal <= unknownFence)
+      || (accountFence !== undefined && ordinal <= accountFence)) {
       throw new AuthAccessError('cloud/unauthenticated', requestId)
     }
     return login
   }
 
-  private async invalidateLogin(authSessionId: Branded<'pe-auth-session-id'>, originalState?: LoginState): Promise<void> {
+  private async invalidateLogin(authSessionId: Branded<'pe-auth-session-id'>, originalState?: LoginState, accountId?: AccountId): Promise<void> {
     const state = this.logins.get(authSessionId) ?? originalState
     if (state !== undefined) {
       state.invalidated = true
       state.fenceOrdinal = this.ordinal
     } else {
-      this.reserveInvalidation(authSessionId)
+      this.reserveInvalidation(authSessionId, accountId)
     }
     try { await this.onLoginInvalidated(authSessionId) }
     catch (error) {
@@ -612,15 +622,27 @@ export class BetterAuthAccess {
     return error instanceof AuthAccessError ? error : new AuthAccessError('cloud/account-unavailable', requestId)
   }
 
-  private reserveInvalidation(id: Branded<'pe-auth-session-id'>): void {
+  private async withAccountRevocation<T>(accountId: AccountId, operation: () => Promise<T>): Promise<T> {
+    const invocation = this.invocation.getStore()
+    if (invocation === undefined) throw new Error('Account revocation requires its original authentication invocation.')
+    const previous = invocation.targetAccountId
+    invocation.targetAccountId = accountId
+    try { return await operation() }
+    finally { invocation.targetAccountId = previous }
+  }
+
+  private reserveInvalidation(id: Branded<'pe-auth-session-id'>, accountId?: AccountId): void {
     const known = this.logins.get(id)
     if (known !== undefined) { known.fenceOrdinal = this.ordinal; return }
-    if (!this.invalidationFences.has(id) && this.invalidationFences.size >= this.config.maxAuthInvalidations) {
+    const wholeAccount = accountId !== undefined && this.invocation.getStore()?.targetAccountId === accountId
+    const exists = wholeAccount ? this.accountInvalidationFences.has(accountId) : this.invalidationFences.has(id)
+    if (!exists && this.invalidationFences.size + this.accountInvalidationFences.size >= this.config.maxAuthInvalidations) {
       const invocation = this.invocation.getStore()
       if (invocation !== undefined) invocation.failure = 'cloud/capacity'
       throw this.apiError.from('TOO_MANY_REQUESTS', { code: 'cloud/capacity', message: 'Authentication invalidation capacity is full.' })
     }
-    this.invalidationFences.set(id, this.ordinal)
+    if (wholeAccount) this.accountInvalidationFences.set(accountId, this.ordinal)
+    else this.invalidationFences.set(id, this.ordinal)
   }
 
   private loginState(login: LibraryLogin, requestId: Branded<'pe-request-id'>): LoginState {
@@ -667,6 +689,9 @@ export class BetterAuthAccess {
     for (const ordinal of this.pending.values()) if (minimum === undefined || ordinal < minimum) minimum = ordinal
     for (const [id, fence] of this.invalidationFences) {
       if (minimum === undefined || minimum > fence) this.invalidationFences.delete(id)
+    }
+    for (const [id, fence] of this.accountInvalidationFences) {
+      if (minimum === undefined || minimum > fence) this.accountInvalidationFences.delete(id)
     }
     for (const state of this.logins.values()) {
       if (state.fenceOrdinal === undefined || (minimum !== undefined && minimum <= state.fenceOrdinal)) continue

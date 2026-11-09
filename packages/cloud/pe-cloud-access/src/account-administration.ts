@@ -28,6 +28,12 @@ export interface ManagedAccount {
 type ManagedAuth = Auth
 type RequestId = Branded<'pe-request-id'>
 
+/** Same authentication invocation owns whole-account hook scope and its structured failures. */
+interface AccountAuthInvocation {
+  revoke<T>(accountId: AccountId, operation: () => Promise<T>): Promise<T>
+  failure(): 'cloud/capacity' | 'cloud/account-unavailable' | undefined
+}
+
 /** Accepted browser operations; actor identity always comes from the actual request Cookie. */
 export type AccountAdministrationRequest =
   | { readonly op: 'list'; readonly search: string; readonly offset: number; readonly limit: number }
@@ -112,7 +118,8 @@ export interface AccountResourceLifecycle {
 export class AccountAdministrator {
   private tail: Promise<void> = Promise.resolve()
   private resources: AccountResourceLifecycle | undefined
-  constructor(private readonly auth: ManagedAuth, private readonly database: Pool, readonly config: AccountAdministrationConfig) {}
+  constructor(private readonly auth: ManagedAuth, private readonly database: Pool, readonly config: AccountAdministrationConfig,
+    private readonly authInvocation: AccountAuthInvocation) {}
 
   /** Bind the original Root's physical resource coordinator exactly once.
    * @param resources Original trusted runtime callbacks, never Loader JSON or a browser object.
@@ -132,6 +139,8 @@ export class AccountAdministrator {
     const response = await this.auth.handler(new Request(target, { method, headers: copied,
       ...method === 'POST' ? { body: JSON.stringify(body) } : {} }))
     const value: unknown = await response.json()
+    const failure = this.authInvocation.failure()
+    if (failure !== undefined) throw new AuthAccessError(failure, requestId)
     if (!response.ok) throw new AuthAccessError(response.status === 401 ? 'cloud/unauthenticated'
       : response.status < 500 ? 'cloud/forbidden' : 'cloud/account-unavailable', requestId)
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AuthAccessError('cloud/account-unavailable', requestId)
@@ -274,17 +283,30 @@ export class AccountAdministrator {
             current()
             await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
           } else {
-            await this.invoke(headers, 'ban-user', { userId: request.id }, requestId)
+            let banFailure: { readonly cause: unknown } | undefined
+            try {
+              await this.authInvocation.revoke(request.id as AccountId,
+                () => this.invoke(headers, 'ban-user', { userId: request.id }, requestId))
+            } catch (cause) {
+              const actual = await client.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id = $1', [request.id])
+              if (actual.rows[0]?.banned !== true) throw cause
+              banFailure = { cause }
+            }
             // Once the identity is banned, actual drain remains owned even if its login or browser retires.
-            const status = await resources.disable(request.id as AccountId, requestId)
-            current()
+            let status: 'disabled' | 'stop-unknown'
+            try { status = await resources.disable(request.id as AccountId, requestId) }
+            catch (cause) { throw new AuthAccessError('cloud/account-stop-unconfirmed', requestId, { cause }) }
             if (status !== 'disabled') throw new AuthAccessError('cloud/account-stop-unconfirmed', requestId)
+            if (banFailure !== undefined) throw banFailure.cause
+            current()
           }
           break
         }
         case 'password':
-          await this.invoke(headers, 'set-user-password', { userId: request.id, newPassword: request.password }, requestId)
-          await this.invoke(headers, 'revoke-user-sessions', { userId: request.id }, requestId)
+          await this.authInvocation.revoke(request.id as AccountId, async () => {
+            await this.invoke(headers, 'set-user-password', { userId: request.id, newPassword: request.password }, requestId)
+            await this.invoke(headers, 'revoke-user-sessions', { userId: request.id }, requestId)
+          })
           break
       }
       current()

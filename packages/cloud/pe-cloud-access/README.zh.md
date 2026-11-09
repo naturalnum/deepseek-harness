@@ -44,7 +44,7 @@ kind: "package-reference"
 | `peerCloseTimeoutMs` | 原生清理等待/告警时限；超时保留实际清理及容量占用。 |
 | `maxAuthOperations` | 实际认证操作上限；超限直接拒绝，不设置等待队列。 |
 | `maxTrackedLogins`、`maxTrackedLoginsPerAccount` | 已验证登录状态的有限上限，包含为旧读取保留的失效状态。 |
-| `maxAuthInvalidations` | 未缓存登录 ID 的有限失效记录；数据库删除前先预留。 |
+| `maxAuthInvalidations` | 精确登录与整账户读取栅栏共用的有限条目数；数据库删除前先预留。 |
 | `bindingFields` | 账户/代际使用不同专用头和 query 名称，实际名称仍须产品传输审核。 |
 | `database` | 显式 `host`、`port`、`user`、`database`、`passwordRef`、`ssl`；SSL 使用系统信任验证服务端证书。 |
 | `pool` | 显式正值 `maxConnections`、`connectionTimeoutMs`、`statementTimeoutMs`、`lockTimeoutMs`、`idleTimeoutMs`、`idleTransactionTimeoutMs`、`maxLifetimeSeconds`；锁超时不得大于语句超时。 |
@@ -148,7 +148,7 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 
 按[运行时 debug 观测约定](../pe-cloud-runtime/README.zh.md#understand-the-implementation)，ingress 记录已检查的本机准入或固定 owner 选择及入站 socket 元数据。选路不证明送达；完成记录要求实际传输已完成结算。浏览器是否收到仍需单独观测。
 
-适配器持有认证一致性；runtime 保留 owner/epoch，API 保留端点/资源规则。已验证 principal 带有适配器本地来源跟踪；伪造 JSON principal 无法复查。失效仅针对精确认证会话 ID；有界记录保留至旧实际读取结算。晚到读取不能恢复已撤销登录，其他登录的凭据仍然有效。操作本地的 hook 失败及库错误级信号，阻止已被库捕获的删除失败变成退出成功响应；诊断正文不被记录。原生 Session、队列及事件实现均不归本包。
+适配器持有认证一致性；runtime 保留 owner/epoch，API 保留端点/资源规则。已验证 principal 带有适配器本地来源跟踪；伪造 JSON principal 无法复查。普通退出与 `revokeLogin` 只撤销精确认证会话。显式管理员停用或改密可为目标账户的未缓存登录共用一个读取栅栏；两个索引共用 `maxAuthInvalidations`，保留至旧实际读取结算。晚到读取不能恢复已撤销登录，同用户其他有效登录不受普通精确撤销影响。即使删除失败遗留会话行，库返回的已禁止用户仍被拒绝。操作本地的 hook 失败及库错误级信号，阻止已被库捕获的删除失败变成退出成功响应；诊断正文不被记录。原生 Session、队列及事件实现均不归本包。
 
 内部 `LoginPeerRegistry` 按已验证登录、账户及 epoch 合并创建，独立借用生命周期 `AccountUse`，固定首次 principal/cookie。准备中和清理未知的记录均占 Peer 名额；单个调用者超时或退出只结束自身等待。原生 HTTP bridge 和 WS mux 复用同一个真实 `Peer`；socket 断开保留 Peer 及借用。watcher 按配置复查，任意拒绝均关闭精确登录；派发及每个逻辑流前同步检查原登录、账户借用和传入的端点守卫。
 
@@ -206,7 +206,7 @@ Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdm
 
 启用此部署需要 `disableSignUp: true` 及原运行时资源协调器。Better Auth 迁移另外维护私有用户字段 `cloudCreationId`、`cloudCreationHash`。创建先登记禁止登录的身份，再占用一个真实预分配的 v3 模板槽位，等待原 Files/Native 工厂实际就绪，最后才解除禁止登录。同一创建标识及请求内容重复提交会返回原账号；失败保留身份与槽位，供明确的资源准备重试使用。重放已完成的创建不能重新启用后来被停用的账号。设置页只列出实际可用模板，不接受文件系统路径或任意配额。
 
-停用先禁止该身份登录并撤销其登录 Peer，再等待原工厂完成停止。仅确认实际停止后报告 `disabled`；其他 owner、保留中的隔离状态或未知工作均保留为 `stop-unknown`。修改密码会撤销登录会话。普通用户继续使用其个人 MCP 和科研能力。独立管理请求绑定实际操作者，不会借用目标账号充当认证身份。
+停用先禁止该身份登录并撤销其登录 Peer，再等待原工厂完成停止。仅确认实际停止后报告 `disabled`；其他 owner、保留中的隔离状态或未知工作均保留为 `stop-unknown`。若库调用失败前已持久化禁止状态，同一资源 owner 仍负责停止；确认停止后仍保留认证失败，停止未确认则返回 `cloud/account-stop-unconfirmed`。权威读取仍未禁止的身份不会触发资源关闭。Hook 容量失败保留 `cloud/capacity`，不再误报来源拒绝。修改密码会撤销登录会话。普通用户继续使用其个人 MCP 和科研能力。独立管理请求绑定实际操作者，不会借用目标账号充当认证身份。
 
 本地管理队列仅在队首占用 PostgreSQL 咨询锁连接，因此并发管理请求仍可使用最少两个连接的池。启动时将认证数据库的空闲事务超时与实际运行时账号等待、有限槽位分配查询及认证尾部调用预算比较；配置不足会在开放管理路由前拒绝启动。定向 PostgreSQL 测试使用固定版本真实认证库和两个连接的池；资源生命周期回复夹具不证明真实 Linux 账号准备或浏览器验收。运行时绑定测试另行验证持久化的唯一槽位分配及重启加载。
 
