@@ -11,8 +11,6 @@ kind: "package-reference"
 
 在启动原生 `AppWebEntry` 前，通过有界、正式解码的 bootstrap 响应准备一个 Cloud 页面。`/client` Loader entry 消费这一精确 owner，并用捕获的账户／代际 carrier 安装既有原生 Connection。缺失或退役的准备状态会拒绝。[Web 入口](../../../apps/web/src/cloud-web.ts)在现有邮箱／密码 Cookie 认证上提供 PowerEvolve 登录界面。本包不实现登录表单，也不证明后端账户已就绪。
 
-Cloud 浏览器以 PowerEvolve 名称和黑色闪电标志填充原生侧栏品牌位置；这些注册随原插件一起撤回。Web 入口与未配置的本地浏览器标题使用 PowerEvolve，显式构建标题仍按原优先级生效。
-
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -28,6 +26,8 @@ Cloud Loader 另挂载生成的 API 项目创建贡献，并向两个原生 Work
 
 <a id="use-this-package"></a>
 ## 使用本包
+
+Cloud 浏览器以 PowerEvolve 名称和黑色闪电标志填充原生侧栏品牌位置；这些注册随原插件一起撤回。 空欢迎标题占用者移除输入框上方的标题、旧标志与预览版徽标。Web 入口与未配置的本地浏览器标题使用 PowerEvolve，显式构建标题仍按原优先级生效。
 
 由于当前 Cloud 组合未开放删除 RPC，准备好的 Cloud 页面在其 root 生命周期内禁用原生工作区删除操作。菜单及已打开的确认框显示本地化原因；该展示限制不替代 Host 鉴权。
 

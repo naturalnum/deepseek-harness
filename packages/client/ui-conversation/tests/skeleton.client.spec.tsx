@@ -135,6 +135,8 @@ function mount(
     sessionId?: SessionId | undefined
     /** When true, mimic overlay:true chain siblings (hidden fallback + takeover). */
     overlayTakeover?: boolean
+    /** A registered empty welcome-header occupant leaves the composer alone. */
+    hideHeroHeader?: boolean
     /** The session list summary's `blank` flag — independent of the snapshot's. */
     summaryBlank?: boolean
     /** Drop the session's summary row entirely (a session the list has not caught up with). */
@@ -206,6 +208,7 @@ function mount(
       seatOwners.push({ key, owner })
     }
     if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
+    if (key === 'conversation.hero.header') return options.hideHeroHeader ? null : opts?.fallback ?? null
     if (key === 'conversation.session.header.lineage') {
       lineageOwners.push(owner as ConversationHeaderLineageOwnerProps)
       return opts?.fallback ?? null
@@ -418,6 +421,15 @@ describe('Hero chrome', () => {
 })
 
 describe('ConversationRoot resident composer', () => {
+  it('omits an occupied empty welcome header while keeping the blank-session composer usable', () => {
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { hideHeroHeader: true })
+    expect(b.view.queryByText('探索未至之境')).toBeNull()
+    expect(b.view.queryByText('预览版')).toBeNull()
+    expect(b.view.getByRole('button', { name: '选择工作区' })).toBeTruthy()
+    expect(b.view.getByRole('textbox')).toBeTruthy()
+    act(() => { b.wiring.setDraft('without welcome header') })
+    expect(b.store.store.getSnapshot().draft.text).toBe('without welcome header')
+  })
   it('keeps global header navigation without selecting a Session', () => {
     const b = mount(sessionSnapshotOf(), [], undefined, { sessionId: undefined })
     expect(b.view.container.querySelector('header')).not.toBeNull()
