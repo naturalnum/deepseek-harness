@@ -87,6 +87,25 @@ it('keeps completed Shell facts when the caller cancels before its first result 
   await expect(handle.result()).resolves.toMatchObject({ exitCode: 0, timedOut: false, aborted: false })
 })
 
+it('keeps a cancelled unsubmitted command available for actual cleanup without reporting a provider failure', async () => {
+  const f = fixture(), caller = new AbortController(), commit = Promise.withResolvers<CommandSnapshot>()
+  f.channel.commit.mockImplementation(() => commit.promise)
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'cancel before submission', signal: caller.signal, onExpiry: 'none' }))
+  await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledOnce() })
+  caller.abort({ kind: 'user' })
+  let settled = false
+  void handle.done.then(() => { settled = true })
+  await Promise.resolve()
+  expect(settled).toBe(false)
+  commit.resolve({ prepared: true, submitted: false, commitClosed: true, rangeEmpty: true, ioClosed: true,
+    physicalStopRequired: false, providerFailure: false, direct: undefined,
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true },
+    stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } })
+  await handle.done
+  await expect(handle.result()).resolves.toMatchObject({ aborted: true, timedOut: false, exitCode: null })
+  expect(f.port.providerFailed).not.toHaveBeenCalled()
+})
+
 it('preserves pre-publication native cancellation and rejects unsupported environment before reservation', async () => {
   const f = fixture(true), caller = new AbortController(), reason = new Error('original caller left')
   const pending = f.shell.execute(f.shell.resolve({ command: 'not committed', signal: caller.signal, onExpiry: 'none' }))

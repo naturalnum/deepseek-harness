@@ -73,6 +73,7 @@ it('activates through the real class-plugin constructor with inherited Config, o
   const store = a.store
   expect(store.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
   expect(store.imageLimits.maxImageBytes).toBe(DEFAULT_MAX_IMAGE_BYTES)
+  expect(store.imageLimits.mediaTypes).toEqual([])
   const providers = [...a.ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
     .filter(current => current.store?.['attachments']?.fiber === current)
   expect(providers.map(current => current.uid)).toEqual([fiber.uid])

@@ -63,7 +63,8 @@ export class ManagedShellExecution implements ShellExecution {
     // The native done can reject or finish with live descendants; neither settles Shell's range.
     const direct = input.process.done.then((outcome) => { this.state.outcome = outcome }, (cause: unknown) => {
       this.state.failure = { cause }
-      input.providerFailed(cause)
+      // The command owner retains unknown failures; its owned interruption is an ordinary Shell result.
+      if (input.interruption() === undefined) input.providerFailed(cause)
     })
     this.actual = Promise.all([direct, input.whenEmpty]).then(() => {
       this.state.status = this.state.failure !== undefined || input.interruption() !== undefined

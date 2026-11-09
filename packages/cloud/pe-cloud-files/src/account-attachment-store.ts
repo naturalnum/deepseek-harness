@@ -25,7 +25,7 @@ function attachmentFailure(error: unknown): AttachmentError {
 /**
  * Prepare a native store constructor whose file paths come only from the trusted mapper.
  * @param backend Exact graph checks and synchronous verified-copy lookup; no staging or authorization is supplied here.
- * @returns Native constructor with inherited configuration, persistence, streams and image handling.
+ * @returns Native constructor with inherited configuration, persistence and streams, and closed inline-image intake.
  *   Path lookup rejects unavailable, stale or replaced owners without exposing the private original.
  */
 export function createAccountAttachmentStore(backend: AccountAttachmentBackend): typeof LocalAttachmentStore {
@@ -46,12 +46,15 @@ export function createAccountAttachmentStore(backend: AccountAttachmentBackend):
   }
   current()
   return class AccountAttachmentStore extends LocalAttachmentStore {
+    declare readonly imageLimits: LocalAttachmentStore['imageLimits']
     private readonly identity = Symbol()
 
     constructor(...args: ConstructorParameters<typeof LocalAttachmentStore>) {
       current(args[0])
       if (args[0].get('attachments') !== undefined) throw unavailable()
       super(...args)
+      // Cloud accepts streamed file receipts; its prompt and command owners keep inline images closed.
+      this.imageLimits = Object.freeze({ ...this.imageLimits, mediaTypes: Object.freeze([]) })
     }
 
     private assertMappingCurrent(): void {

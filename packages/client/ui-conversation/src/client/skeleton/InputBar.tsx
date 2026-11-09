@@ -223,7 +223,10 @@ export const InputBar = memo(function InputBar({
       }
       if (imageLimits !== undefined) {
         const mediaTypes = imageLimits.mediaTypes as readonly string[]
-        const images = files.filter(file => mediaTypes.includes(file.type))
+        const images = files.filter(file => isImageMediaType(file.type))
+        if (images.some(file => !mediaTypes.includes(file.type))) {
+          return t(mediaTypes.length === 0 ? 'image.intakeUnavailable' : 'image.typeUnavailable')
+        }
         const imageAttachments = attachments.filter(attachment => attachment.kind === 'image')
         if (imageAttachments.length + images.length > imageLimits.maxImagesPerMessage) {
           return t('image.tooMany', { count: imageLimits.maxImagesPerMessage })

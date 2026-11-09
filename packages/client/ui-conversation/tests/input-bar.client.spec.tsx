@@ -517,6 +517,25 @@ describe('image draft rail', () => {
   })
 
   it.each([
+    ['closed image intake', [] as const, '当前环境暂不支持发送图片消息。'],
+    ['unavailable image type', ['image/jpeg'] as const, '当前环境不支持此图片格式。'],
+  ])('refuses %s before changing the draft or starting a mixed upload', (_name, mediaTypes, message) => {
+    const addFiles = vi.fn(() => null)
+    const result = bench({ draft: 'keep this draft', addFiles, imageLimits: {
+      maxImageBytes: 1024, maxImagesPerMessage: 2, maxMessageImageBytes: 2048,
+      maxImagePixels: 100, maxImageDimension: 10, mediaTypes,
+    } })
+    const file = new File(['text'], 'note.txt', { type: 'text/plain' })
+    const image = new File(['png'], 'picture.png', { type: 'image/png' })
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([file, image]) })
+    expect(result.view.getByRole('alert').textContent).toContain(message)
+    expect(addFiles).not.toHaveBeenCalled()
+    expect(result.shell.snapshot.draft).toBe('keep this draft')
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([file]) })
+    expect(addFiles).toHaveBeenCalledWith([file], undefined)
+  })
+
+  it.each([
     ['ordinary session', {}],
     ['continuable child', { subagent: CONTINUABLE_CHILD }],
   ])('pre-checks projected image limits for %s: whole-batch refusal with product copy', (_name, session) => {

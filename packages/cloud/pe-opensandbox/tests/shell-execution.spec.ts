@@ -68,6 +68,11 @@ it.each(['aborted', 'timed-out'] as const)('preserves the owning first %s cause 
   const f = fixture(cause)
   f.stderr.push(Buffer.from('known tail'))
   f.native.reject(new Error('direct outcome unavailable after actual range kill'))
+  let settled = false
+  void f.handle.done.then(() => { settled = true })
+  await Promise.resolve()
+  expect(settled).toBe(false)
+  expect(f.providerFailed).not.toHaveBeenCalled()
   f.empty.resolve(undefined)
   await f.handle.done
   await expect(f.handle.result()).resolves.toMatchObject({ exitCode: null, signal: null,
