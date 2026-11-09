@@ -27,7 +27,7 @@ async function fixture() {
     apply(owner: Context) { registerCloudPluginManagement(owner, panelKey, injected) },
   })
   const declare = () => ctx.slots.register({
-    name: 'root', children: { main: { kind: 'keyed', scope: 'root' } },
+    name: 'root', children: { main: { kind: 'keyed', scope: 'root' }, 'plugins.tab': { kind: 'list', scope: 'root' } },
   }, MainHost)
   return { ctx, locale, source, injected, mount, declare, t: locale.bind(PLUGIN_MANAGEMENT_NAMESPACE) }
 }
@@ -42,20 +42,32 @@ it('follows main declaration replacement and releases page and both dictionaries
   expect(firstEntry.options.key).toBe(panelKey)
   expect(firstEntry.locale).toBe(PLUGIN_MANAGEMENT_NAMESPACE)
   expect(firstEntry.component).toBe(PluginManagementPage)
+  expect(f.ctx.slots.entries('plugins.tab')).toHaveLength(1)
+  const firstTab = f.ctx.slots.entries('plugins.tab')[0]!
+  expect(firstTab.component).toBe(PluginManagementPage)
+  expect(firstTab.options.id).toBe(panelKey)
+  const englishLabel = firstTab.options.label
+  expect(typeof englishLabel === 'function' ? englishLabel() : englishLabel).toBe('Approved controls')
   expect(f.injected).not.toHaveBeenCalled()
   expect(f.source.getSnapshot).not.toHaveBeenCalled(); expect(f.source.subscribe).not.toHaveBeenCalled()
 
   collapse()
   expect(f.ctx.slots.entries('main')).toEqual([])
+  expect(f.ctx.slots.entries('plugins.tab')).toEqual([])
   // The contributor still owns its dictionaries while the frame declaration is absent.
   f.locale.setLocale('zh')
   expect(f.t('knownStateRequired')).toBe(pluginManagementDictionaries.zh.knownStateRequired)
   f.declare()
   expect(f.ctx.slots.entries('main')).toHaveLength(1)
+  expect(f.ctx.slots.entries('plugins.tab')).toHaveLength(1)
+  expect(f.ctx.slots.entries('plugins.tab')[0]).not.toBe(firstTab)
+  const chineseLabel = f.ctx.slots.entries('plugins.tab')[0]!.options.label
+  expect(typeof chineseLabel === 'function' ? chineseLabel() : chineseLabel).toBe('获批控制')
   expect(f.ctx.slots.entries('main')[0]).not.toBe(firstEntry)
 
   await firstOwner.dispose()
   expect(f.ctx.slots.entries('main')).toEqual([])
+  expect(f.ctx.slots.entries('plugins.tab')).toEqual([])
   expect(f.t('knownStateRequired')).toBe('knownStateRequired')
   f.locale.setLocale('en')
   expect(f.t('knownStateRequired')).toBe('knownStateRequired')
@@ -66,6 +78,7 @@ it('follows main declaration replacement and releases page and both dictionaries
   expect(f.t('knownStateRequired')).toBe(pluginManagementDictionaries.en.knownStateRequired)
   await replacement.dispose()
   expect(f.ctx.slots.entries('main')).toEqual([])
+  expect(f.ctx.slots.entries('plugins.tab')).toEqual([])
   expect(f.t('knownStateRequired')).toBe('knownStateRequired')
 })
 
@@ -75,6 +88,7 @@ it('does not resurrect a disposed waiting contributor when main is declared late
   expect(f.t('knownStateRequired')).toBe('knownStateRequired')
   const collapse = f.declare()
   expect(f.ctx.slots.entries('main')).toEqual([])
+  expect(f.ctx.slots.entries('plugins.tab')).toEqual([])
   const replacement = f.mount(); await replacement.await()
   expect(f.ctx.slots.entries('main')).toHaveLength(1)
   collapse(); expect(f.ctx.slots.entries('main')).toEqual([])

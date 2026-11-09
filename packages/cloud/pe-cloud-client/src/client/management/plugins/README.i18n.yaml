@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/cloud/pe-cloud-client/src/client/management/plugins/README.md
 /account-plugin-presentation:
-  en: f7cf5a403cadf969
-  zh: 1ab16a8e89fa6d5d
+  en: 7f472e98a8f4df17
+  zh: d4e020201704dbc1

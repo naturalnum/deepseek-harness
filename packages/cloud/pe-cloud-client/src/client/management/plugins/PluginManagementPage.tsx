@@ -6,7 +6,7 @@ import {
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkTerminal,
   StateDot, Switch, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 export type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { AccountPluginCard, PluginCategory, PluginControl, PluginManagementInjected } from './types.ts'
 import { filterPlugins } from './catalog.ts'
@@ -14,8 +14,8 @@ import { PluginEditPanel } from './PluginEditPanel.tsx'
 export type {} from './locales.ts'
 import css from './PluginManagementPage.module.css'
 
-/** The native main slot's owner and locale shares, plus the framework-bound account source. */
-export type PluginManagementPageProps = PropsRuntime<'main'> & PropsLocale<'cloud-plugin-management'> & InjectFace<PluginManagementInjected>
+/** Locale and account shares used by the native plugin tab and fallback main page. */
+export type PluginManagementPageProps = PropsLocale<'cloud-plugin-management'> & InjectFace<PluginManagementInjected>
 type Labels = PropsLocale<'cloud-plugin-management'>
 type Operations = Pick<PluginManagementInjected, 'requestPluginEnabled' | 'requestPluginSelected' | 'openPluginConfiguration'>
 type CardProps = Labels & Operations & { readonly plugin: AccountPluginCard; readonly interactive: boolean }

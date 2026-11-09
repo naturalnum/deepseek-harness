@@ -1,5 +1,6 @@
 /** Locale-owned plugin page copy; package metadata remains owner-provided data. */
 const en = {
+  approvedControlsTab: 'Approved controls',
   availability: 'Bundle files', filesInstallation: 'Provided by the installation', filesProfile: 'Available in the profile',
   filesMissing: 'Bundle files are missing', profileDependency: 'Profile dependency',
   dependencyDeclared: 'Declared', dependencyNotDeclared: 'Not declared',
@@ -72,6 +73,7 @@ const en = {
   editUnavailable: 'The current plugin edit is unavailable. No change was submitted.',
 }
 const zh: Record<keyof typeof en, string> = {
+  approvedControlsTab: '获批控制',
   availability: '插件包文件', filesInstallation: '由安装环境提供', filesProfile: '在 profile 中可用',
   filesMissing: '插件包文件缺失', profileDependency: 'Profile 依赖声明',
   dependencyDeclared: '已声明', dependencyNotDeclared: '未声明',

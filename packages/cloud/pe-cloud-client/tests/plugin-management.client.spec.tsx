@@ -2,7 +2,6 @@
 /** Account display controls never substitute approval for actual installed state or write through a missing port. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime/src/access.ts'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime/src/translate.ts'
 import { PluginManagementPage, type PluginManagementPageProps } from '../src/client/management/plugins/PluginManagementPage.tsx'
 import { pluginManagementDictionaries } from '../src/client/management/plugins/locales.ts'
@@ -18,11 +17,8 @@ function plugin(id: string, options: Partial<AccountPluginCard> = {}): AccountPl
 }
 function fixture(plugins = [plugin('shell'), plugin('agent'), plugin('browser', { installed: null, enabled: null })]) {
   let catalog: AccountPluginCatalog = { phase: 'ready', plugins, refreshing: false }
-  const unused = (): never => { throw new Error('This account page reads no session/global model') }
   const requestPluginEnabled = vi.fn(), requestPluginSelected = vi.fn(), openPluginConfiguration = vi.fn(), refreshPluginCatalog = vi.fn()
   const props: PluginManagementPageProps = {
-    ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    usePanelInfo: unused, useWorkspaces: unused, useResource: unused,
     t: makeTranslate(en), useAccountPluginCatalog: selector => selector(catalog),
     requestPluginEnabled, requestPluginSelected, openPluginConfiguration, refreshPluginCatalog,
   }

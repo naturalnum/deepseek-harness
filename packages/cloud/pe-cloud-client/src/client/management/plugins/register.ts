@@ -8,11 +8,11 @@ import { PLUGIN_MANAGEMENT_NAMESPACE, pluginManagementDictionaries } from './loc
 import type { PluginManagementInjected } from './types.ts'
 
 /**
- * Contribute one account page through the existing native main slot.
+ * Contribute approved controls to the native Plugins tab and its fallback main page.
  * @param owner Captured Cloud dependency fiber; its disposal withdraws the page and dictionaries.
  * @param panelKey Root-owned main/sidebar routing key, shared with its sidebar registration.
  * @param injected Stable current-account data source and authorized callbacks; never a global manager.
- * @returns Synchronous withdrawal of the original main contribution, wait and dictionaries.
+ * @returns Synchronous withdrawal of both contributions, declaration waits and dictionaries.
  */
 export function registerCloudPluginManagement(owner: Context, panelKey: string, injected: () => PluginManagementInjected): () => void {
   const removeCopy = owner.effect(() => owner.locale.register(PLUGIN_MANAGEMENT_NAMESPACE, pluginManagementDictionaries), 'pe-cloud-client: plugin management copy')
@@ -24,5 +24,10 @@ export function registerCloudPluginManagement(owner: Context, panelKey: string, 
     removeMain = remove
     return () => { if (removeMain === remove) removeMain = undefined; remove() }
   })
-  return () => { removeMain?.(); removeMain = undefined; stopWaiting(); void removeCopy() }
+  const t = owner.locale.bind(PLUGIN_MANAGEMENT_NAMESPACE)
+  const stopNativeTab = owner.slots.inject('plugins.tab', () => owner.slots.register({
+    name: 'plugins.tab', id: panelKey, order: 50, locale: PLUGIN_MANAGEMENT_NAMESPACE,
+    label: () => t('approvedControlsTab'), inject: injected,
+  }, PluginManagementPage))
+  return () => { stopNativeTab(); removeMain?.(); removeMain = undefined; stopWaiting(); void removeCopy() }
 }
