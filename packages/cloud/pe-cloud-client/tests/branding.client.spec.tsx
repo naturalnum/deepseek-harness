@@ -17,7 +17,7 @@ it('fills the native brand together after declaration and withdraws it with the 
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     const fiber = await runtime.mount({ apply: installCloudBrand })
-    for (const name of ['sidebar.brand.mark', 'sidebar.brand.name']) expect(runtime.slots.entries(name)).toHaveLength(0)
+    for (const name of ['sidebar.brand.mark', 'sidebar.brand.name'] as const) expect(runtime.slots.entries(name)).toHaveLength(0)
     await runtime.declare({
       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
       'sidebar.brand.name': { kind: 'single', scope: 'root' },
@@ -28,6 +28,6 @@ it('fills the native brand together after declaration and withdraws it with the 
     const name = runtime.renderSlot('sidebar.brand.name', {})
     expect(name.container.textContent).toBe('PowerEvolve')
     await fiber.dispose()
-    for (const name of ['sidebar.brand.mark', 'sidebar.brand.name']) expect(runtime.slots.entries(name)).toHaveLength(0)
+    for (const name of ['sidebar.brand.mark', 'sidebar.brand.name'] as const) expect(runtime.slots.entries(name)).toHaveLength(0)
   } finally { await runtime.dispose() }
 })
