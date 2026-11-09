@@ -14,8 +14,16 @@ const requestId = 'isolated-account-administration' as Branded<'pe-request-id'>
 describe.skipIf(configPath === undefined)('real account administration with PostgreSQL and Better Auth 1.7.10', () => {
   it('keeps registration closed, rejects ordinary users and serializes removal of the final administrator', async () => {
     if (configPath === undefined) throw new Error('Isolated database configuration required')
-    const connection: pg.PoolConfig = JSON.parse(readFileSync(configPath, 'utf8'))
-    connection.database = 'dsh_account_management'
+    const input: unknown = JSON.parse(readFileSync(configPath, 'utf8'))
+    if (input === null || typeof input !== 'object'
+      || !('host' in input) || typeof input.host !== 'string'
+      || !('port' in input) || typeof input.port !== 'number'
+      || !('user' in input) || typeof input.user !== 'string'
+      || !('password' in input) || typeof input.password !== 'string') {
+      throw new Error('Private account administration PostgreSQL configuration is invalid')
+    }
+    const connection: pg.PoolConfig = { host: input.host, port: input.port, user: input.user,
+      password: input.password, database: 'dsh_account_management' }
     const pool = new pg.Pool({ ...connection, max: 2, connectionTimeoutMillis: 2000, statement_timeout: 5000 })
     let adapter: BetterAuthAccess | undefined
     let retireManagementOnInvalidation = false, managementRetired = false
@@ -123,9 +131,51 @@ describe.skipIf(configPath === undefined)('real account administration with Post
       ])
       expect(results.map(result => result.status).sort()).toEqual([200, 409])
       expect((await pool.query<{ count: string }>('SELECT count(*) FROM "user" WHERE role=$1 AND coalesce(banned,false)=false', ['admin'])).rows[0]?.count).toBe('1')
+
+      const active = await pool.query<{ id: string }>('SELECT id FROM "user" WHERE role=$1 AND coalesce(banned,false)=false', ['admin'])
+      expect(active.rows).toHaveLength(1)
+      const sole = [a, b].find(account => account.id === active.rows[0]?.id)
+      const other = [a, b].find(account => account.id !== active.rows[0]?.id)
+      if (sole === undefined || other === undefined) throw new Error('Original fixture administrators missing')
+      const stopsBefore = stopped
+      const deniedDisable = await post('/cloud/admin/accounts', { op: 'enabled', id: sole.id, enabled: false }, sole.cookie)
+      expect(deniedDisable.status).toBe(409)
+      expect(await deniedDisable.json()).toMatchObject({ code: 'cloud/last-administrator' })
+      expect((await pool.query<{ role: string; banned: boolean }>('SELECT role, banned FROM "user" WHERE id=$1', [sole.id])).rows[0])
+        .toMatchObject({ role: 'admin', banned: false })
+      expect(stopped).toBe(stopsBefore)
+
+      expect((await post('/cloud/admin/accounts', { op: 'role', id: other.id, role: 'admin' }, sole.cookie)).status).toBe(200)
+      const signIn = async (account: typeof a) => {
+        const response = await post('/cloud/auth/sign-in/email', { email: account.email, password: 'Test-admin-password-1234!' })
+        expect(response.status).toBe(200)
+        const cookie = response.headers.getSetCookie().map(item => item.split(';')[0]).join('; ')
+        expect(cookie).not.toBe('')
+        return { ...account, cookie }
+      }
+      const [first, second] = await Promise.all([signIn(sole), signIn(other)])
+      const activeCount = async () => (await pool.query<{ count: string }>(
+        'SELECT count(*) FROM "user" WHERE role=$1 AND coalesce(banned,false)=false', ['admin'])).rows[0]?.count
+      expect(await activeCount()).toBe('2')
+      const mixed = await Promise.all([
+        post('/cloud/admin/accounts', { op: 'role', id: first.id, role: 'user' }, first.cookie),
+        post('/cloud/admin/accounts', { op: 'enabled', id: second.id, enabled: false }, second.cookie),
+      ].map(async (response) => {
+        const settled = await response
+        expect(await activeCount()).toBe('1')
+        return settled.status
+      }))
+      expect(mixed.sort()).toEqual([200, 409])
+      expect(await activeCount()).toBe('1')
     } finally {
       await adapter?.close()
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+      expect(server.listening).toBe(false)
       await pool.end()
     }
   }, 20000)
