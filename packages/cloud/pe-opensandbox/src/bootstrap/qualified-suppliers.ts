@@ -34,6 +34,11 @@ export const NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST = 'sha256:84d3c8cd1520dfb2b088f9
 /** Actual six-file guarded SDK overlay paired exclusively with the Native AMD64 artifact. */
 export const NATIVE_AMD64_SERVER_IMAGE_DIGEST = 'sha256:7b9ef8e0c71d81c9d6909cae992015f8789e9e152d5a21aee03836fd08ac7224'
 
+/** Complete AMD64 Office, independent Research, getrandom Git and SSH client supplier. */
+export const OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST = 'sha256:4b7497e321629c90db04a8105865ca9f932beedeb67239cb22e68ed1a66dc360'
+/** COPY-only original SDK policy variant paired exclusively with that complete AMD64 workload. */
+export const OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST = 'sha256:28e4ebc841f3bc9b09f5cbfce8ce289522d259daa95f2b9ca152786ca8b5de0b'
+
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
   readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
@@ -76,6 +81,9 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST,
     platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
     serverImageDigest: NATIVE_AMD64_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST,
+    platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
+    serverImageDigest: OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**

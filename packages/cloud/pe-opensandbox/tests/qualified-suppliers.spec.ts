@@ -11,6 +11,7 @@ import { NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, OFFI
   OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST,
   OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST,
   NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST, NATIVE_AMD64_SERVER_IMAGE_DIGEST,
+  OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST,
   qualifiedSupplierTuples, isPinnedWorkloadImageDigest, isSessionDirectoryServerImageDigest } from '../src/bootstrap/qualified-suppliers.ts'
 import { RUNTIME_PROFILES } from '../src/bootstrap/runtime-profiles.ts'
 import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/root-deployment.ts'
@@ -56,10 +57,18 @@ const armSuppliers = [...previous, {
   sessionDirectories: true,
 }] as const
 
-const suppliers = [...armSuppliers, {
+const nativeSuppliers = [...armSuppliers, {
   schema: 'pe-opensandbox-root-deployment-v2',
   workloadImageDigest: 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb',
   serverImageDigest: 'sha256:7b9ef8e0c71d81c9d6909cae992015f8789e9e152d5a21aee03836fd08ac7224',
+  platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
+  sessionDirectories: true,
+}] as const
+
+const suppliers = [...nativeSuppliers, {
+  schema: 'pe-opensandbox-root-deployment-v2',
+  workloadImageDigest: 'sha256:4b7497e321629c90db04a8105865ca9f932beedeb67239cb22e68ed1a66dc360',
+  serverImageDigest: 'sha256:28e4ebc841f3bc9b09f5cbfce8ce289522d259daa95f2b9ca152786ca8b5de0b',
   platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
   sessionDirectories: true,
 }] as const
@@ -68,9 +77,12 @@ it('retains the original suppliers and permits only the exact built v2 superset 
   expect(qualifiedSupplierTuples.slice(0, 5)).toEqual(existing)
   expect(qualifiedSupplierTuples.slice(0, 7)).toEqual(previous)
   expect(qualifiedSupplierTuples.slice(0, 8)).toEqual(armSuppliers)
+  expect(qualifiedSupplierTuples.slice(0, 9)).toEqual(nativeSuppliers)
   expect(qualifiedSupplierTuples).toEqual(suppliers)
   expect(NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[8].workloadImageDigest)
   expect(NATIVE_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[8].serverImageDigest)
+  expect(OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[9].workloadImageDigest)
+  expect(OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[9].serverImageDigest)
   expect(OFFICE_RESEARCH_WORKLOAD_IMAGE_DIGEST).toBe('sha256:71c7afa35f5d774ec6a198c7233b645bc16275c56595369efa368d6fac025bf8')
   expect(OFFICE_RESEARCH_SERVER_IMAGE_DIGEST).toBe('sha256:7d8a5f0bfe9d7db24ff396d57f930ef8a6be2d4651c05d229e6d2624cfc2e042')
   expect(OFFICE_RESEARCH_GIT_WORKLOAD_IMAGE_DIGEST).toBe('sha256:44e26197f73faece822111f939e23a14816cf4fd5eb53362e0088087c42a8c1e')
@@ -121,12 +133,17 @@ it('uses one fixed bootstrap payload for every exact reviewed supplier', async (
   }
 })
 
-it('admits only the actual Native AMD64 manifest tuple and its fixed bootstrap payload', async () => {
+it.each([
+  [nativeSuppliers[8], 'sha256:9bd266bc2a847a977395c5ccfd5cfa73fecdf9fc7322b18aebf9b27be0c0b87b',
+    'sha256:79b40881f084d1252e6f247409678668a50278685fc8200928495a30fbde0ced'],
+  [suppliers[9], 'sha256:b555c2337af0b7997c465542044723d507fba142533f450f39b1ed5908e2c6b7',
+    'sha256:f1a88665692d86807fc5c68480c91203ae37e1d2880340199625f4edb19e45da'],
+] as const)('admits only the actual AMD64 manifest tuple and its fixed bootstrap payload: %j', async (supplier, workloadConfig, serverConfig) => {
   const base = sharedPathDeploymentFixture()
   const value = { ...base, lifecycle: { ...base.lifecycle, platform: 'amd64',
-    imageDigest: 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb' },
+    imageDigest: supplier.workloadImageDigest },
   selection: { ...base.selection,
-    serverImageDigest: 'sha256:7b9ef8e0c71d81c9d6909cae992015f8789e9e152d5a21aee03836fd08ac7224',
+    serverImageDigest: supplier.serverImageDigest,
     execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de' } }
   const input = parseRootDeploymentInput(value)
   expect(input.lifecycle).toMatchObject({ platform: 'amd64', imageDigest: value.lifecycle.imageDigest })
@@ -138,11 +155,11 @@ it('admits only the actual Native AMD64 manifest tuple and its fixed bootstrap p
   expect(() => new TrustedSdkBootstrap(config, payload, noTransport)).not.toThrow()
   expect(() => new TrustedSdkBootstrap({ ...config, lifecycle: { ...input.lifecycle, platform: 'arm64' } },
     payload, noTransport)).toThrow('binding')
-  for (const imageDigest of ['sha256:9bd266bc2a847a977395c5ccfd5cfa73fecdf9fc7322b18aebf9b27be0c0b87b', 'native:latest']) {
+  for (const imageDigest of [workloadConfig, 'native:latest']) {
     expect(() => parseRootDeploymentInput({ ...value, lifecycle: { ...value.lifecycle, imageDigest } }))
       .toThrow('lifecycle.fixedSelection')
   }
-  for (const serverImageDigest of ['sha256:79b40881f084d1252e6f247409678668a50278685fc8200928495a30fbde0ced',
+  for (const serverImageDigest of [serverConfig,
     'sha256:b9e5cb3029d236dbfcb50823d59cc5ad77dab7efcd1fc4c5a256babcbcf78bde']) {
     expect(() => parseRootDeploymentInput({ ...value, selection: { ...value.selection, serverImageDigest } }))
       .toThrow('selection.originalPolicy')
