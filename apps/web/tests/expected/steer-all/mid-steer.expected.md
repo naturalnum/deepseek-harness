@@ -14,7 +14,7 @@
 - text: "Interjection: include the word ORANGE in your final reply."
 - button "Copy"
 - status: Processing
-- text: Processing for {{duration}} ···
+- text: Processing for {{duration}}…
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
