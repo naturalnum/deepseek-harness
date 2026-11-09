@@ -274,7 +274,7 @@ describe('private native account assembly', () => {
       const failure = Object.assign(new Error('sensitive-message /secret/path'), { code: 'EACCES' })
       ctx.logger.error(failure)
       ctx.logger.error(new Error('second-sensitive-message'))
-      await expect(handle.dispose()).resolves.toMatchObject({ status: 'unknown', errorEvents: 2 })
+      await expect(handle.dispose()).resolves.toMatchObject({ status: 'confirmed', errorEvents: 0 })
       const rows = output.mock.calls.flat().filter((entry): entry is string => typeof entry === 'string'
         && entry.includes('cloud/native-error'))
       expect(rows).toHaveLength(1)
@@ -282,6 +282,20 @@ describe('private native account assembly', () => {
       expect(rows[0]).not.toContain('sensitive-message')
       expect(rows[0]).not.toContain('/secret/path')
     } finally { output.mockRestore() }
+  })
+  it.each([false, true])('keeps runtime diagnostics out of the teardown budget (disposer failure: %s)', async (failure) => {
+    const f = fixture(`runtime-diagnostics-${failure}`)
+    const handle = f.start({ maxObservedEvents: 2, prepare: async (ctx, binding) => {
+      await f.input.prepare(ctx, binding)
+      if (failure) ctx.effect(() => () => { throw new Error('actual disposer failure') })
+    } })
+    const ctx = await mounted(handle)
+    for (let index = 0; index < 4; index++) {
+      ctx.logger.warn('ordinary runtime warning')
+      ctx.logger.error(new Error('ordinary runtime error'))
+    }
+    await expect(handle.dispose()).resolves.toEqual({ status: failure ? 'unknown' : 'confirmed',
+      errorEvents: failure ? 1 : 0, warningEvents: 0, overflow: false })
   })
   it('joins cancelled JSONL preparation and reports its close failure through native disposal', async () => {
     const f = fixture('jsonl-preparation'), read = Promise.withResolvers<undefined>(), releaseRead = Promise.withResolvers<undefined>()
@@ -529,7 +543,7 @@ describe('private native account assembly', () => {
     writeFileSync(f.profile.patchPath, readFileSync(f.profile.patchPath, 'utf8').replace('"count":1', '"count":"invalid"'))
     let context: Context | undefined
     const handle = f.start({ prepare: async (ctx, binding) => { context = ctx; await f.input.prepare(ctx, binding) } })
-    await expect(handle.result).resolves.toMatchObject({ status: 'failed', disposal: { status: 'unknown', errorEvents: 1 } })
+    await expect(handle.result).resolves.toMatchObject({ status: 'failed', disposal: { status: 'confirmed', errorEvents: 0 } })
     expect(context?.get('settings')).toBeUndefined()
     expect(context?.get('configEditor')).toBeUndefined()
     expect(context?.get('loader')).toBeUndefined()

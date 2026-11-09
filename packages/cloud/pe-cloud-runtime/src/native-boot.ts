@@ -29,7 +29,7 @@ export interface NativeAccountBootInput {
   prepare(ctx: Context, binding: AccountBinding): void | Promise<void>
 }
 
-/** Native fiber settlement only; this never establishes business-work drain or account clean. */
+/** Native fiber settlement with bounded teardown diagnostics; this never establishes business-work drain or account clean. */
 export interface NativeDisposalObservation {
   readonly status: 'confirmed' | 'unknown'
   readonly errorEvents: number
@@ -155,14 +155,16 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
         observer.logger = ctx.logger
         observer.logger.exporter({ levels: { default: 1 }, export(message) {
           if (message.type !== 'error' && message.type !== 'warn') return
-          if (errorEvents + warningEvents >= input.maxObservedEvents) { overflow = true; return }
           if (message.type === 'error') {
-            errorEvents++
             const failure: unknown = message.args.slice(0, 3).find(value => value !== null
               && (typeof value === 'object' || typeof value === 'function'))
             observeStartup(diagnostic, { nativeError: failure })
             observeStartup(nativeErrorDiagnostic, { nativeError: failure })
-          } else warningEvents++
+          }
+          if (!disposeRequested && message.fiber?.deref()?.state !== FiberState.UNLOADING) return
+          if (errorEvents + warningEvents >= input.maxObservedEvents) { overflow = true; return }
+          if (message.type === 'error') errorEvents++
+          else warningEvents++
         } })
         if (disposeRequested) throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup was closed')
         ctx.provide('profileContext', profile)
@@ -202,6 +204,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
       return Object.freeze({ status: 'mounted', context: mounted, binding: requireAccountBinding(mounted) })
     } catch (cause) {
       observeStartup(diagnostic, { failure: cause, ...requiredEntryId === undefined ? {} : { requiredEntryId } })
+      disposeRequested = true
       await disposeContext()
       await observer.fiber.dispose()
       return Object.freeze({ status: 'failed', cause, disposal: observation() })
