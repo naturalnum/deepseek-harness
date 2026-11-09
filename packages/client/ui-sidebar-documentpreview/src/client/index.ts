@@ -25,7 +25,7 @@ import type { TextPreviewInjected } from './TextPreview.tsx'
 import { TextTitle } from './TextTitle.tsx'
 import { TEXTPREVIEW_ID, textDefinition } from './definition.ts'
 import { textFace } from './face.ts'
-import { createReadPage, readDelimitedBytes } from './rpc.ts'
+import { createReadPage, readCompleteBytes, readDelimitedBytes } from './rpc.ts'
 import { createTextStore } from './store.ts'
 import { en, zh } from './locales.ts'
 import { DocumentPreviewRegistry } from './document/registry.ts'
@@ -98,7 +98,7 @@ export function apply(ctx: ClientContext): void {
     createReadPage(ctx.remote),
     (file, signal, rendererId) => rendererId === EXCEL_PREVIEW_ID && /\.(?:csv|tsv)$/i.test(file.path)
       ? readDelimitedBytes(ctx.remote.workspaceFiles.readBytes.bind(ctx.remote.workspaceFiles), file, config.excel.maxBytes, signal)
-      : ctx.remote.workspaceFiles.readBytes(file.sessionId, file.path, {}, signal),
+      : readCompleteBytes(ctx.remote.workspaceFiles.readBytes.bind(ctx.remote.workspaceFiles), file, signal),
     ctx.resources,
   )
   const source = { getSnapshot: previews.getSnapshot, subscribe: previews.subscribe }

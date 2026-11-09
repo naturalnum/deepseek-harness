@@ -95,12 +95,30 @@ export type DocumentFileBytes = WorkspaceFileBytes<Uint8Array<ArrayBuffer>>
 export type ReadDocumentBytes = (file: SessionFile, signal: AbortSignal, rendererId?: string) => Promise<RemoteResult<DocumentFileBytes>>
 
 /**
- * Read a delimited preview in bounded native byte windows. Each response is
+ * Read a complete file, using bounded windows if its provider cannot return it at once.
+ * @param read - Captured workspaceFiles readBytes remote.
+ * @param file - Original Session and path of the document.
+ * @param signal - Owning document lifetime.
+ * @returns Complete stable bytes within the Host's declared file cap, or the original failure.
+ */
+export async function readCompleteBytes(
+  read: TypertClientRemote['workspaceFiles']['readBytes'], file: SessionFile, signal: AbortSignal,
+): Promise<RemoteResult<DocumentFileBytes>> {
+  const result = await read(file.sessionId, file.path, {}, signal)
+  signal.throwIfAborted()
+  if (result.ok || result.error.code !== 'workspace-file/too-large') return result
+  const limit = result.error.details.limit
+  if (!Number.isSafeInteger(limit) || limit < 1) return result
+  return readDelimitedBytes(read, file, limit, signal)
+}
+
+/**
+ * Read a complete preview in bounded native byte windows. Each response is
  * authorized for the original Session and must still name the same version and
  * file; a mixed or truncated sequence is never handed to the spreadsheet parser.
  * @param read - Captured workspaceFiles readBytes remote.
  * @param file - Original Session and path of the document.
- * @param maxBytes - Configured spreadsheet source-byte limit.
+ * @param maxBytes - Owner-selected total source-byte limit.
  * @param signal - Owning document lifetime.
  * @returns Complete bounded bytes, or a native/validation failure.
  */
@@ -134,7 +152,7 @@ export async function readDelimitedBytes(
     declaredBytes ??= part.bytes
     if ((declaredBytes !== undefined && declaredBytes > maxBytes) || offset + part.data.byteLength > maxBytes) {
       return { ok: false, error: { name: 'RemoteError', isDSHRemoteError: true, code: 'workspace-file/too-large',
-        message: 'File exceeds the spreadsheet preview limit.', details: { path: file.path, limit: maxBytes } } }
+        message: 'File exceeds the preview limit.', details: { path: file.path, limit: maxBytes } } }
     }
     chunks.push(part.data)
     offset += part.data.byteLength

@@ -2,11 +2,12 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { nativeFileManager } from '@deepseek-ai/dsh-native-command'
-import { delimiter, join, relative } from 'node:path'
+import { FsError } from '@deepseek-ai/dsh-fs'
+import { basename, delimiter, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
 import { excelFixture, excelFreezeFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
@@ -911,9 +912,21 @@ else process.exit(1);
       `- Parent unchanged: ${String(await page.locator('html').getAttribute('data-document-preview-escape') === null)}`,
     ].join('\n'))
 
+    const wholeRead = scaffold.ctx.fs.readBytes.bind(scaffold.ctx.fs)
+    const providerCap = vi.spyOn(scaffold.ctx.fs, 'readBytes').mockImplementation((target, signal, maxBytes) => {
+      if (basename(target.displayPath) === 'smoke.pdf') {
+        return Promise.reject(new FsError('Provider whole-file capacity exceeded.', 'FS_TOO_LARGE'))
+      }
+      return wholeRead(target, signal, maxBytes)
+    })
+    const byteRanges = vi.spyOn(scaffold.ctx.fs, 'readByteRange')
+    onTestFinished(() => { providerCap.mockRestore(); byteRanges.mockRestore() })
     await openFile('smoke.pdf')
     const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
     await canvas.waitFor({ state: 'visible', timeout: 30_000 })
+    expect(providerCap.mock.calls.some(([target]) => basename(target.displayPath) === 'smoke.pdf')).toBe(true)
+    expect(byteRanges.mock.calls.some(([target, range]) => basename(target.displayPath) === 'smoke.pdf'
+      && range.length <= 32768)).toBe(true)
     expect(await viewer.count()).toBe(0)
     const zoomControls = preview.locator('[data-document-zoom-controls]')
     await expect.poll(() => zoomControls.getAttribute('data-document-zoom-visible')).toBeNull()
@@ -973,6 +986,7 @@ else process.exit(1);
     await successShot(page, 'pdf')
     sections.push([
       '## PDF', '',
+      '- Provider whole-file capacity: bounded range fallback',
       `- Viewer menu hidden: ${String(await viewer.count() === 0)}`,
       `- Worker: ${workerNames.find(name => name === 'dsh-pdf')}`,
       `- Continuous pages: ${await preview.locator('[data-pdf-page]').count()}`,

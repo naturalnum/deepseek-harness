@@ -36,6 +36,7 @@
 
 ## PDF
 
+- Provider whole-file capacity: bounded range fallback
 - Viewer menu hidden: true
 - Worker: dsh-pdf
 - Continuous pages: 2
