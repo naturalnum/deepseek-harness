@@ -55,12 +55,19 @@ export default function ResearchTasks({onResumeRecord}:any){
 }
 
 function TaskCsv({task,busy,execute,refresh}:any){
-  const [source,setSource]=useState<any>(null),[selected,setSelected]=useState('');
-  useEffect(()=>{void api('method_get',{id:task.methodId,version:task.methodVersion}).then(setSource).catch(()=>setSource(null));},[task.methodId,task.methodVersion]);
-  if(!source)return null;
+  const [source,setSource]=useState<{methodId:string;methodVersion:string;files:Record<string,string>}|null>(null),[selection,setSelection]=useState<{taskId:string;tableId:string}|null>(null);
+  useEffect(()=>{
+    const controller=new AbortController();
+    void api('method_get',{id:task.methodId,version:task.methodVersion},undefined,controller.signal).then(value=>{
+      if(!controller.signal.aborted)setSource({methodId:task.methodId,methodVersion:task.methodVersion,files:value.files});
+    }).catch(()=>{if(!controller.signal.aborted)setSource(null);});
+    return()=>controller.abort();
+  },[task.methodId,task.methodVersion]);
+  if(!source||source.methodId!==task.methodId||source.methodVersion!==task.methodVersion)return null;
+  const selected=selection?.taskId===task.id?selection.tableId:'';
   const model=parseAimdProtocol(source.files['protocol.aimd']),owners=buildAimdFieldOwnership(model),tables=model.fields.var_table.filter(t=>owners[t.id]==='human'),table=tables.find(t=>t.id===selected)||tables[0];if(!table)return null;
   const columns=table.subvars.filter(c=>(owners[table.id+'.'+c.id]||owners[table.id])==='human');
-  return <div className="power-form-actions"><select aria-label="CSV 目标表格" value={table.id} onChange={e=>setSelected(e.target.value)}>{tables.map(t=><option key={t.id} value={t.id}>{t.id}</option>)}</select><button disabled={busy} onClick={()=>void downloadTextContent(columns.map(c=>c.id).join(',')+'\r\n',task.methodId+'.csv','text/csv')}>下载 CSV 表头</button><label className="upload-button">导入 CSV<input type="file" accept=".csv,text/csv" aria-label="导入任务 CSV" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;void execute(async()=>{if(file.size>2*1024*1024)throw new Error('CSV 文件不能超过 2 MiB。');const bytes=new Uint8Array(await file.arrayBuffer());let text='';for(const b of bytes)text+=String.fromCharCode(b);const uploaded=await api('attachment_put',{name:file.name,contentBase64:btoa(text),requestId:uid()});await api('task_import_csv',{id:task.id,reference:uploaded.reference,table:table.id,expectedRecordRevision:task.record.revision,requestId:uid()});await refresh();});}}/></label></div>;
+  return <div className="power-form-actions"><select aria-label="CSV 目标表格" value={table.id} onChange={e=>setSelection({taskId:task.id,tableId:e.target.value})}>{tables.map(t=><option key={t.id} value={t.id}>{t.id}</option>)}</select><button disabled={busy} onClick={()=>void downloadTextContent(columns.map(c=>c.id).join(',')+'\r\n',task.methodId+'.csv','text/csv')}>下载 CSV 表头</button><label className="upload-button">导入 CSV<input type="file" accept=".csv,text/csv" aria-label="导入任务 CSV" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;void execute(async()=>{if(file.size>2*1024*1024)throw new Error('CSV 文件不能超过 2 MiB。');const bytes=new Uint8Array(await file.arrayBuffer());let text='';for(const b of bytes)text+=String.fromCharCode(b);const uploaded=await api('attachment_put',{name:file.name,contentBase64:btoa(text),requestId:uid()});await api('task_import_csv',{id:task.id,reference:uploaded.reference,table:table.id,expectedRecordRevision:task.record.revision,requestId:uid()});await refresh();});}}/></label></div>;
 }
 
 export function TaskRecordLink({record,onBack,disabled=false,isReviewBlocked=()=>false}:any){

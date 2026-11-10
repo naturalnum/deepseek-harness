@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write integrations/epri-research/README.md
 /deepscientist-and-airalogy-for-deepseek-harness:
-  en: 66af3ee0df4c3b31
-  zh: 49c106817f8745f2
+  en: 032b3cd415c60a87
+  zh: 09ed67f549bc119d
 /deepscientist-and-airalogy-for-deepseek-harness/use-the-cloud-account-integration:
   en: 64d93066ce52ee62
   zh: 26618aaac51c975a
