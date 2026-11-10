@@ -85,7 +85,7 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 -----
 
-显式 `managed.commands.remoteServers: true` 仅向固定原生消费者列表加入 `remote_exec` 和 `remote_server_info`，并要求执行 Session 文件策略。SSH 通过原有受管 Subprocess 范围运行，沿用原有载体上限。只读工作负载镜像必须包含所配置的 Python 和 OpenSSH 可执行文件。密钥与 known_hosts 保存在该范围私有 PID 命名空间中的密封内存描述符中，不写入项目、命令参数或模型日志。本地超时或取消不代表远程后代进程终止。确认是原始用户取消原因时报告“本地等待已取消，远端程序可能仍在运行。”；原 SSH 截止时间到达时报告对应的超时提示。两者保留原始 cause，其他执行或清理失败原样传递。重试前请先核实远端状态；本地进程范围、IO 和凭据清理仍由 Root 负责。
+显式 `managed.commands.remoteServers: true` 仅向固定原生消费者列表加入 `remote_exec` 和 `remote_server_info`，并要求执行 Session 文件策略。SSH 通过原有受管 Subprocess 范围运行，沿用原有载体上限。固定事实探针以压缩数据和凭据共用原有私有批量输入，不再增大 guardian 的 argv frame。helper 仅接受 command 或 probe 的精确字段集合，并在 SSH 前消费这些字段；私有输入与完整 guardian frame 各自原有的 4096 字节上限保持不变。只读工作负载镜像必须包含所配置的 Python 和 OpenSSH 可执行文件。密钥与 known_hosts 保存在该范围私有 PID 命名空间中的密封内存描述符中，不写入项目、命令参数或模型日志。本地超时或取消不代表远程后代进程终止。确认是原始用户取消原因时报告“本地等待已取消，远端程序可能仍在运行。”；原 SSH 截止时间到达时报告对应的超时提示。两者保留原始 cause，其他执行或清理失败原样传递。重试前请先核实远端状态；本地进程范围、IO 和凭据清理仍由 Root 负责。
 
 Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/workload-images.ts)：原始 Native 供应镜像，或叠加了[固定版本 OpenSSH 客户端层](runtime/remote-client/Dockerfile)的镜像。标签及其他摘要均被拒绝。SSH 供应镜像要求使用其[配对的不可变服务端策略](runtime/server/Dockerfile.remote-client)，保留原始目录守卫、seccomp，以及每个请求与唯一已配置工作负载的绑定。Root 在分配前拒绝新工作负载与旧服务端的组合、旧工作负载与配对服务端的组合，以及所有未审阅的服务端摘要。SSH 供应镜像保留原始 Native 镜像层，不代表具备 Office 能力。部署必须显式选择这一配对，并在原始保护条件下验收实际原 SDK 和账户执行，之后才能声明远程执行可用。
 

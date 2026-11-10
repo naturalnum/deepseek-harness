@@ -29,7 +29,10 @@ try:
  if len(raw)>4096: raise ValueError()
  v=json.loads(raw)
  del raw
- if v.pop('probe',False): v['command']=zlib.decompress(base64.b64decode(sys.argv[2])).decode()
+ if type(v) is not dict or set(v)!={'privateKey','knownHosts','host','user','port','connect',('probe' if 'probe' in v else 'command')}: raise ValueError()
+ if any(type(v[k]) is not str for k in ('privateKey','knownHosts','host','user','probe' if 'probe' in v else 'command')): raise ValueError()
+ if any(type(v[k]) is not int or not 1<=v[k]<=m for k,m in (('port',65535),('connect',60))): raise ValueError()
+ if 'probe' in v: v['command']=zlib.decompress(base64.b64decode(v.pop('probe'),validate=True)).decode()
  stage=2
  fds=[]
  for name in ('privateKey','knownHosts'):
@@ -42,7 +45,7 @@ try:
   fcntl.fcntl(fd,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL)
   fds.append(fd)
  base='/proc/'+str(os.getpid())+'/fd/'
- a=[sys.argv[1],'-F/dev/null','-oBatchMode=yes','-oStrictHostKeyChecking=yes','-oGlobalKnownHostsFile=/dev/null','-oUserKnownHostsFile='+base+str(fds[1]),'-oIdentitiesOnly=yes','-oIdentityAgent=none','-oPreferredAuthentications=publickey','-oControlPath=none','-oConnectTimeout='+str(v['connect']),'-i'+base+str(fds[0]),'-p'+str(v['port']),'--',v['user']+'@'+v['host'],v['command']]
+ a=[sys.argv[1],'-F/dev/null','-oBatchMode=yes','-oStrictHostKeyChecking=yes','-oGlobalKnownHostsFile=/dev/null','-oUserKnownHostsFile='+base+str(fds[1]),'-oIdentitiesOnly=yes','-oIdentityAgent=none','-oPreferredAuthentications=publickey','-oControlPath=none','-oConnectTimeout='+str(v.pop('connect')),'-i'+base+str(fds[0]),'-p'+str(v.pop('port')),'--',v.pop('user')+'@'+v.pop('host'),v.pop('command')]
  stage=5
  p=subprocess.Popen(a,stdin=subprocess.DEVNULL,close_fds=True)
  outcome=p.wait()
@@ -82,13 +85,13 @@ function unavailable(): never { throw new ExecutionStateError('cloud/execution-u
 export function remoteSshSpec(target: RemoteServer, credential: RemoteCredential, command: string, workdir: string,
   signal: AbortSignal, config: RemoteSshConfig, probe: boolean): SubprocessSpawnSpec {
   if (probe && command !== PROBE_SCRIPT) unavailable()
+  // The guardian frame includes argv and skill identities; batch input has its own unchanged 4KiB bound.
   const payload = JSON.stringify({ ...credential, host: target.host, user: target.user, port: target.port,
-    ...probe ? { probe: true } : { command }, connect: config.connectTimeoutSeconds })
+    ...probe ? { probe: deflateSync(PROBE_SCRIPT).toString('base64') } : { command }, connect: config.connectTimeoutSeconds })
   if (Buffer.byteLength(payload) > 4096) throw new Error('cloud/remote-request-too-large')
-  return { argv: [config.pythonPath, '-I', '-S', '-c', HELPER, config.sshPath,
-    ...probe ? [deflateSync(PROBE_SCRIPT).toString('base64')] : []], cwd: workdir,
-  stdio: { stdin: { data: payload }, stdout: { maxBytes: config.outputMaxBytes }, stderr: { maxBytes: config.outputMaxBytes } },
-  graceMs: config.stopWaitMs, signal }
+  return { argv: [config.pythonPath, '-I', '-S', '-c', HELPER, config.sshPath], cwd: workdir,
+    stdio: { stdin: { data: payload }, stdout: { maxBytes: config.outputMaxBytes }, stderr: { maxBytes: config.outputMaxBytes } },
+    graceMs: config.stopWaitMs, signal }
 }
 
 /** Run inside the original registry-minted native call; no Host launcher, replacement Session or execution controller.

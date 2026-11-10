@@ -1,0 +1,12 @@
+version: 1
+scenario: cloud-remote-facts-budget
+profile: headless
+composition: cloud-remote-facts-budget
+recording: authored
+header:
+  class: cloud-remote-facts-budget
+  pin: true
+permission: read-only
+platform: posix
+workspace:
+  final: true

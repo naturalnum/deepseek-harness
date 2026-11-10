@@ -1,0 +1,9 @@
+- id: bash-sandbox
+  disabled: true
+- id: subprocess
+  disabled: true
+- id: shell-env
+  disabled: true
+- insert:
+    - id: cloud-remote-facts-budget-fixture
+      name: '../../../packages/cloud/pe-opensandbox/tests/fixtures/remote-facts-budget-snapshot.ts'
