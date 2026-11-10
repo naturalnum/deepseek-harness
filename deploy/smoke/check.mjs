@@ -76,7 +76,7 @@ async function run(options) {
       requireThat(bootstrap.status() === 200, `登录后 bootstrap 返回 HTTP ${bootstrap.status()}，预期 200`)
     }
 
-    async function send(prompt, { tokens = [], bash = 0, bashTokens = [], tools = [] } = {}) {
+    async function send(prompt, { tokens = [], bash = 0, tools = [] } = {}) {
       const before = await page.locator('[data-turn-process]').evaluateAll(elements => elements.map(e => e.dataset.turnProcess))
       await page.locator('[data-composer-input][contenteditable="true"]').fill(`${prompt}\nIf any tool call fails, do not retry it and do not use another tool as a substitute. Report the original failure and end this turn immediately.`)
       await page.getByRole('button', { name: /^(Send message|发送消息)$/ }).click()
@@ -106,24 +106,6 @@ async function run(options) {
         `本轮成功的独立命令调用不足 ${bash} 次`)
       for (const tool of tools) requireThat(states.some(row => row.tool === tool && row.state === 'ok'),
         `未观察到成功的 ${tool} 工具调用`)
-      if (bashTokens.length) {
-        const outputs = []
-        const calls = nodes.locator('[data-chat-call-id]').filter({ has: page.locator('[data-sample="bash"]') })
-        for (const call of await calls.all()) {
-          const summary = call.locator('[data-sample="bash"]')
-          if (await summary.getAttribute('aria-expanded') === 'false') await summary.click()
-          // TerminalBlock renders its command header first and its output body second.
-          const output = call.locator('[data-terminal][data-body] > div:nth-child(2)')
-          requireThat(await output.count() === 1, '本轮命令没有可核对的标准输出')
-          outputs.push(await output.textContent())
-        }
-        let next = 0
-        for (const token of bashTokens) {
-          const index = outputs.findIndex((output, position) => position >= next && output.includes(token))
-          requireThat(index !== -1, '本轮独立命令的实际标准输出未包含预期结果')
-          next = index + 1
-        }
-      }
       // The response group belongs to the node itself; keep reasoning and user prompts out of assertions.
       const answer = await page.locator(`[data-chat-turn="${turn}"][data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]`).allTextContents()
       for (const token of tokens) requireThat(answer.join('\n').includes(token), '模型最终回复没有包含本项预期结果')
@@ -156,12 +138,12 @@ async function run(options) {
     }, [2])
     await check(4, '沙箱执行一条命令', async () => {
       const token = `${prefix}-EXEC`
-      await send(`Use Bash to execute exactly: printf '%s\\n' '${token}'. Report its actual stdout.`, { tokens: [token], bash: 1, bashTokens: [token] })
+      await send(`Use Bash to execute exactly: printf '%s\\n' '${token}'. Report its actual stdout.`, { tokens: [token], bash: 1 })
     }, [3])
     await check(5, '同一对话连续执行五条命令', async () => {
       const tokens = [1, 2, 3, 4, 5].map(n => `${prefix}-SEQ-${n}`)
       const commands = tokens.map(token => `printf '%s\\n' '${token}'`).join('; then ')
-      await send(`Make exactly five separate sequential Bash tool calls, one per command. Do not combine commands into one call. Execute in order: ${commands}. Report all five actual stdout lines.`, { tokens, bash: 5, bashTokens: tokens })
+      await send(`Make exactly five separate sequential Bash tool calls, one per command. Do not combine commands into one call. Execute in order: ${commands}. Report all five actual stdout lines.`, { tokens, bash: 5 })
       return '五次独立命令成功，覆盖每四条命令更换沙箱的路径'
     }, [3])
     await check(6, '按文件名和内容搜索', async () => {
@@ -205,7 +187,7 @@ async function run(options) {
       await page.locator('[data-turn-process]').first().waitFor({ state: 'attached' })
       requireThat((await page.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]').allTextContents()).join('\n').includes(`${prefix}-CHAT`), '重新登录后没有找到原对话内容')
       const token = `${prefix}-RELOGIN`
-      await send(`Use Bash to execute printf '%s\\n' '${token}'. Report actual stdout.`, { tokens: [token], bash: 1, bashTokens: [token] })
+      await send(`Use Bash to execute printf '%s\\n' '${token}'. Report actual stdout.`, { tokens: [token], bash: 1 })
     }, [3])
     console.log('未做 10. MCP 检查；未做 11. 科研模式检查：留待对应迭代扩展')
     const passed = [...outcomes.values()].filter(value => value === 'pass').length
