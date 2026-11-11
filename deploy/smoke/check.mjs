@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
 import { readOptions } from './options.mjs'
-import { createBudget, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
+import { createBudget, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 
 const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--credentials 私密JSON] [--account 账号字段]
 也可通过 PE_CLOUD_SMOKE_EMAIL 和 PE_CLOUD_SMOKE_PASSWORD 提供测试账号。
@@ -52,6 +52,7 @@ async function run(options) {
     let pendingTurn
     let conversationReady = true
     let activeNumber
+    let previousSessionPhase = '打开对话'
     const observers = new Set()
     let bootstrapStatus = null
     const isBootstrap = response => response.request().method() === 'GET'
@@ -118,8 +119,10 @@ async function run(options) {
       } catch (error) {
         outcomes.set(number, error instanceof SmokeUnavailable ? 'skip' : 'fail')
         // Playwright error messages can contain form values. Only our fixed diagnostics are printed.
-        const message = error instanceof StepTimeout || error?.name === 'TimeoutError' ? '本项检查超时'
-          : error instanceof SmokeFailure || error instanceof SmokeUnavailable ? error.message : '网页操作未完成'
+        const message = error instanceof StepTimeout || error?.name === 'TimeoutError'
+          ? number === 12 ? `本项检查超时（${previousSessionPhase}）` : '本项检查超时'
+          : error instanceof SmokeFailure || error instanceof SmokeUnavailable || error instanceof PreviousReplyNotFound
+            ? error.message : '网页操作未完成'
         console.log(`${error instanceof SmokeUnavailable ? '未验证' : '失败'} ${number}. ${label}：${message}`)
         console.log(`页面诊断：${JSON.stringify({ bootstrapStatus })}`)
         phaseDeadline = allowance.deadline
@@ -264,9 +267,12 @@ async function run(options) {
     await check(2, '测试账号登录', async () => { await login(); return '登录后 bootstrap 200' }, [1])
     if (options.continueSession !== undefined) {
       await check(12, '更新前对话保留并能继续执行命令', async () => {
+        previousSessionPhase = '打开对话'
         const content = await openPreviousSession(options.continueSession)
+        previousSessionPhase = '等原回复'
         await waitForPreviousReply(content, options.continueMarker, remaining())
         const token = `${prefix}-CONTINUE`
+        previousSessionPhase = '等新一轮结束'
         await send(`Use Bash to execute printf '%s\\\\n' '${token}'. Report actual stdout.`, { tokens: [token], bash: 1 })
         return '原回复标记保留，新的命令调用和回复通过'
       }, [2])

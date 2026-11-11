@@ -44,6 +44,68 @@ test('a user prompt or another conversation cannot satisfy the previous assistan
     { name: 'TimeoutError' })
 })
 
+for (const [label, pages] of [['加载更早', 1], ['Load earlier', 2]]) {
+  test(`previous reply loads ${pages} earlier history page(s) through the ${label} button`, async t => {
+    const browser = await chromium.launch({ headless: true })
+    t.after(() => browser.close())
+    const page = await browser.newPage()
+    await page.setContent(`<div data-conversation-content data-conversation-session="previous">
+      <button type="button">${label}</button>
+      <div data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-chat-flow-key="recent">recent reply</div>
+    </div>
+    <div data-conversation-content data-conversation-session="other">
+      <button type="button" onclick="throw Error('wrong conversation')">${label}</button>
+      <div data-chat-flow-kind="assistant-step" data-chat-group-part="response">retained-reply-marker</div>
+    </div>
+    <script>
+      const content=document.querySelector('[data-conversation-session="previous"]');
+      const button=content.querySelector('button');let requested=0;
+      button.addEventListener('click',()=>{
+        button.disabled=true;button.textContent='Loading…';content.dataset.requested=String(++requested);
+      });
+      addEventListener('fixture-page-ready',()=>{
+        const reply=document.createElement('div');
+        reply.dataset.chatFlowKind='assistant-step';reply.dataset.chatGroupPart='response';
+        reply.dataset.chatFlowKey='older-'+requested;
+        reply.textContent=requested===${pages}?'retained-reply-marker':'older reply';
+        content.insertBefore(reply,button.nextSibling);
+        if(requested===${pages})button.remove();
+        else {button.disabled=false;button.textContent=${JSON.stringify(label)}}
+      });
+    </script>`)
+    const content = page.locator('[data-conversation-session="previous"]')
+    const outcome = waitForPreviousReply(content, 'retained-reply-marker', 1000)
+      .then(() => undefined, error => error)
+    for (let requested = 1; requested <= pages; requested++) {
+      await page.waitForFunction(value => document.querySelector('[data-conversation-session="previous"]')
+        ?.getAttribute('data-requested') === String(value), requested, { timeout: 1000 })
+      await page.evaluate(() => dispatchEvent(new Event('fixture-page-ready')))
+    }
+    assert.equal(await outcome, undefined)
+    assert.equal(await content.getAttribute('data-requested'), String(pages))
+  })
+}
+
+test('exhausted earlier history reports a missing marker even when the final page adds no messages', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-conversation-content data-conversation-session="previous">
+    <button type="button" onclick="this.disabled=true;this.textContent='Loading…';this.parentElement.dataset.requested='1'">Load earlier</button>
+    <div data-chat-flow-kind="assistant-step" data-chat-group-part="response" data-chat-flow-key="recent">recent reply</div>
+  </div>`)
+  const content = page.locator('[data-conversation-session="previous"]')
+  const result = assert.rejects(waitForPreviousReply(content, 'retained-reply-marker', 1000), error => {
+    assert.equal(error.name, 'PreviousReplyNotFound')
+    assert.equal(error.message, '更新前对话的模型回复中没有找到指定标记')
+    return true
+  })
+  await page.waitForFunction(() => document.querySelector('[data-conversation-session="previous"]')
+    ?.getAttribute('data-requested') === '1', undefined, { timeout: 1000 })
+  await content.locator('button').evaluate(button => button.remove())
+  await result
+})
+
 test('a timed-out real browser entry is cancelled and joined before an independent page action starts', async t => {
   const browser = await chromium.launch({ headless: true })
   t.after(() => browser.close())
