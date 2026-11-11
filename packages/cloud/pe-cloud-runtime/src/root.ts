@@ -15,6 +15,7 @@ import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObse
 import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
 import { AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
+import { SingleInstanceControl } from './single-instance.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import { InstanceControlError, RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
@@ -62,6 +63,7 @@ interface RootIngressRegistration {
 
 interface RootControl {
   readonly config: RuntimeRootConfig
+  readonly singleInstance?: SingleInstanceControl
   readonly executor: PgOwnerExecutor
   readonly database: RootMetadataDatabase
   readonly instance: RuntimeInstanceControl
@@ -104,6 +106,11 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
 
   /** Root-only maintenance capability; ordinary and component-only runtimes keep recovery closed. */
   get recovery(): AccountRecoveryRuntime | undefined { return this.control?.recovery }
+
+  /** Explicit single-instance exclusion is unavailable during reconnect, maintenance and closure. */
+  get singleInstanceActive(): boolean {
+    return !this.closed && this.control?.phase === 'active' && this.control.singleInstance?.active === true
+  }
 
   /** Bounded metadata reads only; absence grants no permission to acquire or recover an account. */
   get ownerResolver(): AccountOwnerResolver | undefined {
@@ -340,7 +347,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     catch (cause) {
       runtime.controlFailure(cause)
       await runtime.close()
-      throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime root startup failed; account admission remains closed')
+      throw new AccountRuntimeError('cloud/account-unavailable',
+        resolved.singleInstance === true && resolved.recovery === undefined
+          && cause instanceof AccountRuntimeError && cause.code === 'cloud/config-conflict'
+          ? cause.message : 'Runtime root startup failed; account admission remains closed')
     }
     return runtime
   }
@@ -724,7 +734,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const factory = new AccountFactory(this.capacity, config.factory,
       (row) => { this.logObservation({ instanceId: instance.identity.instanceId, rootRecipeVersion: config.recipeVersion, ...row }) })
     const saves = new ConfigSaveCoordinator(config.saves)
+    const singleInstance = config.singleInstance === true && config.recovery === undefined
+      ? new SingleInstanceControl({ ...config.database, password }, config.pg, instance.identity.instanceId,
+        (ownerRows, instanceRows) => this.logObservation({ event: 'single-instance-takeover', ownerRows, instanceRows }, 'info'),
+        cause => this.controlFailure(cause)) : undefined
     const control: RootControl = {
+      ...singleInstance === undefined ? {} : { singleInstance },
       config, executor, database, instance, owners, factory, saves, requests: new Map(), secrets,
       ...releaseSkillBinary === undefined ? {} : { releaseSkillBinary },
       phase: 'starting', starting: Promise.resolve(),
@@ -745,6 +760,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       this.assertStarting(control)
       await owners.migrate()
       this.assertStarting(control)
+      if (singleInstance !== undefined) {
+        await singleInstance.start()
+        this.assertStarting(control)
+      }
       await instance.register()
       this.assertStarting(control)
       this.logObservation({ event: 'instance-registered', pid: process.pid,
@@ -848,6 +867,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     }
     try { control.saves.close() } catch (cause) { faults.push(cause) }
     try { await control.instance.close() } catch (cause) { faults.push(cause) }
+    if (control.singleInstance !== undefined) {
+      try { await control.singleInstance.close() } catch (cause) { faults.push(cause) }
+    }
     await Promise.allSettled([...control.secrets])
     try { await control.staticBindings?.close(); control.revokeStaticBindings?.() } catch (cause) { faults.push(cause) }
     try { await control.executor.close() } catch (cause) { faults.push(cause) }
@@ -1057,7 +1079,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   private activeControl(): RootControl {
     this.assertOpen()
     const control = this.control
-    if (control === undefined || control.phase !== 'active') {
+    if (control === undefined || control.phase !== 'active'
+      || control.singleInstance !== undefined && !control.singleInstance.active) {
       throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime root control is not available')
     }
     return control
