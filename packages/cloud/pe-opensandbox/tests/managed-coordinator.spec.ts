@@ -964,7 +964,7 @@ it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount', 'getter-c
       workspace: a.authority.projectForSession(a.agents[0]!.session),
       projectDirectory: { binding: a.binding, prepare: async () => {} } }
     const capacity = kind === 'untyped-cause' ? new Error('/private/environment-key must not reach the model')
-      : new FilesFailure('cloud/capacity', '/private/environment-key must not reach the model')
+      : new FilesFailure('cloud/capacity', 'No free session environment is available.')
     const refused = new FdMutationFailure(kind === 'unknown' ? 'unknown' : 'not-published', 'FS_TOO_LARGE', undefined,
       { cause: capacity })
     const mounts = vi.fn<CloudAccountFiles['prepareExecutionMounts']>(async () => { throw refused })
@@ -1014,7 +1014,7 @@ it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount', 'getter-c
     expect(getterReads).toBe(0)
     if (kind === 'not-published') expect(warn).not.toHaveBeenCalled()
     else {
-      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls.filter(call => call[1]?.event === 'managed-execution-preparation-failed')).toHaveLength(1)
       expect(warn).toHaveBeenCalledWith('Cloud managed execution preparation failed: %j', {
         event: 'managed-execution-preparation-failed', pid: process.pid,
         stage: kind === 'outside-mount' || kind === 'getter-code' ? 'allocation-prepare' : 'environment-mounts',
@@ -1204,7 +1204,7 @@ it.each(['sdk/closed', 'sdk/bounds', 'sdk/capacity', 'sdk/selection', 'sdk/creat
   expect(result.isError).toBe(true)
   if (!result.isError) throw new Error('Scripted preparation must not execute')
   expect(result.error.message).toBe('Cloud execution is not confirmed available; Root retains cleanup responsibility.')
-  expect(warn).toHaveBeenCalledOnce()
+  expect(warn.mock.calls.filter(call => call[1]?.event === 'managed-execution-preparation-failed')).toHaveLength(1)
   expect(warn.mock.calls[0]?.[1]).toMatchObject({ code, causeCode: 'sdk/selection' })
   expect(JSON.stringify(warn.mock.calls)).not.toMatch(/SECRET|BODY|TOKEN|KEY|private|stack/)
   expect(JSON.stringify(result)).not.toContain(privateText)
@@ -1265,3 +1265,37 @@ it('a failed log sink preserves the original account stop failure and unknown re
   f.transportClose.resolve(undefined)
   await expect(f.owner.closeRoot()).rejects.toBe(cause)
 })
+
+for (const source of ['preparation', 'capacity-stop'] as const) for (const typed of [true, false]) {
+  it(`logs ${source} after an earlier request refusal consumed the preparation observation; typed=${typed}`, async () => {
+    const f = await idleComputeFixture()
+    for (let i = 0; i < 2; i++) expect((await f.runSession(i)).isError).toBe(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    f.observe.mockReturnValue(undefined)
+    expect((await f.runSession(2)).isError).toBe(true)
+    expect(warn.mock.calls.filter(call => call[1]?.event === 'managed-execution-preparation-failed')).toHaveLength(1)
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({ stage: 'request', code: 'cloud/capacity' })
+    const cause = typed ? new ExecutionStateError('cloud/stop-unconfirmed', 'Execution cleanup was not confirmed.')
+      : Object.assign(new Error('FAKE_PRIVATE_KEY preparation failure'), { code: 'E_PREPARE' })
+    if (source === 'preparation') f.prepare.mockRejectedValueOnce(cause)
+    else {
+      const a = f.a, project: AccountFilesProject = { binding: a.binding, workspace: a.workspace,
+        projectDirectory: { binding: a.binding, prepare: async () => {} } }
+      const refused = new FdMutationFailure('not-published', 'FS_TOO_LARGE', undefined,
+        { cause: new FilesFailure('cloud/capacity', 'No free environment slot.') })
+      const scripted = { projectFor: async () => project, prepareExecutionMounts: async () => { throw refused } }
+      const files = new Proxy(CloudAccountFiles.prototype, { get(_target, key): unknown { return Reflect.get(scripted, key) } })
+      a.authority.files.mockReturnValue(files)
+      f.prepare.mockImplementationOnce(async (request) => { await request.prepareMount(); throw new Error('Unexpected successful mount') })
+      f.stop.mockRejectedValueOnce(cause)
+    }
+    expect((await f.runSession(0)).isError).toBe(true)
+    const entry = warn.mock.calls.find(call => call[1]?.event === 'managed-execution-failed' && call[1]?.source === source)?.[1]
+    expect(entry).toMatchObject({ source, accountId: f.a.binding.accountId, epoch: f.a.binding.epoch,
+      sessionId: f.a.agents[0]!.session.id, stage: 'allocation-prepare',
+      error: { code: typed ? 'cloud/stop-unconfirmed' : 'E_PREPARE' } })
+    expect(warn.mock.calls.filter(call => call[1]?.event === 'managed-execution-preparation-failed')).toHaveLength(1)
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('FAKE_PRIVATE_KEY')
+    if (!typed) expect(entry.error).not.toHaveProperty('message')
+  })
+}

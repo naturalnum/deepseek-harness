@@ -30,18 +30,23 @@ const check = (ok: boolean, code: ConstructorParameters<typeof SdkLifecycleFailu
   if (!ok) throw new SdkLifecycleFailure(code)
 }
 
+const logIdentifier = (value: unknown): string | undefined =>
+  typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,128}$/.test(value) ? value : undefined
+
 /** Keep SDK response text private while retaining structured stop diagnostics and one cause. */
 function stopFailureDetails(cause: unknown, includeCause = true): Record<string, unknown> {
   const object = cause !== null && typeof cause === 'object' ? cause : undefined
-  const code: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'code')?.value
+  const code: unknown = cause instanceof SandboxException ? logIdentifier(cause.error.code)
+    : object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'code')?.value
   const nested: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'cause')?.value
   const statusCode: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'statusCode')?.value
   const deletionCode = cause instanceof SandboxApiException
-    ? JSON.stringify(cause.rawBody)?.match(/deletion-completion\/[a-zA-Z0-9_.-]+/)?.[0] : undefined
+    ? JSON.stringify(cause.rawBody)?.match(/deletion-completion\/[a-zA-Z0-9_.-]{1,108}(?![a-zA-Z0-9_.-])/)?.[0] : undefined
   return { type: cause instanceof Error ? cause.constructor.name : typeof cause,
     ...(typeof code === 'string' ? { code } : {}),
     ...(cause instanceof SdkLifecycleFailure ? { message: cause.message } : {}),
-    ...(cause instanceof SandboxException ? { code: cause.error.code } : {}),
+    ...(cause instanceof SandboxException && logIdentifier(cause.requestId) !== undefined
+      ? { requestId: logIdentifier(cause.requestId) } : {}),
     ...(typeof statusCode === 'number' ? { statusCode } : {}),
     ...(deletionCode === undefined ? {} : { deletionCode }),
     ...(includeCause && nested !== undefined ? { cause: stopFailureDetails(nested, false) } : {}) }

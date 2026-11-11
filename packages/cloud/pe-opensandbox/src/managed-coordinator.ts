@@ -419,12 +419,14 @@ export class ManagedCoordinator extends SandboxCoordinator {
               if (work.sessions.get(request.sessionId) === request) work.sessions.delete(request.sessionId)
             } catch (failure) {
               this.observePreparationFailure(work, 'capacity-stop', failure)
+              this.observePrivateFailure(work, 'capacity-stop', failure, scope.sessionId, stage)
               work.privateFailure ??= { cause: failure }
               return this.unavailable()
             }
             if (signal.aborted) throw signal.reason
             throw new ExecutionStateError('cloud/capacity', cause.message)
           }
+          this.observePrivateFailure(work, 'preparation', cause, scope.sessionId, stage)
           work.privateFailure ??= { cause }
           if (signal.aborted) throw signal.reason
           return this.unavailable()
@@ -857,9 +859,10 @@ export class ManagedCoordinator extends SandboxCoordinator {
   }
   private stale(): never { throw new ExecutionStateError('cloud/stale-generation', 'Execution requires the original current account generation.') }
   private observePrivateFailure(work: AccountWork,
-    source: 'command' | 'command-stop' | 'session-retirement' | 'account-stop', cause: unknown, sessionId?: SessionId): void {
+    source: 'command' | 'command-stop' | 'session-retirement' | 'account-stop' | 'preparation' | 'capacity-stop',
+    cause: unknown, sessionId?: SessionId, stage?: PreparationFailureStage): void {
     try {
-      console.warn('Cloud managed execution failed: %j', { event: 'managed-execution-failed', source,
+      console.warn('Cloud managed execution failed: %j', { event: 'managed-execution-failed', source, ...(stage === undefined ? {} : { stage }),
         accountId: work.binding.accountId, epoch: work.binding.epoch, sessionId: sessionId ?? null,
         ...(sessionId === undefined ? { sessionIds: [...work.sessions.keys()] } : {}),
         error: executionFailureDetails(cause) })
