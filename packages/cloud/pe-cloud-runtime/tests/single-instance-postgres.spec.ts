@@ -80,10 +80,11 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
       { id: 'credentials', name: 'cordis:takeover-credentials' },
       { id: 'runtime', name: 'cordis:takeover-root', config },
     ]))
-    const takeovers: unknown[] = []
+    const observations: unknown[] = [], errors: unknown[] = []
     const ctx = await boot('single-instance-test', configPath, [], (setup) => {
       setup.logger.exporter({ levels: { default: 3 }, export(message) {
-        if (message.type === 'info' && message.args[0] === 'Cloud runtime observation: %o') takeovers.push(message.args[1])
+        if (message.type === 'error') errors.push(...message.args)
+        if (message.type === 'info' && message.args[0] === 'Cloud runtime observation: %o') observations.push(message.args[1])
       } })
       Object.assign(setup.loader.builtins, {
         'takeover-root': Root,
@@ -100,8 +101,8 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
     if (entry?.fiber === undefined) throw new Error('Root Loader entry is absent')
     await entry.fiber.await()
     const runtime = ctx.get('peAccountRuntime')
-    if (runtime === undefined) throw new Error('Root did not activate')
-    return { runtime, config, takeovers }
+    if (runtime === undefined) throw errors.find(error => error instanceof Error) ?? new Error('Root did not activate')
+    return { runtime, config, observations }
   }
 
   function store(instanceId: InstanceId, config: RuntimeRootConfig) {
@@ -123,9 +124,9 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
   }
 
   it('reclaims ready, mounting and quarantined accounts with incremented epochs and fences old writes', async () => {
-    const { runtime, config, takeovers } = await root({ singleInstance: true })
+    const { runtime, config, observations } = await root({ singleInstance: true })
     expect(runtime.singleInstanceActive).toBe(true)
-    expect(takeovers).toContainEqual({ event: 'single-instance-takeover', ownerRows: 3, instanceRows: 1 })
+    expect(observations).toContainEqual({ event: 'single-instance-takeover', ownerRows: 3, instanceRows: 1 })
     const newInstance = runtime.activeInstanceId
     if (newInstance === undefined) throw new Error('Root must register a fresh instance')
     const owners = store(newInstance, config)
@@ -162,9 +163,10 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
     expect((await client.query(lockSql)).rows).toEqual([{ locked: true }])
     const original = await snapshot()
     const error = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await expect(root({ singleInstance: true }).then(() => 'started')).rejects.toThrow()
+    await expect(root({ singleInstance: true }).then(() => 'started')).rejects.toThrow('Another process holds the single-instance lock')
     expect(await snapshot()).toEqual(original)
-    expect(error).toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith('Cloud runtime control observation: %j',
+      expect.objectContaining({ event: 'runtime-control-failed', code: 'cloud/config-conflict' }))
   })
 
   it('rolls back owner resets when closing stale instance registrations fails', async () => {
@@ -187,7 +189,7 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
   }
 
   it('reconnects a lost lock session without resetting current account ownership', async () => {
-    const { runtime, config } = await root({ singleInstance: true })
+    const { runtime, config, observations } = await root({ singleInstance: true })
     const instanceId = runtime.activeInstanceId
     if (instanceId === undefined) throw new Error('Root must be active')
     const owners = store(instanceId, config)
@@ -202,6 +204,8 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
     }).toBe(true)
     expect(await snapshot()).toEqual(original)
     expect(runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+    expect(observations).toContainEqual({ event: 'single-instance-lock-lost' })
+    expect(observations).toContainEqual({ event: 'single-instance-lock-reacquired' })
   })
 
   it('closes Root admission when another process wins lock reacquisition', async () => {
@@ -225,8 +229,58 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
       await expect.poll(() => runtime.inspectControl().phase).toBe('failed')
       expect(() => { runtime.locateAccount(account('ready')) }).toThrow('not available')
       expect(runtime.singleInstanceActive).toBe(false)
+      expect(reconnect).toHaveBeenCalledTimes(1)
     } finally { gate.resolve(undefined); reconnect.mockRestore() }
   })
+
+  it('reopens admission on the third connection attempt without resetting current owners', async () => {
+    const { runtime, config, observations } = await root({ singleInstance: true })
+    const instanceId = runtime.activeInstanceId
+    if (instanceId === undefined) throw new Error('Root must be active')
+    const owners = store(instanceId, config)
+    await owners.migrate()
+    await owners.claim({ accountId: account('ready'), expectedEpoch: epoch, recipeVersion: config.recipeVersion })
+    const original = await snapshot(), pid = await lockPid()
+    if (pid === undefined) throw new Error('Root must hold its lock')
+    const reconnect = vi.spyOn(Client.prototype, 'connect')
+      .mockRejectedValueOnce(new Error('PRIVATE failed connection'))
+      .mockRejectedValueOnce(new Error('PRIVATE connection timeout'))
+    try {
+      await database.query('SELECT pg_terminate_backend($1)', [pid])
+      await expect.poll(() => reconnect.mock.calls.length).toBe(1)
+      expect(runtime.singleInstanceActive).toBe(false)
+      expect(() => { runtime.locateAccount(account('ready')) }).toThrow('not available')
+      await expect.poll(() => runtime.singleInstanceActive, { timeout: 10_000 }).toBe(true)
+      expect(reconnect).toHaveBeenCalledTimes(3)
+      expect(runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+      expect(await snapshot()).toEqual(original)
+      expect(observations).toContainEqual({ event: 'single-instance-lock-lost' })
+      expect(observations).toContainEqual({ event: 'single-instance-lock-reconnect-failed', attempt: 1 })
+      expect(observations).toContainEqual({ event: 'single-instance-lock-reconnect-failed', attempt: 2 })
+      expect(observations).toContainEqual({ event: 'single-instance-lock-reacquired' })
+      expect(JSON.stringify(observations)).not.toContain('PRIVATE')
+    } finally { reconnect.mockRestore() }
+  }, 15_000)
+
+  it('stops reconnecting and closes admission after five failed connections', async () => {
+    const { runtime, observations } = await root({ singleInstance: true })
+    const pid = await lockPid()
+    if (pid === undefined) throw new Error('Root must hold its lock')
+    const reconnect = vi.spyOn(Client.prototype, 'connect').mockRejectedValue(new Error('PRIVATE failed connection'))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await database.query('SELECT pg_terminate_backend($1)', [pid])
+      await expect.poll(() => runtime.inspectControl().phase, { timeout: 12_000 }).toBe('failed')
+      expect(reconnect).toHaveBeenCalledTimes(5)
+      expect(runtime.singleInstanceActive).toBe(false)
+      expect(() => { runtime.locateAccount(account('ready')) }).toThrow('not available')
+      expect(observations.filter(row => typeof row === 'object' && row !== null
+        && Reflect.get(row, 'event') === 'single-instance-lock-reconnect-failed'))
+        .toEqual([1, 2, 3, 4, 5].map(attempt => ({ event: 'single-instance-lock-reconnect-failed', attempt })))
+      expect(observations).not.toContainEqual({ event: 'single-instance-lock-reacquired' })
+      expect(JSON.stringify(observations)).not.toContain('PRIVATE')
+    } finally { reconnect.mockRestore() }
+  }, 15_000)
 
   it('keeps maintenance recovery unchanged even with the single-instance declaration', async () => {
     const original = await snapshot()

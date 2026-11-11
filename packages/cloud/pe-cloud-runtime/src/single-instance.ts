@@ -1,15 +1,25 @@
 /** Dedicated PostgreSQL session owns opt-in process exclusion and startup-only owner takeover. */
 import { Client, defaults } from 'pg'
+import { setTimeout as delay } from 'node:timers/promises'
 import { AccountRuntimeError } from './errors.ts'
 import type { OwnerPgConnection, OwnerPgLimits } from './owner-pg-executor.ts'
 import type { InstanceId } from './types.ts'
+
+// A short database restart may need several connections; lock contention never permits a retry.
+const MAX_RECONNECT_ATTEMPTS = 5
+
+class SingleInstanceConnectionError extends AccountRuntimeError {
+  constructor(cause: unknown) {
+    super('cloud/account-unavailable', 'Single-instance database connection failed', { cause })
+  }
+}
 
 /** Single-instance lock and takeover share a retained session; reconnect never resets live owners. */
 export class SingleInstanceControl {
   private client: Client | undefined
   private held = false
   private started = false
-  private closing = false
+  private readonly stop = new AbortController()
   private starting: Promise<void> | undefined
   private reconnecting: Promise<void> | undefined
   private shutdown: Promise<void> | undefined
@@ -18,12 +28,14 @@ export class SingleInstanceControl {
    * @param connection Existing Root-selected database and credential resolver.
    * @param limits Existing database budgets, reused without additional deployment settings.
    * @param instanceId New process identity, excluded from closing stale instance registrations.
-   * @param observe Safe row counts only; the Root owns diagnostic delivery.
+   * @param observe Safe event names, row counts and attempt numbers only; the Root owns diagnostic delivery.
    * @param failure Root control failure handler when reacquisition cannot confirm exclusion.
    */
   constructor(private readonly connection: OwnerPgConnection, private readonly limits: OwnerPgLimits,
-    private readonly instanceId: InstanceId, private readonly observe: (owners: number, instances: number) => void,
+    private readonly instanceId: InstanceId, private readonly observe: (row: Readonly<Record<string, string | number>>) => void,
     private readonly failure: (cause: unknown) => void) {}
+
+  private get closing(): boolean { return this.stop.signal.aborted }
 
   /** True only while the dedicated session holds the lock; false during reconnect and closure. */
   get active(): boolean { return this.held && !this.closing }
@@ -42,7 +54,7 @@ export class SingleInstanceControl {
    * @returns Cached actual closure, called by Root after closing its instance registration.
    */
   close(): Promise<void> {
-    this.closing = true
+    this.stop.abort()
     this.held = false
     this.shutdown ??= (async () => {
       await Promise.allSettled([this.starting, this.reconnecting])
@@ -68,8 +80,10 @@ export class SingleInstanceControl {
     this.client = client
     client.on('error', () => { this.disconnected(client) })
     client.once('end', () => { this.disconnected(client) })
+    let connected = false
     try {
       await client.connect()
+      connected = true
       if (this.closing) throw new AccountRuntimeError('cloud/account-unavailable', 'Single-instance startup closed before lock acquisition')
       const result = await client.query<{ locked: boolean }>(
         "SELECT pg_try_advisory_lock(hashtextextended('pe-cloud/single-instance', 0)) AS locked")
@@ -86,7 +100,7 @@ export class SingleInstanceControl {
           SET phase = 'closed', heartbeat_at = statement_timestamp()
           WHERE phase = 'registered' AND instance_id <> $1`, [this.instanceId])
         await client.query('COMMIT')
-        this.observe(owners.rowCount ?? 0, instances.rowCount ?? 0)
+        this.observe({ event: 'single-instance-takeover', ownerRows: owners.rowCount ?? 0, instanceRows: instances.rowCount ?? 0 })
       }
       if (!this.active) throw new AccountRuntimeError('cloud/account-unavailable', 'Single-instance lock was lost during startup')
     } catch (cause) {
@@ -94,7 +108,7 @@ export class SingleInstanceControl {
       // Session closure also rolls back an incomplete takeover transaction.
       await client.end()
       if (this.client === client) this.client = undefined
-      throw cause
+      throw connected ? cause : new SingleInstanceConnectionError(cause)
     }
   }
 
@@ -102,14 +116,29 @@ export class SingleInstanceControl {
     if (this.client !== client) return
     this.held = false
     if (this.closing || !this.started || this.reconnecting !== undefined) return
-    const actual = (async () => {
-      await client.end()
-      if (!this.closing) await this.connect(false)
-    })()
+    this.observe({ event: 'single-instance-lock-lost' })
+    const actual = this.reconnect(client)
     this.reconnecting = actual
-    void actual.then(() => { this.reconnecting = undefined }, (cause: unknown) => {
+    void actual.then(() => {
+      this.reconnecting = undefined
+      if (!this.closing) this.observe({ event: 'single-instance-lock-reacquired' })
+    }, (cause: unknown) => {
       this.reconnecting = undefined
       if (!this.closing) this.failure(cause)
     })
+  }
+
+  private async reconnect(client: Client): Promise<void> {
+    await client.end()
+    for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS && !this.closing; attempt++) {
+      try { await this.connect(false); return }
+      catch (cause) {
+        if (!(cause instanceof SingleInstanceConnectionError)) throw cause
+        this.observe({ event: 'single-instance-lock-reconnect-failed', attempt })
+        if (attempt === MAX_RECONNECT_ATTEMPTS) throw cause
+      }
+      try { await delay(this.limits.connectionTimeoutMs, undefined, { signal: this.stop.signal, ref: false }) }
+      catch (cause) { if (!this.closing) throw cause }
+    }
   }
 }
