@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { create } from 'tar'
-import { collectProductPaths, externalDependencyHash, verifyBundle, writeBundle } from './bundle.mjs'
+import { collectProductPaths, externalDependencyHash, readTrackedPaths, verifyBundle, writeBundle } from './bundle.mjs'
 
 async function fixture(run) {
   const directory = await mkdtemp(join(tmpdir(), 'pe-cloud-bundle-'))
@@ -31,6 +32,20 @@ test('external dependency compatibility ignores workspace importers and object o
   assert.notEqual(externalDependencyHash(first), externalDependencyHash({ ...first, packages: {} }))
   assert.notEqual(externalDependencyHash(first), externalDependencyHash({ ...first, snapshots: {} }))
   assert.throws(() => externalDependencyHash({ packages: {} }), /snapshots/)
+})
+
+test('streams a tracked resource listing larger than the synchronous command buffer', async () => {
+  await fixture(async ({ root }) => {
+    await mkdir(root)
+    const git = (args, input) => execFileSync('git', args, { cwd: root, encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] })
+    git(['init', '--quiet'])
+    const blob = git(['hash-object', '-w', '--stdin'], '').trim()
+    const paths = Array.from({ length: 12000 }, (_, index) => `resources/${String(index).padStart(5, '0')}-${'x'.repeat(100)}.txt`)
+    git(['update-index', '-z', '--index-info'], paths.map(name => `100644 ${blob}\t${name}\0`).join(''))
+    assert.ok(Buffer.byteLength(paths.join('\0')) > 1024 * 1024)
+    assert.throws(() => git(['ls-files', '-z']), error => error.code === 'ENOBUFS')
+    assert.deepEqual(await readTrackedPaths(root), paths)
+  })
 })
 
 test('selects vendor builds, published resources and complete research runtime assets while excluding native and private files', async () => {

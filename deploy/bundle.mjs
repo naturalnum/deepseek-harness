@@ -235,6 +235,24 @@ async function buildProducts(root) {
   await command(process.execPath, ['scripts/build.mjs'], research)
 }
 
+/** Read Git's NUL-separated tracked paths through a stream, including large imported resource trees. */
+export async function readTrackedPaths(root) {
+  return new Promise((resolvePaths, reject) => {
+    const child = spawn('git', ['ls-files', '-z'], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
+    const paths = []
+    let pending = ''
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', chunk => {
+      const parts = (pending + chunk).split('\0')
+      pending = parts.pop()
+      paths.push(...parts)
+    })
+    child.once('error', reject)
+    child.once('close', (code, signal) => code === 0 && signal === null && pending === ''
+      ? resolvePaths(paths) : reject(new Error('无法完整读取 Git 产品文件列表。')))
+  })
+}
+
 async function main(argv) {
   if (argv.includes('--help')) {
     console.log('用法：deploy/bundle [--output 仓库外目录]\n在 Node 24.19.0 下完整构建并生成现有安装的产品更新包；保留目标环境的 Linux 原生模块与依赖。')
@@ -248,7 +266,7 @@ async function main(argv) {
   const sourceCommit = git(['rev-parse', 'HEAD'])
   const output = resolve(argv[1] ?? join(dirname(root), 'bundles', git(['rev-parse', '--short', 'HEAD'])))
   await buildProducts(root)
-  const paths = await collectProductPaths(root, git(['ls-files', '-z']).split('\0').filter(Boolean))
+  const paths = await collectProductPaths(root, await readTrackedPaths(root))
   const pnpmLock = await readFile(join(root, 'pnpm-lock.yaml'), 'utf8')
   const pnpmLockHash = checksum(pnpmLock)
   const researchLockHash = checksum(await readFile(join(root, RESEARCH, 'package-lock.json')))
