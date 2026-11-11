@@ -14,17 +14,19 @@ import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExec
   type AccountExecutionPort } from './account-port.ts'
 import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocationRequest,
   type PreparedSandbox } from './allocation-owner.ts'
-import { PostgresAllocationStore } from './allocation-store.ts'
+import { AllocationStoreError, PostgresAllocationStore } from './allocation-store.ts'
 import type { AllocationStoreLimits } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
-import type { VerifiedExecutionMount } from './lifecycle-types.ts'
+import { SdkLifecycleFailure, type VerifiedExecutionMount } from './lifecycle-types.ts'
+import { BootstrapFailure } from './bootstrap/bootstrap.ts'
+import { LocalRefusal, ControlUncertain, RemoteRefusal } from './agent-data/errors.ts'
 import type { SdkAllocationBackend } from './sdk-lifecycle.ts'
 import type { SkillCommandBorrow, TrustedRuntimeRegistry } from './trusted-runtime.ts'
 import { NativeCommandAccount, type NativeCommandAccountLimits, type NativeCommandReservation } from './native-command-account.ts'
 import { CloudShellExecutor, CloudSubprocessRuntime, type NativeExecutionConfig } from './native-providers.ts'
 import { CloudSandboxProvider } from './native-sandbox.ts'
 import { CloudShellEnvRegistry } from './native-shell-env.ts'
-import type { ExecutionScope } from './scopes.ts'
+import { ExecutionScopeError, type ExecutionScope } from './scopes.ts'
 import { ExecutionStateError } from './errors.ts'
 import type { ManagedServiceConfig, ManagedNativeCommandConfig } from './service-config.ts'
 import { registerDevServiceConsumer, type DevServiceRegistration } from './dev-service-consumer.ts'
@@ -110,6 +112,21 @@ function preparationCode(cause: unknown): string | undefined {
   if (cause === null || typeof cause !== 'object') return undefined
   const code: unknown = Object.getOwnPropertyDescriptor(cause, 'code')?.value
   return typeof code === 'string' && PREPARATION_CODES.has(code) ? code : undefined
+}
+
+/** Only project-owned error classes contribute message text; retain at most one private cause. */
+function executionFailureDetails(cause: unknown, includeCause = true): Record<string, unknown> {
+  const object = cause !== null && typeof cause === 'object' ? cause : undefined
+  const code: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'code')?.value
+  const nested: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'cause')?.value
+  const projectError = cause instanceof ExecutionStateError || cause instanceof ExecutionScopeError
+    || cause instanceof SdkLifecycleFailure || cause instanceof AllocationStoreError || cause instanceof BootstrapFailure
+    || cause instanceof FilesFailure || cause instanceof FdMutationFailure
+    || cause instanceof LocalRefusal || cause instanceof ControlUncertain || cause instanceof RemoteRefusal
+  return { type: cause instanceof Error ? cause.constructor.name : typeof cause,
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(projectError ? { message: cause.message } : {}),
+    ...(includeCause && nested !== undefined ? { cause: executionFailureDetails(nested, false) } : {}) }
 }
 
 interface AccountWork {
@@ -414,11 +431,15 @@ export class ManagedCoordinator extends SandboxCoordinator {
         }
       },
       unknown: (scope, operation, cause) => {
+        this.observePrivateFailure(work, 'command', cause, scope.sessionId)
         work.privateFailure ??= { cause }
         const request = work.sessions.get(scope.sessionId)
         if (request === undefined) return
         void this.allocations.stop(request).then(() => { operation.acknowledgePhysicalStop() },
-          (failure: unknown) => { work.privateFailure ??= { cause: failure } })
+          (failure: unknown) => {
+            this.observePrivateFailure(work, 'command-stop', failure, scope.sessionId)
+            work.privateFailure ??= { cause: failure }
+          })
       },
       reserve: (scope, spec) => this.reserve(work, scope, spec),
       close: () => this.stopAllocations(work),
@@ -640,6 +661,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
         settled.resolve()
         if (work.retiring === original) work.retiring = undefined
       }, (cause: unknown) => {
+        this.observePrivateFailure(work, 'session-retirement', cause, original.request.sessionId)
         work.privateFailure ??= { cause }
         settled.reject(cause)
       })
@@ -800,6 +822,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
       if (this.accounts.get(work.binding.accountId) === work) this.accounts.delete(work.binding.accountId)
     })
     void result.then(() => { stopped.resolve(undefined); this.settle(work, true) }, (cause: unknown) => {
+      this.observePrivateFailure(work, 'account-stop', cause)
       work.privateFailure ??= { cause }; stopped.reject(cause); this.settle(work, false)
     })
     void work.stopping.catch(() => { /* The same failed actual stop remains owned and observable. */ })
@@ -833,6 +856,16 @@ export class ManagedCoordinator extends SandboxCoordinator {
     return allocations
   }
   private stale(): never { throw new ExecutionStateError('cloud/stale-generation', 'Execution requires the original current account generation.') }
+  private observePrivateFailure(work: AccountWork,
+    source: 'command' | 'command-stop' | 'session-retirement' | 'account-stop', cause: unknown, sessionId?: SessionId): void {
+    try {
+      console.warn('Cloud managed execution failed: %j', { event: 'managed-execution-failed', source,
+        accountId: work.binding.accountId, epoch: work.binding.epoch, sessionId: sessionId ?? null,
+        ...(sessionId === undefined ? { sessionIds: [...work.sessions.keys()] } : {}),
+        error: executionFailureDetails(cause) })
+    } catch (_unavailableObservation) { /* Preserve the original failure and cleanup responsibility. */ }
+  }
+
   private observePreparationFailure(work: AccountWork, stage: PreparationFailureStage, cause: unknown): void {
     if (work.preparationFailureObserved || cause instanceof SessionEnvironmentCapacityError) return
     work.preparationFailureObserved = true

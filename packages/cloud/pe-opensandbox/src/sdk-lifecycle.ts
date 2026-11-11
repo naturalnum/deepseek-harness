@@ -2,7 +2,7 @@
 import { parentFacts } from './skill-wire.ts'
 import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createDefaultAdapterFactory, type AdapterFactory, type CreateSandboxRequest, type SandboxInfo } from '@alibaba-group/opensandbox'
+import { createDefaultAdapterFactory, SandboxApiException, SandboxException, type AdapterFactory, type CreateSandboxRequest, type SandboxInfo } from '@alibaba-group/opensandbox'
 import type { AllocationBackend, CreatedSandbox, PreparedSandbox } from './allocation-owner.ts'
 import type { AllocationCreateIntent } from './allocation-types.ts'
 import { BoundedLifecycleConnection, type WireBudget } from './sdk-transport.ts'
@@ -28,6 +28,23 @@ type CloseResult = { readonly ok: true } | { readonly ok: false; readonly cause:
 const labelHash = (value: string): string => `h${createHash('sha256').update(value).digest('base64url')}h`
 const check = (ok: boolean, code: ConstructorParameters<typeof SdkLifecycleFailure>[0]): void => {
   if (!ok) throw new SdkLifecycleFailure(code)
+}
+
+/** Keep SDK response text private while retaining structured stop diagnostics and one cause. */
+function stopFailureDetails(cause: unknown, includeCause = true): Record<string, unknown> {
+  const object = cause !== null && typeof cause === 'object' ? cause : undefined
+  const code: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'code')?.value
+  const nested: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'cause')?.value
+  const statusCode: unknown = object === undefined ? undefined : Object.getOwnPropertyDescriptor(object, 'statusCode')?.value
+  const deletionCode = cause instanceof SandboxApiException
+    ? JSON.stringify(cause.rawBody)?.match(/deletion-completion\/[a-zA-Z0-9_.-]+/)?.[0] : undefined
+  return { type: cause instanceof Error ? cause.constructor.name : typeof cause,
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(cause instanceof SdkLifecycleFailure ? { message: cause.message } : {}),
+    ...(cause instanceof SandboxException ? { code: cause.error.code } : {}),
+    ...(typeof statusCode === 'number' ? { statusCode } : {}),
+    ...(deletionCode === undefined ? {} : { deletionCode }),
+    ...(includeCause && nested !== undefined ? { cause: stopFailureDetails(nested, false) } : {}) }
 }
 
 /** Implements only Root's private lifecycle; it exports neither an execution client nor account-facing service. */
@@ -289,7 +306,15 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         if (physicalFailure !== undefined) throw physicalFailure.cause
         if (joined.status === 'rejected') throw joined.reason
         record.phase = 'stopped'
-      } catch (cause) { record.phase = 'stop-unknown'; throw new SdkLifecycleFailure('sdk/stop-unknown', cause) }
+      } catch (cause) {
+        try {
+          console.warn('Cloud sandbox stop failed: %j', { event: 'sdk-sandbox-stop-failed',
+            accountId: record.intent.accountId, sessionId: record.intent.sessionId,
+            allocationId: record.intent.allocationId, sandboxId: record.created?.sandboxId,
+            error: stopFailureDetails(cause) })
+        } catch (_unavailableObservation) { /* Preserve the original stop failure and resource responsibility. */ }
+        record.phase = 'stop-unknown'; throw new SdkLifecycleFailure('sdk/stop-unknown', cause)
+      }
     }, true), () => ({ intent: record.intent, sandboxId: record.created?.sandboxId,
       runtimeIdentity: record.prepared?.runtimeIdentity }))
   }
