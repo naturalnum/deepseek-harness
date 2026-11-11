@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
 import { readOptions } from './options.mjs'
-import { createBudget, readDownload, StepTimeout, stopPendingTurn, withStepDeadline } from './steps.mjs'
+import { createBudget, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 
 const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--credentials 私密JSON] [--account 账号字段]
 也可通过 PE_CLOUD_SMOKE_EMAIL 和 PE_CLOUD_SMOKE_PASSWORD 提供测试账号。
@@ -265,8 +265,7 @@ async function run(options) {
     if (options.continueSession !== undefined) {
       await check(12, '更新前对话保留并能继续执行命令', async () => {
         const content = await openPreviousSession(options.continueSession)
-        const history = await content.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]').allTextContents()
-        requireThat(history.join('\n').includes(options.continueMarker), '更新前对话的模型回复中没有找到指定标记')
+        await waitForPreviousReply(content, options.continueMarker, remaining())
         const token = `${prefix}-CONTINUE`
         await send(`Use Bash to execute printf '%s\\\\n' '${token}'. Report actual stdout.`, { tokens: [token], bash: 1 })
         return '原回复标记保留，新的命令调用和回复通过'

@@ -2,9 +2,47 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { test } from 'node:test'
-import { createBudget, readDownload, StepTimeout, stopPendingTurn, withStepDeadline } from './steps.mjs'
+import { createBudget, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 
 const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
+
+test('previous reply waits for history after its conversation container and composer arrive', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-conversation-content data-conversation-session="previous" data-content-phase="active">
+    <div data-composer-input contenteditable="true">fixture composer</div>
+  </div>
+  <script>addEventListener('fixture-history-ready',()=>{
+    const reply=document.createElement('div');
+    reply.dataset.chatFlowKind='assistant-step';reply.dataset.chatGroupPart='response';
+    reply.textContent='retained-reply-marker';
+    document.querySelector('[data-conversation-session="previous"]').append(reply);
+  },{once:true})</script>`)
+  const content = page.locator('[data-conversation-session="previous"]')
+  await content.waitFor({ state: 'visible' })
+  await content.locator('[data-composer-input]').waitFor({ state: 'visible' })
+  assert.deepEqual(await content.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]').allTextContents(), [],
+    'the old immediate read runs before history arrives')
+  const waiting = waitForPreviousReply(content, 'retained-reply-marker', 1000)
+  const result = assert.doesNotReject(waiting)
+  await page.evaluate(() => dispatchEvent(new Event('fixture-history-ready')))
+  await result
+})
+
+test('a user prompt or another conversation cannot satisfy the previous assistant reply check', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-conversation-content data-conversation-session="previous">
+    <div data-chat-flow-kind="user">retained-reply-marker</div>
+  </div>
+  <div data-conversation-content data-conversation-session="other">
+    <div data-chat-flow-kind="assistant-step" data-chat-group-part="response">retained-reply-marker</div>
+  </div>`)
+  await assert.rejects(waitForPreviousReply(page.locator('[data-conversation-session="previous"]'), 'retained-reply-marker', 30),
+    { name: 'TimeoutError' })
+})
 
 test('a timed-out real browser entry is cancelled and joined before an independent page action starts', async t => {
   const browser = await chromium.launch({ headless: true })

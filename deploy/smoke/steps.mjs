@@ -84,3 +84,15 @@ export async function stopPendingTurn(page, before, timeoutMs) {
     return closed && !running
   }, before, { timeout: timeoutMs })
 }
+
+/**
+ * Wait for the retained assistant reply inside the selected conversation.
+ * @param content Selected conversation content locator.
+ * @param marker Expected text from its previous assistant reply.
+ * @param timeoutMs Remaining work time for this check.
+ * @returns Settlement after the matching reply is attached.
+ */
+export async function waitForPreviousReply(content, marker, timeoutMs) {
+  await content.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]')
+    .filter({ hasText: marker }).first().waitFor({ state: 'attached', timeout: timeoutMs })
+}
