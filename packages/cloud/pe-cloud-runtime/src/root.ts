@@ -736,7 +736,11 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const saves = new ConfigSaveCoordinator(config.saves)
     const singleInstance = config.singleInstance === true && config.recovery === undefined
       ? new SingleInstanceControl({ ...config.database, password }, config.pg, instance.identity.instanceId,
-        row => this.logObservation(row, 'info'),
+        (row) => {
+          try { console.warn('Cloud runtime control observation: %j', { ...row, pid: process.pid, at: Date.now() }) }
+          catch (_observationFailure) { /* Logging does not change lock ownership or account admission. */ }
+          this.logObservation(row, 'info')
+        },
         cause => this.controlFailure(cause)) : undefined
     const control: RootControl = {
       ...singleInstance === undefined ? {} : { singleInstance },

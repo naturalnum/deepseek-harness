@@ -234,6 +234,7 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
   })
 
   it('reopens admission on the third connection attempt without resetting current owners', async () => {
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { runtime, config, observations } = await root({ singleInstance: true })
     const instanceId = runtime.activeInstanceId
     if (instanceId === undefined) throw new Error('Root must be active')
@@ -259,6 +260,17 @@ describe.skipIf(privateConfig === undefined)('single-instance Root takeover', { 
       expect(observations).toContainEqual({ event: 'single-instance-lock-reconnect-failed', attempt: 2 })
       expect(observations).toContainEqual({ event: 'single-instance-lock-reacquired' })
       expect(JSON.stringify(observations)).not.toContain('PRIVATE')
+      for (const row of [
+        { event: 'single-instance-takeover', ownerRows: 3, instanceRows: 1 },
+        { event: 'single-instance-lock-lost' },
+        { event: 'single-instance-lock-reconnect-failed', attempt: 1 },
+        { event: 'single-instance-lock-reconnect-failed', attempt: 2 },
+        { event: 'single-instance-lock-reacquired' },
+      ]) {
+        expect(warnings).toHaveBeenCalledWith('Cloud runtime control observation: %j',
+          expect.objectContaining({ ...row, pid: process.pid, at: expect.any(Number) }))
+      }
+      expect(JSON.stringify(warnings.mock.calls)).not.toContain('PRIVATE')
     } finally { reconnect.mockRestore() }
   }, 15_000)
 
