@@ -20,12 +20,19 @@ import type { ConfigurationPeerOperation } from './peers.ts'
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
 
 function startupFailure(value: unknown) {
-  const code: unknown = value !== null && typeof value === 'object'
-    ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
-  return { type: value instanceof Error ? value.constructor.name : typeof value,
-    ...(typeof code === 'string' ? { code } : {}),
-    ...(value instanceof AuthAccessError || value instanceof AccountRuntimeError || value instanceof CloudApiError
-      ? { message: value.message } : {}) }
+  let code: string | undefined
+  try {
+    const rawCode: unknown = value !== null && typeof value === 'object'
+      ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
+    code = typeof rawCode === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(rawCode) ? rawCode : undefined
+    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+    const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
+    const message: unknown = value instanceof AuthAccessError || value instanceof AccountRuntimeError || value instanceof CloudApiError
+      ? Object.getOwnPropertyDescriptor(value, 'message')?.value : undefined
+    return { ...(typeof type === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(type) ? { type } : {}),
+      ...(code === undefined ? {} : { code }), ...(typeof message === 'string' ? { message } : {}) }
+  } catch (_diagnosticFailure) { return code === undefined ? {} : { code } }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -93,8 +100,10 @@ export class PeAuthService extends Service {
       try {
         const cause: unknown = error !== null && typeof error === 'object'
           ? Object.getOwnPropertyDescriptor(error, 'cause')?.value : undefined
-        ctx.logger.warn('Cloud authentication startup failed: %j', { requestId: service.requestId,
-          failure: startupFailure(error), ...(cause === undefined ? {} : { cause: startupFailure(cause) }) })
+        const fields = { requestId: service.requestId,
+          failure: startupFailure(error), ...(cause === undefined ? {} : { cause: startupFailure(cause) }) }
+        console.warn('Cloud authentication startup failed: %j', fields)
+        ctx.logger.warn('Cloud authentication startup failed: %j', fields)
       } catch (_diagnosticFailure) { /* Reporting must not change startup failure or resource cleanup. */ }
       // The caller sees a fixed error; actual startup and cleanup remain owned by the service effects.
       if (service.phase === 'starting') service.phase = 'failed'

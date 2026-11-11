@@ -191,11 +191,13 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     expect(wire).toContain('cache-control: no-store')
     const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
     expect(Buffer.byteLength(body)).toBe(212)
-    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
       requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-unavailable',
+      failure: { type: 'AccountRuntimeError', code: 'cloud/account-unavailable',
+        message: 'Root recipe is not sealed; inspect its current audit before admitting traffic' },
       causeCodes: [null, null], sites: [], headersSent: false, writableEnded: false, destroyed: false,
       rootRecipe: { status: 'unsealed', rootEntries: 0, providers: 0, participants: 0, issues: [] },
-    }))
+    })
     expect(f.stderr.mock.calls).toEqual(log.mock.calls)
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/must-not-be-read|old-account/)
     expect(f.seal).toHaveBeenCalledWith('ingress-test')
@@ -229,11 +231,12 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
     expect(Buffer.byteLength(body)).toBe(212)
     expect(JSON.parse(body)).toMatchObject({ code: 'cloud/account-unavailable', retry: 'after-status-check' })
-    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
       requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-starting',
+      failure: { type: 'Error', code: 'cloud/account-starting' }, cause: { type: 'object', code: 'ECONNRESET' },
       causeCodes: ['ECONNRESET', 'EPIPE'], sites: [], headersSent: false, writableEnded: false, destroyed: false,
       rootRecipe: { status: 'unsealed', rootEntries: 0, providers: 0, participants: 0, issues: [] },
-    }))
+    })
     expect(forbidden).not.toHaveBeenCalled()
     expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
     expect(f.query).not.toHaveBeenCalled()
@@ -304,17 +307,63 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
       const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
       expect(response.statusCode).toBe(503)
       expect(Buffer.byteLength(body)).toBe(212)
-      expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+      expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
         requestId: responseRequestId(body), stage: 'auth.authenticate', code: code === 'cycle' ? 'EPIPE' : 'unknown',
+        failure: { type: 'Error', code: code === 'cycle' ? 'EPIPE' : 'unknown' },
+        ...(code === 'cycle' ? { cause: { type: 'Error', code: 'EPIPE' } }
+          : code === 'proxy' ? { cause: { type: 'object', code: 'unknown' } } : {}),
         causeCodes: code === 'cycle' ? ['EPIPE', 'EPIPE'] : code === 'proxy' ? ['unknown', null] : [null, null],
         sites: [],
         headersSent: false, writableEnded: false, destroyed: false,
-      }))
+      })
       expect(accessor).not.toHaveBeenCalled()
       expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
       expect(f.query).not.toHaveBeenCalled()
     },
   )
+
+  it('does not read an error constructor accessor while recording its class', async () => {
+    const f = await fixture(), log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+    const accessor = vi.fn(() => { throw new Error('PRIVATE_CONSTRUCTOR') })
+    const error = Object.assign(new Error('PRIVATE_MESSAGE'), { code: 'EPIPE' })
+    Object.defineProperty(error, 'constructor', { get: accessor })
+    f.seal.mockImplementationOnce(() => { throw error })
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(([value]) => value).find(value => value.path === '/api')
+    if (route === undefined) throw new Error('Actual API route missing')
+    const { request, response } = carrier('/api/session/list', 'POST')
+    await route.handler(request, response)
+    expect(response.statusCode).toBe(503)
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+      failure: { type: 'Error', code: 'EPIPE' },
+    }))
+    expect(f.stderr.mock.calls).toEqual(log.mock.calls)
+    expect(accessor).not.toHaveBeenCalled()
+    expect(f.stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('PRIVATE_')
+  })
+
+  it('retains the ingress failure row and cause code when class inspection throws', async () => {
+    const f = await fixture(), log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+    const cause = new Proxy({}, {
+      getOwnPropertyDescriptor: (_target, key) => key === 'code'
+        ? { configurable: true, value: 'ECONNRESET' } : undefined,
+      getPrototypeOf: () => { throw new Error('PRIVATE_PROXY_PROTOTYPE') },
+    })
+    const error = new AccountRuntimeError('cloud/invalid-config', 'Account configuration is unavailable.', { cause })
+    f.seal.mockImplementationOnce(() => { throw error })
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(([value]) => value).find(value => value.path === '/api')
+    if (route === undefined) throw new Error('Actual API route missing')
+    const { request, response } = carrier('/api/session/list', 'POST')
+    await route.handler(request, response)
+    expect(response.statusCode).toBe(503)
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
+      failure: { type: 'AccountRuntimeError', code: 'cloud/invalid-config', message: error.message },
+      cause: { code: 'ECONNRESET' }, causeCodes: ['ECONNRESET', null],
+    }))
+    expect(f.stderr.mock.calls).toEqual(log.mock.calls)
+    expect(f.stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('PRIVATE_')
+  })
 
   it('keeps the original response and cleanup when the diagnostic exporter fails', async () => {
     const f = await fixture()

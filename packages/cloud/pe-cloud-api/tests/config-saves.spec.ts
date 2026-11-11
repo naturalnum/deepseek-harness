@@ -58,6 +58,34 @@ it.each(['project', 'external'] as const)('logs credential describe failures saf
   }
 })
 
+it('omits invalid credential-read diagnostic tokens and retains valid boundary tokens', async () => {
+  const root = new ConfigSaveCoordinator(limits), ref = credentialRef('SYNTHETIC_KEY')
+  const account = root.createAccount(binding(), { references: [ref], maxReferences: 1, maxReferenceBytes: 64 })
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    for (const row of [
+      { code: 'EIO\nsk-fake-code', type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'x'.repeat(65), type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'EIO', type: 'Bad Type', expected: { code: 'EIO' } },
+      { code: 'EIO', type: 'x'.repeat(65), expected: { code: 'EIO' } },
+      { code: 'C'.repeat(64), type: 'T'.repeat(64), expected: { code: 'C'.repeat(64), type: 'T'.repeat(64) } },
+    ]) {
+      class ProviderFailure extends Error {}
+      Object.defineProperty(ProviderFailure, 'name', { value: row.type })
+      const error = Object.assign(new ProviderFailure('sk-fake-provider-secret'), { code: row.code })
+      await expect(account.describeCredentialEdit(ref, async () => { throw error }))
+        .rejects.toMatchObject({ code: 'cloud/account-unavailable', message: 'Credential state could not be read.' })
+      expect(log).toHaveBeenLastCalledWith('Cloud credential state read failed: %j', {
+        accountId: account.binding.accountId, failure: row.expected,
+      })
+    }
+    expect(log.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  } finally {
+    log.mockRestore()
+    await account.stopConfigSaves(nowDeadline()); root.releaseAccount(account); root.close()
+  }
+})
+
 describe('actual configuration submission responsibility', () => {
   it('commits a settings policy only after every enrolled child has succeeded', async () => {
     const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding())

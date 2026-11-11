@@ -28,12 +28,20 @@ export class SkillEditApplyFailure extends Error {
 }
 
 function credentialReadFailure(value: unknown) {
-  const code: unknown = value !== null && typeof value === 'object'
-    ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
-  return { type: value instanceof Error ? value.constructor.name : typeof value,
-    ...(typeof code === 'string' ? { code } : {}),
-    ...(value instanceof CloudApiError || value instanceof ConfigSaveOutcomeUnknown || value instanceof SkillEditApplyFailure
-      ? { message: value.message } : {}) }
+  let code: string | undefined
+  try {
+    const rawCode: unknown = value !== null && typeof value === 'object'
+      ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
+    code = typeof rawCode === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(rawCode) ? rawCode : undefined
+    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+    const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
+    const message: unknown = value instanceof CloudApiError || value instanceof ConfigSaveOutcomeUnknown
+      || value instanceof SkillEditApplyFailure
+      ? Object.getOwnPropertyDescriptor(value, 'message')?.value : undefined
+    return { ...(typeof type === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(type) ? { type } : {}),
+      ...(code === undefined ? {} : { code }), ...(typeof message === 'string' ? { message } : {}) }
+  } catch (_diagnosticFailure) { return code === undefined ? {} : { code } }
 }
 
 interface Operation {

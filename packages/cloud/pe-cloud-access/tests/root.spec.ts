@@ -126,13 +126,39 @@ describe('root authentication resources remain closed on incomplete or failed in
       : Object.assign(new Error('sk-fake-database-secret', { cause }), { code: 'EIO' })
     vi.spyOn(BetterAuthAccess, 'create').mockRejectedValueOnce(error)
     const log = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await expect(PeAuthService.mountRoot(ctx, config())).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
     await ctx.peAuth.close()
-    expect(log).toHaveBeenCalledWith('Cloud authentication startup failed: %j', expect.objectContaining({
+    expect(stderr).toHaveBeenCalledWith('Cloud authentication startup failed: %j', expect.objectContaining({
       failure: kind === 'project' ? { type: 'AccountRuntimeError', code: error.code, message: error.message }
         : { type: 'Error', code: 'EIO' }, cause: { type: 'Error', code: 'ECONNRESET' },
     }))
-    expect(log.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+    expect(stderr.mock.calls).toEqual(log.mock.calls)
+    expect(stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  })
+  it('omits invalid startup diagnostic tokens and retains valid boundary tokens', async () => {
+    const create = vi.spyOn(BetterAuthAccess, 'create')
+    const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const row of [
+      { code: 'EIO\nsk-fake-code', type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'x'.repeat(65), type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'EIO', type: 'Bad Type', expected: { code: 'EIO' } },
+      { code: 'EIO', type: 'x'.repeat(65), expected: { code: 'EIO' } },
+      { code: 'C'.repeat(64), type: 'T'.repeat(64), expected: { code: 'C'.repeat(64), type: 'T'.repeat(64) } },
+    ]) {
+      const { ctx } = await context()
+      class ProviderFailure extends Error {}
+      Object.defineProperty(ProviderFailure, 'name', { value: row.type })
+      create.mockRejectedValueOnce(Object.assign(new ProviderFailure('sk-fake-database-secret'), { code: row.code }))
+      const log = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+      await expect(PeAuthService.mountRoot(ctx, config())).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+      await ctx.peAuth.close()
+      expect(stderr).toHaveBeenLastCalledWith('Cloud authentication startup failed: %j', {
+        requestId: expect.any(String), failure: row.expected,
+      })
+      expect(log.mock.calls[0]).toEqual(stderr.mock.calls.at(-1))
+    }
+    expect(stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
   })
   it('preserves the explicit library sign-up policy through Root configuration parsing', () => {
     expect(parseAuthRootConfig({ ...config(), disableSignUp: true }).disableSignUp).toBe(true)

@@ -69,11 +69,17 @@ function failureCode(value: unknown): string {
 }
 
 function failureDiagnostic(value: unknown) {
-  const message = value instanceof CloudApiError || value instanceof AccountRuntimeError || value instanceof AuthAccessError
-    || value instanceof RequestBindingError || value instanceof ExecutionStateError || value instanceof PreviewAccessError
-    || value instanceof PreviewResponseError ? errorData(value, 'message') : undefined
-  return { type: value instanceof Error ? value.constructor.name : typeof value, code: failureCode(value),
-    ...(typeof message === 'string' ? { message } : {}) }
+  const code = failureCode(value)
+  try {
+    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+    const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
+    const message = value instanceof CloudApiError || value instanceof AccountRuntimeError || value instanceof AuthAccessError
+      || value instanceof RequestBindingError || value instanceof ExecutionStateError || value instanceof PreviewAccessError
+      || value instanceof PreviewResponseError ? errorData(value, 'message') : undefined
+    return { code, ...(typeof type === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(type) ? { type } : {}),
+      ...(typeof message === 'string' ? { message } : {}) }
+  } catch (_diagnosticFailure) { return { code } }
 }
 
 interface Dependencies {
