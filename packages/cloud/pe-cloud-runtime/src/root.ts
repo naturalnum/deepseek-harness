@@ -82,6 +82,7 @@ interface RootControl {
   recoveryVerifier?: { readonly participant: DrainParticipant; readonly verify: RootRecoveryVerifier['verify'] }
   phase: 'starting' | 'active' | 'failed' | 'closing' | 'closed'
   starting: Promise<void>
+  heartbeatObservationTimeouts: number
   heartbeat?: Promise<unknown>
   timer?: ReturnType<typeof setTimeout>
   closing?: Promise<void>
@@ -746,7 +747,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       ...singleInstance === undefined ? {} : { singleInstance },
       config, executor, database, instance, owners, factory, saves, requests: new Map(), secrets,
       ...releaseSkillBinary === undefined ? {} : { releaseSkillBinary },
-      phase: 'starting', starting: Promise.resolve(),
+      phase: 'starting', starting: Promise.resolve(), heartbeatObservationTimeouts: 0,
     }
     this.control = control
     if (config.recovery === undefined) {
@@ -804,11 +805,21 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       control.heartbeat = actual
       void observe(actual, control.config.heartbeatTimeoutMs, 'Runtime instance heartbeat observation expired').then(
         () => {
+          control.heartbeatObservationTimeouts = 0
           if (control.heartbeat === actual) delete control.heartbeat
           control.factory.logObservation()
           this.scheduleHeartbeat(control)
         },
         (cause: unknown) => {
+          // Actual instance failures are InstanceControlError; only the Root observation timer uses the base error here.
+          if (cause instanceof AccountRuntimeError && !(cause instanceof InstanceControlError)) {
+            control.heartbeatObservationTimeouts++
+            this.logControlFailure('instance-heartbeat-observation-expired', cause)
+            // Three consecutive expiries tolerate two temporary stalls without abandoning the retained database write.
+            if (control.heartbeatObservationTimeouts >= 3) { this.controlFailure(cause); return }
+            this.scheduleHeartbeat(control)
+            return
+          }
           if (!isUnsubmittedHeartbeat(cause)) { this.controlFailure(cause); return }
           if (control.heartbeat === actual) delete control.heartbeat
           this.logControlFailure('instance-heartbeat-not-submitted', cause)
@@ -1178,7 +1189,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     this.ctx.logger.error('Runtime root control failed or became uncertain; new account admission is closed and status requires inspection')
   }
 
-  private logControlFailure(event: 'instance-heartbeat-not-submitted' | 'runtime-control-failed', cause: unknown): void {
+  private logControlFailure(
+    event: 'instance-heartbeat-not-submitted' | 'instance-heartbeat-observation-expired' | 'runtime-control-failed', cause: unknown,
+  ): void {
     try {
       console.warn('Cloud runtime control observation: %j', { event, pid: process.pid, at: Date.now(),
         operation: cause instanceof InstanceControlError ? cause.operation : 'control',
