@@ -37,7 +37,7 @@ import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness,
   provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { NativeCommandAccount } from '../src/native-command-account.ts'
-import { SessionAllocationOwner, type PreparedSandbox } from '../src/allocation-owner.ts'
+import { SessionAllocationOwner, type NativeAllocationRequest, type PreparedSandbox } from '../src/allocation-owner.ts'
 import type { CommandChannel, CommandSnapshot } from '../src/command-operation.ts'
 import type { PreviewHttpOwner } from '../src/application-http.ts'
 import type { OriginalDevServiceWork } from '../src/dev-service-consumer.ts'
@@ -1299,3 +1299,50 @@ for (const source of ['preparation', 'capacity-stop'] as const) for (const typed
     if (!typed) expect(entry.error).not.toHaveProperty('message')
   })
 }
+
+it('retains the original failed stop even after only its durable allocation is marked released', async () => {
+  const f = fixture(); await f.owner.start()
+  const a = f.bind('expiry-owner-probe'), release = vi.fn(), stopCause = new SdkLifecycleFailure('sdk/stop-unknown')
+  let row: SandboxAllocation | undefined
+  const current = (): SandboxAllocation => {
+    if (row === undefined) throw new Error('No original allocation')
+    return row
+  }
+  const store: Pick<PostgresAllocationStore, 'begin' | 'transition' | 'releaseStopped' | 'failNotCreated' | 'reconcileCommitted'> = {
+    async begin(intent) {
+      row = { ...intent, state: 'creating', sandboxId: null, lastActivityAt: intent.requestedAt,
+        lastCheckedAt: intent.requestedAt, runtimeIdentity: null, executionProtocolVersion: null,
+        executionCapabilities: [], failureCode: null }
+      return { allocation: row, inserted: true }
+    },
+    async transition(_expected, change) {
+      return row = { ...current(), state: change.to, sandboxId: change.sandboxId ?? current().sandboxId,
+        ...change.to === 'ready' ? { runtimeIdentity: change.runtimeIdentity,
+          executionProtocolVersion: change.executionProtocolVersion, executionCapabilities: change.executionCapabilities } : {} }
+    },
+    async releaseStopped() { return row = { ...current(), state: 'released' } },
+    async failNotCreated() { throw new Error('The original sandbox was created') },
+    async reconcileCommitted() { return current() },
+  }
+  const allocations = new SessionAllocationOwner(store, {
+    create: async () => ({ sandboxId: 'original-expired-sandbox' }),
+    prepare: async created => ({ ...created, runtimeIdentity: '1'.repeat(64), protocolVersion: 'unit', capabilities: [] }),
+    stop: async () => { throw stopCause },
+  }, { ...config.allocations, maxAllocations: 1, maxAllocationsPerAccount: 1 })
+  const request: NativeAllocationRequest<object> = { binding: a.binding, sessionId: SessionId('expiry-owner-probe'),
+    workspaceId: brandString<Workspace['id']>('expiry-owner-probe'), assertCurrent() {},
+    prepareMount: async () => ({ value: {}, projectMountVersion: 'unit-mount', assertCurrent() {}, release }) }
+  await allocations.prepare(request)
+  const stopped = allocations.stop(request)
+  await expect(stopped).rejects.toBe(stopCause)
+  await store.releaseStopped(await store.transition(current(), { to: 'stopping' }))
+  expect(current().state).toBe('released')
+  expect(allocations.inspect().allocations).toBe(1)
+  expect(allocations.stop(request)).toBe(stopped)
+  await expect(allocations.prepare(request)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  await expect(allocations.reconcileStoppedMetadata(request)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(() => allocations.reconcileUnstartedMetadata(request)).toThrow('closed or unresolved')
+  await expect(allocations.prepare({ ...request, sessionId: SessionId('next-expiry-session') }))
+    .rejects.toMatchObject({ code: 'cloud/capacity' })
+  expect(release).not.toHaveBeenCalled()
+})

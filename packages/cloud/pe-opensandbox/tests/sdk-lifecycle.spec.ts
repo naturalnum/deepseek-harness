@@ -77,6 +77,8 @@ class FakeTransport implements OwnedSdkTransport {
   postEntered = Promise.withResolvers<undefined>()
   closeEntered = Promise.withResolvers<undefined>()
   getState = 'Running'
+  getStatus = 200
+  getFailure: Error | undefined
   list: ((url: URL) => Response) | undefined
   readonly fetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init), url = new URL(request.url)
@@ -95,6 +97,8 @@ class FakeTransport implements OwnedSdkTransport {
           headers: this.requestId === undefined ? {} : { 'x-request-id': this.requestId } })
     }
     await this.getGate
+    if (this.getFailure !== undefined) throw this.getFailure
+    if (this.getStatus !== 200) return Response.json({ code: 'SYNTHETIC_LOOKUP', message: 'Synthetic lookup refusal' }, { status: this.getStatus })
     if (url.pathname.endsWith('/sandboxes')) return this.list?.(url)
       ?? Response.json({ items: [], pagination: { page: 1, pageSize: 1, totalItems: 0, totalPages: 0, hasNextPage: false } })
     return Response.json(this.info('sandbox-one'))
@@ -188,7 +192,7 @@ test('lost create is retained; empty metadata-filtered pages never authorize rep
   assert.equal(transport.phases.includes('physical-stop-ack'), false)
 })
 
-for (const status of [200, 404, 421, 500]) test(`DELETE ${status} remains unknown and is never repeated`, async () => {
+for (const status of [200, 421, 500]) test(`DELETE ${status} remains unknown while the sandbox is present and is never repeated`, async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   onTestFinished(() => { warn.mockRestore() })
   const transport = new FakeTransport(); transport.deleteStatus = status
@@ -449,10 +453,10 @@ test('acknowledgement defect cannot replay a physically completed DELETE or repo
   assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 1); assert.equal(attempts, 1)
 })
 
-test('failed DELETE still retains pending actual local join before stop and close settle', async () => {
+for (const status of [404, 500]) test(`DELETE ${status} still retains pending actual local join before stop and close settle`, async () => {
   const transport = new FakeTransport(), selected = selection(), callbacks = agent(transport)
   const joined = Promise.withResolvers<undefined>(), originalFence = callbacks.fenceRequests
-  transport.deleteStatus = 404
+  transport.deleteStatus = status
   callbacks.fenceRequests = (value, prepared, signal) => ({ ...originalFence(value, prepared, signal), whenJoined: joined.promise })
   const backend = new SdkAllocationBackend(config, callbacks, transport), created = await backend.create(selected.intent, selected.mount)
   const stopping = backend.stop(created, undefined); let settled = false
@@ -460,9 +464,13 @@ test('failed DELETE still retains pending actual local join before stop and clos
   await transport.deleteEntered.promise
   await assert.rejects(backend.closeRoot(Date.now() + 25), { code: 'sdk/close-unconfirmed' })
   assert.equal(settled, false); assert.equal(transport.closed, false)
-  assert.equal(transport.phases.includes('physical-stop-ack'), false)
-  joined.resolve(undefined); await assert.rejects(stopping, { code: 'sdk/stop-unknown' })
-  await assert.rejects(backend.closeRoot(Date.now() + 1000), { code: 'sdk/close-unconfirmed' })
+  assert.equal(transport.phases.includes('physical-stop-ack'), status === 404)
+  joined.resolve(undefined)
+  if (status === 404) { await stopping; await backend.closeRootActual() }
+  else {
+    await assert.rejects(stopping, { code: 'sdk/stop-unknown' })
+    await assert.rejects(backend.closeRoot(Date.now() + 1000), { code: 'sdk/close-unconfirmed' })
+  }
   assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 1)
 })
 
@@ -626,7 +634,7 @@ test('known failure cannot authorize DELETE before the original body and dispatc
   assert.equal(await outcome, 'stopped'); assert.equal(f.ack.mock.calls.length, 1)
 })
 
-test('terminal failed bootstrap reaches allocation released only through actual selected stop and terminal SQL', async () => {
+for (const status of [204, 404, 500]) test(`terminal failed bootstrap releases allocation capacity after DELETE ${status} and confirmed absence`, async () => {
   const f = await bootstrapFailureFixture(completedFailure), release = vi.fn()
   let row: SandboxAllocation | undefined
   const store = {
@@ -655,9 +663,12 @@ test('terminal failed bootstrap reaches allocation released only through actual 
     maxWaiters: 2, maxWaitersPerAllocation: 2 })
   await assert.rejects(owner.prepare(request))
   assert.equal(row?.state, 'creating'); assert.equal(row?.sandboxId, null); assert.equal(release.mock.calls.length, 0)
+  f.transport.deleteStatus = status
+  if (status === 500) f.transport.getStatus = 404
   await owner.stop(request)
   assert.equal(row?.state, 'released')
   assert.equal(store.failNotCreated.mock.calls.length, 0); assert.equal(release.mock.calls.length, 1)
+  assert.equal(owner.inspect().allocations, 0)
 })
 
 
@@ -896,4 +907,47 @@ for (const kind of ['valid', 'invalid-characters', 'oversized'] as const) test(`
   }
   assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
   await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+})
+
+for (const status of [404, 500, 200, 421]) test(`confirms sandbox absence after DELETE ${status} only from an actual 404`, async () => {
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = status; transport.getStatus = 404
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount)
+  await backend.stop(created, undefined)
+  await backend.closeRootActual()
+  assert.equal(transport.calls.filter(call => call.method === 'DELETE').length, 1)
+  assert.equal(transport.calls.filter(call => call.method === 'GET').length, status === 404 ? 0 : 1)
+  assert.equal(transport.phases.filter(value => value === 'physical-stop-ack').length, 1)
+  assert.equal(warn.mock.calls[0]?.[1]?.error?.statusCode ?? warn.mock.calls[0]?.[1]?.error?.cause?.statusCode, status)
+})
+
+for (const lookup of ['present', '500', 'network', 'timeout'] as const) test(`keeps DELETE failure unknown when the lookup is ${lookup}`, async () => {
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = 500
+  if (lookup === '500') transport.getStatus = 500
+  if (lookup === 'network') transport.getFailure = new TypeError('FAKE_PRIVATE_KEY network error')
+  if (lookup === 'timeout') transport.getFailure = new DOMException('FAKE_PRIVATE_KEY timeout', 'TimeoutError')
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount), stopping = backend.stop(created, undefined)
+  await assert.rejects(stopping, { code: 'sdk/stop-unknown' })
+  assert.equal(backend.stop(created, undefined), stopping)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+  assert.equal(transport.calls.filter(call => call.method === 'GET').length, 1)
+  assert.equal(transport.calls.filter(call => call.method === 'DELETE').length, 1)
+  assert.equal(transport.phases.includes('physical-stop-ack'), false)
+  assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
+})
+
+for (const status of [200, 404, 500]) test(`Root absence query for ${status} never mutates an allocation`, async () => {
+  const transport = new FakeTransport(); transport.getStatus = status
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  assert.equal(await backend.isMissing('original-sandbox', Date.now() + 1000), status === 404)
+  await backend.closeRootActual()
+  assert.deepEqual(transport.calls.map(call => call.method), ['GET'])
+  assert.throws(() => backend.isMissing('original-sandbox', Date.now() + 1000), { code: 'sdk/closed' })
 })

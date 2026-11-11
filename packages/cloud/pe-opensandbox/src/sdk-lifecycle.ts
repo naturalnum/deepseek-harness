@@ -177,7 +177,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
 
   /** @param created Original known-successful create handle.
    * @param prepared Original handshake when published; omission uses retained startup state.
-   * @returns Synchronous fence, selected authenticated204/ack, then actual local/preparation/observation settlement.
+   * @returns Synchronous fence, authenticated deletion or 404 absence, then actual local/preparation/observation settlement.
    * Rejection retains responsibility, with no automatic DELETE replay or fabricated handshake.
    */
   stop(created: CreatedSandbox, prepared: PreparedSandbox | undefined): Promise<void> {
@@ -240,6 +240,16 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     return actual
   }
 
+  /** Observe one original sandbox by id without changing its lifecycle.
+   * @param sandboxId Original durable sandbox id.
+   * @param deadlineAtMs Finite observation deadline; no mutation is retried.
+   * @returns True only for an actual SDK 404; other wire outcomes remain unknown. Admission can refuse the read.
+   */
+  isMissing(sandboxId: string, deadlineAtMs: number): Promise<boolean> {
+    this.assertAdmission(); this.checkFields([sandboxId])
+    return this.own(() => this.queryMissing(sandboxId, deadlineAtMs))
+  }
+
   /** Fence module admission, join retained real operations/stops, then actual dispatcher close.
    * @param deadlineAtMs Finite observer deadline.
    * @param signal Optional observer-only cancellation; omitted means deadline only.
@@ -285,6 +295,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     record.phase = 'stopping'
     const span = this.audit.begin('sdk-stop', { intent: record.intent, sandboxId: record.created?.sandboxId })
     return record.stopActual = this.audit.watch(span, this.own(async () => {
+      let observedFailure: { readonly cause: unknown } | undefined
       try {
         await record.actual
         const budget = this.budget(Date.now() + this.config.stopBudgetMs)
@@ -302,7 +313,14 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
           fenced.assertDeploymentCurrent()
           const created = record.created
           if (created === undefined) throw new SdkLifecycleFailure('sdk/stop-unknown')
-          await this.connection.run(budget, 'DELETE', this.path(created.sandboxId), 204, () => this.sandboxes.deleteSandbox(created.sandboxId))
+          try {
+            await this.connection.run(budget, 'DELETE', this.path(created.sandboxId), 204, () => this.sandboxes.deleteSandbox(created.sandboxId))
+          } catch (cause) {
+            this.observeStopFailure(record, cause); observedFailure = { cause }
+            const absent = cause instanceof SandboxApiException && cause.statusCode === 404
+              || await this.queryMissing(created.sandboxId, Date.now() + this.config.requestTimeoutMs)
+            if (!absent) throw cause
+          }
           fenced.assertDeploymentCurrent()
           this.agent.acknowledgePhysicalStop(selection, record.prepared)
         } catch (cause) { physicalFailure = { cause } }
@@ -312,16 +330,28 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         if (joined.status === 'rejected') throw joined.reason
         record.phase = 'stopped'
       } catch (cause) {
-        try {
-          console.warn('Cloud sandbox stop failed: %j', { event: 'sdk-sandbox-stop-failed',
-            accountId: record.intent.accountId, sessionId: record.intent.sessionId,
-            allocationId: record.intent.allocationId, sandboxId: record.created?.sandboxId,
-            error: stopFailureDetails(cause) })
-        } catch (_unavailableObservation) { /* Preserve the original stop failure and resource responsibility. */ }
+        if (observedFailure === undefined || observedFailure.cause !== cause) this.observeStopFailure(record, cause)
         record.phase = 'stop-unknown'; throw new SdkLifecycleFailure('sdk/stop-unknown', cause)
       }
     }, true), () => ({ intent: record.intent, sandboxId: record.created?.sandboxId,
       runtimeIdentity: record.prepared?.runtimeIdentity }))
+  }
+
+  private async queryMissing(sandboxId: string, deadlineAtMs: number): Promise<boolean> {
+    try {
+      await this.connection.run(this.budget(deadlineAtMs), 'GET', this.path(sandboxId), 200,
+        () => this.sandboxes.getSandbox(sandboxId))
+      return false
+    } catch (cause) { return cause instanceof SandboxApiException && cause.statusCode === 404 }
+  }
+
+  private observeStopFailure(record: AllocationRecord, cause: unknown): void {
+    try {
+      console.warn('Cloud sandbox stop failed: %j', { event: 'sdk-sandbox-stop-failed',
+        accountId: record.intent.accountId, sessionId: record.intent.sessionId,
+        allocationId: record.intent.allocationId, sandboxId: record.created?.sandboxId,
+        error: stopFailureDetails(cause) })
+    } catch (_unavailableObservation) { /* Preserve the original stop failure and resource responsibility. */ }
   }
 
   private selection(record: AllocationRecord): AgentSelection {
