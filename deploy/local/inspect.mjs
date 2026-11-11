@@ -66,9 +66,16 @@ export async function engineRequest(method, requestPath, payload) {
 }
 
 /** Read the lifecycle status of one already identified Docker exec, omitting its command and environment. */
-export async function inspectExec(execId) {
+export async function inspectExec(execId, { request = engineRequest } = {}) {
   if (!/^[a-f0-9]{64}$/.test(execId)) throw new CandidateError('应用启动标识无效。')
-  const result = await engineRequest('GET', '/exec/' + execId + '/json')
+  let result
+  try { result = await request('GET', '/exec/' + execId + '/json') }
+  catch (error) {
+    if (error instanceof CandidateError && error.exitCode === 404) {
+      return { execId, running: false, exitCode: null, hostPid: 0, missing: true }
+    }
+    throw error
+  }
   return { execId: result.ID, running: result.Running, exitCode: result.ExitCode, hostPid: result.Pid }
 }
 

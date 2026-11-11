@@ -70,6 +70,26 @@ test('a nonzero original exec exit is a stop failure and does not trigger anothe
   assert.equal(signals, 1)
 })
 
+for (const afterSignal of [false, true]) {
+  test(`an expired exec record ${afterSignal ? 'after' : 'before'} SIGTERM reports an unknown stop result and recovery`, async () => {
+    const commands = []
+    let inspected = 0
+    const lifecycle = createLifecycle({
+      inspect: async () => snapshot, execute: async command => { commands.push(command) },
+      execution: async execId => afterSignal && inspected++ === 0
+        ? { execId, running: true, exitCode: null, hostPid: 200 }
+        : { execId, running: false, exitCode: null, hostPid: 0, missing: true },
+    })
+    await assert.rejects(lifecycle.stopApplication(snapshot), error => {
+      assert.equal(error.message, '停止结果已无法确认，产品文件未改动；运行复位脚本后用 start 恢复。')
+      assert.equal(error.exitCode, null)
+      return true
+    })
+    assert.equal(commands.length, afterSignal ? 1 : 0)
+    if (afterSignal) assert.equal(JSON.parse(commands[0].at(-1)).signal, true)
+  })
+}
+
 test('stop accepts exit zero after the existing shutdown budget within its thirty second observation allowance', async () => {
   let clock = 0
   const commands = []

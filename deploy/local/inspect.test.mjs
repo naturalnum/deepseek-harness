@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { matchApplicationExec, selectProcessState } from './inspect.mjs'
+import { CandidateError, inspectExec, matchApplicationExec, selectProcessState } from './inspect.mjs'
 
 const containerNamespace = 'mnt:[100]'
 const namespaceId = 'mnt:[200]'
@@ -42,4 +42,25 @@ test('binds an exec only through a unique independently observed host process', 
   assert.equal(matchApplicationExec(app, [{ pid: 201, comm: 'MainThread' }], [execution]), null)
   assert.equal(matchApplicationExec(app, [{ pid: 200, comm: 'MainThread' }, { pid: 201, comm: 'MainThread' }], [execution]), null)
   assert.equal(matchApplicationExec(app, [{ pid: 200, comm: 'MainThread' }], [{ ...execution, running: false }]), null)
+})
+
+test('an expired Docker exec record is explicitly missing without inventing an exit code', async () => {
+  const execId = 'a'.repeat(64)
+  const result = await inspectExec(execId, { request: async (method, route) => {
+    assert.equal(method, 'GET')
+    assert.equal(route, '/exec/' + execId + '/json')
+    throw new CandidateError('本机 Docker 请求失败。', 404)
+  } })
+  assert.deepEqual(result, { execId, running: false, exitCode: null, hostPid: 0, missing: true })
+})
+
+test('normal Docker exec observations retain the existing result fields', async () => {
+  const execId = 'b'.repeat(64)
+  assert.deepEqual(await inspectExec(execId, { request: async () => ({ ID: execId, Running: true, ExitCode: null, Pid: 42 }) }),
+    { execId, running: true, exitCode: null, hostPid: 42 })
+})
+
+test('Docker failures other than 404 remain failures', async () => {
+  const failure = new CandidateError('本机 Docker 请求失败。', 500)
+  await assert.rejects(inspectExec('c'.repeat(64), { request: async () => { throw failure } }), error => error === failure)
 })

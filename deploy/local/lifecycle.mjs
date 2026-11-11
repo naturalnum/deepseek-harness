@@ -90,6 +90,7 @@ export function createLifecycle({
     const deadline = now() + timeoutMs
     while (true) {
       const state = await execution(execId)
+      if (state.missing === true) throw new CandidateError('停止结果已无法确认，产品文件未改动；运行复位脚本后用 start 恢复。')
       if (!state.running) {
         if (state.exitCode !== 0) throw new CandidateError(`应用已退出，退出码${state.exitCode}，产品文件未改动；运行复位脚本后用start恢复。`, state.exitCode)
         return state
@@ -149,6 +150,7 @@ export function createLifecycle({
     if (!current.canStopSafely || !snapshot.appExecId) throw new CandidateError('正常停止所需的命名空间和启动记录尚未确认。')
     const timeoutMs = budget(snapshot)
     const before = await execution(snapshot.appExecId)
+    if (before.missing === true) throw new CandidateError('停止结果已无法确认，产品文件未改动；运行复位脚本后用 start 恢复。')
     if (!before.running) throw new CandidateError('原应用启动记录已结束；没有发送停止信号。')
     await identify(current, { kind: 'app', pid: snapshot.appPid, startTicks: snapshot.appStartTicks, uid: 2000 }, true)
     const state = await waitForExit(snapshot.appExecId, timeoutMs + 30000)

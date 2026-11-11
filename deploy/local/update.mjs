@@ -187,6 +187,24 @@ export function requireProductOnlyRollback(state) {
   }
 }
 
+/** Require the retained rollback stop to have a confirmed successful exit. */
+export async function requireConfirmedRollbackStop(state, execution = inspectExec) {
+  if (!state.rollbackStopExecId) return
+  const previousStop = await execution(state.rollbackStopExecId)
+  if (previousStop.missing || previousStop.running || previousStop.exitCode !== 0) {
+    throw new CandidateError('停止结果已无法确认，复位后用 start。')
+  }
+}
+
+/** Save the attempted rollback stop before signalling and its completion before replacing files. */
+export async function stopForRollback(state, current, { stop = stopApplication, save = saveState } = {}) {
+  state.rollbackStopExecId = current.appExecId
+  await save(state)
+  await stop(current)
+  delete state.rollbackStopExecId
+  await save(state)
+}
+
 async function rollback(args) {
   const state = JSON.parse(await readFile(LATEST, 'utf8'))
   requireProductOnlyRollback(state)
@@ -198,12 +216,7 @@ async function rollback(args) {
   const smokeArgs = args.length ? smokeArguments(args) : state.smokeArgs
   try { await readOptions(smokeArgs) }
   catch (_error) { throw new CandidateError('冒烟检查参数或私密账号文件无效；没有执行回滚。') }
-  if (state.rollbackStopExecId) {
-    const previousStop = await inspectExec(state.rollbackStopExecId)
-    if (previousStop.running || previousStop.exitCode !== 0) {
-      throw new CandidateError('上次回滚未确认正常停止；保留现场，不重复发信号。')
-    }
-  }
+  await requireConfirmedRollbackStop(state)
   const current = await inspectCandidate()
   if (current.namespaceId !== state.snapshot.namespaceId) {
     throw new CandidateError('候选环境已重建，不能对另一代应用执行本次回滚。')
@@ -212,9 +225,7 @@ async function rollback(args) {
   state.namespace = { ...current, namespacePid: state.holder.pid }
   await saveState(state)
   if (current.appPid) {
-    state.rollbackStopExecId = current.appExecId
-    await saveState(state)
-    await stopApplication(current)
+    await stopForRollback(state, current)
   }
   else if (state.launch && (await inspectExec(state.launch.execId)).running) throw new CandidateError('新应用状态未确认，不替换产品文件。')
   console.log(await productOperation(state, 'restore'))

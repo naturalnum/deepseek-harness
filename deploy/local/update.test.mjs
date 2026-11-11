@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { buildProductProgram, requireProductOnlyRollback, startSavedApplication } from './update.mjs'
+import { buildProductProgram, requireConfirmedRollbackStop, requireProductOnlyRollback, startSavedApplication, stopForRollback } from './update.mjs'
 
 test('the real product program prepares from asynchronous stdin and leaves the installed product untouched', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'pe-update-program-')))
@@ -77,6 +77,67 @@ test('start does not duplicate an unconfirmed Docker exec', async () => {
     save: async () => {},
   }), /没有再次启动/)
   assert.equal(launches, 0)
+})
+
+test('start can reuse the retained namespace after an old launch exec record is missing', async () => {
+  const { state, current } = savedStart()
+  state.launch = { execId: 'expired-start' }
+  let launches = 0
+  await startSavedApplication(state, {
+    inspect: async () => current,
+    execution: async id => {
+      assert.equal(id, 'expired-start')
+      return { running: false, exitCode: null, hostPid: 0, missing: true }
+    },
+    launch: async saved => { launches++; saved.launch = { execId: 'new-start' } },
+    save: async () => {},
+  })
+  assert.equal(launches, 1)
+  assert.equal(state.phase, 'recovered')
+})
+
+test('rollback persists the successful stop before any later file replacement or start', async () => {
+  const state = {}, current = { appPid: 20, appExecId: 'stopping-exec' }
+  const saved = []
+  let stops = 0
+  await stopForRollback(state, current, {
+    stop: async snapshot => {
+      stops++
+      assert.equal(snapshot, current)
+      assert.deepEqual(saved, [{ rollbackStopExecId: 'stopping-exec' }])
+    },
+    save: async value => { saved.push({ ...value }) },
+  })
+  assert.equal(stops, 1)
+  assert.deepEqual(saved, [{ rollbackStopExecId: 'stopping-exec' }, {}])
+  assert.equal(state.rollbackStopExecId, undefined)
+})
+
+test('rollback retains an unsuccessful stop and never repeats its signal', async () => {
+  const state = {}, failure = new Error('unconfirmed stop')
+  const saved = []
+  let stops = 0
+  await assert.rejects(stopForRollback(state, { appExecId: 'stopping-exec' }, {
+    stop: async () => { stops++; throw failure },
+    save: async value => { saved.push({ ...value }) },
+  }), error => error === failure)
+  assert.equal(stops, 1)
+  assert.deepEqual(saved, [{ rollbackStopExecId: 'stopping-exec' }])
+  assert.equal(state.rollbackStopExecId, 'stopping-exec')
+})
+
+test('a missing, nonzero or running rollback stop requires reset and start', async () => {
+  for (const result of [
+    { running: false, exitCode: null, hostPid: 0, missing: true },
+    { running: false, exitCode: 7 },
+    { running: true, exitCode: 0 },
+  ]) {
+    await assert.rejects(requireConfirmedRollbackStop({ rollbackStopExecId: 'previous-stop' }, async id => {
+      assert.equal(id, 'previous-stop')
+      return result
+    }), /停止结果已无法确认，复位后用 start/)
+  }
+  await requireConfirmedRollbackStop({ rollbackStopExecId: 'previous-stop' }, async () => ({ running: false, exitCode: 0 }))
 })
 
 test('a failed first start remains failed with its launch identity and is never retried automatically', async () => {
