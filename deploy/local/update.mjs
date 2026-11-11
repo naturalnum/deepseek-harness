@@ -30,10 +30,14 @@ async function stageFile(snapshot, filename, target) {
     { input: await readFile(filename) })
 }
 
+/** Construct the actual remote Node entry that receives public product metadata through stdin. */
+export function buildProductProgram(code) {
+  return `${code}\nconst executeProduct=module.exports.execute;let data='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>{try{console.log(JSON.stringify(executeProduct(JSON.parse(data))))}catch(_error){console.error('产品文件操作未完成。');process.exitCode=1}});`
+}
+
 async function productOperation(state, mode) {
   const code = await readFile(join(ROOT, 'deploy/local/product-files.cjs'), 'utf8')
-  // The transferred program receives only public product metadata through stdin.
-  const program = `${code}\nlet data='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>{try{console.log(JSON.stringify(module.exports.execute(JSON.parse(data))))}catch(_error){console.error('产品文件操作未完成。');process.exitCode=1}});`
+  const program = buildProductProgram(code)
   return JSON.parse(await execInNamespace(state.namespace, [state.namespace.nodePath, '-e', program], { input: JSON.stringify({
     mode, productRoot: state.snapshot.productRoot, productDevice: state.snapshot.productDevice,
     namespaceId: state.snapshot.namespaceId, archivePath: state.stageView + '/products.tar.gz',
