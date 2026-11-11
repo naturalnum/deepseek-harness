@@ -62,11 +62,29 @@ test('a nonzero original exec exit is a stop failure and does not trigger anothe
     inspect: async () => snapshot, execute: async () => { signals++ },
     execution: async id => ({ execId: id, running: count++ === 0, exitCode: 7 }),
   })
-  await assert.rejects(lifecycle.stopApplication(snapshot), error => error.exitCode === 7)
+  await assert.rejects(lifecycle.stopApplication(snapshot), error => {
+    assert.equal(error.exitCode, 7)
+    assert.equal(error.message, '应用已退出，退出码7，产品文件未改动；运行复位脚本后用start恢复。')
+    return true
+  })
   assert.equal(signals, 1)
 })
 
-test('an expired existing shutdown budget never triggers SIGKILL or a second termination', async () => {
+test('stop accepts exit zero after the existing shutdown budget within its thirty second observation allowance', async () => {
+  let clock = 0
+  const commands = []
+  const lifecycle = createLifecycle({
+    inspect: async () => snapshot, execute: async command => { commands.push(command) },
+    execution: async id => ({ execId: id, running: clock < 80, exitCode: clock < 80 ? null : 0 }),
+    now: () => clock, wait: async () => { clock += 40 },
+  })
+  assert.deepEqual(await lifecycle.stopApplication(snapshot), { execId: EXEC, exitCode: 0, normalExit: true })
+  assert.equal(clock, 80)
+  assert.equal(commands.length, 1)
+  assert.equal(JSON.parse(commands[0].at(-1)).signal, true)
+})
+
+test('expiry after the existing shutdown budget plus thirty seconds never triggers SIGKILL or a second termination', async () => {
   let clock = 0, signals = 0
   const lifecycle = createLifecycle({
     inspect: async () => snapshot, execute: async () => { signals++ },
@@ -74,6 +92,7 @@ test('an expired existing shutdown budget never triggers SIGKILL or a second ter
     now: () => clock, wait: async () => { clock += 40 },
   })
   await assert.rejects(lifecycle.stopApplication(snapshot), /不强杀、不重复发信号/)
+  assert.equal(clock, snapshot.shutdownTimeoutMs + 30000)
   assert.equal(signals, 1)
 })
 
@@ -131,23 +150,4 @@ test('an unconfirmed launch retains its exact exec and private log path for reco
     assert.match(error.logPath, /^\/opt\/dsh-features\/prelaunch\/pe-cloud-[a-f0-9-]+\.log$/)
     return true
   })
-})
-
-test('release preserves the holder while the app is unavailable and never releases an unowned keeper', async () => {
-  let signals = 0
-  const lifecycle = createLifecycle({ inspect: async () => stopped, execute: async () => { signals++ } })
-  await assert.rejects(lifecycle.releaseNamespaceHolder(snapshot, holder), /保留命名空间进程/)
-  assert.deepEqual(await lifecycle.releaseNamespaceHolder(snapshot, { ...holder, owned: false }), { released: false })
-  assert.equal(signals, 0)
-})
-
-test('release waits for its owned holder exec after confirming a running application', async () => {
-  const commands = []
-  const lifecycle = createLifecycle({
-    inspect: async () => snapshot, execute: async args => { commands.push(args) },
-    execution: async id => ({ execId: id, running: false, exitCode: 143 }),
-  })
-  assert.deepEqual(await lifecycle.releaseNamespaceHolder(snapshot, holder), { released: true })
-  assert.equal(commands.length, 1)
-  assert.equal(JSON.parse(commands[0].at(-1)).kind, 'holder')
 })

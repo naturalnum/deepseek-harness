@@ -16,8 +16,6 @@ const uid=status.match(/^Uid:\s+(.*)$/m)?.[1].trim().split(/\s+/);
 if(ticks!==expected.startTicks||fs.readlinkSync(base+'/ns/mnt')!==expected.namespaceId||!uid?.every(value=>Number(value)===expected.uid))throw Error('identity changed');
 if(expected.kind==='app'){
  if(!argv.includes('/opt/dsh-installed-products/apps/cli/lib/bin.js')||!fs.readlinkSync(base+'/exe').endsWith('/node24'))throw Error('application changed');
-}else if(expected.kind==='holder'){
- if(argv.length!==2||argv[0].split('/').at(-1)!=='sleep'||argv[1]!=='infinity')throw Error('holder changed');
 }else throw Error('unsupported identity');
 if(expected.signal)process.kill(expected.pid,'SIGTERM');
 console.log(expected.signal?'termination dispatched':'identity confirmed');
@@ -88,15 +86,15 @@ export function createLifecycle({
       JSON.stringify({ ...process, namespaceId: snapshot.namespaceId, signal })])
   }
 
-  async function waitForExit(execId, timeoutMs, normal) {
+  async function waitForExit(execId, timeoutMs) {
     const deadline = now() + timeoutMs
     while (true) {
       const state = await execution(execId)
       if (!state.running) {
-        if (normal && state.exitCode !== 0) throw new CandidateError('应用未正常退出；停止后续更新。', state.exitCode)
+        if (state.exitCode !== 0) throw new CandidateError(`应用已退出，退出码${state.exitCode}，产品文件未改动；运行复位脚本后用start恢复。`, state.exitCode)
         return state
       }
-      if (now() >= deadline) throw new CandidateError('应用在原有关闭预算内未退出；不强杀、不重复发信号。')
+      if (now() >= deadline) throw new CandidateError('应用在原有关闭期限加30秒后仍未退出；不强杀、不重复发信号。')
       await wait()
     }
   }
@@ -153,7 +151,7 @@ export function createLifecycle({
     const before = await execution(snapshot.appExecId)
     if (!before.running) throw new CandidateError('原应用启动记录已结束；没有发送停止信号。')
     await identify(current, { kind: 'app', pid: snapshot.appPid, startTicks: snapshot.appStartTicks, uid: 2000 }, true)
-    const state = await waitForExit(snapshot.appExecId, timeoutMs, true)
+    const state = await waitForExit(snapshot.appExecId, timeoutMs + 30000)
     return { execId: state.execId, exitCode: state.exitCode, normalExit: true }
   }
 
@@ -172,26 +170,10 @@ export function createLifecycle({
     return { execId, logPath, namespaceId: current.namespaceId }
   }
 
-  async function releaseNamespaceHolder(snapshot, holder) {
-    if (!holder?.owned) return { released: false }
-    const current = await inspect()
-    if (!current.appPid || current.appUid !== 2000 || !current.appExecId || current.namespaceId !== holder.namespaceId) {
-      throw new CandidateError('应用尚未恢复运行，保留命名空间进程。')
-    }
-    if (current.namespaceKeeperPid !== holder.pid || current.namespaceKeeperStartTicks !== holder.startTicks) {
-      throw new CandidateError('临时命名空间保留进程的身份已经变化。')
-    }
-    const timeoutMs = budget(snapshot)
-    await identify(current, { kind: 'holder', pid: holder.pid, startTicks: holder.startTicks, uid: 0 }, true)
-    await waitForExit(holder.execId, timeoutMs, false)
-    return { released: true }
-  }
-
-  return { ensureNamespaceHolder, stopApplication, startApplication, releaseNamespaceHolder }
+  return { ensureNamespaceHolder, stopApplication, startApplication }
 }
 
 const lifecycle = createLifecycle()
 export const ensureNamespaceHolder = lifecycle.ensureNamespaceHolder
 export const stopApplication = lifecycle.stopApplication
 export const startApplication = lifecycle.startApplication
-export const releaseNamespaceHolder = lifecycle.releaseNamespaceHolder

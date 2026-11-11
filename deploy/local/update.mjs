@@ -7,10 +7,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { verifyBundle } from '../bundle.mjs'
 import { CandidateError, execInCandidate, execInNamespace, inspectCandidate, inspectExec } from './inspect.mjs'
-import { ensureNamespaceHolder, releaseNamespaceHolder, startApplication, stopApplication } from './lifecycle.mjs'
+import { ensureNamespaceHolder, startApplication, stopApplication } from './lifecycle.mjs'
 import { preflight } from './dependencies.mjs'
-import { backupData, dataLayout, dockerToFile, restoreData } from './backup.mjs'
+import { backupData, dataLayout, dockerToFile } from './backup.mjs'
 import { readOptions } from '../smoke/options.mjs'
+import { assertCandidateLock, readLineArguments } from './candidate-lock.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const STATE = join(dirname(ROOT), 'local-state')
@@ -102,12 +103,6 @@ async function startAndVerify(state) {
   await ready(state, state.launch)
 }
 
-async function releaseVerifiedHolder(state) {
-  await releaseNamespaceHolder(state.snapshot, state.holder)
-  state.holder = null
-  await saveState(state)
-}
-
 async function update(bundle, args) {
   let previous
   try { previous = JSON.parse(await readFile(LATEST, 'utf8')) }
@@ -131,7 +126,6 @@ async function update(bundle, args) {
     stageGlobal: `/opt/dsh-features/pe-cloud-delivery/${operation}` }
   state.stageView = '/proc/1/root' + state.stageGlobal
   state.holder = null
-  let stopAttempted = false
   let stopped = false
   let installAttempted = false
   try {
@@ -146,7 +140,6 @@ async function update(bundle, args) {
     state.dataFormatChanged = state.dataFormat.changed
     state.phase = 'prepared'
     await saveState(state)
-    stopAttempted = true
     state.stopAttempted = true
     await saveState(state)
     await stopApplication(snapshot)
@@ -165,21 +158,15 @@ async function update(bundle, args) {
     await saveState(state)
     await startAndVerify(state)
     await smoke(state.smokeArgs)
-    await releaseVerifiedHolder(state)
     state.phase = 'verified'
     await saveState(state)
     console.log(`更新完成：${manifest.sourceCommit}；回滚资料：${state.backupDirectory}`)
   } catch (error) {
     const failureAt = state.phase
-    if (!stopAttempted && state.holder) {
-      try { await releaseNamespaceHolder(snapshot, state.holder); state.holder = null }
-      catch (_releaseError) { /* The recorded holder remains available for recovery. */ }
-    }
     if (stopped && !installAttempted) {
       // No product byte was changed; restore the original process after a backup failure.
       try {
         await startAndVerify(state)
-        await releaseVerifiedHolder(state)
         state.recoveredOriginal = true
         console.log('更新未执行，原应用已恢复就绪')
       }
@@ -193,11 +180,19 @@ async function update(bundle, args) {
   }
 }
 
+/** Cross-format rollback requires a separately rehearsed recovery procedure. */
+export function requireProductOnlyRollback(state) {
+  if (state.dataFormatChanged === true) {
+    throw new CandidateError('此次更新涉及数据格式变化，不能自动回滚；请找评审者处理，应用未停止。')
+  }
+}
+
 async function rollback(args) {
   const state = JSON.parse(await readFile(LATEST, 'utf8'))
+  requireProductOnlyRollback(state)
   if (state.format !== 'pe-cloud-local-update/v1'
     || state.backupCompleted !== true
-    || !['backed-up', 'installed', 'start-unconfirmed', 'started', 'verified'].includes(state.failureAt ?? state.phase)) {
+    || !['backed-up', 'installed', 'start-unconfirmed', 'started', 'verified', 'recovered'].includes(state.failureAt ?? state.phase)) {
     throw new CandidateError('当前没有完成备份的版本可执行标准回滚；保留现场供复核。')
   }
   const smokeArgs = args.length ? smokeArguments(args) : state.smokeArgs
@@ -223,13 +218,8 @@ async function rollback(args) {
   }
   else if (state.launch && (await inspectExec(state.launch.execId)).running) throw new CandidateError('新应用状态未确认，不替换产品文件。')
   console.log(await productOperation(state, 'restore'))
-  // Product-only updates preserve current data. Cross-format restoration is recorded separately below.
-  if (state.dataFormatChanged === true) {
-    await restoreData(state.namespace, state.backupDirectory, state.layout, state.stageView + '/accounts-restore.tar.gz')
-  }
   await startAndVerify(state)
   await smoke(smokeArgs)
-  await releaseVerifiedHolder(state)
   state.phase = 'rolled-back'
   delete state.failureAt
   delete state.rollbackStopExecId
@@ -237,17 +227,58 @@ async function rollback(args) {
   console.log('回滚完成，冒烟检查通过')
 }
 
+/** Restart the installed version from its saved launch inputs without replacing files or restoring data. */
+export async function startSavedApplication(state, {
+  inspect = inspectCandidate, execution = inspectExec, launch = startAndVerify, save = saveState,
+} = {}) {
+  if (state.format !== 'pe-cloud-local-update/v1') throw new CandidateError('没有可复用的候选启动状态；请找评审者处理。')
+  const current = await inspect()
+  if (current.appPid) throw new CandidateError('候选应用仍在运行，没有再次启动。')
+  if (current.namespaceId !== state.snapshot.namespaceId) throw new CandidateError('候选挂载环境已变化，不能复用原启动状态。')
+  if (state.launch && (await execution(state.launch.execId)).running) {
+    throw new CandidateError('上一次启动尚未确认结束，没有再次启动。')
+  }
+  if (!state.holder || current.namespaceKeeperPid !== state.holder.pid) state.holder = await ensureNamespaceHolder(current)
+  state.namespace = { ...current, namespacePid: state.holder.pid }
+  state.recoveredOriginal = false
+  await save(state)
+  try {
+    await launch(state)
+    state.phase = 'recovered'
+    state.recoveredOriginal = true
+    delete state.failureAt
+    delete state.rollbackStopExecId
+    await save(state)
+    return state.launch
+  } catch (error) {
+    state.failureAt = state.phase
+    state.phase = 'failed'
+    await save(state)
+    throw error
+  }
+}
+
+async function start() {
+  const state = JSON.parse(await readFile(LATEST, 'utf8'))
+  await startSavedApplication(state)
+  console.log('候选应用已恢复就绪；保留进程继续运行，可以重新执行更新')
+}
+
 async function main(argv) {
   if (process.versions.node !== '24.19.0') throw new CandidateError('请使用 Node 24.19.0 运行候选更新。')
-  const [mode, ...args] = argv
+  const [mode, ...rawArguments] = argv
+  const { line, args } = readLineArguments(rawArguments)
   if (mode === '--help' || !mode || args.includes('--help')) {
-    console.log('用法：deploy/local/update <产品包目录> [私密账号参数] [--continue-session 旧对话] [--continue-marker 旧回复标记]\n      deploy/local/rollback [相同检查参数]\n仅操作本机候选环境；正常停止不确认时停止更新，绝不强杀。')
+    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
     return
   }
+  if (mode === 'start' && args.length) throw new CandidateError('start 只接受 --line 线名。')
+  await assertCandidateLock(dirname(ROOT), line)
   await mkdir(STATE, { recursive: true, mode: 0o700 })
   const lock = await open(join(STATE, 'operation.lock'), 'wx', 0o600)
   try {
-    if (mode === 'rollback') await rollback(args)
+    if (mode === 'start') await start()
+    else if (mode === 'rollback') await rollback(args)
     else if (mode === 'update' && args[0]) await update(resolve(args[0]), args.slice(1))
     else throw new CandidateError('缺少产品包目录或命令无效。')
   } finally {
