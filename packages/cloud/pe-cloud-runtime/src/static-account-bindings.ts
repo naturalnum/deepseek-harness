@@ -9,6 +9,7 @@ import { staticAccountMigrationSql } from './migrations/static-accounts.ts'
  * @param slotCount Finite physical inventory size; zero denotes the legacy path.
  * @param budgets Actual authentication pool/operation budgets.
  * @returns Milliseconds covering all bounded slot attempts, actual mount and final provider calls.
+ * @throws AccountRuntimeError with the required/configured milliseconds and slot count for an insufficient budget.
  */
 export function accountAdministrationTransactionBudget(accountWaitTimeoutMs: number,
   queryBounds: Readonly<{ queueTimeoutMs: number; statementTimeoutMs: number }>, slotCount: number,
@@ -17,11 +18,13 @@ export function accountAdministrationTransactionBudget(accountWaitTimeoutMs: num
   const preparation = accountWaitTimeoutMs + maximumQueries * (queryBounds.queueTimeoutMs + queryBounds.statementTimeoutMs)
   const tail = 2 * (budgets.authConnectionTimeoutMs + budgets.authStatementTimeoutMs)
   if (!Number.isSafeInteger(preparation + tail) || budgets.authOperationTimeoutMs < preparation + tail) {
-    throw new AccountRuntimeError('cloud/invalid-config', 'Account administration operation timeout is shorter than resource preparation bounds')
+    throw new AccountRuntimeError('cloud/invalid-config',
+      `Account administration operation timeout requires at least ${preparation + tail} ms, configured ${budgets.authOperationTimeoutMs} ms for ${slotCount} slots`)
   }
   const required = preparation + budgets.authOperationTimeoutMs + tail
   if (!Number.isSafeInteger(required) || budgets.idleTransactionTimeoutMs < required) {
-    throw new AccountRuntimeError('cloud/invalid-config', 'Account administration transaction timeout is shorter than resource preparation bounds')
+    throw new AccountRuntimeError('cloud/invalid-config',
+      `Account administration transaction timeout requires at least ${required} ms, configured ${budgets.idleTransactionTimeoutMs} ms for ${slotCount} slots`)
   }
   return required
 }

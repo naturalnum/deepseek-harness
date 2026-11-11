@@ -1,8 +1,36 @@
 /** Original account Loader, checked key writes, native catalog and Gateway notifications. */
+import { format } from 'node:util'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { buildModelCatalog } from '../../../api/session-controller/src/catalog.ts'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { CloudApiError } from '../src/errors.ts'
 import { localeFixture } from './locale-field-fixture.ts'
+
+it.each(['describe', 'set', 'unset'] as const)('logs the original model-key %s failure without exposing external messages', async (method) => {
+  const f = await localeFixture('model-key-log-' + method, true, undefined, 'normal', true)
+  const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+  const submit = method === 'describe' ? vi.spyOn(f.barrier, 'describeCredentialEdit')
+    : vi.spyOn(f.barrier, 'commitCredentialEdit')
+  const invoke = () => method === 'describe' ? f.keyState() : method === 'set'
+    ? f.writeKey(f.keyStateBefore.version, 'sk-fake-request-secret') : f.unsetKey(f.keyStateBefore.version)
+  try {
+    const cause = Object.assign(new Error('sk-fake-cause-secret'), { code: 'ECONNRESET' })
+    const error = new CloudApiError('cloud/invalid-config', 'The approved credential provider is unavailable.')
+    Object.defineProperty(error, 'cause', { value: cause })
+    submit.mockRejectedValueOnce(error)
+    await expect(invoke()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(log).toHaveBeenCalledWith('Cloud model credential operation failed: %j', expect.objectContaining({
+      method, failure: { type: 'CloudApiError', code: error.code, message: error.message },
+      cause: { type: 'Error', code: 'ECONNRESET' },
+    }))
+    submit.mockRejectedValueOnce(Object.assign(new Error('sk-fake-provider-secret'), { code: 'EIO' }))
+    await expect(invoke()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(log).toHaveBeenLastCalledWith('Cloud model credential operation failed: %j', expect.objectContaining({
+      method, failure: { type: 'Error', code: 'EIO' },
+    }))
+    expect(log.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  } finally { submit.mockRestore(); log.mockRestore() }
+})
 
 it('publishes committed model-key changes only to the owning account and keeps actual native model availability current', async () => {
   const a = await localeFixture('model-events-a', true, undefined, 'normal', true)

@@ -4,7 +4,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import pg from 'pg'
-import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
@@ -17,6 +18,15 @@ import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { ConfigurationPeerOperation } from './peers.ts'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
+
+function startupFailure(value: unknown) {
+  const code: unknown = value !== null && typeof value === 'object'
+    ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
+  return { type: value instanceof Error ? value.constructor.name : typeof value,
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(value instanceof AuthAccessError || value instanceof AccountRuntimeError || value instanceof CloudApiError
+      ? { message: value.message } : {}) }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -63,6 +73,7 @@ export class PeAuthService extends Service {
   /**
    * Resolve official credentials, create the real pool/library and inspect deployed migrations.
    * Optional ingress registers on the existing Web service after schema inspection; the actual seal still gates every request.
+   * Startup diagnostics retain project error messages and one cause; external messages and stacks are omitted.
    * @param ctx - Root Loader scope with the official credentials service.
    * @param config - Explicit Host database and operation budgets.
    * @returns The installed resource provider after a gap-free library schema inspection.
@@ -78,7 +89,13 @@ export class PeAuthService extends Service {
     try {
       await service.wait(service.starting, resolved.startupTimeoutMs)
       return service
-    } catch (_error) {
+    } catch (error) {
+      try {
+        const cause: unknown = error !== null && typeof error === 'object'
+          ? Object.getOwnPropertyDescriptor(error, 'cause')?.value : undefined
+        ctx.logger.warn('Cloud authentication startup failed: %j', { requestId: service.requestId,
+          failure: startupFailure(error), ...(cause === undefined ? {} : { cause: startupFailure(cause) }) })
+      } catch (_diagnosticFailure) { /* Reporting must not change startup failure or resource cleanup. */ }
       // The caller sees a fixed error; actual startup and cleanup remain owned by the service effects.
       if (service.phase === 'starting') service.phase = 'failed'
       void service.close().catch(() => { ctx.logger.error('Cloud authentication cleanup is unconfirmed; admission remains closed.') })

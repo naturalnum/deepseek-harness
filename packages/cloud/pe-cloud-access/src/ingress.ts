@@ -55,7 +55,7 @@ const FAILURE_CODES: readonly string[] = Object.freeze([
 ])
 
 // Diagnostic reads never invoke error accessors or serialize an error object.
-function errorData(value: unknown, key: 'code' | 'cause' | 'requestId'): unknown {
+function errorData(value: unknown, key: 'code' | 'cause' | 'requestId' | 'message'): unknown {
   if (value === null || typeof value !== 'object') return undefined
   try {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
@@ -66,6 +66,14 @@ function errorData(value: unknown, key: 'code' | 'cause' | 'requestId'): unknown
 function failureCode(value: unknown): string {
   const code = errorData(value, 'code')
   return typeof code === 'string' && code.length <= 48 && FAILURE_CODES.includes(code) ? code : 'unknown'
+}
+
+function failureDiagnostic(value: unknown) {
+  const message = value instanceof CloudApiError || value instanceof AccountRuntimeError || value instanceof AuthAccessError
+    || value instanceof RequestBindingError || value instanceof ExecutionStateError || value instanceof PreviewAccessError
+    || value instanceof PreviewResponseError ? errorData(value, 'message') : undefined
+  return { type: value instanceof Error ? value.constructor.name : typeof value, code: failureCode(value),
+    ...(typeof message === 'string' ? { message } : {}) }
 }
 
 interface Dependencies {
@@ -973,6 +981,7 @@ export class CloudIngress {
         && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(originalId) ? originalId : operation.id
       const fields = {
         requestId, stage: operation.stage, code: failureCode(error),
+        failure: failureDiagnostic(error), ...(cause === undefined ? {} : { cause: failureDiagnostic(cause) }),
         causeCodes: [cause === undefined ? null : failureCode(cause), nested === undefined ? null : failureCode(nested)],
         sites: [...cloudFailureSites(error), ...cloudFailureSites(cause)].slice(0, 6),
         headersSent: operation.response?.headersSent ?? false,

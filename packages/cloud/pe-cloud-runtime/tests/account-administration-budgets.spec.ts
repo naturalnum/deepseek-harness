@@ -2,6 +2,17 @@
 import { expect, it } from 'vitest'
 import { accountAdministrationTransactionBudget } from '../src/static-account-bindings.ts'
 
+it('reports the required and configured administrator budgets with the slot count', () => {
+  const query = { queueTimeoutMs: 10_000, statementTimeoutMs: 10_000 }
+  const budgets = { authConnectionTimeoutMs: 5_000, authStatementTimeoutMs: 10_000,
+    authOperationTimeoutMs: 381_000, idleTransactionTimeoutMs: 900_000 }
+  expect(() => accountAdministrationTransactionBudget(30_000, query, 4, budgets))
+    .toThrow(/420000.*381000.*4 slots/)
+  expect(() => accountAdministrationTransactionBudget(30_000, query, 4,
+    { ...budgets, authOperationTimeoutMs: 421_000, idleTransactionTimeoutMs: 762_000 }))
+    .toThrow(/841000.*762000.*4 slots/)
+})
+
 it('requires the actual native and bounded inventory work plus the authentication tail before opening management', () => {
   const queryBounds = { queueTimeoutMs: 100, statementTimeoutMs: 200 }
   const budgets = { idleTransactionTimeoutMs: 20_000, authOperationTimeoutMs: 10_000,
