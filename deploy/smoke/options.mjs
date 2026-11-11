@@ -37,7 +37,7 @@ async function readCredentials(path) {
  * Resolve the candidate entry and one account from environment variables or a private JSON file.
  * @param {string[]} argv - Command arguments; account secrets are never accepted here.
  * @param {NodeJS.ProcessEnv} env - Environment containing optional smoke account credentials.
- * @returns {Promise<{url: string, email: string, password: string, mcp: boolean, research: boolean, wrongPassword: boolean, help: boolean}>} Options for one smoke run.
+ * @returns {Promise<{url: string, email: string, password: string, mcp: boolean, research: boolean, wrongPassword: boolean, help: boolean, continueSession?: string, continueMarker?: string}>} Options for one smoke run.
  */
 export async function readOptions(argv = process.argv.slice(2), env = process.env) {
   const options = {
@@ -48,6 +48,8 @@ export async function readOptions(argv = process.argv.slice(2), env = process.en
     research: false,
     wrongPassword: false,
     help: false,
+    continueSession: undefined,
+    continueMarker: undefined,
   }
   let credentialsPath
   let accountName = 'ordinaryUserC'
@@ -60,6 +62,8 @@ export async function readOptions(argv = process.argv.slice(2), env = process.en
       case '--help': options.help = true; break
       case '--url':
       case '--credentials':
+      case '--continue-session':
+      case '--continue-marker':
       case '--account': {
         const value = argv[++index]
         if (typeof value !== 'string' || value === '' || value.startsWith('--')) {
@@ -67,6 +71,8 @@ export async function readOptions(argv = process.argv.slice(2), env = process.en
         }
         if (argument === '--url') options.url = value
         else if (argument === '--credentials') credentialsPath = value
+        else if (argument === '--continue-session') options.continueSession = value
+        else if (argument === '--continue-marker') options.continueMarker = value
         else accountName = value
         break
       }
@@ -74,6 +80,15 @@ export async function readOptions(argv = process.argv.slice(2), env = process.en
     }
   }
   if (options.help) return options
+  if ((options.continueSession === undefined) !== (options.continueMarker === undefined)) {
+    throw new Error('--continue-session 和 --continue-marker 必须成对提供。')
+  }
+  if (options.continueSession !== undefined && !/^session:[a-zA-Z0-9_-]+$/.test(options.continueSession)) {
+    throw new Error('请提供完整的 session:... 会话行标识。')
+  }
+  if (options.continueMarker !== undefined && options.continueMarker.trim() === '') {
+    throw new Error('原对话的回复标记不能为空。')
+  }
 
   const url = parseUrl(options.url)
   options.url = url.href.replace(/\/$/, '')

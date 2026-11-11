@@ -26,6 +26,7 @@ test('reads the existing candidate credential structure and default account', as
     assert.deepEqual(await readOptions(['--credentials', path], {}), {
       url: ORIGIN, email: EMAIL, password: PASSWORD, mcp: false,
       research: false, wrongPassword: false, help: false,
+      continueSession: undefined, continueMarker: undefined,
     })
   })
 })
@@ -51,6 +52,29 @@ test('reads environment credentials with the selected entry and optional checks'
   assert.equal(result.password, PASSWORD)
   assert.equal(result.mcp, true)
   assert.equal(result.research, true)
+})
+
+test('accepts the complete old-session row key and its original response marker together', async () => {
+  const session = 'session:session-fixture-before-update'
+  const marker = 'fixture-before-update-CHAT'
+  const result = await readOptions(['--continue-session', session, '--continue-marker', marker], {
+    PE_CLOUD_SMOKE_EMAIL: EMAIL, PE_CLOUD_SMOKE_PASSWORD: PASSWORD,
+  })
+  assert.equal(result.continueSession, session)
+  assert.equal(result.continueMarker, marker)
+})
+
+test('refuses either old-session fixture argument without its pair', async () => {
+  await assert.rejects(readOptions(['--continue-session', 'session:session-fixture'], {}), /必须成对提供/)
+  await assert.rejects(readOptions(['--continue-marker', 'fixture-CHAT'], {}), /必须成对提供/)
+})
+
+test('refuses an incomplete session key or an empty history marker', async () => {
+  const credentials = { PE_CLOUD_SMOKE_EMAIL: EMAIL, PE_CLOUD_SMOKE_PASSWORD: PASSWORD }
+  for (const session of ['session:', 'session-fixture', 'session:session-"invalid']) {
+    await assert.rejects(readOptions(['--continue-session', session, '--continue-marker', 'fixture-CHAT'], credentials), /完整的 session:/)
+  }
+  await assert.rejects(readOptions(['--continue-session', 'session:session-fixture', '--continue-marker', '   '], credentials), /标记不能为空/)
 })
 
 test('refuses group-readable credentials before using their contents', async () => {
