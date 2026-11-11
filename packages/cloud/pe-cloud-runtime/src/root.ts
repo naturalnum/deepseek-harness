@@ -815,6 +815,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           if (cause instanceof AccountRuntimeError && !(cause instanceof InstanceControlError)) {
             control.heartbeatObservationTimeouts++
             this.logControlFailure('instance-heartbeat-observation-expired', cause)
+            void actual.catch((lateFailure: unknown) => {
+              if (!isUnsubmittedHeartbeat(lateFailure)) this.controlFailure(lateFailure)
+            })
             // Three consecutive expiries tolerate two temporary stalls without abandoning the retained database write.
             if (control.heartbeatObservationTimeouts >= 3) { this.controlFailure(cause); return }
             this.scheduleHeartbeat(control)

@@ -188,3 +188,27 @@ it('fences after three observation timeouts without duplicating the pending writ
   await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs * 3)
   expect(f.heartbeat).toHaveBeenCalledTimes(3)
 })
+
+it.each(['conflict', 'unknown'] as const)('fences immediately when a timed-out heartbeat later ends with %s', async (outcome) => {
+  const f = await fixture(), release = Promise.withResolvers<undefined>(), run = driver.run!
+  f.releases.push(() => { release.resolve(undefined) })
+  driver.run = async (text, values) => {
+    if (text !== heartbeatInstanceSql) return run(text, values)
+    await release.promise
+    if (outcome === 'conflict') return { rows: [] }
+    throw new Error('PRIVATE submitted heartbeat failure')
+  }
+  await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs + f.config.heartbeatTimeoutMs)
+  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+  const pending = f.heartbeat.mock.results[0]
+  if (pending?.type !== 'return') throw new Error('Original heartbeat must retain its actual write')
+  release.resolve(undefined)
+  await Promise.allSettled([pending.value])
+  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'failed', hasFailure: true })
+  expect(f.revokes).toHaveBeenCalledWith('runtime-control')
+  expect(() => { f.runtime.locateAccount(account) }).toThrow('not available')
+  await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs * 3)
+  expect(f.heartbeat).toHaveBeenCalledOnce()
+  expect(JSON.stringify(f.stderr.mock.calls)).not.toContain('PRIVATE')
+  await expect(f.runtime.close()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
+})
