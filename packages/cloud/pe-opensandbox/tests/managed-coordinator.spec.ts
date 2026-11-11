@@ -10,7 +10,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
 import { installAccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/src/binding.ts'
 import type { AccountBinding, AccountRuntimeService, DrainParticipant, RootMetadataDatabase } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi, type MockInstance } from 'vitest'
 import { ManagedCoordinator, installManagedExecutionProviders } from '../src/managed-coordinator.ts'
 import type { ManagedCoordinatorConfig, ManagedExecutionDeployment } from '../src/managed-coordinator.ts'
 import type { NativeAccountExecutionAuthority } from '../src/coordinator.ts'
@@ -21,7 +21,8 @@ import type { SandboxAllocation } from '../src/allocation-types.ts'
 import { PostgresAllocationStore } from '../src/allocation-store.ts'
 import { allocationMigrationSql } from '../src/migrations/allocations.ts'
 import { SdkAllocationBackend } from '../src/sdk-lifecycle.ts'
-import type { OwnedSdkTransport, SdkLifecycleConfig } from '../src/lifecycle-types.ts'
+import { SdkLifecycleFailure, type OwnedSdkTransport, type SdkLifecycleConfig } from '../src/lifecycle-types.ts'
+import { ExecutionStateError } from '../src/errors.ts'
 import { TrustedRuntimeRegistry } from '../src/trusted-runtime.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
@@ -1207,4 +1208,60 @@ it.each(['sdk/closed', 'sdk/bounds', 'sdk/capacity', 'sdk/selection', 'sdk/creat
   expect(warn.mock.calls[0]?.[1]).toMatchObject({ code, causeCode: 'sdk/selection' })
   expect(JSON.stringify(warn.mock.calls)).not.toMatch(/SECRET|BODY|TOKEN|KEY|private|stack/)
   expect(JSON.stringify(result)).not.toContain(privateText)
+})
+
+for (const typed of [true, false]) {
+  const failure = () => typed
+    ? Object.assign(new ExecutionStateError('cloud/stop-unconfirmed', 'Execution cleanup was not confirmed.'),
+      { cause: new SdkLifecycleFailure('sdk/selection') })
+    : Object.assign(new Error('FAKE_PRIVATE_KEY must stay private'),
+      { code: 'E_CLEANUP', cause: Object.assign(new Error('FAKE_PRIVATE_KEY nested'), { code: 'E_NESTED' }) })
+  const checkLog = (warn: MockInstance<Console['warn']>, source: string, accountId: string, sessionId: SessionId | null) => {
+    const entry = warn.mock.calls.find(call => call[1]?.source === source)?.[1]
+    expect(entry).toMatchObject({ event: 'managed-execution-failed', source, accountId, epoch: '1', sessionId,
+      error: typed ? { type: 'ExecutionStateError', code: 'cloud/stop-unconfirmed', message: 'Execution cleanup was not confirmed.',
+        cause: { type: 'SdkLifecycleFailure', code: 'sdk/selection', message: expect.any(String) } }
+        : { type: 'Error', code: 'E_CLEANUP', cause: { type: 'Error', code: 'E_NESTED' } } })
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('FAKE_PRIVATE_KEY')
+    if (!typed) { expect(entry.error).not.toHaveProperty('message'); expect(entry.error.cause).not.toHaveProperty('message') }
+  }
+  it(`logs uncertain command and cleanup causes without exposing private messages; typed=${typed}`, async () => {
+    const f = await applicationFixture(), a = await f.account('command-log')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const started = await a.start(), pending = trackApplication(a.borrow(started))
+    await vi.waitFor(() => { expect(f.attempts).toHaveLength(1) })
+    vi.spyOn(SessionAllocationOwner.prototype, 'stop').mockRejectedValueOnce(failure())
+    f.attempts[0]!.terminal.reject(failure()); await pending.joined
+    await vi.waitFor(() => { checkLog(warn, 'command-stop', a.binding.accountId, a.agents[0]!.session.id) })
+    checkLog(warn, 'command', a.binding.accountId, a.agents[0]!.session.id)
+    expect(pending.state.cause).toMatchObject({ code: 'cloud/stop-unconfirmed' })
+  })
+  it(`logs original Session retirement failure without changing refusal; typed=${typed}`, async () => {
+    const f = await idleComputeFixture()
+    for (let i = 0; i < 2; i++) expect((await f.runSession(i)).isError).toBe(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    f.stop.mockRejectedValueOnce(failure())
+    expect((await f.runSession(2)).isError).toBe(true)
+    checkLog(warn, 'session-retirement', f.a.binding.accountId, f.a.agents[0]!.session.id)
+    expect(f.stop).toHaveBeenCalledOnce(); expect(f.prepare).toHaveBeenCalledTimes(2)
+  })
+  it(`logs original account stop failure and retained Sessions; typed=${typed}`, async () => {
+    const f = await applicationFixture(), a = await f.account('account-stop-log')
+    await a.start()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(f.deployment, 'assertEpochReleased').mockImplementation(() => { throw failure() })
+    expect((await f.owner.stopEpoch(a.binding, Date.now() + 1000)).status).toBe('unknown')
+    checkLog(warn, 'account-stop', a.binding.accountId, null)
+    expect(warn.mock.calls.find(call => call[1]?.source === 'account-stop')?.[1]).toMatchObject({ sessionIds: [a.agents[0]!.session.id] })
+  })
+}
+
+it('a failed log sink preserves the original account stop failure and unknown receipt', async () => {
+  const f = fixture(); await f.owner.start()
+  const a = f.bind(), cause = new ExecutionStateError('cloud/stop-unconfirmed', 'Execution cleanup was not confirmed.')
+  vi.spyOn(f.deployment, 'assertEpochReleased').mockImplementation(() => { throw cause })
+  vi.spyOn(console, 'warn').mockImplementation(() => { throw new Error('log sink unavailable') })
+  expect((await f.owner.stopEpoch(a.binding, Date.now() + 1000)).status).toBe('unknown')
+  f.transportClose.resolve(undefined)
+  await expect(f.owner.closeRoot()).rejects.toBe(cause)
 })

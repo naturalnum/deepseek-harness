@@ -13,7 +13,7 @@ import type { AgentDataClient, ClientOptions, Handshake, Responsibility } from '
 import { SessionAllocationOwner } from '../src/allocation-owner.ts'
 import type { NativeAllocationRequest } from '../src/allocation-owner.ts'
 import type { SandboxAllocation, AllocationCreateIntent as Intent, AllocationExpectation, AllocationChange } from '../src/allocation-types.ts'
-import type { CreateSandboxRequest } from '@alibaba-group/opensandbox'
+import { SandboxApiException, type CreateSandboxRequest } from '@alibaba-group/opensandbox'
 import type { AllocationCreateIntent } from '../src/allocation-types.ts'
 import type { ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import { SdkAllocationBackend } from '../src/sdk-lifecycle.ts'
@@ -62,6 +62,7 @@ class FakeTransport implements OwnedSdkTransport {
   readonly phases: string[] = []
   body: CreateSandboxRequest | undefined
   deleteStatus = 204
+  deleteBody: object = { code: 'SYNTHETIC_DELETE', message: 'Synthetic unconfirmed deletion' }
   postFailure = false
   deleteFailure = false
   closeFailure = false
@@ -89,7 +90,7 @@ class FakeTransport implements OwnedSdkTransport {
       this.deleteEntered.resolve(undefined); await this.deleteGate; this.onDelete?.()
       if (this.deleteFailure) throw new Error('synthetic lost DELETE reply')
       return this.deleteStatus === 204 ? new Response(null, { status: 204 })
-        : Response.json({ code: 'SYNTHETIC_DELETE', message: 'Synthetic unconfirmed deletion' }, { status: this.deleteStatus })
+        : Response.json(this.deleteBody, { status: this.deleteStatus })
     }
     await this.getGate
     if (url.pathname.endsWith('/sandboxes')) return this.list?.(url)
@@ -186,11 +187,15 @@ test('lost create is retained; empty metadata-filtered pages never authorize rep
 })
 
 for (const status of [200, 404, 421, 500]) test(`DELETE ${status} remains unknown and is never repeated`, async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
   const transport = new FakeTransport(); transport.deleteStatus = status
   const selected = selection(), backend = new SdkAllocationBackend(config, agent(transport), transport)
   const created = await backend.create(selected.intent, selected.mount)
   const original = backend.stop(created, undefined)
   await assert.rejects(original, { code: 'sdk/stop-unknown' }); assert.equal(backend.stop(created, undefined), original)
+  const details = warn.mock.calls[0]?.[1]?.error
+  assert.equal(status === 200 ? details?.cause?.statusCode : details?.statusCode, status)
   await assert.rejects(backend.closeRoot(Date.now() + 1000), { code: 'sdk/close-unconfirmed' })
   assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 1)
   assert.equal(transport.phases.includes('physical-stop-ack'), false)
@@ -801,4 +806,69 @@ test('passes only actual unspent lifecycle observations and the same deadline to
   await backend.prepare(created, selected.mount, expectedDeadline)
   assert.equal(observations, 2)
   await backend.stop(created, undefined); await backend.closeRootActual()
+})
+
+for (const nested of [false, true]) test(`logs DELETE status and deletion code without raw SDK response text; nested=${nested}`, async () => {
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = 500
+  const detail = { code: 'deletion-completion/history-limit', message: 'FAKE_PRIVATE_KEY response message', extra: 'FAKE_PRIVATE_KEY body' }
+  transport.deleteBody = nested ? { error: detail } : detail
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount)
+  await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
+  assert.equal(warn.mock.calls.length, 1)
+  assert.deepEqual(warn.mock.calls[0]?.[1], { event: 'sdk-sandbox-stop-failed', accountId: selected.intent.accountId,
+    sessionId: selected.intent.sessionId, allocationId: selected.intent.allocationId, sandboxId: created.sandboxId,
+    error: { type: 'SandboxApiException', code: 'deletion-completion/history-limit', statusCode: 500,
+      deletionCode: 'deletion-completion/history-limit' } })
+  assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+  assert.equal(warn.mock.calls.length, 1)
+})
+
+test('logs typed local stop causes but omits ordinary Error messages and deeper causes', async () => {
+  const transport = new FakeTransport(), selected = selection(), callbacks = agent(transport), original = callbacks.fenceRequests
+  const privateError = Object.assign(new Error('FAKE_PRIVATE_KEY local failure'), { code: 'E_LOCAL_JOIN',
+    cause: new Error('FAKE_PRIVATE_KEY deeper') })
+  callbacks.fenceRequests = (...args) => ({ ...original(...args), whenJoined: Promise.reject(new SdkLifecycleFailure('sdk/selection', privateError)) })
+  const backend = new SdkAllocationBackend(config, callbacks, transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount)
+  await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
+  const entry = warn.mock.calls[0]?.[1]
+  assert.deepEqual(entry?.error, { type: 'SdkLifecycleFailure', code: 'sdk/selection',
+    message: new SdkLifecycleFailure('sdk/selection').message, cause: { type: 'Error', code: 'E_LOCAL_JOIN' } })
+  assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+})
+
+test('a failed log sink preserves the original SDK stop failure and sticky cleanup', async () => {
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = 500
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => { throw new Error('log sink unavailable') })
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount), stopping = backend.stop(created, undefined)
+  await assert.rejects(stopping, (error: unknown) => error instanceof SdkLifecycleFailure
+    && error.code === 'sdk/stop-unknown' && error.cause instanceof SandboxApiException && error.cause.statusCode === 500)
+  assert.equal(backend.stop(created, undefined), stopping)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+  assert.equal(transport.calls.filter(value => value.method === 'DELETE').length, 1)
+})
+
+test('logs deletion completion codes in SDK response messages without exposing the response text', async () => {
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = 500
+  transport.deleteBody = { code: 'INTERNAL_SERVER_ERROR', message: 'deletion-completion/history-limit FAKE_PRIVATE_KEY response text' }
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount)
+  await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
+  assert.equal(warn.mock.calls[0]?.[1]?.error?.deletionCode, 'deletion-completion/history-limit')
+  assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
 })
