@@ -61,6 +61,7 @@ class FakeTransport implements OwnedSdkTransport {
   readonly calls: { method: string; url: URL }[] = []
   readonly phases: string[] = []
   body: CreateSandboxRequest | undefined
+  requestId: string | undefined
   deleteStatus = 204
   deleteBody: object = { code: 'SYNTHETIC_DELETE', message: 'Synthetic unconfirmed deletion' }
   postFailure = false
@@ -90,7 +91,8 @@ class FakeTransport implements OwnedSdkTransport {
       this.deleteEntered.resolve(undefined); await this.deleteGate; this.onDelete?.()
       if (this.deleteFailure) throw new Error('synthetic lost DELETE reply')
       return this.deleteStatus === 204 ? new Response(null, { status: 204 })
-        : Response.json(this.deleteBody, { status: this.deleteStatus })
+        : Response.json(this.deleteBody, { status: this.deleteStatus,
+          headers: this.requestId === undefined ? {} : { 'x-request-id': this.requestId } })
     }
     await this.getGate
     if (url.pathname.endsWith('/sandboxes')) return this.list?.(url)
@@ -869,6 +871,29 @@ test('logs deletion completion codes in SDK response messages without exposing t
   const created = await backend.create(selected.intent, selected.mount)
   await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
   assert.equal(warn.mock.calls[0]?.[1]?.error?.deletionCode, 'deletion-completion/history-limit')
+  assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+})
+
+for (const kind of ['valid', 'invalid-characters', 'oversized'] as const) test(`records only bounded SDK identifiers and deletion classifiers; kind=${kind}`, async () => {
+  const valid = kind === 'valid'
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = 500
+  const identifier = valid ? 'A'.repeat(128) : kind === 'oversized' ? 'A'.repeat(129) : 'FAKE_PRIVATE_KEY invalid code'
+  transport.requestId = identifier
+  transport.deleteBody = { code: identifier, message: `deletion-completion/${'a'.repeat(valid ? 108 : 109)} FAKE_PRIVATE_KEY` }
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const created = await backend.create(selected.intent, selected.mount)
+  await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
+  const error = warn.mock.calls[0]?.[1]?.error
+  if (valid) {
+    assert.equal(error.code, identifier); assert.equal(error.requestId, identifier)
+    assert.equal(error.deletionCode, `deletion-completion/${'a'.repeat(108)}`)
+  } else {
+    assert.equal(error.code, undefined); assert.equal(error.requestId, undefined); assert.equal(error.deletionCode, undefined)
+  }
   assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
   await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
 })
