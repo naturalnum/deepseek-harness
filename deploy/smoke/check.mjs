@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
 import { readOptions } from './options.mjs'
-import { createBudget, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
+import { createBudget, findPreviousSessionRow, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 import { createBrowserMcpChecks, McpSmokeFailure } from './mcp-checks.mjs'
 
 const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--credentials 私密JSON] [--account 账号字段]
@@ -241,18 +241,8 @@ async function run(options) {
     closeLogin = signOut
 
     async function openPreviousSession(key) {
-      const row = page.locator(`[data-row-key="${key}"]`)
-      await page.locator('[data-row-key^="session:"]').first().waitFor({ state: 'attached' })
-      while (await row.count() === 0) {
-        const more = page.getByRole('button', { name: /^(Show \d+ more sessions|展开其余 \d+ 个会话)$/ })
-        requireThat(await more.count() !== 0, '侧栏没有找到指定的更新前对话')
-        const previous = await page.locator('[data-row-key^="session:"]').count()
-        await more.first().click()
-        await page.waitForFunction(({ previous, key }) => {
-          const rows = [...document.querySelectorAll('[data-row-key^="session:"]')]
-          return rows.length > previous || rows.some(element => element.getAttribute('data-row-key') === key)
-        }, { previous, key }, { timeout: remaining() })
-      }
+      const row = await findPreviousSessionRow(page, key, remaining())
+      requireThat(row !== undefined, '侧栏没有找到指定的更新前对话')
       await row.click()
       const session = key.slice('session:'.length)
       const content = page.locator(`[data-conversation-content][data-conversation-session="${session}"][data-content-phase="active"]`)

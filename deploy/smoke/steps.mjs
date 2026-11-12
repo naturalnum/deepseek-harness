@@ -131,3 +131,36 @@ export async function waitForPreviousReply(content, marker, timeoutMs) {
     }
   } finally { await root.dispose() }
 }
+
+/** Reveal an exact retained Session through existing workspace rows and their normal overflow buttons. */
+export async function findPreviousSessionRow(page, key, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  const remaining = () => Math.max(1, deadline - Date.now())
+  const row = page.locator(`[data-row-key="${key}"]`)
+  const sessions = page.locator('[data-row-key^="session:"]')
+  const workspaces = page.locator('[data-row-key^="workspace:"][role="treeitem"]')
+  await sessions.first().or(workspaces.first()).first().waitFor({ state: 'attached', timeout: remaining() })
+  for (;;) {
+    if (Date.now() >= deadline) throw new StepTimeout()
+    if (await row.count() !== 0) return row
+    const collapsed = page.locator('[data-row-key^="workspace:"][role="treeitem"][aria-expanded="false"]')
+    if (await collapsed.count() !== 0) {
+      const workspace = collapsed.first()
+      const workspaceKey = await workspace.getAttribute('data-row-key')
+      // Rows.tsx places the folder in the first span; its click bubbles to onToggle, away from create/menu buttons.
+      await workspace.locator(':scope > span').first().click({ timeout: remaining() })
+      await page.waitForFunction(workspaceKey => [...document.querySelectorAll('[data-row-key^="workspace:"]')]
+        .some(element => element.getAttribute('data-row-key') === workspaceKey && element.getAttribute('aria-expanded') === 'true'),
+      workspaceKey, { timeout: remaining() })
+      continue
+    }
+    const more = page.getByRole('button', { name: /^(Show \d+ more sessions|展开其余 \d+ 个会话)$/ })
+    if (await more.count() === 0) return
+    const previous = await sessions.count()
+    await more.first().click({ timeout: remaining() })
+    await page.waitForFunction(({ previous, key }) => {
+      const rows = [...document.querySelectorAll('[data-row-key^="session:"]')]
+      return rows.length > previous || rows.some(element => element.getAttribute('data-row-key') === key)
+    }, { previous, key }, { timeout: remaining() })
+  }
+}
