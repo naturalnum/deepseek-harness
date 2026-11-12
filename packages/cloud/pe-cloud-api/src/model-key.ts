@@ -69,6 +69,21 @@ function safeFailure(error: unknown): CloudApiError {
     'The credential operation has no confirmed response. Check current state; do not automatically replay writes.')
 }
 
+function modelKeyFailure(value: unknown) {
+  let code: string | undefined
+  try {
+    const rawCode: unknown = value !== null && typeof value === 'object'
+      ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
+    code = typeof rawCode === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(rawCode) ? rawCode : undefined
+    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+    const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
+    const message: unknown = value instanceof CloudApiError ? Object.getOwnPropertyDescriptor(value, 'message')?.value : undefined
+    return { ...(typeof type === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(type) ? { type } : {}),
+      ...(code === undefined ? {} : { code }), ...(typeof message === 'string' ? { message } : {}) }
+  } catch (_diagnosticFailure) { return code === undefined ? {} : { code } }
+}
+
 /** Borrowed request adapter; its caller retains and releases the original AccountUse after actual settlement. */
 export interface ModelKeyAccess {
   /** @param request Closed reference JSON. @returns Only native nonsecret state and the current opaque version. */
@@ -80,6 +95,7 @@ export interface ModelKeyAccess {
 }
 
 /** Bind the original borrow, API and private native installation; this registers no Remote handler.
+ * Failures log the operation and fixed project diagnostics; request values and external messages are omitted.
  * @param use Original runtime-issued request borrow, never reconstructed from client identities.
  * @param api Original account API owner, including business-ready and C04 exposure checks.
  * @param install Original private native installation from that API owner.
@@ -119,7 +135,17 @@ export function bindModelKeyAccess(
       const result = await operation()
       check(method)
       return result
-    } catch (error) { throw safeFailure(error) }
+    } catch (error) {
+      try {
+        const cause: unknown = error !== null && typeof error === 'object'
+          ? Object.getOwnPropertyDescriptor(error, 'cause')?.value : undefined
+        const fields = { method, accountId: use.binding.accountId, failure: modelKeyFailure(error),
+          ...(cause === undefined ? {} : { cause: modelKeyFailure(cause) }) }
+        console.warn('Cloud model credential operation failed: %j', fields)
+        owner.logger.warn('Cloud model credential operation failed: %j', fields)
+      } catch (_diagnosticFailure) { /* Preserve the original response even when reporting fails. */ }
+      throw safeFailure(error)
+    }
   }
   return Object.freeze({
     describe: (request: unknown) => invoke('describe', async () => {

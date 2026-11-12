@@ -1,9 +1,12 @@
+import { format } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ConfigEditor } from '@deepseek-ai/dsh-config-editor'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { ConfigSaveCoordinator, ConfigSaveOutcomeUnknown } from '../src/config-saves.ts'
+import { CloudApiError } from '../src/errors.ts'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { installNativeDefaultModelSaveHook } from '../src/native-save-hook.ts'
 import type { ConfigSaveLimits } from '../src/save-hooks.ts'
 
@@ -31,6 +34,57 @@ function binding(id = 'a', epoch = '1', lifetime = new AbortController()): Accou
 }
 
 afterEach(() => { vi.useRealTimers() })
+
+it.each(['project', 'external'] as const)('logs credential describe failures safely for %s errors', async (kind) => {
+  const root = new ConfigSaveCoordinator(limits), ref = credentialRef('SYNTHETIC_KEY')
+  const account = root.createAccount(binding(), { references: [ref], maxReferences: 1, maxReferenceBytes: 64 })
+  const cause = Object.assign(new Error('sk-fake-cause-secret'), { code: 'ECONNRESET' })
+  const error = kind === 'project' ? new CloudApiError('cloud/invalid-config', 'Credential provider is unavailable.')
+    : Object.assign(new Error('sk-fake-provider-secret'), { code: 'EIO' })
+  Object.defineProperty(error, 'cause', { value: cause })
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    await expect(account.describeCredentialEdit(ref, async () => { throw error }))
+      .rejects.toMatchObject({ code: 'cloud/account-unavailable', message: 'Credential state could not be read.' })
+    expect(log).toHaveBeenCalledWith('Cloud credential state read failed: %j', expect.objectContaining({
+      failure: kind === 'project' ? { type: 'CloudApiError', code: 'cloud/invalid-config', message: error.message }
+        : { type: 'Error', code: 'EIO' }, cause: { type: 'Error', code: 'ECONNRESET' },
+    }))
+    expect(log.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+    expect(account.snapshot().failures).toEqual([])
+  } finally {
+    log.mockRestore()
+    await account.stopConfigSaves(nowDeadline()); root.releaseAccount(account); root.close()
+  }
+})
+
+it('omits invalid credential-read diagnostic tokens and retains valid boundary tokens', async () => {
+  const root = new ConfigSaveCoordinator(limits), ref = credentialRef('SYNTHETIC_KEY')
+  const account = root.createAccount(binding(), { references: [ref], maxReferences: 1, maxReferenceBytes: 64 })
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    for (const row of [
+      { code: 'EIO\nsk-fake-code', type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'x'.repeat(65), type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'EIO', type: 'Bad Type', expected: { code: 'EIO' } },
+      { code: 'EIO', type: 'x'.repeat(65), expected: { code: 'EIO' } },
+      { code: 'C'.repeat(64), type: 'T'.repeat(64), expected: { code: 'C'.repeat(64), type: 'T'.repeat(64) } },
+    ]) {
+      class ProviderFailure extends Error {}
+      Object.defineProperty(ProviderFailure, 'name', { value: row.type })
+      const error = Object.assign(new ProviderFailure('sk-fake-provider-secret'), { code: row.code })
+      await expect(account.describeCredentialEdit(ref, async () => { throw error }))
+        .rejects.toMatchObject({ code: 'cloud/account-unavailable', message: 'Credential state could not be read.' })
+      expect(log).toHaveBeenLastCalledWith('Cloud credential state read failed: %j', {
+        accountId: account.binding.accountId, failure: row.expected,
+      })
+    }
+    expect(log.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  } finally {
+    log.mockRestore()
+    await account.stopConfigSaves(nowDeadline()); root.releaseAccount(account); root.close()
+  }
+})
 
 describe('actual configuration submission responsibility', () => {
   it('commits a settings policy only after every enrolled child has succeeded', async () => {

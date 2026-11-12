@@ -130,18 +130,85 @@ it.each(['unknown', 'conflict', 'invalid-record', 'wrong-operation'] as const)('
   await expect(f.runtime.close()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
 })
 
-it('retains the actual heartbeat after observation timeout and never un-fences when it eventually succeeds', async () => {
+it.each([1, 2])('keeps admission after %s observation timeouts and resets the count on success', async (timeouts) => {
   const f = await fixture(), release = Promise.withResolvers<undefined>(), run = driver.run!
   f.releases.push(() => { release.resolve(undefined) })
   driver.run = async (text, values) => { if (text === heartbeatInstanceSql) await release.promise; return run(text, values) }
-  await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs + f.config.heartbeatTimeoutMs)
-  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'failed', hasFailure: true })
-  expect(f.revokes).toHaveBeenCalledWith('runtime-control')
+  for (let i = 1; i <= timeouts; i++) {
+    await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs + f.config.heartbeatTimeoutMs)
+    expect(f.runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+    expect(f.revokes).not.toHaveBeenCalledWith('runtime-control')
+    await expect(f.runtime.locateAccount(account)).resolves.toBeUndefined()
+  }
+  expect(f.stderr.mock.calls.filter(([text]) => text === 'Cloud runtime control observation: %j')).toHaveLength(timeouts)
+  expect(f.statements.filter(text => text === heartbeatInstanceSql)).toHaveLength(0)
+  release.resolve(undefined)
+  await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs)
+  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+  expect(f.heartbeat).toHaveBeenCalledTimes(timeouts + 1)
+  expect(f.statements.filter(text => text === heartbeatInstanceSql)).toHaveLength(2)
+  const again = Promise.withResolvers<undefined>()
+  f.releases.push(() => { again.resolve(undefined) })
+  driver.run = async (text, values) => { if (text === heartbeatInstanceSql) await again.promise; return run(text, values) }
+  for (let i = 0; i < 2; i++) {
+    await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs + f.config.heartbeatTimeoutMs)
+    expect(f.runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+    await expect(f.runtime.locateAccount(account)).resolves.toBeUndefined()
+  }
+  driver.run = run
   let closed = false
   const closing = f.runtime.close().then(() => { closed = true })
   await Promise.resolve(); expect(closed).toBe(false)
-  f.releases[0]!(); await closing
+  again.resolve(undefined); await closing
+  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'closed', hasFailure: false })
+  expect(JSON.stringify(f.stderr.mock.calls)).not.toMatch(/PRIVATE|credential/)
+})
+
+it('fences after three observation timeouts without duplicating the pending write or undoing the fence on late success', async () => {
+  const f = await fixture(), release = Promise.withResolvers<undefined>(), run = driver.run!
+  f.releases.push(() => { release.resolve(undefined) })
+  let writes = 0
+  driver.run = async (text, values) => {
+    if (text === heartbeatInstanceSql) { writes++; await release.promise }
+    return run(text, values)
+  }
+  for (let i = 1; i <= 3; i++) {
+    await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs + f.config.heartbeatTimeoutMs)
+    expect(f.runtime.inspectControl()).toMatchObject({ phase: i === 3 ? 'failed' : 'active', hasFailure: i === 3 })
+  }
+  expect(f.heartbeat).toHaveBeenCalledTimes(3)
+  expect(writes).toBe(1)
+  expect(f.revokes).toHaveBeenCalledWith('runtime-control')
+  expect(() => { f.runtime.locateAccount(account) }).toThrow('not available')
+  let closed = false
+  const closing = f.runtime.close().then(() => { closed = true })
+  await Promise.resolve(); expect(closed).toBe(false)
+  release.resolve(undefined); await closing
   expect(f.runtime.inspectControl()).toMatchObject({ phase: 'failed', hasFailure: true })
   await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs * 3)
+  expect(f.heartbeat).toHaveBeenCalledTimes(3)
+})
+
+it.each(['conflict', 'unknown'] as const)('fences immediately when a timed-out heartbeat later ends with %s', async (outcome) => {
+  const f = await fixture(), release = Promise.withResolvers<undefined>(), run = driver.run!
+  f.releases.push(() => { release.resolve(undefined) })
+  driver.run = async (text, values) => {
+    if (text !== heartbeatInstanceSql) return run(text, values)
+    await release.promise
+    if (outcome === 'conflict') return { rows: [] }
+    throw new Error('PRIVATE submitted heartbeat failure')
+  }
+  await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs + f.config.heartbeatTimeoutMs)
+  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'active', hasFailure: false })
+  const pending = f.heartbeat.mock.results[0]
+  if (pending?.type !== 'return') throw new Error('Original heartbeat must retain its actual write')
+  release.resolve(undefined)
+  await Promise.allSettled([pending.value])
+  expect(f.runtime.inspectControl()).toMatchObject({ phase: 'failed', hasFailure: true })
+  expect(f.revokes).toHaveBeenCalledWith('runtime-control')
+  expect(() => { f.runtime.locateAccount(account) }).toThrow('not available')
+  await vi.advanceTimersByTimeAsync(f.config.heartbeatIntervalMs * 3)
   expect(f.heartbeat).toHaveBeenCalledOnce()
+  expect(JSON.stringify(f.stderr.mock.calls)).not.toContain('PRIVATE')
+  await expect(f.runtime.close()).rejects.toMatchObject({ code: 'cloud/stop-unconfirmed' })
 })

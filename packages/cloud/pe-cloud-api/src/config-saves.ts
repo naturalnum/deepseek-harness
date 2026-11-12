@@ -27,6 +27,23 @@ export class SkillEditApplyFailure extends Error {
   constructor(readonly version: SkillEditVersion) { super('The skill pointer persisted, but native catalog application failed.') }
 }
 
+function credentialReadFailure(value: unknown) {
+  let code: string | undefined
+  try {
+    const rawCode: unknown = value !== null && typeof value === 'object'
+      ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
+    code = typeof rawCode === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(rawCode) ? rawCode : undefined
+    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+    const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
+    const message: unknown = value instanceof CloudApiError || value instanceof ConfigSaveOutcomeUnknown
+      || value instanceof SkillEditApplyFailure
+      ? Object.getOwnPropertyDescriptor(value, 'message')?.value : undefined
+    return { ...(typeof type === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(type) ? { type } : {}),
+      ...(code === undefined ? {} : { code }), ...(typeof message === 'string' ? { message } : {}) }
+  } catch (_diagnosticFailure) { return code === undefined ? {} : { code } }
+}
+
 interface Operation {
   readonly operationId: OperationId
   readonly kind: ConfigSaveKind
@@ -76,6 +93,7 @@ function deadline(value: number): void {
 /**
  * One shared capacity owner borrowed by all account barriers. Runtime creates,
  * retains, and closes this object; it is not another Loader service or participant.
+ * Credential read failures log fixed project messages and one cause, omitting external messages and stacks.
  */
 export class ConfigSaveCoordinator {
   /** Validated, immutable deployment limits shared by all account barriers. */
@@ -341,8 +359,14 @@ class AccountSaves implements ConfigSaveBarrier {
           ...info.source === undefined ? {} : { source: info.source } }
         return { ok: true as const, value: Object.freeze({ credential,
           version: Object.freeze({ epoch: this.binding.epoch, editToken }) }) }
-      } catch (_error) {
-        // The verified native describe is read-only; do not publish its diagnostic or a secret value.
+      } catch (error) {
+        try {
+          const cause: unknown = error !== null && typeof error === 'object'
+            ? Object.getOwnPropertyDescriptor(error, 'cause')?.value : undefined
+          console.warn('Cloud credential state read failed: %j', { accountId: this.binding.accountId,
+            failure: credentialReadFailure(error), ...(cause === undefined ? {} : { cause: credentialReadFailure(cause) }) })
+        } catch (_diagnosticFailure) { /* Preserve the fixed read failure even when reporting fails. */ }
+        // The verified native describe is read-only; only the fixed refusal reaches the caller.
         return { ok: false as const, error: new CloudApiError('cloud/account-unavailable', 'Credential state could not be read.') }
       }
     })

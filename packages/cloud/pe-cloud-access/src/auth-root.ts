@@ -4,7 +4,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import pg from 'pg'
-import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
@@ -17,6 +18,22 @@ import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { ConfigurationPeerOperation } from './peers.ts'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
+
+function startupFailure(value: unknown) {
+  let code: string | undefined
+  try {
+    const rawCode: unknown = value !== null && typeof value === 'object'
+      ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
+    code = typeof rawCode === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(rawCode) ? rawCode : undefined
+    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+    const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
+    const message: unknown = value instanceof AuthAccessError || value instanceof AccountRuntimeError || value instanceof CloudApiError
+      ? Object.getOwnPropertyDescriptor(value, 'message')?.value : undefined
+    return { ...(typeof type === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(type) ? { type } : {}),
+      ...(code === undefined ? {} : { code }), ...(typeof message === 'string' ? { message } : {}) }
+  } catch (_diagnosticFailure) { return code === undefined ? {} : { code } }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -63,6 +80,7 @@ export class PeAuthService extends Service {
   /**
    * Resolve official credentials, create the real pool/library and inspect deployed migrations.
    * Optional ingress registers on the existing Web service after schema inspection; the actual seal still gates every request.
+   * Startup diagnostics retain project error messages and one cause; external messages and stacks are omitted.
    * @param ctx - Root Loader scope with the official credentials service.
    * @param config - Explicit Host database and operation budgets.
    * @returns The installed resource provider after a gap-free library schema inspection.
@@ -78,7 +96,15 @@ export class PeAuthService extends Service {
     try {
       await service.wait(service.starting, resolved.startupTimeoutMs)
       return service
-    } catch (_error) {
+    } catch (error) {
+      try {
+        const cause: unknown = error !== null && typeof error === 'object'
+          ? Object.getOwnPropertyDescriptor(error, 'cause')?.value : undefined
+        const fields = { requestId: service.requestId,
+          failure: startupFailure(error), ...(cause === undefined ? {} : { cause: startupFailure(cause) }) }
+        console.warn('Cloud authentication startup failed: %j', fields)
+        ctx.logger.warn('Cloud authentication startup failed: %j', fields)
+      } catch (_diagnosticFailure) { /* Reporting must not change startup failure or resource cleanup. */ }
       // The caller sees a fixed error; actual startup and cleanup remain owned by the service effects.
       if (service.phase === 'starting') service.phase = 'failed'
       void service.close().catch(() => { ctx.logger.error('Cloud authentication cleanup is unconfirmed; admission remains closed.') })

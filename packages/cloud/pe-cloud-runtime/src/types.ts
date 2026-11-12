@@ -395,6 +395,8 @@ export interface AccountRuntimeService {
   readonly recovery?: AccountRecoveryRuntime | undefined
   /** Original local startup identity for active ordinary Roots; absent for component, maintenance and stopped Roots. */
   readonly activeInstanceId?: InstanceId | undefined
+  /** True only for an ordinary single-instance Root while its dedicated database lock is held; absent or false otherwise. */
+  readonly singleInstanceActive?: boolean
   /** Active ordinary Roots expose only bounded reads; component, maintenance and stopped Roots omit this facade. */
   readonly ownerResolver?: AccountOwnerResolver | undefined
   /**

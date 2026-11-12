@@ -2056,6 +2056,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly singleInstanceActive?: boolean',
+        description: 'True only for an ordinary single-instance Root while its dedicated database lock is held; absent or false otherwise.',
+        parameters: [],
+      },
+      {
         signature: 'readonly ownerResolver?: AccountOwnerResolver | undefined',
         description: 'Active ordinary Roots expose only bounded reads; component, maintenance and stopped Roots omit this facade.',
         parameters: [],

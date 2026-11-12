@@ -1,3 +1,4 @@
+import { format } from 'node:util'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -17,6 +18,7 @@ import { AuthRootConfigSchema, parseAuthRootConfig, type AuthRootConfig } from '
 import * as root from '../src/root.ts'
 import { CloudIngress } from '../src/ingress.ts'
 import { ingressConfig } from './ingress-fixture.ts'
+import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 
 const contexts: Context[] = []
 const gates: Array<() => void> = []
@@ -116,6 +118,48 @@ function bootAuthentication(read: TestCredentials['resolveRead']): {
 }
 
 describe('root authentication resources remain closed on incomplete or failed initialization', () => {
+  it.each(['project', 'external'] as const)('logs original authentication startup failures safely for %s errors', async (kind) => {
+    const { ctx } = await context()
+    const cause = Object.assign(new Error('sk-fake-cause-secret'), { code: 'ECONNRESET' })
+    const error = kind === 'project'
+      ? new AccountRuntimeError('cloud/invalid-config', 'Administrator operation requires 420000 ms, configured 381000 ms for 4 slots.', { cause })
+      : Object.assign(new Error('sk-fake-database-secret', { cause }), { code: 'EIO' })
+    vi.spyOn(BetterAuthAccess, 'create').mockRejectedValueOnce(error)
+    const log = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await expect(PeAuthService.mountRoot(ctx, config())).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    await ctx.peAuth.close()
+    expect(stderr).toHaveBeenCalledWith('Cloud authentication startup failed: %j', expect.objectContaining({
+      failure: kind === 'project' ? { type: 'AccountRuntimeError', code: error.code, message: error.message }
+        : { type: 'Error', code: 'EIO' }, cause: { type: 'Error', code: 'ECONNRESET' },
+    }))
+    expect(stderr.mock.calls).toEqual(log.mock.calls)
+    expect(stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  })
+  it('omits invalid startup diagnostic tokens and retains valid boundary tokens', async () => {
+    const create = vi.spyOn(BetterAuthAccess, 'create')
+    const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const row of [
+      { code: 'EIO\nsk-fake-code', type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'x'.repeat(65), type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'EIO', type: 'Bad Type', expected: { code: 'EIO' } },
+      { code: 'EIO', type: 'x'.repeat(65), expected: { code: 'EIO' } },
+      { code: 'C'.repeat(64), type: 'T'.repeat(64), expected: { code: 'C'.repeat(64), type: 'T'.repeat(64) } },
+    ]) {
+      const { ctx } = await context()
+      class ProviderFailure extends Error {}
+      Object.defineProperty(ProviderFailure, 'name', { value: row.type })
+      create.mockRejectedValueOnce(Object.assign(new ProviderFailure('sk-fake-database-secret'), { code: row.code }))
+      const log = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+      await expect(PeAuthService.mountRoot(ctx, config())).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+      await ctx.peAuth.close()
+      expect(stderr).toHaveBeenLastCalledWith('Cloud authentication startup failed: %j', {
+        requestId: expect.any(String), failure: row.expected,
+      })
+      expect(log.mock.calls[0]).toEqual(stderr.mock.calls.at(-1))
+    }
+    expect(stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  })
   it('preserves the explicit library sign-up policy through Root configuration parsing', () => {
     expect(parseAuthRootConfig({ ...config(), disableSignUp: true }).disableSignUp).toBe(true)
     expect(parseAuthRootConfig({ ...config(), disableSignUp: false }).disableSignUp).toBe(false)

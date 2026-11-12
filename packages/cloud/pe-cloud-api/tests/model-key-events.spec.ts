@@ -1,8 +1,64 @@
 /** Original account Loader, checked key writes, native catalog and Gateway notifications. */
+import { format } from 'node:util'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { buildModelCatalog } from '../../../api/session-controller/src/catalog.ts'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { CloudApiError } from '../src/errors.ts'
 import { localeFixture } from './locale-field-fixture.ts'
+
+it.each(['describe', 'set', 'unset'] as const)('logs the original model-key %s failure without exposing external messages', async (method) => {
+  const f = await localeFixture('model-key-log-' + method, true, undefined, 'normal', true)
+  const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+  const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const submit = method === 'describe' ? vi.spyOn(f.barrier, 'describeCredentialEdit')
+    : vi.spyOn(f.barrier, 'commitCredentialEdit')
+  const invoke = () => method === 'describe' ? f.keyState() : method === 'set'
+    ? f.writeKey(f.keyStateBefore.version, 'sk-fake-request-secret') : f.unsetKey(f.keyStateBefore.version)
+  try {
+    const cause = Object.assign(new Error('sk-fake-cause-secret'), { code: 'ECONNRESET' })
+    const error = new CloudApiError('cloud/invalid-config', 'The approved credential provider is unavailable.')
+    Object.defineProperty(error, 'cause', { value: cause })
+    submit.mockRejectedValueOnce(error)
+    await expect(invoke()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(stderr).toHaveBeenCalledWith('Cloud model credential operation failed: %j', expect.objectContaining({
+      method, accountId: f.binding.accountId, failure: { type: 'CloudApiError', code: error.code, message: error.message },
+      cause: { type: 'Error', code: 'ECONNRESET' },
+    }))
+    submit.mockRejectedValueOnce(Object.assign(new Error('sk-fake-provider-secret'), { code: 'EIO' }))
+    await expect(invoke()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(stderr).toHaveBeenLastCalledWith('Cloud model credential operation failed: %j', expect.objectContaining({
+      method, accountId: f.binding.accountId, failure: { type: 'Error', code: 'EIO' },
+    }))
+    expect(stderr.mock.calls).toEqual(log.mock.calls)
+    expect(stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  } finally { submit.mockRestore(); log.mockRestore(); stderr.mockRestore() }
+})
+
+it('omits invalid model-key diagnostic tokens and retains valid boundary tokens', async () => {
+  const f = await localeFixture('model-key-log-tokens', true, undefined, 'normal', true)
+  const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+  const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const submit = vi.spyOn(f.barrier, 'describeCredentialEdit')
+  try {
+    for (const row of [
+      { code: 'EIO\nsk-fake-code', type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'x'.repeat(65), type: 'ProviderFailure', expected: { type: 'ProviderFailure' } },
+      { code: 'EIO', type: 'Bad Type', expected: { code: 'EIO' } },
+      { code: 'EIO', type: 'x'.repeat(65), expected: { code: 'EIO' } },
+      { code: 'C'.repeat(64), type: 'T'.repeat(64), expected: { code: 'C'.repeat(64), type: 'T'.repeat(64) } },
+    ]) {
+      class ProviderFailure extends Error {}
+      Object.defineProperty(ProviderFailure, 'name', { value: row.type })
+      submit.mockRejectedValueOnce(Object.assign(new ProviderFailure('sk-fake-provider-secret'), { code: row.code }))
+      await expect(f.keyState()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+      expect(stderr).toHaveBeenLastCalledWith('Cloud model credential operation failed: %j', {
+        method: 'describe', accountId: f.binding.accountId, failure: row.expected,
+      })
+    }
+    expect(stderr.mock.calls).toEqual(log.mock.calls)
+    expect(stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+  } finally { submit.mockRestore(); log.mockRestore(); stderr.mockRestore() }
+})
 
 it('publishes committed model-key changes only to the owning account and keeps actual native model availability current', async () => {
   const a = await localeFixture('model-events-a', true, undefined, 'normal', true)

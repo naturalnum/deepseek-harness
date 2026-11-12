@@ -14,6 +14,9 @@ import type { OwnerRecoveryLimits, RecoveryVerifierId } from './owner-types.ts'
 
 /** Required deployment inputs for the actual root Loader; component capacities stay separate. */
 export interface RuntimeRootConfig extends RuntimeConfig {
+  /** Explicit single-process deployment: lock and reclaim stale owners at startup.
+   * Omitted/false and maintenance recovery preserve existing ownership and connections. */
+  readonly singleInstance?: boolean
   /** Temporary numerical guard diagnostics; omitted or false leaves collection disabled. */
   readonly fileReadTiming?: boolean
   /** Explicit maintenance-only authority; omission preserves ordinary runtime admission and closes recovery. */
@@ -119,6 +122,7 @@ const officeRows = {
 }
 
 const rootFields: z<RuntimeRootConfig> = z.object({
+  singleInstance: z.union([z.boolean()]),
   fileReadTiming: z.union([z.boolean()]),
   recovery: z.union([z.object({
     verifierId: z.const('local-original-process-and-provider-v1').required(),

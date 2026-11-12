@@ -52,6 +52,8 @@ kind: "package-reference"
 
 临时排查文件延迟时，可信 Root 配置可显式设置 `fileReadTiming: true`；省略或 `false` 不创建采集器或计时器。原 runtime 持有采集器，销毁时关闭；计时器每五秒汇总数值，结束时补充尾批。`nominalIntervalMs` 是计时器的标称周期，不是实际墙钟时间或速率分母。仅记录固定阶段名、次数及同步累计/最大微秒数，不记录路径、账户、参数、内容或凭据。父阶段包含子阶段，不能将其相加；重叠请求共用实例汇总。采集保留原检查与失败语义，不代表性能已改善。
 
+可选 `singleInstance` 默认关闭。仅在恰好一个应用进程使用元数据数据库时打开：启动会取得专用数据库锁并接管残留账号归属；取不到锁时启动失败。多个进程连接同一数据库时不得打开。维护恢复模式（`recovery`）不执行此逻辑。锁连接断开期间，所有账号的业务检查都会被拒绝；连接失败最多尝试五次，间隔使用现有的 `pg.connectionTimeoutMs`，确认锁被其他会话持有时立即控制失败。重连次数耗尽后入口保持关闭，需要重启应用。重新取锁保留内存中的账号，不重复接管；原有归属和版本号检查仍会拒绝旧写入。锁竞争或重连次数耗尽造成控制失败后，进程继续存活，不再安排取锁。
+
 函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。原生准备期间，factory 从精确安装的 binding 签发该 coordinator 的屏障，并在实际保存及其余账户排空检查完成前持续持有。
 
 `controlDatabase(participant)` 向精确登记且实现 `closeRoot()` 的根拥有者提供不可变参数化查询能力，共用 runtime 的有界 PG executor；不暴露凭据、目标选择或驱动关闭权，也不向账户图提供数据库能力。根关闭先等待账户排空和保留的根工作结束，再关闭 executor；参与者撤销也等待其实际根关闭。关闭待定或失败时保留登记和数据库责任。既有借用者可在排空期间完成清理；撤销完成后的查询在提交前拒绝。`wasNotSubmitted(cause)` 仅识别实际适配器已结束且未提交 SQL 的错误，不引入对 Host 实现的依赖。
@@ -175,7 +177,7 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 登记合并相同的本地调用，遇到已有的持久化 id 时拒绝，不覆盖其元数据。单行读取区分行不存在、读取失败及无效结果。Heartbeat 仅更新组件自身的 registered 行。`registered`、`closed` 或过期 heartbeat 均不代表账户 ready、进程死亡或获准回收 owner。实例操作不修改账户 owner 或 epoch。
 
-每个组件最多持有一个实际 mutation。Close 关闭本地 mutation 准入，等待实际 schema/登记/heartbeat 工作，然后仅将自身登记标为 closed；账户排空及共享 executor 关闭由根单独持有。等待复用 adapter 的有界观察，不结算实际 SQL。已提交结果未知会保留类型化责任，读取或观察超时均不自动解除或重放；其他组件仍可继续。只有确定的提交前失败允许显式重试，重试 close 仍保持本地准入关闭。 仅当原实例组件确认已结算的 `heartbeat`/`not-submitted` 失败时，Root 调度器才按既有间隔再次发起心跳。既有登记及 owner 守卫保持原样；PostgreSQL owner 读取及新领取 CAS 保留原调用者检查。停机等待正在执行的心跳，不把该已确认零提交的拒绝保留为清理故障。未知、已提交、冲突及观察超时仍撤销 Root 准入、保留实际工作，且不自动重试。固定 stderr 记录只报告操作、结果和代码，不序列化错误、凭据或部署地址；此行为不能重新激活已撤销的 Root。
+每个组件最多持有一个实际 mutation。Close 关闭本地 mutation 准入，等待实际 schema/登记/heartbeat 工作，然后仅将自身登记标为 closed；账户排空及共享 executor 关闭由根单独持有。等待复用 adapter 的有界观察，不结算实际 SQL。已提交结果未知会保留类型化责任，读取或观察超时均不自动解除或重放；其他组件仍可继续。只有确定的提交前失败允许显式重试，重试 close 仍保持本地准入关闭。Root 调度器对已结算的 `heartbeat`/`not-submitted` 失败按原间隔重试，不限制次数。观察超时后保留原写入，按原间隔再次观察，连续三次观察超时才撤销准入；一次成功的观察会清零计数。既有登记及 owner 守卫保持原样；PostgreSQL owner 读取及新领取 CAS 保留原调用者检查。停机等待正在执行的心跳，不把该已确认零提交的拒绝保留为清理故障。写入结果不确定、登记冲突和记录不可信会立即撤销 Root 准入，且不重试，即使这些失败在观察超时后才返回。迟到的成功和迟到的 `not-submitted` 失败不改变观察计数。未结清的实际工作继续保留。固定 stderr 记录只报告操作、结果和代码，不序列化错误、凭据或部署地址；此行为不能重新激活已撤销的 Root。
 
 普通 active Root 向可信 Host 装配提供 `ownerResolver?.resolve(accountId)`。该 facade 通过原 owner store、实例 registry 和 `PgOwnerExecutor` 执行 owner → instance → owner 单行读取；元数据缺失、非 ready、已停止、不一致或变化时拒绝。它保留十进制字符串 epoch 和原读取失败分类。完整读取链共用现有 `pg.maxConnections + pg.maxQueued` 上限，不增加队列、缓存或重试。Root 关闭立即撤销 facade，并在既有实例及 executor 关闭前等待实际读取结束。组件、维护及已停止 Root 不提供它。返回的记录对只是经过复查的观察，不是原子快照、`AccountUse`、ready、恢复或网络准入；原 owner 仍须为每个业务操作重新核验。
 
