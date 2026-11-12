@@ -4,7 +4,6 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { AGENT_PRESET_SETTINGS_NS, requiresCodingTools, writeDefaultPreset } from './settings-store.ts'
-import { presetIntegrationOf } from './integration.ts'
 
 /** The read-only composition viewer over one preset. */
 export interface PresetView {
@@ -21,7 +20,6 @@ export interface AgentPresetSectionState {
   error: string | null
   saving: boolean
   rows: readonly AgentPresetRow[]
-  readOnly?: boolean
   /** The open viewer, or null. */
   view: PresetView | null
 }
@@ -47,15 +45,9 @@ export class AgentPresetSectionController {
   }
   private async readRoster(): Promise<void> {
     try {
-      const integration = presetIntegrationOf(this.ctx)
-      if (integration !== undefined) {
-        const roster = await integration.list()
-        this.set({ status: 'ready', error: null, rows: roster.presets, readOnly: true })
-        return
-      }
       const result = await this.ctx.remote.agentPresets.list()
       if (!result.ok) throw new Error(result.error.message)
-      this.set({ status: 'ready', error: null, rows: result.value.presets, readOnly: false })
+      this.set({ status: 'ready', error: null, rows: result.value.presets })
     } catch (error) { this.set({ status: 'error', error: message(error) }) }
   }
 
@@ -67,12 +59,6 @@ export class AgentPresetSectionController {
     const request = ++this.viewRequest
     this.set({ error: null, view: null })
     try {
-      const integration = presetIntegrationOf(this.ctx)
-      if (integration !== undefined) {
-        const document = await integration.read(id)
-        if (request === this.viewRequest) this.set({ view: { id, title: document.name ?? id, content: document.content } })
-        return
-      }
       const result = await this.ctx.remote.agentPresets.read(id)
       if (request !== this.viewRequest) return
       if (!result.ok) throw new Error(result.error.message)
@@ -89,7 +75,6 @@ export class AgentPresetSectionController {
    * @returns Once saved and refreshed.
    */
   async makeDefault(id: string, sync?: (id: string) => Promise<string | undefined>): Promise<void> {
-    if (presetIntegrationOf(this.ctx) !== undefined) return
     await this.save(() => writeDefaultPreset(this.ctx, id), sync)
   }
 

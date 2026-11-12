@@ -1,0 +1,234 @@
+路径	类别	原因	撤销条件
+apps/cli/src/args.ts	功能增强	新增启动参数 --shutdown-timeout-ms（退出宽限可调；云端 Root 关闭耗时长才用得上，但对任何部署通用）	启动器没有插件点；向上游提交，或接受 5 秒默认宽限后还原
+apps/cli/src/bin.ts	功能增强	把 shutdownTimeoutMs 透传给 runProfile	随 args.ts 一起处理
+apps/cli/src/process-shutdown.ts	通用修复	收尾失败、超时或二次信号时退出码不再报 0	进程级行为只能在启动器里改；向上游提交
+apps/cli/src/profile-boot.ts	扩展点	新增 AppShutdown 服务（shutdown.register），供 pe-cloud-runtime 登记必须完成的关闭动作；兼透传退出宽限、failLoud 走统一 dispose（通用修复）	需要上游提供“应用关闭参与者”登记点
+apps/web/product-isolation.ts	通用修复	构建输入校验补上 Worker 文件插桩，并兼容 Rolldown 没有 getWatchFiles	构建脚本自身的缺陷；向上游提交
+apps/web/src/main.ts	云端定制	入口按全局 __DSH_CLOUD_WEB__ 分支到 CloudWebEntry（有开关：没有该全局时走原逻辑；多数行只是缩进）	可另建自有入口应用（自带 main.ts，复用上游构建配置），或请上游提供入口替换点；代价是多维护一套入口
+apps/web/vite.config.ts	云端定制	默认网页标题改为 PowerEvolve（品牌）	上游已有构建变量 DSH_CLIENT_TITLE，构建时设置后还原本文件
+packages/client/connection/src/http-bridge.ts	通用修复	请求体改为有上限的流式读取，响应结束和清理失败有明确结果；兼有可选 beforeResponse 钩子（扩展点，供 pe-cloud-access）	Host 侧连接层内部逻辑；向上游提交
+packages/client/connection/src/index.ts	登记	导出新增的守卫类型和清理错误类	随 rpc-host.ts、http-bridge.ts 一起处理
+packages/client/connection/src/rpc-host.ts	扩展点	新增 handleNodeRequest 和可选 beforeDispatch 守卫（供 pe-cloud-access 做账号准入；未传时行为不变）	需要上游提供“分发前守卫”
+packages/client/connection/src/rpc.ts	扩展点	守卫用到的 ConnectionDispatch、ConnectionDispatchGuard 类型	随 rpc-host.ts
+packages/client/file-upload/src/client/index.ts	扩展点	声明 fileUploadHooks 服务和 file-upload/complete 事件	fetch 钩子可改用上游已有的全局 __DSH_FILE_UPLOAD__；完成事件仍需上游提供
+packages/client/file-upload/src/client/runtime.ts	通用修复	Worker 启动失败时释放资源；兼从 Context 读取 fileUploadHooks、上传成功后发事件（扩展点）	修复部分只能改上游；钩子部分见上一行
+packages/client/file-upload/src/http-route.ts	通用修复	请求体在拒绝前先结算，避免连接悬挂；兼新增 workspaceOnly、directory 查询参数（扩展点，供文件侧栏上传）	向上游提交；参数部分可改成云端自有路由，但要重复上传实现
+packages/client/file-upload/src/index.ts	通用修复	上传收据加容量上限和“未确认”状态、超限报明确错误；兼把 storeFileStream 等改成可覆盖（扩展点，pe-cloud-api 覆盖它）。注意改了默认：待确认收据上限 128	向上游提交；可覆盖方法需要上游接受
+packages/client/locale/src/locales/en.ts	云端定制	brand.localBuild 文案改为 PowerEvolve（品牌）	侧栏名称已由 pe-cloud-client 填 sidebar.brand.name 插槽，窗口标题用 DSH_CLIENT_TITLE；还原
+packages/client/locale/src/locales/zh.ts	云端定制	同 en.ts	同 en.ts
+packages/client/modules/src/client/entries.ts	扩展点	入口重算时计入 plugins 清单，并跳过不需要激活的行（支持只登记不激活）	随 modules/src/index.ts
+packages/client/modules/src/client/manifest.ts	扩展点	清单行新增可选 activate 字段	随 modules/src/index.ts
+packages/client/modules/src/index.ts	扩展点	registerClientPackages 新增 { activate } 选项和 declaredSources（云端要求 Connection 只登记不激活，由云端页面自己装连接）	需要上游提供“只登记不激活的客户端包”
+packages/client/shortcuts/src/client/index.ts	扩展点	把 clientPersistence 传给快捷键存储	上游若提供页面级默认存储端口，本文件不用改
+packages/client/shortcuts/src/client/storage.ts	扩展点	快捷键读写改走可选的页面存储端口	同上；直接用 localStorage 的代码需上游改成走端口
+packages/client/store/src/contract.ts	扩展点	新增 ClientPersistence 端口、Context.clientPersistence、resolveClientPersistence	按账号分区本地存储的根接缝；需要上游接受
+packages/client/store/src/index.ts	扩展点	persist.storage 和 create(scopeKey, persistence)，存储不再写死 localStorage	同上
+packages/client/tsdown.client.ts	登记	INLINE_SAFE 白名单加入 dsh-pe-cloud-access/schema	把浏览器用到的 bootstrap 解码放进 pe-cloud-client 自身，不再从 pe-cloud-access/schema 取值（推断）
+packages/client/ui-agent-preset/src/client/settings-store.ts	通用修复	预设名单请求传输失败时返回错误状态，不再抛出；保留原分类已明确的通用修复	上游接受该通用修复后撤销
+packages/client/ui-attachment/src/FileCard.module.css	通用修复	“上传未确认”状态的样式	随 FileCard.tsx
+packages/client/ui-attachment/src/FileCard.tsx	通用修复	文件卡片区分“未确认”与“失败”，未确认时不给重试	组件内部状态展示；向上游提交
+packages/client/ui-attachment/src/client/ComposerAttachments.tsx	通用修复	把未确认状态和 retryAllowed 传给卡片	同上
+packages/client/ui-chat/src/client/apply.ts	通用修复	分支会话失败时把失败原因回传给界面	向上游提交
+packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx	功能增强	向 Markdown 渲染传 standaloneFileLinks（回答完成后把独立文件名变成可点链接）	渲染器没有外部插入点；向上游提交
+packages/client/ui-chat/src/client/chat/AssistantNodeView.tsx	功能增强	回答已完成时开启 standaloneFileLinks	同上
+packages/client/ui-chat/src/client/chat/ChatView.module.css	云端定制	删除鲸尾动画样式（品牌，改了上游默认外观）	还原则保留上游鲸尾；要换图标需上游给“运行状态图标”插槽
+packages/client/ui-chat/src/client/chat/ChatView.tsx	通用修复	分支会话失败时弹出说明	向上游提交
+packages/client/ui-chat/src/client/chat/RunningStatus.tsx	云端定制	运行状态图标由鲸尾换成 LightningMark（品牌）	同 ChatView.module.css
+packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx	云端定制	删除鲸尾组件（品牌）	同上
+packages/client/ui-chat/src/client/contract/slots.ts	通用修复	分支回调签名带上失败信息	随 apply.ts
+packages/client/ui-chat/src/client/locale.ts	云端定制	“深度求索中”改为“处理中”（品牌，改了上游默认文案）；兼新增分支失败文案（通用修复）	上游文案注册不允许同名空间重复登记，无法从外部覆盖；需上游给文案覆盖方式，或还原品牌部分
+packages/client/ui-chat/tsdown.config.ts	云端定制	去掉鲸图资源的构建插件（品牌）	同 ChatView.module.css
+packages/client/ui-conversation/src/client/apply.ts	通用修复	停止生成结果未确认时保留状态并提示；兼新增 conversation.hero.header 插槽声明和宽度偏好走存储端口（扩展点）	向上游提交
+packages/client/ui-conversation/src/client/contract/slots.ts	扩展点	声明新插槽 conversation.hero.header（云端用空组件隐藏首页头部）	上游已有 conversation.hero.brand.mark 等细粒度插槽，若只换图标不隐藏整块可不改；否则需上游接受
+packages/client/ui-conversation/src/client/input/hub.ts	扩展点	输入草稿存储走页面存储端口；兼会话列表撤回时的修复	上游若提供页面级默认存储端口，本文件存储部分不用改
+packages/client/ui-conversation/src/client/locales.ts	通用修复	停止未确认、上传未确认/超限/跨会话的提示文案；兼 2 条“当前环境不支持图片”文案（由云端关闭图片输入触发）	随对应修复
+packages/client/ui-conversation/src/client/service.ts	通用修复	上传结果在切换会话后仍归到原会话，不丢不串	向上游提交
+packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx	扩展点	首页头部改为经 conversation.hero.header 插槽渲染，默认仍是 HeroShell	同 contract/slots.ts
+packages/client/ui-conversation/src/client/skeleton/ConversationWidthControls.tsx	扩展点	内容宽度偏好改由注入的读写函数存取，不直接用 localStorage	上游若让本组件走存储端口即可不改
+packages/client/ui-conversation/src/client/skeleton/InputBar.tsx	通用修复	停止未确认时提示；提供方不接受的图片类型给出明确提示而不是静默丢弃	向上游提交
+packages/client/ui-conversation/src/client/stop-shortcut.ts	通用修复	停止快捷键等待停止结果	向上游提交
+packages/client/ui-conversation/src/client/stores.ts	扩展点	会话界面状态存储走页面存储端口	上游若提供页面级默认存储端口，本文件不用改
+packages/client/ui-open-in-app/src/client/controller.ts	扩展点	“上次选择的应用”存储走页面存储端口	同上
+packages/client/ui-open-in-app/src/client/index.ts	扩展点	把 clientPersistence 传给控制器	同上
+packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx	云端定制	按 integration 的许可禁用插件开关、隐藏安装入口（有开关：未提供时行为不变）	可改为云端自有插件页（已有 power-evolve-plugins 页和 plugins.tab 插槽），但原生页仍会显示全部开关；需上游给“数据源/许可”接缝
+packages/client/ui-plugin-manager/src/client/index.ts	登记	导出 PluginManagerIntegration 类型	随 manager-store.ts
+packages/client/ui-plugin-manager/src/client/locales.ts	云端定制	“此操作受限”文案	随 PluginManagerPage.tsx
+packages/client/ui-plugin-manager/src/client/manager-store.ts	云端定制	有 pluginManagerIntegration 时改由它读清单、判断许可、执行开关和安装（有开关）；兼界面偏好走存储端口、请求异常转为错误状态	同 PluginManagerPage.tsx
+packages/client/ui-primitives/src/index.ts	登记	导出 ConfigField 和新增的 LightningMark	LightningMark 可搬进 pe-cloud-client（前提是 ui-chat 不再用它）；ConfigField 需上游导出或云端自写
+packages/client/ui-primitives/src/markdown/MarkdownText.tsx	功能增强	新增 standaloneFileLinks 选项并传给渲染	渲染器没有外部插入点；向上游提交
+packages/client/ui-primitives/src/markdown/file-link.ts	功能增强	识别 file:/// 和 sandbox: 形式的文件链接	同上
+packages/client/ui-primitives/src/markdown/render.tsx	功能增强	把回答里独立成段的文件名渲染成可点的文件链接	同上
+packages/client/ui-renderer/src/client/registry.ts	扩展点	插槽 store 实例创建时带上页面存储端口	上游若提供页面级默认存储端口，本文件不用改
+packages/client/ui-schedule/src/client/TaskDetail.tsx	扩展点	最近时区的读写改由注入函数提供	同上
+packages/client/ui-schedule/src/client/index.ts	扩展点	取 clientPersistence 并传给时区和任务标签绑定	同上
+packages/client/ui-schedule/src/client/recent-time-zones.ts	扩展点	最近时区存储走页面存储端口	同上；直接用 localStorage 的代码需上游改成走端口
+packages/client/ui-schedule/src/client/task-tab-bindings.ts	扩展点	任务标签绑定存储走页面存储端口	同上
+packages/client/ui-settings-models/src/client/ModelsSection.tsx	云端定制	受保护的密钥隐藏添加/移除/首配卡片，改挂密钥编辑按钮（有开关：未注入 integration 时行为不变）	可在 pe-cloud-client 用更低 priority 遮蔽 settings.section 的 models 条目，自己画模型页；代价是复制上游界面，不建议
+packages/client/ui-settings-models/src/client/ProviderEditor.tsx	云端定制	新增 credentialEdit、modelCatalogOnly 两种受限模式，并对 deepseek-official 布局特判（有开关）	同上
+packages/client/ui-settings-models/src/client/index.ts	扩展点	读取可选的 modelsSettingsIntegration：关闭首配引导、换数据源和写入通道	复用原生模型页就需要这个接缝；需上游接受
+packages/client/ui-settings-models/src/client/locales.ts	云端定制	密钥编辑相关文案	随 ModelsSection.tsx
+packages/client/ui-settings-models/src/client/operations.ts	扩展点	凭据编辑的类型和“结果未知”分支	随 index.ts
+packages/client/ui-settings-models/src/client/store.ts	扩展点	支持由 integration 提供读取结果（integratedRead）	随 index.ts
+packages/client/ui-settings-shell/src/client/ShellCard.tsx	扩展点	可选属性 managedMaxTimeoutMs，传入时多显示一行受管上限	可在 pe-cloud-client 自写只读终端卡片（内容很少），则本文件不用改
+packages/client/ui-settings-shell/src/client/index.ts	扩展点	把 ShellCard 组件作为 shellSettingsCard 服务提供，供云端复用	同上
+packages/client/ui-settings-shell/src/client/locales.ts	云端定制	受管终端的 3 条文案	同上
+packages/client/ui-settings-subagent/src/client/SubagentLimitsFields.tsx	扩展点	按 fields 过滤显示的字段	需上游接受“可限定字段和命名空间”的接缝
+packages/client/ui-settings-subagent/src/client/index.ts	扩展点	subagentSettingsIntegration 注入后按它给的命名空间重新挂卡片	同上
+packages/client/ui-settings-subagent/src/client/subagent-limits-card-controller.ts	扩展点	控制器支持 fields 过滤	同上
+packages/client/ui-settings-web-search/src/client/WebSearchCard.tsx	云端定制	密钥状态未知时的显示（配合控制器）	随 web-search-card-controller.ts
+packages/client/ui-settings-web-search/src/client/index.ts	扩展点	把可选的 webSearchSettingsIntegration 传给控制器	需上游接受
+packages/client/ui-settings-web-search/src/client/locales.ts	云端定制	密钥状态文案	随 web-search-card-controller.ts
+packages/client/ui-settings-web-search/src/client/web-search-card-controller.ts	云端定制	有 integration 时密钥读写走云端通道；同时改了原生默认：凭据状态确认前不可写	可在 pe-cloud-client 遮蔽 plugins.item 的 web-search 条目自写卡片；改默认的部分应单独作为通用修复提交
+packages/client/ui-settings/src/client/config-form-types.ts	扩展点	mutate 增加可选第三参 assertCurrent 的类型	需上游接受
+packages/client/ui-settings/src/client/config-form.ts	扩展点	mutate 在发送前后调用可选的 assertCurrent（云端“已批准配置”用它确认账号未变）	需上游接受
+packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx	通用修复	整文件读取时带上所选渲染器，状态按渲染器区分	随 rpc.ts
+packages/client/ui-sidebar-documentpreview/src/client/excel/delimited.ts	通用修复	CSV/TSV 预览保留首字段里的 BOM 数据、去掉解析器多出的末尾空行	向上游提交
+packages/client/ui-sidebar-documentpreview/src/client/excel/index.ts	通用修复	导出表格渲染器标识，供分段读取判断	随 rpc.ts
+packages/client/ui-sidebar-documentpreview/src/client/face.ts	通用修复	loadAll、reloadAll 增加渲染器参数	随 rpc.ts
+packages/client/ui-sidebar-documentpreview/src/client/index.ts	通用修复	整文件读取改用分段读取函数	随 rpc.ts
+packages/client/ui-sidebar-documentpreview/src/client/rpc.ts	通用修复	文件提供方一次读不完时改为 32KB 窗口分段读取并校验一致性（由云端文件提供方的单次上限触发，逻辑通用）	读取路径在包内部；向上游提交
+packages/client/ui-sidebar-files/src/client/FilesBody.module.css	云端定制	上传进度、新建文件夹等样式	随 FilesBody.tsx
+packages/client/ui-sidebar-files/src/client/FilesBody.tsx	云端定制	文件侧栏新增上传、下载、新建文件夹按钮和进度（有开关：未提供 workspaceFileManagement 时不显示）	上游已有 sidebar.right.tab.files.actions 插槽，但只给根目录路径；上游把“当前选中目录”和“刷新”加进插槽属性后可整体搬进 pe-cloud-client
+packages/client/ui-sidebar-files/src/client/face.ts	扩展点	把 management 和上传完成订阅传给界面	同上
+packages/client/ui-sidebar-files/src/client/index.ts	扩展点	读取可选的 workspaceFileManagement，并在上传完成后刷新文件树	同上
+packages/client/ui-sidebar-files/src/client/locales.ts	云端定制	上传、下载、新建文件夹文案	同上
+packages/client/ui-sidebar-right/src/client/index.ts	扩展点	取 clientPersistence 并传给侧栏控制器和 store	上游若提供页面级默认存储端口，本文件不用改
+packages/client/ui-sidebar-right/src/client/persistence.ts	扩展点	侧栏布局读写走页面存储端口	同上；直接用 localStorage 的代码需上游改成走端口
+packages/client/ui-sidebar-right/src/client/service.ts	扩展点	控制器构造多接收一个存储端口	同上
+packages/client/ui-sidebar-right/src/client/stores.ts	扩展点	布局 store 创建时带存储端口	同上
+packages/client/ui-sidebar-right/src/client/tab-inventory.ts	扩展点	已存标签清单的枚举走页面存储端口	同上
+packages/client/ui-sidebar/src/client/SidebarRoot.module.css	云端定制	“新建会话”按钮改为左对齐整行样式（改了上游默认外观，非云端也生效）	纯外观偏好，还原即可；要保留则只能改上游
+packages/client/ui-sidebar/src/client/SidebarRoot.tsx	云端定制	“新建会话”按钮换图标和结构（同上）	同上
+packages/client/ui-skill/src/client/index.ts	通用修复	收到 skills/change 远端事件时清空技能目录缓存	缓存在包内部；向上游提交
+packages/client/ui-theme/src/client/AppearanceRow.module.css	通用修复	外观保存反馈的样式	随 ui-theme/src/client/index.ts
+packages/client/ui-theme/src/client/AppearanceRow.tsx	通用修复	保存中、只读、未确认时禁用主题按钮并显示状态	同上
+packages/client/ui-theme/src/client/index.ts	通用修复	主题写入区分已保存、被拒、未确认，不再把失败当成功	向上游提交
+packages/client/ui-theme/src/client/locales.ts	通用修复	保存状态文案	同上
+packages/client/ui-theme/src/client/settings-store.ts	通用修复	行状态里增加 saveState	同上
+packages/client/ui-theme/src/theme-settings.ts	通用修复	ThemeSaveState 类型	同上
+packages/client/ui-trajectory/src/client/duration-store.ts	扩展点	“显示耗时”偏好走页面存储端口	上游若提供页面级默认存储端口，本文件不用改
+packages/client/ui-trajectory/src/client/index.ts	扩展点	把 clientPersistence 传给两个偏好 store	同上
+packages/client/ui-trajectory/src/client/string-wrapping-store.ts	扩展点	“字符串换行”偏好走页面存储端口	同上
+packages/client/ui-workspace/src/client/index.ts	扩展点	声明可选标准属性 workspaceDeleteDisabledReason、视图 store 带存储端口；兼快捷键分支失败时给提示（通用修复）	需上游接受；修复部分向上游提交
+packages/client/ui-workspace/src/client/locales.ts	通用修复	分支失败文案改为“可能已创建，请先检查”；兼 1 条“此部署不支持删除工作区”文案（云端）	随对应改动
+packages/client/ui-workspace/src/client/navigation.ts	通用修复	新建会话期间先挂起旧会话的输入框，失败时恢复；兼当前会话选择走存储端口（扩展点）	向上游提交
+packages/client/ui-workspace/src/client/rows/Rows.tsx	云端定制	删除工作区菜单项可按部署禁用并显示原因（有开关：未提供属性时行为不变）	上游已有 useWorkspaceAccess 权限 Hook，但删除入口没有用它；需上游让删除入口受权限或属性控制
+packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx	云端定制	把禁用原因传到行和确认框，并拦住删除（有开关）	同上
+packages/client/web/src/boot.ts	扩展点	BootSeams 新增 modules、persistence、requirePersistence、prepareContext、beforeDispose；run 幂等、dispose 合并清理	云端页面生命周期的根接缝；需上游接受
+packages/extensions/tool-cordis/src/api-catalog.ts	生成	由 pnpm run gen-cordis-api（scripts/gen-cordis-api.ts）生成；新增 15 个云端服务条目约 1147 行、原生服务新增方法约 285 行、类型声明约 1183 行	不手工合并，合并上游后重新生成；想让它不随云端包变化，需在生成脚本里排除 packages/cloud（脚本归别的任务）
+packages/session/session-persistence-jsonl/src/index.ts	云端定制	加了静止观察 isQuiescent/settlePreparations（扩展点），同时把 stat/open/read 改成“取消后先等实际 I/O 结算再返回、关闭失败不吞”（改了原生取消语义）；约一半行数是包进 observeRequest 的缩进	拆成两份：静止观察留作小扩展点；取消结算加固单独提上游或放弃
+vendor/loader/src/config/entry.ts	扩展点	给条目加“配置更新计划”接口和守护入口；没有守护时原更新路径只多一个版本计数	要读 Entry 私有状态，只能留在本文件；可把计划计算外移，只留守护入口、版本计数和少量访问器
+packages/boot/config-editor/src/index.ts	扩展点	加保存钩子 registerSaveHook/submitSave、影响守护 registerImpactGuard、edit 第三参 control、editFailureOutcome；没有守护时走原写入路径（另有只读加载、别名归一等小调整）	钩子在私有写入流程里，保留；守护分支的计划逻辑已在 app-boot/config-impact.ts
+packages/api/gateway/src/index.ts	云端定制	加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）	三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退
+packages/extensions/cordis-client-runner/src/client/slot-catalog.ts	生成	由 pnpm run gen-client-catalog 生成；每个槽位多一个标准属性 workspaceDeleteDisabledReason，新增 2 个槽位，并列出云端占用者	不手工合并，合并后重新生成
+packages/boot/plugin-manager/src/index.ts	扩展点	加 registerSaveHook、registerSelectionGuard、changeFailureOutcome、previewBundleSelection；没有守护时原启停写入不变	钩子在私有启停写入流程里，保留
+packages/skill/skill-filesystem/src/index.ts	扩展点	加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本	来源接口和选项保留；提示文本改由已有的 bundledInstructions 配置传入
+packages/api/gateway/src/stream-server.ts	云端定制	加扩展点 NodeStreamTransportOptions（帧上限、逻辑流占用回调），同时关闭和清理失败由打日志改为保留并在 close 抛出、关闭中拒绝新升级（改默认）	与 gateway/src/index.ts 一起处理
+packages/attachment/attachment-local/src/store.ts	云端定制	暂存写入区分“容量不足、清理未确认、发布未确认”三类错误，关闭句柄和删临时文件的失败不再吞掉（改了默认错误类型）	提上游；或让云端附件存储（已继承 LocalAttachmentStore）自己实现暂存
+packages/core/agent-loop/src/index.ts	云端定制	加扩展点 stop()、isQuiescent()、observeDisposal，同时未发布句柄的关闭失败由吞掉改为保留到工厂停止、停用后 create 直接拒绝（改默认）	三个扩展点保留；关闭失败保留部分提上游
+packages/host/webserver/src/index.ts	扩展点	加可选配置 tls.clientCa（客户端证书）和 transportLimits（头部、水位、连接数上限）；不配置时不变	云端自建监听可以不改，但会失去原生路由复用；建议保留为配置项
+packages/settings/settings/src/index.ts	扩展点	update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化	保留（透传参数和一个导出）
+packages/workspace/workspace/src/index.ts	扩展点	加受保护方法 createDirectoryMetadata，可注入目录元数据提供方；默认仍用 Node 文件系统	保留；实现在我方新增的 metadata.ts
+packages/session/session-persistence-jsonl/src/generation.ts	云端定制	历史日志解码时区分“取消”和“真实 I/O 失败”，解码器关闭失败保留；读文件不再把取消信号传给 fs（改默认）	随取消结算加固一起提上游或回退
+packages/subagent/subagent/src/index.ts	扩展点	加 registerAdmission：子 Agent 启动和冷恢复前的准入检查；没有登记时原提供方查找不变	保留
+packages/skill/skill/src/index.ts	扩展点	加 inspect()（列出全部候选及胜出关系）、SkillPackage 和 candidate.package；skills/change 事件声明移到新文件 types.ts	保留
+packages/api/session-controller/src/control.ts	扩展点	控制流可选缓冲上限 SessionControlBufferLimits；不传时保持原缓冲	保留
+packages/session-query/session-query/src/cold-read.ts	云端定制	新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数	随取消结算加固一起提上游或回退
+vendor/loader/src/index.ts	扩展点	加 LoaderUpdateGuard、LoaderUpdateScope、withUpdateGuard，以及“受守护的销毁不自动写 disabled”一处判断	保留；这是守护机制的唯一入口
+packages/mcp/mcp-client/src/connection.ts	通用修复	严格启动失败在确认关闭后交给调用方，监督器不再重试和重复告警（改默认）；另含扩展点 closureConfirmed 和有界 HTTP 读取器的归属	修复部分提上游；扩展点保留
+packages/session-query/session-query/src/observation.ts	云端定制	取消后的结算认证（看提供方是否声明能结算），错误信息不再带会话号和后端原文（改默认文案）	随取消结算加固一起提上游或回退
+packages/api/session-controller/src/index.ts	扩展点	加四个受保护方法 ensureProjectDirectory、preparePromptFiles、assertModelSelection、controlBufferLimits 和 internals.skillCatalog；默认实现不做事	保留
+packages/skill/skill-office/src/index.ts	云端定制	把执行环境说明（guest 路径、Linux soffice/pdftoppm、技术报告目录刷新）写进原生技能提供方；由配置开启，但文本和选项是我方产品专用	改由云端包注册自己的技能提供方，或只留一个通用的“附加说明”配置项
+packages/session/session-persistence-jsonl/src/storage.ts	云端定制	句柄静止观察 isQuiescent（扩展点），同时 read 取消后先结算、close 等已准入的读结束（改默认）	静止观察保留；其余随取消结算加固处理
+packages/subagent/subagent/src/manager.ts	扩展点	把准入检查穿进创建和恢复子 Agent 的各检查点	保留
+packages/api/settings-controller/src/index.ts	扩展点	加 internals.withWrite：写设置时由宿主包住原写入；不提供时原样写	保留
+packages/credentials/credentials/src/index.ts	扩展点	凭据提供方加 registerSaveHook 和受保护的 submitSave	保留
+packages/api/remotes/src/index.ts	扩展点	把内联的瀑布事件监听器提成导出函数 createRemoteWaterfallListener；另加一行技能类型引入	保留
+packages/subagent/subagent/src/types.ts	扩展点	准入检查的类型 SubagentAdmission、SubagentAdmissionRequest	保留
+packages/session-query/session-log-export/src/index.ts	扩展点	加 registerSessionLogExport(ctx, config, admit)：导出前可做部署方准入；apply 行为不变	保留
+vendor/loader/src/config/group.ts	扩展点	三处守护入口（create/remove/update）和 awaitUpdate（等子项更新结算，app-boot 重载用它修一个竞态）	保留；awaitUpdate 可单独提上游
+packages/attachment/attachment-local/src/file-store.ts	云端定制	发布失败统一包成“发布未确认”（改默认错误）；另含读流提前返回时等文件关闭（通用修复）	等文件关闭那 5 行提上游；其余随 store.ts 处理
+packages/core/agent/src/index.ts	扩展点	类型：AgentDisposalObserver、observeDisposal 选项、AgentSetupCommit.assertCurrent	保留
+packages/boot/app-boot/src/index.ts	云端定制	挂载和重载都先读根配置文件，以支持“非空根配置 + 补丁”；重载后先等子项更新再恢复（修竞态）；导出 config-impact 的函数	导出和 awaitUpdate 保留；非空根支持是云端根配置所需，除非云端改回空根配置
+packages/credentials/credentials-local/src/index.ts	扩展点	本地凭据写入和迁移前调用 submitSave	保留
+vendor/loader/src/config/diff.ts	扩展点	两个只读辅助函数：判定 schema 是否属于“无回调的确定子集”、给 schema 元数据拍快照	只被 entry.ts 的计划逻辑用；若计划计算外移可一并搬走
+packages/schedule/schedule/src/index.ts	扩展点	加 installDispatchAdmission、resumeDispatch、isDispatchIdle	保留
+packages/workspace/workspace/src/types.ts	扩展点	类型 WorkspaceDirectoryMetadata	保留
+packages/api/session-controller/src/history.ts	云端定制	follow 被取消时立即停止监听并清空缓冲，然后等提供方读操作结算才报告取消（改默认）	随取消结算加固一起提上游或回退
+packages/workspace/workspace/src/entity.ts	扩展点	工作区实体改用注入的目录元数据访问；默认提供方下行为不变	保留
+packages/settings/settings/src/redact.ts	通用修复	脱敏补上“元组”和“字典的键本身是密钥”两种情况；另导出 ConfigSchemaNode 类型	修复提上游；类型导出保留
+packages/api/terminal-controller/src/client/close-requests.ts	扩展点	浏览器存储改走可选的页面存储端口；不提供时仍用 localStorage（端口实现在 packages/client/store，归界面任务）	取决于界面侧页面存储端口的去留
+packages/boot/app-boot/src/compatibility-preflight.ts	扩展点	prepareProfilePatches 加可选参数 base；空根时走原路径	保留
+packages/feedback/message-feedback/src/index.ts	扩展点	加受保护方法 assertSessionAccess，在队列内和读写前复核；默认不做事	保留
+packages/mcp/mcp-client/src/index.ts	扩展点	配置项 listMaxPages、maxIncomingResponseBytes；apply 第三参 observeLifecycle	保留
+packages/boot/app-boot/src/profile-context.ts	扩展点	ProfileContext.entryAliases（启动期条目改名）和 normalizeProfileEntryAliases；不设别名时不变	保留
+packages/session/session-persistence/src/index.ts	扩展点	基类加 isQuiescent（默认 false）、statSettlesOnAbort、readOperationsSettleOnAbort（默认 false）	保留
+packages/feedback/command-feedback/src/index.ts	扩展点	可选服务 sessionFeedbackIdentity；已有 sessionFeedback 服务时复用而不重复注册	保留；或云端自己注册 /feedback 命令
+packages/boot/cmdline/src/index.ts	扩展点	可选能力 appShutdown：关闭参与者在进程退出前被等待；启动器不提供时不存在	保留
+packages/typert/generator/src/cordis-catalog.ts	扩展点	文档目录生成器支持 ctx.<服务>:<类型> 限定名，避免不同服务的同名类型互相顶替	目前只有一个云端条目用到；改掉云端那个类型名即可回退
+packages/session-query/session-log-export/src/client/controller.ts	通用修复	下载锚点先挂到页面再点击；成功状态带上下载地址供手动下载；另含可选参数 bindUrl（扩展点）	界面修复提上游；bindUrl 保留
+packages/test-support/client-runtime/src/assembly/bundle-roster.ts	通用修复	链接安装的 bundle 自引用解析；上游最新版已用另一种写法修了	合并时取上游版本，丢弃我方改动
+packages/api/terminal-controller/src/client/index.ts	扩展点	终端客户端服务从 ctx 取可选的 clientPersistence 并传给各子对象	同 close-requests.ts
+packages/preset/agent-preset-registry/src/index.ts	通用修复	预设重组和选择记录放进 agent.runMaintenance，排队消息等重组结束再执行（改默认）；另含扩展点 assertSelectionCurrent	修复提上游；扩展点保留
+packages/api/workspace-files/src/changes.ts	通用修复	文件监听改用调用方当时绑定的 fs，而不是服务自身的 ctx.fs；只有一套文件系统时等价	提上游
+packages/api/terminal-controller/src/client/bindings.ts	扩展点	同 close-requests.ts：存储改走可选页面端口	同 close-requests.ts
+packages/api/session-controller/src/agent.ts	扩展点	建目录改为调用控制器传入的回调（原 mkdir 挪到 index.ts 的受保护方法）	保留
+packages/session/session-persistence-jsonl/src/catalog-migration.ts	云端定制	子目录补齐时区分取消和真实读失败，校验可带取消信号	随取消结算加固一起提上游或回退
+packages/subprocess/subprocess/src/types.ts	扩展点	spawn 规格可选 sandboxPolicy；句柄可选 releaseCollected	保留
+packages/session-query/session-log-export/src/client/index.ts	扩展点	可选服务 sessionLogDownloadIntegration：由应用提供带登录态的 fetch 和下载地址绑定	保留
+packages/schedule/schedule/src/runtime.ts	扩展点	投递前后调用可选的准入回调；加 isIdle	保留
+packages/fs/fs/src/index.ts	扩展点	文件系统基类加 supportsTextEdit（默认 true）和 scopeRoot（默认 undefined）	保留
+packages/core/system-prompt/src/index.ts	扩展点	新增瀑布事件 system-prompt/prepare，组装提示词前先等监听者；无监听者时直接继续	保留
+packages/context/agent-instructions/src/files.ts	扩展点	找项目根时在 fs.scopeRoot() 给出的边界处停下；默认提供方无边界时不变	保留
+packages/session-query/session-query/src/config.ts	扩展点	两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError	随取消结算加固一起提上游或回退
+packages/mcp/mcp-client/src/transport.ts	扩展点	配置了 maxIncomingResponseBytes 时给 SDK 传入有界 fetch；不配置时不变	保留
+packages/api/terminal-controller/src/client/shell-preference.ts	扩展点	同 close-requests.ts：存储改走可选页面端口	同 close-requests.ts
+packages/fs/tool-fs-search/src/glob.ts	云端定制	把 12 条 VCS 排除参数合成 2 条花括号模式，为了不超过云端命令 16 个参数的上限；搜索结果应等价	在云端执行器放宽参数上限，然后回退这处改动
+packages/interaction/permission-presets/src/index.ts	扩展点	加受保护方法 assertCanSwitch，在写入权限事件前复核；默认不做事	保留
+packages/api/terminal-controller/src/client/model.ts	扩展点	同 close-requests.ts：存储改走可选页面端口	同 close-requests.ts
+packages/api/gateway/src/client/index.ts	通用修复	私有方法 install 改成 Symbol，解除“远程方法不能叫 install”的限制（云端的 cloudSkills.install 撞名）	把云端那个远程方法改名即可回退；或作为通用修复提上游
+packages/boot/app-boot/src/profile.ts	扩展点	loadProfileDirectory 加 readOnly 和 bundles 选项；默认仍会清理失效 bundle	保留
+packages/skill/tool-workspace-dependencies/src/index.ts	扩展点	可选配置 executionManifest：从执行环境镜像带出的 runtime.json 读路径，不在宿主安装；目前只有 apps/cli 的云端示例配置使用	可改为云端包自带一个同名工具插件
+packages/api/gateway/src/types.ts	扩展点	类型 RemoteEventQueueLimits 和 registerRemoteEvents 的第三参	保留
+packages/core/agent-default-model/src/index.ts	扩展点	保存默认模型时经 configEditor.submitSave；没有钩子时直接执行	保留
+packages/session/session-persistence-jsonl/src/zstd-public-decoder.ts	通用修复	解码失败后关闭又失败时两个错误都保留，不再只剩关闭错误	提上游
+packages/session/session-persistence-jsonl/src/zstd-private-decoder.ts	通用修复	同 zstd-public-decoder.ts	提上游
+packages/api/session-controller/src/commands.ts	扩展点	构造函数可选回调 prepareFiles、assertModelSelection；prompt 多一个 signal 参数	保留
+vendor/cordis/src/fiber.ts	通用修复	状态通知循环跳过已被前一个通知撤掉的服务记录（否则访问 undefined）；另含扩展点 configMutationRevision 和 resolveConfig 参数类型放宽	修复提上游（上游最新版仍无此判断）；计数器保留
+packages/boot/plugin-manager/src/patch.ts	扩展点	writePluginEnabled 加可选回调 prepared，包住实际写文件	保留
+packages/extensions/cordis-client-runner/src/client/api-catalog.ts	生成	由 pnpm run gen-cordis-inspect-catalog 生成；随界面侧 ClientPersistence 类型和主题事件说明变化	不手工合并，合并后重新生成
+packages/session-query/session-log-export/src/client/locales.ts	通用修复	导出对话框文案改成“已请求下载”，并加手动下载链接的文字	随 controller.ts 一起提上游
+packages/api/session-controller/src/client/sessions/service.ts	通用修复	会话作用域被直接销毁时，先撤回它的代际再跑清理回调	提上游
+packages/skill/tool-skill/src/index.ts	通用修复	预设里可见的技能工具负责目录，被隐藏的上层注册不再覆盖它的决定	提上游
+packages/session-query/session-log-export/src/client/Dialog.tsx	通用修复	导出成功后显示手动下载链接	随 controller.ts 一起提上游
+packages/interaction/commands/src/index.ts	扩展点	加受保护方法 assertCommandInvocation，在调用命令处理器前复核；默认不做事	保留
+packages/typert/generator/src/analyzer.ts	通用修复	类型诊断只报本包文件，不再连带报依赖包里的错误	提上游或回退
+packages/fs/tool-fs/src/index.ts	扩展点	提供方声明不支持文本编辑时不注册 edit 工具；默认提供方返回 true	保留
+packages/boot/app-boot/src/profile-resolution/service.ts	扩展点	packageOf 加可选参数 fresh：直接读磁盘上的包清单，不动缓存	保留
+packages/mcp/mcp-client/src/tools.ts	通用修复	注册冲突选择“抛出”时不再先打一条错误日志，由调用方负责报告	提上游
+packages/core/agent-loop/src/agent.ts	扩展点	Agent 加只读属性 isQuiescent（空闲且收件箱无待处理）	保留
+packages/attachment/attachment/src/error.ts	扩展点	新错误码 ATTACHMENT_STORAGE_CAPACITY 和可选字段 settlement	保留
+packages/settings/settings/src/schema.ts	通用修复	随 redact.ts：处理字典键的 schema	随 redact.ts 提上游
+packages/api/session-controller/src/skill-catalog.ts	云端定制	列技能时在发起 Agent 的上下文里取工作目录（云端按调用方区分工作目录）；原生下等价	云端已有 AccountSkillCatalog 子类，可试着在子类里包这一层
+packages/session-query/session-query/src/index.ts	登记	导出两个新错误类	随取消结算加固一起提上游或回退
+packages/api/remotes/src/remote-events.ts	功能增强	把 skills/change 加进转发给界面的事件清单：技能目录变化后界面自动刷新	保留；或提上游
+packages/ptc-runtime/ptc-runtime-node/src/index.ts	扩展点	把已解析的沙箱策略随 spawn 规格传给子进程提供方；本地提供方不读它	保留
+packages/attachment/attachment-local/src/index.ts	登记	导出三个新错误类	随 store.ts 处理
+packages/api/workspace-files/src/index.ts	通用修复	随 changes.ts：把调用方的 fs 传进去	随 changes.ts 提上游
+packages/terminal/terminal-bash/src/index.ts	扩展点	终端 spawn 规格带上已解析的沙箱策略	保留
+packages/api/remotes/src/client/index.ts	登记	引入技能事件的类型声明，让界面能订阅 skills/change	随 remote-events.ts 处理
+scripts/product-package-policy.ts	纯登记	`:19-26` 把 8 个包登记为 `category: 'optional'`；产品包分类检查要求每个包有分类	上游支持不需本地改脚本的自有包分类登记入口，8包分类仍完整受正式检查且原脚本可无差异恢复；须相关正式检查通过且该脚本相对上游无差异。
+scripts/package-dependency-policy.ts	纯登记	`:25` 起 `CONFIGURATION_ONLY_DEV_DEPENDENCIES['@deepseek-ai/dsh-pe-cloud-client']`；允许 `apps/web` 把它作为仅配置用途的开发依赖	仅配置依赖登记由上游标准扩展或正式自有检查等价承担，apps/web原依赖约束不减且脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。
+scripts/gen-doc-graphs.ts	纯登记	`SERVICE_ROLES` 加 15 条云端服务（`:110-186`）；能力图生成器要求每个服务有角色说明	15云端服务角色可经上游标准扩展或自有生成段完整进入最终能力图，原脚本不再需本地条目；须相关正式检查通过且该脚本相对上游无差异。
+scripts/gen-tool-catalog.ts	纯登记	加 3 个 import，`TOOL_PACKAGES` 加 remote-server 条目（`:196`）；工具目录要列出 `remote_exec`、`remote_server_info`	remote_exec/remote_server_info由标准扩展或自有目录合成完整列出且原脚本无需本地imports/登记；须相关正式检查通过且该脚本相对上游无差异。
+scripts/gen-cordis-catalog.ts	登记，但数量大；一部分是原生包新增类型的映射，不是云端包的	`SERVICE_PAGE` 加 15 个云端服务键指向 `cloud.md`（`:53-67`）；`SERVICE_WALK_EXEMPTIONS` 加 14 条；`EVENT_WALK_EXEMPTIONS` 加 1 条；`LINK_MAP` 加大量类型到页面的映射（含 `:338-340`）；目录生成器要求每个服务和类型有归属页	原生新增类型映射被上游吸纳、云端服务/类型/事件登记经标准扩展或正式自有生成保持全量归属，整个原脚本无需本地映射/豁免；须相关正式检查通过且该脚本相对上游无差异。
+scripts/check-workspace-constraints.ts	一半登记，一半是我们加的新规则	`privateRemoteDerivative`（`:57`）；`cloudLoaderEntries` 和 `checkCloudLoaderEntries`（`:121-157`）；`packageFileExtras` 加 `pe-opensandbox`（`:246`）；`expectedDshPackageFiles` 的云端分支（`:305-306`）；`:463`、`:495-496`；给云端包规定允许的导出入口，放行私有包和额外发布文件	云端入口/发布文件/私有包规则全部由正式自有检查或上游等价覆盖，正反约束不减且原脚本可完全还原；须相关正式检查通过且该脚本相对上游无差异。
+scripts/translation-pairing.ts	登记（1 行）	`:166` 把 `integrations/epri-research/CLOUD.*` 纳入配对范围；让科研包的云端说明也受中英文配对约束	科研CLOUD中英配对由正式自有检查/上游标准范围等价覆盖，原脚本无登记差异；须相关正式检查通过且该脚本相对上游无差异。
+scripts/verify-translation-pairing.ts	登记式钩子	`:16`、`:97-101` 调用 `isUnchangedImportedResearchContent`；豁免未改动的导入文件	相关第三方导入内容已移出本仓或被上游标准导入机制正确处理、不再需本地未改动豁免，配对覆盖不减；须相关正式检查通过且该脚本相对上游无差异。
+scripts/verify-concrete-terms.ts	豁免登记加通用修复	`originalReportHashes`（`:14-21`）、导入科研内容豁免（`:52`）、改用 `trackedRepositoryFiles`；导入文件里含禁用词；文件数太多撑爆缓冲区	第三方/报告技能豁免已不需要且文件列表缓冲通用修复已被上游等价吸纳，完整扫描无截断/漏检，整个脚本可还原；须相关正式检查通过且该脚本相对上游无差异。
+scripts/verify-repository-references.ts	豁免登记	`officeSourcePin`（`:43-60`）、`researchSourcePins`、`uv.lock` 的 size 豁免；来源记录文件里必须写提交哈希	来源固定记录/科研记录/uv.lock可由上游标准规则正确校验或已迁出本仓，不再需本地哈希/大小豁免，完整引用检查通过；须相关正式检查通过且该脚本相对上游无差异。
+scripts/verify-public-repository-links.ts	通用修复	改用 `trackedRepositoryFiles`；缓冲区修复	上游等价解决当前文件规模的列举缓冲溢出/截断，完整公开链接检查覆盖不减，脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。
+scripts/compile-referenced-projects.ts	否，容量调整	Host 聚合检查的堆上限 4096 → 8192（`:98,109,113`）；加入云端包后 Host 程序变大	上游/正式构建方案在原4GiB堆上限下完成相同Host检查、不删检查项且不再需本地8GiB差异；须相关正式检查通过且该脚本相对上游无差异。
+scripts/gen-client-catalog.ts	否，阈值调整	`MAX_ENTRY_LINES` 122 → 123（`:54`）；某个入口多了一行	入口回到原行数限制内或上游通用机制覆盖当前规模，完整catalog不漏项、原脚本无需本地122→123调整；须相关正式检查通过且该脚本相对上游无差异。
+scripts/gen-config-catalog.ts	否，可提交给上游	`collectTypeNames` 的泛型参数作用域修复；通用缺陷修复	可以向上游提交，提交后就不再是我们的差异。
+scripts/web-product-bundle-isolation.ts	否，可提交给上游	打包器兼容；通用修复	可以向上游提交，提交后就不再是我们的差异。
