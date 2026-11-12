@@ -3,6 +3,11 @@ export class StepTimeout extends Error {
   constructor() { super('本项检查超时'); this.name = 'StepTimeout' }
 }
 
+/** All available history was loaded without the requested assistant marker. */
+export class PreviousReplyNotFound extends Error {
+  constructor() { super('更新前对话的模型回复中没有找到指定标记'); this.name = 'PreviousReplyNotFound' }
+}
+
 const weights = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 5, 6: 3, 7: 1, 8: 2, 9: 2, 12: 2 }
 
 /** Derive per-check work/recovery deadlines while reserving the relogin and final sign-out shares. */
@@ -86,13 +91,39 @@ export async function stopPendingTurn(page, before, timeoutMs) {
 }
 
 /**
- * Wait for the retained assistant reply inside the selected conversation.
+ * Load earlier history until the selected conversation contains the retained assistant reply.
  * @param content Selected conversation content locator.
  * @param marker Expected text from its previous assistant reply.
  * @param timeoutMs Remaining work time for this check.
- * @returns Settlement after the matching reply is attached.
+ * @returns Settlement after the matching reply is attached, or a fixed failure after history is exhausted.
  */
 export async function waitForPreviousReply(content, marker, timeoutMs) {
-  await content.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]')
-    .filter({ hasText: marker }).first().waitFor({ state: 'attached', timeout: timeoutMs })
+  const deadline = Date.now() + timeoutMs
+  const remaining = () => Math.max(1, deadline - Date.now())
+  const replies = content.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]')
+  const match = replies.filter({ hasText: marker }).first()
+  const earlier = content.getByRole('button', { name: /^(加载更早|Load earlier)$/ })
+  // The content container and composer can appear before the first history page.
+  await replies.first().or(earlier).first().waitFor({ state: 'attached', timeout: remaining() })
+  const root = await content.elementHandle({ timeout: remaining() })
+  try {
+    for (;;) {
+      if (Date.now() >= deadline) throw new StepTimeout()
+      if (await match.count()) return
+      if (!await earlier.count()) throw new PreviousReplyNotFound()
+      const previous = await content.locator('[data-chat-flow-kind]').evaluateAll(elements =>
+        elements.map(element => element.getAttribute('data-chat-flow-key')))
+      const button = await earlier.elementHandle({ timeout: remaining() })
+      try {
+        await earlier.click({ timeout: remaining() })
+        await content.page().waitForFunction(({ root, button, previous }) => {
+          const messages = [...root.querySelectorAll('[data-chat-flow-kind]')]
+          const changed = messages.length !== previous.length
+            || messages.some((element, index) => element.getAttribute('data-chat-flow-key') !== previous[index])
+          // The same button is disabled and renamed while a page is loading.
+          return !button.isConnected || !button.disabled && changed
+        }, { root, button, previous }, { timeout: remaining() })
+      } finally { await button.dispose() }
+    }
+  } finally { await root.dispose() }
 }
