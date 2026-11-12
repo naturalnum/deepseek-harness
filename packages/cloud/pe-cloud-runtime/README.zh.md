@@ -31,6 +31,12 @@ kind: "package-reference"
 
 根 Loader 入口为 `/root`，包入口重导出其具名 `name`、`inject`、`Config` 和 `apply`，没有 default 导出。具名 `PeAccountRuntime` 类仍可用于容量/参与者组件装配，其 `Config` 只解析容量。`/account` 仅接受空配置，拒绝身份或其他 JSON 字段，并核验私有工厂安装的不可变 `peAccount` 贡献。`/types` 提供共享数据声明，`/schema` 分别导出容量与完整根部署解析器。
 
+Root 服务安装[封闭的服务日志输出端](src/service-log-output.ts)，不增加日志插件或改变账号图。它向 `console.warn` 只传一个字符串，以 `Cloud service log: ` 开头，后接含 `level`、`name` 和 `content` 的 JSON；`name` 固定为别名 `cloud-root`，不是原 Logger 名。显式放行 `error`、`info`、`warn`，不放行 `debug`。只有有限已审的 Root 关闭／控制、认证及入口模板，且参数个数精确匹配时，才输出各自的固定文本。动态标识、对象字段、未知模板及多余参数均省略，不运行通用格式化或原文兜底。
+
+精确的两参数 `Cloud runtime observation: %o` 模板还会把直接数据字段 `event` 等于 `ordinary-profile-ready` 的情况映射为该固定事件，其他观察字段全部省略。Error 首参及已审登录 Peer 清理模板中的 Error 参数使用有限公开类型映射。只有 `cloud/account-unavailable`、`cloud/stop-unconfirmed`、`cloud/config-conflict`、`cloud/invalid-config` 有错误码映射；未知名称变为 `unknown`，未知或缺失的错误码省略。输出端不读取 Error 消息、堆栈或 cause，不调用输入访问器或格式化器。既有 Logger 的 cause／AggregateError 前处理不变：匹配的公开模板也可能来自 cause，因此这些行不认证来源，也不授予 readiness。
+
+完整 UTF-8 行预算为 4096 字节，包含前缀及 JSON 转义；超限时改为固定缩略记录。反射、序列化、console 和撤销失败均不以原始错误兜底，不改变业务结果。私有观察 Context 共享原 Root Logger，并持有输出端的 effect。运行时 fiber 只持有先加入原 Root close Promise、再销毁该观察器的清理；它的并行清理不能独立删除输出端。实际关闭成功或失败结算、以及组件关闭，都通知同一个幂等观察器清理。构造器只在可关闭字段和清理钩子就绪后安装观察器；注册失败只清掉部分诊断观察器，不发起 Root 关闭。其他输出端保持不动。本输出不安装账号 Logger，不替换已有 console 诊断，也不保证未知上游消息可见。
+
 ### Configuration
 
 组件要求下列三个限制均为正安全整数。实际 Loader 入口还要求 [Host 部署 schema](src/root-config.ts) 的全部字段；只有容量的配置不能启动根控制面。两者均不推断部署默认值。

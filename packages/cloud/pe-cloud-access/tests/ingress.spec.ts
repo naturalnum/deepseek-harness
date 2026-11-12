@@ -87,11 +87,12 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     const { request, response } = carrier('/api/session/list', 'POST')
     await route.handler(request, response)
     expect(response.statusCode).toBe(503)
-    expect(log).toHaveBeenCalledWith('Cloud ingress request failed: %j', expect.objectContaining({
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
       failure: { type: 'AccountRuntimeError', code: 'cloud/invalid-config', message: error.message },
       cause: { type: 'AccountRuntimeError', code: 'cloud/account-starting', message: 'Account preparation is pending.' },
     }))
-    expect(log.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
+    expect(log).not.toHaveBeenCalled()
+    expect(f.stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('sk-fake-')
   })
   it.each(['access', 'runtime'] as const)('keeps shared ingress available after account cleanup is unconfirmed in %s', async (source) => {
     const f = await fixture(false, true)
@@ -191,15 +192,15 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     expect(wire).toContain('cache-control: no-store')
     const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
     expect(Buffer.byteLength(body)).toBe(212)
-    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
       requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-unavailable',
       failure: { type: 'AccountRuntimeError', code: 'cloud/account-unavailable',
         message: 'Root recipe is not sealed; inspect its current audit before admitting traffic' },
       causeCodes: [null, null], sites: [], headersSent: false, writableEnded: false, destroyed: false,
       rootRecipe: { status: 'unsealed', rootEntries: 0, providers: 0, participants: 0, issues: [] },
     })
-    expect(f.stderr.mock.calls).toEqual(log.mock.calls)
-    expect(JSON.stringify(log.mock.calls)).not.toMatch(/must-not-be-read|old-account/)
+    expect(log).not.toHaveBeenCalled()
+    expect(JSON.stringify(f.stderr.mock.calls)).not.toMatch(/must-not-be-read|old-account/)
     expect(f.seal).toHaveBeenCalledWith('ingress-test')
     for (const operation of [f.authCurrent, f.authenticate, f.bootstrap, f.authHandler,
       f.locate, f.acquire, f.borrow, f.http, f.stream, f.query, read]) expect(operation).not.toHaveBeenCalled()
@@ -231,14 +232,15 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
     expect(Buffer.byteLength(body)).toBe(212)
     expect(JSON.parse(body)).toMatchObject({ code: 'cloud/account-unavailable', retry: 'after-status-check' })
-    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
+    expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
       requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-starting',
       failure: { type: 'Error', code: 'cloud/account-starting' }, cause: { type: 'object', code: 'ECONNRESET' },
       causeCodes: ['ECONNRESET', 'EPIPE'], sites: [], headersSent: false, writableEnded: false, destroyed: false,
       rootRecipe: { status: 'unsealed', rootEntries: 0, providers: 0, participants: 0, issues: [] },
     })
     expect(forbidden).not.toHaveBeenCalled()
-    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
+    expect(log).not.toHaveBeenCalled()
+    expect(JSON.stringify(f.stderr.mock.calls)).not.toContain('PRIVATE_')
     expect(f.query).not.toHaveBeenCalled()
     expect(f.ingress.observe().pendingOperations).toBe(0)
   })
@@ -307,7 +309,7 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
       const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
       expect(response.statusCode).toBe(503)
       expect(Buffer.byteLength(body)).toBe(212)
-      expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
+      expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
         requestId: responseRequestId(body), stage: 'auth.authenticate', code: code === 'cycle' ? 'EPIPE' : 'unknown',
         failure: { type: 'Error', code: code === 'cycle' ? 'EPIPE' : 'unknown' },
         ...(code === 'cycle' ? { cause: { type: 'Error', code: 'EPIPE' } }
@@ -317,7 +319,8 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
         headersSent: false, writableEnded: false, destroyed: false,
       })
       expect(accessor).not.toHaveBeenCalled()
-      expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
+      expect(log).not.toHaveBeenCalled()
+      expect(JSON.stringify(f.stderr.mock.calls)).not.toContain('PRIVATE_')
       expect(f.query).not.toHaveBeenCalled()
     },
   )
@@ -337,7 +340,7 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     expect(f.stderr).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', expect.objectContaining({
       failure: { type: 'Error', code: 'EPIPE' },
     }))
-    expect(f.stderr.mock.calls).toEqual(log.mock.calls)
+    expect(log).not.toHaveBeenCalled()
     expect(accessor).not.toHaveBeenCalled()
     expect(f.stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('PRIVATE_')
   })
@@ -361,13 +364,14 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
       failure: { type: 'AccountRuntimeError', code: 'cloud/invalid-config', message: error.message },
       cause: { code: 'ECONNRESET' }, causeCodes: ['ECONNRESET', null],
     }))
-    expect(f.stderr.mock.calls).toEqual(log.mock.calls)
+    expect(log).not.toHaveBeenCalled()
     expect(f.stderr.mock.calls.map(call => format(...call)).join('\n')).not.toContain('PRIVATE_')
   })
 
-  it('keeps the original response and cleanup when the diagnostic exporter fails', async () => {
+  it('keeps the original response and cleanup when the console diagnostic fails', async () => {
     const f = await fixture()
-    vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => { throw new Error('PRIVATE_EXPORTER') })
+    const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+    f.stderr.mockImplementationOnce(() => { throw new Error('PRIVATE_EXPORTER') })
     const fallback = vi.spyOn(console, 'error').mockImplementation(() => {})
     await f.ingress.install()
     const route = f.register.mock.calls.map(call => call[0]).find(value => value.path === '/api')
@@ -378,6 +382,8 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     const wire = Buffer.concat(socket.output).toString('utf8')
     expect(Buffer.byteLength(wire.slice(wire.indexOf('\r\n\r\n') + 4))).toBe(212)
     expect(wire).not.toContain('PRIVATE_EXPORTER')
+    expect(log).not.toHaveBeenCalled()
+    expect(f.stderr).toHaveBeenCalledTimes(1)
     expect(fallback).toHaveBeenCalledExactlyOnceWith('Cloud ingress failure diagnostics unavailable.')
     expect(request.destroyed).toBe(true)
     expect(f.ingress.observe().pendingOperations).toBe(0)
