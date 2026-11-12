@@ -831,14 +831,14 @@ for (const nested of [false, true]) test(`logs DELETE status and deletion code w
   onTestFinished(() => { warn.mockRestore() })
   const created = await backend.create(selected.intent, selected.mount)
   await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
-  assert.equal(warn.mock.calls.length, 1)
+  assert.equal(warn.mock.calls.length, 2)
   assert.deepEqual(warn.mock.calls[0]?.[1], { event: 'sdk-sandbox-stop-failed', accountId: selected.intent.accountId,
     sessionId: selected.intent.sessionId, allocationId: selected.intent.allocationId, sandboxId: created.sandboxId,
     error: { type: 'SandboxApiException', code: 'deletion-completion/history-limit', statusCode: 500,
       deletionCode: 'deletion-completion/history-limit' } })
   assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
   await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
-  assert.equal(warn.mock.calls.length, 1)
+  assert.equal(warn.mock.calls.length, 2)
 })
 
 test('logs typed local stop causes but omits ordinary Error messages and deeper causes', async () => {
@@ -922,6 +922,7 @@ for (const status of [404, 500, 200, 421]) test(`confirms sandbox absence after 
   assert.equal(transport.calls.filter(call => call.method === 'GET').length, status === 404 ? 0 : 1)
   assert.equal(transport.phases.filter(value => value === 'physical-stop-ack').length, 1)
   assert.equal(warn.mock.calls[0]?.[1]?.error?.statusCode ?? warn.mock.calls[0]?.[1]?.error?.cause?.statusCode, status)
+  assert(warn.mock.calls.some(([, row]) => row?.event === 'sdk-sandbox-deletion-observed' && row.outcome === 'confirmed-absent'))
 })
 
 for (const lookup of ['present', '500', 'network', 'timeout'] as const) test(`keeps DELETE failure unknown when the lookup is ${lookup}`, async () => {
@@ -950,4 +951,87 @@ for (const status of [200, 404, 500]) test(`Root absence query for ${status} nev
   await backend.closeRootActual()
   assert.deepEqual(transport.calls.map(call => call.method), ['GET'])
   assert.throws(() => backend.isMissing('original-sandbox', Date.now() + 1000), { code: 'sdk/closed' })
+})
+
+for (const lookup of ['404', '500', 'network', 'timeout', 'present'] as const) test(`expired deletion-only stop queries once without DELETE replay: ${lookup}`, async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { vi.useRealTimers(); warn.mockRestore() })
+  const transport = new FakeTransport(), selected = selection(), runtime = agent(transport)
+  const backend = new SdkAllocationBackend(config, runtime, transport)
+  const created = await backend.create(selected.intent, selected.mount)
+  const prepared = await backend.prepare(created, selected.mount, Date.now() + 5000)
+  transport.deleteStatus = 500
+  const original = backend.stop(created, prepared)
+  await assert.rejects(original, { code: 'sdk/stop-unknown' })
+  const requests = transport.calls.length
+  const expires = Date.parse(selected.intent.createDeadlineAt) + config.ttlSeconds * 1000 + 30000
+  vi.setSystemTime(expires - 1)
+  assert.equal(backend.stop(created, prepared), original)
+  assert.equal(transport.calls.length, requests)
+  vi.setSystemTime(expires)
+  if (lookup === 'network') transport.getFailure = new TypeError('FAKE_PRIVATE_KEY')
+  else if (lookup === 'timeout') transport.getFailure = new DOMException('FAKE_PRIVATE_KEY', 'TimeoutError')
+  else transport.getStatus = lookup === 'present' ? 200 : Number(lookup)
+  const recovered = backend.stop(created, prepared)
+  assert.equal(backend.stop(created, prepared), recovered)
+  if (lookup === 'present') {
+    await assert.rejects(recovered, { code: 'sdk/stop-unknown' })
+    assert.equal(transport.calls.length, requests + 1)
+    assert.equal(transport.phases.filter(value => value === 'physical-stop-ack').length, 0)
+    assert(warn.mock.calls.some(([, row]) => row?.event === 'expired-sandbox-present' && row.state === 'Running'))
+    transport.getStatus = 404
+    await backend.stop(created, prepared)
+  } else {
+    await recovered
+    assert.equal(transport.calls.length, requests + 1)
+  }
+  assert.equal(transport.calls.filter(call => call.method === 'DELETE').length, 1)
+  assert.equal(transport.phases.filter(value => value === 'physical-stop-ack').length, 1)
+  const retire = vi.fn()
+  backend.retireStopped(prepared, retire)
+  assert.equal(retire.mock.calls.length, 1)
+  await backend.closeRootActual()
+  assert(warn.mock.calls.some(([, row]) => row?.event === 'sdk-sandbox-deletion-observed' && row.outcome === 'unknown'))
+  assert(warn.mock.calls.some(([, row]) => row?.event === 'sdk-sandbox-deletion-observed' && row.outcome === 'expired'))
+  assert.equal(JSON.stringify(warn.mock.calls).includes('FAKE_PRIVATE_KEY'), false)
+})
+
+for (const failure of ['ordinary-join', 'privileged-join', 'deployment'] as const) test(`expiry never recovers a non-deletion stop failure: ${failure}`, async () => {
+  vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
+  const transport = new FakeTransport(), selected = selection(), runtime = agent(transport)
+  const originalFence = runtime.fenceRequests
+  runtime.fenceRequests = (...args) => {
+    const fenced = originalFence(...args)
+    const failed = Promise.reject(new Error('synthetic unresolved local stop'))
+    void failed.catch(() => {})
+    return { ...fenced,
+      ...(failure === 'ordinary-join' ? { whenJoined: failed } : {}),
+      ...(failure === 'privileged-join' ? { whenPrivilegedStartsJoined: failed } : {}),
+      ...(failure === 'deployment' ? { assertDeploymentCurrent() { throw new Error('synthetic stale deployment') } } : {}) }
+  }
+  transport.deleteStatus = 500
+  const backend = new SdkAllocationBackend(config, runtime, transport)
+  const created = await backend.create(selected.intent, selected.mount), original = backend.stop(created, undefined)
+  await assert.rejects(original, { code: 'sdk/stop-unknown' })
+  const requests = transport.calls.length
+  vi.setSystemTime(Date.parse(selected.intent.createDeadlineAt) + config.ttlSeconds * 1000 + 30000)
+  assert.equal(backend.stop(created, undefined), original)
+  assert.equal(transport.calls.length, requests)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+})
+
+test('application close retains expired deletion uncertainty without running expiry recovery', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
+  const transport = new FakeTransport(), selected = selection()
+  transport.deleteStatus = 500
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  const created = await backend.create(selected.intent, selected.mount)
+  await assert.rejects(backend.stop(created, undefined), { code: 'sdk/stop-unknown' })
+  const requests = transport.calls.length
+  vi.setSystemTime(Date.parse(selected.intent.createDeadlineAt) + config.ttlSeconds * 1000 + 30000)
+  transport.getStatus = 404
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+  assert.equal(transport.calls.length, requests)
+  assert.equal(transport.phases.includes('physical-stop-ack'), false)
 })

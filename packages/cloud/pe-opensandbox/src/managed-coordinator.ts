@@ -156,7 +156,13 @@ interface AccountWork {
   stopping?: Promise<void>
   outcome?: ParticipantReceipt
   preparationFailureObserved?: true
-  privateFailure?: { readonly cause: unknown }
+  privateFailure?: {
+    readonly cause: unknown
+    readonly retirements?: Map<ManagedSessionRequest, PreparedSandbox>
+    recovered?: { sessionId: SessionId; allocationId: string }[]
+    recovery?: Promise<void>
+  }
+  retiredCommands?: Set<Session>
 }
 
 class ManagedAccountPort extends IssuedExecutionPort {
@@ -379,13 +385,23 @@ export class ManagedCoordinator extends SandboxCoordinator {
           throw cause
         })
         let stage: PreparationFailureStage = 'allocation-prepare'
+        let failedRetirement: { cause: unknown } | undefined
         try {
+          if (registered === undefined && work.retiredCommands?.has(scope.agent.session)) {
+            commands.retireCompletedSession(scope)
+            work.retiredCommands.delete(scope.agent.session)
+          }
           let prepared = await this.allocations.prepare(request, signal)
           if (registered === undefined && this.deployment.runtimes.needsContinuation(prepared)) {
             stage = 'continuation'
             commands.assertContinuation(scope)
             // stop synchronously fences the old allocation; its original promise joins physical and SQL settlement.
-            await this.allocations.stop(request)
+            try { await this.allocations.stop(request) }
+            catch (cause) {
+              failedRetirement = { cause }
+              this.retainRetirementFailure(work, request, prepared, cause)
+              throw cause
+            }
             this.deployment.backend.retireStopped(prepared, (selection) =>{  this.deployment.runtimes.retireStopped(prepared, selection) })
             signal.throwIfAborted(); request.assertCurrent()
             commands.retireCompletedSession(scope)
@@ -420,27 +436,28 @@ export class ManagedCoordinator extends SandboxCoordinator {
             } catch (failure) {
               this.observePreparationFailure(work, 'capacity-stop', failure)
               this.observePrivateFailure(work, 'capacity-stop', failure, scope.sessionId, stage)
-              work.privateFailure ??= { cause: failure }
+              this.retainPrivateFailure(work, failure)
               return this.unavailable()
             }
             if (signal.aborted) throw signal.reason
             throw new ExecutionStateError('cloud/capacity', cause.message)
           }
-          this.observePrivateFailure(work, 'preparation', cause, scope.sessionId, stage)
-          work.privateFailure ??= { cause }
+          const retirementFailed = failedRetirement !== undefined && failedRetirement.cause === cause
+          this.observePrivateFailure(work, retirementFailed ? 'continuation-stop' : 'preparation', cause, scope.sessionId, stage)
+          if (!retirementFailed) this.retainPrivateFailure(work, cause)
           if (signal.aborted) throw signal.reason
           return this.unavailable()
         }
       },
       unknown: (scope, operation, cause) => {
         this.observePrivateFailure(work, 'command', cause, scope.sessionId)
-        work.privateFailure ??= { cause }
+        this.retainPrivateFailure(work, cause)
         const request = work.sessions.get(scope.sessionId)
         if (request === undefined) return
         void this.allocations.stop(request).then(() => { operation.acknowledgePhysicalStop() },
           (failure: unknown) => {
             this.observePrivateFailure(work, 'command-stop', failure, scope.sessionId)
-            work.privateFailure ??= { cause: failure }
+            this.retainPrivateFailure(work, failure)
           })
       },
       reserve: (scope, spec) => this.reserve(work, scope, spec),
@@ -624,9 +641,11 @@ export class ManagedCoordinator extends SandboxCoordinator {
    * @returns Original cached request or one fresh selection after actual retirement releases capacity.
    */
   private async request(work: AccountWork, scope: ExecutionScope<Workspace>,
-    signal: AbortSignal): Promise<NativeAllocationRequest<VerifiedExecutionMount>> {
+    signal: AbortSignal): Promise<ManagedSessionRequest> {
     for (;;) {
       this.assertReady(); work.authority.assertBusinessCurrent(); scope.lifetime.throwIfAborted(); signal.throwIfAborted()
+      if (!work.open || scope.binding !== work.binding) this.stale()
+      await this.recoverRetirements(work)
       if (!work.open || scope.binding !== work.binding) this.stale()
       const retiring = work.retiring
       if (retiring?.request.sessionId === scope.sessionId) { await retiring.actual; continue }
@@ -664,7 +683,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
         if (work.retiring === original) work.retiring = undefined
       }, (cause: unknown) => {
         this.observePrivateFailure(work, 'session-retirement', cause, original.request.sessionId)
-        work.privateFailure ??= { cause }
+        this.retainPrivateFailure(work, cause)
         settled.reject(cause)
       })
       await original.actual
@@ -825,7 +844,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     })
     void result.then(() => { stopped.resolve(undefined); this.settle(work, true) }, (cause: unknown) => {
       this.observePrivateFailure(work, 'account-stop', cause)
-      work.privateFailure ??= { cause }; stopped.reject(cause); this.settle(work, false)
+      this.retainPrivateFailure(work, cause); stopped.reject(cause); this.settle(work, false)
     })
     void work.stopping.catch(() => { /* The same failed actual stop remains owned and observable. */ })
   }
@@ -858,8 +877,49 @@ export class ManagedCoordinator extends SandboxCoordinator {
     return allocations
   }
   private stale(): never { throw new ExecutionStateError('cloud/stale-generation', 'Execution requires the original current account generation.') }
+  private retainPrivateFailure(work: AccountWork, cause: unknown): void {
+    if (work.privateFailure === undefined || work.privateFailure.retirements !== undefined) work.privateFailure = { cause }
+  }
+
+  private retainRetirementFailure(work: AccountWork, request: ManagedSessionRequest, prepared: PreparedSandbox, cause: unknown): void {
+    work.privateFailure ??= { cause, retirements: new Map() }
+    work.privateFailure.retirements?.set(request, prepared)
+  }
+
+  private async recoverRetirements(work: AccountWork): Promise<void> {
+    const failure = work.privateFailure
+    const retirements = failure?.retirements
+    if (failure === undefined || retirements === undefined) return
+    failure.recovery ??= (async () => {
+      for (const [request, prepared] of retirements) {
+        const allocationId = await this.allocations.retryFailedStop(request)
+        if (work.privateFailure !== failure || !work.open) this.unavailable()
+        try {
+          this.deployment.backend.retireStopped(prepared, (selection) => {
+            this.deployment.runtimes.retireStopped(prepared, selection)
+          })
+        } catch (cause) { this.retainPrivateFailure(work, cause); throw cause }
+        failure.recovered ??= []
+        failure.recovered.push({ sessionId: request.sessionId, allocationId })
+        work.retiredCommands ??= new Set()
+        work.retiredCommands.add(request.session)
+        if (work.sessions.get(request.sessionId) === request) work.sessions.delete(request.sessionId)
+        retirements.delete(request)
+      }
+      if (work.privateFailure !== failure || !work.open) this.unavailable()
+      delete work.privateFailure
+      delete work.preparationFailureObserved
+      for (const recovered of failure.recovered ?? []) {
+        try { console.warn('Cloud managed session stop recovered: %j', { event: 'managed-session-stop-recovered',
+          accountId: work.binding.accountId, ...recovered }) }
+        catch (_unavailableObservation) { /* The original runtime retirement remains authoritative. */ }
+      }
+    })().finally(() => { delete failure.recovery })
+    try { await failure.recovery } catch (_retainedFailure) { this.unavailable() }
+  }
+
   private observePrivateFailure(work: AccountWork,
-    source: 'command' | 'command-stop' | 'session-retirement' | 'account-stop' | 'preparation' | 'capacity-stop',
+    source: 'command' | 'command-stop' | 'session-retirement' | 'account-stop' | 'preparation' | 'capacity-stop' | 'continuation-stop',
     cause: unknown, sessionId?: SessionId, stage?: PreparationFailureStage): void {
     try {
       console.warn('Cloud managed execution failed: %j', { event: 'managed-execution-failed', source, ...(stage === undefined ? {} : { stage }),

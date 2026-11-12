@@ -127,6 +127,14 @@ Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/work
 
 私有[受管协调器](src/managed-coordinator.ts) 通过原始延迟原生授权和 files 授权连接这些拥有者，活跃进程槽与保留输出分别释放。Root 启动时先检查持久化的非终态分配，再允许就绪；关闭时等待启动、分配、传输和元数据责任实际结束。[SDK 适配器](src/sdk-lifecycle.ts) 在唯一且受验证的物理 DELETE 前关闭并等待特权启动请求。启动失败本身不表示特权启动仍未结清：有界命令流已初始化、观察到执行完成事件并结束，且原传输实际关闭时，严格输出或错误校验仍可判启动失败，但允许进入原停止链。缺少终结事实、超出观察限额或传输关闭失败时仍保留 unknown 并阻止删除；HTTP 成功本身不证明命令终结或物理停止。[受信运行时登记器](src/trusted-runtime.ts) 保留普通认证请求直到本地实际结束；只有物理删除不能释放命令容量。有界[数据传输器](src/agent-data/index.ts) 保留原始字节坐标与原操作引用。其 Loader 安装仍要求原始受保护部署；组件安装本身不代表原生网页服务执行已通过验收。
 
+删除当时，SDK 只接受 DELETE 204、DELETE 404，或 DELETE 失败后的一次 GET 404 作为不存在确认。GET 200 或其他查询失败仍将删除保留为未知。SDK 不重发 DELETE。删除确认本身不释放分配；仍须等待实际本地结清，并沿用原元数据和挂载释放流程。
+
+只有更换 Session 计算资源时的删除未知可以进入这一恢复例外：准备、特权启动和普通请求均须成功结束，全部观察也须结清。账号和 Root 准入仍开放、原部署仍有效时，后续命令可在 `Date.now() >= Date.parse(createDeadlineAt) + ttlSeconds * 1000 + 30_000` 时再次查询。GET 200 保留原失败；此时 GET 404 或任何查询失败允许按已有到期规则确认。并发恢复调用共享这次查询。恢复本身不重发 DELETE，也不创建沙盒。
+
+恢复由下一次前台执行通道获取触发，没有后台定时重试。原分配须先完成 stopping/released SQL、挂载释放和 SDK/运行时退役，协调器才清除此失败并允许新工作。旧命令记录只在其所属 Session 自己的下一次前台获取时退役。出现任何其他失败来源，包括准备、用户取消、命令结果不确定、容量驱动的退役或本地结清失败，都继续保留原责任，不启用这个例外。账号和 Root 关闭不走到期重问，仍可能保持未知；没有后续命令时也不会触发恢复。
+
+DELETE 使用既有 `stopBudgetMs` 期限；失败后的不存在查询另取一次完整 `requestTimeoutMs`，这两段 HTTP 预算为 `stopBudgetMs + requestTimeoutMs`。后续每次到期查询使用 `requestTimeoutMs`。这些预算不约束实际本地结清，也不保证与账号 `shutdownTimeoutMs` 相容；部署实际值及其关系须单独核实。SDK 传输替身和内存元数据测试覆盖了此恢复路径。真实服务端到期、可信运行时结清、挂载及 PostgreSQL 恢复、已部署原生/网页行为仍须独立验收。
+
 私有[语义观察器](src/semantic-audit.ts) 可选地将有界 SDK、bootstrap 及原生操作事实发布给应用导入前安装的受保护接收方。接收方在原 stderr 完整写出后确认且仅确认一次；投递丢失或失败会污染证据。观察保留原 Promise，不授予业务控制能力或恢复权限。
 
 可选的可信 `ManagedExecutionDeployment.skillCopies` 策略提供显式 `maxCopiesPerOperation`，不属于公开 Loader JSON 或模型输入。它要求原 files owner 实现 `prepareSkillProject` 和 `borrowAllBundleWorkingCopies`；缺少枚举方法时，在 allocation 前拒绝。每条命令均由原 owner 从受保护的项目关联中推导包含 legacy 与完整树副本的完整有界集合，并核验已签发的 `SkillBundleOperationCopies`；超限、未知或未取得资格的成员使整个操作拒绝；命令文本、路径和 API 发布缓存不能选择成员。allocation 保留原父目录与 export 借用，每个原命令保留真实 copies 借用，直到实际 range 完成且本地结清，或合格且已 joined 的物理停止。输出保留有独立释放点。 受保护的 `rootDeployment` 文件接受可选闭合对象 `skillCopies: { maxCopiesPerOperation }`，数量须显式为正整数且不超过 2147483647；省略时不注入策略。Assembly 将独立冻结的解析结果传给原 deployment。

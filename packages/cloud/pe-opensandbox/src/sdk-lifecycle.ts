@@ -21,6 +21,8 @@ interface AllocationRecord {
   prepared?: AgentHandshake
   phase: 'active' | 'stopping' | 'stopped' | 'stop-unknown'
   stopActual?: Promise<void>
+  deletionRetry?: { assertDeploymentCurrent(): void }
+  expiryCheck?: Promise<void>
 }
 
 type CloseResult = { readonly ok: true } | { readonly ok: false; readonly cause: unknown }
@@ -178,11 +180,16 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   /** @param created Original known-successful create handle.
    * @param prepared Original handshake when published; omission uses retained startup state.
    * @returns Synchronous fence, authenticated deletion or 404 absence, then actual local/preparation/observation settlement.
+   * A later call may confirm an expired deletion-only failure through one query; Root close never uses this path.
    * Rejection retains responsibility, with no automatic DELETE replay or fabricated handshake.
    */
   stop(created: CreatedSandbox, prepared: PreparedSandbox | undefined): Promise<void> {
     const record = this.record(created)
     check(prepared === undefined || prepared === record.prepared, 'sdk/selection')
+    if (this.admission && record.phase === 'stop-unknown' && record.deletionRetry !== undefined
+      && Date.now() >= Date.parse(record.intent.createDeadlineAt) + this.config.ttlSeconds * 1000 + 30000) {
+      return record.expiryCheck ??= this.confirmExpiredStop(record).finally(() => { delete record.expiryCheck })
+    }
     return this.stopRecord(record)
   }
 
@@ -319,14 +326,21 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
             this.observeStopFailure(record, cause); observedFailure = { cause }
             const absent = cause instanceof SandboxApiException && cause.statusCode === 404
               || await this.queryMissing(created.sandboxId, Date.now() + this.config.requestTimeoutMs)
+            this.observeDeletionOutcome(record, absent ? 'confirmed-absent' : 'unknown')
             if (!absent) throw cause
           }
           fenced.assertDeploymentCurrent()
           this.agent.acknowledgePhysicalStop(selection, record.prepared)
         } catch (cause) { physicalFailure = { cause } }
-        const [joined] = await settled
+        const [joined, privileged, preparation] = await settled
         while (record.observations.size) await Promise.allSettled([...record.observations])
-        if (physicalFailure !== undefined) throw physicalFailure.cause
+        if (physicalFailure !== undefined) {
+          if (observedFailure !== undefined && physicalFailure.cause === observedFailure.cause
+            && joined.status === 'fulfilled' && privileged.status === 'fulfilled' && preparation.status === 'fulfilled') {
+            record.deletionRetry = { assertDeploymentCurrent: () => { fenced.assertDeploymentCurrent() } }
+          }
+          throw physicalFailure.cause
+        }
         if (joined.status === 'rejected') throw joined.reason
         record.phase = 'stopped'
       } catch (cause) {
@@ -337,12 +351,43 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       runtimeIdentity: record.prepared?.runtimeIdentity }))
   }
 
-  private async queryMissing(sandboxId: string, deadlineAtMs: number): Promise<boolean> {
+  private async confirmExpiredStop(record: AllocationRecord): Promise<void> {
+    return this.own(async () => {
+      const retry = record.deletionRetry
+      const created = record.created
+      if (!this.admission || retry === undefined || created === undefined) throw new SdkLifecycleFailure('sdk/closed')
+      retry.assertDeploymentCurrent()
+      const missing = await this.queryMissing(created.sandboxId, Date.now() + this.config.requestTimeoutMs, true)
+      check(this.admission, 'sdk/closed')
+      retry.assertDeploymentCurrent()
+      if (!missing) return record.stopActual
+      try { this.agent.acknowledgePhysicalStop(this.selection(record), record.prepared) }
+      catch (cause) { delete record.deletionRetry; throw cause }
+      record.phase = 'stopped'
+      delete record.deletionRetry
+      record.stopActual = Promise.resolve()
+      this.observeDeletionOutcome(record, 'expired')
+    }, true)
+  }
+
+  private async queryMissing(sandboxId: string, deadlineAtMs: number, expired = false): Promise<boolean> {
     try {
-      await this.connection.run(this.budget(deadlineAtMs), 'GET', this.path(sandboxId), 200,
+      const info = await this.connection.run(this.budget(deadlineAtMs), 'GET', this.path(sandboxId), 200,
         () => this.sandboxes.getSandbox(sandboxId))
+      if (expired) {
+        try { console.warn('Cloud expired sandbox remains present: %j', { event: 'expired-sandbox-present',
+          sandboxId, state: logIdentifier(info.status.state) }) }
+        catch (_unavailableObservation) { /* Keep the original failed stop when observation is unavailable. */ }
+      }
       return false
-    } catch (cause) { return cause instanceof SandboxApiException && cause.statusCode === 404 }
+    } catch (cause) { return expired || cause instanceof SandboxApiException && cause.statusCode === 404 }
+  }
+
+  private observeDeletionOutcome(record: AllocationRecord, outcome: 'confirmed-absent' | 'unknown' | 'expired'): void {
+    try { console.warn('Cloud sandbox deletion observed: %j', { event: 'sdk-sandbox-deletion-observed', outcome,
+      accountId: record.intent.accountId, sessionId: record.intent.sessionId, allocationId: record.intent.allocationId,
+      sandboxId: record.created?.sandboxId }) }
+    catch (_unavailableObservation) { /* Diagnostics do not establish or change physical stop. */ }
   }
 
   private observeStopFailure(record: AllocationRecord, cause: unknown): void {

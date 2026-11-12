@@ -13,6 +13,47 @@ class NeverSubmitted extends AllocationQueryNotSubmittedError {
   constructor() { super(); this.name = 'FixtureNeverSubmitted' }
 }
 
+it('retries only an original failed stop and releases once after backend confirmation', async () => {
+  const f = fixture(), request = f.request(), failure = new Error('synthetic backend still unknown')
+  f.created.resolve({ sandboxId: 'original' })
+  await f.owner.prepare(request)
+  expect(() => f.owner.retryFailedStop(request)).toThrow()
+  expect(() => f.owner.retryFailedStop(f.request('missing'))).toThrow()
+  f.backend.stop.mockRejectedValue(failure)
+  await expect(f.owner.stop(request)).rejects.toBe(failure)
+  const transitions = f.store.transition.mock.calls.length
+  expect(() => f.owner.retryFailedStop({ ...request, binding: { ...request.binding } })).toThrow()
+  expect(() => f.owner.retryFailedStop({ ...request, workspaceId: brandString<WorkspaceId>('other') })).toThrow()
+  await expect(f.owner.retryFailedStop(request)).rejects.toBe(failure)
+  expect(f.release).not.toHaveBeenCalled()
+  expect(f.store.transition).toHaveBeenCalledTimes(transitions)
+  expect(f.store.releaseStopped).not.toHaveBeenCalled()
+  expect(f.owner.inspect().allocations).toBe(1)
+  await expect(f.owner.prepare(request)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  f.backend.stop.mockResolvedValue(undefined)
+  await f.owner.retryFailedStop(request)
+  expect(f.store.transition.mock.calls.at(-1)?.[1]).toMatchObject({ to: 'stopping' })
+  expect(f.store.releaseStopped).toHaveBeenCalledTimes(1)
+  expect(f.release).toHaveBeenCalledTimes(1)
+  expect(f.owner.inspect().allocations).toBe(0)
+  await f.owner.prepare(request)
+  await f.owner.close()
+})
+
+it('reconciles a never-submitted stopping write without asking the confirmed backend to stop again', async () => {
+  const f = fixture(), request = f.request()
+  f.created.resolve({ sandboxId: 'original' }); f.stopped.resolve(undefined)
+  await f.owner.prepare(request)
+  f.store.transition.mockImplementationOnce(async () => { throw new NeverSubmitted() })
+  await expect(f.owner.stop(request)).rejects.toBeInstanceOf(NeverSubmitted)
+  expect(f.release).not.toHaveBeenCalled()
+  await f.owner.retryFailedStop(request)
+  expect(f.backend.stop).toHaveBeenCalledTimes(1)
+  expect(f.store.releaseStopped).toHaveBeenCalledTimes(1)
+  expect(f.release).toHaveBeenCalledTimes(1)
+  expect(f.owner.inspect().allocations).toBe(0)
+})
+
 function fixture() {
   const lifetime = new AbortController()
   const binding: AccountBinding = Object.freeze({ accountId: brandString<AccountBinding['accountId']>('a'),

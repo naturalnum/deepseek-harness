@@ -173,6 +173,22 @@ export class SessionAllocationOwner<Mount> {
   }
 
   /**
+   * Ask the original backend to settle a previously failed stop without releasing its ownership early.
+   * @param request Original native selection with the same binding and workspace.
+   * @returns The retained allocation id after original stop and metadata settlement.
+   */
+  retryFailedStop(request: NativeAllocationRequest<Mount>): Promise<AllocationId> {
+    const work = this.work.get(this.key(request))
+    if (work === undefined || work.request.binding !== request.binding
+      || work.request.workspaceId !== request.workspaceId) this.stale()
+    if (work.created === undefined || work.row === undefined || work.stopFailure === undefined) this.unavailable()
+    if (work.backendStopped) return this.reconcileStoppedMetadata(request).then(() => work.id)
+    work.stop = undefined
+    work.stopFailure = undefined
+    return this.stopWork(work).then(() => work.id)
+  }
+
+  /**
    * Finish only metadata for a range whose original backend stop already fulfilled.
    * @param request Original native selection; user admission may already be revoked.
    * @returns Terminal SQL and reservation settlement after exact committed-postimage reconciliation.

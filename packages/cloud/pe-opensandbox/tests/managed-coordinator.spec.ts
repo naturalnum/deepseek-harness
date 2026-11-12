@@ -17,11 +17,11 @@ import type { NativeAccountExecutionAuthority } from '../src/coordinator.ts'
 import { assertAccountExecutionProviders, installIssuedExecutionPort, withAccountApplicationService,
   accountServiceAvailability, accountTerminalLimits } from '../src/account-port.ts'
 import type { AccountExecutionPort } from '../src/account-port.ts'
-import type { SandboxAllocation } from '../src/allocation-types.ts'
+import type { SandboxAllocation, AllocationCreateIntent, AllocationExpectation, AllocationChange } from '../src/allocation-types.ts'
 import { PostgresAllocationStore } from '../src/allocation-store.ts'
 import { allocationMigrationSql } from '../src/migrations/allocations.ts'
 import { SdkAllocationBackend } from '../src/sdk-lifecycle.ts'
-import { SdkLifecycleFailure, type OwnedSdkTransport, type SdkLifecycleConfig } from '../src/lifecycle-types.ts'
+import { SdkLifecycleFailure, type OwnedSdkTransport, type SdkLifecycleConfig, type VerifiedExecutionMount } from '../src/lifecycle-types.ts'
 import { ExecutionStateError } from '../src/errors.ts'
 import { TrustedRuntimeRegistry } from '../src/trusted-runtime.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -783,6 +783,189 @@ async function continuationFixture(sessions = 2, ownedHandles = false) {
     name: 'bash', arguments: {}, agent: a.agents[index]!, signal })
   return { ...f, a, counts, stop, due, command, retire, run, runSession }
 }
+
+/** Real SDK/owner stop and CAS settlement; files grants and privileged local joins are scripted frontiers. */
+async function expiryContinuationFixture(sessions = 2) {
+  const prepareActual = SessionAllocationOwner.prototype.prepare, stopActual = SessionAllocationOwner.prototype.stop
+  const retryActual = SessionAllocationOwner.prototype.retryFailedStop
+  const f = await continuationFixture(sessions), rows = new Map<string, SandboxAllocation>()
+  const release = vi.fn(), http: { method: string; sandboxId: string }[] = []
+  const metadata = new Map<string, Record<string, string>>()
+  let serial = 0, oldStatus = 200
+  const failedSandbox = 'compute-0'
+  const store = {
+    begin: vi.fn(async (intent: AllocationCreateIntent) => {
+      const row: SandboxAllocation = { ...intent, state: 'creating', sandboxId: null, runtimeIdentity: null,
+        executionProtocolVersion: null, executionCapabilities: [], failureCode: null,
+        lastActivityAt: intent.requestedAt, lastCheckedAt: intent.requestedAt }
+      rows.set(row.allocationId, row); return { allocation: row, inserted: true }
+    }),
+    transition: vi.fn(async (expected: AllocationExpectation, change: AllocationChange) => {
+      const row = rows.get(expected.allocationId)
+      if (row === undefined || row.state !== expected.state) throw new Error('Synthetic CAS conflict')
+      const next: SandboxAllocation = { ...row, state: change.to, sandboxId: change.sandboxId ?? row.sandboxId,
+        ...(change.to === 'ready' ? { runtimeIdentity: change.runtimeIdentity,
+          executionProtocolVersion: change.executionProtocolVersion, executionCapabilities: change.executionCapabilities } : {}) }
+      rows.set(next.allocationId, next); return next
+    }),
+    releaseStopped: vi.fn(async (expected: AllocationExpectation) => {
+      const row = rows.get(expected.allocationId)
+      if (row === undefined || row.state !== 'stopping') throw new Error('Synthetic release conflict')
+      const next: SandboxAllocation = { ...row, state: 'released' }; rows.set(next.allocationId, next); return next
+    }),
+    reconcileCommitted: vi.fn(async (): Promise<never> => { throw new Error('No SQL uncertainty is scripted') }),
+    failNotCreated: vi.fn(async (): Promise<never> => { throw new Error('No unsubmitted create is scripted') }),
+  }
+  const allocations = new SessionAllocationOwner(store, f.backend, { ...config.allocations,
+    maxAllocations: 4, maxAllocationsPerAccount: 2 })
+  onTestFinished(async () => { await allocations.close().catch(() => {}) })
+  const mountFor = (request: NativeAllocationRequest<VerifiedExecutionMount>): VerifiedExecutionMount => {
+    const quota = { device: '5', mountId: '10', maximumBytes: '8388608', maximumInodes: '128' }
+    const directory = { device: '6', mountId: '20', uid: 2000, gid: 2000, mode: 0o40700 }
+    return { grant: { binding: request.binding, sessionId: request.sessionId, workspaceId: request.workspaceId,
+      project: { rootPath: '/project', rootDevice: '5', rootInode: '11', rootMountId: '10', mountVersion: 'fixture-v1',
+        quota, readOnlyPaths: ['.pe'], metadataDirectory: { relativePath: '.pe', ...directory, device: '5', mountId: '10', inode: '13' } },
+      environment: { rootPath: '/environment', rootDevice: '6', rootInode: '12', rootMountId: '20',
+        quota: { ...quota, device: '6', mountId: '20' }, targetPath: '/opt/session-env', bankId: 'bank', slotId: 'slot',
+        slotGeneration: 1, environmentVersion: config.allocations.environmentVersion, rootReadOnly: true,
+        writablePaths: ['home', 'venv', 'tmp'], layout: { home: { ...directory, inode: '14' },
+          venv: { ...directory, inode: '15' }, tmp: { ...directory, inode: '16' } } } },
+    exports: { project: '/export/project', protectedProject: '/export/project/.pe', environment: '/export/environment' },
+    assertCurrent: request.assertCurrent }
+  }
+  f.prepare.mockImplementation(request => prepareActual.call(allocations, { ...request, prepareMount: async () => ({
+    value: mountFor(request), projectMountVersion: 'fixture-v1', assertCurrent: request.assertCurrent, release }) }))
+  f.stop.mockImplementation(request => stopActual.call(allocations, request))
+  const retry = vi.spyOn(SessionAllocationOwner.prototype, 'retryFailedStop')
+    .mockImplementation(request => retryActual.call(allocations, request))
+  f.retire.mockRestore()
+  const retire = vi.spyOn(f.backend, 'retireStopped')
+  vi.spyOn(f.deployment.runtimes, 'retireStopped').mockImplementation(() => {})
+  vi.spyOn(f.deployment.runtimes, 'handshake').mockImplementation(async selection => ({
+    sandboxId: selection.sandboxId, runtimeIdentity: '1'.repeat(64), protocolVersion: 'fixture', capabilities: ['argv-collect'],
+    payloadSha256: selection.payloadSha256, imageDigest: selection.imageDigest, deploymentIdentity: selection.deploymentIdentity }))
+  vi.spyOn(f.deployment.runtimes, 'fenceRequests').mockImplementation(selection => ({
+    sandboxId: selection.sandboxId, deploymentIdentity: selection.deploymentIdentity,
+    whenJoined: Promise.resolve(), whenPrivilegedStartsJoined: Promise.resolve(), assertDeploymentCurrent() {} }))
+  const acknowledge = vi.spyOn(f.deployment.runtimes, 'acknowledgePhysicalStop').mockImplementation(() => undefined)
+  f.fetch.mockImplementation(async (input, init) => {
+    const request = new Request(input, init), id = new URL(request.url).pathname.split('/').at(-1)!
+    http.push({ method: request.method, sandboxId: id })
+    const info = (sandboxId: string) => ({ id: sandboxId, image: { uri: 'display-only' }, metadata: metadata.get(sandboxId),
+      status: { state: 'Running' }, entrypoint: [...sdkConfig.entrypoint], createdAt: new Date(),
+      expiresAt: new Date(Date.now() + sdkConfig.ttlSeconds * 1000) })
+    if (request.method === 'POST') {
+      const body = await request.json() as { metadata: Record<string, string> }, sandboxId = `compute-${serial++}`
+      metadata.set(sandboxId, body.metadata); return Response.json(info(sandboxId), { status: 202 })
+    }
+    if (request.method === 'DELETE') {
+      return id === failedSandbox ? Response.json({ code: 'synthetic-delete-unknown' }, { status: 500 })
+        : new Response(null, { status: 204 })
+    }
+    return id === failedSandbox && oldStatus !== 200
+      ? Response.json({ code: 'synthetic-lookup' }, { status: oldStatus }) : Response.json(info(id))
+  })
+  return { ...f, retry, retire, rows, store, release, http, allocations, acknowledge,
+    absent: () => { oldStatus = 404 }, expires: () => {
+      const row = [...rows.values()].find(value => value.sandboxId === failedSandbox)
+      if (row === undefined) throw new Error('No original failed allocation')
+      return Date.parse(row.createDeadlineAt) + sdkConfig.ttlSeconds * 1000 + 30000
+    } }
+}
+
+it.each(['same', 'other'] as const)('recovers the original deletion-only retirement on the %s Session after expiry', async (source) => {
+  vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const f = await expiryContinuationFixture(), retireCommands = vi.spyOn(NativeCommandAccount.prototype, 'retireCompletedSession')
+  for (let i = 0; i < 4; i++) expect((await f.run()).isError).toBe(false)
+  expect((await f.run()).isError).toBe(true)
+  const http = f.http.length, begin = f.store.begin.mock.calls.length, transition = f.store.transition.mock.calls.length
+  vi.setSystemTime(f.expires() - 1)
+  expect((await f.run()).isError).toBe(true)
+  expect((await f.runSession(1)).isError).toBe(true)
+  expect(f.http).toHaveLength(http); expect(f.store.begin).toHaveBeenCalledTimes(begin)
+  expect(f.store.transition).toHaveBeenCalledTimes(transition); expect(f.store.releaseStopped).not.toHaveBeenCalled()
+  expect(f.query.mock.calls.filter(([sql]) => sql.startsWith('SELECT'))).toHaveLength(1)
+  vi.setSystemTime(f.expires()); f.absent()
+  expect((await f.runSession(source === 'same' ? 0 : 1)).isError).toBe(false)
+  expect(f.http.filter(call => call.method === 'DELETE')).toHaveLength(1)
+  expect(f.http.filter(call => call.method === 'POST')).toHaveLength(2)
+  expect(f.store.releaseStopped).toHaveBeenCalledTimes(1); expect(f.release).toHaveBeenCalledTimes(1)
+  expect(f.retire).toHaveBeenCalledTimes(1)
+  expect(retireCommands.mock.calls.filter(([scope]) => scope.sessionId === f.a.agents[0]!.session.id))
+    .toHaveLength(source === 'same' ? 1 : 0)
+  if (source === 'other') expect((await f.run()).isError).toBe(false)
+  expect(retireCommands.mock.calls.filter(([scope]) => scope.sessionId === f.a.agents[0]!.session.id)).toHaveLength(1)
+  expect(warn.mock.calls.some(([, row]) => row?.event === 'managed-session-stop-recovered'
+    && row.accountId === f.a.binding.accountId && row.sessionId === f.a.agents[0]!.session.id
+    && typeof row.allocationId === 'string')).toBe(true)
+  f.prepare.mockRejectedValueOnce(new Error('synthetic later preparation failure'))
+  expect((await f.runSession(source === 'same' ? 1 : 0)).isError).toBe(true)
+  expect(warn.mock.calls.filter(([, row]) => row?.event === 'managed-execution-preparation-failed').length).toBeGreaterThanOrEqual(2)
+  expect(f.query.mock.calls.filter(([sql]) => sql.startsWith('SELECT'))).toHaveLength(1)
+})
+
+it('retains an unknown account stop receipt before deletion-only expiry', async () => {
+  const f = await expiryContinuationFixture()
+  for (let i = 0; i < 4; i++) await f.run()
+  expect((await f.run()).isError).toBe(true)
+  const http = f.http.length
+  expect((await f.owner.stopEpoch(f.a.binding, Date.now() + 1000)).status).toBe('unknown')
+  expect(f.http).toHaveLength(http)
+  expect(f.store.releaseStopped).not.toHaveBeenCalled()
+})
+
+it.each(['preparation', 'cancelled-preparation'] as const)('expiry does not clear a %s source', async (source) => {
+  vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
+  const f = await expiryContinuationFixture(), entered = Promise.withResolvers<undefined>(), gate = Promise.withResolvers<undefined>()
+  const cancel = new AbortController()
+  f.prepare.mockImplementationOnce(async () => {
+    entered.resolve(undefined)
+    await gate.promise
+    throw new Error('synthetic preparation failure')
+  })
+  onTestFinished(() => { gate.resolve(undefined) })
+  const actual = f.run(cancel.signal)
+  await entered.promise
+  if (source === 'cancelled-preparation') cancel.abort(new Error('synthetic caller cancellation'))
+  gate.resolve(undefined)
+  expect((await actual).isError).toBe(true)
+  const http = f.http.length, writes = f.store.begin.mock.calls.length
+  vi.setSystemTime(Date.now() + 200000)
+  expect((await f.runSession(1)).isError).toBe(true)
+  expect(f.retry).not.toHaveBeenCalled(); expect(f.http).toHaveLength(http)
+  expect(f.store.begin).toHaveBeenCalledTimes(writes)
+})
+
+it.each([false, true])('retains command uncertainty after expiry, including an earlier retirement failure=%s', async (mixed) => {
+  vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const f = await expiryContinuationFixture(3), entered = Promise.withResolvers<undefined>(), gate = Promise.withResolvers<undefined>()
+  const command = f.command.getMockImplementation()!
+  f.command.mockImplementation((...args) => {
+    const channel = command(...args)
+    if (args[0].sandboxId !== 'compute-1') return channel
+    return { ...channel, commit: async () => {
+      entered.resolve(undefined)
+      await gate.promise
+      throw new Error('synthetic unknown command result')
+    } }
+  })
+  onTestFinished(() => { gate.resolve(undefined) })
+  for (let i = 0; i < 4; i++) expect((await f.run()).isError).toBe(false)
+  const held = f.runSession(1)
+  await entered.promise
+  if (mixed) expect((await f.run()).isError).toBe(true)
+  gate.resolve(undefined)
+  expect((await held).isError).toBe(true)
+  expect(warn.mock.calls.some(([, row]) => row?.event === 'managed-execution-failed' && row.source === 'command')).toBe(true)
+  const requests = f.http.length, retries = f.retry.mock.calls.length, writes = f.store.begin.mock.calls.length
+  vi.setSystemTime(Date.now() + 200000); f.absent()
+  expect((await f.runSession(2)).isError).toBe(true)
+  expect(f.retry).toHaveBeenCalledTimes(retries); expect(f.http).toHaveLength(requests)
+  expect(f.store.begin).toHaveBeenCalledTimes(writes)
+  expect(warn.mock.calls.some(([, row]) => row?.event === 'managed-session-stop-recovered')).toBe(false)
+})
 
 /** Exercises original coordinator/native ownership; external ready/stop frontiers are scripted, never deployment evidence. */
 async function idleComputeFixture(ownedHandles = false) {
