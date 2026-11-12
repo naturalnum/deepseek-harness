@@ -20,6 +20,10 @@ export function createBudget(totalMs, numbers, now = Date.now) {
     deadline,
     startupMs: unit,
     remaining: () => Math.max(1, deadline - now()),
+    optional() {
+      const available = Math.max(0, deadline - now() - finalReserve)
+      return { workMs: Math.max(1, available * 3 / 4), deadline: now() + available }
+    },
     step(number) {
       const reserve = finalReserve + (number !== 9 && pending.has(9) ? unit * weights[9] : 0)
       const available = Math.max(0, deadline - now() - reserve)

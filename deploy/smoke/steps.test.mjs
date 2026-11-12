@@ -154,6 +154,25 @@ test('budget keeps time for relogin and final logout after an earlier step uses 
   assert.ok(budget.deadline - now > 0, 'the final logout budget remains even after relogin times out')
 })
 
+test('optional checks share only unused time and leave the original final logout reserve', () => {
+  let now = 0
+  const budget = createBudget(300000, [1, 2, 3, 4, 5, 6, 7, 8, 9], () => now)
+  for (const number of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    const step = budget.step(number)
+    now += step.workMs / 2
+  }
+  const outage = budget.optional()
+  assert.ok(outage.workMs > 0)
+  assert.ok(now + outage.workMs <= outage.deadline)
+  assert.ok(outage.deadline < budget.deadline)
+  now += outage.workMs / 2
+  const recovery = budget.optional()
+  assert.ok(recovery.workMs < outage.workMs)
+  assert.equal(recovery.deadline, outage.deadline)
+  now = recovery.deadline
+  assert.ok(budget.remaining() > 0)
+})
+
 test('local UI cancellation requires a newly settled turn and cannot mistake button disappearance for completion', async t => {
   const browser = await chromium.launch({ headless: true })
   t.after(() => browser.close())
