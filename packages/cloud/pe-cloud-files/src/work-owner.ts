@@ -3,7 +3,7 @@ import type { AccountBinding, AccountId, DrainParticipant, ParticipantReceipt, O
 import type { FilesLimits } from './types.ts'
 import { FilesFailure } from './error.ts'
 import { FilesWorkQueue } from './work-queue.ts'
-import type { ResidentResult, WorkLane, FilesWorkTrace, WorkRetention } from './work-queue.ts'
+import type { ResidentResult, WorkLane, FilesWorkTrace, WorkRetention, RetainUnconfirmed } from './work-queue.ts'
 import type { DirectoryIntent, DirectoryBudgetLimits } from './directory-budget.ts'
 import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork, DirectoryObservation, DirectoryResponsibility } from './directory-responsibility.ts'
 
@@ -15,7 +15,7 @@ export interface BoundFilesWork {
    * Lease is reserved for inert grants whose later files I/O reenters this original lane; budgets survive until release.
    * Joined completion requires an executor deadline and waits for actual cleanup.
    */
-  run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+  run<T>(reservedBytes: number, work: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<T>, signal?: AbortSignal,
     retention?: WorkRetention, completion?: 'joined', trace?: FilesWorkTrace): Promise<ResidentResult<T>>
   /** Register a bounded private responsibility on this same lane; this does not authorize directory writes. */
   prepareDirectory(
@@ -74,7 +74,7 @@ export class FilesWorkOwner implements DrainParticipant {
       assertCurrent: () => {
         current()
       },
-      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+      run: <T>(bytes: number, work: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<T>, signal?: AbortSignal,
         retention?: WorkRetention, completion?: 'joined', trace?: FilesWorkTrace) => {
         current()
         return lane.run(bytes, work, signal, retention, completion, trace)

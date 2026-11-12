@@ -27,6 +27,7 @@ import type { FdMetadata } from './worker-protocol.ts'
 import type { ResidentResult, FilesWorkTrace } from './work-queue.ts'
 import { FilesWorkOwner } from './work-owner.ts'
 import { FdWorkerClient, FdWorkerFailure, FdMutationFailure, FdTextWriteFailure, FdStageFailure } from './worker-client.ts'
+import type { FdSkillFailure } from './worker-client.ts'
 import { createTextProjectFileSystem, decodeBoundedText } from './text-project.ts'
 import type { NativeTextFileSystemConstructor, ResolveAccountFileProject, TextProjectBackend } from './text-project.ts'
 import type { AccountFilesProject } from './account-service.ts'
@@ -651,18 +652,19 @@ export class LinuxFilesPool implements DrainParticipant {
     // Only trusted same-lane executors enter here; observation never settles their actual work.
     const runMutation = <T>(
       reservation: number, assertProject: () => void,
-      execute: (client: FdWorkerClient, control: AbortSignal) => Promise<T>,
+      execute: (client: FdWorkerClient, control: AbortSignal, captureClosedUnknown?: (failure: FdSkillFailure) => void) => Promise<T>,
       failure: (outcome: 'not-published' | 'unknown', code: FsErrorCode, cause?: unknown) => FdMutationFailure,
       signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' | 'joined-result' | 'retained-lease' = 'native-handoff',
       trace?: FilesWorkTrace,
       retainedLeaseBytes?: number,
+      legacyPrepare = false,
     ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
       if (mutationState.unknown) return Promise.reject(failure('unknown', 'FS_IO_ERROR'))
       const answer = Promise.withResolvers<ResidentResult<T>>()
       let invoked = false
-      const work = port.run<T>(reservation, async (control) => {
+      const work = port.run<T>(reservation, async (control, retainUnconfirmed) => {
         invoked = true
         const previous = mutationTail
         const turn = Promise.withResolvers<void>()
@@ -674,8 +676,12 @@ export class LinuxFilesPool implements DrainParticipant {
           if (control.aborted) throw failure('not-published', 'FS_ABORTED')
           if (mutationState.unknown) throw failure('not-published', 'FS_IO_ERROR')
           const execution = { entered: false }
+          let closedUnknown: FdSkillFailure | undefined
           try {
-            const value = await this.withSlot(false, (client) => { execution.entered = true; return execute(client, control) })
+            const value = await this.withSlot(false, (client) => {
+              execution.entered = true
+              return execute(client, control, legacyPrepare ? (failure) => { closedUnknown = failure } : undefined)
+            })
             // Stage releases running capacity at actual closure; the original queue keeps its resident result.
             if (delivery !== 'native-handoff') return value
             const consumed = Promise.withResolvers<void>()
@@ -691,6 +697,10 @@ export class LinuxFilesPool implements DrainParticipant {
               turn.resolve()
               console.error('Cloud file publication or cleanup is unconfirmed; '
                 + 'account operation and budget remain retained. Do not retry the write.')
+              if (closedUnknown !== undefined && error === closedUnknown) {
+                retainUnconfirmed(closedUnknown)
+                throw error
+              }
               // Unresolved publication/cleanup keeps this original operation and its complete reservation.
               await new Promise<never>(() => {})
             }
@@ -758,6 +768,15 @@ export class LinuxFilesPool implements DrainParticipant {
         mutate: (kind, work, signal) => runMutation(reservation, current, work,
           (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal,
           kind === 'prepare' ? 'retained-result' : 'native-handoff'),
+        prepareLegacy: (work, signal) => runMutation(reservation, current, (client, control, captureClosedUnknown) => {
+          let invoked = false
+          return work((request) => {
+            if (invoked) throw new FdMutationFailure('unknown', 'FS_IO_ERROR')
+            invoked = true
+            return client.prepareSkillVersion(request, control, captureClosedUnknown)
+          })
+        }, (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, { cause }), signal,
+        'retained-result', undefined, undefined, true),
         read: (work, signal) => run(reservation, (client, control) => { current(); return work(client, control) }, signal),
       })
       return skillCell.port

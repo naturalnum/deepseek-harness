@@ -11,7 +11,7 @@ import type { FdWorkerClient } from './worker-client.ts'
 import type { FdRootIdentity } from './worker-protocol.ts'
 import type { ResidentResult } from './work-queue.ts'
 import type { SkillCurrent, SkillVersion, SkillVersionId, SkillVersionLimits, SkillVersionPort,
-  SkillVersionSource } from './skill-versions.ts'
+  SkillVersionSource, FdSkillPrepareRequest, FdSkillFacts } from './skill-versions.ts'
 
 /** Original lane executors; the root storage owner supplies actual private identity and admission. */
 export interface SkillVersionWork {
@@ -29,6 +29,9 @@ export interface SkillVersionWork {
     resource: Uint8Array<ArrayBuffer> }>,
     resolve: (id: SkillVersionId, expected: Omit<SkillVersion, 'binding'>) => SkillVersion | undefined): void
   mutate<T>(kind: 'prepare' | 'commit', work: (client: FdWorkerClient, signal: AbortSignal) => Promise<T>,
+    signal: AbortSignal): Promise<ResidentResult<T>>
+  /** Only the legacy executor receives this original borrow's single native prepare call. */
+  prepareLegacy<T>(work: (prepare: (request: Omit<FdSkillPrepareRequest, 'id' | 'cancel'>) => Promise<FdSkillFacts>) => Promise<T>,
     signal: AbortSignal): Promise<ResidentResult<T>>
   read<T>(work: (client: FdWorkerClient, signal: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>
 }
@@ -181,12 +184,12 @@ export function createSkillVersionWork(input: SkillVersionWork): SkillVersionPor
       if (!(resourceInput.buffer instanceof ArrayBuffer) || resourceInput.byteOffset !== 0
         || resourceInput.byteLength !== resourceInput.buffer.byteLength || Buffer.from(markdown).toString('utf8') !== markdown) refused()
       // Copy inside the original admitted operation, before worker transport. The source cannot race those owned bytes.
-      return input.mutate('prepare', async (client, control) => {
+      return input.prepareLegacy(async (prepare) => {
         if (resourceInput.byteLength > input.limits.maxFileBytes) refused('FS_TOO_LARGE')
         const skill = new TextEncoder().encode(markdown), resource = Uint8Array.from(resourceInput)
         const version = randomUUID() as SkillVersionId
-        const facts = await client.prepareSkillVersion({ kind: 'skill-prepare', root: input.root, uid: input.uid, gid: input.gid,
-          version, skill, resource, limits: input.limits }, control)
+        const facts = await prepare({ kind: 'skill-prepare', root: input.root, uid: input.uid, gid: input.gid,
+          version, skill, resource, limits: input.limits })
         if (facts.outcome !== 'prepared') throw new FdMutationFailure('unknown', 'FS_IO_ERROR')
         return issue({ binding: input.binding, id: version, skillSha256: hash(skill), resourceSha256: hash(resource),
           skillBytes: skill.byteLength, resourceBytes: resource.byteLength })

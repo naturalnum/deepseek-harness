@@ -95,7 +95,7 @@ Session 目录模式逐字保留旧槽记录。旧 bound Session 必须先完成
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-已安装账户 lane 首次出现未知 mutation 时，同步通知持有原账户的 factory。实际工作及其完整预留继续保留；发出通知不代表 PostgreSQL 隔离、清理或账户恢复已经确认。
+已安装账户 lane 首次出现未知 mutation 时，同步通知持有原账户的 factory。原操作责任及其完整预留继续保留；发出通知不代表 PostgreSQL 隔离、清理或账户恢复已经确认。
 
 <details>
 <summary>实现细节——点击展开</summary>
@@ -176,6 +176,8 @@ ABI8 `lstat` 移除尾分隔符后以 `O_PATH | O_NOFOLLOW` 打开最终目录�
 root probe 配置在账户准入前，从全局预留有界记录、proc、资产副本、native 临时空间及持有事实。同一时间仅运行一个账户核验。两组固定分配最多保留两条准备／lease 记录，并串行等待核验；重复的同代输入共享原 Promise。核验失败会关闭准入，root 关闭或排队代际被取消时，会在后续 I/O 前拒绝。等待中的核验责任一直保留到实际结算。观察超时后，busy slot、root operation id 及预留持续保留，直至实际回复或退出。组件传输及 macOS 均不能签发真实存储 owner。ABI6 及其 S2 行为保持独立；Linux helper 编译、实际权限限制、字节与 inode 耗尽后 control/其他账户持续写入，均须由部署验证。
 
 files 静止查询观察原有精确 epoch lane、待处理工作及 root probe 责任。驻留结果仍计为工作。查询不释放结果、不 retire lane，也不提供排空回执。
+
+只有原 legacy 单次技能版本 prepare 收到与原 pending 请求匹配、且确认描述符关闭的 native DSV1 unknown 回包，并且原执行器确实拒绝后，才可归还执行容量，让同一健康 worker 服务其他账号。原队列记录、native intent、两个操作 ID 和完整字节预留继续保留为未确认；已安装账号仍封锁，空闲查询为 false，账号和 Root 关闭不能确认。managed bundles、其他操作、丢回包及关闭未确认继续原行为。保留预算仍可能耗尽准入容量；这不恢复账号，也不清理残留文件。
 
 </details>
 

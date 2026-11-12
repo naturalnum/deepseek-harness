@@ -95,7 +95,7 @@ Remote-server metadata uses the fixed account-private `cloud_remote_server_accou
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The first unknown mutation on an installed account lane synchronously notifies its original factory. Actual work and its full reservation remain retained; notification does not confirm PostgreSQL quarantine, cleanup or account recovery.
+The first unknown mutation on an installed account lane synchronously notifies its original factory. Original operation responsibility and its full reservation remain retained; notification does not confirm PostgreSQL quarantine, cleanup or account recovery.
 
 <details>
 <summary>Implementation internals — click to expand</summary>
@@ -174,6 +174,8 @@ The [static storage owner](src/storage-owner.ts) reads a root-owned, hash-pinned
 The `/root` entry also exposes the same `parseStaticStoragePlan` and `accountEnvironmentBank` selectors to trusted deployment composition. They decode the protected record without issuing a files grant or certifying live storage; execution consumers still require the original current account grant and actual source measurements.
 
 Root probe configuration reserves bounded record/proc/asset copies, native scratch and retained facts globally before account admission. One account verification runs at a time. The two fixed assignments retain at most two preparation/lease records and join verification serially; duplicate generation inputs share the same Promise. A failed verification closes admission, while root closure or an aborted queued lifetime rejects before further I/O. Pending verification remains owned until it actually settles. Observation expiry retains the busy slot, root operation id and reservation until an actual reply or exit. Neither component transports nor macOS can issue a real storage owner. ABI6 and its S2 behavior remain separate; Linux helper compilation, actual confinement, byte/inode exhaustion and continued control/account writes require deployment verification.
+
+Only a legacy single skill-version prepare with a native DSV1 `unknown` reply matched to its original pending request and confirmed descriptor closure can return execution capacity after its executor actually rejects. The same healthy worker may then serve another account. Its original queue record, native intent, operation IDs and complete byte reservation remain unconfirmed; the installed account stays fenced, idle remains false and account/Root drain cannot confirm. Managed bundles, other operations, missing replies and unconfirmed closure retain their existing behavior. Retained reservations can still exhaust admission capacity; this is neither account recovery nor residual-file cleanup.
 
 The files idle query observes the original exact epoch lane, pending work and root-probe ownership. Resident results still count as work. It releases no result, retires no lane and supplies no drain receipt.
 

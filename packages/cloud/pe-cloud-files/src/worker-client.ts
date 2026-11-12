@@ -175,6 +175,7 @@ interface PendingSkill extends PendingBase {
   readonly request: Omit<FdSkillPrepareRequest, 'id' | 'cancel'>
   readonly resolve: (facts: FdSkillFacts) => void
   readonly reject: (error: Error) => void
+  readonly captureClosedUnknown?: (failure: FdSkillFailure) => void
 }
 interface PendingEnvironmentLayout extends PendingBase {
   readonly kind: 'environment-layout'
@@ -312,7 +313,11 @@ export class FdWorkerClient {
   private rejectReady!: (error: Error) => void
   private resolveExit!: (code: number) => void
 
-  constructor(private readonly worker: Worker) {
+  constructor(private readonly worker: Pick<Worker, 'postMessage' | 'terminate'> & {
+    on(event: 'message', listener: (value: unknown) => void): void
+    on(event: 'error', listener: (error: Error) => void): void
+    once(event: 'exit', listener: (code: number) => void): void
+  }) {
     this.ready = new Promise<void>((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject })
     this.exited = new Promise<number>((resolve) => { this.resolveExit = resolve })
     // Keep initialization failures observed even before the pool installs its waiter.
@@ -446,9 +451,11 @@ export class FdWorkerClient {
    * Submit fixed bounded content through this original exclusive worker client.
    * @param request Original private identity, fixed limits and owned content bytes.
    * @param signal Actual work cancellation; confirmed late publication is preserved.
+   * @param captureClosedUnknown Records matched closed failure for this borrow; omission preserves transport-failure handling.
    * @returns Measured sealed-version facts after actual descriptor closure.
    */
-  prepareSkillVersion(request: Omit<FdSkillPrepareRequest, 'id' | 'cancel'>, signal: AbortSignal): Promise<FdSkillFacts> {
+  prepareSkillVersion(request: Omit<FdSkillPrepareRequest, 'id' | 'cancel'>, signal: AbortSignal,
+    captureClosedUnknown?: (failure: FdSkillFailure) => void): Promise<FdSkillFacts> {
     try { this.assertAvailable(signal) } catch (cause) { throw new FdMutationFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
     if (!this.supportsSkillVersions) throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED')
     if ([request.skill, request.resource].some(bytes => !(bytes.buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0
@@ -456,7 +463,8 @@ export class FdWorkerClient {
       throw new FdSkillFailure('not-published', 'FS_TOO_LARGE')
     }
     return new Promise((resolve, reject) => {
-      const pending: PendingSkill = { kind: 'skill-prepare', ...this.base(128, signal), request, resolve, reject }
+      const pending: PendingSkill = { kind: 'skill-prepare', ...this.base(128, signal), request, resolve, reject,
+        ...captureClosedUnknown === undefined ? {} : { captureClosedUnknown } }
       this.pending = pending
       this.post({ ...request, id: pending.id, cancel: pending.cancel.buffer })
     })
@@ -1058,6 +1066,22 @@ export class FdWorkerClient {
     if (pending.kind === 'skill-prepare') {
       const facts = value.kind === 'skill-prepare-reply' ? parseSkillFrame(value.frame, pending.request) : undefined
       if (facts === undefined) { this.failProtocol(); return }
+      if (facts.outcome === 'unknown' && facts.closed && pending.captureClosedUnknown !== undefined) {
+        const failure = new FdSkillFailure('unknown', 'FS_IO_ERROR', facts, undefined, Object.freeze({
+          operationId: pending.id, kind: 'prepare', root: Object.freeze({ ...pending.request.root }),
+          version: pending.request.version, pointerRevision: undefined,
+        }))
+        pending.removeAbort()
+        this.pending = undefined
+        try { pending.captureClosedUnknown(failure) }
+        catch (_captureFailure) {
+          this.failure = failure
+          try { console.warn('Cloud file closure handoff is unconfirmed: %j', { event: 'skill-prepare-closed-unknown' }) }
+          catch (_diagnosticFailure) { /* This unavailable client and original unknown responsibility stay retained. */ }
+        }
+        pending.reject(failure)
+        return
+      }
       if (facts.outcome === 'unknown' || !facts.closed) { this.failure = new FdSkillFailure('unknown', 'FS_IO_ERROR', facts)
         void this.close(); return }
       pending.removeAbort(); this.pending = undefined

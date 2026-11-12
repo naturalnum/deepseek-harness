@@ -125,6 +125,7 @@ async function fixture(queueWaitMs?: number) {
   let resolveBundle: ((version: Omit<SkillBundleVersion, 'binding'>) => SkillBundleVersion) | undefined
   const work: SkillVersionWork = { binding, root, uid: 2000, gid: 2000, maxReadBytes: 65536,
     limits: { maxVersions: 8, maxTotalBytes: 1048576, maxTotalInodes: 256, maxFileBytes: 4096, reservationBytes: limits.reservationBytes },
+    prepareLegacy: (callback, control) => run(client => callback(request => client.prepareSkillVersion(request, control)), control),
     assertCurrent: () => { lifetime.signal.throwIfAborted() }, mutate: (_kind, callback, control) => run(callback, control), read: run,
     bundles: { limits, reclaim: { projectionLimits, maxPathBytes: 4096, maxReplyBytes: 65536 },
       bind: (read, resolve, check) => { readBundle = read; resolveBundle = resolve; authorize = check },

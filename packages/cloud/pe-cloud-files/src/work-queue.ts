@@ -18,6 +18,9 @@ export interface ResidentResult<T> {
 /** Trusted inert leases may retain a smaller, independently bounded result after actual work settles. */
 export type WorkRetention = 'lease' | Readonly<{ kind: 'lease'; retainedBytes: number }>
 
+/** Original executor may retain its failure responsibility; this never settles execution or grants release. */
+export type RetainUnconfirmed = (reason: unknown) => void
+
 /** Readonly transitions from the original record; executor entry does not mean source or worker entry. */
 export type FilesWorkTrace = (row: Readonly<{
   id: OperationId
@@ -31,14 +34,14 @@ export interface WorkLane {
   /**
    * Reserve finite capacity for one operation and any result retained by the service.
    * @param reservedBytes Positive safe integer covering the operation's buffers and overhead.
-   * @param work Backend work whose actual settlement remains owned after caller cancellation.
+   * @param work Backend work stays owned after cancellation; its second argument retains unknown responsibility after settlement.
    * @param signal Cancels this caller's wait and signals actual work to stop; joined work waits for actual settlement.
    * @param retention Trusted inert lease; a smaller bound applies after actual success and excludes trace callbacks.
    * Later files I/O must reenter this lane with complete work capacity.
    * @param completion Joined work requires an executor deadline, bounds queue waiting separately and waits for actual settlement.
    * @returns A result whose reservation remains held until release; lease never shortens actual work.
    */
-  run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+  run<T>(reservedBytes: number, work: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<T>, signal?: AbortSignal,
     retention?: WorkRetention, completion?: 'joined', trace?: FilesWorkTrace): Promise<ResidentResult<T>>
   /** Register responsibility and preparation I/O atomically; no storage authority is issued. */
   prepareDirectory(
@@ -71,13 +74,14 @@ interface RecordState {
   readonly retainedBytes?: number
   readonly completion?: 'joined'
   readonly controller: AbortController
-  work?: (signal: AbortSignal) => Promise<unknown>
+  work?: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<unknown>
   deliver: (value: unknown, release: () => void) => void
   reject: (reason: unknown) => void
   readonly owned?: { readonly responsibility: DirectoryResponsibility; readonly operation: 'prepare' | 'cleanup' }
   cleanupWait: () => void
   stopQueueWait: () => void
-  phase: 'queued' | 'running' | 'retained' | 'settled'
+  phase: 'queued' | 'running' | 'unconfirmed' | 'retained' | 'settled'
+  unconfirmed?: { readonly reason: unknown }
   abandoned: boolean
   invoked: boolean
   trace?: FilesWorkTrace
@@ -136,7 +140,7 @@ export class FilesWorkQueue {
     }
     this.lanes.add(lane)
     return Object.freeze({
-      run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+      run: <T>(bytes: number, work: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<T>, signal?: AbortSignal,
         retention?: WorkRetention, completion?: 'joined', trace?: FilesWorkTrace) => this.submit(lane, bytes, work, signal, retention, completion, trace),
       prepareDirectory: (
         intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
@@ -196,7 +200,7 @@ export class FilesWorkQueue {
   private submit<T>(
     lane: LaneState,
     bytes: number,
-    work: (signal: AbortSignal) => Promise<T>,
+    work: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<T>,
     signal: AbortSignal | undefined,
     retention?: WorkRetention,
     completion?: 'joined',
@@ -296,7 +300,7 @@ export class FilesWorkQueue {
   }
 
   private enqueue<T>(
-    lane: LaneState, bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal,
+    lane: LaneState, bytes: number, work: (signal: AbortSignal, retainUnconfirmed: RetainUnconfirmed) => Promise<T>, signal?: AbortSignal,
     owned?: RecordState['owned'], retention?: WorkRetention,
     completion?: 'joined',
     trace?: FilesWorkTrace,
@@ -311,11 +315,11 @@ export class FilesWorkQueue {
         ...typeof retention === 'object' ? { retainedBytes: retention.retainedBytes } : {},
         ...completion === undefined ? {} : { completion },
         controller: new AbortController(),
-        work: (control) => {
+        work: (control, retainUnconfirmed) => {
           const run = captured
           captured = undefined // A held result or lease must not retain the submitting context.
           if (run === undefined) throw new Error('files work was already invoked')
-          return run(work, control)
+          return run(work, control, retainUnconfirmed)
         },
         deliver: (value, release) => { resolve({ value: value as T, release }) },
         reject, cleanupWait: () => {}, stopQueueWait: () => {}, phase: 'queued', abandoned: false, invoked: false,
@@ -360,7 +364,9 @@ export class FilesWorkQueue {
       const work = record.work
       delete record.work // A retained inert result cannot retain the executor's captured buffers or caller context.
       if (work === undefined) throw new Error('files work was already invoked')
-      return work(record.controller.signal)
+      return work(record.controller.signal, (reason) => {
+        if (record.phase === 'running') record.unconfirmed ??= { reason }
+      })
     }).then(
       (value) => { this.complete(record, { kind: 'success', value }) },
       (reason: unknown) => { this.complete(record, { kind: 'failure', reason }) },
@@ -373,6 +379,15 @@ export class FilesWorkQueue {
     record.cleanupWait()
     record.cleanupWait = () => {}
     record.stopQueueWait = () => {}
+    if (record.unconfirmed !== undefined) {
+      record.phase = 'unconfirmed'
+      if (!record.abandoned) record.reject(record.unconfirmed.reason)
+      record.deliver = () => {}
+      record.reject = () => {}
+      delete record.trace
+      this.pump()
+      return
+    }
     if (record.owned !== undefined) {
       const { responsibility, operation } = record.owned
       const notify = operation === 'prepare' ? responsibility.prepared(result, record.invoked) : responsibility.cleaned(result)
