@@ -190,7 +190,6 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   sessionLogDownloadIntegration: 'client-side captured authenticated download carrier, not a Service — packages/session-query/session-log-export/README.md owns its fetch and navigation API',
   modelsSettingsIntegration: 'client-side page-owned Models input value — packages/client/ui-settings-models/README.md owns the API',
   webSearchSettingsIntegration: 'client-side page-owned Web search credential editor — packages/client/ui-settings-web-search/README.md owns the API',
-  agentPresetIntegration: 'client-side native preset read adapter — packages/client/ui-agent-preset/README.md owns the API',
   pluginManagerIntegration: 'client-side account plugin inventory and controls — packages/client/ui-plugin-manager/README.md owns the API',
   subagentSettingsIntegration: 'client-side namespace and field binding — packages/client/ui-settings-subagent/README.md owns the API',
   shellSettingsCard: 'client-side scoped native Terminal component — packages/client/ui-settings-shell/README.md owns its read-only composition API',

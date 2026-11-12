@@ -18,10 +18,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * including tools registered by your package. Register with
      * `key: '<tool name>'`; a typo never renders.
      *
-     * Registering an occupied key replaces its view; unclaimed keys use the
-     * generic row. The owner supplies the call identity and running
-     * or settled node through explicit phase props. Every stage supplies
-     * `name` and a lazy `args` view; preparing arguments may be incomplete.
+     * Registering an occupied key replaces its view; unclaimed keys use the generic row. The owner
+     * supplies the call identity and running or settled node through explicit phase props. Every
+     * stage supplies `name` and a lazy `args` view; preparing arguments may be incomplete.
      */
     'tool.call.toolview': {
       kind: 'keyed'

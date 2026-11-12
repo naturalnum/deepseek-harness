@@ -106,6 +106,7 @@ packages/client/ui-theme/src/client/index.ts	通用修复	主题写入区分已�
 packages/client/ui-theme/src/client/locales.ts	通用修复	保存状态文案	同上
 packages/client/ui-theme/src/client/settings-store.ts	通用修复	行状态里增加 saveState	同上
 packages/client/ui-theme/src/theme-settings.ts	通用修复	ThemeSaveState 类型	同上
+packages/client/ui-tool/src/client/contract/slots.ts	云端定制	已撤回旧注释改写；为现有client catalog报告123行预算，仅将上游原注释四行排为三行，完整词序标点和TS结构不变	原注释换行可在现有报告预算内通过，或上游吸收该纯排版；相关正式检查通过且本文件相对上游无差异。
 packages/client/ui-trajectory/src/client/duration-store.ts	扩展点	“显示耗时”偏好走页面存储端口	上游若提供页面级默认存储端口，本文件不用改
 packages/client/ui-trajectory/src/client/index.ts	扩展点	把 clientPersistence 传给两个偏好 store	同上
 packages/client/ui-trajectory/src/client/string-wrapping-store.ts	扩展点	“字符串换行”偏好走页面存储端口	同上
@@ -221,7 +222,7 @@ scripts/product-package-policy.ts	纯登记	`:19-26` 把 8 个包登记为 `cate
 scripts/package-dependency-policy.ts	纯登记	`:25` 起 `CONFIGURATION_ONLY_DEV_DEPENDENCIES['@deepseek-ai/dsh-pe-cloud-client']`；允许 `apps/web` 把它作为仅配置用途的开发依赖	仅配置依赖登记由上游标准扩展或正式自有检查等价承担，apps/web原依赖约束不减且脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。
 scripts/gen-doc-graphs.ts	纯登记	`SERVICE_ROLES` 加 15 条云端服务（`:110-186`）；能力图生成器要求每个服务有角色说明	15云端服务角色可经上游标准扩展或自有生成段完整进入最终能力图，原脚本不再需本地条目；须相关正式检查通过且该脚本相对上游无差异。
 scripts/gen-tool-catalog.ts	纯登记	加 3 个 import，`TOOL_PACKAGES` 加 remote-server 条目（`:196`）；工具目录要列出 `remote_exec`、`remote_server_info`	remote_exec/remote_server_info由标准扩展或自有目录合成完整列出且原脚本无需本地imports/登记；须相关正式检查通过且该脚本相对上游无差异。
-scripts/gen-cordis-catalog.ts	登记，但数量大；一部分是原生包新增类型的映射，不是云端包的	`SERVICE_PAGE` 加 15 个云端服务键指向 `cloud.md`（`:53-67`）；`SERVICE_WALK_EXEMPTIONS` 加 14 条；`EVENT_WALK_EXEMPTIONS` 加 1 条；`LINK_MAP` 加大量类型到页面的映射（含 `:338-340`）；目录生成器要求每个服务和类型有归属页	原生新增类型映射被上游吸纳、云端服务/类型/事件登记经标准扩展或正式自有生成保持全量归属，整个原脚本无需本地映射/豁免；须相关正式检查通过且该脚本相对上游无差异。
+scripts/gen-cordis-catalog.ts	登记，但数量大；一部分是原生包新增类型的映射，不是云端包的	`SERVICE_PAGE` 加 15 个云端服务键指向 `cloud.md`（`:53-67`）；`SERVICE_WALK_EXEMPTIONS` 保留 13 条（原预设适配服务撤回后删除陈旧 agentPresetIntegration 登记）；`EVENT_WALK_EXEMPTIONS` 加 1 条；`LINK_MAP` 加大量类型到页面的映射（含 `:338-340`）；目录生成器要求每个服务和类型有归属页	原生新增类型映射被上游吸纳、云端服务/类型/事件登记经标准扩展或正式自有生成保持全量归属，整个原脚本无需本地映射/豁免；须相关正式检查通过且该脚本相对上游无差异。
 scripts/check-workspace-constraints.ts	一半登记，一半是我们加的新规则	`privateRemoteDerivative`（`:57`）；`cloudLoaderEntries` 和 `checkCloudLoaderEntries`（`:121-157`）；`packageFileExtras` 加 `pe-opensandbox`（`:246`）；`expectedDshPackageFiles` 的云端分支（`:305-306`）；`:463`、`:495-496`；给云端包规定允许的导出入口，放行私有包和额外发布文件	云端入口/发布文件/私有包规则全部由正式自有检查或上游等价覆盖，正反约束不减且原脚本可完全还原；须相关正式检查通过且该脚本相对上游无差异。
 scripts/translation-pairing.ts	登记（1 行）	`:166` 把 `integrations/epri-research/CLOUD.*` 纳入配对范围；让科研包的云端说明也受中英文配对约束	科研CLOUD中英配对由正式自有检查/上游标准范围等价覆盖，原脚本无登记差异；须相关正式检查通过且该脚本相对上游无差异。
 scripts/verify-translation-pairing.ts	登记式钩子	`:16`、`:97-101` 调用 `isUnchangedImportedResearchContent`；豁免未改动的导入文件	相关第三方导入内容已移出本仓或被上游标准导入机制正确处理、不再需本地未改动豁免，配对覆盖不减；须相关正式检查通过且该脚本相对上游无差异。
