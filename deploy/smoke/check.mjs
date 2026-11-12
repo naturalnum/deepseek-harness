@@ -354,7 +354,7 @@ async function run(options) {
     }, [2])
     if (options.mcpOffline) {
       await check(13, 'MCP 停服后退出重登仍可对话和执行命令', async signal => {
-        mcpChecks = await createBrowserMcpChecks({ getPage: () => page, signOut, signIn: login, send, remaining,
+        mcpChecks = await createBrowserMcpChecks({ getPage: () => page, signOut, signIn: login, send, remaining, host: options.mcpHost,
           newConversation: async () => {
             await page.getByRole('button', { name: /^(New session|新建会话|新建对话)$/i }).last().click()
             currentSessionKey = undefined

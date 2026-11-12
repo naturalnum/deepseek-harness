@@ -2,6 +2,7 @@
 import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
+import { resolveMcpFixtureHost } from './mcp-fixture.mjs'
 
 const DEFAULT_URL = 'http://127.0.0.1:32802'
 
@@ -37,7 +38,7 @@ async function readCredentials(path) {
  * Resolve the candidate entry and one account from environment variables or a private JSON file.
  * @param {string[]} argv - Command arguments; account secrets are never accepted here.
  * @param {NodeJS.ProcessEnv} env - Environment containing optional smoke account credentials.
- * @returns {Promise<{url: string, email: string, password: string, mcp: boolean, mcpOffline: boolean, mcpRecover: boolean, research: boolean, wrongPassword: boolean, help: boolean, continueSession?: string, continueMarker?: string}>} Options for one smoke run.
+ * @returns {Promise<{url: string, email: string, password: string, mcp: boolean, mcpOffline: boolean, mcpRecover: boolean, mcpHost?: string, research: boolean, wrongPassword: boolean, help: boolean, continueSession?: string, continueMarker?: string}>} Options for one smoke run.
  */
 export async function readOptions(argv = process.argv.slice(2), env = process.env) {
   const options = {
@@ -87,6 +88,7 @@ export async function readOptions(argv = process.argv.slice(2), env = process.en
   if (options.mcpRecover && !options.mcpOffline) {
     throw new Error('--mcp-recover 必须与同轮 --mcp-offline 一起提供。')
   }
+  if (options.mcpOffline) options.mcpHost = resolveMcpFixtureHost(env.PE_CLOUD_SMOKE_MCP_HOST)
   if ((options.continueSession === undefined) !== (options.continueMarker === undefined)) {
     throw new Error('--continue-session 和 --continue-marker 必须成对提供。')
   }

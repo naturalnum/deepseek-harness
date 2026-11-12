@@ -3,15 +3,32 @@ import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { randomBytes } from 'node:crypto'
+import { isIP } from 'node:net'
+import { networkInterfaces } from 'node:os'
 
 const require = createRequire(new URL('../../packages/mcp/mcp-client/package.json', import.meta.url))
 const load = name => import(pathToFileURL(require.resolve(name)).href)
 
+/** Select only the default loopback or an exact, currently assigned private LAN IPv4. */
+export function resolveMcpFixtureHost(value = '127.0.0.1') {
+  if (value === '127.0.0.1') return value
+  const [first, second] = typeof value === 'string' ? value.split('.').map(Number) : []
+  const privateAddress = first === 10 || first === 172 && second >= 16 && second <= 31
+    || first === 192 && second === 168
+  if (typeof value !== 'string' || isIP(value) !== 4 || !privateAddress
+    || !Object.values(networkInterfaces()).flat().some(row => row?.family === 'IPv4' && !row.internal && row.address === value)) {
+    throw new Error('MCP 测试服务地址必须是 127.0.0.1 或本机当前网卡上的私网 IPv4；未开启监听。')
+  }
+  return value
+}
+
 /** Load the SDK only for an explicitly requested optional check.
+ * @param input One host used for both binding and advertising; no wildcard, DNS or separate advertised address.
  * @returns One owned service with joined stop/close and same-address restart.
  */
-export async function createMcpSmokeFixture() {
-  const [{ createMcpHandler, McpServer }, { toNodeHandler }, { z }] = await Promise.all([
+export async function createMcpSmokeFixture({ host = '127.0.0.1' } = {}) {
+  host = resolveMcpFixtureHost(host)
+  const [{ createMcpHandler, McpServer }, { toNodeHandler, hostHeaderValidation }, { z }] = await Promise.all([
     load('@modelcontextprotocol/server'), load('@modelcontextprotocol/node'), load('zod'),
   ])
   const marker = `mcp-smoke-${randomBytes(12).toString('hex')}`
@@ -31,7 +48,9 @@ export async function createMcpSmokeFixture() {
       return service
     })
     const handle = toNodeHandler(handler)
+    const validateHost = hostHeaderValidation([host])
     server = createServer((request, response) => {
+      if (!validateHost(request, response)) return
       if (new URL(request.url ?? '/', 'http://localhost').pathname !== '/mcp') {
         response.writeHead(404).end(); return
       }
@@ -48,7 +67,7 @@ export async function createMcpSmokeFixture() {
         const failed = error => { server.off('listening', listening); reject(error) }
         const listening = () => { server.off('error', failed); resolve() }
         server.once('error', failed); server.once('listening', listening)
-        server.listen(port, '127.0.0.1')
+        server.listen(port, host)
       })
       const address = server.address()
       if (address === null || typeof address === 'string') throw new Error('MCP fixture has no listening address.')
@@ -94,7 +113,7 @@ export async function createMcpSmokeFixture() {
 
   await start()
   return {
-    get url() { return `http://127.0.0.1:${port}/mcp` },
+    get url() { return `http://${host}:${port}/mcp` },
     get state() { return state },
     marker,
     calls,

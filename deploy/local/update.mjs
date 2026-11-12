@@ -77,12 +77,14 @@ async function smoke(args) {
   })
 }
 
-function smokeArguments(args) {
-  for (let index = 0; index < args.length; index += 2) {
+export function smokeArguments(args, allowMcp = false) {
+  for (let index = 0; index < args.length; index++) {
+    if (allowMcp && ['--mcp-offline', '--mcp-recover'].includes(args[index])) continue
     if (!['--credentials', '--account', '--continue-session', '--continue-marker'].includes(args[index])
       || !args[index + 1] || args[index + 1].startsWith('--')) {
       throw new CandidateError('更新仅接受私密测试账号和已有对话检查参数。')
     }
+    index++
   }
   return args
 }
@@ -111,7 +113,7 @@ async function update(bundle, args) {
     && !['verified', 'rolled-back'].includes(previous.phase)) {
     throw new CandidateError('已有未完成的更新；先检查保留状态或执行回滚，不重复停止应用。')
   }
-  const smokeArgs = smokeArguments(args)
+  const smokeArgs = smokeArguments(args, true)
   try { await readOptions(smokeArgs) }
   catch (_error) { throw new CandidateError('冒烟检查参数或私密账号文件无效；没有进行更新。') }
   const manifest = await verifyBundle(bundle)

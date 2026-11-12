@@ -28,6 +28,16 @@ test('refuses recovery without its same-run outage before reading credentials', 
   await assert.rejects(readOptions(['--mcp-recover'], {}), /必须与同轮 --mcp-offline/)
 })
 
+test('MCP host is explicit only for optional outage checks and invalid hosts fail before credential reads', async () => {
+  const credentials = { PE_CLOUD_SMOKE_EMAIL: EMAIL, PE_CLOUD_SMOKE_PASSWORD: PASSWORD }
+  const original = await readOptions([], { ...credentials, PE_CLOUD_SMOKE_MCP_HOST: '0.0.0.0' })
+  assert.equal(Object.hasOwn(original, 'mcpHost'), false)
+  const selected = await readOptions(['--mcp-offline'], { ...credentials, PE_CLOUD_SMOKE_MCP_HOST: '127.0.0.1' })
+  assert.equal(selected.mcpHost, '127.0.0.1')
+  await assert.rejects(readOptions(['--mcp-offline', '--credentials', '/missing/private.json'],
+    { PE_CLOUD_SMOKE_MCP_HOST: '0.0.0.0' }), /MCP 测试服务地址必须/)
+})
+
 async function withCredentials(data, run, mode = 0o600) {
   const directory = await mkdtemp(join(tmpdir(), 'pe-cloud-smoke-options-'))
   try {

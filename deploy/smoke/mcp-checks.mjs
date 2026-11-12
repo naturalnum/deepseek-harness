@@ -86,7 +86,7 @@ const label = {
  * @param input Current browser and existing account/conversation actions with their remaining budget.
  * @returns Checks owning one keyless service and, after save, one unique account connection.
  */
-export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConversation, send, command, remaining }) {
+export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConversation, send, command, remaining, host }) {
   const serverName = `smoke_${randomBytes(6).toString('hex')}`
   let saveAttempted = false
   let page = getPage()
@@ -218,7 +218,7 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
     }),
   }
   // No asynchronous setup follows acquisition before the caller owns cleanup.
-  const fixture = await createMcpSmokeFixture()
+  const fixture = await createMcpSmokeFixture({ host })
   const connection = Object.freeze({ serverName, url: fixture.url })
   try { console.warn('MCP smoke owned connection: %j', connection) } catch (_diagnosticFailure) {}
   return { ...mcpChecks(fixture, actions, serverName), connection }
