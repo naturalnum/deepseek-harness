@@ -196,6 +196,8 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+已安装 files lane 首次出现未知 mutation 时，同步封锁其原 slot，并在错误交付后调度既有、受跟踪的排空。它只请求一次原 quarantine；提交失败或结果不确定时仍保留封锁。过期的 slot、binding 或 lease 不能作用于另一个账户图。
+
 <details>
 <summary>实现内部机制 — 点击展开</summary>
 

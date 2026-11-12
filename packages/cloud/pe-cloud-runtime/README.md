@@ -196,6 +196,8 @@ Remote-server activation requires the approved catalog's `remoteServers` policy,
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The installed files lane's first unknown mutation synchronously fences its original slot and schedules the existing tracked drain after error delivery. It requests the original quarantine once; failed or uncertain submission keeps the slot fenced. A stale slot, binding or lease cannot target another graph.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 

@@ -337,6 +337,27 @@ function validate(config: FilesPoolConfig): void {
 }
 
 /**
+ * Retain one bound lane's write fence and its first original-owner notification.
+ * @param notify Original installed account owner; omission preserves component-only file fencing.
+ * @returns The lane's existing unknown state; notification failure never releases its work.
+ */
+export function createMutationUnknownState(notify?: () => void) {
+  let unknown = false
+  return {
+    get unknown(): boolean { return unknown },
+    markUnknown(): void {
+      if (unknown) return
+      unknown = true
+      try { notify?.() }
+      catch (_notificationFailure) {
+        try { console.warn('Cloud file owner notification is unconfirmed: %j', { event: 'file-mutation-unknown' }) }
+        catch (_diagnosticFailure) { /* The original operation, budget and write fence remain retained. */ }
+      }
+    },
+  }
+}
+
+/**
  * One root pool and files participant; configured static storage is verified before startup completes.
  * Omission grants healthy fixed slots only. Neither mode certifies a complete account recipe or readiness.
  */
@@ -432,7 +453,8 @@ export class LinuxFilesPool implements DrainParticipant {
       view: () => this.probeOperation((client, signal) => client.storageView(storage.maxMountInfoBytes, signal)),
       skillProof: () => this.probeOperation((client, signal) => client.storageSkillProof(storage.maxPlanBytes, signal)),
       assertPoolCurrent: () => { this.assertHealthy() },
-      bind: (binding, root, current, privateParent, revalidation) => this.bind(binding, root, current, privateParent, revalidation),
+      bind: (binding, root, current, privateParent, revalidation, mutationUnknown) =>
+        this.bind(binding, root, current, privateParent, revalidation, mutationUnknown),
       joinEpoch: binding => this.owner.joinEpoch(binding),
       retireSkillVersions: async (binding, root, uid, gid) => {
         const config = this.config.skillVersions
@@ -493,12 +515,14 @@ export class LinuxFilesPool implements DrainParticipant {
    * @param privateParent Optional verified private-files parent for instruction reads and environment banks;
    * omission leaves those operations unavailable.
    * @param revalidation Optional bounded record authorities minted only by the original verified Root lease.
+   * @param onMutationUnknown First unknown-write notification to the installed account owner; omission keeps component-only fencing.
    * @returns A fixed-root internal read port with no shared-pool close capability.
    */
   bind(
     binding: AccountBinding, root: FdRootIdentity, assertCurrent: () => void,
     privateParent?: FdRootIdentity & { readonly rootMountId: string },
     revalidation?: readonly SkillRecordRevalidation[],
+    onMutationUnknown?: () => void,
   ): PoolReadPort {
     this.assertHealthy()
     if (root.rootPath.length > this.config.maxPathBytes || !isAbsolute(root.rootPath)
@@ -622,7 +646,7 @@ export class LinuxFilesPool implements DrainParticipant {
       } finally { held.release() }
     }
     let mutationTail = Promise.resolve()
-    let mutationUnknown = false
+    const mutationState = createMutationUnknownState(onMutationUnknown)
     const environmentBanks = new WeakMap<StaticEnvironmentBank, EnvironmentBankState>()
     // Only trusted same-lane executors enter here; observation never settles their actual work.
     const runMutation = <T>(
@@ -635,7 +659,7 @@ export class LinuxFilesPool implements DrainParticipant {
     ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
-      if (mutationUnknown) return Promise.reject(failure('unknown', 'FS_IO_ERROR'))
+      if (mutationState.unknown) return Promise.reject(failure('unknown', 'FS_IO_ERROR'))
       const answer = Promise.withResolvers<ResidentResult<T>>()
       let invoked = false
       const work = port.run<T>(reservation, async (control) => {
@@ -648,7 +672,7 @@ export class LinuxFilesPool implements DrainParticipant {
           checkCurrent()
           assertProject()
           if (control.aborted) throw failure('not-published', 'FS_ABORTED')
-          if (mutationUnknown) throw failure('not-published', 'FS_IO_ERROR')
+          if (mutationState.unknown) throw failure('not-published', 'FS_IO_ERROR')
           const execution = { entered: false }
           try {
             const value = await this.withSlot(false, (client) => { execution.entered = true; return execute(client, control) })
@@ -662,7 +686,7 @@ export class LinuxFilesPool implements DrainParticipant {
           } catch (error) {
             if (!execution.entered && error instanceof FilesFailure) throw failure('not-published', 'FS_IO_ERROR', error)
             if (!(error instanceof FdMutationFailure) || error.outcome === 'unknown') {
-              mutationUnknown = true
+              mutationState.markUnknown()
               answer.reject(error)
               turn.resolve()
               console.error('Cloud file publication or cleanup is unconfirmed; '
@@ -800,7 +824,7 @@ export class LinuxFilesPool implements DrainParticipant {
     ): Promise<ResidentResult<FsWriteOutcome>> => {
       checkCurrent()
       assertProject()
-      if (mutationUnknown) return Promise.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR'))
+      if (mutationState.unknown) return Promise.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR'))
       if (this.slots.some(slot => !slot.client.supportsTextWrites)) return Promise.reject(new FdTextWriteFailure('not-published',
         'FS_PERMISSION_DENIED'))
       if (Buffer.byteLength(content) > this.config.maxReadBytes) return Promise.reject(new FdTextWriteFailure('not-published',

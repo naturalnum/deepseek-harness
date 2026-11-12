@@ -95,6 +95,8 @@ Remote-server metadata uses the fixed account-private `cloud_remote_server_accou
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The first unknown mutation on an installed account lane synchronously notifies its original factory. Actual work and its full reservation remain retained; notification does not confirm PostgreSQL quarantine, cleanup or account recovery.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 

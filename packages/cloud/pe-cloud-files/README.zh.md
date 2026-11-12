@@ -95,6 +95,8 @@ Session 目录模式逐字保留旧槽记录。旧 bound Session 必须先完成
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+已安装账户 lane 首次出现未知 mutation 时，同步通知持有原账户的 factory。实际工作及其完整预留继续保留；发出通知不代表 PostgreSQL 隔离、清理或账户恢复已经确认。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

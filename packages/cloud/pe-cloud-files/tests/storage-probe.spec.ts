@@ -13,6 +13,7 @@ import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { StaticStorageAccount, StaticStorageConfig, StaticAccountAssignment, StorageProbeFacts } from '../src/storage-types.ts'
 import type { PoolReadPort } from '../src/worker-pool.ts'
 
+const ignoreMutationUnknown = (): void => {}
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
 function domain(index: number) {
   return { rootPath: `/domain-${index}`, rootDevice: `${index}`, rootInode: '2', rootMountId: `${index + 10}`,
@@ -479,7 +480,7 @@ describe('two retained static preparations with serial verification', () => {
     }
     f.driver.bind.mockReturnValue(port)
     const resolveProject = async () => unused(), first = await f.prepare(original)
-    first.bindInstalled(original.binding, () => {}, () => {}, resolveProject)
+    first.bindInstalled(original.binding, () => {}, () => {}, resolveProject, ignoreMutationUnknown)
     const qualification = f.driver.bind.mock.calls[0]?.[4]?.[0]
     if (qualification === undefined) throw new Error('Expected the original Root qualification')
     expect(qualification.pending).toBe(true)
@@ -495,7 +496,7 @@ describe('two retained static preparations with serial verification', () => {
     const next = { ...original, binding: { ...original.binding,
       epoch: '3' as AccountMountInput['binding']['epoch'], lifetime: new AbortController().signal } }
     const second = await f.prepare(next)
-    second.bindInstalled(next.binding, () => {}, () => {}, resolveProject)
+    second.bindInstalled(next.binding, () => {}, () => {}, resolveProject, ignoreMutationUnknown)
     const later = f.driver.bind.mock.calls[1]?.[4]?.[0]
     expect(later?.pending).toBe(false)
     expect(() => { later?.assertRecord('1:2:3:4:5') }).toThrow('static storage lease')
@@ -515,7 +516,7 @@ describe('two retained static preparations with serial verification', () => {
     }
     f.driver.bind.mockReturnValue(port)
     const resolveProject = async () => unused(), first = await f.prepare(f.inputs[0]!)
-    first.bindInstalled(f.inputs[0]!.binding, () => {}, () => {}, resolveProject)
+    first.bindInstalled(f.inputs[0]!.binding, () => {}, () => {}, resolveProject, ignoreMutationUnknown)
     const [a, b] = f.driver.bind.mock.calls[0]?.[4] ?? []
     if (a === undefined || b === undefined) throw new Error('Expected two account qualifications')
     expect([a.workspaceId, b.workspaceId]).toEqual(['workspace', 'workspace-2'])
@@ -526,7 +527,7 @@ describe('two retained static preparations with serial verification', () => {
     expect(() => { b.confirmRecord('1:2:3:4:7', '1:2:3:4:8') }).toThrow()
     a.assertRecord('1:2:3:4:5'); a.confirmRecord('1:2:3:4:5', '1:2:3:4:6')
     const other = await f.prepare(f.inputs[1]!)
-    other.bindInstalled(f.inputs[1]!.binding, () => {}, () => {}, resolveProject)
+    other.bindInstalled(f.inputs[1]!.binding, () => {}, () => {}, resolveProject, ignoreMutationUnknown)
     const supplied = f.driver.bind.mock.calls[1]?.[4]
     expect(supplied?.map(entry => entry.workspaceId)).toEqual(['other-account-workspace'])
     expect(supplied?.[0]?.pending).toBe(true)
@@ -534,7 +535,7 @@ describe('two retained static preparations with serial verification', () => {
     const next = { ...f.inputs[0]!, binding: { ...f.inputs[0]!.binding,
       epoch: '3' as AccountMountInput['binding']['epoch'], lifetime: new AbortController().signal } }
     const later = await f.prepare(next)
-    later.bindInstalled(next.binding, () => {}, () => {}, resolveProject)
+    later.bindInstalled(next.binding, () => {}, () => {}, resolveProject, ignoreMutationUnknown)
     expect(f.driver.bind.mock.calls[2]?.[4]?.map(entry => entry.pending)).toEqual([false, false])
   })
 
@@ -576,7 +577,7 @@ describe('two retained static preparations with serial verification', () => {
     const make = async (f: Awaited<ReturnType<typeof fixture>>) => {
       f.driver.bind.mockReturnValue(pool)
       const input = f.inputs[0]!, lease = await f.prepare(input)
-      lease.bindInstalled(input.binding, () => {}, () => {}, async () => unused())
+      lease.bindInstalled(input.binding, () => {}, () => {}, async () => unused(), ignoreMutationUnknown)
       const authority = f.driver.bind.mock.calls[0]?.[4]
       if (authority?.[0] === undefined) throw new Error('Expected an actual Root qualification')
       const work: SkillProjectWork = { binding: input.binding,
@@ -809,4 +810,34 @@ describe('two retained static preparations with serial verification', () => {
     expect(f.driver.view).toHaveBeenCalledTimes(1)
     expect(() => { lease.assertCurrent() }).toThrow()
   })
+  it('binds the original factory notification once per installed lease and never transfers it to another account', async () => {
+    const f = await fixture(), unused = (): never => { throw new Error('No business I/O belongs to this wiring fixture') }
+    const port: PoolReadPort = {
+      get reader() { return unused() }, get directory() { return unused() },
+      skillVersions: unused, skillProjection: unused, assertContentAvailable: unused, assertStagingAvailable: unused,
+      workspaceContent: unused, prepareExecutionMounts: unused, stageFiles: unused, stageWorkspaceUploads: unused,
+      runNativeMutation: unused, createTextFileSystem: unused, projectFor: unused, withInstructionReaders: unused,
+      derivePreparedLeaf: unused, createWorkspaceRegistry: unused, stat: unused, streamText: unused, readBytes: unused,
+    }
+    f.driver.bind.mockReturnValue(port)
+    const a = f.inputs[0]!, b = f.inputs[1]!, leaseA = await f.prepare(a), leaseB = await f.prepare(b)
+    const resolveProject = async () => unused(), notifyA = vi.fn(), notifyB = vi.fn()
+    const first = leaseA.bindInstalled(a.binding, () => {}, () => {}, resolveProject, notifyA)
+    expect(leaseA.bindInstalled(a.binding, () => {}, () => {}, resolveProject, notifyA)).toBe(first)
+    expect(() => leaseA.bindInstalled(a.binding, () => {}, () => {}, resolveProject, notifyB)).toThrow()
+    leaseB.bindInstalled(b.binding, () => {}, () => {}, resolveProject, notifyB)
+    expect(f.driver.bind).toHaveBeenCalledTimes(2)
+    expect(f.driver.bind.mock.calls[0]?.[5]).toBe(notifyA)
+    expect(f.driver.bind.mock.calls[1]?.[5]).toBe(notifyB)
+    const notification = f.driver.bind.mock.calls[0]?.[5]
+    if (notification === undefined) throw new Error('Original installed owner notification was not wired')
+    f.controllers[0]!.abort()
+    notification()
+    expect(notifyA).toHaveBeenCalledTimes(1); expect(notifyB).not.toHaveBeenCalled()
+    expect(f.driver.joinEpoch).not.toHaveBeenCalled()
+    leaseB.assertCurrent()
+    await leaseA.closeAfterActualDrain()
+    expect(f.driver.joinEpoch).toHaveBeenCalledExactlyOnceWith(a.binding)
+  })
+
 })
