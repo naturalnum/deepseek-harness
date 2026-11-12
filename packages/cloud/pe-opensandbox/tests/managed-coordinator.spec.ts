@@ -86,6 +86,7 @@ function fixture(input: {
   managed?: ManagedCoordinatorConfig
   applicationFactory?: boolean
   skillCopies?: number
+  singleInstanceActive?: boolean
 } = {}) {
   const ctx = new Context(), accountContexts: Context[] = []
   const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
@@ -103,6 +104,7 @@ function fixture(input: {
   const database: RootMetadataDatabase = { query, wasNotSubmitted: () => false }
   let registered: DrainParticipant | undefined, withdraw: (() => void | Promise<void>) | undefined
   const runtimePort = {
+    ...input.singleInstanceActive === undefined ? {} : { singleInstanceActive: input.singleInstanceActive },
     registerDrainParticipant: vi.fn<AccountRuntimeService['registerDrainParticipant']>((participant) => {
       const disposer = runtime.registerDrainParticipant(participant)
       registered = participant; withdraw = disposer
@@ -177,6 +179,165 @@ function retainedAllocation(): SandboxAllocation {
     runtimeIdentity: null, executionProtocolVersion: null, executionCapabilities: [], failureCode: null,
   }
 }
+
+it('single-instance startup admits service after closing an expired unnumbered allocation', async () => {
+  const retained = retainedAllocation(), f = fixture({ retained, singleInstanceActive: true })
+  const fail = vi.spyOn(PostgresAllocationStore.prototype, 'failNotCreated').mockResolvedValue({
+    ...retained, state: 'failed', failureCode: 'startup-expired',
+  })
+  await expect(f.owner.start()).resolves.toBeUndefined()
+  expect(() => f.owner.assertReady()).not.toThrow()
+  expect(fail).toHaveBeenCalledWith(retained, 'startup-expired')
+  expect(f.create).not.toHaveBeenCalled(); expect(f.bootstrap).not.toHaveBeenCalled()
+})
+
+function startupAllocation(id: string, state: SandboxAllocation['state'] = 'ready'): SandboxAllocation {
+  return { ...retainedAllocation(), allocationId: brandString<SandboxAllocation['allocationId']>(id), state,
+    sandboxId: `old-${id}`, runtimeIdentity: state === 'ready' ? '1'.repeat(64) : null,
+    executionProtocolVersion: state === 'ready' ? 'unit' : null,
+    executionCapabilities: state === 'ready' ? ['argv-collect'] : [] }
+}
+
+function startupSweepFixture(allocations: readonly SandboxAllocation[]) {
+  const f = fixture({ singleInstanceActive: true }), rows = new Map(allocations.map(row => [row.allocationId, row]))
+  const original = (expected: AllocationExpectation): SandboxAllocation => {
+    const row = rows.get(expected.allocationId)
+    if (row === undefined || (['accountId', 'sessionId', 'workspaceId', 'epoch', 'state'] as const)
+      .some(key => row[key] !== expected[key])) throw new Error('Synthetic startup CAS conflict')
+    return row
+  }
+  const list = vi.spyOn(PostgresAllocationStore.prototype, 'listNonterminal').mockImplementation(async (_scope, cursor, limit) => {
+    const page = [...rows.values()].filter(row => row.state !== 'failed' && row.state !== 'released'
+      && (cursor === null || row.allocationId > cursor)).sort((a, b) => a.allocationId.localeCompare(b.allocationId)).slice(0, limit)
+    return { allocations: page, nextCursor: page.length === limit ? page.at(-1)!.allocationId : null }
+  })
+  const transition = vi.spyOn(PostgresAllocationStore.prototype, 'transition').mockImplementation(async (expected, change) => {
+    const row: SandboxAllocation = { ...original(expected), state: change.to }
+    rows.set(row.allocationId, row); return row
+  })
+  const release = vi.spyOn(PostgresAllocationStore.prototype, 'releaseStopped').mockImplementation(async (expected) => {
+    const before = original(expected)
+    if (before.state !== 'stopping') throw new Error('Synthetic startup release requires stopping')
+    const row: SandboxAllocation = { ...before, state: 'released' }; rows.set(row.allocationId, row); return row
+  })
+  const fail = vi.spyOn(PostgresAllocationStore.prototype, 'failNotCreated').mockImplementation(async (expected, failureCode) => {
+    const before = original(expected)
+    if (before.state !== 'creating') throw new Error('Synthetic no-create requires creating')
+    const row: SandboxAllocation = { ...before, state: 'failed', failureCode }; rows.set(row.allocationId, row); return row
+  })
+  const deletion = vi.spyOn(f.backend, 'deleteOriginal').mockResolvedValue('deleted')
+  return { ...f, rows, list, transition, release, fail, deletion }
+}
+
+it('single-instance startup paginates old rows and preserves the original stopping/released CAS order', async () => {
+  const rows = [startupAllocation('a', 'creating'), startupAllocation('b'), startupAllocation('c', 'stopping')]
+  const f = startupSweepFixture(rows), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  f.deletion.mockResolvedValueOnce('deleted').mockResolvedValueOnce('missing').mockResolvedValueOnce('missing')
+  await f.owner.start()
+  expect(() => f.owner.assertReady()).not.toThrow()
+  expect(f.list.mock.calls.map(args => args[1])).toEqual([null, rows[1]!.allocationId])
+  expect(f.deletion.mock.calls.map(args => args[0])).toEqual(rows.map(row => row.sandboxId))
+  expect(f.transition).toHaveBeenCalledTimes(2); expect(f.release).toHaveBeenCalledTimes(3)
+  expect([...f.rows.values()].map(row => row.state)).toEqual(['released', 'released', 'released'])
+  expect(f.fail).not.toHaveBeenCalled(); expect(f.create).not.toHaveBeenCalled(); expect(f.bootstrap).not.toHaveBeenCalled()
+  expect(warn).toHaveBeenCalledWith('Cloud startup sandbox cleanup: %j', {
+    event: 'startup-sandbox-cleanup', phase: 'complete', total: 3, deleted: 1, missing: 2, expired: 0 })
+})
+
+it('an explicit false single-instance flag retains the original startup refusal without deletion', async () => {
+  const f = fixture({ retained: startupAllocation('disabled'), singleInstanceActive: false })
+  const deletion = vi.spyOn(f.backend, 'deleteOriginal')
+  await expect(f.owner.start()).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  expect(deletion).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+})
+
+it('startup waits through the shared expiry boundary before releasing an unconfirmed old sandbox', async () => {
+  vi.useFakeTimers(); onTestFinished(() => { vi.useRealTimers() })
+  const row = { ...startupAllocation('waiting'), createDeadlineAt: new Date(Date.now() + 1000).toISOString() }
+  const f = startupSweepFixture([row]), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  f.deletion.mockResolvedValue('unknown')
+  const starting = f.owner.start()
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(() => f.owner.assertReady()).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+  expect(f.transition).not.toHaveBeenCalled(); expect(f.release).not.toHaveBeenCalled()
+  expect(warn).toHaveBeenCalledWith('Cloud startup sandbox cleanup: %j', expect.objectContaining({ phase: 'waiting', total: 1 }))
+  await vi.advanceTimersByTimeAsync(90999)
+  expect(f.release).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1); await starting
+  expect(f.deletion).toHaveBeenCalledOnce(); expect(f.release).toHaveBeenCalledOnce()
+  expect(f.rows.get(row.allocationId)?.state).toBe('released')
+  expect(warn).toHaveBeenCalledWith('Cloud startup sandbox cleanup: %j', {
+    event: 'startup-sandbox-cleanup', phase: 'complete', total: 1, deleted: 0, missing: 0, expired: 1 })
+})
+
+it('startup with no sandbox id uses the task-card expiry fallback without replaying create or listing', async () => {
+  vi.useFakeTimers(); onTestFinished(() => { vi.useRealTimers() })
+  const row = { ...retainedAllocation(), createDeadlineAt: new Date(Date.now() + 1000).toISOString() }
+  const f = startupSweepFixture([row]), listing = vi.spyOn(f.backend, 'findOriginal')
+  const starting = f.owner.start()
+  await vi.advanceTimersByTimeAsync(150999)
+  expect(f.fail).not.toHaveBeenCalled(); expect(f.release).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1); await starting
+  expect(f.fail).toHaveBeenCalledWith(row, 'startup-expired')
+  expect(f.rows.get(row.allocationId)?.state).toBe('failed')
+  expect(f.deletion).not.toHaveBeenCalled(); expect(listing).not.toHaveBeenCalled(); expect(f.create).not.toHaveBeenCalled()
+})
+
+it.each(['uncertain', 'stopping'] as const)('startup expires an unnumbered %s row through the existing stopping CAS', async (state) => {
+  const row = { ...startupAllocation('unnumbered', state), sandboxId: null }, f = startupSweepFixture([row])
+  await f.owner.start()
+  expect(f.fail).not.toHaveBeenCalled(); expect(f.deletion).not.toHaveBeenCalled()
+  expect(f.transition).toHaveBeenCalledTimes(state === 'stopping' ? 0 : 1)
+  expect(f.release).toHaveBeenCalledOnce(); expect(f.rows.get(row.allocationId)?.state).toBe('released')
+})
+
+it('startup stops before metadata writes when its single-instance lock is lost during expiry waiting', async () => {
+  vi.useFakeTimers(); onTestFinished(() => { vi.useRealTimers() })
+  const row = { ...startupAllocation('lost-lock'), createDeadlineAt: new Date(Date.now() + 1000).toISOString() }
+  const f = startupSweepFixture([row]); f.deletion.mockResolvedValue('unknown')
+  const starting = f.owner.start(), refused = expect(starting).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  await vi.advanceTimersByTimeAsync(0)
+  f.runtimePort.singleInstanceActive = false
+  await vi.advanceTimersByTimeAsync(60000); await refused
+  expect(f.transition).not.toHaveBeenCalled(); expect(f.release).not.toHaveBeenCalled()
+  expect(f.rows.get(row.allocationId)?.state).toBe('ready')
+})
+
+it('startup refuses readiness when its single-instance lock is lost during the final terminal write', async () => {
+  const row = startupAllocation('final-lock'), f = startupSweepFixture([row])
+  const entered = Promise.withResolvers<undefined>(), released = Promise.withResolvers<SandboxAllocation>()
+  f.release.mockImplementationOnce(async () => { entered.resolve(undefined); return await released.promise })
+  const starting = f.owner.start(), refused = expect(starting).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  await entered.promise
+  f.runtimePort.singleInstanceActive = false
+  const terminal: SandboxAllocation = { ...row, state: 'released' }
+  f.rows.set(row.allocationId, terminal); released.resolve(terminal)
+  await refused
+  expect(f.release).toHaveBeenCalledOnce()
+  expect(() => f.owner.assertReady()).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+})
+
+it('startup does not declare clean metadata after a submitted terminal CAS rejects', async () => {
+  const row = startupAllocation('cas'), f = startupSweepFixture([row])
+  f.release.mockRejectedValueOnce(new Error('Synthetic original terminal acknowledgement lost'))
+  await expect(f.owner.start()).rejects.toThrow('Synthetic original terminal acknowledgement lost')
+  expect(() => f.owner.assertReady()).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+  expect(f.rows.get(row.allocationId)?.state).toBe('stopping')
+  expect(f.deletion).toHaveBeenCalledOnce(); expect(f.create).not.toHaveBeenCalled()
+})
+
+it('closing during startup expiry cancels the owned timer while leaving old metadata unconfirmed', async () => {
+  vi.useFakeTimers(); onTestFinished(() => { vi.useRealTimers() })
+  const row = { ...startupAllocation('closing'), createDeadlineAt: new Date(Date.now() + 1000).toISOString() }
+  const f = startupSweepFixture([row]); f.deletion.mockResolvedValue('unknown')
+  const starting = f.owner.start(), refusedStart = expect(starting).rejects.toMatchObject({ name: 'AbortError' })
+  await vi.advanceTimersByTimeAsync(0)
+  f.transportClose.resolve(undefined)
+  const closing = f.owner.closeRoot(), refusedClose = expect(closing).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  await Promise.all([refusedStart, refusedClose])
+  expect(f.release).not.toHaveBeenCalled(); expect(f.rows.get(row.allocationId)?.state).toBe('ready')
+  expect(vi.getTimerCount()).toBe(0)
+})
 
 it('retains its original runtime registration while shutdown joins a pending migration and actual backend close', async () => {
   const f = fixture({ holdMigration: true }), starting = f.owner.start()
@@ -872,6 +1033,30 @@ async function expiryContinuationFixture(sessions = 2) {
       return Date.parse(row.createDeadlineAt) + sdkConfig.ttlSeconds * 1000 + 30000
     } }
 }
+
+for (const active of [false, true]) it.each(['initial', 'expiry'] as const)(
+  `keeps the original %s deletion recovery independent of singleInstanceActive=${active}`, async (path) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
+    const f = await expiryContinuationFixture()
+    f.runtimePort.singleInstanceActive = active
+    for (let i = 0; i < 4; i++) expect((await f.run()).isError).toBe(false)
+    if (path === 'initial') {
+      f.absent()
+      expect((await f.run()).isError).toBe(false)
+      expect(f.retry).not.toHaveBeenCalled()
+    } else {
+      expect((await f.run()).isError).toBe(true)
+      expect(f.store.releaseStopped).not.toHaveBeenCalled()
+      vi.setSystemTime(f.expires() - 1)
+      expect((await f.run()).isError).toBe(true)
+      expect(f.store.releaseStopped).not.toHaveBeenCalled()
+      vi.setSystemTime(f.expires()); f.absent()
+      expect((await f.run()).isError).toBe(false)
+      expect(f.retry).toHaveBeenCalled()
+    }
+    expect(f.http.filter(call => call.method === 'DELETE')).toHaveLength(1)
+    expect(f.store.releaseStopped).toHaveBeenCalledOnce()
+  })
 
 it.each(['same', 'other'] as const)('recovers the original deletion-only retirement on the %s Session after expiry', async (source) => {
   vi.useFakeTimers({ toFake: ['Date'] }); onTestFinished(() => { vi.useRealTimers() })
